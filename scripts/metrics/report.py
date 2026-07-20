@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Aggregate ``logs/metrics.jsonl`` into per-session rows and rollups.
 
-Reads the JSONL emitted by ``scripts/metrics/hook_collect.py`` (design doc §4)
-and prints one row per session, plus optional per-SHA rollups for A/B
-comparison. Per design doc §2, token count and wall-clock are near-deterministic
-per fixed task, so ``--by-sha`` (n, mean/median tokens + wall-clock per commit)
-is the cheap efficiency channel for matched-pair harness A/B tests.
+Reads the JSONL emitted by ``scripts/metrics/hook_collect.py`` and prints one
+row per session, plus optional per-SHA rollups for A/B comparison. Token count
+and wall-clock are near-deterministic per fixed task, so ``--by-sha`` (n,
+mean/median tokens + wall-clock per commit) is the cheap efficiency channel for
+matched-pair harness A/B tests (see ``evals/ab-protocol.md``).
 
 Usage:
     .venv/bin/python scripts/metrics/report.py [--log PATH] [--by-sha]
 
 Malformed / partial lines are skipped, never fatal — the transcript-derived Stop
-rows are version-brittle (design doc §2/§4 [caveat]).
+rows are version-brittle (re-verify the hook payload shape after upgrades).
 """
 
 from __future__ import annotations

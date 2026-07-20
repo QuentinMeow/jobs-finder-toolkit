@@ -415,6 +415,18 @@ def main():
         print(f"Error: tailored.yaml not found for {app_dir}", file=sys.stderr)
         sys.exit(1)
 
+    # Guard against rendering with a mismatched identity: outputs are named and
+    # filled from the ACTIVE config, so rendering a folder that lives outside the
+    # configured applications root (e.g. the tracked examples/ dataset while a
+    # real config.yaml is active) would drop foreign-identity files into it.
+    # Point JOBHUNT_CONFIG at the config that owns the folder to silence this.
+    apps_root = config.applications_root().resolve()
+    if apps_root not in app_dir.resolve().parents:
+        print(f"WARNING: {app_dir} is outside the configured applications root "
+              f"({apps_root}); outputs will use the active config's identity "
+              f"({resume_stem('')}*). Set JOBHUNT_CONFIG if that is not intended.",
+              file=sys.stderr)
+
     with open(yaml_path) as f:
         data = yaml.safe_load(f)
 

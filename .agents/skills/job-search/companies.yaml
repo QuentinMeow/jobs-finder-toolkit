@@ -215,6 +215,6 @@ companies:
   # The PUBLIC registry ships identity + poll config only — it carries NO personal
   # skip rules. Candidate-specific blacklist rows (companies that don't sponsor, the
   # candidate's own employer, etc.) live in a git-ignored overlay merged at load time
-  # by scripts/registry.py: `personal/job-search/blacklist.yaml`. Each overlay row is
+  # by scripts/registry.py: `private/job-search/blacklist.yaml`. Each overlay row is
   # an identity-only entry (name + optional aliases + a `blacklist:` reason, no
   # ats/token) and is dropped from results wherever the company surfaces.

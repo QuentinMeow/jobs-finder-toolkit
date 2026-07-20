@@ -1,9 +1,8 @@
 """gardener front-end — dispatch the memory-hygiene routines.
 
 The gardener keeps this repo's agent-memory zones from growing without bound
-(maintainer-only design doc, overlay-mounted:
-``private/docs/harness-engineering-and-repo-evolution/03-folder-structure-and-memory.md``
-§5). Every routine DEFAULTS TO DRY-RUN, prints a plan/diff, and MOVES rather than
+(see ``AGENTS.md`` → "Memory Map" for the zones and retention windows). Every
+routine DEFAULTS TO DRY-RUN, prints a plan/diff, and MOVES rather than
 deletes; ``--apply`` is an explicit opt-in that a human confirms.
 
 Routines:

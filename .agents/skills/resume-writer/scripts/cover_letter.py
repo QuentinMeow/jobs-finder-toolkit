@@ -108,8 +108,7 @@ def find_application_txt(folder: Path, label: str = "") -> Path | None:
 
     A labeled (per-JD) lookup must match its OWN ``..._Application_<label>.txt``
     exactly — it never falls back to a different role's bundle. Only the unlabeled
-    lookup (label="") falls back to any single bundle, then a legacy standalone
-    cover-letter .txt, so old folders keep rendering.
+    lookup (label="") falls back to any single bundle.
     """
     folder = application_dir(folder)
     exact = folder / f"{application_stem(label)}.txt"
@@ -118,22 +117,15 @@ def find_application_txt(folder: Path, label: str = "") -> Path | None:
     if label:
         return None
     matches = sorted(folder.glob(f"{APPLICATION_STEM}*.txt"))
-    if matches:
-        return matches[0]
-    # Legacy fallback: a standalone cover-letter .txt (pre-bundle layout).
-    legacy = sorted(folder.glob("*Cover_Letter*.txt"))
-    return legacy[0] if legacy else None
+    return matches[0] if matches else None
 
 
 def cover_letter_text(folder: Path, label: str = "") -> str | None:
-    """The raw cover-letter block: the COVER LETTER section of the bundle,
-    or the whole file when it's a legacy standalone cover-letter .txt."""
+    """The raw cover-letter block: the COVER LETTER section of the bundle."""
     txt = find_application_txt(folder, label)
     if txt is None:
         return None
     raw = txt.read_text()
-    if "Cover_Letter" in txt.name:  # legacy standalone file
-        return raw
     sections = parse_bundle(raw)
     for key, body in sections.items():
         if any(t in key for t in COVER_TITLES):

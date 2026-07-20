@@ -108,10 +108,9 @@ saving the JD:
 
 Validation and backfill default to the `applications/6_drafted/` folder only, where
 drafts must be strict schema-v3 (`job_metadata_schema_version: 3`); pass `--all-statuses`
-to include the archived status folders, whose older applications may remain at schema v2
-without blocking resume renders. (Unrelated: the reusable company leveling/compensation
-cache — `company-levels.yaml` — is a separate file that legitimately stays at schema v2,
-`total_compensation_range` included.)
+to include the other status folders. A `meta.yaml`'s only supported schema is v3.
+(Unrelated: the reusable company leveling/compensation cache — `company-levels.yaml` — is a
+separate file that legitimately stays at schema v2, `total_compensation_range` included.)
 
 Company benchmarks import from user-supplied YAML/JSON/CSV only:
 `.venv/bin/python scripts/maintenance/import_company_levels.py INPUT DESTINATION`.
@@ -150,6 +149,7 @@ The public skills are also published as a **Claude Code plugin marketplace** via
 - `application-tracker` — track applications, statuses, and pipeline health
 - `behavioral-interview-prep` — build project-based behavioral story banks and STAR answers
 - `company-research` — deep company + role research and an interview question bank
+- `gardener` — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
 
 The private `coding-interview` skill is intentionally **not** in the marketplace — it ships only
 in the private overlay (see below).
@@ -178,7 +178,7 @@ instructions. It contains no real identity or products.
 
 Everything tied to a real person or an active job hunt lives in a separate **PRIVATE overlay
 repo** — its **own git repo**, synced to a private GitHub remote, cloned into a git-ignored
-**`private/`** path inside this checkout (`personal/` is a legacy alias). Your `config.yaml`
+**`private/`** path inside this checkout. Your `config.yaml`
 (git-ignored) points the toolkit's `paths.*` into the overlay — its real profile, baseline,
 reference DOCX, and applications:
 
@@ -228,9 +228,9 @@ Full walkthrough — overlay layout, config keys, and the leak guard — is in
 | `config.reference_docx_path()` (git-ignored; example `examples/templates/reference.example.docx`) | Your approved resume DOCX — the format-preserving render reference |
 | `scripts/shared/` | Canonical cross-cutting helpers (`config.py`, `layout.py`, `location.py`, `job_metadata.py`, `metadata_editor.py`) vendored into skills |
 | `scripts/vendoring/` | Keeps skills self-contained: `sync_vendored.py` copies canonical shared modules into each skill's `_vendor/` and checks for drift |
-| `scripts/maintenance/` | Maintenance tooling (`migrate_layout.py`, file-only `import_company_levels.py`) |
-| `.agents/skills/<skill>/scripts/` | Each skill bundles its own scripts (e.g. resume-writer's `render.py`, `cover_letter.py`, `check.py`; application-tracker's `status.py`, `backfill_location.py`, `backfill_job_metadata.py`) |
-| `hooks/pre-commit` | Git pre-commit hook (drift check + compile); install with `ln -sf ../../hooks/pre-commit .git/hooks/pre-commit` |
+| `scripts/maintenance/` | Maintenance tooling (the `gardener/` routines, file-only `import_company_levels.py`) |
+| `.agents/skills/<skill>/scripts/` | Each skill bundles its own scripts (e.g. resume-writer's `render.py`, `cover_letter.py`, `check.py`; application-tracker's `status.py`, `backfill_job_metadata.py`) |
+| `hooks/pre-commit` | Git pre-commit hook (drift check + compile); install with `python scripts/bootstrap_overlay.py` (installs pre-commit AND pre-push) |
 | `.agents/skills/ask-me-anything/` | PUBLIC orientation guide: the five-step workflow, repo structure, and per-step dependencies (start here) |
 | `.agents/skills/job-search/` | PUBLIC skill for discovering and ranking matching job postings |
 | `.agents/skills/resume-writer/` | PUBLIC skill for resume tailoring |
@@ -245,7 +245,7 @@ skill shipped by the private overlay and is never published here.
 
 - This repository is the **PUBLIC toolkit** — it ships only the tooling, the company registry
   (identity only, no specific jobs), fake `examples/**`, and general instructions
-- Personal data belongs under the `private/` overlay (`personal/` is a legacy alias) or other
+- Personal data belongs under the `private/` overlay or other
   private product paths. Exported public checkouts git-ignore these paths, and the exporter
   removes real `applications/**`, `interviews/**`, company-level research, and profile /
   baseline / reference DOCX content

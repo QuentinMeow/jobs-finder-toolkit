@@ -37,9 +37,9 @@ Use this skill when the user asks to:
 2. Read this skill's `LESSONS.md` for operational knowledge.
    - **Personalization / private overrides:** if this skill folder has a
      `references_private/` directory, read every file in it — those candidate-specific
-     notes and examples OVERRIDE the generic examples in this SKILL.md and in
-     `references_public/`. When it is absent (public / example mode), use the generic
-     examples here and take all candidate specifics from `config` and the profile.
+     notes and examples OVERRIDE the generic examples in this SKILL.md. When it is
+     absent (public / example mode), use the generic examples here and take all
+     candidate specifics from `config` and the profile.
 3. Confirm the profile: profiles live in `profiles/<label>.yaml` (default:
    `config.job_search.default_profile`). If the user wants different criteria, edit or
    copy a profile — do NOT hardcode criteria into scripts.
@@ -326,8 +326,9 @@ The active cache is `config.company_levels_path()` (by default
 `examples/profile/company-levels.example.yaml`).
 
 This reference cache is a **separate, richer** database from the flat application
-`meta.yaml`: it keeps `schema_version: 2` with per-fact provenance so its sourced facts
-stay auditable. Application enrichment consumes it only for **level/YOE** (the normalized
+`meta.yaml`: it keeps `schema_version: 2` (the company-levels cache file format — a different
+file from `meta.yaml`, whose only supported schema is v3) with per-fact provenance so its
+sourced facts stay auditable. Application enrichment consumes it only for **level/YOE** (the normalized
 seniority word and approximate Google-equivalent float range) when a posting omits them;
 the flat `meta.yaml` salary always comes from the posting itself (USD/year). Resolution
 order within the cache is `live_jd > employer_official > market_benchmark >

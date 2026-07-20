@@ -12,8 +12,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-# LibreOffice locations to try, in order (macOS user install first).
-LO_PATHS = [
+# LibreOffice locations to try, in order: the JOBHUNT_SOFFICE env override,
+# the common macOS install locations, then PATH lookups (Linux/CI).
+LO_PATHS = [p for p in (os.environ.get("JOBHUNT_SOFFICE"),) if p] + [
     str(Path.home() / "Applications/LibreOffice.app/Contents/MacOS/soffice"),
     "/Applications/LibreOffice.app/Contents/MacOS/soffice",
     "soffice",

@@ -18,9 +18,9 @@ location_policy:
   allow_us_remote: true
   us_only: true
 retention:
-  # Memory/forgetting windows for the gardener (design doc 03 §"Retention windows").
+  # Memory/forgetting windows for the gardener (see AGENTS.md "Memory Map").
   # Config readers ignore unknown keys, so this block is optional and safe to omit.
-  discovery_ttl_days: 30       # discoveries/market scans go stale in ~30d → move to archive/ (doc 03)
-  discovery_archive_days: 14   # raw scans soft-archived at 14d (doc 03)
-  search_log_prune_days: 90    # company-search-log rows older than 90d worth re-searching → prune (doc 03)
-  lesson_confirm_days: 180     # LESSONS entries not re-confirmed within 180d → gardener flags demotion (doc 03)
+  discovery_ttl_days: 30       # discoveries/market scans go stale in ~30d → move to archive/
+  discovery_archive_days: 14   # raw scans soft-archived at 14d
+  search_log_prune_days: 90    # company-search-log rows older than 90d worth re-searching → prune
+  lesson_confirm_days: 180     # LESSONS entries not re-confirmed within 180d → gardener flags demotion

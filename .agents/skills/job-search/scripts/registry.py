@@ -143,9 +143,9 @@ class Registry:
 def _overlay_blacklist_paths() -> list[Path]:
     """Candidate locations of the optional git-ignored overlay blacklist.
 
-    Personal data mounts at a git-ignored ``personal/`` dir at the repo root. We
-    anchor on the active config file's directory when the vendored config loader is
-    importable, and also try the repo root relative to this skill. The overlay is
+    Personal data mounts at the git-ignored ``private/`` overlay at the repo root.
+    We anchor on the active config file's directory when the vendored config loader
+    is importable, and also try the repo root relative to this skill. The overlay is
     never required — it simply keeps personal skip rules (e.g. the candidate's own
     employer, or companies that don't sponsor) OUT of the public registry.
     """
@@ -160,7 +160,7 @@ def _overlay_blacklist_paths() -> list[Path]:
     out: list[Path] = []
     seen: set[Path] = set()
     for base in bases:
-        p = (base / "personal" / "job-search" / "blacklist.yaml").resolve()
+        p = (base / "private" / "job-search" / "blacklist.yaml").resolve()
         if p not in seen:
             seen.add(p)
             out.append(p)
@@ -171,7 +171,7 @@ def load_registry(path: str | Path | None = None) -> Registry:
     """Load the canonical company registry from companies.yaml.
 
     When loading the DEFAULT registry (``path is None``), also merges an optional
-    git-ignored overlay blacklist (``personal/job-search/blacklist.yaml``) if
+    git-ignored overlay blacklist (``private/job-search/blacklist.yaml``) if
     present. Overlay rows use the same entry shape as identity-only blacklist rows
     (``name`` + optional ``aliases`` + ``blacklist`` reason), so personal skip
     rules never live in the public ``companies.yaml``.

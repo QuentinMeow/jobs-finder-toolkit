@@ -1,6 +1,6 @@
 """gardener routine: compact the agent-state logs (search-log prune + log rebuild).
 
-Two working-memory logs (design doc 03 zone (d)) grow without bound:
+Two working-memory logs (AGENTS.md "Memory Map" zone (d)) grow without bound:
 
   * ``company-search-log.yaml`` — one row per employer's last successful search.
     Rows whose ``last_successful_search`` is older than ``search_log_prune_days``

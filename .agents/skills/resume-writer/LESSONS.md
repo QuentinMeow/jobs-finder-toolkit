@@ -38,10 +38,7 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   divergent multi-role split (Path B); cover letters/bundles are always per-JD labeled.
 - Layout resolution lives in `check.py` (`application_dir`/`source_dir`/`tailored_path`);
   `render.py`/`check.py`/`status.py` all accept the app folder OR the `source/tailored.yaml`
-  path. Legacy pre-`source/` folders still validate (helpers fall back to the root).
-- `scripts/maintenance/migrate_layout.py` converts an old-layout folder to the new one
-  (idempotent, reorganize-only): moves inputs into `source/`, renames `jd.md`→`source/JD-<job
-  title>.md`, and merges old `..._Cover_Letter.txt`/`..._Why_Fit.txt` into `..._Application.txt`.
+  path.
 - Quick visual check after render: `sips -s format png "<...Resume.pdf>" --out /tmp/preview.png`
   (or `pdftoppm`) and eyeball the employer row alignment.
 

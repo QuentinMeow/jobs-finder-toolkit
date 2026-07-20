@@ -1,6 +1,6 @@
 """gardener routine: expire stale discovery scans (move, never delete).
 
-Discovery/market-scan files are WORKING MEMORY (design doc 03 zone (d)). They go
+Discovery/market-scan files are WORKING MEMORY (AGENTS.md "Memory Map" zone (d)). They go
 stale in ~30 days, so:
 
   * files older than ``discovery_ttl_days`` (default 30) are EXPIRED -> moved to the

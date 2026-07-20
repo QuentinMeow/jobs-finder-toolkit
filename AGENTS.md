@@ -64,8 +64,8 @@ tied to a real person or a real job hunt stays private:
   `examples/templates/…`, `examples/applications/…`), and general instructions/techniques.
   `config.example.yaml` is the tracked placeholder.
 - **Private overlay repo** — its **own git repo** synced to a private GitHub remote, mounted
-  at a git-ignored **`private/`** directory inside the public checkout (`personal/` is a
-  legacy alias). `config.yaml` (git-ignored) points the toolkit's `paths.*` into it — real
+  at a git-ignored **`private/`** directory inside the public checkout. `config.yaml`
+  (git-ignored) points the toolkit's `paths.*` into it — real
   identity, profile, baseline, reference DOCX, applications, interviews, and the private
   `coding-interview` skill all live under `private/`. See `docs/PRIVATE_OVERLAY.md`.
 
@@ -74,7 +74,7 @@ frontmatter:
 
 - **PUBLIC skills** (SKILL.md + scripts are published; their generated PRODUCTS stay private):
   `ask-me-anything`, `job-search`, `resume-writer`, `application-tracker`,
-  `behavioral-interview-prep`, `company-research`.
+  `behavioral-interview-prep`, `company-research`, `gardener`.
 - **PRIVATE skill**: `coding-interview` — the ENTIRE skill (SKILL.md + product) lives only in
   the private overlay and never ships in the public repo.
 
@@ -94,8 +94,7 @@ git-ignored, per-skill **`references_private/`** folder — the exporter prunes 
 guard fails on any tracked file under it, and `.gitignore` ignores it. Each `SKILL.md`
 "Before You Start" carries a **Personalization** stanza telling the agent to read
 `references_private/` (overrides the generic examples) when present, and to fall back to
-the generic examples otherwise. A sibling **`references_public/`** folder (optional,
-tracked) may hold generic extracted docs.
+the generic examples otherwise.
 
 **The publish leak guard derives its tokens** (`scripts/publish/check_public.py` →
 `personal_tokens()`) from the git-ignored `config.yaml` identity, an optional git-ignored
@@ -113,14 +112,14 @@ creates, so it stays discoverable whenever the overlay is mounted.
 All job-search content (the candidate's profile materials, research findings, and every
 application) lives under the applications root (`config.applications_root()`, `applications/`
 by default, real data under `private/applications/`); only shared tooling (`scripts/`,
-`templates/`, `.agents/skills/`) sits at the repo root. Files are grouped by purpose into
+`.agents/skills/`) sits at the repo root. Files are grouped by purpose into
 meaningful subfolders (see "File & Folder Organization"): `scripts/` fans out into
 `scripts/shared/`, `scripts/vendoring/`, and `scripts/maintenance/` (each skill bundles its
-own render/tracking scripts under `.agents/skills/<skill>/scripts/`); `templates/` holds
-`templates/resume/`. Application status is encoded by which sub-folder the application sits in
-(the folder is the source of truth for status); the profile directory (`<profile-dir>` =
-`config.applications_root()/0_profile/`, where `config.profile_md_path()` and the skip-logs
-live) and `config.discoveries_dir()` are support folders, not applications.
+own render/tracking scripts under `.agents/skills/<skill>/scripts/`). Application status is encoded by which sub-folder the application sits in
+(the folder is the source of truth for status); the profile directory (`<profile-dir>` — the
+directory containing `config.profile_md_path()`, where the skip-logs live; by convention
+`<applications_root>/0_profile/` in a real overlay, `examples/profile/` in the shipped
+example) and `config.discoveries_dir()` are support folders, not applications.
 
 | Path | Purpose |
 |------|---------|
@@ -138,15 +137,13 @@ live) and `config.discoveries_dir()` are support folders, not applications.
 | `config.applications_root()/4_in_progress/<slug>/` | Heard back / interviews scheduled — active pipeline (user moves here manually) |
 | `config.applications_root()/3_rejected/<slug>/` | Rejected at any stage (user moves here manually) |
 | `config.applications_root()/2_ignored/<slug>/` | Decided not to submit; don't reconsider this posting (user moves here manually) |
-| `config.reference_docx_path()` (default `templates/resume/reference.docx`; real DOCX under `private/`, example `examples/templates/reference.example.docx`) | Formatted resume DOCX — the rendering reference (preserves all formatting) |
+| `config.reference_docx_path()` (default `examples/templates/reference.example.docx`; real DOCX under `private/`) | Formatted resume DOCX — the rendering reference (preserves all formatting) |
 | `.agents/skills/resume-writer/scripts/render.py` | Fill the DOCX template from `source/tailored.yaml` → resume DOCX (`source/`) + PDF (root, stem from `config.resume_stem()`) + **one cover letter per JD**; auto-runs `check.py`. Detail in the resume-writer skill |
 | `.agents/skills/resume-writer/scripts/cover_letter.py` | Render one cover letter per JD from each bundled `..._Application_<job title>.txt` COVER LETTER section (DOCX in `source/` + PDF at root); `--label "<Role>"` renders just one. Detail in the resume-writer skill |
 | `.agents/skills/resume-writer/scripts/pdf_convert.py` | Shared DOCX → PDF conversion (LibreOffice, docx2pdf fallback) used by both renderers |
 | `.agents/skills/resume-writer/scripts/extract.py` | DOCX → YAML extraction utility (re-run when the master resume changes) |
 | `.agents/skills/application-tracker/scripts/status.py` | Scan applications and manage status-folder metadata; `--enrich-metadata` safely inserts missing schema-v3 level/YOE/salary facts with the formatting-preserving editor, `--check-metadata` validates them (drafted by default), `--sync-log` refreshes logs, and `--check-locations` enforces location policy |
 | `.agents/skills/application-tracker/scripts/backfill_job_metadata.py` | Dry-run-by-default fleet metadata preview/backfill; requires exact `jd_file` associations for multi-role records and uses checksum-guarded atomic writes only with `--write` |
-| `scripts/maintenance/migrate_layout.py` | One-off migration: move an application folder to the `source/` layout + bundled `..._Application.txt` (idempotent, reorganize-only) |
-| `.agents/skills/application-tracker/scripts/backfill_location.py` | Backfill the `location` field into every application's `meta.yaml` from its JD `Location:` line(s) (top-level for single-role, per-`jobs:` entry for multi-role); idempotent, formatting-preserving |
 | `.agents/skills/resume-writer/scripts/check.py` | Validate tailored.yaml + PDF (locked fields, real project titles/skills, bullet lengths, one page, each JD's cover letter); re-exports the filename stems + `application_roles()`/layout helpers. Detail in the resume-writer skill |
 | `scripts/shared/config.py` | **Canonical** config loader — candidate identity, paths (including the company-level cache), output-filename stems, and location policy. Vendored into `job-search`, `resume-writer`, and `application-tracker` |
 | `scripts/shared/layout.py` | **Canonical** pure application-folder layout helpers (no identity/config): `source/` rules, `slugify_label` / `compose_stem`, `application_roles()`, and `find_jd_files`. Vendored into `resume-writer` and `application-tracker` |
@@ -155,7 +152,7 @@ live) and `config.discoveries_dir()` are support folders, not applications.
 | `scripts/shared/metadata_editor.py` | **Canonical** formatting-preserving schema-v3 `meta.yaml` editor (YAML node anchors, checksums, atomic writes, semantic verification, idempotence). Vendored into application-tracker |
 | `scripts/maintenance/import_company_levels.py` | Dry-run-by-default YAML/JSON/CSV importer for user-supplied or licensed company-level facts; never fetches/scrapes Levels.fyi and keeps base/stock/bonus/total plus geographic bands distinct |
 | `scripts/vendoring/sync_vendored.py` | Vendoring tool: copies each canonical shared module into every consuming skill's `scripts/_vendor/` (registry in `TARGETS`); `--check` fails on drift (run by the pre-commit hook) |
-| `hooks/pre-commit` | Tracked git pre-commit hook: runs the vendored-copy drift check + `compileall`. Install once: `ln -sf ../../hooks/pre-commit .git/hooks/pre-commit` |
+| `hooks/pre-commit` | Tracked git pre-commit hook: runs the vendored-copy drift check + `compileall`. Install once: `python scripts/bootstrap_overlay.py` (installs pre-commit AND pre-push) |
 | `.agents/skills/<skill>/scripts/_vendor/` | Generated byte-identical copies of vendored toolkit modules (e.g. `config.py`, `layout.py`, `location.py`, `job_metadata.py`, `metadata_editor.py`) — do not edit; regenerate via `scripts/vendoring/sync_vendored.py` |
 | `.agents/skills/ask-me-anything/` | PUBLIC orientation guide: the five-step workflow, repo structure, and which skill + dependencies each step needs (read first when a user asks how the toolkit works or where to start) |
 | `.agents/skills/job-search/` | PUBLIC skill for discovering and ranking matching job postings (role, keyword, location, recency, visa filters) |
@@ -165,16 +162,16 @@ live) and `config.discoveries_dir()` are support folders, not applications.
 | `.agents/skills/company-research/` | PUBLIC skill for researching a company + role for interviews (product, size, teams, values, stage, comp, WLB, ratings, visa) and drafting a hiring-manager/engineer question bank under `interviews/company-specific/<company>/company-info/` |
 | `.claude/skills/`, `.cursor/skills/` | Tool-compatibility symlinks to `.agents/skills` (for agents that look in their own skill directories) |
 | `.agents/MEMORY.md` | Cross-session hypotheses and learnings (gitignored) |
-| `tmp/` | Gitignored scratch space for **all** disposable, ad-hoc work — one-off ATS/API probes, fetched web artifacts, sanity checks — organized into purpose-named subfolders (`tmp/ats_scripts/`, `tmp/web_artifacts/`, `tmp/scratch/`). Never committed (only `tmp/README.md` is); nothing in the toolkit may depend on it. See "Scratch & Temporary Files" |
+| `tmp/` | Gitignored scratch space for **all** disposable, ad-hoc work — one-off ATS/API probes, fetched web artifacts, sanity checks — organized into purpose-named subfolders (`tmp/ats_scripts/`, `tmp/web_artifacts/`, `tmp/scratch/`). Never committed; created on demand; nothing in the toolkit may depend on it. See "Scratch & Temporary Files" |
 | `README.md` | Human-facing quickstart |
 | `AGENTS.md` | This file (agent-facing contract) |
 
 ## Handy Commands
 
-Always use the repo venv: `.venv/bin/python` (created with `uv venv`; system pythons on this
-machine are too old or blocked). PDF conversion uses LibreOffice, which
-`.agents/skills/resume-writer/scripts/pdf_convert.py` probes at `~/Applications/LibreOffice.app` then
-`/Applications/LibreOffice.app` (on this machine it lives at `/Applications/LibreOffice.app`).
+Always use the repo venv: `.venv/bin/python` (needs Python 3.11+). PDF conversion uses
+LibreOffice, which `.agents/skills/resume-writer/scripts/pdf_convert.py` finds via
+`~/Applications`, `/Applications`, or `soffice` on `PATH` (override with the `JOBHUNT_SOFFICE`
+env var).
 
 ```bash
 # Render a tailored resume to DOCX (source/) + PDF (root) and validate it (format,
@@ -195,7 +192,7 @@ machine are too old or blocked). PDF conversion uses LibreOffice, which
 
 # Populate/validate schema-v3 level, required YOE, salary + approximate Google-equiv from JD + cache.
 .venv/bin/python .agents/skills/application-tracker/scripts/status.py --enrich-metadata applications/6_drafted/<slug>/
-# Fleet preview: dry-run, DRAFTED-ONLY by default (v2 archives skipped). Add --all-statuses for the
+# Fleet preview: dry-run, defaults to applications/6_drafted/ (strict schema v3). Add --all-statuses for the
 # full fleet or --statuses <labels> for a set; add --write only after reviewing the dry-run preview.
 .venv/bin/python .agents/skills/application-tracker/scripts/backfill_job_metadata.py
 # Validate structured metadata — DRAFTED-ONLY by default; --all-statuses for the fleet.
@@ -216,9 +213,6 @@ machine are too old or blocked). PDF conversion uses LibreOffice, which
 # (statuses: drafted | applied | in_progress | rejected | ignored)
 .venv/bin/python .agents/skills/application-tracker/scripts/status.py --update <slug> applied
 
-# Migrate legacy application folders to the source/ layout (idempotent)
-.venv/bin/python scripts/maintenance/migrate_layout.py
-
 # Extract content from a DOCX resume (utility)
 .venv/bin/python .agents/skills/resume-writer/scripts/extract.py path/to/resume.docx
 
@@ -227,8 +221,8 @@ machine are too old or blocked). PDF conversion uses LibreOffice, which
 .venv/bin/python scripts/vendoring/sync_vendored.py
 .venv/bin/python scripts/vendoring/sync_vendored.py --check
 
-# Install the pre-commit hook once (drift check + compileall; no git-config change)
-ln -sf ../../hooks/pre-commit .git/hooks/pre-commit
+# Install the git hooks once (pre-commit drift check + compileall, and pre-push)
+python scripts/bootstrap_overlay.py
 
 # Install dependencies
 pip install -r requirements.txt
@@ -295,7 +289,7 @@ toolkit module, that module is **vendored** (copied) into the skill:
   `.venv/bin/python scripts/vendoring/sync_vendored.py`.
 - A drift check (`sync_vendored.py --check`) fails if any copy diverges from its
   source. It runs in the tracked `hooks/pre-commit` hook (install once with
-  `ln -sf ../../hooks/pre-commit .git/hooks/pre-commit`), so copies can never
+  `python scripts/bootstrap_overlay.py`), so copies can never
   silently drift.
 - Skill scripts import the vendored module locally, e.g.
   `from _vendor.location import classify_location`.
@@ -327,7 +321,7 @@ where its purpose is obvious:
   `vendoring`, `company-info`, `oa-references`), not after a file type or a
   generic bucket (`scripts`, `docs`, `files`, `data`).
 - **Generic top-level folders must fan out into purpose subfolders.** `scripts/` splits
-  into `shared/`, `vendoring/`, and `maintenance/`; `templates/` holds `resume/`; each
+  into `shared/`, `vendoring/`, and `maintenance/`; `docs/` fans out into `docs/design/`; each
   skill keeps its code under `.agents/skills/<skill>/scripts/`. Follow the same pattern
   for anything new that would otherwise land in a generic root.
 - **Don't orphan single files at a generic root.** A lone reference PDF, asset, image, or
@@ -357,7 +351,7 @@ folder (`applications/`, `scripts/`, `templates/`, `.agents/skills/`, `interview
 for every agent and skill; the old flat `tmp_*.py`-in-root habit is retired.
 
 - **Location & lifecycle:** everything disposable lives under `tmp/<purpose>/`. The whole `tmp/`
-  tree is gitignored (only `tmp/README.md` is tracked) — nothing in it is committed, and nothing in
+  tree is gitignored — nothing in it is committed, and nothing in
   the committed toolkit may import from or depend on `tmp/`. Temp files are disposable: delete them
   once done; if a probe proves worth keeping, promote it into the proper skill's `scripts/`.
 - **Purpose-named buckets** (the name must announce the contents' job): `tmp/ats_scripts/` (job-board/

@@ -44,7 +44,7 @@ canaries:
     prompt: "Where does my real personal data go, and why isn't the coding-interview skill here?"
     setup: "Default setup."
     expected_behavior:
-      - "Explains the public repo (timeless tooling + the fake example candidate) + an optional private overlay — real identity/applications/interviews mount under a git-ignored `private/` path that is its own git repo (`personal/` is the legacy alias)."
+      - "Explains the public repo (timeless tooling + the fake example candidate) + an optional private overlay — real identity/applications/interviews mount under a git-ignored `private/` path that is its own git repo."
       - "Says config.yaml is git-ignored and its paths point at the private overlay; real profile/baseline/reference DOCX and all applications/interviews stay private."
       - "Explains the coding-interview skill ships ONLY with the private overlay, so it is not part of the public toolkit."
       - "Points to the authoritative sources — AGENTS.md 'Public vs Private' and docs/PRIVATE_OVERLAY.md."

@@ -1,26 +1,18 @@
 #!/usr/bin/env python3
-"""Static instruction-file token-budget check (design doc §4, metric #6).
+"""Static instruction-file token-budget check (anti-bloat guard).
 
 Measures every ``AGENTS.md``, ``.agents/skills/*/SKILL.md``, ``LESSONS.md``, and
-``reference.md`` and reports lines / bytes / estimated tokens (bytes / 4). This
-is the "instruction_file_token_budget ... static anti-bloat guard" from the
-maintainer-only, overlay-mounted design doc
-``private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md``
-§4, and the file-size budget gate from §3 ("Self-evolution quality gates", gate
-#6: "Pre-commit cap on each SKILL.md/LESSONS.md; exceeding forces a
-consolidation pass, not an exception").
+``reference.md`` and reports lines / bytes / estimated tokens (bytes / 4).
+Instruction files are context every agent session pays for, so each has a hard
+size budget; exceeding it forces a consolidation pass, not an exception.
 
 Usage:
     .venv/bin/python scripts/metrics/instruction_budget.py           # report + warn, exit 0
     .venv/bin/python scripts/metrics/instruction_budget.py --strict  # exit 1 on any violation
 
-Default mode prints a table + any warnings and always exits 0 (measure-only, the
-P3 posture). ``--strict`` exits 1 on violations.
-
-The pre-commit hook invokes this in warn-only (default) mode today because
-``resume-writer/SKILL.md`` (957 lines) is knowingly over budget. P1 will slim
-the oversized instruction files and then flip the pre-commit invocation to
-``--strict`` so the budget becomes a hard gate.
+Default mode prints a table + any warnings and always exits 0 (measure-only).
+``--strict`` exits 1 on violations; the pre-commit hook and CONTRIBUTING checks
+run ``--strict`` so the budget is a hard gate.
 """
 
 from __future__ import annotations
@@ -31,7 +23,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Budgets from design doc §4. "Warn above" == the check flags the file; with
+# Budgets. "Warn above" == the check flags the file; with
 # --strict it also exits non-zero. reference.md is measured for visibility but
 # has no hard budget yet, so it never triggers a warning.
 BUDGETS = {
@@ -41,7 +33,7 @@ BUDGETS = {
 }
 
 # Rough token estimate. English prose averages ~4 bytes/token; good enough for a
-# static bloat tripwire (design doc §4 uses token count as the budget unit).
+# static bloat tripwire (token count is the budget unit).
 BYTES_PER_TOKEN = 4
 
 

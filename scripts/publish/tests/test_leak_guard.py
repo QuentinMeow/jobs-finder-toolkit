@@ -286,9 +286,9 @@ class ExporterEndToEndTests(unittest.TestCase):
                 if Path(c).suffix.lower() in (".docx", ".pdf"):
                     self.assertTrue(c.startswith("examples/"), c)
 
-            # The public .gitignore anchors BOTH overlay names + private trees.
+            # The public .gitignore anchors the overlay mount + private trees.
             gitignore = (dest / ".gitignore").read_text()
-            for needle in ("private/", "personal/", "/applications/",
+            for needle in ("private/", "/applications/",
                            "/interviews/", "/.agents/skills/coding-interview/"):
                 self.assertIn(needle, gitignore)
 

@@ -54,7 +54,7 @@ for _p in (_HERE, _HERE / "_vendor"):
 # layout.py; the candidate-identity-derived values (baseline/profile paths and
 # filename stems) live in config.py, backed by the git-ignored config.yaml.
 # Re-export both here so existing `from check import <name>` importers keep
-# working unchanged (render.py, cover_letter.py, status.py, migrate_layout.py).
+# working unchanged (render.py, cover_letter.py, status.py).
 import config
 from config import application_stem, cover_stem, resume_stem  # noqa: F401  (re-exported)
 from job_metadata import validate_meta

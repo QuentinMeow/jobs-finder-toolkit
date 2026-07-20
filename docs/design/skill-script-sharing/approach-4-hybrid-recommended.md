@@ -1,4 +1,4 @@
-# Approach 4 — Hybrid (RECOMMENDED)
+# Approach 4 — Hybrid (not adopted)
 
 **Strategy:** Use the right tool for each layer instead of forcing one model
 everywhere. Combine a small importable **core** for repo-internal toolkit code

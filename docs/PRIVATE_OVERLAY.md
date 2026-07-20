@@ -3,7 +3,7 @@
 This toolkit is designed to be published **publicly** while everything tied to a
 real person or a real job hunt stays **private**. It ships as two layers:
 
-1. **PUBLIC toolkit repo** — timeless, general tooling only: the scripts, the five
+1. **PUBLIC toolkit repo** — timeless, general tooling only: the scripts, the seven
    public skills, the company registry (identity only), a fake example candidate
    ("Jordan Rivers") under `examples/`, and `config.example.yaml`. Nothing here is
    tied to a real person or a dated posting.
@@ -13,8 +13,7 @@ real person or a real job hunt stays **private**. It ships as two layers:
    and your real job-search profile YAML(s).
 
 The overlay **mounts into a git-ignored `private/` directory** inside a public
-checkout (**`private/` is the canonical mount; `personal/` is kept as a legacy
-alias** — `.gitignore` ignores both), and `config.yaml`'s `paths.*` point the
+checkout (**`private/` is the canonical mount**), and `config.yaml`'s `paths.*` point the
 toolkit at the overlay's data. Because `private/` (and the other private paths) are
 git-ignored in the public repo, your real data is never committed to the public toolkit.
 

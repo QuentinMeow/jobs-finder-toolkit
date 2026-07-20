@@ -21,7 +21,8 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 - Job facts are per posting and live inside each `jobs:` entry: `job_level` (incl. approximate
   float-bounded Google equivalent), `required_yoe`, and `salary_range` — schema **v3**, no
   `total_compensation_range`. Live JD values win; the dated, sourced company-level cache
-  (`config.company_levels_path()`, its own schema-v2 file) is level/YOE fallback only.
+  (`config.company_levels_path()`, its own schema-v2 file — the company-levels cache format, a
+  different file from `meta.yaml`, whose only supported schema is v3) is level/YOE fallback only.
 - Never round-trip application `meta.yaml` through `safe_dump`. Use the node-anchored metadata
   editor/backfill so comments, quoting, blank lines, and CRLF survive; multi-role enrichment
   requires an exact `jd_file` for each job.

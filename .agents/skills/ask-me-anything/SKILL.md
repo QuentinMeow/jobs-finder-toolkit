@@ -52,13 +52,13 @@ These are the global dependencies. Per-step extras are listed under each step.
 
 | What | Why | Install |
 |------|-----|---------|
-| Python 3.11+ in a repo venv | Runs every toolkit script | `uv venv` (creates `.venv/`), then always call `.venv/bin/python` |
+| Python 3.11+ in a repo venv | Runs every toolkit script | `python3 -m venv .venv` (Python 3.11+; or `uv venv --seed`), then always call `.venv/bin/python` |
 | Python packages | YAML + DOCX + PDF parsing | `.venv/bin/pip install -r requirements.txt` (pyyaml, python-docx, pypdf) |
 | LibreOffice **or** Word+docx2pdf | DOCX → PDF for resumes/cover letters (Step 3) | `brew install --cask libreoffice` (recommended), or `pip install docx2pdf` if you have Word |
 | Any AI coding agent | Reads `AGENTS.md` + `.agents/skills/` and drives the workflow | Open the repo in the agent (Claude Code, Cursor, Codex, …); skills auto-route |
 
-Optional but recommended: install the git pre-commit hook so vendored script copies can't
-drift — `ln -sf ../../hooks/pre-commit .git/hooks/pre-commit`.
+Optional but recommended: install the git hooks so vendored script copies can't
+drift — run `python scripts/bootstrap_overlay.py` (installs both tracked hooks).
 
 Always invoke scripts with the repo venv (`.venv/bin/python ...`); the system Python is
 often too old. On macOS the renderer looks for LibreOffice at `~/Applications/LibreOffice.app`
@@ -90,7 +90,7 @@ If you don't set `config.yaml`, the toolkit falls back to `config.example.yaml` 
 
 **Keep real data private.** Real profile/baseline/reference DOCX and all applications +
 interviews are personal products. Point `config.yaml`'s paths at the git-ignored **`private/`**
-overlay (its own git repo; `personal/` is a legacy alias). See `AGENTS.md` → "Public vs Private"
+overlay (its own git repo). See `AGENTS.md` → "Public vs Private"
 and `docs/PRIVATE_OVERLAY.md` for the two-repo model. Never commit real identity to the public
 repo — `config.yaml` itself is git-ignored.
 
@@ -136,8 +136,10 @@ Read `.agents/skills/job-search/SKILL.md` for the full flag set and the two-stag
 Pick a posting from the shortlist and tell the agent:
 > "Tailor my resume for this job: <paste JD or URL>" (or "for posting #3 from the search").
 
-The `resume-writer` skill creates `applications/6_drafted/<slug>/`, saves the JD(s) under
-`source/JD-<title>.md`, writes `meta.yaml`, tailors `source/tailored.yaml` **starting from
+The `resume-writer` skill creates `applications/6_drafted/<slug>/` (here `applications/` means
+`config.applications_root()` — with the shipped example config, `examples/applications/`),
+saves the JD(s) under `source/JD-<title>.md`, writes `meta.yaml`, tailors `source/tailored.yaml`
+**starting from
 your baseline** (targeted edits only — no fabrication, skills gated by your Approved/Weak/Never
 lists), then renders and validates:
 - `<RESUME_STEM>.pdf` (root, for humans) + `.docx` (in `source/`, for ATS portals) — one resume.

@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Zero-platform metrics collector for Claude Code hooks (P3 measurement).
+"""Zero-platform metrics collector for Claude Code hooks.
 
 Reads a hook JSON payload from stdin and appends ONE JSON line to
 ``logs/metrics.jsonl``. Metrics are OPT-IN: wire these hooks (SessionStart,
 PostToolUse, Stop) from your local ``.claude/settings.local.json`` (see
-``docs/METRICS.md``); they are intentionally NOT tracked so contributors never
-run them by default. See the maintainer-only design doc
-``private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md``
-§4 ("Metric set + logging design") for the metric set and rationale.
+``docs/METRICS.md`` for the metric set and rationale); they are intentionally
+NOT tracked so contributors never run them by default.
 
 Modes (``argv[1]``):
     session-start   {ts, event, session_id, model, source, git_sha}
@@ -23,7 +21,7 @@ HARD INVARIANTS — this must NEVER block or fail a Claude Code session:
   * ``logs/`` is created on demand.
 
 The transcript JSONL schema is version-brittle across Claude Code releases
-(design doc §2/§4 [caveat]: "re-verify after upgrades"). Every field access in
+(re-verify the payload shape after Claude Code upgrades). Every field access in
 the parser is defensive and malformed lines are skipped, never raised.
 """
 
@@ -40,7 +38,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LOG_PATH = REPO_ROOT / "logs" / "metrics.jsonl"
 
-# usage sub-keys summed for the Stop token totals (design doc §4, metric #1:
+# usage sub-keys summed for the Stop token totals (metric:
 # "tokens (in/out/cache)"). Any subset may be present depending on the release.
 _USAGE_KEYS = (
     "input_tokens",
@@ -58,8 +56,8 @@ def _now() -> str:
 def _git_sha():
     """Best-effort current commit SHA; ``None`` if git is unavailable.
 
-    Design doc §4: "git SHA ties every run to the exact SKILL/LESSONS version,
-    essential for A/B and rollback attribution." Failure is tolerated.
+    The git SHA ties every run to the exact SKILL/LESSONS version — essential
+    for A/B and rollback attribution. Failure is tolerated.
     """
     try:
         out = subprocess.run(

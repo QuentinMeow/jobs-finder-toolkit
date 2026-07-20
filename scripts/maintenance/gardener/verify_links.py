@@ -1,7 +1,7 @@
 """gardener routine: verify referenced paths, skill symlinks, and vendor drift.
 
 Instruction files (AGENTS.md, SKILL.md, LESSONS.md, reference.md) reference toolkit
-paths in backticks. This routine (design doc 03 §5 "verify-links") checks that:
+paths in backticks. This routine checks that:
 
   * every backticked, repo-relative TOOLKIT path that looks like a real file/dir
     exists (resolving symlinks). Config-derived placeholders (``config.*()``,
@@ -48,10 +48,10 @@ STRICT_ROOT_PREFIXES = (
 # under ``private/docs/``) fall through to OVERLAY_PREFIX and are verified ONLY when
 # the overlay is mounted (otherwise counted "overlay-skipped" — a clean pass for
 # contributors).
-SKIP_PREFIXES = ("applications/", "personal/", "interviews/", "tmp/",
+SKIP_PREFIXES = ("applications/", "interviews/", "tmp/",
                  ".agents/inputs/", ".git/", ".venv/",
                  "private/applications/", "private/interviews/",
-                 "private/job-search/", "private/personal/", "private/tmp/")
+                 "private/job-search/", "private/tmp/")
 SKILLS_ROOT = ".agents/skills"
 
 # Backticked refs into the private overlay (maintainer-only design docs, real

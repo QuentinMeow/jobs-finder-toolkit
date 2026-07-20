@@ -58,9 +58,9 @@ Use this skill when the user asks to:
 2. Read this skill's `LESSONS.md` for operational knowledge.
    - **Personalization / private overrides:** if this skill folder has a
      `references_private/` directory, read every file in it — those candidate-specific
-     notes and examples OVERRIDE the generic examples in this SKILL.md and in
-     `references_public/`. When it is absent (public / example mode), use the generic
-     examples here and take all candidate specifics from `config` and the profile.
+     notes and examples OVERRIDE the generic examples in this SKILL.md. When it is
+     absent (public / example mode), use the generic examples here and take all
+     candidate specifics from `config` and the profile.
 3. Find the application record under `config.applications_root()/<status>/<slug>/`: its
    `meta.yaml`, the JD file(s) `source/JD-*.md`, and `notes.md` if present.
 4. Skim your candidate profile (`config.profile_md_path()`) so research and questions connect to
@@ -124,7 +124,9 @@ only from a user-supplied licensed export or licensed API access, with the licen
 method recorded in provenance.
 
 When role research contributes reusable leveling or compensation facts, keep them in the
-schema-v2 company-level cache rather than `company-info/`: employer postings first,
+schema-v2 company-level cache (the company-levels cache file format — a different file from
+application `meta.yaml`, whose only supported schema is v3) rather than `company-info/`:
+employer postings first,
 employer-authored ladders second, licensed market benchmarks last. Record provenance per
 fact (provider, URL, retrieved date, geography, confidence, method, sample size/statistic,
 and access/license). Keep base, stock, bonus, and total compensation separate, preserve

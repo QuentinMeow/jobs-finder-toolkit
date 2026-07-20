@@ -21,9 +21,9 @@ Use this skill when the user asks to:
 2. Read this skill's `LESSONS.md` for operational knowledge.
    - **Personalization / private overrides:** if this skill folder has a
      `references_private/` directory, read every file in it — those candidate-specific
-     notes and examples OVERRIDE the generic examples in this SKILL.md and in
-     `references_public/`. When it is absent (public / example mode), use the generic
-     examples here and take all candidate specifics from `config` and the profile.
+     notes and examples OVERRIDE the generic examples in this SKILL.md. When it is
+     absent (public / example mode), use the generic examples here and take all
+     candidate specifics from `config` and the profile.
 3. **Scratch stays in `tmp/`** (never the repo root or an application folder) — see `AGENTS.md`
    → "Scratch & Temporary Files".
 
@@ -120,8 +120,8 @@ jobs:
       source: "job_description"    # job_description | company_reference
 ```
 
-`research_date` supersedes the older `date` field; `status.py` still reads a legacy `date`
-(then the slug date) for older applications when rendering the pipeline table.
+`research_date` is the canonical search date; `status.py` falls back to the slug date when
+rendering the pipeline table.
 
 Metadata rules:
 - Metadata uses the integer top-level `job_metadata_schema_version: 3`. There is **no

@@ -3,11 +3,12 @@
 # Steps 1-3 (vendored-copy drift check, compile, example render + validate) verify
 # the toolkit itself and pass in ANY checkout (with or without the private overlay).
 #
-# Step 4 runs the publish leak-guard UNIT TESTS — a required gate that exercises
-# the guard/exporter tooling itself (structural PII detection, path denylist,
-# fail-closed binaries, allowlist copy). These must pass everywhere.
+# Steps 4-5 run the unit tests: the shared-module suite (job metadata, the
+# metadata editor, layout, search/backfill) and the publish leak-guard suite
+# (structural PII detection, path denylist, fail-closed binaries, allowlist
+# copy). These must pass everywhere.
 #
-# Step 5 is the public leak guard (scripts/publish/check_public.py) — a BLOCKING
+# Step 6 is the public leak guard (scripts/publish/check_public.py) — a BLOCKING
 # gate. This IS the public toolkit repo, so the guard must be completely clean
 # (exit 0, zero findings) on every run; ANY finding is a regression. It is armed
 # with the `JOBHUNT_PERSONAL_TOKENS` repo secret when present. Fork PRs do NOT
@@ -31,8 +32,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Match the repo's local .venv (created with `uv venv`), which runs Python 3.12;
-      # the requirements (pyyaml, python-docx, pypdf) support 3.11+ as well.
+      # The toolkit requires Python 3.11+; the requirements (pyyaml, python-docx,
+      # pypdf) are tested on 3.12 here.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -69,13 +70,19 @@ jobs:
             python .agents/skills/resume-writer/scripts/render.py \
             examples/applications/6_drafted/example-corp-senior-software-engineer/
 
-      # 4. Publish leak-guard + exporter UNIT TESTS (required gate). Exercises the
+      # 4. Shared-module unit tests: job-metadata extraction/validation, the
+      #    formatting-preserving metadata editor, company-levels import, layout
+      #    helpers, and the search/backfill flows.
+      - name: Shared-module unit tests
+        run: python -m unittest discover scripts/shared/tests
+
+      # 5. Publish leak-guard + exporter UNIT TESTS (required gate). Exercises the
       #    guard's structural PII / path-denylist / fail-closed logic and the
       #    allowlist exporter end-to-end.
       - name: Leak-guard + exporter unit tests
         run: python -m unittest discover scripts/publish/tests
 
-      # 5. Public leak guard — BLOCKING. This is the public toolkit repo, so the
+      # 6. Public leak guard — BLOCKING. This is the public toolkit repo, so the
       #    guard must be completely clean (exit 0, zero findings); ANY finding is a
       #    regression. Armed with the JOBHUNT_PERSONAL_TOKENS repo secret when
       #    present. Fork PRs receive no secrets, so those runs are tokenless

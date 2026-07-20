@@ -30,9 +30,9 @@ Use this skill when the user asks to:
    - **Personalization / private overrides:** if this skill folder has a
      `references_private/` directory, read every file in it — those candidate-specific
      instructions, examples, and preferences OVERRIDE the generic examples in this
-     SKILL.md and in `references_public/`. When it is absent (public / example mode),
-     use the generic examples here as-is and take all candidate specifics from `config`
-     and the profile (`config.profile_md_path()`).
+     SKILL.md. When it is absent (public / example mode), use the generic examples here
+     as-is and take all candidate specifics from `config` and the profile
+     (`config.profile_md_path()`).
 6. **Pre-flight before any NEW application folder** (single posting, Path A, or Path B):
    - **Location gate** — confirm the posting satisfies the configured location policy
      (`config.location_policy()` — the allowed metros / US-remote / `us_only` rule) before
@@ -160,7 +160,8 @@ associate JDs by index or sorted filename). **The `application-tracker` skill
 owner of the full field list, rules, and later fields (`recruiter_email`, `comp_notes`,
 `stage`)** — don't restate the schema here. After the full JD is saved, fill the empty
 placeholders by handing off to its enrichment (never add a `status` field — status is the
-folder):
+folder). Here `applications/` stands for `config.applications_root()` — with the example
+config, `examples/applications/`:
 
 ```bash
 .venv/bin/python .agents/skills/application-tracker/scripts/status.py \

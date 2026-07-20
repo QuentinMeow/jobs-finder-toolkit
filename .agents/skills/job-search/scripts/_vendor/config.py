@@ -169,7 +169,7 @@ def baseline_path() -> Path:
 
 def reference_docx_path() -> Path:
     return _resolve(_paths().get("reference_docx"),
-                    "templates/resume/reference.docx")
+                    "examples/templates/reference.example.docx")
 
 
 def company_levels_path() -> Path:

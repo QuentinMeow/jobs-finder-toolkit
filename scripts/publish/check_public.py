@@ -1,8 +1,8 @@
 """Publish-time leak guard: verify a checkout is safe to publish PUBLICLY.
 
 This is the PUBLIC toolkit repo; personal data lives in a separate PRIVATE
-overlay repo mounted at the git-ignored ``private/`` path (the legacy name
-``personal/`` is still honored), so the TRACKED tree must always be publishable.
+overlay repo mounted at the git-ignored ``private/`` path, so the TRACKED
+tree must always be publishable.
 This script gates that invariant: it runs in CI (blocking), in the pre-push
 hook, and by hand — zero findings is the steady state; ANY finding is a
 regression.
@@ -15,7 +15,7 @@ message:
   1. Private skill leak. A skill whose ``.agents/skills/<skill>/SKILL.md``
      frontmatter declares ``visibility: private`` MUST have zero tracked files.
   2. Personal overlay leak. Any tracked path under the private overlay prefix
-     (``private/`` — canonical, or ``personal/`` — legacy) must never ship.
+     (``private/``) must never ship.
   3. references_private leak. Any tracked file under a per-skill
      ``references_private/`` folder — candidate-specific skill content.
   4. Path/filename denylist (defense in depth). Any tracked path under a private
@@ -32,8 +32,8 @@ message:
   6. Personal-identity token leak. Any file whose PATH or CONTENT contains a
      personal-identity token. Tokens are NOT hardcoded here; they are resolved at
      runtime by ``personal_tokens()`` (env var + git-ignored config identity +
-     ``private/leak_tokens.txt`` / ``personal/leak_tokens.txt``) so this shipped
-     guard carries zero real identity.
+     ``private/leak_tokens.txt``) so this shipped guard carries zero real
+     identity.
   7. Unscannable binaries (fail closed). Document binaries (``.docx``/``.pdf``/...)
      AND images (``.png``/``.jpg``/...) that cannot be text-extracted count as
      FAILURES (they might hide a real name/resume/screenshot). A narrow explicit
@@ -41,9 +41,9 @@ message:
      covers intentionally-shipped binaries.
 
 This guard is designed to go GREEN on a properly genericized public checkout. Run
-it in the combined repo (where ``config.yaml`` supplies the real tokens) before
-publishing, and the exporter (``export_public.py``) runs it against the freshly
-copied tree as the final gate.
+it in a maintainer checkout (where ``config.yaml`` supplies the real tokens)
+before publishing, and the exporter (``export_public.py``) runs it against the
+freshly copied tree as the final gate.
 
 Usage:
     .venv/bin/python scripts/publish/check_public.py
@@ -86,22 +86,19 @@ GUARD_REL_PATH = "scripts/publish/check_public.py"
 # supplied by the maintainer's environment/overlay.
 PERSONAL_TOKENS: list[str] = []
 
-# Optional git-ignored files of extra personal tokens (one per line; blank lines
-# and ``#`` comments ignored). The canonical location is ``private/leak_tokens.txt``
-# (the overlay mount); ``personal/leak_tokens.txt`` is the legacy fallback. Both
-# live under an overlay prefix so they are never tracked/shipped.
+# Optional git-ignored file of extra personal tokens (one per line; blank lines
+# and ``#`` comments ignored). It lives under the overlay prefix so it is never
+# tracked/shipped.
 LEAK_TOKENS_FILES = [
-    REPO_ROOT / "private" / "leak_tokens.txt",   # canonical (overlay mount)
-    REPO_ROOT / "personal" / "leak_tokens.txt",  # legacy fallback
+    REPO_ROOT / "private" / "leak_tokens.txt",
 ]
 
 # Env var the exporter uses to forward the resolved real token set into the guard
 # run against a freshly copied (config-less) export tree.
 TOKENS_ENV_VAR = "JOBHUNT_PERSONAL_TOKENS"
 
-# The private overlay prefixes that must never be tracked in the public repo.
-# ``private/`` is canonical; ``personal/`` is the legacy name kept for back-compat.
-PERSONAL_OVERLAY_PREFIXES = ("private/", "personal/")
+# The private overlay prefix that must never be tracked in the public repo.
+PERSONAL_OVERLAY_PREFIXES = ("private/",)
 
 # Where skills live, relative to the repo root.
 SKILLS_DIR = ".agents/skills"
@@ -132,7 +129,7 @@ _DENY_TREES = [
 def find_path_denylist_violations(tracked: list[str]) -> list[dict]:
     """Flag tracked paths that a public tree must never carry.
 
-    ``private/`` and ``personal/`` overlay paths are reported by
+    ``private/`` overlay paths are reported by
     ``find_personal_overlay_violations`` and are intentionally not repeated here.
     """
     violations: list[dict] = []
@@ -367,9 +364,8 @@ def personal_tokens() -> list[str]:
     """Resolve the active personal-identity token set (see the module comment).
 
     Union of: the ``JOBHUNT_PERSONAL_TOKENS`` env var, the real config identity
-    (skipped for the fictional example), the git-ignored leak-token files
-    (``private/leak_tokens.txt`` canonical + ``personal/leak_tokens.txt`` legacy),
-    and the (empty) shipped ``PERSONAL_TOKENS`` base.
+    (skipped for the fictional example), the git-ignored
+    ``private/leak_tokens.txt``, and the (empty) shipped ``PERSONAL_TOKENS`` base.
     """
     toks: set[str] = set(PERSONAL_TOKENS)
 
@@ -471,7 +467,7 @@ def find_private_skill_violations(root: Path, tracked: list[str]) -> list[dict]:
 
 
 def find_personal_overlay_violations(tracked: list[str]) -> list[dict]:
-    """Any tracked path under a private overlay prefix (private/ or personal/)."""
+    """Any tracked path under the private overlay prefix (``private/``)."""
     violations: list[dict] = []
     for p in tracked:
         for prefix in PERSONAL_OVERLAY_PREFIXES:

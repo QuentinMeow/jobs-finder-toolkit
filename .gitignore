@@ -11,9 +11,7 @@ config.yaml
 # Local metrics collection output (opt-in metrics hooks; see docs/METRICS.md)
 logs/
 # Private overlay (personal data mounts here; never committed to the public repo).
-# ``private/`` is the canonical mount; ``personal/`` is the legacy name.
 private/
-personal/
 # Agent scratch memory (personal cross-session notes; see AGENTS.md "Memory Map")
 .agents/MEMORY.md
 # coding-interview skill symlink into the mounted overlay (private/skills/…). The
@@ -27,10 +25,9 @@ personal/
 !.agents/skills/job-search/profiles/example.yaml
 # Per-skill private references (candidate-specific skill content; never shipped)
 .agents/skills/*/references_private/
-# Optional git-ignored personal token lists consumed by the leak guard
+# Optional git-ignored personal token list consumed by the leak guard
 private/leak_tokens.txt
-personal/leak_tokens.txt
-# Private products (present only if you work in-place in a combined checkout).
+# Private products (present only if you work in-place with your own data).
 # Anchored to the repo root so they never match the tracked examples/ dataset
 # (e.g. examples/applications/**, examples/templates/reference.example.docx).
 /applications/

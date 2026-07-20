@@ -116,10 +116,6 @@ def _deny_reason(rel: str, tokens: list[str]) -> str | None:
         return "junk:__pycache__"
     if "references_private" in parts:
         return "references_private"
-    # Internal working docs that inventory the private checkout (real filenames,
-    # account handles, data locations) — never shipped to the public mirror.
-    if rel.startswith("docs/design/harness-engineering-and-repo-evolution/"):
-        return "internal-design-doc"
     if rel.startswith(PROFILES_DIR + "/") and name not in PUBLIC_PROFILE_FILES:
         return "personal-profile"
 
@@ -178,7 +174,7 @@ def _copy_tree(rel_dir: str, dest_root: Path, copied: list[str],
 def _regenerate_symlinks(dest_root: Path) -> list[str]:
     """Recreate .claude/skills + .cursor/skills compat symlinks for PUBLIC skills.
 
-    Mirrors the combined repo: ``<host>/<skill> -> ../../.agents/skills/<skill>``.
+    Mirrors the source checkout: ``<host>/<skill> -> ../../.agents/skills/<skill>``.
     coding-interview (PRIVATE) is intentionally skipped.
     """
     created: list[str] = []
@@ -275,10 +271,9 @@ def export(dest: Path, git_init: bool, force: bool) -> int:
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
 
-    # Resolve the REAL personal-identity tokens once (from the combined repo's
-    # config.yaml + private/leak_tokens.txt, legacy personal/leak_tokens.txt);
-    # used for the copy-time denylist AND forwarded to the guard run against the
-    # copied tree.
+    # Resolve the REAL personal-identity tokens once (from the source checkout's
+    # config.yaml + private/leak_tokens.txt); used for the copy-time denylist AND
+    # forwarded to the guard run against the copied tree.
     tokens = check_public.personal_tokens()
 
     copied: list[str] = []

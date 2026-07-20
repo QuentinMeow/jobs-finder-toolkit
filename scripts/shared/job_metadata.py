@@ -106,16 +106,13 @@ SOURCE_TIERS = (
     "generic_heuristic",
 )
 TIER_RANK = {tier: index for index, tier in enumerate(SOURCE_TIERS)}
-LEGACY_SOURCE_TIERS = {
+# Map a fact's flat ``source`` label (the schema-v3 enum the extractor emits)
+# to a provenance tier, used when a fact carries no explicit ``tier``.
+SOURCE_TIER_MAP = {
     "job_description": "live_jd",
     "company_reference": "employer_official",
-    "generic_level_mapping": "generic_heuristic",
     "title": "generic_heuristic",
     "required_yoe": "generic_heuristic",
-    "source_api": "market_benchmark",
-    "adzuna_api": "market_benchmark",
-    "jsearch_api": "market_benchmark",
-    "jobspy": "market_benchmark",
 }
 
 _WS_RE = re.compile(r"\s+")
@@ -258,8 +255,8 @@ def _source_text(value: str | None) -> str:
     return re.sub(r"\\([+$])", r"\1", value or "")
 
 
-def legacy_source_to_tier(source: str | None) -> str | None:
-    """Map legacy ``source`` labels to the reference-cache precedence tiers."""
+def source_to_tier(source: str | None) -> str | None:
+    """Map a fact's ``source`` label to a reference-cache precedence tier."""
     if not source:
         return None
     value = str(source).strip().lower()
@@ -267,13 +264,13 @@ def legacy_source_to_tier(source: str | None) -> str | None:
         return value
     if value.endswith("_api"):
         return "market_benchmark"
-    return LEGACY_SOURCE_TIERS.get(value)
+    return SOURCE_TIER_MAP.get(value)
 
 
 def normalize_provenance(
     value: Any,
     *,
-    legacy_source: str | None = None,
+    fact_source: str | None = None,
     defaults: dict | None = None,
 ) -> dict:
     """Return a normalized provenance mapping for the reference cache."""
@@ -281,7 +278,7 @@ def normalize_provenance(
     for key, default in (defaults or {}).items():
         if default is not None and provenance.get(key) in (None, ""):
             provenance[key] = default
-    tier = provenance.get("tier") or legacy_source_to_tier(legacy_source)
+    tier = provenance.get("tier") or source_to_tier(fact_source)
     if tier:
         provenance["tier"] = tier
     if not provenance.get("confidence"):
@@ -293,7 +290,7 @@ def _candidate_tier(fact: dict | None) -> str | None:
     if not isinstance(fact, dict):
         return None
     provenance = normalize_provenance(
-        fact.get("provenance"), legacy_source=fact.get("source"))
+        fact.get("provenance"), fact_source=fact.get("source"))
     return provenance.get("tier")
 
 
@@ -301,7 +298,7 @@ def _candidate_date(fact: dict | None) -> int:
     if not isinstance(fact, dict):
         return 0
     raw = normalize_provenance(
-        fact.get("provenance"), legacy_source=fact.get("source")
+        fact.get("provenance"), fact_source=fact.get("source")
     ).get("retrieved_at")
     if not raw:
         return 0
@@ -391,7 +388,7 @@ def _companies(reference: dict) -> list[dict]:
 
 
 def normalize_company_levels(data: dict) -> dict:
-    """Normalize v1/v2 company caches to the provenance-aware v2 shape in memory."""
+    """Normalize a company cache to the provenance-aware v2 shape in memory."""
     out = dict(data)
     normalized_companies = []
     for raw_company in _companies(out):
@@ -454,7 +451,7 @@ def normalize_company_levels(data: dict) -> dict:
         company["levels"] = levels
         normalized_companies.append(company)
     out["companies"] = normalized_companies
-    out["schema_version"] = max(int(out.get("schema_version") or 1), 2)
+    out["schema_version"] = 2
     out.setdefault("tier_precedence", list(SOURCE_TIERS))
     return out
 

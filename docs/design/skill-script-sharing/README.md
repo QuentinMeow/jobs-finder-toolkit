@@ -1,6 +1,8 @@
 # Design: Sharing & Maintaining Scripts Across Skills
 
-**Status:** proposal (no code changes yet)
+> **Superseded (historical).** The toolkit shipped **Approach 2 — vendored self-contained skills** (see `AGENTS.md` → 'Sharing Code Across Skills'). This folder is kept as the design record; its 'current state' audit describes the pre-split tree and no longer matches the repo.
+
+**Status:** superseded — Approach 2 adopted
 **Scope:** how Python scripts should be organized, shared, and maintained as the
 number of skills and scripts in this repo grows.
 **Audience:** repo maintainer (human) deciding the architecture.

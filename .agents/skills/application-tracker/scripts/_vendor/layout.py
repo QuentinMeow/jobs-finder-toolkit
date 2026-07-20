@@ -65,8 +65,7 @@ def compose_stem(base: str, label: str = "") -> str:
 #           <RESUME_STEM>.docx
 #           <COVER_STEM>.docx
 # The helpers below resolve that layout from any of: the folder, the tailored.yaml
-# path (in source/ or a legacy root location), or the source/ folder itself, and
-# fall back to the pre-source/ layout so older folders still validate.
+# path, or the source/ folder itself.
 
 def application_dir(path) -> Path:
     """Return the application-folder root for a folder / tailored.yaml / source path."""
@@ -84,10 +83,8 @@ def source_dir(app_dir) -> Path:
 
 
 def tailored_path(app_dir) -> Path:
-    """Locate tailored.yaml: source/ first (new layout), then the root (legacy)."""
-    ad = Path(app_dir)
-    in_source = ad / SOURCE_DIRNAME / "tailored.yaml"
-    return in_source if in_source.exists() else ad / "tailored.yaml"
+    """The tailored.yaml inside an application folder's source/ subfolder."""
+    return Path(app_dir) / SOURCE_DIRNAME / "tailored.yaml"
 
 
 def meta_path(app_dir) -> Path:
@@ -102,8 +99,8 @@ def application_roles(app_dir) -> list:
     covered by one resume); otherwise the single top-level ``role``. Each role maps
     one-to-one to a ``source/JD-<title>.md``, a bundled ``..._Application_<role>.txt``,
     and a rendered ``..._Cover_Letter_<role>.{docx,pdf}`` (the label slug comes from
-    ``slugify_label``). Returns ``[]`` when meta.yaml carries no role info, so callers
-    can fall back to the legacy unlabeled bundle.
+    ``slugify_label``). Returns ``[]`` when meta.yaml carries no role info (e.g. a
+    resume-only draft).
     """
     mp = meta_path(app_dir)
     if not mp.exists():
@@ -127,18 +124,12 @@ def find_jd_files(app_dir) -> list:
 
     Naming convention (always JD-prefixed, single or multiple postings):
       - one ``JD-<job-title>.md`` per posting, in the ``source/`` subfolder.
-    Searches ``source/`` first (current layout), then the application-folder root,
-    and still recognizes a legacy ``jd.md`` so older folders keep validating.
     Returned sorted so concatenation is deterministic.
     """
-    ad = application_dir(app_dir)
-    for folder in (source_dir(ad), ad):
-        if not folder.is_dir():
-            continue
-        files = [
-            p for p in sorted(folder.glob("*.md"))
-            if p.name.lower() == "jd.md" or p.name.lower().startswith("jd-")
-        ]
-        if files:
-            return files
-    return []
+    folder = source_dir(application_dir(app_dir))
+    if not folder.is_dir():
+        return []
+    return [
+        p for p in sorted(folder.glob("*.md"))
+        if p.name.lower().startswith("jd-")
+    ]

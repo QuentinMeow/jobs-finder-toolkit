@@ -144,8 +144,7 @@ def load_application(app_dir: Path, status: str) -> dict | None:
         "has_resume": bool(list(source_dir(app_dir).glob(f"{RESUME_STEM}*.docx"))
                            or list(app_dir.glob(f"{RESUME_STEM}*.docx"))),
         "has_pdf": bool(list(app_dir.glob(f"{RESUME_STEM}*.pdf"))),
-        # Match any cover-letter PDF so both the current stem and the legacy
-        # ..._Software_Engineer_Cover_Letter naming still register.
+        # Match any cover-letter PDF regardless of the role-label suffix.
         "has_cover_letter": bool(list(app_dir.glob("*Cover_Letter*.pdf"))),
         "has_app_txt": bool(list(app_dir.glob(f"{APPLICATION_STEM}*.txt"))),
         "notes": "",
@@ -164,7 +163,7 @@ def load_application(app_dir: Path, status: str) -> dict | None:
             # The folder wins for status; pull everything else from meta.yaml.
             # Structured job facts (job_level/required_yoe/salary_range) live per
             # posting under `jobs`, so they are read from there, not the top level.
-            for key in ["company", "role", "date", "research_date", "posted_date",
+            for key in ["company", "role", "research_date", "posted_date",
                         "channel", "referrer", "next_action", "notes", "location",
                         "recruiter_email", "comp_notes", "url", "stage", "jobs",
                         "job_metadata_schema_version"]:
@@ -173,8 +172,8 @@ def load_application(app_dir: Path, status: str) -> dict | None:
         except Exception:
             pass
 
-    # research_date is the canonical creation date; fall back to legacy `date`
-    # (already loaded above), then to the slug-derived date.
+    # research_date is the canonical creation date; fall back to the
+    # slug-derived date (parsed above).
     if info.get("research_date"):
         info["date"] = info["research_date"]
 

@@ -131,7 +131,7 @@ evals/
   results/
     .gitkeep                    # results are per-machine; tracked for now, may be gitignored later
     TEMPLATE.md                 # one-page result-recording template
-  <skill>/canaries.yaml         # 3–6 canaries per public skill (6 skills)
+  <skill>/canaries.yaml         # 3–6 canaries per public skill (6 skills; gardener excluded — its routines are deterministic scripts)
 ```
 
 All canaries are **fully public**: only the "Jordan Rivers" fixture identity + fictional or

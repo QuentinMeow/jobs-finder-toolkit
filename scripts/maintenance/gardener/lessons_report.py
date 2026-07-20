@@ -1,6 +1,6 @@
 """gardener routine: LESSONS.md health report (staleness + near-duplicates).
 
-Durable memory (design doc 03 zone (c)) carries lifecycle tags per ``##`` section
+Durable memory (AGENTS.md "Memory Map" zone (c)) carries lifecycle tags per ``##`` section
 (``<!-- added · last_confirmed · status -->``). This routine:
 
   * flags sections whose ``last_confirmed`` is older than ``lesson_confirm_days``

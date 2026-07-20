@@ -14,7 +14,7 @@
 #          token-independent structural checks. Guard fails -> REFUSE the push.
 #        * GitHub remote + gh confirms PRIVATE  -> allow without the guard (a
 #          private destination can hold anything; this also covers the private
-#          overlay repo and the archived combined repo).
+#          overlay repo).
 #        * GitHub remote + gh missing/errors    -> cannot verify; treat like an
 #          unknown remote and run the guard as a safety net.
 #        * Non-GitHub remote                    -> same: run the guard.
@@ -96,7 +96,7 @@ if [ -z "$PY" ]; then
     echo "pre-push: no python interpreter found to run the leak guard" >&2
     exit 1
 fi
-if [ -f "config.yaml" ] || [ -f "private/leak_tokens.txt" ] || [ -f "personal/leak_tokens.txt" ]; then
+if [ -f "config.yaml" ] || [ -f "private/leak_tokens.txt" ]; then
     echo "pre-push: leak guard is ARMED with real identity tokens."
 else
     echo "pre-push: leak guard is NOT armed (no config.yaml / leak_tokens.txt);"

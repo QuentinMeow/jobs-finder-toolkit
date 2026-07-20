@@ -31,11 +31,9 @@ echo "pre-commit: byte-compiling scripts + self-contained skills..."
     .agents/skills/resume-writer/scripts \
     .agents/skills/application-tracker/scripts
 
-# Instruction-file token-budget check (design doc 05 §4). WARN-ONLY today: an
-# oversized SKILL.md must not block commits yet. `|| true` guarantees this step
-# never changes the hook's exit status under `set -e`. P1 will slim the
-# instruction files and then switch this to `--strict` to make it a hard gate.
-echo "pre-commit: instruction-file budget (warn-only)..."
-"$PY" scripts/metrics/instruction_budget.py || true
+# Instruction-file token-budget check — a hard gate: every instruction file
+# is within budget today, and any commit that pushes one over must slim it.
+echo "pre-commit: instruction-file budget (strict)..."
+"$PY" scripts/metrics/instruction_budget.py --strict
 
 echo "pre-commit: OK"

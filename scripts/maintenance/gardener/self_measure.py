@@ -1,6 +1,6 @@
 """gardener routine: recompute the pipeline funnel + memory-health metrics.
 
-Self-measurement (design doc 03 §5 "self-measure"): derive the application funnel
+Self-measurement: derive the application funnel
 from the status folders (matching status.py) plus the discovered count from the
 derived applications-log, LESSONS staleness counts, and the instruction-budget
 summary. Prints YAML to stdout.

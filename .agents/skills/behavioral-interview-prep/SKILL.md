@@ -25,9 +25,9 @@ Use this skill when the user asks to:
 4. If a company-specific folder exists, read relevant files under `interviews/company-specific/<company>/behavioral/` (real interview products mount under `private/interviews/...`; see `AGENTS.md` → "Public vs Private").
 5. **Personalization / private overrides:** if this skill folder has a
    `references_private/` directory, read every file in it — those candidate-specific
-   notes and examples OVERRIDE the generic examples in this SKILL.md and in
-   `references_public/`. When it is absent (public / example mode), use the generic
-   examples here and take all candidate specifics from `config` and the profile.
+   notes and examples OVERRIDE the generic examples in this SKILL.md. When it is absent
+   (public / example mode), use the generic examples here and take all candidate
+   specifics from `config` and the profile.
 6. Read `QUESTION_BANK.md` when selecting question families, follow-ups, or company overlays.
 7. Never fabricate facts, metrics, conflict, ownership, or technologies. Reframe only what is real.
 8. **Scratch stays in `tmp/`** (never the repo root or the `interviews/` tree — only finished

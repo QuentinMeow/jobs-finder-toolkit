@@ -1,8 +1,7 @@
 """Shared helpers for the gardener memory-hygiene routines.
 
 The gardener is periodic memory hygiene for this repo's agent-memory zones
-(maintainer-only design doc, overlay-mounted and absent in contributor checkouts:
-``private/docs/harness-engineering-and-repo-evolution/03-folder-structure-and-memory.md``
+(see ``AGENTS.md`` -> "Memory Map"
 §5). Every routine defaults to DRY-RUN, prints a plan/diff, and NEVER deletes —
 stale items are MOVED to an ``archive/`` sibling (soft-delete). ``--apply`` is an
 explicit opt-in.
@@ -35,7 +34,7 @@ DESIGN_DOC = (
     "03-folder-structure-and-memory.md"
 )
 
-# Retention defaults (design doc 03 §"Retention windows"). Overridable via the
+# Retention defaults (see AGENTS.md "Memory Map"). Overridable via the
 # optional ``retention:`` block in the active config.yaml.
 RETENTION_DEFAULTS = {
     "discovery_ttl_days": 30,
