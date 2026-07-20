@@ -240,8 +240,9 @@ prints an estimated height + verdict):
   (when shortening isn't enough) drop the single least JD-relevant project. On SPARSE, lengthen
   with real, traceable detail — never filler or invented content.
 - **check.py's post-render page count is the authoritative gate;** the estimate is only a
-  pre-check. `render.py` prints this estimate up front too. See LESSONS.md → "Pre-render layout
-  budget" for the calibrated constants and the font / margin / line-spacing levers.
+  pre-check — state this explicitly whenever you give the user a fit verdict. `render.py` prints
+  this estimate up front too. See LESSONS.md → "Pre-render layout budget" for the calibrated
+  constants and the font / margin / line-spacing levers.
 
 ### Step 6: Render + Validate
 
