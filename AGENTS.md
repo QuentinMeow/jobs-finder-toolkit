@@ -163,7 +163,8 @@ example) and `config.discoveries_dir()` are support folders, not applications.
 | `.claude/skills/`, `.cursor/skills/` | Tool-compatibility symlinks to `.agents/skills` (for agents that look in their own skill directories) |
 | `.agents/MEMORY.md` | Cross-session hypotheses and learnings (gitignored) |
 | `tmp/` | Gitignored scratch space for **all** disposable, ad-hoc work — one-off ATS/API probes, fetched web artifacts, sanity checks — organized into purpose-named subfolders (`tmp/ats_scripts/`, `tmp/web_artifacts/`, `tmp/scratch/`). Never committed; created on demand; nothing in the toolkit may depend on it. See "Scratch & Temporary Files" |
-| `README.md` | Human-facing quickstart |
+| `README.md` | Human-facing quickstart (capability-first: example output, then the workflow) |
+| `docs/ARCHITECTURE.md` | Human-facing design doc: render pipeline, config system, vendoring, CI gates, repo reference |
 | `AGENTS.md` | This file (agent-facing contract) |
 
 ## Handy Commands
