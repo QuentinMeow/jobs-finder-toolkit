@@ -176,6 +176,47 @@ class TailoringCardTests(unittest.TestCase):
         self.assertIn("Read the full story", text)
         self.assertIn("interviews/behavioral-story-bank/payments-migration.md", text)
 
+    def test_story_bank_resolved_from_overlay_root_not_config_dir(self):
+        # Real-deployment shape: config.yaml at the repo root, the private overlay
+        # (applications tree + story bank) mounted under private/. The story bank must
+        # be resolved via applications_root().parent, NOT the config file's directory —
+        # otherwise the builder looks under the repo root, finds nothing, and stamps the
+        # card "(0 stories)", hiding a real story bank. Before the fix this test fails.
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        overlay = tmp / "private"
+        (overlay / "applications" / "0_profile").mkdir(parents=True)
+        shutil.copy(PROFILE_FIXTURE, overlay / "profile.md")
+        shutil.copy(BASELINE_FIXTURE, overlay / "baseline.yaml")
+        sb = overlay / "interviews" / "behavioral-story-bank"
+        sb.mkdir(parents=True)
+        (sb / "payments-migration.md").write_text(
+            "# Payments platform microservices migration\n\n"
+            "Split a monolithic payments service into independently deployable "
+            "services, reducing failed-payment incidents by 40%.\n",
+            encoding="utf-8")
+        cfg = tmp / "config.yaml"          # config at the repo root, NOT in the overlay
+        cfg.write_text(
+            'candidate:\n'
+            '  name: "Jordan Rivers"\n'
+            '  name_slug: "Jordan_Rivers"\n'
+            '  title_slug: "Software_Engineer"\n'
+            'paths:\n'
+            '  profile_md: "private/profile.md"\n'
+            '  baseline_yaml: "private/baseline.yaml"\n'
+            '  applications_root: "private/applications"\n',
+            encoding="utf-8")
+        rc, out, err = self._run(cfg)
+        self.assertEqual(rc, 0, err)
+        card = overlay / "applications" / "0_profile" / "tailoring-card.md"
+        text = card.read_text(encoding="utf-8")
+        self.assertNotIn("No story bank found", text)
+        self.assertIn("Payments platform microservices migration", text)
+        self.assertIn("(1 story)", text)
+        # Digest pointer stays config-relative (absolute-free), reaching into the overlay.
+        self.assertIn(
+            "private/interviews/behavioral-story-bank/payments-migration.md", text)
+
     # ── staleness / no-op protection ─────────────────────────
     def test_check_reports_current_then_stale_after_mutation(self):
         tmp, cfg = self._setup()

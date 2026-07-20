@@ -9,11 +9,18 @@ the JD demands a deep dive (see the resume-writer SKILL.md workflow).
 Inputs (via the vendored config accessors — self-contained skill, no repo-root imports):
   * profile markdown  — ``config.profile_md_path()``
   * baseline yaml      — ``config.baseline_path()``
-  * story bank         — ``interviews/behavioral-story-bank/`` relative to the config
-                         (overlay) root, i.e. ``config.config_path().parent``. With no
-                         ``config.yaml`` present the config falls back to the tracked
-                         example config + the Jordan Rivers ``examples/`` fixture, which
-                         ships no story bank — the digest then says so gracefully.
+  * story bank         — ``interviews/behavioral-story-bank/`` under the OVERLAY ROOT,
+                         derived as ``config.applications_root().parent`` — NOT the config
+                         file's directory. In the real deployment ``config.yaml`` sits at the
+                         repo root while the private overlay is mounted at ``private/``; the
+                         applications root (``private/applications``) is what locates the
+                         overlay, so its parent (``private/``) is the overlay root and the
+                         story bank lives at ``private/interviews/behavioral-story-bank/``.
+                         (An overlay-resident ``config.yaml`` resolves to the same place.)
+                         With no ``config.yaml`` present the config falls back to the tracked
+                         example config, whose applications root is ``examples/applications``
+                         → the Jordan Rivers ``examples/`` fixture ships no story bank, and
+                         the digest then says so gracefully.
 
 Output: ``<applications_root>/0_profile/tailoring-card.md`` (applications root from
 config). The card carries, in order: a generated-from header (config-relative source
@@ -355,10 +362,17 @@ def build_card(profile_path: Path, baseline_path: Path, story_dir: Path,
 # ── CLI ──────────────────────────────────────────────────────
 def _resolve_paths() -> tuple[Path, Path, Path, Path, Path]:
     config_dir = config.config_path().parent
+    # The story bank lives beside the applications tree in the private overlay, NOT
+    # under the config file's directory: in the real deployment config.yaml sits at the
+    # repo root while the overlay is mounted at private/. Derive the overlay root from
+    # the applications root (private/applications → private/) so the bank resolves the
+    # same whether config.yaml is at the repo root or inside the overlay. config_dir is
+    # kept only for absolute-free, config-relative display of the profile/baseline/card.
+    overlay_root = config.applications_root().parent
     return (
         config.profile_md_path(),
         config.baseline_path(),
-        config_dir / STORY_BANK_REL,
+        overlay_root / STORY_BANK_REL,
         config_dir,
         config.applications_root() / CARD_REL,
     )
