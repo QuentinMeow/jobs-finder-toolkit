@@ -55,6 +55,7 @@ TARGETS: dict[str, list[str]] = {
     ],
     "scripts/shared/metadata_editor.py": [
         ".agents/skills/application-tracker/scripts/_vendor/metadata_editor.py",
+        ".agents/skills/job-search/scripts/_vendor/metadata_editor.py",
     ],
 }
 
