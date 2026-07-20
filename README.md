@@ -1,255 +1,126 @@
-# Jobs Finder — job-hunting toolkit
+# Jobs Finder — an AI-agent job-hunting toolkit
 
-The **public** `jobs-finder-toolkit` repository, licensed **Apache-2.0**.
-A minimal toolkit for ATS-optimized resume generation, job discovery,
-and application tracking, driven by AI agents. The skills live in `.agents/skills/` and work
-from any AI coding agent that reads `AGENTS.md` (Claude Code, Cursor, Codex, and others). It ships timeless tooling plus a fictional "Jordan Rivers"
-example candidate under `examples/`; your real data stays in a separate private overlay (see
-"Bring your own data"). Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Point your AI coding agent (Claude Code, Cursor, Codex, …) at this repo and it can
+find matching job postings, tailor an ATS-optimized resume + cover letter for each
+one, track every application through a pipeline, and prep you for the interviews —
+while a validator keeps every generated resume honest, one page, and true to your
+approved format.
 
-## How It Works
+Here is what one tailoring run produces — a resume rendered into *your* approved
+DOCX format, plus an individually researched cover letter per posting:
 
-**Content and formatting are separate concerns.** Your full professional profile lives in markdown (your candidate profile (`config.profile_md_path()`)). For each job application, the AI tailors the content and generates structured YAML. A script renders the YAML into a DOCX resume by copying your approved reference resume and swapping in the tailored content (preserving all formatting), then converts to PDF and validates it.
+| Tailored resume (PDF) | Cover letter (PDF, one per posting) |
+|---|---|
+| ![Example tailored resume](examples/screenshots/example-resume.png) | ![Example cover letter](examples/screenshots/example-cover-letter.png) |
 
-```
-your candidate profile (config.profile_md_path()) + job description
-    → AI analyzes gaps, selects projects, tailors content
-    → source/tailored.yaml (structured)
-    → render.py fills the reference DOCX (config.reference_docx_path(), format-preserving)
-    → resume DOCX (source/) + PDF (root) + cover letter + automatic validation (.agents/skills/resume-writer/scripts/check.py)
-```
+Every application also gets a bundled, copy-paste `..._Application_<role>.txt`
+(cover letter + "why this company/role" + "past experience" sections for portal
+text boxes) and a `meta.yaml` of structured facts (level, required YOE, salary,
+sponsorship). The full worked example lives in
+[`examples/applications/6_drafted/example-corp-senior-software-engineer/`](examples/applications/6_drafted/example-corp-senior-software-engineer/).
 
-Each application folder keeps only the finished PDFs, a bundled copy-paste `..._Application.txt`,
-and `meta.yaml` at its root; the generation inputs (JD files, `tailored.yaml`, DOCX) live in a
-`source/` subfolder.
+## Try it in three commands
 
-## Configuration
-
-Candidate identity, paths, and output filename stems are never hardcoded — they come from
-`config.yaml` (git-ignored). Copy `config.example.yaml` to `config.yaml` and edit it with your
-own values:
+Works out of the box on a fresh clone — no config needed; every tool falls back to
+the fictional "Jordan Rivers" example candidate. Requires Python 3.11+
+(`python3 --version` first) and, for PDF output, LibreOffice
+(`brew install --cask libreoffice`; or add `--no-pdf` to skip).
 
 ```bash
-cp config.example.yaml config.yaml
+git clone https://github.com/<owner>/jobs-finder-toolkit.git && cd jobs-finder-toolkit   # or your fork
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python .agents/skills/resume-writer/scripts/render.py examples/applications/6_drafted/example-corp-senior-software-engineer/
 ```
 
-`config.example.yaml` is a neutral **"Jordan Rivers"** placeholder that also serves as the
-fallback when no `config.yaml` is found. It supplies the profile path (`config.profile_md_path()`),
-the baseline (`config.baseline_path()`), the render reference DOCX
-(`config.reference_docx_path()`), the reusable company leveling/compensation cache
-(`config.company_levels_path()`), and the output filename stems
-(`<RESUME_STEM>` = `Jordan_Rivers_Software_Engineer_Resume` in the example). Paths in the config
-are resolved relative to the config file's directory.
+That renders and validates the example resume + cover letter you see above. Then
+open the repo in your AI agent and just talk to it — the skills route themselves.
 
-## Quickstart
+## The workflow
 
-### 1. Clone and install dependencies
+The toolkit turns one **candidate profile** into tailored applications and tracks
+them. One-time setup, then five steps, each driven by a prompt to your agent:
 
-```bash
-git clone https://github.com/<owner>/jobs-finder-toolkit.git   # or your fork
-cd jobs-finder-toolkit
-python3 -m venv .venv        # needs Python 3.11+ — check `python3 --version` first
-.venv/bin/pip install -r requirements.txt
+```
+0. Setup ............ config.yaml + profile + baseline resume YAML + reference DOCX   (one time)
+1. Profile & filters  define WHO you are and WHAT you want    → job-search profile
+2. Search ........... find fresh, sponsorship-aware postings  → job-search skill
+3. Generate ......... tailor resume + cover letters per JD    → resume-writer skill
+4. Review & track ... you decide; move the folder             → application-tracker
+5. Interview prep ... company research + behavioral stories   → company-research /
+                                                                behavioral-interview-prep
 ```
 
-> **Python 3.11+ required.** On macOS, bare `python3` can still resolve to an
-> ancient interpreter (3.7-era) where the install fails — if so, create the venv
-> with a modern one instead, e.g. `python3.13 -m venv .venv` or
-> `uv venv --python 3.13`.
+> "Find senior backend roles posted this week that sponsor H-1B"
+> "Tailor my resume for this job: [paste JD]"
+> "Research Example Corp for my interview and build a question bank"
 
-No `config.yaml` is needed to try the toolkit: with none present, every tool falls back to the
-fictional `config.example.yaml` and the `examples/` **Jordan Rivers** fixture, so you can run
-any skill against the example candidate right away.
-
-For PDF conversion, install one of:
-- **LibreOffice** (recommended): `brew install --cask libreoffice`
-- **Microsoft Word** (if already installed): `.venv/bin/pip install docx2pdf`
-
-Optional (recommended for contributors): wire the tracked git hooks (vendored-copy drift check
-+ byte-compile) with the idempotent, stdlib-only bootstrap script:
-
-```bash
-python scripts/bootstrap_overlay.py
-```
-
-### 2. Review your profile
-
-Your professional profile is at your candidate profile (`config.profile_md_path()`). It contains all your experience (tagged `[draft]` or `[backup]`), skills, and resume writing preferences. Update it as your experience grows.
-
-### 3. Tailor a resume for a job
-
-Tell your AI agent:
-
-> Tailor my resume for this job: [paste the job description]
-
-The `resume-writer` skill handles the rest: reads your profile, analyzes keyword gaps, selects the best projects, tailors content, and renders DOCX + PDF. By default it also drafts a matching cover letter PDF and a single bundled `..._Application.txt` — a copy-paste-friendly file with three plain-text sections (cover letter, "why this company / role", and "past experience") that you paste straight into portal boxes — say "resume only" to skip them. Cover-letter, why-fit, and past-experience content are researched against the company's product and the specific job description. When one company posts several jobs, it produces one resume covering them all unless the roles are very different, in which case it splits them into separate applications with position-labeled filenames.
-
-### 4. Check application status
+Applications land in `6_drafted/` for your review; **the folder is the status** —
+move it to `5_applied/`, `4_in_progress/`, `3_rejected/`, or `2_ignored/` as things
+progress (or ask the agent; the number prefix is a fixed sort key, not a sequence). `status.py` prints the pipeline any time:
 
 ```bash
 .venv/bin/python .agents/skills/application-tracker/scripts/status.py
 ```
 
-Prints a summary table of all applications with status, source, and next actions.
+New here? Ask your agent anything — the `ask-me-anything` skill is the built-in
+tour guide for the whole toolkit.
 
-Schema-v3 per-posting job metadata (workplace, visa sponsorship, job level, required
-YOE, and base salary — an application's `meta.yaml` has **no** `total_compensation_range`)
-lives under a `jobs:` list, one entry per posting, and can be inserted safely after
-saving the JD:
+## Use your own data
 
-```bash
-# One application: formatting-preserving, checksum-guarded write
-.venv/bin/python .agents/skills/application-tracker/scripts/status.py \
-  --enrich-metadata applications/6_drafted/<slug>/
-
-# Drafted-folder preview: dry-run unless --write is added after review
-.venv/bin/python .agents/skills/application-tracker/scripts/backfill_job_metadata.py
-```
-
-Validation and backfill default to the `applications/6_drafted/` folder only, where
-drafts must be strict schema-v3 (`job_metadata_schema_version: 3`); pass `--all-statuses`
-to include the other status folders. A `meta.yaml`'s only supported schema is v3.
-(Unrelated: the reusable company leveling/compensation cache — `company-levels.yaml` — is a
-separate file that legitimately stays at schema v2, `total_compensation_range` included.)
-
-Company benchmarks import from user-supplied YAML/JSON/CSV only:
-`.venv/bin/python scripts/maintenance/import_company_levels.py INPUT DESTINATION`.
-It is dry-run by default. Public Levels.fyi scraping is never used; automated Levels.fyi
-inputs require a user-supplied licensed export or licensed API access.
-An application's **status is the folder it lives in** (there is no `status` field in
-`meta.yaml`) — newly generated applications start in `applications/6_drafted/`, and you move
-each folder into `applications/5_applied/`, `applications/4_in_progress/`,
-`applications/3_rejected/`, or `applications/2_ignored/` as things progress.
-
-### 5. Update status
-
-Move the application folder into the target status folder — either by hand, or with
-(`<status>` is one of `drafted | applied | in_progress | rejected | ignored`):
+Your real identity never enters this repo. Copy the example config and point its
+`paths.*` at your own files — `config.yaml` is git-ignored:
 
 ```bash
-.venv/bin/python .agents/skills/application-tracker/scripts/status.py --update google-ml-engineer-20260416 applied
+cp config.example.yaml config.yaml     # edit: your name, your file paths
+python scripts/bootstrap_overlay.py    # wires git hooks (+ overlay symlinks if mounted)
 ```
 
-## Install as skills / Claude plugin
+Keep your real profile, applications, and interview prep in a **private overlay** —
+your own git repo mounted at the git-ignored `private/` directory. A leak guard
+(run blocking in CI and in the pre-push hook) screens every tracked file for your
+identity so nothing personal can ship by accident. Full walkthrough, including
+creating an overlay from scratch: [docs/PRIVATE_OVERLAY.md](docs/PRIVATE_OVERLAY.md).
 
-Every skill under `.agents/skills/<skill>/` is **self-contained**: it bundles its own
-`scripts/` plus a `scripts/_vendor/` copy of the shared toolkit modules (`config.py`,
-`layout.py`, `location.py`, `job_metadata.py`). A skill never imports repo-root Python, so you can drop a single
-skill folder into another project and it keeps working — just copy the whole
-`.agents/skills/<skill>/` directory (its `scripts/` and `_vendor/` come along) and provide a
-`config.yaml` (or set `JOBHUNT_CONFIG`; it falls back to `config.example.yaml`).
+## The skills
 
-The public skills are also published as a **Claude Code plugin marketplace** via
-[`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json). Each entry points at its
-`.agents/skills/<skill>/` folder:
+Skills live in [`.agents/skills/`](.agents/skills/) — self-contained (each bundles
+its scripts and vendored dependencies), agent-agnostic, and also published as a
+Claude Code plugin marketplace via
+[`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json):
 
-- `ask-me-anything` — orientation guide: the five-step workflow, repo structure, and the skill + dependencies each step needs (start here if you're new)
-- `job-search` — discover and rank fresh job postings that match a candidate profile
-- `resume-writer` — tailor resumes for ATS optimization and render DOCX + PDF + cover letters
-- `application-tracker` — track applications, statuses, and pipeline health
-- `behavioral-interview-prep` — build project-based behavioral story banks and STAR answers
-- `company-research` — deep company + role research and an interview question bank
-- `gardener` — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
+- **`ask-me-anything`** — orientation guide: the five-step workflow and what each step needs (start here)
+- **`job-search`** — discover and rank fresh postings by role, location, recency, and visa sponsorship
+- **`resume-writer`** — tailor resumes for ATS fit and render validated DOCX + PDF + cover letters
+- **`application-tracker`** — pipeline status, structured `meta.yaml` facts, notes, skip-logs
+- **`behavioral-interview-prep`** — project-based STAR story banks and reusable answers
+- **`company-research`** — deep company + role research and an interview question bank
+- **`gardener`** — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
 
-The private `coding-interview` skill is intentionally **not** in the marketplace — it ships only
-in the private overlay (see below).
+## Repo layout
 
-## Continuous integration
+```
+config.example.yaml      # tracked "Jordan Rivers" placeholder (+ no-config fallback)
+examples/                # fictional example: profile, templates, a worked application
+.agents/skills/<skill>/  # the skills: SKILL.md + self-contained scripts
+scripts/                 # shared modules, vendoring, maintenance, metrics, leak guard
+evals/                   # per-skill canary evals (gate skill-instruction changes)
+hooks/                   # tracked git hooks (drift check, compile, leak guard)
+docs/                    # design docs: ARCHITECTURE, PRIVATE_OVERLAY, METRICS
+AGENTS.md                # the agent-facing contract (guardrails + conventions)
+```
 
-CI lives in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every push and
-pull request. It:
+## Learn more
 
-1. **Drift check** — verifies each skill's vendored `_vendor/` copies are byte-identical to their
-   canonical `scripts/shared/` source (`sync_vendored.py --check`).
-2. **Compile** — byte-compiles all toolkit and skill Python (`compileall`).
-3. **Example render + validate** — renders and validates the worked example under
-   `examples/applications/6_drafted/` using the fake `config.example.yaml`.
-4. **Leak guard** — runs `scripts/publish/check_public.py`, a **blocking** gate. This is the
-   public repo, so the guard must be **completely clean** (exit 0, zero findings); any finding is
-   a regression. It prevents leaking personal data or private skills.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how it works: the render pipeline,
+  config system, application-folder model, vendoring, CI gates, and the full repo
+  reference table
+- [docs/PRIVATE_OVERLAY.md](docs/PRIVATE_OVERLAY.md) — the public/private two-repo
+  model and overlay setup
+- [AGENTS.md](AGENTS.md) — the contract AI agents follow (no fabrication,
+  validation is mandatory, folder conventions)
+- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, the check suite, and the PR
+  workflow ([CI](.github/workflows/ci.yml) runs it all, including a blocking
+  privacy leak guard)
 
-## Public + private (two-repo) setup
-
-This repository is the **PUBLIC toolkit** — it ships only timeless, general material: the
-tooling (`scripts/`, the public skills and their scripts), the company registry
-`.agents/skills/job-search/companies.yaml` (**identity only** — never specific or dated
-postings), a fake example candidate under `examples/`, `config.example.yaml`, and general
-instructions. It contains no real identity or products.
-
-Everything tied to a real person or an active job hunt lives in a separate **PRIVATE overlay
-repo** — its **own git repo**, synced to a private GitHub remote, cloned into a git-ignored
-**`private/`** path inside this checkout. Your `config.yaml`
-(git-ignored) points the toolkit's `paths.*` into the overlay — its real profile, baseline,
-reference DOCX, and applications:
-
-- The private `coding-interview` skill (SKILL.md + its products) lives only in the overlay and
-  never ships in the public repo.
-- All real products — `applications/**`, the real `interviews/**`, the real
-  company-level cache, and your real profile / baseline / reference DOCX — belong in the
-  private overlay. Exported public checkouts git-ignore these paths, and the public exporter
-  excludes them; only fake `examples/**` counterparts are published.
-- The overlay's private `coding-interview` skill is wired in by `scripts/bootstrap_overlay.py`
-  as a git-ignored symlink under `.agents/skills/`, so it's discoverable only when the overlay
-  is mounted.
-
-### Bring your own data
-
-To point the toolkit at your real profile and applications:
-
-1. Copy the example config and edit its `paths.*` to point at your own files:
-   `cp config.example.yaml config.yaml`. `config.yaml` is git-ignored, so your identity is never
-   committed. Paths resolve relative to the config file's directory.
-2. (Optional) Keep your real data in a **separate private repo** mounted at the git-ignored
-   `private/` path (`git clone <you>/<your-private-overlay> private`, or symlink it there), then
-   point `paths.*` at `private/…`.
-3. Wire the overlay symlinks + git hooks idempotently:
-   `python scripts/bootstrap_overlay.py`.
-
-Full walkthrough — overlay layout, config keys, and the leak guard — is in
-[docs/PRIVATE_OVERLAY.md](docs/PRIVATE_OVERLAY.md).
-
-## Folder Structure
-
-| Path | Purpose |
-|------|---------|
-| `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, and output-filename stems; the tracked example is the neutral "Jordan Rivers" placeholder + fallback |
-| your candidate profile (`config.profile_md_path()`) | Your complete professional profile (source of truth); the public example is `examples/profile/profile.example.md` |
-| `config.baseline_path()` | Canonical transcription of your approved resume |
-| `config.company_levels_path()` | Schema-v2 sourced company level/YOE/base/stock/bonus/total-compensation cache; compensation ages per fact and keeps geographic bands separate; the public example is fictional |
-| `.agents/skills/job-search/companies.yaml` | Canonical company registry — identity, ATS poll config, tags, and the blacklist (employers to never consider); never carries specific or dated postings |
-| `<profile-dir>/applications-log.yaml` | Auto-generated log of postings already considered (job-search skips them) |
-| `<profile-dir>/resumes/` | Your approved master resume file(s) |
-| `config.discoveries_dir()` | Ad-hoc research findings during the job search |
-| `applications/6_drafted/<slug>/` | Generated applications land here first, for your review (finished files at root, inputs in `source/`) |
-| `applications/5_applied/<slug>/` | Applications you've submitted |
-| `applications/4_in_progress/<slug>/` | Heard back / interviewing |
-| `applications/3_rejected/<slug>/` | Rejected at any stage |
-| `applications/2_ignored/<slug>/` | Decided not to submit |
-| `config.reference_docx_path()` (git-ignored; example `examples/templates/reference.example.docx`) | Your approved resume DOCX — the format-preserving render reference |
-| `scripts/shared/` | Canonical cross-cutting helpers (`config.py`, `layout.py`, `location.py`, `job_metadata.py`, `metadata_editor.py`) vendored into skills |
-| `scripts/vendoring/` | Keeps skills self-contained: `sync_vendored.py` copies canonical shared modules into each skill's `_vendor/` and checks for drift |
-| `scripts/maintenance/` | Maintenance tooling (the `gardener/` routines, file-only `import_company_levels.py`) |
-| `.agents/skills/<skill>/scripts/` | Each skill bundles its own scripts (e.g. resume-writer's `render.py`, `cover_letter.py`, `check.py`; application-tracker's `status.py`, `backfill_job_metadata.py`) |
-| `hooks/pre-commit` | Git pre-commit hook (drift check + compile); install with `python scripts/bootstrap_overlay.py` (installs pre-commit AND pre-push) |
-| `.agents/skills/ask-me-anything/` | PUBLIC orientation guide: the five-step workflow, repo structure, and per-step dependencies (start here) |
-| `.agents/skills/job-search/` | PUBLIC skill for discovering and ranking matching job postings |
-| `.agents/skills/resume-writer/` | PUBLIC skill for resume tailoring |
-| `.agents/skills/application-tracker/` | PUBLIC skill for status and pipeline management |
-| `.agents/skills/behavioral-interview-prep/` | PUBLIC skill for behavioral interview story banks and STAR answers |
-| `.agents/skills/company-research/` | PUBLIC skill for researching a company + role for interviews |
-
-The private `coding-interview` skill is not part of this public repo — it is an overlay-only
-skill shipped by the private overlay and is never published here.
-
-## Privacy
-
-- This repository is the **PUBLIC toolkit** — it ships only the tooling, the company registry
-  (identity only, no specific jobs), fake `examples/**`, and general instructions
-- Personal data belongs under the `private/` overlay or other
-  private product paths. Exported public checkouts git-ignore these paths, and the exporter
-  removes real `applications/**`, `interviews/**`, company-level research, and profile /
-  baseline / reference DOCX content
-- `config.yaml` is git-ignored (your real identity, paths, and filename stems); only
-  `config.example.yaml` is tracked
-- `.agents/MEMORY.md` is gitignored (personal cross-session notes)
-- `.DS_Store` and other OS/editor junk remain gitignored
+**License:** Apache-2.0. The example candidate ("Jordan Rivers") and all
+`examples/` data are fictional.
