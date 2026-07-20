@@ -26,6 +26,14 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 - Most postings are `unclear`. Default `exclude_negative` keeps them; use
   `require_positive` only when the user wants a hard sponsorship guarantee (few results).
 
+## Visa heuristic false-positives
+<!-- added: 2026-07-20 · last_confirmed: 2026-07-20 · status: active -->
+- The sponsorship heuristic can score `yes` on a negation: a posting whose text said it
+  does *not* sponsor still contained sponsorship keywords and was tagged `yes`. Treat a
+  heuristic `yes` as a claim to verify against the actual JD wording — especially negations
+  like "unable to sponsor" or "does not offer sponsorship" — before relying on it for a
+  policy decision.
+
 ## Filtering / scoring
 <!-- added: 2026-07-13 · last_confirmed: 2026-07-19 · status: active -->
 - A 7-day window across 100+ boards + keyless aggregators scans ~11k postings in ~20s
@@ -84,3 +92,10 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   hand-add the `ai-native` tag when a company is AI-first but its primary tag is
   dev-tools/consumer/data-platform (Replit, Warp, Waymo/Nuro/Zoox, Palantir). See SKILL.md
   "AI-native / AI-transitioning company fit" for the two-signal scoring model.
+
+## Scraped remote flag is unreliable
+<!-- added: 2026-07-20 · last_confirmed: 2026-07-20 · status: active -->
+- Never trust the market-scraper (JobSpy) remote/workplace flag for the location gate or for
+  handoff facts. In a live run *every* match came back tagged remote — including postings whose
+  JD text explicitly said hybrid or on-site. Verify workplace type from the saved JD text
+  before handing off a posting or recording location facts.
