@@ -1,0 +1,32 @@
+fixture_version: 1
+synthetic_identity: Jordan Rivers
+public_safe: true
+scenarios:
+  - id: legacy-project-focused
+    tier: schema-normalization
+    docx_tier: single-column-extraction
+    expected: canonical
+  - id: chronological-two-employer
+    tier: single-column-extraction
+    expected: canonical
+  - id: same-company-promotion
+    tier: single-column-extraction
+    expected: canonical
+  - id: hybrid-role-bullets-projects
+    tier: single-column-extraction
+    expected: canonical
+  - id: new-grad-internships-projects
+    tier: single-column-extraction
+    expected: canonical
+  - id: concurrent-contractor-roles
+    tier: single-column-extraction
+    expected: canonical
+  - id: unsupported-two-column
+    tier: unsupported-layout
+    expected: diagnostics
+  - id: empty-corrupt
+    tier: unsupported-layout
+    expected: diagnostics
+  - id: _test_application_multi-experience
+    tier: application-e2e
+    expected: semantic-artifacts

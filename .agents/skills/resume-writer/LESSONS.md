@@ -57,9 +57,11 @@ render; all read live from the DOCX so the numbers self-adjust if the template c
 - **Line pitch: bullets render single-spaced ≈ 11.5pt (1.15×pt); skills/education lines use
   276 "auto" ≈ 13.2pt (1.15²×pt).** Each bullet paragraph adds 2.0pt space-after (after=40);
   each project title adds 10.0pt space-before (before=200).
-- **Fixed overhead ≈ 140pt** (name + contact + 3 section headers + employer header + spacers +
-  section breaks) — roughly constant for the 1-employer/3-section template.
-- Model: `height = 140 + Σ(lines×pitch + spacing)`; `lines = ceil(plain_len / chars_per_line)`.
+- **Fixed overhead ≈ 140pt** (name + contact + 3 section headers + the first employer header +
+  spacers + section breaks). Each additional employer header + inter-employer spacing costs
+  approximately **16pt at 10pt body size**.
+- Model: `height = 140 + 16×extra_employers + Σ(lines×pitch + spacing)`; direct role bullets
+  and project bullets use the same body-line model; `lines = ceil(plain_len / chars_per_line)`.
 
 **Verdict bands:** OK ≤ ~715pt · TIGHT 715–734 (trim ~1 line) · OVERFLOW > 734 (2 pages) ·
 SPARSE < ~660 (risks check.py "too blank"). **Aim est ≤ ~715pt** (≈ one rendered line of margin)

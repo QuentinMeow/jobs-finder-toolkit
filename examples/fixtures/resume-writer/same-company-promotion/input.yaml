@@ -1,0 +1,27 @@
+fixture_version: 1
+kind: docx-paragraphs-v1
+support_tier: single-column-extraction
+document:
+  columns: 1
+  tables: false
+  text_boxes: false
+paragraphs:
+  - {text: "Jordan Rivers", style: "Title", bold: true}
+  - {text: "City, ST | jordan.rivers@example.com | linkedin.com/in/jordanrivers", style: "Normal"}
+  - {text: "PROFESSIONAL SUMMARY", style: "Heading 1", bold: true}
+  - {text: "Software engineer promoted through two roles at a fully invented product company.", style: "List Bullet", list: bullet}
+  - {text: "Leads backend reliability work while remaining hands-on with Python and PostgreSQL.", style: "List Bullet", list: bullet}
+  - {text: "Communicates operational tradeoffs clearly with synthetic customer and product teams.", style: "List Bullet", list: bullet}
+  - {text: "EDUCATION & SKILLS", style: "Heading 1", bold: true}
+  - {text: "Education: B.S. in Computer Science, Lakemont University, 2020", style: "Normal"}
+  - {text: "Programming Languages: Python, Java, SQL", style: "Normal"}
+  - {text: "Skills: PostgreSQL, Docker, CI/CD, observability", style: "Normal"}
+  - {text: "WORK EXPERIENCE", style: "Heading 1", bold: true}
+  - {text: "Harborline Systems", style: "Heading 2", bold: true}
+  - {text: "Senior Software Engineer | Jan 2024 – Present | Riverside, ST", style: "Normal", bold: true}
+  - {text: "Led capacity planning for 11 synthetic services and avoided three forecasted staging bottlenecks.", style: "List Bullet", list: bullet}
+  - {text: "Established review checklists that reduced invented production rollback drills by 26%.", style: "List Bullet", list: bullet}
+  - {text: "Harborline Systems", style: "Heading 2", bold: true}
+  - {text: "Software Engineer | Jun 2020 – Dec 2023 | Riverside, ST", style: "Normal", bold: true}
+  - {text: "Implemented queue consumers for a fictional logistics product and processed 8 million test events daily.", style: "List Bullet", list: bullet}
+  - {text: "Optimized database indexes and cut synthetic reporting queries from 14 seconds to four seconds.", style: "List Bullet", list: bullet}

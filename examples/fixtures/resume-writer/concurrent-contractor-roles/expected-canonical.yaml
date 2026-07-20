@@ -1,0 +1,37 @@
+name: "Jordan Rivers"
+contact_line: "Remote (US) • jordan.rivers@example.com • jordan.example.com"
+summary_bullets:
+  - "Contract software engineer delivering bounded backend projects for fictional clients."
+  - "Balances overlapping engagements with explicit milestones and isolated technical scope."
+  - "Builds APIs and delivery automation with Python, Go, AWS, and Docker."
+education_line: "B.S. in Software Engineering, Fairview Technical College, 2017"
+skills:
+  - label: "Programming Languages"
+    items: "Python, Go, SQL"
+  - label: "Skills"
+    items: "AWS, Docker, PostgreSQL, CI/CD, REST APIs"
+employers:
+  - company: "Juniper Vale Studio"
+    role: "Contract Backend Engineer"
+    dates: "Jan 2024 – Present"
+    location: "Remote (US)"
+    bullets:
+      - "Delivered a synthetic order API for 75 invented stores while meeting six fixed contract milestones."
+      - "Introduced load tests that exposed two example bottlenecks before the fictional launch rehearsal."
+    projects: []
+  - company: "Copper Kite Analytics"
+    role: "Contract Platform Engineer"
+    dates: "Jun 2024 – Dec 2025"
+    location: "Remote (US)"
+    bullets:
+      - "Containerized four invented data services and reduced staged environment setup from five hours to 40 minutes."
+      - "Created deployment checks that prevented 19 synthetic configuration errors during acceptance testing."
+    projects: []
+  - company: "Pine Harbor Media"
+    role: "Software Consultant"
+    dates: "Mar 2023 – Nov 2023"
+    location: "Springfield, ST"
+    bullets:
+      - "Refactored a fictional content API and lowered benchmark response time by 33% without changing its contract."
+      - "Documented a staged handoff plan that enabled two invented maintainers to own the service after delivery."
+    projects: []

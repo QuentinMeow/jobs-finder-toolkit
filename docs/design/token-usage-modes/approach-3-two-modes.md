@@ -28,7 +28,7 @@ SKILL.md states what each mode does differently; scripts that behave differently
 | Candidate context | Tailoring card (~2k tokens) | Full profile + baseline + entire story bank + prior applications |
 | Company/JD research for prose | JD text + company registry/cache facts only | Deep per-JD company research (product, launches, team) incl. web fetches |
 | Render loop | `estimate_layout.py` then **one** render + check; a second cycle only on FAIL | Iterate until polished (est → render → check → refine) |
-| Step 7 skill categorization | Queue new skills to a pending file; ask later in one interactive session | Full one-at-a-time interactive protocol in-run |
+| Step 7 skill categorization | Queue new skills to a pending file; ask later in one interactive session | Full batched protocol in-run (one question per skill, one interaction) |
 | Cover letter | Standard template depth, one pass | Individually researched, iterated per JD |
 
 **`full` semantics:** today's documented behavior, unchanged, plus explicit

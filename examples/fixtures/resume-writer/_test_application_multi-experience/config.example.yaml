@@ -1,0 +1,17 @@
+candidate:
+  name: "Jordan Rivers"
+  contact_line: "City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers"
+  name_slug: "Jordan_Rivers"
+  title_slug: "Software_Engineer"
+paths:
+  profile_md: "profile/jordan-rivers.md"
+  baseline_yaml: "profile/baseline.yaml"
+  reference_docx: "../../../templates/reference.example.docx"
+  applications_root: "work/applications"
+  discoveries_dir: "work/applications/1_discoveries"
+job_search:
+  default_profile: "example"
+location_policy:
+  metro: [springfield, fairview, riverside, lakemont]
+  allow_us_remote: true
+  us_only: true

@@ -1,0 +1,29 @@
+fixture_version: 1
+kind: docx-paragraphs-v1
+support_tier: single-column-extraction
+document: {columns: 1, tables: false, text_boxes: false}
+paragraphs:
+  - {text: "Jordan Rivers", style: "Title", bold: true}
+  - {text: "City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers", style: "Normal"}
+  - {text: "SUMMARY", style: "Heading 1", bold: true}
+  - {text: "Software engineer building reliable backend services for synthetic customers.", style: "List Bullet", list: bullet}
+  - {text: "Experienced with service APIs, cloud automation, and production observability.", style: "List Bullet", list: bullet}
+  - {text: "Works across product and operations teams to deliver measurable improvements.", style: "List Bullet", list: bullet}
+  - {text: "EDUCATION AND SKILLS", style: "Heading 1", bold: true}
+  - {text: "Education: B.S. in Computer Science, Lakemont University, 2018", style: "Normal"}
+  - {text: "Programming Languages: Python, Java, SQL", style: "Normal"}
+  - {text: "Skills: AWS, Docker, PostgreSQL, REST APIs, observability", style: "Normal"}
+  - {text: "EXPERIENCE", style: "Heading 1", bold: true}
+  - {text: "Northwind Systems — Senior Software Engineer\t2018 – Present | City, ST", style: "Heading 2", bold: true}
+  - {text: "Synthetic billing migration", style: "Heading 3", bold: true}
+  - {text: "Split a fictional billing service into independently deployable components and reduced test deployment time by 45%.", style: "List Bullet", list: bullet}
+  - {text: "Added idempotent request handling that lowered duplicate synthetic transactions by 38% during load tests.", style: "List Bullet", list: bullet}
+  - {text: "Example notification pipeline", style: "Heading 3", bold: true}
+  - {text: "Built a replayable event pipeline processing 12 million invented notifications per day with bounded retries.", style: "List Bullet", list: bullet}
+  - {text: "Reduced synthetic delivery latency from nine seconds to two seconds by tuning workers and batching writes.", style: "List Bullet", list: bullet}
+  - {text: "Partner API gateway", style: "Heading 3", bold: true}
+  - {text: "Created versioned REST endpoints for 240 fictional partner accounts with shared authentication and rate limits.", style: "List Bullet", list: bullet}
+  - {text: "Introduced contract tests that caught incompatible schema changes before example releases reached staging.", style: "List Bullet", list: bullet}
+  - {text: "Operations dashboard", style: "Heading 3", bold: true}
+  - {text: "Unified logs, metrics, and traces across 18 invented services to shorten synthetic incident investigation.", style: "List Bullet", list: bullet}
+  - {text: "Automated common diagnostic steps and reduced mean triage time in tabletop exercises by 31%.", style: "List Bullet", list: bullet}

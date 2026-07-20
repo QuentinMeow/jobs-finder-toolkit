@@ -42,6 +42,10 @@ Every application also gets a bundled, copy-paste `..._Application_<role>.txt`
 text boxes) and a `meta.yaml` of structured facts (level, required YOE, salary,
 sponsorship). The full worked example lives in
 [`examples/applications/6_drafted/example-corp-senior-software-engineer/`](examples/applications/6_drafted/example-corp-senior-software-engineer/).
+For contributors and integrators, the
+[`examples/fixtures/resume-writer/`](examples/fixtures/resume-writer/) corpus adds
+fully synthetic multi-employer, promotion, internship, contractor, hybrid-project,
+malformed, and unsupported-layout inputs with expected outputs.
 
 ## Try it in three commands
 
@@ -114,7 +118,7 @@ Claude Code plugin marketplace via
 
 - `ask-me-anything` — orientation guide: the five-step workflow and what each step needs (start here)
 - `job-search` — discover and rank fresh postings by role, location, recency, and visa sponsorship
-- `resume-writer` — tailor resumes for ATS fit and render validated DOCX + PDF + cover letters
+- `resume-writer` — tailor single- or multi-employer resumes for ATS fit and render validated DOCX + PDF + cover letters
 - `application-tracker` — pipeline status, structured `meta.yaml` facts, notes, skip-logs
 - `behavioral-interview-prep` — project-based STAR story banks and reusable answers
 - `company-research` — deep company + role research and an interview question bank
@@ -125,7 +129,7 @@ Claude Code plugin marketplace via
 
 ```
 config.example.yaml      # tracked "Jordan Rivers" placeholder (+ no-config fallback)
-examples/                # fictional example: profile, templates, a worked application
+examples/                # fictional profile/templates/app + public resume/JD fixtures
 .agents/skills/<skill>/  # the skills: SKILL.md + self-contained scripts
 scripts/                 # shared modules, vendoring, maintenance, metrics, leak guard
 evals/                   # per-skill canary evals (gate skill-instruction changes)

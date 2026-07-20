@@ -1,0 +1,35 @@
+job_metadata_schema_version: 3
+company: "Nimbus Robotics"
+research_date: "2026-07-20"
+channel: "fixture"
+referrer: ""
+recruiter_email: ""
+comp_notes: ""
+next_action: "Run the isolated multi-experience render test"
+stage: ""
+notes: "Fully synthetic public E2E fixture; not an actual application."
+jobs:
+  - role: "Senior Platform Engineer"
+    jd_file: "JD-senior-platform-engineer.md"
+    location: "Remote (US)"
+    workplace: "remote"
+    url: "__FIXTURE_ROOT_URI__/search/jd-page.html"
+    posted_date: "2026-07-18"
+    sponsorship: "likely"
+    fit: "strong"
+    job_level:
+      normalized: "senior"
+      min: 5.0
+      max: 5.8
+      confidence: "medium"
+      source: "title"
+    required_yoe:
+      min: 5
+      max: null
+      confidence: "high"
+      source: "job_description"
+    salary_range:
+      min: 190000
+      max: 230000
+      confidence: "high"
+      source: "job_description"

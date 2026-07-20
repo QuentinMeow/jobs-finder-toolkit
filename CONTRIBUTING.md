@@ -33,6 +33,12 @@ python scripts/bootstrap_overlay.py        # installs hooks/pre-commit + hooks/p
 Run these before opening a PR (all must pass; CI runs them too):
 
 ```bash
+# Resume-writer schema/extraction/render tests (includes one fake multi-experience E2E)
+.venv/bin/python -m unittest discover -s .agents/skills/resume-writer/scripts/tests
+
+# Canonical shared-module tests
+.venv/bin/python -m unittest discover -s scripts/shared/tests
+
 # Publish leak-guard + exporter unit tests
 .venv/bin/python -m unittest discover -s scripts/publish/tests
 

@@ -1,0 +1,44 @@
+[
+  {
+    "source": "fixture",
+    "company": "Nimbus Robotics",
+    "title": "Senior Platform Engineer",
+    "url": "__FIXTURE_ROOT_URI__/search/jd-page.html",
+    "location": "Remote (US)",
+    "remote": "remote",
+    "posted_at": "2026-07-18T09:00:00+00:00",
+    "description": "Build the synthetic robot-fleet platform with Go, AWS, Kubernetes, Terraform, PostgreSQL, REST APIs, distributed systems, CI/CD, and observability. H-1B transfer sponsorship is available. Base salary is $190,000-$230,000.",
+    "age_days": 2.0,
+    "visa_label": "yes",
+    "visa_hits": [
+      "H-1B transfer sponsorship is available"
+    ],
+    "workplace": "remote",
+    "sponsorship": "likely",
+    "job_level": {
+      "normalized": "senior",
+      "min": 5.0,
+      "max": 5.8,
+      "confidence": "medium",
+      "source": "title"
+    },
+    "required_yoe": {
+      "min": 5,
+      "max": null,
+      "confidence": "high",
+      "source": "job_description"
+    },
+    "salary_range": {
+      "min": 190000,
+      "max": 230000,
+      "confidence": "high",
+      "source": "job_description"
+    },
+    "score": 91.0,
+    "reasons": [
+      "Synthetic profile matches platform requirements",
+      "US remote",
+      "Sponsorship explicitly stated"
+    ]
+  }
+]

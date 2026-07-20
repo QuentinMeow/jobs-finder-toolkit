@@ -1,0 +1,38 @@
+fixture_version: 1
+kind: resume-yaml
+support_tier: schema-normalization
+resume:
+  name: "Jordan Rivers"
+  contact_line: "City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers"
+  summary_bullets:
+    - "Software engineer building reliable backend services for synthetic customers."
+    - "Experienced with service APIs, cloud automation, and production observability."
+    - "Works across product and operations teams to deliver measurable improvements."
+  education_line: "B.S. in Computer Science, Lakemont University, 2018"
+  skills:
+    - label: "Programming Languages"
+      items: "Python, Java, SQL"
+    - label: "Skills"
+      items: "AWS, Docker, PostgreSQL, REST APIs, observability"
+  employer:
+    company: "Northwind Systems"
+    role: "Senior Software Engineer"
+    dates: "2018 – Present"
+    location: "City, ST"
+    projects:
+      - title: "Synthetic billing migration"
+        bullets:
+          - "Split a fictional billing service into independently deployable components and reduced test deployment time by 45%."
+          - "Added idempotent request handling that lowered duplicate synthetic transactions by 38% during load tests."
+      - title: "Example notification pipeline"
+        bullets:
+          - "Built a replayable event pipeline processing 12 million invented notifications per day with bounded retries."
+          - "Reduced synthetic delivery latency from nine seconds to two seconds by tuning workers and batching writes."
+      - title: "Partner API gateway"
+        bullets:
+          - "Created versioned REST endpoints for 240 fictional partner accounts with shared authentication and rate limits."
+          - "Introduced contract tests that caught incompatible schema changes before example releases reached staging."
+      - title: "Operations dashboard"
+        bullets:
+          - "Unified logs, metrics, and traces across 18 invented services to shorten synthetic incident investigation."
+          - "Automated common diagnostic steps and reduced mean triage time in tabletop exercises by 31%."

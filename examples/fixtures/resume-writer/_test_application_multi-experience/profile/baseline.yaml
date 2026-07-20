@@ -1,0 +1,47 @@
+name: "Jordan Rivers"
+contact_line: "City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers"
+summary_bullets:
+  - "Senior backend and platform engineer with eight years building **reliable distributed systems** for synthetic products"
+  - "Operate fictional services on **AWS and Kubernetes**, emphasizing safe delivery, observability, and measured recovery"
+  - "Partner with product and operations teams to turn ambiguous example needs into **maintainable backend platforms**"
+education_line: "B.S. in Computer Science, Lakemont University, 2018"
+skills:
+  - label: "Programming Languages"
+    items: "Go, Python, Java, SQL, Bash"
+  - label: "Skills"
+    items: "AWS, Docker, Kubernetes, Terraform, PostgreSQL, Redis, REST APIs, distributed systems, microservices, CI/CD, Git, observability, service-level objectives"
+employers:
+  - company: "Northwind Systems"
+    role: "Senior Software Engineer"
+    dates: "2022 – Present"
+    location: "Remote (US)"
+    bullets:
+      - "Owned **reliability targets for 22 fictional services** and reported monthly risk trends to three synthetic product groups"
+      - "Reviewed backend designs with six invented engineers and established **rollback criteria** for high-risk example changes"
+      - "Coordinated quarterly failure drills that reduced staged recovery time from **47 minutes to 29 minutes** while preserving the synthetic release cadence"
+    projects:
+      - title: "Regional deployment control plane"
+        bullets:
+          - "Built a **Go control plane** that orchestrated 180 synthetic releases each week across three invented regions"
+          - "Added **Terraform previews and policy checks** that reduced example deployment configuration errors by 32% before every staged regional rollout"
+      - title: "Service telemetry platform"
+        bullets:
+          - "Standardized metrics, logs, and traces across 22 fictional services and cut tabletop incident triage by **38%** for product and operations teams"
+          - "Introduced **service-level objective dashboards** that linked alerts to synthetic customer impact"
+  - company: "Blue Lantern Labs"
+    role: "Software Engineer"
+    dates: "2018 – 2022"
+    location: "Fairview, ST"
+    bullets:
+      - "Built and maintained **REST APIs** for an invented scheduling product used by 310 fictional businesses"
+      - "Rotated on call for eight synthetic services and documented **repeatable diagnostics** for common staged failures"
+      - "Mentored two fictional interns on testing, code review, and **incremental backend delivery** through two complete staged projects"
+    projects:
+      - title: "Scheduling data migration"
+        bullets:
+          - "Migrated **74 million synthetic scheduling records** into PostgreSQL without interrupting staged API traffic across two rehearsed cutover windows"
+          - "Added checksums and restartable checkpoints that shortened invented migration rehearsals by **51%**"
+      - title: "Developer delivery pipeline"
+        bullets:
+          - "Containerized local and CI workflows and reduced example **build-and-test time by 58%**"
+          - "Added **API contract tests** that caught 27 synthetic compatibility regressions before staged releases"

@@ -14,8 +14,9 @@ height directly from the YAML, closing the loop up front.
 
 THE MODEL (calibrated on the shipped Arial-10 reference.docx; see LESSONS.md)
 ----------------------------------------------------------------------------
-The template is single-column, one employer, three sections (Summary /
-Education & Skills / Experience). Measured facts (US Letter, LibreOffice render):
+The template is single-column with three sections (Summary / Education & Skills /
+Experience) and one or more employer blocks. Measured facts (US Letter,
+LibreOffice render):
 
   * content width  = pgSz.w - L - R  (default 525.6pt / 7.30in)
   * content height = pgSz.h - T - B  (default 734.4pt / 10.20in)  <- one-page budget
@@ -26,8 +27,9 @@ Education & Skills / Experience). Measured facts (US Letter, LibreOffice render)
   * skills/education line pitch   = 1.32 * font_pt = 13.2pt  (276 "auto" = 1.15^2)
   * each bullet paragraph adds    = 2.0pt  space-after (w:spacing after="40")
   * each project title adds       = 10.0pt space-before (w:spacing before="200")
-  * fixed overhead (name + contact + 3 section headers + employer header +
+  * fixed overhead (name + contact + 3 section headers + first employer header +
     spacers + section breaks)     = ~140pt
+  * each extra employer header    = ~16pt at 10pt body size
 
 Everything is parametrized off the *font size* and *content width* actually found
 in the reference DOCX, so the three "levers" the layout responds to fall straight
@@ -73,6 +75,7 @@ for _p in (_HERE, _HERE / "_vendor"):
 
 import config  # noqa: E402
 from layout import application_dir, tailored_path  # noqa: E402
+from resume_schema import ResumeSchemaError, normalize_resume  # noqa: E402
 
 BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 
@@ -87,6 +90,7 @@ LINE_FACTOR_SKILLS = 1.32  # education/skills line pitch = factor * font_pt (276
 BULLET_AFTER_PT = 2.0      # space-after on each bullet/summary paragraph (after="40")
 TITLE_BEFORE_PT = 10.0     # space-before on each project title (before="200")
 FIXED_PT_AT_10 = 140.0     # name+contact+3 headers+employer header+spacers+section breaks
+EXTRA_EMPLOYER_PT_AT_10 = 16.0  # additional 12pt header + inter-employer breathing room
 
 # Template defaults (US Letter, 0.4in T/B, 0.6in L/R) — used only if the
 # reference DOCX can't be read.
@@ -163,6 +167,7 @@ def derived_params(metrics: dict) -> dict:
         "pitch_body": LINE_FACTOR_BODY * body_pt,
         "pitch_skills": LINE_FACTOR_SKILLS * body_pt,
         "fixed_pt": FIXED_PT_AT_10 * (body_pt / 10.0),
+        "extra_employer_pt": EXTRA_EMPLOYER_PT_AT_10 * (body_pt / 10.0),
         "budget_pt": metrics["content_height_pt"],
         "body_pt": body_pt,
     }
@@ -173,14 +178,15 @@ def _lines(text: str, cpl: int) -> int:
 
 
 def _employers(data: dict) -> list:
-    emps = data.get("employers", [])
-    if not emps and data.get("employer"):
-        emps = [data["employer"]]
-    return emps
+    try:
+        return normalize_resume(data)["employers"]
+    except ResumeSchemaError:
+        return []
 
 
 def estimate(data: dict, params: dict) -> dict:
     """Estimate rendered height (pt) with a per-element breakdown."""
+    data = normalize_resume(data)
     cpl_b, cpl_p = params["cpl_bullet"], params["cpl_plain"]
     pb, ps = params["pitch_body"], params["pitch_skills"]
 
@@ -200,7 +206,15 @@ def estimate(data: dict, params: dict) -> dict:
         education += n * ps
         line_count += n
 
-    for emp in _employers(data):
+    employers = _employers(data)
+    extra_headers = max(0, len(employers) - 1) * params["extra_employer_pt"]
+    experience += extra_headers
+    line_count += max(0, len(employers) - 1)
+    for emp in employers:
+        for b in emp.get("bullets", []):
+            n = _lines(b, cpl_b)
+            experience += n * pb + BULLET_AFTER_PT
+            line_count += n
         for proj in emp.get("projects", []):
             if proj.get("title"):
                 experience += TITLE_BEFORE_PT + _lines(proj["title"], cpl_p) * pb
@@ -244,8 +258,15 @@ def verdict(total: float, budget: float, pitch_body: float) -> tuple[str, str]:
 
 
 def run(yaml_path: Path, ref_path: Path) -> bool:
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
+    try:
+        with open(yaml_path) as f:
+            data = normalize_resume(yaml.safe_load(f))
+    except (OSError, yaml.YAMLError) as exc:
+        print(f"Error: could not read {yaml_path}: {exc}", file=sys.stderr)
+        return False
+    except ResumeSchemaError as exc:
+        print(f"Error: invalid resume schema: {exc}", file=sys.stderr)
+        return False
     metrics = read_template_metrics(ref_path)
     params = derived_params(metrics)
     est = estimate(data, params)

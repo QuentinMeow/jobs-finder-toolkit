@@ -1,0 +1,15 @@
+fixture_version: 1
+support_tier: unsupported-layout
+cases:
+  - id: empty-docx
+    kind: docx-paragraphs-v1
+    document:
+      columns: 1
+      tables: false
+      text_boxes: false
+    paragraphs: []
+  - id: corrupt-docx
+    kind: raw-bytes-v1
+    encoding: utf-8
+    content: "This synthetic fixture is intentionally not a valid ZIP or DOCX package."
+test_instruction: "Materialize each case as a .docx path in a temporary directory."

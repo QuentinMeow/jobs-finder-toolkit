@@ -122,7 +122,7 @@ Read the JD and identify:
    compensation/OTE. Do not derive total compensation from assumed equity or bonus.
 8. **Skill-list status**: compare each concrete skill/technology against the profile's
    Approved / Weak / Never lists (`Weak` is presented to users as **Weak or Selective**).
-   Deduplicate close variants and preserve first-seen JD order for the one-at-a-time
+   Deduplicate close variants and preserve first-seen JD order for the batched
    uncategorized-skill queue in Step 7. Do not infer a category merely from how familiar or
    unusual a term sounds.
 
@@ -137,6 +137,9 @@ Strategy** (which angle to lead with and which projects most directly match the 
 ### Step 4: Select Projects
 
 The profile's projects are tagged `[draft]` or `[backup]`. Select the projects for this application:
+
+For multi-employer baselines, keep employer order and project ownership; tailor direct role
+bullets under the same honesty/length rules as project bullets. Rules below apply resume-wide.
 
 - **Default**: Use **all** the `[draft]` projects (the full set — the profile is sized so they
   fill one page). Tailoring means small wording tweaks and rephrasing a project's bullets to fit
@@ -156,8 +159,9 @@ The profile's projects are tagged `[draft]` or `[backup]`. Select the projects f
 
 ### Step 5: Tailor from the baseline (`tailored.yaml`)
 
-**Always start from the baseline — never write from scratch.** The folder exists from Step 1;
-this only ensures `source/` exists:
+**Always start from the baseline — never write from scratch.** It may use canonical
+`employers:` or legacy `employer:` / `experience:`; do not convert formats merely to tailor.
+The folder exists from Step 1; this only ensures `source/` exists:
 
 ```bash
 mkdir -p applications/6_drafted/<slug>/source
@@ -172,14 +176,14 @@ live schema** — the full field-by-field `tailored.yaml` schema and the bold-ma
 
 **Locked — never change (validated against `config.baseline_path()`):**
 - Name, contact line, education line
-- Employer, job title, dates, location
+- Every employer entry's company, job title, dates, and location (count/order included)
 - Project titles — must exactly match a `[draft]` or `[backup]` project in the profile
 
 **Fixed structure (validated by `.agents/skills/resume-writer/scripts/check.py`):**
-- Exactly 3 summary bullets.
-- 4-6 projects (default = the full `[draft]` set, normally 5), 2-3 bullets each (default 3). Keep
-  every project; projects are not dropped to tailor — remove one only when the content cannot fit
-  on one page (Step 6).
+- Summary count matches the baseline (the shipped/default profile has 3).
+- Preserve all employers. Use 1-6 direct role bullets and 1-4 bullets per named project.
+  Project-focused baselines may drop one project only for page fit (Step 6);
+  hybrid/direct-bullet resumes are not forced into a five-project shape.
 - Each bullet 45-215 characters (bold markers excluded); project titles ≤ 95.
 - Rendered PDF must be exactly 1 page AND fill the page — no large blank band at the bottom.
   check.py fails a resume that ends too high (>1.5in of trailing whitespace). Fix a too-blank
@@ -295,7 +299,7 @@ after the three canonical ones. **Full templates, per-paragraph word counts, the
 cover-letter structure/length (`check_cover_letter`), the WHY / PAST EXPERIENCE section shapes, the
 APPLICATION QUESTIONS mechanism, and the ATS optimization guidelines: [`reference.md`](reference.md).**
 
-### Step 7: Categorize New JD Skills One at a Time (ALWAYS do this at the end)
+### Step 7: Categorize New JD Skills in One Batch (ALWAYS do this at the end)
 
 After rendering, extract every concrete skill/technology the JD mentions (languages,
 frameworks, tools, platforms, methodologies — not soft skills) and compare against the
@@ -303,8 +307,8 @@ profile's three stored lists (Approved / Weak / Never, matching case-insensitive
 counting close variants like "Go"/"Golang" or "K8s"/"Kubernetes" as the same skill). Use the
 deduplicated, first-seen order recorded in Step 2.
 
-For any JD skill in NONE of the lists, ask the user at the end of the run to categorize
-it by its concrete resume consequence:
+For every JD skill in NONE of the lists, collect the complete queue and ask the user in one
+batch at the end of the run to categorize each term by its concrete resume consequence:
 
 - **Never** — never include this skill in any resume, even when a JD mentions it.
 - **Weak or Selective** — include only when the JD specifically mentions it: limited
@@ -317,30 +321,29 @@ record answers under `Weak`; never rename the subsection or the parser's categor
 
 The interaction protocol is strict:
 
-1. Ask about **exactly one skill at a time**, regardless of how many are pending. Never
-   put multiple skill questions in one tool call, form, message, batch, or multi-select;
-   never offer an "apply my whole split" shortcut.
-2. Always display the consequence in each choice label, in this exact order:
+1. **Gather the complete queue before asking.** Extract and deduplicate uncategorized skills
+   across every JD; do not interrupt analysis with serial questions.
+2. Ask all pending skills in **one batched interaction**. Each question must focus on
+   exactly one skill and be single-select; use one question object per skill in the same
+   form/tool call. Never combine several skills into one question or use a multi-select.
+3. For every question, use this exact option order — three consequence-labeled choices,
+   then Other:
    1. **Never — never include this skill in any resume**
    2. **Weak or Selective — include only when the JD specifically mentions it**
    3. **Approved — include in most resumes, if not all**
    4. **Other** (free text for clarification)
    With an interactive question tool whose built-in Other choice is automatic, provide only
-   the three consequence-labeled choices (one question object per call); never show bare
+   the three consequence-labeled choices in each question object; never show bare
    labels without consequences. Recommend a category in the prompt without reordering choices.
-3. Wait for the user's answer before asking about the next skill. After a Never /
-   Weak-or-Selective / Approved answer, update that stored list in the candidate profile
-   (`config.profile_md_path()`); the answer is the required permission. Ask the next queued skill.
-4. If the user selects Other, clarify that same skill and then ask it again with the same
-   fixed choice order. Do not update the profile or advance the queue until it is
-   categorized.
-5. In a background or otherwise non-interactive run, do not dump all pending skills as
-   simultaneous choices. Return only the first pending skill question, then continue one
-   skill per user response in later turns.
+4. Wait for the complete response; the answers are permission to edit. If any are Other,
+   clarify all unresolved terms in one follow-up batch (one question per skill) before editing.
+   Once resolved, apply every answer in one profile edit and rebuild the tailoring card once.
+5. In a background/non-interactive run, return the complete queue in one compact batch with
+   one separated single-skill question per term; never spread it across later turns.
 
-After the queue is complete, if a newly Approved or Weak/Selective term would improve the
-just-rendered resume, offer to re-tailor with it. A newly Weak/Selective term remains
-JD-conditional even when the reason is wording preference rather than proficiency.
+If newly Approved or Weak/Selective terms improve the resume, incorporate all relevant terms
+in one edit, re-estimate layout, and render once. Weak/Selective remains JD-conditional even
+when chosen for wording preference rather than proficiency.
 
 Never silently add an uncategorized skill to the resume — check.py fails the render
 if you try.

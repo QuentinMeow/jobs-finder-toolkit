@@ -1,0 +1,13 @@
+status: error
+canonical_output: null
+diagnostics:
+  - code: "UNSUPPORTED_TABLE_LAYOUT"
+    severity: "error"
+    message: "The DOCX contains a table. Convert the resume to ordinary single-column paragraphs before extracting."
+  - code: "UNSUPPORTED_MULTI_COLUMN_LAYOUT"
+    severity: "error"
+    message: "Section 1 uses multiple columns. Convert it to one column before extracting."
+assertions:
+  exit_code: 2
+  traceback: false
+  partial_output: false

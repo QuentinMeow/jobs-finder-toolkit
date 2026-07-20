@@ -1,0 +1,29 @@
+fixture_version: 1
+kind: docx-paragraphs-v1
+support_tier: single-column-extraction
+document:
+  columns: 1
+  tables: false
+  text_boxes: false
+paragraphs:
+  - {text: "Jordan Rivers", style: "Title", bold: true}
+  - {text: "City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers", style: "Normal"}
+  - {text: "SUMMARY", style: "Heading 1", bold: true}
+  - {text: "Platform engineer combining role-level ownership with named delivery projects.", style: "List Bullet", list: bullet}
+  - {text: "Builds fictional distributed systems with Go, Kubernetes, and PostgreSQL.", style: "List Bullet", list: bullet}
+  - {text: "Uses measured experiments and observability to improve synthetic service reliability.", style: "List Bullet", list: bullet}
+  - {text: "EDUCATION", style: "Heading 1", bold: true}
+  - {text: "B.S. in Computer Science, Lakemont University, 2019", style: "Normal"}
+  - {text: "TECHNICAL SKILLS", style: "Heading 1", bold: true}
+  - {text: "Programming Languages: Go, Python, SQL", style: "Normal"}
+  - {text: "Skills: Kubernetes, PostgreSQL, Terraform, REST APIs, observability", style: "Normal"}
+  - {text: "PROFESSIONAL EXPERIENCE", style: "Heading 1", bold: true}
+  - {text: "Atlas Grove — Platform Engineer\t2019 — Present | Remote (US)", style: "Heading 2", bold: true}
+  - {text: "Owned service health goals for 15 fictional APIs and reviewed reliability risks with three product groups.", style: "List Bullet", list: bullet}
+  - {text: "Coached five synthetic teammates on incident analysis, design reviews, and incremental delivery.", style: "List Bullet", list: bullet}
+  - {text: "Tenant routing redesign", style: "Heading 3", bold: true}
+  - {text: "Reworked tenant routing to isolate high-volume examples and reduced staged p99 latency by 37%.", style: "List Bullet", list: bullet}
+  - {text: "Added deterministic replay tests that reproduced 92% of invented routing failures before release.", style: "List Bullet", list: bullet}
+  - {text: "Infrastructure preview environments", style: "Heading 3", bold: true}
+  - {text: "Built temporary Terraform environments for every change and shortened synthetic review cycles by 41%.", style: "List Bullet", list: bullet}
+  - {text: "Added automatic cleanup and budget limits that lowered invented test infrastructure spend by 23%.", style: "List Bullet", list: bullet}

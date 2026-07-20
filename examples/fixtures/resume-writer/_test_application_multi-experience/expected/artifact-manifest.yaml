@@ -1,0 +1,57 @@
+manifest_version: 1
+fixture: "_test_application_multi-experience"
+synthetic: true
+handoff:
+  selection: "rank 1"
+  research_date: "2026-07-20"
+  production_slug_before_test_rename: "nimbus-robotics-senior-platform-engineer-20260720"
+  isolated_test_folder_prefix: "_test_application_"
+  metadata_status: "valid"
+expected_paths:
+  seeded_inputs:
+    - "meta.yaml"
+    - "Jordan_Rivers_Software_Engineer_Application_Senior_Platform_Engineer.txt"
+    - "source/JD-senior-platform-engineer.md"
+    - "source/tailored.yaml"
+  generated_outputs:
+    - "source/Jordan_Rivers_Software_Engineer_Resume.docx"
+    - "Jordan_Rivers_Software_Engineer_Resume.pdf"
+    - "source/Jordan_Rivers_Cover_Letter_Senior_Platform_Engineer.docx"
+    - "Jordan_Rivers_Cover_Letter_Senior_Platform_Engineer.pdf"
+checked_in_generated_outputs: true
+semantic_assertions:
+  resume_page_count: 1
+  resume_text_extractable: true
+  cover_letter_page_count: 1
+  employer_order:
+    - "Northwind Systems — Senior Software Engineer"
+    - "Blue Lantern Labs — Software Engineer"
+  employer_direct_bullets_render_before_projects: true
+  project_order:
+    - "Regional deployment control plane"
+    - "Service telemetry platform"
+    - "Scheduling data migration"
+    - "Developer delivery pipeline"
+  metadata_schema_version: 3
+  metadata_job_count: 1
+  metadata_location_match: "us_remote"
+  application_role_slug: "Senior_Platform_Engineer"
+  application_bundle_sections:
+    - "COVER LETTER"
+    - "WHY THIS COMPANY & ROLE"
+    - "PAST EXPERIENCE"
+normalization:
+  text:
+    unicode_dash_equivalence: true
+    collapse_horizontal_whitespace: true
+    ignore_blank_lines: true
+    preserve_nonblank_line_order: true
+  docx:
+    ignore_zip_timestamps: true
+    ignore_core_modified_time: true
+    assert_employer_header_right_tabs: true
+  pdf:
+    ignore_producer_metadata: true
+    ignore_creation_time: true
+  local_uri:
+    replace_absolute_fixture_root_with: "__FIXTURE_ROOT_URI__"

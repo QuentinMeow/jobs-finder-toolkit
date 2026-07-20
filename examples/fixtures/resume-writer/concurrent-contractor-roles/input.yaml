@@ -1,0 +1,28 @@
+fixture_version: 1
+kind: docx-paragraphs-v1
+support_tier: single-column-extraction
+document:
+  columns: 1
+  tables: false
+  text_boxes: false
+paragraphs:
+  - {text: "Jordan Rivers", style: "Title", bold: true}
+  - {text: "Remote (US) • jordan.rivers@example.com • jordan.example.com", style: "Normal"}
+  - {text: "PROFILE", style: "Heading 1", bold: true}
+  - {text: "Contract software engineer delivering bounded backend projects for fictional clients.", style: "List Bullet", list: bullet}
+  - {text: "Balances overlapping engagements with explicit milestones and isolated technical scope.", style: "List Bullet", list: bullet}
+  - {text: "Builds APIs and delivery automation with Python, Go, AWS, and Docker.", style: "List Bullet", list: bullet}
+  - {text: "EDUCATION AND SKILLS", style: "Heading 1", bold: true}
+  - {text: "Education: B.S. in Software Engineering, Fairview Technical College, 2017", style: "Normal"}
+  - {text: "Programming Languages: Python, Go, SQL", style: "Normal"}
+  - {text: "Skills: AWS, Docker, PostgreSQL, CI/CD, REST APIs", style: "Normal"}
+  - {text: "CONSULTING EXPERIENCE", style: "Heading 1", bold: true}
+  - {text: "Juniper Vale Studio — Contract Backend Engineer\tJan 2024 – Present | Remote (US)", style: "Heading 2", bold: true}
+  - {text: "Delivered a synthetic order API for 75 invented stores while meeting six fixed contract milestones.", style: "List Bullet", list: bullet}
+  - {text: "Introduced load tests that exposed two example bottlenecks before the fictional launch rehearsal.", style: "List Bullet", list: bullet}
+  - {text: "Copper Kite Analytics — Contract Platform Engineer\tJun 2024 – Dec 2025 | Remote (US)", style: "Heading 2", bold: true}
+  - {text: "Containerized four invented data services and reduced staged environment setup from five hours to 40 minutes.", style: "List Bullet", list: bullet}
+  - {text: "Created deployment checks that prevented 19 synthetic configuration errors during acceptance testing.", style: "List Bullet", list: bullet}
+  - {text: "Pine Harbor Media — Software Consultant\tMar 2023 – Nov 2023 | Springfield, ST", style: "Heading 2", bold: true}
+  - {text: "Refactored a fictional content API and lowered benchmark response time by 33% without changing its contract.", style: "List Bullet", list: bullet}
+  - {text: "Documented a staged handoff plan that enabled two invented maintainers to own the service after delivery.", style: "List Bullet", list: bullet}

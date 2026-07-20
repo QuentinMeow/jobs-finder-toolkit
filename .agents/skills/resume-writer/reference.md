@@ -145,19 +145,19 @@ skills:
   - label: "Skills"
     items: "AWS, Docker, Kubernetes, Terraform, PostgreSQL, Redis, gRPC, REST APIs, microservices, distributed systems, event-driven architecture, CI/CD, observability"
 
-employer:
-  company: "Northwind Systems"
-  role: "Senior Software Engineer"
-  dates: "2018 – Present"
-  location: "City, ST"
-  projects:
-    - title: "Project Title"
-      bullets:
-        - "Action verb + what you did + impact/scale"
-        - "Another bullet"
-        - "Optional third bullet"
+employers:
+  - company: "Northwind Systems"
+    role: "Senior Software Engineer"
+    dates: "2018 – Present"
+    location: "City, ST"
+    bullets: ["Action verb + what you did + impact/scale"]  # optional
+    projects:  # optional named project blocks
+      - title: "Project Title"
+        bullets: ["Action verb + what you did + impact/scale", "Another bullet"]
 ```
 
+`employers:` supports direct `bullets:`, named `projects:`, or both. Legacy `employer:` and
+`experience:` remain accepted, but never together; every employer needs content and is locked.
 **Bold markers**: `**text**` in any bullet or summary line renders as bold. The baseline
 already bolds key phrases; when rewording a bullet, keep 1-3 bold phrases and prefer
 bolding the JD-relevant keywords.
@@ -201,8 +201,10 @@ body line costs ~11.5pt, a skills/education line ~13.2pt. As a fast mental check
 default full-project resume (3 summary bullets + 2 skills lines + 5 projects × 3 bullets)
 fits when nearly every bullet stays ≤ 2 rendered lines: keeping most bullets in the
 **~150-175 char** range lands the whole resume near the budget. Run `estimate_layout.py`
-(SKILL.md Step 5.5) to get the exact number instead of guessing. Calibrated constants and the
-font / margin / line-spacing levers: LESSONS.md → "Pre-render layout budget".
+(SKILL.md Step 5.5) to get the exact number instead of guessing. Each additional employer
+adds approximately 16pt; direct and project bullets consume the same body-line budget.
+Calibrated constants and the font / margin / line-spacing levers: LESSONS.md →
+"Pre-render layout budget".
 
 ## Render & validate — operational detail
 
@@ -386,9 +388,12 @@ an essay. **Exactly two paragraphs**, each opening with a one-sentence summary t
 
 A plain-English answer for portal "describe your relevant experience / tell us about your
 background" boxes. Lead with the current role and scope, then summarize the most
-JD-relevant projects and impact in prose. Draw only on real content from the profile /
-`tailored.yaml` / supporting library; mirror the JD's terminology where honest. Keep it
-tight (a lead paragraph plus a few short project paragraphs).
+JD-relevant achievements across prior roles and named projects in prose. A multi-employer
+resume is still a career narrative, not a company-by-company transcript: include older work
+only when it strengthens this JD's fit, while keeping employer/project ownership accurate.
+Draw only on real content from the profile / `tailored.yaml` / supporting library; mirror
+the JD's terminology where honest. Keep it tight (a lead paragraph plus a few short
+experience/project paragraphs).
 
 ### APPLICATION QUESTIONS section (answer the portal's actual questions when you can see them)
 
@@ -471,9 +476,9 @@ Handle the whole set as a **single application folder** — not one folder per r
    have in common; call out in `tailored.yaml`'s header comment which role each choice serves
    and what is deliberately NOT claimed for the weaker-fit roles.
 4. **Categorize new skills (Step 7) across the union of all JDs.** Deduplicate close
-   variants, then follow Step 7's strict one-question-at-a-time protocol and fixed,
-   consequence-labeled Never → Weak or Selective → Approved → Other choice order; a larger
-   multi-role union is never a reason to batch questions.
+   variants, gather the complete queue, then follow Step 7's batched one-question-per-skill
+   protocol and fixed, consequence-labeled Never → Weak or Selective → Approved → Other
+   choice order.
 5. **Write one bundled `..._Application_<job title>.txt` per JD** — cover letters are
    one-to-one with postings. Research each JD individually and write a distinct, tailored
    COVER LETTER + WHY + PAST EXPERIENCE for it; do NOT reuse one letter across the set. The

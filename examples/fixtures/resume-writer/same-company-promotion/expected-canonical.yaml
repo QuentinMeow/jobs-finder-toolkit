@@ -1,0 +1,29 @@
+name: "Jordan Rivers"
+contact_line: "City, ST | jordan.rivers@example.com | linkedin.com/in/jordanrivers"
+summary_bullets:
+  - "Software engineer promoted through two roles at a fully invented product company."
+  - "Leads backend reliability work while remaining hands-on with Python and PostgreSQL."
+  - "Communicates operational tradeoffs clearly with synthetic customer and product teams."
+education_line: "B.S. in Computer Science, Lakemont University, 2020"
+skills:
+  - label: "Programming Languages"
+    items: "Python, Java, SQL"
+  - label: "Skills"
+    items: "PostgreSQL, Docker, CI/CD, observability"
+employers:
+  - company: "Harborline Systems"
+    role: "Senior Software Engineer"
+    dates: "Jan 2024 – Present"
+    location: "Riverside, ST"
+    bullets:
+      - "Led capacity planning for 11 synthetic services and avoided three forecasted staging bottlenecks."
+      - "Established review checklists that reduced invented production rollback drills by 26%."
+    projects: []
+  - company: "Harborline Systems"
+    role: "Software Engineer"
+    dates: "Jun 2020 – Dec 2023"
+    location: "Riverside, ST"
+    bullets:
+      - "Implemented queue consumers for a fictional logistics product and processed 8 million test events daily."
+      - "Optimized database indexes and cut synthetic reporting queries from 14 seconds to four seconds."
+    projects: []

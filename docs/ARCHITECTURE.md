@@ -24,7 +24,16 @@ candidate profile (markdown) + job description
 
 Validation (`.agents/skills/resume-writer/scripts/check.py`) enforces locked identity
 fields, real project titles and skills, bullet counts/lengths, a one-page PDF, and a
-proper cover letter per posting. A failed render is fixed, never shipped.
+proper cover letter per posting. Resume YAML canonically uses an ordered `employers:`
+list; each job may carry conventional direct achievement bullets, named project blocks,
+or both. The singular `employer:` form remains backward compatible. A failed render is
+fixed, never shipped.
+
+`extract.py` can bootstrap that YAML from standard single-column, paragraph-based DOCX
+resumes, including native Word bullets and repeated employer/promotion entries. It fails
+closed with diagnostics for tables/two-column layouts, text boxes, image-only documents,
+corrupt packages, and ambiguous experience headers; those layouts require manual cleanup
+instead of a silently incomplete work history.
 
 ## Configuration
 
@@ -127,13 +136,15 @@ pull request:
 
 1. **Vendored-copy drift check** — `sync_vendored.py --check`.
 2. **Compile** — byte-compiles all toolkit and skill Python.
-3. **Example render + validate** — renders the worked example under
-   `examples/applications/6_drafted/` with the fake config, including the one-page PDF
-   check (LibreOffice is installed in CI).
-4. **Shared-module unit tests** — `scripts/shared/tests` (job metadata, the
+3. **Example renders + validate** — renders the legacy worked example under
+   `examples/applications/6_drafted/` and a public multi-experience fixture with fake
+   configs, including one-page PDF checks (LibreOffice is installed in CI).
+4. **Resume-writer unit tests** — schema normalization, extraction diagnostics,
+   multi-employer rendering/layout, and an isolated `_test_application_` workflow.
+5. **Shared-module unit tests** — `scripts/shared/tests` (job metadata, the
    formatting-preserving editor, layout, search/backfill).
-5. **Leak-guard + exporter unit tests** — `scripts/publish/tests`.
-6. **Public leak guard** — blocking; zero findings is the steady state.
+6. **Leak-guard + exporter unit tests** — `scripts/publish/tests`.
+7. **Public leak guard** — blocking; zero findings is the steady state.
 
 A separate `secret-scan` job runs gitleaks over the full history for credential
 shapes the identity guard does not target.
@@ -148,7 +159,7 @@ the leak guard on push.
 | Path | Purpose |
 |------|---------|
 | `config.example.yaml` (tracked) / `config.yaml` (git-ignored) | Candidate identity, paths, filename stems; the example doubles as the no-config fallback |
-| `examples/` | The complete fictional "Jordan Rivers" dataset: profile, baseline, reference DOCX, a worked drafted application, and the README screenshots |
+| `examples/` | The fictional "Jordan Rivers" dataset: profile, baseline, reference DOCX, a worked drafted application, screenshots, and the public resume/JD fixture matrix under `examples/fixtures/resume-writer/` |
 | `.agents/skills/<skill>/` | The skills — `SKILL.md` instructions + self-contained `scripts/` + `_vendor/` copies |
 | `.agents/skills/job-search/companies.yaml` | Canonical company registry: identity, ATS poll config, tags, blacklist — never dated postings |
 | `scripts/shared/` | Canonical shared modules, vendored into skills |

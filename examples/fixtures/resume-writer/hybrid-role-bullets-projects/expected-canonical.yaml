@@ -1,0 +1,29 @@
+name: "Jordan Rivers"
+contact_line: "City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers"
+summary_bullets:
+  - "Platform engineer combining role-level ownership with named delivery projects."
+  - "Builds fictional distributed systems with Go, Kubernetes, and PostgreSQL."
+  - "Uses measured experiments and observability to improve synthetic service reliability."
+education_line: "B.S. in Computer Science, Lakemont University, 2019"
+skills:
+  - label: "Programming Languages"
+    items: "Go, Python, SQL"
+  - label: "Skills"
+    items: "Kubernetes, PostgreSQL, Terraform, REST APIs, observability"
+employers:
+  - company: "Atlas Grove"
+    role: "Platform Engineer"
+    dates: "2019 — Present"
+    location: "Remote (US)"
+    bullets:
+      - "Owned service health goals for 15 fictional APIs and reviewed reliability risks with three product groups."
+      - "Coached five synthetic teammates on incident analysis, design reviews, and incremental delivery."
+    projects:
+      - title: "Tenant routing redesign"
+        bullets:
+          - "Reworked tenant routing to isolate high-volume examples and reduced staged p99 latency by 37%."
+          - "Added deterministic replay tests that reproduced 92% of invented routing failures before release."
+      - title: "Infrastructure preview environments"
+        bullets:
+          - "Built temporary Terraform environments for every change and shortened synthetic review cycles by 41%."
+          - "Added automatic cleanup and budget limits that lowered invented test infrastructure spend by 23%."

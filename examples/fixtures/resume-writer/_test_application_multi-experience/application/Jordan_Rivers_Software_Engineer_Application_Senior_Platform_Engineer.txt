@@ -1,0 +1,32 @@
+COVER LETTER
+============
+
+Jordan Rivers
+City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers
+
+Dear Nimbus Robotics Hiring Team,
+
+Nimbus Robotics' fictional fleet platform is a compelling systems problem: its invented warehouse carts depend on reliable scheduling, regional software delivery, and health reporting to complete each simulation safely. I am interested in the Senior Platform Engineer role because it combines Go services, REST APIs, Kubernetes operations, PostgreSQL reliability, and cross-team rollout design rather than treating platform work as isolated infrastructure. The opportunity to build reusable interfaces for application engineers while improving service-level objectives and recovery practices closely matches the way I have delivered synthetic platform projects at Northwind Systems.
+
+My strongest fit is turning distributed delivery and reliability needs into measurable platform capabilities. At Northwind, I built a Go control plane that coordinated 180 synthetic releases each week across three invented regions, then added Terraform previews and policy checks that reduced example configuration errors by 32%. I also standardized telemetry across 22 fictional services, cutting tabletop incident triage by 38%, and led failure drills that improved staged recovery from 47 minutes to 29 minutes. Those projects required the same mix of hands-on implementation, operational judgment, and communication that Nimbus Robotics describes for its fleet platform.
+
+I would welcome the chance to discuss how this synthetic background could help Nimbus Robotics make its fictional delivery and fleet-health systems safer, easier to operate, and more useful to application engineers. Thank you for your consideration.
+
+Sincerely,
+Jordan Rivers
+
+
+WHY THIS COMPANY & ROLE
+=======================
+
+Nimbus Robotics is building a fictional platform where reliable software delivery directly affects how invented robot fleets complete warehouse simulations. The Senior Platform Engineer role is compelling because it joins Go APIs, Kubernetes operations, PostgreSQL reliability, observability, and rollout design around one concrete synthetic product.
+
+Jordan's multi-employer background matches that combination of platform construction and operational ownership. At Northwind Systems, he coordinated 180 synthetic regional releases each week and improved telemetry across 22 fictional services; at Blue Lantern Labs, he built PostgreSQL-backed REST APIs and CI/CD workflows, providing a grounded path into Nimbus Robotics' example fleet challenges.
+
+
+PAST EXPERIENCE
+===============
+
+Jordan Rivers is a senior software engineer at the fictional Northwind Systems, where he owns reliability goals for 22 synthetic services and reviews distributed backend designs. He built a Go regional delivery control plane, added Terraform policy checks, standardized observability, and led failure drills that improved staged recovery.
+
+Previously, at the invented Blue Lantern Labs, Jordan built REST APIs for a scheduling product used by 310 fictional businesses. He migrated 74 million synthetic records into PostgreSQL, containerized CI/CD workflows, and added contract tests that caught 27 example compatibility regressions before staged releases.

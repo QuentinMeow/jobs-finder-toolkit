@@ -21,6 +21,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 # tests/ -> scripts/ -> resume-writer/ -> skills/ -> .agents/ -> repo root
 _HERE = Path(__file__).resolve()
 REPO_ROOT = _HERE.parents[5]
@@ -135,6 +137,31 @@ class TailoringCardTests(unittest.TestCase):
         self.assertIn("Software Engineer", text)          # target title
         self.assertIn("Payments platform microservices migration", text)  # locked title
         self.assertIn("40%", text)                        # a key number
+
+    def test_multi_employer_baseline_lists_every_locked_job_and_metric(self):
+        tmp, cfg = self._setup()
+        baseline = yaml.safe_load((tmp / "baseline.yaml").read_text())
+        first = baseline.pop("employer")
+        second = {
+            "company": "Fictional Labs",
+            "role": "Software Engineer",
+            "dates": "2014 – 2016",
+            "location": "City, ST",
+            "bullets": [
+                "Improved a synthetic batch workflow by 25% for a public test fixture."
+            ],
+            "projects": [],
+        }
+        baseline["employers"] = [first, second]
+        (tmp / "baseline.yaml").write_text(
+            yaml.safe_dump(baseline, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+        self.assertEqual(self._run(cfg)[0], 0)
+        text = self._card(tmp).read_text(encoding="utf-8")
+        self.assertIn("Northwind Systems", text)
+        self.assertIn("Fictional Labs", text)
+        self.assertIn("25%", text)
 
     # ── size ceiling ─────────────────────────────────────────
     def test_size_ceiling(self):

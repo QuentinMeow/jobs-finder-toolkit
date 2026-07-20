@@ -1,0 +1,43 @@
+name: "Jordan Rivers"
+contact_line: "Lakemont, ST • jordan.rivers@example.com • github.com/jordanrivers-example"
+summary_bullets:
+  - "New graduate with two fictional internships and hands-on backend project experience."
+  - "Builds tested services with Python, Java, SQL, and Docker."
+  - "Enjoys learning production practices through feedback and measured experiments."
+education_line: "B.S. in Computer Science, Lakemont University, 2026"
+skills:
+  - label: "Programming Languages"
+    items: "Python, Java, SQL"
+  - label: "Skills"
+    items: "Docker, PostgreSQL, REST APIs, Git"
+employers:
+  - company: "Maple Circuit"
+    role: "Software Engineering Intern"
+    dates: "May 2025 – Aug 2025"
+    location: "Fairview, ST"
+    bullets:
+      - "Implemented validation for a synthetic inventory API and reduced malformed test requests by 43%."
+      - "Added 36 invented integration cases that raised example workflow coverage from 61% to 84%."
+    projects: []
+  - company: "Silver Finch Data"
+    role: "Developer Intern"
+    dates: "Jun 2024 – Aug 2024"
+    location: "Remote (US)"
+    bullets:
+      - "Automated sample dataset checks and saved an estimated six fictional analyst hours each week."
+      - "Documented local setup for a Java service and shortened invented onboarding from two days to three hours."
+    projects: []
+  - company: "Lakemont University"
+    role: "Student Developer"
+    dates: "2022 – 2026"
+    location: "Lakemont, ST"
+    bullets: []
+    projects:
+      - title: "Campus shuttle simulator"
+        bullets:
+          - "Built a Python simulator for 24 invented routes and measured scheduling changes against repeatable demand traces."
+          - "Published a small REST API that served synthetic arrival predictions with deterministic test fixtures."
+      - title: "Study group planner"
+        bullets:
+          - "Created a Java scheduling tool for 180 fictional students with conflict detection backed by PostgreSQL."
+          - "Added containerized local development and reduced example setup to a single documented command."

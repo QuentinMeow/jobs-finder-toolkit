@@ -1,0 +1,28 @@
+fixture_version: 1
+kind: docx-paragraphs-v1
+support_tier: single-column-extraction
+document:
+  columns: 1
+  tables: false
+  text_boxes: false
+paragraphs:
+  - {text: "Jordan Rivers", style: "Title", bold: true}
+  - {text: "City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers", style: "Normal"}
+  - {text: "SUMMARY", style: "Heading 1", bold: true}
+  - {text: "Backend engineer with seven years of experience improving fictional cloud products.", style: "List Bullet", list: bullet}
+  - {text: "Builds observable APIs and automation with Python, Go, and AWS.", style: "List Bullet", list: bullet}
+  - {text: "Collaborates with product teams to turn ambiguous examples into reliable services.", style: "List Bullet", list: bullet}
+  - {text: "EDUCATION", style: "Heading 1", bold: true}
+  - {text: "B.S. in Computer Science, Lakemont University, 2018", style: "Normal"}
+  - {text: "SKILLS", style: "Heading 1", bold: true}
+  - {text: "Programming Languages: Python, Go, SQL", style: "Normal"}
+  - {text: "Skills: AWS, Docker, PostgreSQL, REST APIs, observability", style: "Normal"}
+  - {text: "EXPERIENCE", style: "Heading 1", bold: true}
+  - {text: "Cedar Peak Software — Senior Software Engineer\t2022 – Present | Remote (US)", style: "Heading 2", bold: true}
+  - {text: "Designed a synthetic account service that supported 420 invented tenants and reduced test latency by 34%.", style: "List Bullet", list: bullet}
+  - {text: "Introduced service dashboards and runbooks that cut tabletop incident triage from 28 minutes to 17 minutes.", style: "List Bullet", list: bullet}
+  - {text: "Mentored four fictional engineers while coordinating quarterly reliability exercises with product partners.", style: "List Bullet", list: bullet}
+  - {text: "Blue Lantern Labs — Software Engineer\t2018 – 2022 | Fairview, ST", style: "Heading 2", bold: true}
+  - {text: "Built REST APIs for an invented scheduling product and increased synthetic request throughput by 52%.", style: "List Bullet", list: bullet}
+  - {text: "Automated development environments with containers, reducing example setup time from one day to 25 minutes.", style: "List Bullet", list: bullet}
+  - {text: "Added integration tests for 16 fictional workflows and lowered staged release regressions by 29%.", style: "List Bullet", list: bullet}

@@ -1,0 +1,31 @@
+name: "Jordan Rivers"
+contact_line: "City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers"
+summary_bullets:
+  - "Backend engineer with seven years of experience improving fictional cloud products."
+  - "Builds observable APIs and automation with Python, Go, and AWS."
+  - "Collaborates with product teams to turn ambiguous examples into reliable services."
+education_line: "B.S. in Computer Science, Lakemont University, 2018"
+skills:
+  - label: "Programming Languages"
+    items: "Python, Go, SQL"
+  - label: "Skills"
+    items: "AWS, Docker, PostgreSQL, REST APIs, observability"
+employers:
+  - company: "Cedar Peak Software"
+    role: "Senior Software Engineer"
+    dates: "2022 – Present"
+    location: "Remote (US)"
+    bullets:
+      - "Designed a synthetic account service that supported 420 invented tenants and reduced test latency by 34%."
+      - "Introduced service dashboards and runbooks that cut tabletop incident triage from 28 minutes to 17 minutes."
+      - "Mentored four fictional engineers while coordinating quarterly reliability exercises with product partners."
+    projects: []
+  - company: "Blue Lantern Labs"
+    role: "Software Engineer"
+    dates: "2018 – 2022"
+    location: "Fairview, ST"
+    bullets:
+      - "Built REST APIs for an invented scheduling product and increased synthetic request throughput by 52%."
+      - "Automated development environments with containers, reducing example setup time from one day to 25 minutes."
+      - "Added integration tests for 16 fictional workflows and lowered staged release regressions by 29%."
+    projects: []

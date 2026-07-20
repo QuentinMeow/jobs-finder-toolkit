@@ -65,6 +65,7 @@ for _p in (_HERE, _HERE / "_vendor"):
         sys.path.insert(0, str(_p))
 
 import config  # noqa: E402  (import after sys.path bootstrap, by design)
+from resume_schema import ResumeSchemaError, normalize_resume  # noqa: E402
 
 CEILING_BYTES = 8192          # ~2k tokens target ceiling for the card
 BYTES_PER_TOKEN = 4           # est. tokens = bytes / 4 (repo-wide convention)
@@ -189,8 +190,14 @@ def _key_numbers(text: str) -> list[str]:
 
 def _numbers_text(baseline: dict, profile_md: str) -> str:
     parts = list(baseline.get("summary_bullets") or [])
-    for proj in (baseline.get("employer") or {}).get("projects") or []:
-        parts.extend(proj.get("bullets") or [])
+    try:
+        employers = normalize_resume(baseline)["employers"]
+    except ResumeSchemaError:
+        employers = []
+    for employer in employers:
+        parts.extend(employer.get("bullets") or [])
+        for proj in employer.get("projects") or []:
+            parts.extend(proj.get("bullets") or [])
     parts.extend(_section(profile_md, "## Career Summary"))
     return "\n".join(parts)
 
@@ -270,15 +277,20 @@ def build_card(profile_path: Path, baseline_path: Path, story_dir: Path,
     if baseline_path.is_file():
         try:
             baseline = yaml.safe_load(baseline_path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError:
+            baseline = normalize_resume(baseline)
+        except (yaml.YAMLError, ResumeSchemaError):
             baseline = {}
 
     name = (baseline.get("name") or config.candidate_name() or "Candidate").strip()
     contact = (baseline.get("contact_line") or config.contact_line() or "").strip()
     education = (baseline.get("education_line") or "").strip()
-    emp = baseline.get("employer") or {}
-    projects = [p.get("title", "").strip()
-                for p in (emp.get("projects") or []) if p.get("title")]
+    employers = baseline.get("employers") or []
+    projects = [
+        p.get("title", "").strip()
+        for employer in employers
+        for p in (employer.get("projects") or [])
+        if p.get("title")
+    ]
     skills = _parse_skills(profile_md)
     key_nums = _key_numbers(_numbers_text(baseline, profile_md))
     target_role = config.title_slug().replace("_", " ").strip()
@@ -305,10 +317,12 @@ def build_card(profile_path: Path, baseline_path: Path, story_dir: Path,
         L.append(f"- Contact: {contact}")
     if education:
         L.append(f"- Education: {education}")
-    if emp:
-        L.append(f"- Employer / role / dates: {emp.get('company', '')} — "
-                 f"{emp.get('role', '')}, {emp.get('dates', '')} "
-                 f"({emp.get('location', '')})")
+    if employers:
+        L.append("- Employers / roles / dates (count and order are locked):")
+        for employer in employers:
+            L.append(f"  - {employer.get('company', '')} — "
+                     f"{employer.get('role', '')}, {employer.get('dates', '')} "
+                     f"({employer.get('location', '')})")
     if projects:
         L.append("- Locked project titles (must match a profile `[draft]`/`[backup]` "
                  "title exactly):")

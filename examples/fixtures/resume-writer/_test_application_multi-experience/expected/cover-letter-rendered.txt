@@ -1,0 +1,8 @@
+Jordan Rivers
+City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers
+Dear Nimbus Robotics Hiring Team,
+Nimbus Robotics' fictional fleet platform is a compelling systems problem: its invented warehouse carts depend on reliable scheduling, regional software delivery, and health reporting to complete each simulation safely. I am interested in the Senior Platform Engineer role because it combines Go services, REST APIs, Kubernetes operations, PostgreSQL reliability, and cross-team rollout design rather than treating platform work as isolated infrastructure. The opportunity to build reusable interfaces for application engineers while improving service-level objectives and recovery practices closely matches the way I have delivered synthetic platform projects at Northwind Systems.
+My strongest fit is turning distributed delivery and reliability needs into measurable platform capabilities. At Northwind, I built a Go control plane that coordinated 180 synthetic releases each week across three invented regions, then added Terraform previews and policy checks that reduced example configuration errors by 32%. I also standardized telemetry across 22 fictional services, cutting tabletop incident triage by 38%, and led failure drills that improved staged recovery from 47 minutes to 29 minutes. Those projects required the same mix of hands-on implementation, operational judgment, and communication that Nimbus Robotics describes for its fleet platform.
+I would welcome the chance to discuss how this synthetic background could help Nimbus Robotics make its fictional delivery and fleet-health systems safer, easier to operate, and more useful to application engineers. Thank you for your consideration.
+Sincerely,
+Jordan Rivers

@@ -1,0 +1,23 @@
+cases:
+  - id: empty-docx
+    status: error
+    canonical_output: null
+    diagnostics:
+      - code: "EMPTY_DOCUMENT"
+        severity: "error"
+        message: "Resume document contains no extractable paragraph text."
+    assertions:
+      exit_code: 2
+      traceback: false
+      partial_output: false
+  - id: corrupt-docx
+    status: error
+    canonical_output: null
+    diagnostics:
+      - code: "CORRUPT_DOCX"
+        severity: "error"
+        message: "Could not open resume document as a valid DOCX package. Re-save or replace the file."
+    assertions:
+      exit_code: 2
+      traceback: false
+      partial_output: false

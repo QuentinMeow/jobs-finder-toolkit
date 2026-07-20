@@ -37,6 +37,7 @@ for _p in (_HERE, _HERE / "_vendor"):
 
 import config
 from check import application_dir, resume_stem, source_dir, tailored_path
+from resume_schema import ResumeSchemaError, normalize_resume
 
 XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
@@ -47,49 +48,21 @@ BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 
 def prepare_context(data: dict) -> dict:
     """Transform tailored.yaml into render-ready context."""
-    name = data.get("name", "")
-    contact_line = data.get("contact_line", "")
-
-    summary_bullets = data.get("summary_bullets", [])
-    if not summary_bullets and data.get("summary"):
-        summary_bullets = [data["summary"]]
-
-    education_line = data.get("education_line", "")
-
-    skills = data.get("skills", [])
-    if isinstance(skills, dict):
-        skills = [
-            {"label": k.replace("_", " ").title(),
-             "items": ", ".join(v) if isinstance(v, list) else str(v)}
-            for k, v in skills.items() if v
-        ]
-
-    employers = data.get("employers", [])
-    if not employers and data.get("employer"):
-        employers = [data["employer"]]
-    if not employers and data.get("experience"):
-        employers = []
-        for exp in data["experience"]:
-            emp = {
-                "company": exp.get("company", ""),
-                "role": exp.get("role", ""),
-                "dates": exp.get("dates", ""),
-                "location": exp.get("location", ""),
-                "projects": [],
-            }
-            if exp.get("projects"):
-                emp["projects"] = exp["projects"]
-            elif exp.get("bullets"):
-                emp["projects"] = [{"title": "", "bullets": exp["bullets"]}]
-            employers.append(emp)
-
+    ctx = normalize_resume(data)
+    if not ctx["summary_bullets"] and data.get("summary"):
+        if not isinstance(data["summary"], str):
+            raise ResumeSchemaError(["summary must be a string"])
+        ctx["summary_bullets"] = [data["summary"]]
     return {
-        "name": name,
-        "contact_line": contact_line,
-        "summary_bullets": summary_bullets,
-        "education_line": education_line,
-        "skills": skills,
-        "employers": employers,
+        key: ctx.get(key, default)
+        for key, default in (
+            ("name", ""),
+            ("contact_line", ""),
+            ("summary_bullets", []),
+            ("education_line", ""),
+            ("skills", []),
+            ("employers", []),
+        )
     }
 
 
@@ -295,8 +268,9 @@ def render_from_reference(ref_path: Path, data: dict, output_path: Path):
     exp_i = _find_section(texts, "Experience")
 
     if summary_i is None or edu_i is None or exp_i is None:
-        print("Error: could not find all section headers in reference DOCX", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError(
+            "reference DOCX must contain exact Summary, Education & Skills, "
+            "and Experience section headers")
 
     # ── Name & Contact ──
     _set_text(all_p[0], ctx["name"])
@@ -335,8 +309,9 @@ def render_from_reference(ref_path: Path, data: dict, output_path: Path):
     # ── Experience ──
     exp_content = [i for i in range(exp_i + 1, len(all_p)) if texts[i].strip()]
     if len(exp_content) < 3:
-        doc.save(str(output_path))
-        return
+        raise ValueError(
+            "reference DOCX Experience section needs employer, project-title, "
+            "and bullet template paragraphs")
 
     emp_template = deepcopy(all_p[exp_content[0]])
     proj_template = deepcopy(all_p[exp_content[1]])
@@ -354,6 +329,11 @@ def render_from_reference(ref_path: Path, data: dict, output_path: Path):
         emp_p = _build_emp_header(emp_template, left, right, tab_pos)
         anchor.addnext(emp_p)
         anchor = emp_p
+
+        for b in emp.get("bullets", []):
+            bp = _clone_para(bullet_exp_template, b)
+            anchor.addnext(bp)
+            anchor = bp
 
         for proj in emp.get("projects", []):
             if proj.get("title") and proj_template is not None:
@@ -427,11 +407,15 @@ def main():
               f"({resume_stem('')}*). Set JOBHUNT_CONFIG if that is not intended.",
               file=sys.stderr)
 
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    if not data:
-        print(f"Error: {yaml_path} is empty or invalid", file=sys.stderr)
+    try:
+        with open(yaml_path) as f:
+            raw_data = yaml.safe_load(f)
+        data = normalize_resume(raw_data)
+    except (OSError, yaml.YAMLError) as exc:
+        print(f"Error: could not read {yaml_path}: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except ResumeSchemaError as exc:
+        print(f"Error: invalid resume schema: {exc}", file=sys.stderr)
         sys.exit(1)
 
     label = args.label if args.label is not None else data.get("target_position", "")
@@ -462,7 +446,11 @@ def main():
     except Exception:
         pass
 
-    render_from_reference(ref_path, data, docx_output)
+    try:
+        render_from_reference(ref_path, data, docx_output)
+    except (OSError, ValueError, ResumeSchemaError) as exc:
+        print(f"Error: resume render failed: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(f"  DOCX: {docx_output}")
 
     pdf_path = None

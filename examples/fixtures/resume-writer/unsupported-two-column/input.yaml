@@ -1,0 +1,19 @@
+fixture_version: 1
+kind: docx-layout-v1
+support_tier: unsupported-layout
+document:
+  columns: 2
+  tables: true
+  text_boxes: false
+  reading_order_is_unambiguous: false
+synthetic_fragments:
+  left_column:
+    - "Jordan Rivers"
+    - "jordan.rivers@example.com"
+    - "Skills"
+    - "Python, Go, SQL"
+  right_column:
+    - "Experience"
+    - "Willow Frame — Software Engineer"
+    - "Built a fictional service for synthetic traffic."
+test_instruction: "Materialize the fragments in a two-column table; do not flatten them before extraction."
