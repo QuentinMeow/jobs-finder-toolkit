@@ -9,6 +9,7 @@ Routines:
     expire-discoveries   move discovery scans past their TTL to archive/ (--apply)
     compact-logs         prune stale search-log rows / rebuild derived log (--apply)
     lessons-report       flag stale + near-duplicate LESSONS entries (report-only)
+    card-staleness       flag the tailoring card when its sources drifted (report-only)
     verify-links         check referenced paths + symlinks + vendor drift (exit 1 on break)
     self-measure         recompute the pipeline funnel + memory metrics (--apply writes yaml)
 
@@ -25,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import card_staleness  # noqa: E402
 import compact_logs  # noqa: E402
 import expire_discoveries  # noqa: E402
 import lessons_report  # noqa: E402
@@ -36,12 +38,13 @@ ROUTINES = {
     "expire-discoveries": (lambda apply: expire_discoveries.run(apply), True),
     "compact-logs": (lambda apply: compact_logs.run(apply), True),
     "lessons-report": (lambda apply: lessons_report.run(), False),
+    "card-staleness": (lambda apply: card_staleness.run(), False),
     "verify-links": (lambda apply: verify_links.run(), False),
     "self-measure": (lambda apply: self_measure.run(apply), True),
 }
 # Order used by --all (verify-links last so its exit code is the overall gate).
 ALL_ORDER = ["self-measure", "expire-discoveries", "compact-logs",
-             "lessons-report", "verify-links"]
+             "lessons-report", "card-staleness", "verify-links"]
 
 
 def run_all() -> int:
