@@ -48,9 +48,14 @@ are resolved relative to the config file's directory.
 ```bash
 git clone https://github.com/<owner>/jobs-finder-toolkit.git   # or your fork
 cd jobs-finder-toolkit
-python3 -m venv .venv
+python3 -m venv .venv        # needs Python 3.11+ — check `python3 --version` first
 .venv/bin/pip install -r requirements.txt
 ```
+
+> **Python 3.11+ required.** On macOS, bare `python3` can still resolve to an
+> ancient interpreter (3.7-era) where the install fails — if so, create the venv
+> with a modern one instead, e.g. `python3.13 -m venv .venv` or
+> `uv venv --python 3.13`.
 
 No `config.yaml` is needed to try the toolkit: with none present, every tool falls back to the
 fictional `config.example.yaml` and the `examples/` **Jordan Rivers** fixture, so you can run

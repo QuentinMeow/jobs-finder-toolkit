@@ -43,7 +43,7 @@ git-ignored in the public repo, your real data is never committed to the public 
 - The public skill router `.cursor/rules/shared-skills.mdc` (tracked) lists only
   the public skills. The private `coding-interview` skill is registered by
   `.cursor/rules/private-skills.mdc`, which the overlay supplies (see the template
-  at `docs/overlay-templates/private-skills.mdc`) and which is git-ignored in the
+  at `examples/templates/private-skills.mdc`) and which is git-ignored in the
   public repo — so it is discoverable **only** when the overlay is mounted.
 - `config.yaml`'s `paths.*` are resolved **relative to the config file's
   directory**, so you can point them at `private/…` (or anywhere) and swap the
@@ -81,7 +81,7 @@ my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 │   ├── my-default.yaml        # your real search profile(s)
 │   └── my-smb.yaml
 └── cursor-rules/
-    └── private-skills.mdc     # copied from docs/overlay-templates/private-skills.mdc
+    └── private-skills.mdc     # copied from examples/templates/private-skills.mdc
 ```
 
 `private/leak_tokens.txt` is one token per line (blank / `#` lines ignored) — put
@@ -90,6 +90,45 @@ title, current/former employers, internal product and distinctive project names)
 `private/job-search/blacklist.yaml` holds identity-only rows (`name` + optional
 `aliases` + a `blacklist:` reason) that `registry.py` merges into the company registry
 so personal skip rules never live in the public `companies.yaml`.
+
+## Creating your overlay from scratch
+
+You do not need to be the maintainer to have an overlay — anyone can generate
+their own private data set and use the toolkit for a real hunt. From the toolkit
+checkout root:
+
+```bash
+# 1. Scaffold the overlay tree (directly at the git-ignored ./private/ mount):
+mkdir -p private/{profile,templates,job-search,job-search-profiles,cursor-rules,interviews}
+mkdir -p private/applications/{1_discoveries/{current,archive},2_ignored,3_rejected,4_in_progress,5_applied,6_drafted}
+mkdir -p private/skills
+
+# 2. Seed the data files from the tracked fixtures, then edit them to be YOU:
+cp examples/profile/profile.example.md        private/profile/profile.md
+cp examples/profile/baseline.example.yaml     private/profile/baseline.yaml
+cp examples/templates/reference.example.docx  private/templates/reference.docx
+cp examples/templates/private-skills.mdc      private/cursor-rules/private-skills.mdc
+cp .agents/skills/job-search/profiles/_TEMPLATE.yaml private/job-search-profiles/my-default.yaml
+
+# 3. Arm the leak guard with your identity (one token per line: name variants,
+#    email localpart, phone, school, employers, distinctive project names):
+$EDITOR private/leak_tokens.txt
+
+# 4. Make it a git repo of its own — local-only is fine; a PRIVATE GitHub remote
+#    adds multi-machine sync. NEVER make this repo public.
+cd private && git init && git add -A && git commit -m "My private overlay"
+gh repo create <you>/my-jobhunt-overlay --private --source . --push   # optional
+cd ..
+
+# 5. Point the toolkit at it and wire everything up (see "Setup steps" below):
+cp config.example.yaml config.yaml     # edit candidate + paths.* to private/…
+python scripts/bootstrap_overlay.py
+```
+
+Git does not track empty directories, so the status folders under
+`applications/` materialize in a fresh clone only as the tools write into them —
+that is normal. The `interviews/` and `skills/` trees are optional; leave them
+empty until you have content (e.g. your own private interview-prep skill).
 
 ## Setup steps
 
@@ -152,7 +191,7 @@ so personal skip rules never live in the public `companies.yaml`.
 
    - `.agents/skills/coding-interview` → `private/skills/coding-interview` — the private skill;
    - `.cursor/rules/private-skills.mdc` → `private/cursor-rules/private-skills.mdc` — its router,
-     which the overlay seeds from `docs/overlay-templates/private-skills.mdc`;
+     which the overlay seeds from `examples/templates/private-skills.mdc`;
    - one link per `private/job-search-profiles/*.yaml` into
      `.agents/skills/job-search/profiles/` — then point `config.job_search.default_profile` at one.
 
@@ -165,29 +204,29 @@ so personal skip rules never live in the public `companies.yaml`.
    only `example.yaml`, `_TEMPLATE.yaml`, and `README.md` public.)
 
 **Maintainer note.** The maintainer keeps the canonical overlay as its own private
-GitHub repo, mounted at `private/` exactly as above; the public repo is produced from
-that combined working checkout with the exporter (next section). Strangers do not need
+GitHub repo, mounted at `private/` exactly as above. Strangers do not need
 (or get) access to it — the `<you>/<your-private-overlay>` placeholder is your own.
 
-## Producing / refreshing the public repo
+## How the public repo stays clean
 
-Maintainers regenerate the clean public repo from the combined working checkout
-with the allowlist exporter — it copies only public paths, prunes `references_private/`,
-scrubs files containing personal tokens (text AND `.docx`/`.pdf` content), and
-**always** runs the leak guard against the copied tree as the final gate. `--git-init`
-additionally commits the clean export:
+This public repo is **canonical** — toolkit development happens here directly;
+there is no export/mirror step between a maintainer checkout and what you see.
+(The allowlist exporter, `scripts/publish/export_public.py`, seeded this repo's
+fresh history from the maintainer's pre-split combined repo, and lives on as the
+end-to-end harness for the leak-guard test suite and as a sanitized-copy tool.)
 
-```bash
-.venv/bin/python scripts/publish/export_public.py --dest /path/to/public --git-init
-```
-
-The leak guard (`scripts/publish/check_public.py`) fails the publish if any private
-skill, `private/` path, tracked `references_private/` file, or personal-identity token
-(in a path, text content, or extracted `.docx`/`.pdf` content) is present. Its tokens
-are derived at runtime from `config.yaml` + `private/leak_tokens.txt` +
-`JOBHUNT_PERSONAL_TOKENS` (nothing hardcoded). Run it any time against a checkout — in
-the combined repo it reads the real tokens from your `config.yaml`:
+The gate is the leak guard (`scripts/publish/check_public.py`). It fails if any
+private skill, `private/` path, tracked `references_private/` file, or
+personal-identity token (in a path, text content, or extracted `.docx`/`.pdf`
+content) is tracked. Its tokens are derived at runtime from `config.yaml` +
+`private/leak_tokens.txt` + `JOBHUNT_PERSONAL_TOKENS` (nothing hardcoded), so
+with your overlay mounted it screens for **your** identity. It runs three times
+over: blocking in CI, in the pre-push hook before anything reaches a public
+remote, and by hand any time:
 
 ```bash
 .venv/bin/python scripts/publish/check_public.py
 ```
+
+The steady state is **zero findings**; any finding is a regression to fix, never
+to except.

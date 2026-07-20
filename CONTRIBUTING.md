@@ -8,9 +8,14 @@ real data.
 ## Dev setup
 
 ```bash
-python3 -m venv .venv
+python3 -m venv .venv        # Python 3.11+ (see below)
 .venv/bin/pip install -r requirements.txt
 ```
+
+**Python 3.11+ required.** Bare `python3` can resolve to an ancient interpreter
+(macOS boxes still ship 3.7-era pythons) where the requirements install fails —
+create the venv with a modern one if needed: `python3.13 -m venv .venv` or
+`uv venv --python 3.13`.
 
 No `config.yaml` is needed to contribute: with none present, every tool falls
 back to the tracked `config.example.yaml` and the `examples/` Jordan Rivers
@@ -45,6 +50,30 @@ Vendored copies must stay in sync; after editing a canonical `scripts/shared/`
 module, regenerate with `.venv/bin/python scripts/vendoring/sync_vendored.py` (the
 pre-commit hook and CI both fail on drift).
 
+## Commits & pull requests
+
+1. **Fork** the repo on GitHub (maintainer: branch directly), then create a topic
+   branch off `main` named `<type>/<short-slug>` where `<type>` is one of
+   `feature`, `fix`, `docs`, `chore` — e.g. `fix/guard-comment-tokens`.
+2. **Keep each PR to one focused change.** Small PRs get reviewed fast; unrelated
+   fixes belong in their own PRs.
+3. **Commit messages**: imperative subject line (≤72 chars) saying *what* changed;
+   a short body saying *why* — especially for anything behavioral. Run the checks
+   above before committing; the tracked pre-commit hook (installed by
+   `scripts/bootstrap_overlay.py`) re-runs the cheap ones.
+4. **Open the PR against `main`** and fill in the pull-request template — it
+   mirrors the gates: checks pass, eval canaries run if you touched skill
+   instruction files, no personal data.
+5. **CI must be green.** Fork PRs run the leak guard tokenless (structural + path
+   checks) — a clean tree passes; if the guard fires on your PR, it found
+   something that looks personal and it must come out, not be excepted.
+6. **Avoid stacked PRs** (a PR based on another PR's branch). If two changes must
+   land in order, say so in the descriptions; the maintainer merges base-first.
+   (When stacked PRs are merged, each head branch must be deleted on merge so
+   GitHub retargets the next one — merging out of order strands content.)
+7. The maintainer reviews every PR; merged work arrives in the next
+   `git pull` — there is no mirror or sync step.
+
 ## Eval gate for skill-instruction changes
 
 Any PR that touches a skill's instruction files — `.agents/skills/*/SKILL.md`,
@@ -63,6 +92,24 @@ The CI **leak guard (`scripts/publish/check_public.py`) is blocking**: it scans
 tracked files (text and `.docx`/`.pdf` content) for structural PII and private
 paths, and any finding fails the build. Fork PRs run it tokenless (structural +
 path checks only), which a clean tree passes by design.
+
+## Contributing while running your own job hunt
+
+You can use this toolkit with your **own real data** and still contribute — that
+is exactly what the private-overlay design is for (see
+[`docs/PRIVATE_OVERLAY.md`](docs/PRIVATE_OVERLAY.md), including how to create
+your own overlay from scratch):
+
+- Your data lives in the git-ignored `private/` mount (optionally your **own**
+  private repo — never this one) plus a git-ignored `config.yaml`. None of it is
+  ever tracked here, so it cannot enter a commit or PR by accident.
+- With an overlay mounted, the leak guard runs **armed with your identity
+  tokens** (from `config.yaml` + `private/leak_tokens.txt`), and the pre-push
+  hook re-runs it before anything reaches a public remote — screen your own
+  identity locally before CI ever sees the PR.
+- Keep the two commit streams separate: toolkit improvements → branch + PR here;
+  your data → commits in your own overlay repo. A PR should never reference your
+  overlay's contents, filenames, or real employers/companies from your hunt.
 
 ## Extra-careful review areas
 
