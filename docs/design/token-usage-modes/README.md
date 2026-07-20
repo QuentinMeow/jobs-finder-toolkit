@@ -94,6 +94,40 @@ validation, `check.py`, no-fabrication rules) run identically in both modes.
 | + Stage 2 (instruction tiering) | ~35k | ~150k | ~185k | −58% |
 | + Stage 3, `token_saving` default (no search subagent, card-only context, capped cycles) | ~8k | ~110k | ~120k | **−73%** |
 | Stage 3, `full` mode | ≈ baseline, minus Stage 1–2 savings | | ~200k | −54% |
+| **+ Stage 1 (measured 2026-07-20, post-merge)** | 158k | 343k | **~502k** | **+15%** |
+| **Pinned-scenario reference (Stage-1 state, measured 2026-07-20, v1.1)** | 131k | 354k | **~485k** | — (new comparison base) |
+| **+ Stage 2 (measured 2026-07-20, pinned scenario, 2-draft normalized)** | 120k | ~316k | **~436k** | **−10% vs pinned reference** |
+
+**Stage 1 measured note (2026-07-20).** The mechanisms all landed: the widening journey
+that cost the baseline 7 full fetches ran as snapshot refilters (3 fetches + 7 zero-network
+refilters), render cycles dropped from 3 to 1–2 (the baseline-collision fix produced zero
+false positives), handoff scaffolding emitted validated folders with no hand transcription,
+and each JD was fetched once, verbatim. Total tokens still rose because (a) the freed budget
+went to deeper verification the design deliberately preserves — JD-text checks disqualified
+three mislabeled postings *before* handoff that the baseline pipeline would have drafted;
+(b) the run did strictly more product work than the baseline (a second-profile market sweep,
+per-letter product research, one metadata-extractor gap diagnosed); and (c) the instruction
+boot tax — untouched by Stage 1, exactly per Approach 1's analysis — was paid in full by all
+three agents (~35–40% each). Per the execution plan's gate rule (≥25% off projection →
+pause and analyze), Stage 2 waits for maintainer review; the boot tax is now the binding
+constraint, and the benchmark scenario should be pinned (fixed profile count and
+verification depth) so future rows measure cost, not scope. Full record:
+`evals/results/stage1-benchmark-20260720.md`.
+
+**Stage 2 measured note (2026-07-20).** Measured under the pinned scenario (v1.1) against
+a same-day pinned-scenario reference row, so these rows compare cost, not scope. The
+instruction tiering delivered: boot instruction bytes fell ~55% for the search agent
+(contract doc 40→13 KB, skill doc 29→17 KB), the search leg cost −8% despite a harsher
+market state, and the drafting leg ran card-first (card + baseline, full profile only via
+a listed trigger) with one render cycle. Normalized total: **−10% vs the pinned
+reference** (projection was −25%; inside the plan's pause threshold, so Stage 3 is not
+forced to pause — it remains a maintainer decision). Residual gap: the drafting agent
+still chose to full-read the reference tier + validator source (~59 KB) on demand, and a
+hostile fetch environment (all JD pages JS-rendered that run) added fallback work. The
+post row measured one draft (same-day pool depletion + one handoff rejected by the
+authoritative location gate — a search-time heuristic miss the reference leg had caught);
+the 2-draft total is normalized from the measured draft. Full record and follow-ups:
+`evals/results/stage2-benchmark-20260720.md`.
 
 ## How to re-measure
 

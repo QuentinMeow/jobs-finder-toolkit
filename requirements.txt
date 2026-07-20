@@ -2,3 +2,4 @@ pyyaml>=6.0,<7.0
 python-docx>=0.8,<2.0
 pypdf>=4.0,<7.0
 python-jobspy>=1.1,<2.0
+keyring>=25.0,<27.0

@@ -37,11 +37,13 @@ TARGETS: dict[str, list[str]] = {
         ".agents/skills/resume-writer/scripts/_vendor/config.py",
         ".agents/skills/application-tracker/scripts/_vendor/config.py",
         ".agents/skills/job-search/scripts/_vendor/config.py",
+        ".agents/skills/outlook-email-assistant/scripts/_vendor/config.py",
     ],
     "scripts/shared/layout.py": [
         ".agents/skills/resume-writer/scripts/_vendor/layout.py",
         ".agents/skills/application-tracker/scripts/_vendor/layout.py",
         ".agents/skills/job-search/scripts/_vendor/layout.py",
+        ".agents/skills/outlook-email-assistant/scripts/_vendor/layout.py",
     ],
     "scripts/shared/location.py": [
         ".agents/skills/resume-writer/scripts/_vendor/location.py",

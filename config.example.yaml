@@ -12,6 +12,13 @@ paths:
   discoveries_dir: "examples/applications/1_discoveries"
 job_search:
   default_profile: "example"
+outlook_email:
+  # Personal mailbox settings belong in git-ignored config.yaml. Register a
+  # Microsoft public-client app for personal accounts; never add a client secret
+  # or Mail.Send permission. OAuth tokens live in the OS keyring, not this file.
+  account: ""
+  client_id: ""
+  tenant: "consumers"
 location_policy:
   # Preferred-metro tokens (fictional placeholders for the "City, ST" example persona).
   metro: [springfield, fairview, riverside, lakemont]

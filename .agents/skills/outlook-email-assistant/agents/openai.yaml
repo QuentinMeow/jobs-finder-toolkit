@@ -1,0 +1,4 @@
+interface:
+  display_name: "Outlook Email Assistant"
+  short_description: "Read Outlook mail and create safe reply drafts"
+  default_prompt: "Use $outlook-email-assistant to review recent recruiter emails and create reply drafts grounded in this job-hunt repository."

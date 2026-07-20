@@ -38,6 +38,11 @@
       "description": "Deeply research a company and the specific role for interviews — product, hard technical challenges, competitive moat and defensibility, culture, comp, and a question bank."
     },
     {
+      "name": "outlook-email-assistant",
+      "source": "./.agents/skills/outlook-email-assistant",
+      "description": "Read personal Outlook mail, connect recruiter messages to local job applications, and create repository-grounded reply drafts without ever sending email."
+    },
+    {
       "name": "gardener",
       "source": "./.agents/skills/gardener",
       "description": "Periodic memory hygiene for the toolkit's agent-memory zones: expire stale discovery scans, prune old search-log rows, flag stale/duplicate LESSONS, verify links, and recompute the pipeline funnel. Dry-run by default; moves rather than deletes."

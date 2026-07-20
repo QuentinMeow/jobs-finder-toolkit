@@ -3,7 +3,7 @@
 This toolkit is designed to be published **publicly** while everything tied to a
 real person or a real job hunt stays **private**. It ships as two layers:
 
-1. **PUBLIC toolkit repo** — timeless, general tooling only: the scripts, the seven
+1. **PUBLIC toolkit repo** — timeless, general tooling only: the scripts, the eight
    public skills, the company registry (identity only), a fake example candidate
    ("Jordan Rivers") under `examples/`, and `config.example.yaml`. Nothing here is
    tied to a real person or a dated posting.
@@ -73,8 +73,8 @@ my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 ├── interviews/                # your real interview prep
 ├── skills/
 │   ├── coding-interview/      # the PRIVATE skill (SKILL.md + products)
-│   └── references_private/    # per public skill: candidate-specific notes/examples,
-│                              # symlinked/copied into .agents/skills/<skill>/references_private/
+│   └── references_private/    # candidate-specific references grouped by public skill
+│       └── resume-writer/     # symlinked to that skill's references_private/ folder
 └── job-search-profiles/
     ├── my-default.yaml        # your real search profile(s)
     └── my-smb.yaml
@@ -97,7 +97,7 @@ checkout root:
 # 1. Scaffold the overlay tree (directly at the git-ignored ./private/ mount):
 mkdir -p private/{profile,templates,job-search,job-search-profiles,interviews}
 mkdir -p private/applications/{1_discoveries/{current,archive},2_ignored,3_rejected,4_in_progress,5_applied,6_drafted}
-mkdir -p private/skills
+mkdir -p private/skills/references_private
 
 # 2. Seed the data files from the tracked fixtures, then edit them to be YOU:
 cp examples/profile/profile.example.md        private/profile/profile.md
@@ -186,15 +186,17 @@ empty until you have content (e.g. your own private interview-prep skill).
 
    - `.agents/skills/coding-interview` → `private/skills/coding-interview` — the private skill;
    - one link per `private/job-search-profiles/*.yaml` into
-     `.agents/skills/job-search/profiles/` — then point `config.job_search.default_profile` at one.
+     `.agents/skills/job-search/profiles/` — then point `config.job_search.default_profile` at one;
+   - one link per `private/skills/references_private/<skill>/` into
+     `.agents/skills/<skill>/references_private/` when that public skill exists.
 
    It **always** installs `hooks/pre-commit` and `hooks/pre-push` into `.git/hooks`
    (never clobbering a foreign hook — it warns instead), and re-running is a safe
-   no-op. Both `.agents/skills/coding-interview/`
-   and any personal `*.yaml` profiles are git-ignored in the public repo, so the private
-   skill and your profiles stay out of public history while remaining discoverable
-   whenever the overlay is mounted. (The `.agents/skills/job-search/profiles/` folder keeps
-   only `example.yaml`, `_TEMPLATE.yaml`, and `README.md` public.)
+   no-op. The private skill, linked `references_private/` directories, and personal `*.yaml`
+   profiles are git-ignored in the public repo, so they stay out of public history while remaining
+   discoverable whenever the overlay is mounted. (The
+   `.agents/skills/job-search/profiles/` folder keeps only `example.yaml`, `_TEMPLATE.yaml`, and
+   `README.md` public.)
 
 **Maintainer note.** The maintainer keeps the canonical overlay as its own private
 GitHub repo, mounted at `private/` exactly as above. Strangers do not need

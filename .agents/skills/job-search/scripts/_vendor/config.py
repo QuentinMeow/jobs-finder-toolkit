@@ -30,6 +30,10 @@ Config schema::
       discoveries_dir: "applications/1_discoveries"
     job_search:
       default_profile: "default"
+    outlook_email:
+      account: "<personal-mailbox>"  # expected signed-in mailbox; private config only
+      client_id: "..."               # public-client app registration ID; not a secret
+      tenant: "consumers"             # personal Microsoft accounts only
     location_policy:
       metro: [City, ...]          # preferred-metro tokens (candidate-specific)
       remote_tokens: [...]        # OPTIONAL; if omitted use location.py defaults
@@ -219,4 +223,21 @@ def location_policy() -> dict:
         "us_remote_regions": _list("us_remote_regions"),
         "allow_us_remote": lp.get("allow_us_remote", True),
         "us_only": lp.get("us_only", True),
+    }
+
+
+# ── Outlook email assistant ───────────────────────────────────
+def outlook_email_config() -> dict:
+    """Personal-Outlook OAuth configuration for the draft-only email skill.
+
+    The client ID is an identifier, not a client secret. Refresh tokens never
+    belong in this config; the skill stores OAuth refresh state in the OS keyring.
+    Restricting the authority to ``consumers`` prevents an accidental work-
+    tenant login when this toolkit is configured for a personal mailbox.
+    """
+    mail = _config().get("outlook_email") or {}
+    return {
+        "account": str(mail.get("account", "")).strip(),
+        "client_id": str(mail.get("client_id", "")).strip(),
+        "tenant": str(mail.get("tenant", "consumers")).strip() or "consumers",
     }

@@ -25,7 +25,9 @@ private/
 .agents/skills/job-search/profiles/*.yaml
 !.agents/skills/job-search/profiles/_TEMPLATE.yaml
 !.agents/skills/job-search/profiles/example.yaml
-# Per-skill private references (candidate-specific skill content; never shipped)
+# Per-skill private references (candidate-specific skill content; never shipped).
+# The unslashed rule covers overlay symlinks; the trailing-slash rule covers directories.
+.agents/skills/*/references_private
 .agents/skills/*/references_private/
 # Optional git-ignored personal token list consumed by the leak guard
 private/leak_tokens.txt

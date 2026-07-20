@@ -56,6 +56,7 @@ What the config supplies:
 | `paths.applications_root` | Where the application pipeline folders live |
 | `paths.discoveries_dir` | Where job-search shortlists land |
 | `job_search.default_profile` | Which `.agents/skills/job-search/profiles/<label>.yaml` search profile to use |
+| `outlook_email.*` | Private personal-mailbox address, Microsoft public-client application ID, and `consumers` tenant selection; OAuth refresh state lives only in the OS keyring |
 | `location_policy` | Allowed metros + US-remote/us-only rules that gate application creation |
 
 ## Application folders: the folder is the status
@@ -110,7 +111,7 @@ marketplace.
 
 ## Public / private split
 
-This repo is the PUBLIC toolkit: tooling, the seven public skills, an identity-only
+This repo is the PUBLIC toolkit: tooling, the eight public skills, an identity-only
 company registry, and the fictional Jordan Rivers dataset under `examples/`. Everything
 tied to a real person mounts under the git-ignored `private/` overlay (its own git
 repo) and is pointed at by the git-ignored `config.yaml`. Three defenses keep the

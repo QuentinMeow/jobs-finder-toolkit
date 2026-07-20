@@ -4,7 +4,8 @@
 # Blocks a commit when:
 #   1. a vendored copy has drifted from its canonical source
 #      (see scripts/vendoring/sync_vendored.py + .../job-search/scripts/_vendor/), or
-#   2. any toolkit/skill Python file fails to byte-compile.
+#   2. the Outlook assistant exposes any email-sending capability, or
+#   3. any toolkit/skill Python file fails to byte-compile.
 #
 # Install once (tracked, no git-config change):
 #   ln -sf ../../hooks/pre-commit .git/hooks/pre-commit
@@ -25,11 +26,15 @@ fi
 echo "pre-commit: checking vendored copies are in sync..."
 "$PY" scripts/vendoring/sync_vendored.py --check
 
+echo "pre-commit: enforcing Outlook draft-only policy..."
+"$PY" .agents/skills/outlook-email-assistant/scripts/check_draft_only.py
+
 echo "pre-commit: byte-compiling scripts + self-contained skills..."
 "$PY" -m compileall -q scripts \
     .agents/skills/job-search/scripts \
     .agents/skills/resume-writer/scripts \
-    .agents/skills/application-tracker/scripts
+    .agents/skills/application-tracker/scripts \
+    .agents/skills/outlook-email-assistant/scripts
 
 # Instruction-file token-budget check — a hard gate: every instruction file
 # is within budget today, and any commit that pushes one over must slim it.

@@ -69,7 +69,11 @@ def analyze() -> dict:
     config_dir = config.config_path().parent
     profile = config.profile_md_path()
     baseline = config.baseline_path()
-    story_dir = config_dir / STORY_BANK_REL
+    # Resolve the story bank from the overlay root (applications_root().parent), NOT the
+    # config file's directory — config.yaml sits at the repo root in the real deployment
+    # while the overlay is mounted at private/. This mirrors build_tailoring_card.py so
+    # the two never disagree on which story bank the card was built from.
+    story_dir = config.applications_root().parent / STORY_BANK_REL
     card = config.applications_root() / CARD_REL
 
     current = {
