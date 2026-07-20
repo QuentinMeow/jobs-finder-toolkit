@@ -10,6 +10,7 @@ their local copy here instead of reaching into the repo-root toolkit.
 | `config.py` | `scripts/shared/config.py` |
 | `layout.py` | `scripts/shared/layout.py` |
 | `job_metadata.py` | `scripts/shared/job_metadata.py` |
+| `metadata_editor.py` | `scripts/shared/metadata_editor.py` |
 
 ## Rules
 

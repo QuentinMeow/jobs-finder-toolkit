@@ -101,6 +101,11 @@ explicitly asks ("resume only"). Tell the user which artifacts you produced and 
 `applications/<status>/` (see "Before You Start" item 6). Abort if duplicate or
 blacklisted.
 
+**If job-search's `handoff.py` already scaffolded this folder** (a `meta.yaml` and
+`source/JD-<job title>.md` are present), Step 1 is done — do not re-create or re-verify the
+folder, JD, or the facts it carried. Skip to Step 2; only if `handoff.py` reported metadata
+gaps, run `status.py --enrich-metadata <folder>` first, then continue to Gap Analysis.
+
 Generate a slug: `<company>-<role>-<YYYYMMDD>` (lowercase, hyphens, no special characters).
 Confirm the slug path does not already exist under any status folder.
 
