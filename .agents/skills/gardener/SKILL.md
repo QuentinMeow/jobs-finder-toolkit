@@ -39,6 +39,7 @@ and staleness/duplicate flagging.
 | `expire-discoveries` | Discovery scans older than `discovery_ttl_days` (30) → move to `archive/`; raw scans >`discovery_archive_days` (14) flagged for review | dry-run; `--apply` moves | move-not-delete; per-file plan; index entry appended |
 | `compact-logs` | `company-search-log.yaml` rows older than `search_log_prune_days` (90) → prune; `applications-log.yaml` regenerated via `status.py --sync-log` | dry-run; `--apply` writes a compacted copy + runs sync | never edits the live log in place |
 | `lessons-report` | Flag LESSONS sections whose `last_confirmed` > `lesson_confirm_days` (180) or that are untagged; flag near-duplicate bullets within a LESSONS.md and vs its SKILL.md | **report-only** | human ratifies any promotion/deletion |
+| `card-staleness` | Compare the source hashes recorded in the resume-writer tailoring card (`<applications_root>/0_profile/tailoring-card.md`) with current profile/baseline/story-bank hashes; flag the card when a source drifted | **report-only** | rebuild is the skill's job (`build_tailoring_card.py --force`), never the gardener's |
 | `verify-links` | Backticked toolkit paths exist; tool-compatibility skill symlinks resolve; `sync_vendored.py --check` | report-only; **exit 1 on break** | fails CI on a broken link / vendor drift |
 | `self-measure` | Recompute the funnel (discovered/drafted/applied/in_progress/rejected/ignored) + LESSONS staleness + instruction-budget summary | dry-run; `--apply` writes `metrics.yaml` | writes only into the overlay (`0_profile/metrics.yaml`), never the toolkit |
 
@@ -55,6 +56,7 @@ Retention windows come from the optional `retention:` block in `config.yaml`
 .venv/bin/python scripts/maintenance/gardener/gardener.py expire-discoveries
 .venv/bin/python scripts/maintenance/gardener/gardener.py compact-logs
 .venv/bin/python scripts/maintenance/gardener/gardener.py lessons-report
+.venv/bin/python scripts/maintenance/gardener/gardener.py card-staleness
 .venv/bin/python scripts/maintenance/gardener/gardener.py verify-links
 .venv/bin/python scripts/maintenance/gardener/gardener.py self-measure
 
