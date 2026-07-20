@@ -16,7 +16,11 @@ Use this skill when the user asks to:
 ## Before You Start
 
 1. Read `AGENTS.md` for guardrails (no fabrication, consistency).
-2. Read your candidate profile (`config.profile_md_path()`) — the comprehensive source of all experience, skills, and resume writing preferences.
+2. **Read the tailoring card first** (`<applications_root>/0_profile/tailoring-card.md`): identity/locked
+   fields, target roles, key numbers, the three skills lists (Never verbatim), story-bank digest.
+   If missing or stale, rebuild: `.venv/bin/python .agents/skills/resume-writer/scripts/build_tailoring_card.py`
+   (`--check` tests staleness). Open the full profile (`config.profile_md_path()`) or story bank
+   only when a card pointer or the JD demands a deep dive — the full files win on any conflict.
 3. Skim the supporting library for real, verifiable detail you can pull into bullets:
    - `interviews/behavioral-story-bank/` — deep, first-person write-ups of real projects
      (concrete scale, artifacts, and metrics). These are the richest source of legitimate
@@ -100,6 +104,11 @@ explicitly asks ("resume only"). Tell the user which artifacts you produced and 
 **Pre-flight again:** confirm blacklist + log + no matching folder under any
 `applications/<status>/` (see "Before You Start" item 6). Abort if duplicate or
 blacklisted.
+
+**If job-search's `handoff.py` already scaffolded this folder** (a `meta.yaml` and
+`source/JD-<job title>.md` are present), Step 1 is done — do not re-create or re-verify the
+folder, JD, or the facts it carried. Skip to Step 2; only if `handoff.py` reported metadata
+gaps, run `status.py --enrich-metadata <folder>` first, then continue to Gap Analysis.
 
 Generate a slug: `<company>-<role>-<YYYYMMDD>` (lowercase, hyphens, no special characters).
 Confirm the slug path does not already exist under any status folder.

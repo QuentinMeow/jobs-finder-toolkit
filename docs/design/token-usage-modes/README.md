@@ -1,7 +1,8 @@
 # Token-usage modes for job search + application drafting
 
-**Status:** proposal (2026-07-20). Nothing here is implemented; this records a
-measured baseline, the cost taxonomy, and four candidate designs.
+**Status:** accepted (2026-07-20) — execution underway per
+[execution-plan.md](execution-plan.md). This records a measured baseline, the
+cost taxonomy, and four candidate designs.
 
 ## Problem
 

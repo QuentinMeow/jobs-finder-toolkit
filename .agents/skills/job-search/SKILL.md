@@ -218,11 +218,24 @@ Common overrides (flags beat profile values):
 
 # re-search companies logged within the last 7 days (still skips blacklist)
 ... --profile example --include-recent
+
+# RE-FILTER the last fetch instead of re-fetching: widen the window, change top-k,
+# or re-emit JSON in seconds (fetch-affecting flags like --stage/--aggregators refused)
+... --profile example --refilter latest --max-age-days 7 --top-k 60
 ```
 
-The script prints the ranked table and writes it to the configured discoveries dir
-(`config.discoveries_dir()`; `<discoveries_dir>/<YYYYMMDD>-<profile>.md`). A
-stage-1 market-scan run scans ~12k postings (100+ boards + keyless aggregators +
+Default stdout is a ~5-line run summary + a compact top-K table (rank, company, title,
+score, level, age, visa, URL) — **read that table; do not `cat` the discoveries file**.
+The full Markdown report is still written to `<discoveries_dir>/<YYYYMMDD>-<profile>.md`
+(`config.discoveries_dir()`); pass `--print-full` for the old full-report stdout dump.
+Every fetch also writes a pre-filter snapshot to `tmp/search_cache/` (gitignored). When
+widening the freshness window, changing top-k, or re-emitting JSON **after** a search,
+run `--refilter latest` (reuses that snapshot, anchors posting age to its fetch time,
+refuses snapshots >6h old unless `--allow-stale`) instead of re-running the fetch. Pull
+one JSON field rather than dumping records, e.g. the top 5 URLs:
+`... --refilter latest --json-out /tmp/m.json && python -c "import json;print(*[r['url'] for r in json.load(open('/tmp/m.json'))][:5],sep='\n')"`
+
+A stage-1 market-scan run scans ~12k postings (100+ boards + keyless aggregators +
 JobSpy Indeed/Google) in ~15–20s; stage 2 adds LinkedIn + keyed APIs and is slower.
 
 ## LinkedIn / Indeed Coverage (the two stages)
@@ -281,17 +294,25 @@ the posting/reference did not provide the fact; never fill it from guesswork. Ca
 
 ### Step 4 — Hand off to the pipeline
 
-When the user picks a posting, hand off:
-- **`resume-writer`** → create `applications/6_drafted/<slug>/` with `meta.yaml` at the root
-  and the generation inputs in `source/` (one `source/JD-<job title>.md` per posting plus
-  `source/tailored.yaml`), then tailor. `meta.yaml` is always `job_metadata_schema_version: 3`
-  with a uniform **`jobs:` list — one entry per posting, even a single role.** Record each
-  posting's **`location`**, `url`, and `posted_date` in its `jobs:` entry — only hand off
-  postings that passed the location filter (per `config.location_policy()`). Carry the search
-  result's per-posting `workplace`, `sponsorship`, `job_level`, `required_yoe`, and
-  `salary_range` (the structured facts are the flat `{min, max, confidence, source}` shape;
-  `workplace` and `sponsorship` are single words) into that posting's `jobs:` entry, then run
-  `status.py --enrich-metadata <folder>` after saving the full JD to fill any missing
+For **each** posting the user selects, scaffold its folder with `handoff.py` (needs
+`--json-out` from Step 2) — it creates `applications/6_drafted/<slug>/`, saves
+`source/JD-<job title>.md` verbatim, and carries the row's structured facts into a
+schema-v3 `meta.yaml`, so nothing is hand-transcribed (refuses to overwrite an existing folder):
+
+```bash
+.venv/bin/python .agents/skills/job-search/scripts/handoff.py \
+    --json /tmp/matches.json --select "rank 1"   # or --select "Company/Title"
+```
+
+Then hand off:
+- **`resume-writer`** → the folder `handoff.py` scaffolded already holds `meta.yaml` at the
+  root and `source/JD-<job title>.md`; add `source/tailored.yaml` and tailor. `meta.yaml` is
+  always `job_metadata_schema_version: 3` with a uniform **`jobs:` list — one entry per
+  posting, even a single role.** Only hand off postings that passed the location filter (per
+  `config.location_policy()`). `handoff.py` already carried each posting's `location`, `url`,
+  `posted_date`, `workplace`, `sponsorship`, `job_level`, `required_yoe`, and `salary_range`
+  into its `jobs:` entry; if it reported gaps, run
+  `status.py --enrich-metadata <folder>` to fill any missing
   facts and consult the reusable company cache for level/YOE. After creating the draft,
   run `.agents/skills/application-tracker/scripts/status.py --sync-log` so this posting is added to
   `applications-log.yaml` and the company is recorded in `company-search-log.yaml`, then
@@ -409,7 +430,7 @@ employers with sponsorship history:
 | `companies.yaml` | Canonical company registry — identity, ATS poll config, tags (incl. the `ai-lab`/`ai-infra`/`ai-native` AI-native family), blacklist |
 | `config.company_levels_path()` | Dated reusable company level/YOE/base/total-comp reference; defaults beside the configured profile and stays separate from the identity registry |
 | `scripts/registry.py` | Registry loader + resolver (canonical name, blacklist, poll targets, `tagged_keys` for the AI-native set) |
-| `scripts/search_jobs.py` | Main pipeline (two-stage fetch → filter → score → rank → output); `--stage`, `--ai-native-only`, `--no-jobspy`, `--max-per-company`, `--top-k` |
+| `scripts/search_jobs.py` | Main pipeline (two-stage fetch → filter → score → rank → output); `--stage`, `--ai-native-only`, `--no-jobspy`, `--max-per-company`, `--top-k`, `--refilter latest`, `--print-full` |
 | `scripts/sources.py` | Company ATS fetchers (Greenhouse / Ashby / Lever / SmartRecruiters / Workday / Amazon / Apple / Meta) |
 | `scripts/aggregators.py` | Cross-company sources (Jobicy/RemoteOK/Muse/Arbeitnow keyless; Adzuna/JSearch keyed) + JobSpy (site-tiered, radius + multi-location); `build_jobspy_tasks`, `keyed_available` |
 | `scripts/visa.py` | Sponsorship phrase detection |
@@ -417,7 +438,9 @@ employers with sponsorship history:
 | `scripts/validate_companies.py` | Check that company tokens still resolve (skips identity-only rows) |
 | `scripts/company_roles.py` | Re-check ONE company's live board with a location-policy verdict (single-company re-search + JD dump) |
 | `scripts/build_sponsor_index.py` | Optional DOL sponsorship enrichment |
-| `scripts/_vendor/{location,config,layout,job_metadata}.py` | **Generated** byte-identical copies of `scripts/shared/{location,config,layout,job_metadata}.py` (keep this skill self-contained; `config.py` supplies paths and `job_metadata.py` extracts/validates the structured handoff fields). Do not edit — regenerate with `scripts/vendoring/sync_vendored.py`; see `scripts/_vendor/README.md` |
+| `scripts/fetch_jd.py` | Fetch one posting page and save its readable text **verbatim** (`<URL> --out <path>`; no summarization) |
+| `scripts/handoff.py` | Scaffold an application folder from one selected search row (`--json <search.json> --select <"rank N"\|"Company/Title">`): folder + verbatim JD (via `fetch_jd`) + schema-v3 `meta.yaml` carrying the row's facts; validates before exit, refuses to overwrite |
+| `scripts/_vendor/{location,config,layout,job_metadata,metadata_editor}.py` | **Generated** byte-identical copies of `scripts/shared/{location,config,layout,job_metadata,metadata_editor}.py` (keep this skill self-contained; `config.py` supplies paths, `job_metadata.py` extracts/validates the structured handoff fields, `metadata_editor.py` writes them formatting-preservingly). Do not edit — regenerate with `scripts/vendoring/sync_vendored.py`; see `scripts/_vendor/README.md` |
 | `reference.md` | Data-source endpoints, field notes, visa-phrase rationale |
 | `<applications_root>/0_profile/company-search-log.yaml` | Last successful full-company search per employer (config-derived path under `config.applications_root()/0_profile/`; 7-day default skip; see above) |
 

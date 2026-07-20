@@ -8,6 +8,17 @@ Usage:
       [--company-tags ai-lab,ai-infra] [--aggregators jobicy,themuse] \
       [--jobspy] [--no-jobspy] [--no-companies] [--out <discoveries_dir>/DATE-label.md]
 
+  # Re-answer a filter/rank question (wider window, different top-k, re-emit JSON)
+  # WITHOUT re-fetching, using the snapshot the last fetch wrote:
+      [--refilter latest] [--max-age-days 7] [--top-k 60] [--json-out out.json]
+
+Default stdout is a ~5-line run summary + a compact top-K table; the full Markdown
+report is always written to the discoveries file. Pass --print-full to dump the full
+report to stdout instead. Every fetch writes a pre-filter snapshot to --cache-dir
+(default tmp/search_cache/, gitignored); --refilter [PATH|latest] reuses it, anchoring
+posting-age math to the snapshot's fetch time and refusing snapshots older than 6h
+unless --allow-stale.
+
 The --profile default and the applications-log / company-search-log / discoveries
 output locations come from the toolkit config layer (config.job_search.default_profile
 and config.paths.*), so nothing candidate-specific is hardcoded here. When no config
@@ -51,7 +62,8 @@ for _p in (str(SKILL_SCRIPTS), str(_VENDOR)):
         sys.path.insert(0, _p)
 
 from aggregators import (  # noqa: E402
-    KEYED, KEYLESS, build_aggregator_tasks, build_jobspy_tasks, keyed_available,
+    KEYED, KEYLESS, build_aggregator_tasks, build_jobspy_tasks, jobspy_available,
+    keyed_available,
 )
 from common import days_since  # noqa: E402
 from job_metadata import analyze_job_metadata, load_company_levels  # noqa: E402
@@ -61,6 +73,7 @@ from scoring import (  # noqa: E402
     visa_ok,
 )
 from sources import fetch_company  # noqa: E402
+import snapshot  # noqa: E402  (sibling: pre-filter fetch cache + --refilter helpers)
 
 try:
     import config  # noqa: E402  (vendored toolkit config loader)
@@ -99,6 +112,32 @@ def discoveries_dir() -> Path:
         except Exception:  # noqa: BLE001
             pass
     return REPO_ROOT / "applications" / "1_discoveries"
+
+
+def default_cache_dir() -> Path:
+    """Where fetch snapshots land when --cache-dir is omitted (gitignored tmp/)."""
+    return REPO_ROOT / "tmp" / "search_cache"
+
+
+# CLI flags that change WHAT is fetched (the source set), not how results are
+# filtered/scored/ranked. --refilter reuses a cached fetch, so any of these being
+# explicitly passed means the cache can't answer the question — a fresh fetch is
+# required. Classified from code truth (see the fetch-task assembly in main):
+#   --stage         -> gates stage-2 keyed aggregators + JobSpy extended sites
+#   --company-tags  -> registry.poll_companies(tags) selects which boards are fetched
+#   --aggregators   -> which keyless aggregators are fetched
+#   --no-companies  -> drops all company-board fetches
+#   --jobspy        -> force-enables the JobSpy scraper fetch tier
+#   --no-jobspy     -> disables the JobSpy scraper fetch tier
+# NOT here (deliberately): --max-age-days is ALSO passed to fetchers, but it is the
+# primary date FILTER and the headline reason to refilter (widen the window), so it
+# stays refilter-adjustable; a widen past the fetch horizon is surfaced as a stderr
+# note instead of a hard error. --workers only sets fetch concurrency (a no-op under
+# refilter). --profile is validated against the snapshot separately (below).
+FETCH_AFFECTING_FLAGS = (
+    "--stage", "--company-tags", "--aggregators",
+    "--no-companies", "--jobspy", "--no-jobspy",
+)
 
 
 def profile_dir() -> Path:
@@ -410,6 +449,198 @@ def render_markdown(kept, profile, meta) -> str:
     return "\n".join(lines)
 
 
+def _jobspy_missing_banner(skipped_sites: list[str]) -> str:
+    """Prominent multi-line stderr banner: JobSpy enabled but not importable."""
+    sites = ", ".join(dict.fromkeys(s for s in skipped_sites if s)) or "all JobSpy sites"
+    bar = "!" * 74
+    return "\n".join([
+        "",
+        bar,
+        "!! JobSpy is ENABLED for this run but the 'python-jobspy' package is NOT",
+        "!! importable, so its scraper tier is being SKIPPED this run.",
+        f"!! Skipped JobSpy sources: {sites}",
+        "!! (Indeed/Google + any stage-2 LinkedIn/Glassdoor coverage will be missing.)",
+        "!!",
+        "!! Install it, then re-run the search:",
+        "!!     .venv/bin/pip install python-jobspy",
+        bar,
+        "",
+    ])
+
+
+def assemble_jobspy_tasks(jobspy_on, stage, jobspy_cfg, query_terms, max_age,
+                          *, available=None, stream=sys.stderr):
+    """Build this run's JobSpy fetch tasks, or skip them loudly.
+
+    Returns ``(tasks, labels, skipped_sites)``. Stage 1 uses the reliable sites
+    (Indeed+Google); stage >= 2 also adds the extended sites (LinkedIn/Glassdoor).
+    When JobSpy is enabled but ``python-jobspy`` can't be imported, prints a prominent
+    multi-line banner to ``stream`` naming the exact install command and every skipped
+    site, returns no tasks, and lets the caller continue on the remaining sources.
+
+    No network is touched here — ``build_jobspy_tasks`` only builds deferred callables.
+    ``available`` overrides import detection (tests).
+    """
+    if not jobspy_on:
+        return [], [], []
+    reliable = jobspy_cfg.get("reliable_sites") or ["indeed", "google"]
+    extended = (jobspy_cfg.get("extended_sites") or ["linkedin"]) if stage >= 2 else []
+    wanted = list(reliable) + list(extended)
+    ok = jobspy_available() if available is None else available
+    if not ok:
+        print(_jobspy_missing_banner(wanted), file=stream)
+        return [], [], wanted
+    tasks: list = []
+    labels: list = []
+    tasks += build_jobspy_tasks(query_terms, jobspy_cfg, reliable, max_age)
+    labels.append("jobspy:" + ",".join(reliable))
+    if extended:
+        tasks += build_jobspy_tasks(query_terms, jobspy_cfg, extended, max_age)
+        labels.append("jobspy:" + ",".join(extended))
+    return tasks, labels, wanted
+
+
+def build_filter_context(profile: dict, registry: Registry, args) -> dict:
+    """Assemble the filter/score inputs that don't depend on the fetch itself.
+
+    These are read fresh from the current flags + skip-logs on every run (fetch OR
+    refilter), so a refilter reflects the *current* filter intent — the whole point
+    of the cache. Returns a dict consumed by :func:`filter_score_rank`.
+    """
+    considered_urls, considered_pairs = (
+        (set(), set()) if args.include_considered else load_considered())
+    skip_days, search_tokens = load_company_search_log(profile, registry)
+    if args.search_log_skip_days is not None:
+        skip_days = args.search_log_skip_days
+    ai_cfg = profile.get("ai_company", {}) or {}
+    ai_native_tags = ai_cfg.get("company_tags") or ["ai-lab", "ai-infra", "ai-native"]
+    ai_native_keys = registry.tagged_keys(ai_native_tags) if ai_cfg else set()
+    return {
+        "considered_urls": considered_urls,
+        "considered_pairs": considered_pairs,
+        "skip_days": skip_days,
+        "search_tokens": search_tokens,
+        "ignore_search_log": args.include_recent,
+        "ai_native_keys": ai_native_keys,
+    }
+
+
+def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company,
+                      sponsor_index, company_levels, registry, now):
+    """Run filter -> score -> dedupe -> rank on already-fetched postings.
+
+    ``now`` anchors all posting-age math and the recently-searched window: on a fresh
+    fetch it is wall-clock now; on a refilter it is the snapshot's fetch timestamp, so
+    ages never drift with elapsed real time. Returns ``(kept, counts)`` where the
+    pipeline is a pure function of its inputs (identical inputs -> identical output),
+    which is what makes refilter byte-identical to the fetch run that wrote the cache.
+    """
+    as_of = now.date()
+    kept = []
+    n_blacklisted = n_considered = n_recently_searched = n_non_ai = 0
+    ai_native_keys = ctx["ai_native_keys"]
+    for p in postings:
+        p.age_days = days_since(p.posted_at, now)
+        if not title_ok(p, profile):
+            continue
+        if not date_ok(p, max_age):
+            continue
+        if not location_ok(p, profile):
+            continue
+        if not visa_ok(p, profile):
+            continue
+        if not experience_ok(p, profile):
+            continue
+        is_ai_native = bool(ai_native_keys
+                            and registry.match_keys(p.company) & ai_native_keys)
+        if not ai_company_ok(p, profile, is_ai_native):
+            n_non_ai += 1
+            continue
+        if registry.is_blacklisted(p.company)[0]:
+            n_blacklisted += 1
+            continue
+        if already_considered(p, ctx["considered_urls"], ctx["considered_pairs"]):
+            n_considered += 1
+            continue
+        if not ctx["ignore_search_log"] and is_recently_searched(
+                p, ctx["search_tokens"], ctx["skip_days"], as_of, registry):
+            n_recently_searched += 1
+            continue
+        enrich_posting_metadata(p, company_levels)
+        score_posting(p, profile, sponsor_index, is_ai_native_company=is_ai_native)
+        kept.append(p)
+
+    kept = dedupe(kept)
+    kept.sort(key=lambda p: p.score, reverse=True)
+    kept = select_diverse(kept, top_k, max_per_company)
+    counts = {
+        "n_blacklisted": n_blacklisted,
+        "n_considered": n_considered,
+        "n_recently_searched": n_recently_searched,
+        "n_non_ai": n_non_ai,
+    }
+    return kept, counts
+
+
+def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
+               max_age, max_per_company, errors, now) -> dict:
+    return {
+        "profile": args.profile,
+        "generated": now.strftime("%Y-%m-%d %H:%M UTC"),
+        "max_age_days": max_age,
+        "visa_policy": (profile.get("visa", {}) or {}).get("policy", "exclude_negative"),
+        "n_companies": n_companies,
+        "aggregators": aggregators,
+        "stage": stage,
+        "n_raw": n_raw,
+        "n_blacklisted": counts["n_blacklisted"],
+        "n_considered": counts["n_considered"],
+        "n_recently_searched": counts["n_recently_searched"],
+        "max_per_company": max_per_company,
+        "errors": errors,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Compact stdout contract
+# --------------------------------------------------------------------------- #
+def _compact_age(posting) -> str:
+    return "?" if posting.age_days is None else f"{posting.age_days:.1f}d"
+
+
+def _compact_level(posting) -> str:
+    return str((posting.job_level or {}).get("normalized") or "?").replace("_", " ")
+
+
+def render_compact_table(kept) -> str:
+    """Fixed-width top-K table: rank, company, title, score, level, age, visa, URL."""
+    header = (f"{'#':>3}  {'Company':<20.20}  {'Title':<32.32}  {'Score':>6}  "
+              f"{'Level':<11.11}  {'Age':>5}  {'Visa':<7.7}  URL")
+    rule = "-" * len(header.split("  URL")[0]) + "  ---"
+    rows = [header, rule]
+    for i, p in enumerate(kept, 1):
+        rows.append(
+            f"{i:>3}  {p.company:<20.20}  {p.title:<32.32}  {p.score:>6g}  "
+            f"{_compact_level(p):<11.11}  {_compact_age(p):>5}  "
+            f"{p.visa_label:<7.7}  {p.url}")
+    return "\n".join(rows)
+
+
+def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
+                       json_path) -> str:
+    """~5-line run summary printed above the compact table on default stdout."""
+    aggs = meta["aggregators"]
+    lines = [
+        f"Stage {meta['stage']}: {meta['n_companies']} company boards + "
+        f"{len(aggs)} aggregator sources reached [{', '.join(aggs) or 'none'}]",
+        f"Fetched {meta['n_raw']} postings -> kept {len(kept)}",
+        f"Snapshot:    {snapshot_display}",
+        f"Discoveries: {discoveries_path}",
+        f"JSON:        {json_path or '-'}",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Match job postings to a profile.")
     ap.add_argument("--profile", default=default_profile(),
@@ -460,6 +691,21 @@ def main() -> int:
     ap.add_argument("--out", default=None)
     ap.add_argument("--json-out", default=None)
     ap.add_argument("--workers", type=int, default=12)
+    ap.add_argument("--cache-dir", default=None,
+                    help="Where fetch snapshots are written / read "
+                         "(default: repo tmp/search_cache/, gitignored).")
+    ap.add_argument("--refilter", nargs="?", const="latest", default=None,
+                    metavar="PATH|latest",
+                    help="Skip ALL fetching: load a pre-filter snapshot and re-run "
+                         "filter -> score -> rank with the current filter flags. "
+                         "Bare or 'latest' uses the newest snapshot for --profile; "
+                         "otherwise a snapshot path. Posting age anchors to the "
+                         "snapshot's fetch time, not now.")
+    ap.add_argument("--allow-stale", action="store_true",
+                    help="Permit --refilter on a snapshot older than the 6h TTL.")
+    ap.add_argument("--print-full", action="store_true",
+                    help="Print the full Markdown report to stdout (the pre-compact "
+                         "behavior) instead of the compact summary + top-K table.")
     args = ap.parse_args()
 
     profile = load_yaml(resolve_profile(args.profile))
@@ -484,152 +730,170 @@ def main() -> int:
                        else div_cfg.get("max_per_company", 3))
     stage = args.stage
 
-    # ---- assemble fetch tasks (two stages) ----
-    tasks = []
-    companies = []
-    if not args.no_companies:                     # stage 1: company ATS boards
-        tags = (args.company_tags.split(",") if args.company_tags
-                else src_cfg.get("company_tags"))
-        companies = registry.poll_companies(tags)
-        tasks += [(f"board:{c['name']}", (lambda c=c: fetch_company(c))) for c in companies]
-
-    query_terms = resolve_query_terms(profile)
-    query_location = src_cfg.get("query_location")
-    jobspy_cfg = src_cfg.get("jobspy", {}) or {}
-    jobspy_on = bool(args.jobspy or jobspy_cfg.get("enabled")) and not args.no_jobspy
-
-    # Aggregator names from CLI (keyless override) or profile. Keyed names listed
-    # anywhere are deferred to stage 2; keyless ones run in stage 1.
-    prof_aggs = ([a.lower().strip() for a in args.aggregators.split(",")]
-                 if args.aggregators
-                 else [a.lower().strip() for a in (src_cfg.get("aggregators") or [])])
-    extended_aggs = [a.lower().strip() for a in (src_cfg.get("extended_aggregators") or [])]
-    stage1_aggs = [a for a in prof_aggs if a in KEYLESS]
-    keyed_wanted = [a for a in (prof_aggs + extended_aggs) if a in KEYED]
-
-    agg_labels: list[str] = list(stage1_aggs)
-    # Stage 1 keyless aggregators
-    tasks += build_aggregator_tasks(stage1_aggs, query_terms, query_location,
-                                    max_age, jobspy_cfg)
-    # Stage 1 JobSpy reliable tier (Indeed + Google)
-    if jobspy_on:
-        reliable_sites = jobspy_cfg.get("reliable_sites") or ["indeed", "google"]
-        tasks += build_jobspy_tasks(query_terms, jobspy_cfg, reliable_sites, max_age)
-        agg_labels.append("jobspy:" + ",".join(reliable_sites))
-
-    # Stage 2 extended tier
-    if stage >= 2:
-        seen_keyed = []
-        for a in keyed_wanted:                    # de-dupe, preserve order
-            if a not in seen_keyed:
-                seen_keyed.append(a)
-        avail_keyed = [a for a in seen_keyed if keyed_available(a)]
-        missing_keyed = [a for a in seen_keyed if not keyed_available(a)]
-        tasks += build_aggregator_tasks(avail_keyed, query_terms, query_location,
-                                        max_age, jobspy_cfg)
-        agg_labels += avail_keyed
-        if jobspy_on:
-            extended_sites = jobspy_cfg.get("extended_sites") or ["linkedin"]
-            tasks += build_jobspy_tasks(query_terms, jobspy_cfg, extended_sites, max_age)
-            agg_labels.append("jobspy:" + ",".join(extended_sites))
-        if missing_keyed:
-            print(f"Stage 2: skipped keyed aggregators missing API keys: "
-                  f"{', '.join(missing_keyed)} (set env vars to enable).",
-                  file=sys.stderr)
-
-    if not tasks:
-        sys.exit("No sources selected. Check company_tags / aggregators / --stage.")
-
     sponsor_index = None
     if os.path.exists(args.sponsor_index):
         with open(args.sponsor_index) as f:
             sponsor_index = json.load(f)
 
-    print(f"Stage {stage}: fetching {len(companies)} company boards + "
-          f"{len(agg_labels)} aggregator sources "
-          f"[{', '.join(agg_labels) or 'none'}] ({len(tasks)} tasks)...",
-          file=sys.stderr)
-    postings, errors, per_source = run_tasks(tasks, workers=args.workers)
-    n_raw = len(postings)
-    print(f"Fetched {n_raw} raw postings "
-          f"({dict(per_source)}); {len(errors)} source errors.", file=sys.stderr)
+    cache_dir = Path(args.cache_dir) if args.cache_dir else default_cache_dir()
 
-    considered_urls, considered_pairs = (
-        (set(), set()) if args.include_considered else load_considered())
-    skip_days, search_tokens = load_company_search_log(profile, registry)
-    if args.search_log_skip_days is not None:
-        skip_days = args.search_log_skip_days
-    ignore_search_log = args.include_recent
+    # These filter/score inputs are read fresh from the CURRENT flags + skip-logs on
+    # both paths, so a refilter reflects the current filter intent.
+    ctx = build_filter_context(profile, registry, args)
 
-    # AI-native employer match keys (registry companies tagged ai-lab/ai-infra/
-    # ai-native, or a profile-configured tag list). Used for the company-level
-    # AI-native boost / hard-filter; the JD-text heuristic (ai_company_hits) is
-    # source-agnostic and handled inside scoring.
-    ai_cfg = profile.get("ai_company", {}) or {}
-    ai_native_tags = ai_cfg.get("company_tags") or ["ai-lab", "ai-infra", "ai-native"]
-    ai_native_keys = registry.tagged_keys(ai_native_tags) if ai_cfg else set()
+    if args.refilter is not None:
+        # ---- REFILTER: no fetching; reuse a cached pre-filter snapshot ----
+        snap_path = snapshot.resolve_snapshot_path(cache_dir, args.profile, args.refilter)
+        snap = snapshot.load_snapshot(snap_path)
+        fetched_at = snapshot.snapshot_fetched_at(snap)
+        wall_now = datetime.now(timezone.utc)
+        age = snapshot.format_age(wall_now - fetched_at)
+        print(f"Refilter: snapshot {snap_path} fetched {snap['fetched_at']} "
+              f"(age {age}).", file=sys.stderr)
 
-    now = datetime.now(timezone.utc)
-    as_of = now.date()
-    kept = []
-    n_blacklisted = n_considered = n_recently_searched = n_non_ai = 0
-    for p in postings:
-        p.age_days = days_since(p.posted_at, now)
-        if not title_ok(p, profile):
-            continue
-        if not date_ok(p, max_age):
-            continue
-        if not location_ok(p, profile):
-            continue
-        if not visa_ok(p, profile):
-            continue
-        if not experience_ok(p, profile):
-            continue
-        is_ai_native = bool(ai_native_keys
-                            and registry.match_keys(p.company) & ai_native_keys)
-        if not ai_company_ok(p, profile, is_ai_native):
-            n_non_ai += 1
-            continue
-        if registry.is_blacklisted(p.company)[0]:
-            n_blacklisted += 1
-            continue
-        if already_considered(p, considered_urls, considered_pairs):
-            n_considered += 1
-            continue
-        if not ignore_search_log and is_recently_searched(
-                p, search_tokens, skip_days, as_of, registry):
-            n_recently_searched += 1
-            continue
-        enrich_posting_metadata(p, company_levels)
-        score_posting(p, profile, sponsor_index, is_ai_native_company=is_ai_native)
-        kept.append(p)
+        if snapshot.is_stale(fetched_at, wall_now) and not args.allow_stale:
+            sys.exit(
+                f"Refusing snapshot older than {snapshot.TTL_HOURS}h (age {age}). "
+                "Freshness is the product — run a fresh search, or pass --allow-stale "
+                "to refilter this stale cache anyway.")
 
-    if n_blacklisted or n_considered or n_recently_searched or n_non_ai:
-        extra = f" + {n_non_ai} non-AI-native" if n_non_ai else ""
-        print(f"Skipped {n_blacklisted} blacklisted + {n_considered} "
-              f"already-considered + {n_recently_searched} recently-searched"
-              f"{extra} postings.",
+        provided = {a.split("=", 1)[0] for a in sys.argv[1:] if a.startswith("--")}
+        bad = [f for f in FETCH_AFFECTING_FLAGS if f in provided]
+        if bad:
+            sys.exit(
+                "Fresh fetch required: these flags change what is FETCHED, which a "
+                f"cached snapshot cannot answer: {', '.join(bad)}. Drop them to "
+                "refilter, or run a fresh search (no --refilter).")
+        if args.profile != snap.get("profile"):
+            sys.exit(
+                f"Fresh fetch required: snapshot was fetched for profile "
+                f"'{snap.get('profile')}', not '{args.profile}' (a different profile "
+                "fetches a different source set).")
+
+        sel = snap.get("source_selection", {}) or {}
+        fetch_max_age = sel.get("max_age_days_at_fetch")
+        if (max_age is not None and fetch_max_age is not None
+                and max_age > fetch_max_age):
+            print(f"Note: widening --max-age-days to {max_age} beyond the snapshot's "
+                  f"fetch horizon ({fetch_max_age}d) can only re-surface postings that "
+                  "were actually fetched; run a fresh search for a wider crawl.",
+                  file=sys.stderr)
+
+        postings = [snapshot.posting_from_dict(d) for d in snap.get("postings", [])]
+        n_raw = len(postings)
+        now = fetched_at                 # anchor age math to the fetch, never now
+        stage = snap.get("stage", stage)
+        n_companies = sel.get("n_companies", 0)
+        agg_labels = sel.get("aggregators", []) or []
+        errors = snap.get("errors", []) or []
+        snapshot_display = f"{snap_path} (refilter; age {age})"
+        print(f"Refilter: loaded {n_raw} normalized postings from the snapshot.",
+              file=sys.stderr)
+    else:
+        # ---- FETCH: assemble tasks (two stages), fetch, then snapshot ----
+        tasks = []
+        companies = []
+        tags = (args.company_tags.split(",") if args.company_tags
+                else src_cfg.get("company_tags"))
+        if not args.no_companies:                     # stage 1: company ATS boards
+            companies = registry.poll_companies(tags)
+            tasks += [(f"board:{c['name']}", (lambda c=c: fetch_company(c)))
+                      for c in companies]
+
+        query_terms = resolve_query_terms(profile)
+        query_location = src_cfg.get("query_location")
+        jobspy_cfg = src_cfg.get("jobspy", {}) or {}
+        jobspy_on = bool(args.jobspy or jobspy_cfg.get("enabled")) and not args.no_jobspy
+
+        # Aggregator names from CLI (keyless override) or profile. Keyed names listed
+        # anywhere are deferred to stage 2; keyless ones run in stage 1.
+        prof_aggs = ([a.lower().strip() for a in args.aggregators.split(",")]
+                     if args.aggregators
+                     else [a.lower().strip() for a in (src_cfg.get("aggregators") or [])])
+        extended_aggs = [a.lower().strip()
+                         for a in (src_cfg.get("extended_aggregators") or [])]
+        stage1_aggs = [a for a in prof_aggs if a in KEYLESS]
+        keyed_wanted = [a for a in (prof_aggs + extended_aggs) if a in KEYED]
+
+        agg_labels = list(stage1_aggs)
+        # Stage 1 keyless aggregators
+        tasks += build_aggregator_tasks(stage1_aggs, query_terms, query_location,
+                                        max_age, jobspy_cfg)
+        # JobSpy tier (stage-1 reliable + stage-2 extended). Fails loud: if JobSpy is
+        # enabled but python-jobspy is unimportable, this prints a banner naming the
+        # install command + skipped sites and returns no tasks so the run continues.
+        jobspy_tasks, jobspy_labels, _ = assemble_jobspy_tasks(
+            jobspy_on, stage, jobspy_cfg, query_terms, max_age)
+        tasks += jobspy_tasks
+        agg_labels += jobspy_labels
+
+        # Stage 2 keyed aggregators
+        if stage >= 2:
+            seen_keyed = []
+            for a in keyed_wanted:                    # de-dupe, preserve order
+                if a not in seen_keyed:
+                    seen_keyed.append(a)
+            avail_keyed = [a for a in seen_keyed if keyed_available(a)]
+            missing_keyed = [a for a in seen_keyed if not keyed_available(a)]
+            tasks += build_aggregator_tasks(avail_keyed, query_terms, query_location,
+                                            max_age, jobspy_cfg)
+            agg_labels += avail_keyed
+            if missing_keyed:
+                print(f"Stage 2: skipped keyed aggregators missing API keys: "
+                      f"{', '.join(missing_keyed)} (set env vars to enable).",
+                      file=sys.stderr)
+
+        if not tasks:
+            sys.exit("No sources selected. Check company_tags / aggregators / --stage.")
+
+        print(f"Stage {stage}: fetching {len(companies)} company boards + "
+              f"{len(agg_labels)} aggregator sources "
+              f"[{', '.join(agg_labels) or 'none'}] ({len(tasks)} tasks)...",
+              file=sys.stderr)
+        postings, errors, per_source = run_tasks(tasks, workers=args.workers)
+        n_raw = len(postings)
+        n_companies = len(companies)
+        print(f"Fetched {n_raw} raw postings "
+              f"({dict(per_source)}); {len(errors)} source errors.", file=sys.stderr)
+
+        now = datetime.now(timezone.utc)
+        # Snapshot the normalized, PRE-filter postings so a later --refilter can
+        # re-answer filter/rank questions without re-fetching (gitignored tmp/).
+        source_selection = {
+            "no_companies": bool(args.no_companies),
+            "jobspy_on": jobspy_on,
+            "company_tags": tags,
+            "aggregators": agg_labels,
+            "n_companies": n_companies,
+            "query_terms": query_terms,
+            "query_location": query_location,
+            "max_age_days_at_fetch": max_age,
+        }
+        snap_path, _ = snapshot.write_snapshot(
+            cache_dir, profile=args.profile, stage=stage, fetched_at=now,
+            source_selection=source_selection, postings=postings, errors=errors)
+        snapshot_display = str(snap_path)
+        print(f"Snapshot: wrote {n_raw} normalized postings -> {snap_path}",
               file=sys.stderr)
 
-    kept = dedupe(kept)
-    kept.sort(key=lambda p: p.score, reverse=True)
-    kept = select_diverse(kept, top_k, max_per_company)
+    # ---- shared: filter -> score -> rank -> render -> output ----
+    kept, counts = filter_score_rank(
+        postings, profile, ctx, max_age=max_age, top_k=top_k,
+        max_per_company=max_per_company, sponsor_index=sponsor_index,
+        company_levels=company_levels, registry=registry, now=now)
 
-    meta = {
-        "profile": args.profile,
-        "generated": now.strftime("%Y-%m-%d %H:%M UTC"),
-        "max_age_days": max_age,
-        "visa_policy": (profile.get("visa", {}) or {}).get("policy", "exclude_negative"),
-        "n_companies": len(companies),
-        "aggregators": agg_labels,
-        "stage": stage,
-        "n_raw": n_raw,
-        "n_blacklisted": n_blacklisted,
-        "n_considered": n_considered,
-        "n_recently_searched": n_recently_searched,
-        "max_per_company": max_per_company,
-        "errors": errors,
-    }
+    if (counts["n_blacklisted"] or counts["n_considered"]
+            or counts["n_recently_searched"] or counts["n_non_ai"]):
+        extra = f" + {counts['n_non_ai']} non-AI-native" if counts["n_non_ai"] else ""
+        print(f"Skipped {counts['n_blacklisted']} blacklisted + "
+              f"{counts['n_considered']} already-considered + "
+              f"{counts['n_recently_searched']} recently-searched{extra} postings.",
+              file=sys.stderr)
+
+    meta = build_meta(profile, args, stage=stage, n_companies=n_companies,
+                      aggregators=agg_labels, n_raw=n_raw, counts=counts,
+                      max_age=max_age, max_per_company=max_per_company,
+                      errors=errors, now=now)
     md = render_markdown(kept, profile, meta)
 
     out_path = args.out
@@ -646,7 +910,16 @@ def main() -> int:
             json.dumps([p.to_dict() for p in kept], indent=2))
         print(f"Wrote JSON -> {args.json_out}", file=sys.stderr)
 
-    print(md)
+    # Default stdout is the compact contract (5-line summary + top-K table); the full
+    # Markdown report always lands in the discoveries file, and --print-full restores
+    # the old full-report stdout dump.
+    if args.print_full:
+        print(md)
+    else:
+        print(render_run_summary(meta, kept, snapshot_display=snapshot_display,
+                                 discoveries_path=out_path, json_path=args.json_out))
+        print()
+        print(render_compact_table(kept))
     return 0
 
 
