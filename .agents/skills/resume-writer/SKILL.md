@@ -22,6 +22,19 @@ part of the routine: expect 1–2 render cycles (hard stop at 3, then report to 
 than looping); cap company/product research at 2 web fetches per cover letter unless the user
 asks for deep research; and never re-read a file already in context.**
 
+**Generation mode.** Read `config.generation_mode()` — `token_saving` (default) or `full`.
+- **token_saving (default)** *is* the routine path written in this Quickstart — card-first context
+  (not the full profile/story bank), 1–2 render cycles, ≤2 research fetches per cover letter, no
+  unprompted extra work. Nothing extra to do: follow the steps as written.
+- **full (opt-in)** lifts those discretionary caps — read the full profile + story bank up front,
+  do deep multi-source company/product research, and take extra render/polish iterations (still
+  **≤ the hard stop of 3**).
+- **Hard gates are IDENTICAL in both modes and never relax:** blacklist/log/duplicate preflight,
+  location gate, `meta.yaml` schema validation, `check.py`, no-fabrication, and the three-list
+  skill gate run the same regardless of mode. Mode changes how much *context and iteration* you
+  spend, never which *validations* run.
+- A user's explicit instruction in the moment outranks the config mode (either direction).
+
 **Default deliverables — produce all of these unless the user opts out** (e.g. "resume only"), in
 `applications/6_drafted/<slug>/`: ONE tailored **resume** (DOCX in `source/`, PDF at root, covers
 the whole folder); **one bundled application `.txt` per JD** at root

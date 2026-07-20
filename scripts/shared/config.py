@@ -30,6 +30,8 @@ Config schema::
       discoveries_dir: "applications/1_discoveries"
     job_search:
       default_profile: "default"
+    generation:
+      mode: token_saving              # token_saving (default) | full
     outlook_email:
       account: "<personal-mailbox>"  # expected signed-in mailbox; private config only
       client_id: "..."               # public-client app registration ID; not a secret
@@ -224,6 +226,19 @@ def location_policy() -> dict:
         "allow_us_remote": lp.get("allow_us_remote", True),
         "us_only": lp.get("us_only", True),
     }
+
+
+# ── generation mode (token_saving default | full) ────────────
+def generation_mode() -> str:
+    """Token-usage mode for search + drafting: ``token_saving`` (default) or ``full``.
+
+    An absent ``generation`` section or ``mode`` key resolves to ``token_saving``.
+    The mode scales how much *context and iteration* a routine run spends (research
+    depth, render/polish cycles, up-front library reads, extra sweeps); it never
+    relaxes a hard gate or validator — those run identically in both modes.
+    """
+    gen = _config().get("generation") or {}
+    return str(gen.get("mode", "token_saving"))
 
 
 # ── Outlook email assistant ───────────────────────────────────

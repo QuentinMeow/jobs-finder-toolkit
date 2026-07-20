@@ -34,6 +34,19 @@ For a single named company's live board (not a market search), jump to **Re-chec
 
 This is the complete routine path — an ordinary search needs nothing below it.
 
+**Generation mode.** Read `config.generation_mode()` — `token_saving` (default) or `full`.
+- **token_saving (default)** *is* this routine path — run the pipeline directly (no search
+  subagent for a routine run), `--refilter` the snapshot to widen/re-emit instead of re-fetching,
+  scope the run to the profile(s) asked for, and add no unprompted extra sweeps.
+- **full (opt-in)** lifts those discretionary caps — a search subagent that investigates anomalies
+  and reads pipeline source when results look wrong, deeper multi-source verification, and
+  second-profile / additional-market sweeps **when the user asks**.
+- **Hard gates are IDENTICAL in both modes and never relax:** blacklist + already-considered +
+  recently-searched skip logic, the location gate, `meta.yaml` schema validation on handoff,
+  no-fabricated-postings, and JD-text verification before handoff run the same regardless of mode.
+  Mode changes how much *context and iteration* you spend, never which *checks* run.
+- A user's explicit instruction in the moment outranks the config mode (either direction).
+
 ### Before you start
 1. Read `AGENTS.md` (traceability, no fabrication) and this skill's `LESSONS.md` (hard-won
    operational edge cases — visa phrasing, title/location false-matches, source noise). The

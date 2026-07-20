@@ -55,7 +55,9 @@ loader dir → `config.example.yaml`). **Paths** always come from `config.*_path
 baseline, reference DOCX, company-levels, applications root, discoveries), never literals — real data
 under `private/`, the public example under `examples/`. **Output stems** come from
 `config.resume_stem()`/`cover_stem()`/`application_stem()`; never hardcode a person's filename stem —
-use `<RESUME_STEM>`. Full function/path detail: `docs/AGENTS-ANNEX.md` §1.
+use `<RESUME_STEM>`. **Generation mode**: `config.generation_mode()` returns `token_saving`
+(default) or `full` — a token-usage dial for search + drafting; hard gates run identically in both.
+Full function/path detail: `docs/AGENTS-ANNEX.md` §1.
 
 ## Repo Map (top level)
 

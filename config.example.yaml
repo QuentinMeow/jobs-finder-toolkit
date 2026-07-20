@@ -12,6 +12,14 @@ paths:
   discoveries_dir: "examples/applications/1_discoveries"
 job_search:
   default_profile: "example"
+generation:
+  # Token-usage mode for search + application drafting.
+  #   token_saving (default) — routine card-first path: capped render cycles,
+  #     <=2 research fetches per cover letter, refilter-first search, no extra sweeps.
+  #   full — opt-in for deep multi-source research and extra polish iterations.
+  # Hard gates (blacklist/log preflight, location gate, schema validation,
+  # check.py, no-fabrication, skill-list gating) are identical in both modes.
+  mode: token_saving   # token_saving (default) | full
 outlook_email:
   # Personal mailbox settings belong in git-ignored config.yaml. Register a
   # Microsoft public-client app for personal accounts; never add a client secret
