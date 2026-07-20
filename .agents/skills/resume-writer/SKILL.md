@@ -245,7 +245,10 @@ prints an estimated height + verdict):
 .venv/bin/python .agents/skills/resume-writer/scripts/estimate_layout.py applications/6_drafted/<slug>/
 ```
 
-**Verdict protocol (calibrated bands against the ~734pt one-page budget):**
+**Verdict protocol (calibrated bands against the ~734pt one-page budget).** A fit verdict you
+give the user always has TWO parts: (1) the band verdict below, and (2) the statement that
+**check.py's post-render page count is the authoritative gate — the estimate is only a
+pre-check**. A verdict missing part (2) is incomplete.
 - **OK** ≤ ~715pt — 1 page with margin; proceed. **TIGHT** 715–734 — trim ~1 line.
   **OVERFLOW** > 734 — will be 2 pages; shorten the longest bullets/summary before rendering.
   **SPARSE** < ~660 — may trip check.py's "too blank"; lengthen bullets with real detail.
@@ -256,10 +259,8 @@ prints an estimated height + verdict):
 - **Never drop a project** to hit the budget; shorten bullets first, and only as a last resort
   (when shortening isn't enough) drop the single least JD-relevant project. On SPARSE, lengthen
   with real, traceable detail — never filler or invented content.
-- **check.py's post-render page count is the authoritative gate;** the estimate is only a
-  pre-check — state this explicitly whenever you give the user a fit verdict. `render.py` prints
-  this estimate up front too. See LESSONS.md → "Pre-render layout budget" for the calibrated
-  constants and the font / margin / line-spacing levers.
+- `render.py` prints this estimate up front too. See LESSONS.md → "Pre-render layout budget"
+  for the calibrated constants and the font / margin / line-spacing levers.
 
 ### Step 6: Render + Validate
 
