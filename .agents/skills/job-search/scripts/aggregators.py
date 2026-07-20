@@ -378,6 +378,22 @@ def keyed_available(name: str) -> bool:
     return False
 
 
+def jobspy_available() -> bool:
+    """True if the optional JobSpy scraper package can be imported.
+
+    JobSpy is a heavy optional dependency (pandas/numpy/tls-client). When it is
+    missing, every JobSpy fetch task fails and the whole scraper tier drops out of a
+    run silently. search_jobs.py calls this to emit a loud banner and skip the JobSpy
+    tasks rather than degrade quietly. Mirrors the ImportError guard in ``fetch_jobspy``
+    (a missing transitive dep also surfaces as ImportError / ModuleNotFoundError).
+    """
+    try:
+        import jobspy  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def build_jobspy_tasks(query_terms, jobspy_cfg, sites, max_age_days):
     """One JobSpy task per configured location, all on the given `sites`.
 

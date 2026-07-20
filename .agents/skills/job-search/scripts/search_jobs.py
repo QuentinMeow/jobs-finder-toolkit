@@ -51,7 +51,8 @@ for _p in (str(SKILL_SCRIPTS), str(_VENDOR)):
         sys.path.insert(0, _p)
 
 from aggregators import (  # noqa: E402
-    KEYED, KEYLESS, build_aggregator_tasks, build_jobspy_tasks, keyed_available,
+    KEYED, KEYLESS, build_aggregator_tasks, build_jobspy_tasks, jobspy_available,
+    keyed_available,
 )
 from common import days_since  # noqa: E402
 from job_metadata import analyze_job_metadata, load_company_levels  # noqa: E402
@@ -410,6 +411,57 @@ def render_markdown(kept, profile, meta) -> str:
     return "\n".join(lines)
 
 
+def _jobspy_missing_banner(skipped_sites: list[str]) -> str:
+    """Prominent multi-line stderr banner: JobSpy enabled but not importable."""
+    sites = ", ".join(dict.fromkeys(s for s in skipped_sites if s)) or "all JobSpy sites"
+    bar = "!" * 74
+    return "\n".join([
+        "",
+        bar,
+        "!! JobSpy is ENABLED for this run but the 'python-jobspy' package is NOT",
+        "!! importable, so its scraper tier is being SKIPPED this run.",
+        f"!! Skipped JobSpy sources: {sites}",
+        "!! (Indeed/Google + any stage-2 LinkedIn/Glassdoor coverage will be missing.)",
+        "!!",
+        "!! Install it, then re-run the search:",
+        "!!     .venv/bin/pip install python-jobspy",
+        bar,
+        "",
+    ])
+
+
+def assemble_jobspy_tasks(jobspy_on, stage, jobspy_cfg, query_terms, max_age,
+                          *, available=None, stream=sys.stderr):
+    """Build this run's JobSpy fetch tasks, or skip them loudly.
+
+    Returns ``(tasks, labels, skipped_sites)``. Stage 1 uses the reliable sites
+    (Indeed+Google); stage >= 2 also adds the extended sites (LinkedIn/Glassdoor).
+    When JobSpy is enabled but ``python-jobspy`` can't be imported, prints a prominent
+    multi-line banner to ``stream`` naming the exact install command and every skipped
+    site, returns no tasks, and lets the caller continue on the remaining sources.
+
+    No network is touched here — ``build_jobspy_tasks`` only builds deferred callables.
+    ``available`` overrides import detection (tests).
+    """
+    if not jobspy_on:
+        return [], [], []
+    reliable = jobspy_cfg.get("reliable_sites") or ["indeed", "google"]
+    extended = (jobspy_cfg.get("extended_sites") or ["linkedin"]) if stage >= 2 else []
+    wanted = list(reliable) + list(extended)
+    ok = jobspy_available() if available is None else available
+    if not ok:
+        print(_jobspy_missing_banner(wanted), file=stream)
+        return [], [], wanted
+    tasks: list = []
+    labels: list = []
+    tasks += build_jobspy_tasks(query_terms, jobspy_cfg, reliable, max_age)
+    labels.append("jobspy:" + ",".join(reliable))
+    if extended:
+        tasks += build_jobspy_tasks(query_terms, jobspy_cfg, extended, max_age)
+        labels.append("jobspy:" + ",".join(extended))
+    return tasks, labels, wanted
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Match job postings to a profile.")
     ap.add_argument("--profile", default=default_profile(),
@@ -511,13 +563,15 @@ def main() -> int:
     # Stage 1 keyless aggregators
     tasks += build_aggregator_tasks(stage1_aggs, query_terms, query_location,
                                     max_age, jobspy_cfg)
-    # Stage 1 JobSpy reliable tier (Indeed + Google)
-    if jobspy_on:
-        reliable_sites = jobspy_cfg.get("reliable_sites") or ["indeed", "google"]
-        tasks += build_jobspy_tasks(query_terms, jobspy_cfg, reliable_sites, max_age)
-        agg_labels.append("jobspy:" + ",".join(reliable_sites))
+    # JobSpy tier (stage-1 reliable + stage-2 extended). Fails loud: if JobSpy is
+    # enabled but python-jobspy is unimportable, this prints a banner naming the
+    # install command + skipped sites and returns no tasks so the run continues.
+    jobspy_tasks, jobspy_labels, _ = assemble_jobspy_tasks(
+        jobspy_on, stage, jobspy_cfg, query_terms, max_age)
+    tasks += jobspy_tasks
+    agg_labels += jobspy_labels
 
-    # Stage 2 extended tier
+    # Stage 2 keyed aggregators
     if stage >= 2:
         seen_keyed = []
         for a in keyed_wanted:                    # de-dupe, preserve order
@@ -528,10 +582,6 @@ def main() -> int:
         tasks += build_aggregator_tasks(avail_keyed, query_terms, query_location,
                                         max_age, jobspy_cfg)
         agg_labels += avail_keyed
-        if jobspy_on:
-            extended_sites = jobspy_cfg.get("extended_sites") or ["linkedin"]
-            tasks += build_jobspy_tasks(query_terms, jobspy_cfg, extended_sites, max_age)
-            agg_labels.append("jobspy:" + ",".join(extended_sites))
         if missing_keyed:
             print(f"Stage 2: skipped keyed aggregators missing API keys: "
                   f"{', '.join(missing_keyed)} (set env vars to enable).",
