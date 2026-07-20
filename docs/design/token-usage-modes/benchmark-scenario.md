@@ -1,6 +1,10 @@
-# Benchmark scenario (v1) — one search + two drafted applications
+# Benchmark scenario (v1.1) — one search + two drafted applications
 
-**Status:** pinned (2026-07-20). This is the fixed, testable definition of the
+**Status:** pinned (2026-07-20; v1.1 same day — the first v1 attempt was
+invalidated when the day's heavily pre-mined pipeline state yielded zero
+eligible candidates, so v1.1 pins the run *independent of mutable pipeline
+state*; an invalidated attempt is recorded in the results file but its tokens
+never enter a row). This is the fixed, testable definition of the
 token-usage benchmark. Every future row in the README table and every stage
 gate compares against a run of *this* scenario, like-for-like. The Stage-1
 result (`evals/results/stage1-benchmark-20260720.md`) rose +15% partly because
@@ -20,9 +24,18 @@ measured subject agents run the pinned mid-tier.
 
 ## 1. Search — exactly one search subagent, one profile
 
-- **Profile:** the owner's default profile as defined in the private config
-  (`config.job_search.default_profile`) — **one profile only**. No second
-  profile, no ad-hoc criteria.
+- **Profile:** a **benchmark-labeled copy** of the owner's default profile
+  (identical criteria, name suffixed for benchmark provenance) — **one profile
+  only**. No second profile, no ad-hoc criteria. The copy keeps benchmark
+  discovery artifacts separate from real runs and is passed by *name* (never a
+  filesystem path — a path argument leaks into the discoveries filename).
+- **Pipeline-state neutrality (v1.1):** run with `--include-recent` and
+  `--include-considered` so the row does not depend on how recently the
+  private pipeline was mined or synced — both skips key off mutable private
+  logs that vary day to day. The **folder-based duplicate check** (below)
+  remains the real gate against re-drafting anything already in the pipeline.
+  The snapshot cache starts **cold** (cleared before the run), so every row
+  pays exactly one fetch per widening step at most.
 - **Freshness / widening policy (fixed):** start at **last 2 hours**
   (`--max-age-days 0.084`). Widen **stepwise to 1 day, then to 3 days**, and
   *only* when the current window yields **fewer than 2 eligible candidates**
