@@ -207,6 +207,7 @@ companies:
   - {name: Workday, ats: workday, token: workday, host: workday.wd5.myworkdayjobs.com, site: Workday, tags: [bigtech, saas]}
   - {name: PayPal, ats: workday, token: paypal, host: paypal.wd1.myworkdayjobs.com, site: Jobs, tags: [bigtech, fintech]}
   - {name: eBay, ats: workday, token: ebay, host: ebay.wd5.myworkdayjobs.com, site: apply, tags: [bigtech, consumer]}
+  - {name: Yahoo, ats: workday, token: ouryahoo, host: ouryahoo.wd5.myworkdayjobs.com, site: careers, tags: [bigtech, consumer]}
   - {name: Unity, ats: workday, token: unitytech, host: unitytech.wd1.myworkdayjobs.com, site: Unity, tags: [bigtech, gaming]}
   - {name: Activision Blizzard, ats: workday, token: xboxgaming, host: xboxgaming.wd1.myworkdayjobs.com, site: CentralTech, tags: [bigtech, gaming]}
   - {name: Smartsheet, ats: greenhouse, token: smartsheet, tags: [bigtech, saas]}
