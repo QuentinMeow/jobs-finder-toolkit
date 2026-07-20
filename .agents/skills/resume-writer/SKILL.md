@@ -16,13 +16,11 @@ Use this skill when the user asks to:
 ## Before You Start
 
 1. Read `AGENTS.md` for guardrails (no fabrication, consistency).
-2. **Read the tailoring card first** (`<applications_root>/0_profile/tailoring-card.md`) —
-   a distilled digest of identity/locked fields, target roles, key numbers, the three
-   skills lists (Never verbatim), and a story-bank digest. If it is missing or stale
-   (`build_tailoring_card.py --check` exits non-zero), rebuild it with
-   `.venv/bin/python .agents/skills/resume-writer/scripts/build_tailoring_card.py`. Open the
-   full profile (`config.profile_md_path()`) or story bank only when a card pointer or the JD
-   demands a deep dive — the full files always win on any conflict.
+2. **Read the tailoring card first** (`<applications_root>/0_profile/tailoring-card.md`): identity/locked
+   fields, target roles, key numbers, the three skills lists (Never verbatim), story-bank digest.
+   If missing or stale, rebuild: `.venv/bin/python .agents/skills/resume-writer/scripts/build_tailoring_card.py`
+   (`--check` tests staleness). Open the full profile (`config.profile_md_path()`) or story bank
+   only when a card pointer or the JD demands a deep dive — the full files win on any conflict.
 3. Skim the supporting library for real, verifiable detail you can pull into bullets:
    - `interviews/behavioral-story-bank/` — deep, first-person write-ups of real projects
      (concrete scale, artifacts, and metrics). These are the richest source of legitimate
