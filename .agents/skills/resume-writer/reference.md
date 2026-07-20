@@ -235,8 +235,8 @@ keywords in high-weight locations is the target.
 - The **summary is read first and carries the highest per-word weight** — put the role's
   top 3-5 keywords there, honestly framed.
 - Keywords in a **properly labeled Skills section outrank the same words buried in a
-  bullet** — surface JD-critical skills there (Approved list, or JD-conditional
-  Weak+JD-mention).
+  bullet** — surface JD-critical skills there (Approved list, or user-facing
+  Weak/Selective + explicit JD mention).
 - The **first bullet under each project** is weighted more than later bullets — lead with
   the most JD-relevant bullet per project (reorder within the 2-3 without rewriting).
 - Any term appearing **2+ times in the JD is almost certainly weighted** — make sure the

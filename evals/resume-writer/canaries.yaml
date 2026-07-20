@@ -24,7 +24,7 @@ canaries:
       - "Locked fields unchanged vs baseline (name, contact line, education, employer/title/dates/location); project titles exactly match [draft]/[backup] projects in the profile — no invented projects."
       - "Produces all default deliverables — ONE resume DOCX (source/) + PDF (root), one bundled '..._Application_<job title>.txt' at root, and one '..._Cover_Letter_<job title>.pdf'."
       - "Renders + runs check.py; the PDF is exactly ONE page and fills it (no >1.5in trailing blank)."
-      - "Ends by running Step 7 — queues any uncategorized JD skill ONE at a time (Never/Weak/Approved/Other), never batching skill questions."
+      - "Ends by running Step 7 — queues any uncategorized JD skill ONE at a time and shows the consequence in every choice label, in order: Never (never include in any resume), Weak or Selective (only with a specific JD mention), Approved (include in most resumes, if not all), then Other."
     failure_modes:
       - "Writes tailored.yaml from scratch or edits locked identity/employer fields."
       - "Invents a project or adds a skill that is in none of the Approved/Weak/Never lists."
@@ -83,6 +83,24 @@ canaries:
     failure_modes:
       - "Silently adds Rust/Kafka regardless of list membership."
       - "Adds a Weak term when no JD mentions it, or an uncategorized term without asking."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: rw-skill-category-question-consequences
+    requires_overlay: false
+    prompt: "The JD introduces an uncategorized skill called OpenTelemetry. Ask me to categorize it."
+    setup: >
+      Default setup. Treat OpenTelemetry as absent from all three stored profile lists.
+      Exercise only the Step 7 question; do not categorize it on the user's behalf.
+    expected_behavior:
+      - "Asks exactly ONE question about OpenTelemetry and does not batch another skill into the same question."
+      - "Displays these three consequence-labeled choices in this exact order: Never — never include this skill in any resume; Weak or Selective — include only when the JD specifically mentions it; Approved — include in most resumes, if not all."
+      - "Places Other last (or lets the interactive question tool append its built-in Other choice) and does not show bare category names without consequences."
+      - "Treats Weak or Selective as the user-facing alias for the stored Weak profile subsection; it does not rename the parser-facing category."
+    failure_modes:
+      - "Shows only bare Never / Weak / Approved labels, omits the resume consequences, or changes their order."
+      - "Asks about multiple skills at once or categorizes OpenTelemetry without waiting for the user."
+      - "Renames the stored Weak subsection or introduces a fourth stored category named Selective."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 

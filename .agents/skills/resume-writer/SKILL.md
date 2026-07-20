@@ -116,7 +116,7 @@ Create the folder and its `source/` subfolder. Put the files listed below in pla
 `<job title>` is the posting's title, lowercased with hyphens (e.g.
 `JD-senior-software-engineer-infrastructure.md`). One file per posting; never a bare
 `jd.md`. `.agents/skills/resume-writer/scripts/check.py` reads and concatenates every `JD-*.md` in `source/`, so
-Weak-skill validation honors a term mentioned in any of the JDs.
+Weak-or-Selective validation honors a term mentioned in any of the JDs.
 
 **Multiple jobs at one company — one resume by default, split only when the roles are very
 different** (different companies always get their own folder). See "One Resume, Multiple Roles
@@ -203,9 +203,10 @@ Read the JD and identify:
 7. **Compensation facts**: posted base-salary/pay range and separately stated total
    compensation/OTE. Do not derive total compensation from assumed equity or bonus.
 8. **Skill-list status**: compare each concrete skill/technology against the profile's
-   Approved / Weak / Never lists. Deduplicate close variants and preserve first-seen JD
-   order for the one-at-a-time uncategorized-skill queue in Step 7. Do not infer a category
-   merely from how familiar or unusual a term sounds.
+   Approved / Weak / Never lists (`Weak` is presented to users as **Weak or Selective**).
+   Deduplicate close variants and preserve first-seen JD order for the one-at-a-time
+   uncategorized-skill queue in Step 7. Do not infer a category merely from how familiar or
+   unusual a term sounds.
 
 ### Step 3: Gap Analysis
 
@@ -316,14 +317,14 @@ automatically; violating them fails the render.
 
 **Honesty (validated where possible):**
 - The profile's Skills section has three lists that gate every skill mention:
-  - **Approved** — safe to include in any resume
-  - **Weak** — JD-conditional: include ONLY when the JD explicitly mentions the term
-    (check.py verifies against every `source/JD-*.md`). "Weak" does **not** necessarily
-    mean low proficiency; it may instead mean the wording is unusual, awkward, overly
-    specific, or otherwise undesirable on the regular resume unless that exact term
-    appears in the JD.
-  - **Never** — skills the user doesn't know; must not appear anywhere on the resume
-    (skills line, summary, or bullets — check.py scans all text)
+  - **Approved** — generally include in most resumes, if not all; still prioritize
+    relevance and the one-page space limit.
+  - **Weak** (user-facing: **Weak or Selective**) — include ONLY when the JD explicitly
+    mentions the term (check.py verifies against every `source/JD-*.md`). This category does
+    **not** necessarily mean low proficiency; it may instead mean the wording is unusual,
+    awkward, overly specific, or otherwise undesirable on the regular resume.
+  - **Never** — never include this skill in any resume, even when the JD mentions it
+    (check.py scans skills lines, summaries, and bullets).
 - A skill in none of the three lists fails validation — never add it silently; see
   Step 7 (categorize new skills with the user)
 - Every bullet must map to real content the user actually did — reword, never invent.
@@ -354,9 +355,9 @@ automatically; violating them fails the render.
   always leads — see Step 4), and adjust which bold phrases carry emphasis.
 - Swap in at most ONE `[backup]` project, and only when it is clearly a better fit;
   explain the swap to the user
-- Skills lines: reorder so JD-relevant items come first; merge in JD-conditional Weak-list
-  terms only when the JD explicitly mentions them, regardless of why the user classified
-  the term as Weak
+- Skills lines: reorder so JD-relevant items come first; merge in terms categorized as
+  Weak or Selective only when the JD explicitly mentions them, regardless of why the user
+  chose that category
 
 ### Step 5.5: Pre-render layout budget (one-shot the single page)
 
@@ -454,37 +455,43 @@ AND update `config.baseline_path()` to match its content exactly (this is the on
 
 After rendering, extract every concrete skill/technology the JD mentions (languages,
 frameworks, tools, platforms, methodologies — not soft skills) and compare against the
-profile's three lists (Approved / Weak / Never, matching case-insensitively and counting
-close variants like "Go"/"Golang" or "K8s"/"Kubernetes" as the same skill). Use the
+profile's three stored lists (Approved / Weak / Never, matching case-insensitively and
+counting close variants like "Go"/"Golang" or "K8s"/"Kubernetes" as the same skill). Use the
 deduplicated, first-seen order recorded in Step 2.
 
 For any JD skill in NONE of the lists, ask the user at the end of the run to categorize
-it with these meanings:
+it by its concrete resume consequence:
 
-- **Never** — user doesn't know it; never include
-- **Weak** — JD-conditional; include only when a JD explicitly mentions it. This may
+- **Never** — never include this skill in any resume, even when a JD mentions it.
+- **Weak or Selective** — include only when the JD specifically mentions it. This may
   represent limited familiarity, but it may instead reflect strange, awkward, overly
   specific, or undesirable wording that should not appear on the regular resume.
-- **Approved** — user knows it well and is comfortable including it in any resume
+- **Approved** — generally include in most resumes, if not all, subject to relevance and
+  available space.
 - **Other** — the user needs clarification, wants to distinguish a phrase from a skill,
   or wants to discuss how it should be normalized before categorizing it
+
+`Weak or Selective` is the user-facing label for the stored `### Weak` profile subsection.
+Record that answer under `Weak`; do not rename the profile subsection or change the parser's
+category names.
 
 The interaction protocol is strict:
 
 1. Ask about **exactly one skill at a time**, regardless of how many are pending. Never
    put multiple skill questions in one tool call, form, message, batch, or multi-select;
    never offer an "apply my whole split" shortcut.
-2. Always display choices in this exact order to reduce mis-clicks:
-   1. **Never**
-   2. **Weak**
-   3. **Approved**
+2. Always display the consequence in each choice label, in this exact order:
+   1. **Never — never include this skill in any resume**
+   2. **Weak or Selective — include only when the JD specifically mentions it**
+   3. **Approved — include in most resumes, if not all**
    4. **Other** (free text for clarification)
    With an interactive question tool whose built-in Other choice is automatic, provide
-   only Never, Weak, and Approved in that order so the tool appends Other last. Use one
-   question object per call. If recommending a category, state the recommendation in the
-   prompt without changing the choice order.
-3. Wait for the user's answer before asking about the next skill. After a Never / Weak /
-   Approved answer, update the corresponding list in the candidate profile
+   only the three consequence-labeled choices above so the tool appends Other last. Use one
+   question object per call. Never show bare `Never` / `Weak` / `Approved` labels without
+   their consequences. If recommending a category, state the recommendation in the prompt
+   without changing the choice order.
+3. Wait for the user's answer before asking about the next skill. After a Never /
+   Weak-or-Selective / Approved answer, update the corresponding stored list in the candidate profile
    (`config.profile_md_path()`); that answer is the required permission for this profile
    edit. Then ask the next queued skill, if any.
 4. If the user selects Other, clarify that same skill and then ask it again with the same
@@ -494,9 +501,9 @@ The interaction protocol is strict:
    simultaneous choices. Return only the first pending skill question, then continue one
    skill per user response in later turns.
 
-After the queue is complete, if a newly Approved or Weak term would improve the
-just-rendered resume, offer to re-tailor with it. A newly Weak term remains JD-conditional
-even when the reason is wording preference rather than proficiency.
+After the queue is complete, if a newly Approved or Weak/Selective term would improve the
+just-rendered resume, offer to re-tailor with it. A newly Weak/Selective term remains
+JD-conditional even when the reason is wording preference rather than proficiency.
 
 Never silently add an uncategorized skill to the resume — check.py fails the render
 if you try.
@@ -526,8 +533,8 @@ Handle the whole set as a **single application folder** — not one folder per r
    intentionally extending it (default: stop and use the existing folder).
 
 1. **JD files** — save one `source/JD-<job title>.md` per posting (full JD text + URL).
-   `.agents/skills/resume-writer/scripts/check.py` reads and concatenates every `source/JD-*.md`, so a Weak skill
-   mentioned in *any* of the JDs validates.
+   `.agents/skills/resume-writer/scripts/check.py` reads and concatenates every
+   `source/JD-*.md`, so a Weak/Selective skill mentioned in *any* of the JDs validates.
 2. **`meta.yaml`** — use the `jobs:` list form (see Step 1). One entry per posting with
    `role`, `jd_file` (the `JD-<job title>.md` name), `url`, `posted_date`, the four
    structured job metadata fields, and an optional `fit` note. Keep company-wide fields
@@ -538,9 +545,9 @@ Handle the whole set as a **single application folder** — not one folder per r
    have in common; call out in `tailored.yaml`'s header comment which role each choice serves
    and what is deliberately NOT claimed for the weaker-fit roles.
 4. **Categorize new skills (Step 7) across the union of all JDs.** Deduplicate close
-   variants, then follow Step 7's strict one-question-at-a-time protocol and fixed
-   Never → Weak → Approved → Other choice order; a larger multi-role union is never a
-   reason to batch questions.
+   variants, then follow Step 7's strict one-question-at-a-time protocol and fixed,
+   consequence-labeled Never → Weak or Selective → Approved → Other choice order; a larger
+   multi-role union is never a reason to batch questions.
 5. **Write one bundled `..._Application_<job title>.txt` per JD** — cover letters are
    one-to-one with postings. Research each JD individually and write a distinct, tailored
    COVER LETTER + WHY + PAST EXPERIENCE for it; do NOT reuse one letter across the set. The

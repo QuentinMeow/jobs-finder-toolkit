@@ -29,19 +29,19 @@ B.S. in Computer Science, Lakemont University, 2015
 
 ## Skills
 
-### Approved (safe to include in any resume)
+### Approved (include in most resumes, if not all)
 
 - Programming Languages: Python, Java, Go, JavaScript, TypeScript, SQL, Bash, HTML, CSS
 - Skills: AWS, EC2, S3, Docker, Kubernetes, Terraform, PostgreSQL, Redis, gRPC, REST APIs, GraphQL, microservices, distributed systems, event-driven architecture, message queues, caching, CI/CD, Git, observability, React, Node.js
 
-### Weak (include ONLY when the job description explicitly mentions them)
+### Weak (user-facing: Weak or Selective — include ONLY when the JD specifically mentions it)
 
 - Cloud & Infra: AWS (Lambda, SQS, SNS), Kafka, RabbitMQ, service mesh
 - Frontend: Vue, Next.js, Angular
 - Data & Search: Elasticsearch, MongoDB, DynamoDB, data pipelines
 - CI/CD & Collaboration: GitHub Actions, Jenkins, Jira, Confluence
 
-### Never (skills I don't know — never put in any resume)
+### Never (never include in any resume)
 
 - Languages: Rust, C++, C#, Scala, Ruby, Kotlin, Elixir
 - Cloud: GCP, Azure, Vertex AI, multi-cloud
@@ -105,7 +105,7 @@ B.S. in Computer Science, Lakemont University, 2015
 - **Education & Skills**: Combined into a single section. Education on the first line, then Programming Languages, then Skills
 - **Experience layout**: Project-based under a single employer, not a list of companies. Employer header on one line, then project blocks with a bold title + bullet points
 - **Project selection**: Use [draft] projects by default (pick ~5 that best fit the JD). Use [backup] projects only if they are a significantly better fit than one of the draft projects for the specific role
-- **Skills selection**: Three lists in the Skills section — Approved (include freely), Weak (include only when the JD explicitly mentions them), Never (never include). Any JD skill not in the three lists must be surfaced at the end of a tailoring run so it can be categorized
+- **Skills selection**: Three stored lists in the Skills section — Approved (include in most resumes, if not all), Weak (shown to users as Weak or Selective; include only when the JD specifically mentions it), and Never (never include in any resume). Any JD skill not in the three lists must be surfaced at the end of a tailoring run so it can be categorized
 - **Rewording**: Allowed and encouraged to reword bullets to better match JD keywords, but the underlying experience must be real
 - **Guardrails**: No false information. No fabricated metrics. No technologies I haven't used. No inflated job titles
 - **Length**: One page. Roughly 5 projects with 2-3 bullets each

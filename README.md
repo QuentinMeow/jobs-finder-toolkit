@@ -1,17 +1,41 @@
-# Jobs Finder — an AI-agent job-hunting toolkit
+# Jobs Finder — AI job hunting without invented experience
 
-Point your AI coding agent (Claude Code, Cursor, Codex, …) at this repo and it can
-find matching job postings, tailor an ATS-optimized resume + cover letter for each
-one, track every application through a pipeline, and prep you for the interviews —
-while a validator keeps every generated resume honest, one page, and true to your
-approved format.
+AI should tailor your resume—not invent your career or force it into someone
+else's template. Jobs Finder starts from experience and skill rules you approve,
+preserves your own Word format, and rejects output that changes locked facts or
+breaks the one-page layout.
+
+Point Claude Code, Cursor, Codex, or another AI coding agent at this repo to find
+matching roles, create validated resumes and a researched cover letter for every
+posting, track your application pipeline, and prepare for interviews—all in a
+local, reproducible workflow you can inspect and control.
+
+## What makes it different
+
+Many tools can write a resume, score it against a JD, or track applications. This
+toolkit treats the whole job hunt as a **local, reproducible build** with safeguards
+that the surveyed commercial and open-source alternatives do not publicly document
+together:
+
+| Differentiator                         | What it means in practice                                                                                                                                                                                                                                                                    |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Truthfulness is a build gate**       | Tailoring starts from your approved baseline resume. Locked identity/employment fields and real project titles are machine-checked. Skills follow explicit consequences: Never means never include, Weak or Selective means include only when the JD specifically mentions it, and Approved means include in most resumes, if not all. Unknown skills fail validation instead of being silently added. |
+| **Your DOCX is the template**          | The renderer fills your own approved Word document, preserving its fonts, margins, spacing, and styles, then rejects a PDF that is not one page, is broken, or leaves too much blank space.                                                                                                  |
+| **Every application is reproducible**  | The saved JD, structured resume source, exact DOCX/PDF, metadata, and copy-paste answers stay together. Related roles can share one honest resume, but every JD still gets its own researched letter and packet.                                                                             |
+| **One workspace covers the full hunt** | Multi-source, sponsorship/location-aware discovery feeds tailoring, a folder-backed application pipeline, deep company/role research, and reusable behavioral interview stories.                                                                                                             |
+| **Privacy is architectural**           | Real data can live in a separate private overlay. A blocking leak guard checks paths, text, structural PII, identity tokens, and extractable DOCX/PDF content before the public toolkit can ship.                                                                                            |
+
+See the [feature inventory, competitor matrix, implementation deep dives, limitations,
+and sources](docs/comparisons/resume-writing-tools.md). The comparison was researched
+on 2026-07-20; “not publicly documented” is evidence of differentiation, not a claim
+that another product could never implement the capability.
 
 Here is what one tailoring run produces — a resume rendered into *your* approved
 DOCX format, plus an individually researched cover letter per posting:
 
 | Tailored resume (PDF) | Cover letter (PDF, one per posting) |
 |---|---|
-| ![Example tailored resume](examples/screenshots/example-resume.png) | ![Example cover letter](examples/screenshots/example-cover-letter.png) |
+| ![Example tailored resume](examples/screenshots/example-resume.jpg) | ![Example cover letter](examples/screenshots/example-cover-letter.jpg) |
 
 Every application also gets a bundled, copy-paste `..._Application_<role>.txt`
 (cover letter + "why this company/role" + "past experience" sections for portal
@@ -88,13 +112,13 @@ its scripts and vendored dependencies), agent-agnostic, and also published as a
 Claude Code plugin marketplace via
 [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json):
 
-- **`ask-me-anything`** — orientation guide: the five-step workflow and what each step needs (start here)
-- **`job-search`** — discover and rank fresh postings by role, location, recency, and visa sponsorship
-- **`resume-writer`** — tailor resumes for ATS fit and render validated DOCX + PDF + cover letters
-- **`application-tracker`** — pipeline status, structured `meta.yaml` facts, notes, skip-logs
-- **`behavioral-interview-prep`** — project-based STAR story banks and reusable answers
-- **`company-research`** — deep company + role research and an interview question bank
-- **`gardener`** — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
+- `ask-me-anything` — orientation guide: the five-step workflow and what each step needs (start here)
+- `job-search` — discover and rank fresh postings by role, location, recency, and visa sponsorship
+- `resume-writer` — tailor resumes for ATS fit and render validated DOCX + PDF + cover letters
+- `application-tracker` — pipeline status, structured `meta.yaml` facts, notes, skip-logs
+- `behavioral-interview-prep` — project-based STAR story banks and reusable answers
+- `company-research` — deep company + role research and an interview question bank
+- `gardener` — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
 
 ## Repo layout
 
@@ -116,6 +140,9 @@ AGENTS.md                # the agent-facing contract (guardrails + conventions)
   reference table
 - [docs/PRIVATE_OVERLAY.md](docs/PRIVATE_OVERLAY.md) — the public/private two-repo
   model and overlay setup
+- [docs/comparisons/resume-writing-tools.md](docs/comparisons/resume-writing-tools.md)
+  — detailed feature inventory, market comparison, implementation deep dives, and
+  official sources
 - [AGENTS.md](AGENTS.md) — the contract AI agents follow (no fabrication,
   validation is mandatory, folder conventions)
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, the check suite, and the PR

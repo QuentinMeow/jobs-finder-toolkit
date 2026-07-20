@@ -7,11 +7,12 @@ correctly-formatted variant of the approved baseline resume:
   to config.paths.baseline_yaml — a tailored resume may never change them.
 - Project titles must be real projects from the candidate profile
   (config.paths.profile_md) ([draft] or [backup]) — no invented or renamed projects.
-- Skill items must be in the profile's Approved list, or in the Weak list with an
-  explicit mention in the application's job description(s); 'Never' list items may
-  not appear anywhere on the resume. Unknown skills fail with a prompt to
-  categorize them. Job-description text is read from every JD-<job-title>.md file
-  under the application's source/ subfolder (concatenated for validation).
+- Skill items must be in the profile's Approved list, or in the Weak list (presented
+  to users as Weak or Selective) with an explicit mention in the application's job
+  description(s); 'Never' list items may not appear anywhere on the resume. Unknown
+  skills fail with a prompt to categorize them. Job-description text is read from
+  every JD-<job-title>.md file under the application's source/ subfolder
+  (concatenated for validation).
 - Structure: 3 summary bullets, 4-6 projects, 2-3 bullets each. Projects are
   never dropped to tailor — the full set is kept; a project is removed only when
   the content genuinely cannot fit on one page.
@@ -240,8 +241,8 @@ def _in_list(tok: str, skill_list_text: str) -> bool:
 def _mentioned_in_jd(tok: str, jd_text: str) -> bool:
     """Lenient: the full token, or any of its words (3+ chars), appears in the JD.
 
-    Matching is punctuation(dot)-insensitive so a Weak skill written one way on the
-    resume still matches a JD that spells it differently — e.g. "Node.js" vs
+    Matching is punctuation(dot)-insensitive so a Weak/Selective skill written one way
+    on the resume still matches a JD that spells it differently — e.g. "Node.js" vs
     "NodeJS", or "React.js" vs "React". Both sides are compared with dots removed
     in addition to the literal comparison.
     """
@@ -268,16 +269,18 @@ def check_skills(c: Checker, data: dict, approved: list, weak: list, jd_text: st
             if _in_list(tok, approved_text):
                 continue
             if _in_list(tok, weak_text):
-                # Weak skills are allowed only when the JD mentions them
+                # Weak/Selective skills are allowed only when the JD mentions them
                 if jd_text is None:
-                    c.warn(f"Weak skill {tok!r} used but no JD file (jd.md / JD-*.md) "
+                    c.warn(f"Weak/Selective skill {tok!r} used but no JD file (jd.md / JD-*.md) "
                            "found to verify JD mention")
                 elif not _mentioned_in_jd(tok, jd_text):
-                    c.fail(f"Weak skill {tok!r} used but the JD does not mention it "
-                           "(Weak skills require an explicit JD mention)")
+                    c.fail(f"Weak/Selective skill {tok!r} used but the JD does not mention it "
+                           "(Weak/Selective skills require an explicit JD mention)")
                 continue
             c.fail(f"Skill {tok!r} is not in the profile's Approved or Weak lists — "
-                   "new skill: ask the user to categorize it (Approved/Weak/Never)")
+                   "ask the user to categorize it as Never (never include in any resume), "
+                   "Weak or Selective (only with an explicit JD mention), or Approved "
+                   "(include in most resumes, if not all)")
 
 
 def _all_resume_text(data: dict) -> str:

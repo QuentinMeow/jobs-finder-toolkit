@@ -376,7 +376,11 @@ repo-wide cap — the skills reference it rather than restating it.
 - **Anchored, not frozen**: start every `tailored.yaml` as a copy of the baseline (`config.baseline_path()`). Rephrasing experience bullets and adding real, traceable detail from the library to improve JD fit is allowed; it is still not a from-scratch rewrite, and locked fields, titles, and skill-list gating always hold.
 - **Deep, tailored research**: the cover letter, why-fit, and past-experience sections of each `..._Application_<job title>.txt` must show genuine understanding of the company's product AND that specific JD. Research the company's product/mission before writing; reference concrete, real specifics (never generic flattery or invented product claims). **One cover letter per JD, tailored per posting — no shared/boilerplate letter across postings.**
 - **Keyword density**: incorporate job description keywords naturally. Do not stuff. Readability matters — a human recruiter reads after ATS passes.
-- **Skill lists**: the profile's Skills section defines Approved (use freely), Weak (only when the JD mentions them), and Never (blocklist — must not appear anywhere on the resume). JD skills in none of the lists must be surfaced to the user for categorization at the end of a tailoring run, never added silently.
+- **Skill lists**: the profile's Skills section defines Approved (generally include in most
+  resumes, if not all), Weak (shown to users as **Weak or Selective**; include only when the
+  JD specifically mentions it), and Never (never include in any resume, even when the JD
+  mentions it). JD skills in none of the lists must be surfaced to the user for categorization
+  at the end of a tailoring run, never added silently.
 - **Honesty over optimization**: if the user's experience is a poor match for a role, say so clearly.
 - **Profile is user-owned**: ask before modifying the candidate profile (`config.profile_md_path()`).
 - **Eval-gated harness edits**: any change to a skill's `SKILL.md`/`LESSONS.md`/`reference.md` must pass that skill's canaries (`evals/<skill>/canaries.yaml`) before merge, with no large efficiency regression vs baseline; record runs per `evals/README.md` (model-pinned; re-baseline on model upgrades). Harness self-edits are delta-only — never full-file rewrites, and consolidation never deletes a domain edge case.
