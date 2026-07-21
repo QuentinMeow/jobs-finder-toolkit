@@ -349,16 +349,6 @@ def render_from_reference(ref_path: Path, data: dict, output_path: Path):
 
 
 # ──────────────────────────────────────────────
-# PDF conversion
-# ──────────────────────────────────────────────
-
-def convert_to_pdf(docx_path: Path, output_dir: Path, stem: str) -> Path | None:
-    """Convert the rendered resume DOCX to PDF (shared LibreOffice helper)."""
-    from pdf_convert import docx_to_pdf
-    return docx_to_pdf(docx_path, output_dir, stem)
-
-
-# ──────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────
 
@@ -453,28 +443,48 @@ def main():
         sys.exit(1)
     print(f"  DOCX: {docx_output}")
 
+    # ── Cover-letter DOCX (one per JD/role, from the bundled ..._Application_<role>.txt) ──
+    # Build every cover-letter DOCX first (fast, in-process; no PDF yet) so the
+    # resume PDF and all cover-letter PDFs convert together in ONE parallel batch
+    # below, instead of one-LibreOffice-at-a-time.
+    cover_docs = []  # (role, cl_docx | None) in render order
+    if not args.no_cover_letter:
+        import cover_letter
+        for role, cl_docx, _ in cover_letter.render_all_cover_letters(
+                app_dir, make_pdf=False):
+            tag = f" [{role}]" if role else ""
+            if cl_docx is None:
+                print(f"  Cover{tag}: no bundled Application .txt for this role")
+            else:
+                print(f"  Cover DOCX{tag}: {cl_docx}")
+            cover_docs.append((role, cl_docx))
+
     pdf_path = None
     if not args.no_pdf:
-        pdf_path = convert_to_pdf(docx_output, app_dir, stem)
+        # Convert the resume + every cover letter concurrently — each in its own
+        # LibreOffice process with an isolated user profile (pdf_convert). The
+        # resume is always job 0; cover PDFs follow in cover_docs order.
+        import pdf_convert
+        renderable = [(role, cl) for role, cl in cover_docs if cl is not None]
+        jobs = [(docx_output, app_dir, stem)]
+        jobs += [(cl, app_dir, cl.stem) for _, cl in renderable]
+        try:
+            pdfs = pdf_convert.docx_to_pdf_many(jobs)
+        except pdf_convert.PdfConversionError as exc:
+            print(f"Error: PDF conversion failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        pdf_path = pdfs[0]
         if pdf_path:
             print(f"  PDF:  {pdf_path}")
         else:
             print("  PDF:  skipped (install LibreOffice or docx2pdf)")
             print("        Open the DOCX in Word/Google Docs and export as PDF.")
-
-    # ── Cover letters (one per JD/role, from the bundled ..._Application_<role>.txt) ──
-    if not args.no_cover_letter:
-        import cover_letter
-        for role, cl_docx, cl_pdf in cover_letter.render_all_cover_letters(
-                app_dir, make_pdf=not args.no_pdf):
+        for (role, _cl), cl_pdf in zip(renderable, pdfs[1:]):
             tag = f" [{role}]" if role else ""
-            if cl_docx is None:
-                print(f"  Cover{tag}: no bundled Application .txt for this role")
-                continue
-            print(f"  Cover DOCX{tag}: {cl_docx}")
             if cl_pdf:
                 print(f"  Cover PDF{tag}:  {cl_pdf}")
-            elif not args.no_pdf:
+            else:
                 print(f"  Cover PDF{tag}:  skipped (install LibreOffice or docx2pdf)")
 
     if not args.skip_checks:

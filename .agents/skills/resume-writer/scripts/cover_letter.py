@@ -312,20 +312,25 @@ def main():
 
     folder = application_dir(Path(args.path))
 
-    if args.label is not None:
-        if find_application_txt(folder, args.label) is None:
-            print(f"Error: no {application_stem(args.label)}.txt found under {folder}",
-                  file=sys.stderr)
-            sys.exit(1)
-        docx_path, pdf_path = render_cover_letter(
-            folder, label=args.label, make_pdf=not args.no_pdf)
-        results = [(args.label, docx_path, pdf_path)]
-    else:
-        results = render_all_cover_letters(folder, make_pdf=not args.no_pdf)
-        if not any(docx is not None for _, docx, _ in results):
-            print(f"Error: no bundled application .txt found under {folder}",
-                  file=sys.stderr)
-            sys.exit(1)
+    from pdf_convert import PdfConversionError
+    try:
+        if args.label is not None:
+            if find_application_txt(folder, args.label) is None:
+                print(f"Error: no {application_stem(args.label)}.txt found under {folder}",
+                      file=sys.stderr)
+                sys.exit(1)
+            docx_path, pdf_path = render_cover_letter(
+                folder, label=args.label, make_pdf=not args.no_pdf)
+            results = [(args.label, docx_path, pdf_path)]
+        else:
+            results = render_all_cover_letters(folder, make_pdf=not args.no_pdf)
+            if not any(docx is not None for _, docx, _ in results):
+                print(f"Error: no bundled application .txt found under {folder}",
+                      file=sys.stderr)
+                sys.exit(1)
+    except PdfConversionError as exc:
+        print(f"Error: cover-letter PDF conversion failed: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     for role, docx_path, pdf_path in results:
         tag = f" [{role}]" if role else ""
