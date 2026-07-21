@@ -81,6 +81,17 @@ def check() -> list[str]:
 
 
 def main() -> int:
+    # ast.Constant (used by the scope/command checks below) only exists on 3.8+.
+    # On older pythons ast emits ast.Str and the checks silently under-report
+    # (e.g. "delegated scopes changed: []"). Fail loudly with the real cause.
+    if sys.version_info < (3, 8):
+        got = f"{sys.version_info.major}.{sys.version_info.minor}"
+        print(
+            f"check_draft_only.py requires Python 3.8+ (ast.Constant floor); got {got} "
+            f"at {sys.executable}. Run it with the repo venv (.venv/bin/python).",
+            file=sys.stderr,
+        )
+        return 2
     errors = check()
     if errors:
         for error in errors:

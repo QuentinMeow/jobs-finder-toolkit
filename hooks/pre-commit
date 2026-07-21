@@ -13,13 +13,39 @@
 # Bypass in an emergency with:  git commit --no-verify
 set -e
 
-# Prefer the repo venv; fall back to system python3.
+# Resolve a Python interpreter, worktree-aware:
+#   1. the repo venv at CWD (primary checkout — behavior unchanged);
+#   2. the primary checkout's venv via the git common dir (a worktree has no local .venv);
+#   3. a system python3/python, but only if it meets the 3.11 floor (CI uses 3.12).
 PY=".venv/bin/python"
 if [ ! -x "$PY" ]; then
-    PY="$(command -v python3 || command -v python)"
+    PY=""
+    # In a worktree, .git is a file and the real repo (with its .venv) is the common dir.
+    # --git-common-dir output may be absolute or relative to CWD; both resolve here.
+    common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+    if [ -n "$common_dir" ] && [ -x "$common_dir/../.venv/bin/python" ]; then
+        PY="$common_dir/../.venv/bin/python"
+    fi
 fi
 if [ -z "$PY" ]; then
-    echo "pre-commit: no python interpreter found" >&2
+    # No venv anywhere: accept a system interpreter only if it is >= 3.11.
+    for cand in python3 python; do
+        p="$(command -v "$cand" 2>/dev/null)" || continue
+        if "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+            PY="$p"
+            break
+        fi
+    done
+fi
+if [ -z "$PY" ]; then
+    sys_py="$(command -v python3 || command -v python || true)"
+    if [ -n "$sys_py" ]; then
+        ver="$("$sys_py" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo '?')"
+        echo "pre-commit: repo requires Python 3.11+; found $ver at $sys_py." >&2
+    else
+        echo "pre-commit: repo requires Python 3.11+; no python interpreter found." >&2
+    fi
+    echo "pre-commit: create a .venv (python3.11 -m venv .venv) or point the hook at a 3.11+ interpreter." >&2
     exit 1
 fi
 
