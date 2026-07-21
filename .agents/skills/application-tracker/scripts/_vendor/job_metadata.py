@@ -196,6 +196,13 @@ _SALARY_TERMS = (
     "base compensation",
 )
 
+# "Member of Technical Staff" (MTS) is a role-family name, not a Staff-level (L6)
+# signal — the trailing "Staff" must not trip the bare ``\bstaff\b`` rule below.
+# Neutralized before the level rules run, so "Member of Technical Staff" reads as
+# unknown while "Senior Member of Technical Staff" still resolves via "senior".
+_MTS_NEUTRALIZE_RE = re.compile(
+    r"\bmembers?\s+of\s+(?:the\s+)?technical\s+staff\b", re.I)
+
 _LEVEL_RULES = [
     ("distinguished", re.compile(r"\b(distinguished|fellow)\b", re.I)),
     ("senior_staff", re.compile(r"\b(senior staff|sr\.?\s+staff)\b", re.I)),
@@ -735,8 +742,12 @@ def extract_salary_range(text: str | None) -> dict | None:
 def classify_level(title: str | None) -> tuple[str, str]:
     """Return ``(normalized_level, stated_signal)`` from a generic title."""
     value = title or ""
+    # Drop "Member of Technical Staff" so its trailing "Staff" can't mislabel an
+    # MTS role as Staff-level; any real seniority word (senior/principal/...) that
+    # prefixes the MTS phrase still survives and classifies normally.
+    scan = _MTS_NEUTRALIZE_RE.sub(" ", value)
     for normalized, pattern in _LEVEL_RULES:
-        match = pattern.search(value)
+        match = pattern.search(scan)
         if match:
             return normalized, match.group(0)
     return "unknown", value.strip() or "Not stated"

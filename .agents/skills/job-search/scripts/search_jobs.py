@@ -179,6 +179,36 @@ def resolve_profile(name: str) -> Path:
     return cand
 
 
+def profile_slug(profile_arg: str) -> str:
+    """Filesystem-safe token for the discoveries filename from a --profile value.
+
+    ``--profile`` is usually a bare label ("example") but may be a path to a
+    profile file ("/abs/path/to/example.yaml") when the profiles/ symlinks are not
+    available (e.g. a worktree checkout). Interpolating the raw value into the
+    output filename lets embedded ``/`` characters spawn a junk directory tree
+    under the discoveries dir. Use only the stem, sanitized to ``[a-z0-9._-]``.
+    """
+    stem = Path(profile_arg).stem
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-._")
+    return slug or "profile"
+
+
+def apply_visa_policy(profile: dict, policy: str | None) -> None:
+    """Apply an explicit ``--visa-policy`` override onto the profile in place.
+
+    ``scoring.visa_ok`` short-circuits to keep-everything unless
+    ``visa.needs_sponsorship`` is truthy, so setting only the policy leaves the
+    flag a silent no-op when the profile ships ``needs_sponsorship: false`` (or
+    omits it). Passing ``--visa-policy`` is an explicit intent to enforce the visa
+    gate, so it also implies sponsorship is needed.
+    """
+    if not policy:
+        return
+    visa = profile.setdefault("visa", {})
+    visa["policy"] = policy
+    visa["needs_sponsorship"] = True
+
+
 def resolve_query_terms(profile: dict) -> list[str]:
     terms = (profile.get("sources", {}) or {}).get("query_terms")
     if terms:
@@ -720,8 +750,7 @@ def main() -> int:
 
     max_age = args.max_age_days if args.max_age_days is not None \
         else profile.get("max_age_days")
-    if args.visa_policy:
-        profile.setdefault("visa", {})["policy"] = args.visa_policy
+    apply_visa_policy(profile, args.visa_policy)
     if args.ai_native_only:
         profile.setdefault("ai_company", {})["require"] = True
     top_k = args.top_k or profile.get("top_k", 40)
@@ -900,7 +929,7 @@ def main() -> int:
     if out_path is None:
         disc = discoveries_dir()
         disc.mkdir(parents=True, exist_ok=True)
-        out_path = disc / f"{now.strftime('%Y%m%d')}-{args.profile}.md"
+        out_path = disc / f"{now.strftime('%Y%m%d')}-{profile_slug(args.profile)}.md"
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     Path(out_path).write_text(md)
     print(f"Wrote {len(kept)} matches -> {out_path}", file=sys.stderr)

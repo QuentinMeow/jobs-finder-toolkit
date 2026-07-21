@@ -249,6 +249,25 @@ class AnalyzeTests(unittest.TestCase):
     def test_architect_is_not_generic_principal(self):
         self.assertEqual(classify_level("Solutions Architect")[0], "unknown")
 
+    def test_member_of_technical_staff_is_not_staff_level(self):
+        # The trailing "Staff" in the MTS role family must not read as L6 Staff.
+        self.assertEqual(classify_level("Member of Technical Staff")[0], "unknown")
+        self.assertEqual(
+            classify_level("Member of the Technical Staff")[0], "unknown")
+        self.assertEqual(
+            classify_level("Members of Technical Staff")[0], "unknown")
+        # A real seniority prefix on an MTS title still classifies by that prefix.
+        self.assertEqual(
+            classify_level("Senior Member of Technical Staff")[0], "senior")
+        self.assertEqual(
+            classify_level("Principal Member of Technical Staff")[0], "principal")
+        self.assertEqual(
+            classify_level("Distinguished Member of Technical Staff")[0],
+            "distinguished")
+        # Genuine Staff-level titles are unaffected.
+        self.assertEqual(classify_level("Staff Software Engineer")[0], "staff")
+        self.assertEqual(classify_level("Senior Staff Engineer")[0], "senior_staff")
+
     def test_live_jd_salary_is_flat_and_high_confidence(self):
         metadata = analyze_job_metadata(
             company="Acme",

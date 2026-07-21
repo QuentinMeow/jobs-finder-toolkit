@@ -35,9 +35,14 @@ DEFAULT_METRO: tuple[str, ...] = ()
 
 # Remote signals. "hybrid" / "in-office" / "on-site" are deliberately NOT here —
 # a hybrid role in a specific non-preferred city still requires being in that city.
+# "distributed" is deliberately NOT a remote signal: a bare "Distributed" location
+# tag is a company-structure descriptor, not a work-location grant, and it rode a
+# US-remote match onto globally-pinned roles whose title/JD names a foreign city
+# (e.g. a "Distributed" tag on a Melbourne-only role). Such a tag is unverified —
+# it classifies as "unknown" (review manually) rather than a us_remote match.
 REMOTE_TOKENS = (
     "remote", "work from home", "wfh", "fully remote", "anywhere",
-    "distributed", "worldwide", "global",
+    "worldwide", "global",
 )
 
 # Broad regions that imply remote across North America (include the US).
