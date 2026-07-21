@@ -59,7 +59,7 @@ for _p in (_HERE, _HERE / "_vendor"):
 # working unchanged (render.py, cover_letter.py, status.py).
 import config
 from config import application_stem, cover_stem, resume_stem  # noqa: F401  (re-exported)
-from job_metadata import validate_meta
+from job_metadata import APPLICATION_SCHEMA_VERSION, validate_meta
 from layout import (SOURCE_DIRNAME, _stem, application_dir,  # noqa: F401  (re-exported)
                     application_roles, compose_stem, find_jd_files, meta_path,
                     slugify_label, source_dir, tailored_path)
@@ -89,6 +89,11 @@ BULLETS_PER_PROJECT = (1, 4)
 BULLET_CHAR_RANGE = (45, 215)         # ~2 rendered lines max at current font
 TITLE_MAX_CHARS = 95                  # must stay on one line
 REWORDED_WARN_RATIO = 0.6             # warn if >60% of bullets differ from baseline
+
+# Identity fields locked to the baseline verbatim (single source of truth for
+# both check_locked_fields and the `--rules` dump — edit here, both follow).
+LOCKED_TOP_FIELDS = ("name", "contact_line", "education_line")
+LOCKED_EMPLOYER_FIELDS = ("company", "role", "dates", "location")
 
 # ── Bottom-of-page fill (tune here) ───────────────────────
 # A one-page resume should FILL the page — a big blank band at the bottom looks
@@ -253,7 +258,7 @@ def check_role_filename_collisions(c: Checker, app_dir: Path):
 
 
 def check_locked_fields(c: Checker, data: dict, baseline: dict):
-    for field in ("name", "contact_line", "education_line"):
+    for field in LOCKED_TOP_FIELDS:
         if _norm(data.get(field, "")) != _norm(baseline.get(field, "")):
             c.fail(f"Locked field '{field}' differs from baseline: "
                    f"{data.get(field)!r} != {baseline.get(field)!r}")
@@ -263,7 +268,7 @@ def check_locked_fields(c: Checker, data: dict, baseline: dict):
         c.fail(f"Employer count changed: {len(emps)} vs baseline {len(base_emps)}")
         return
     for emp, base in zip(emps, base_emps):
-        for field in ("company", "role", "dates", "location"):
+        for field in LOCKED_EMPLOYER_FIELDS:
             if _norm(emp.get(field, "")) != _norm(base.get(field, "")):
                 c.fail(f"Locked employer field '{field}' differs from baseline: "
                        f"{emp.get(field)!r} != {base.get(field)!r}")
@@ -796,14 +801,93 @@ def run_checks(yaml_path: Path, pdf_path: Path | None = None,
     return True
 
 
+def rule_groups() -> list[tuple[str, str]]:
+    """(check-group, one-line rule) pairs generated from the live constants.
+
+    The group name is the checker function that raises the FAIL, so a test can
+    assert every FAIL-producing ``check_*`` group is represented. Every number
+    is interpolated from the module constant the checker actually uses (edit the
+    constant and this dump follows) — nothing here is a hand-written threshold.
+    """
+    b_lo, b_hi = BULLET_CHAR_RANGE
+    d_lo, d_hi = DIRECT_BULLETS_RANGE
+    p_lo, p_hi = BULLETS_PER_PROJECT
+    cm_lo, cm_hi = COVER_MAIN_WORD_RANGE
+    ct_lo, ct_hi = COVER_TOTAL_WORD_RANGE
+    aliases = ", ".join(f"{k}={v}" for k, v in sorted(_SKILL_ALIASES.items()))
+    return [
+        ("resume_schema",
+         "tailored.yaml + baseline parse as YAML and satisfy the resume schema ("
+         + ", ".join(LOCKED_TOP_FIELDS) + ", summary_bullets, skills, employers)."),
+        ("check_locked_fields",
+         "Verbatim to baseline: " + ", ".join(LOCKED_TOP_FIELDS) + "; each employer's "
+         + ", ".join(LOCKED_EMPLOYER_FIELDS) + " (count + order too)."),
+        ("check_titles",
+         "Each project title = a [draft]/[backup] profile project (no rename/invent); "
+         "on multi-employer profiles it stays under its owning employer."),
+        ("check_skills",
+         "Approved: allowed. Weak/Selective: only if a source/JD-*.md mentions it (boundary-aware, "
+         "non-negated; slash-compounds match component-wise, e.g. 'REST APIs' satisfies 'REST/gRPC APIs'; "
+         "aliases " + aliases + "). A skill in none of the 3 lists FAILS — queue it for the user."),
+        ("check_never_skills",
+         "No profile 'Never' skill anywhere (skills line, summary, or bullets)."),
+        ("check_structure",
+         f"Summary bullets = baseline count (default {SUMMARY_BULLET_COUNT}); every employer keeps content; "
+         f"{d_lo}-{d_hi} direct bullets/employer; {p_lo}-{p_hi} bullets/project; total projects within "
+         "(baseline-1)..baseline (one drop for page fit); baseline direct bullets can't be dropped/added-to."),
+        ("check_lengths",
+         f"Bullet {b_lo}-{b_hi} chars (bold excluded); project title <= {TITLE_MAX_CHARS} chars."),
+        ("check_bold_markers", "'**' bold markers balanced (no unmatched marker)."),
+        ("check_application_metadata",
+         f"meta.yaml schema {APPLICATION_SCHEMA_VERSION}, non-empty jobs: list; each job needs role, jd_file, "
+         "a valid per-job status, workplace, sponsorship, job_level, required_yoe, salary_range; "
+         "folder = derived rollup."),
+        ("check_role_filename_collisions",
+         "No two roles normalize to the same output filename."),
+        ("check_cover_letter",
+         f"..._Application_<role>.txt COVER LETTER: salutation + 'Sincerely,' sign-off, "
+         f">= {COVER_MAIN_MIN_COUNT} paragraphs of {cm_lo}-{cm_hi} words, {ct_lo}-{ct_hi}-word body, no placeholders."),
+        ("check_pdf",
+         "PDF: exactly 1 page, extractable text (name, every employer company/role, every project title "
+         f"present), not too blank (FAIL over {RESUME_BOTTOM_BLANK_FAIL_IN:g}in trailing whitespace)."),
+    ]
+
+
+def format_rules() -> str:
+    """Compact, authoritative dump of every gate check.py enforces (with thresholds)."""
+    lines = [
+        "check.py gates (thresholds live from the code; a FAIL blocks the render). "
+        "Run this instead of reading check.py source. One line per check group:",
+        "",
+    ]
+    for name, text in rule_groups():
+        tag = name[len("check_"):] if name.startswith("check_") else name
+        lines.append(f"[{tag}] {text}")
+    lines.append("")
+    lines.append(
+        f"Warn-only (never block): >{int(REWORDED_WARN_RATIO * 100)}% bullets reworded (drift); "
+        f"bullet near length limit; sparse bottom (>{RESUME_BOTTOM_BLANK_WARN_IN:g}in); "
+        "visa/sponsorship in the cover body. Full workflow: SKILL.md.")
+    return "\n".join(lines) + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate a tailored resume")
-    parser.add_argument("yaml_path", help="Path to tailored.yaml")
+    parser.add_argument("yaml_path", nargs="?", help="Path to tailored.yaml")
+    parser.add_argument("--rules", action="store_true",
+                        help="Print the authoritative gate list (with thresholds) and exit 0; "
+                             "reads no resume/profile files.")
     parser.add_argument("--pdf", default=None,
                         help=f"Path to rendered PDF (default: the sibling {RESUME_STEM}[_<position>].pdf if present)")
     parser.add_argument("--baseline", default=str(DEFAULT_BASELINE))
     parser.add_argument("--profile", default=str(DEFAULT_PROFILE))
     args = parser.parse_args()
+
+    if args.rules:
+        print(format_rules(), end="")
+        sys.exit(0)
+    if args.yaml_path is None:
+        parser.error("the following arguments are required: yaml_path")
 
     yaml_path = Path(args.yaml_path)
     if yaml_path.is_dir():

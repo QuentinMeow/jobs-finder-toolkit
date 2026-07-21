@@ -162,6 +162,11 @@ Each expands in the annex; the bolded name is the canonical section.
   (+ same-name `private/` mirrors for leak-guarded content): one self-contained file per item,
   formats in each folder's README. Hit an owner-owned fork? File it in `unresolved-decisions/`
   (with options + a default path) and continue — don't block, don't guess.
+- **Shell & Paths** — the shell is **zsh**; always use **absolute paths** in bash calls (a subagent's
+  working directory resets between calls, so relative paths break), and **quote** any `=`-leading
+  argument or glob (`'--flag=val'`, `'*.md'`) so zsh does not mis-split or expand it.
+- **Read Hygiene** — never re-Read a file already in context (duplicate reads are pure token waste);
+  for a file over ~800 lines, prefer a `grep` or an offset/limit slice over reading the whole file.
 
 ## Application Folder Convention
 

@@ -45,9 +45,13 @@ user which artifacts you produced and where.
 
 **Boot reads (once, at the start — skip anything already in context):** `AGENTS.md` (guardrails:
 no fabrication/consistency; scratch stays in `tmp/`, never the repo root, an application folder,
-or `scripts/`; **≤ 8 subagents total per request**); this skill's `LESSONS.md` (render/layout
-DOCX internals, calibrated layout constants, environment); `.agents/MEMORY.md` if it exists
-(cross-session learnings). **Private overrides:** if this skill folder has a `references_private/`
+or `scripts/`; **≤ 8 subagents total per request**); `.agents/MEMORY.md` if it exists
+(cross-session learnings). **The routine path does NOT read this skill's `LESSONS.md`,
+`reference.md`, the `check.py` source, or the application-tracker `SKILL.md`** — open them only on
+the explicit inline triggers below (`LESSONS.md` = a render/layout failure, see Step 6). In
+particular, `handoff.py` already wrote a valid schema-v4 `meta.yaml`, so `status.py
+--enrich-metadata`/`--check-metadata` are the only tracker follow-ups on the routine path.
+**Private overrides:** if this skill folder has a `references_private/`
 directory, read every file in it — those candidate-specific instructions/examples/preferences
 OVERRIDE the generic examples here; when it is absent (public / example mode) use the generic
 examples as-is and take all candidate specifics from `config` + the tailoring card + the profile.
@@ -118,9 +122,10 @@ Save the full JD text as `source/JD-<job title>.md` (one file per posting; never
 `jobs:` list (one entry per posting), **every entry created with `status: "drafted"`**. Newly
 generated applications always go under `applications/6_drafted/`, whose rollup for an all-drafted
 app is `drafted`. `render.py` emits every output filename automatically from the configured stems —
-never hand-name or hand-place files. **Full folder-creation detail (the `meta.yaml` skeleton + field rules, JD/output
-naming conventions, the `status.py --enrich-metadata` handoff, and the application-tracker schema
-owner): [`reference.md`](reference.md) § "Application folder creation (Step 1 detail)".**
+never hand-name or hand-place files. **Trigger — hand-creating the folder (no `handoff.py` scaffold):
+read ONLY [`reference.md`](reference.md) § "Application folder creation (Step 1 detail)" for the
+`meta.yaml` skeleton + field rules and JD/output naming; if you hit a field the skeleton doesn't
+cover, the application-tracker `SKILL.md` owns the full schema.**
 
 ### Step 2: Analyze the Job Description
 
@@ -186,9 +191,11 @@ cp <baseline> applications/6_drafted/<slug>/source/tailored.yaml
 ```
 
 `config.baseline_path()` is the exact transcription of the user's approved resume; tailoring means
-**targeted edits** to that copy within the limits below. **The baseline you just copied is the
-live schema** — the full field-by-field `tailored.yaml` schema and the bold-marker note live in
-[`reference.md`](reference.md) § "tailored.yaml schema".
+**targeted edits** to that copy within the limits below. **The baseline you just copied IS the live
+schema — read its fields directly; do not open reference.md for the schema on a routine run.**
+(`**text**` = bold: the baseline already bolds key phrases; keep 1-3 JD-relevant bold phrases per
+line.) Open [`reference.md`](reference.md) § "tailored.yaml schema" ONLY for a genuine edge case —
+a legacy `employer:`/`experience:` layout, or a field the baseline doesn't show.
 
 **Locked — never change (validated against `config.baseline_path()`):**
 - Name, contact line, education line
@@ -207,9 +214,10 @@ live schema** — the full field-by-field `tailored.yaml` schema and the bold-ma
   never by adding filler or dropping to fewer projects.
 - **`**text**`** in any bullet or summary line renders as bold; keep 1-3 bold phrases per bullet,
   preferring the JD-relevant keywords.
-- **One-page budget:** predict the page fit BEFORE rendering (Step 5.5). Char-math detail:
-  [`reference.md`](reference.md) § "One-page layout budget (char math)"; calibrated constants:
-  LESSONS.md → "Pre-render layout budget".
+- **One-page budget:** predict the page fit BEFORE rendering (Step 5.5) with `estimate_layout.py`,
+  which prints the number. **Trigger — the estimate is ambiguous and you need the hand char-math:**
+  read ONLY [`reference.md`](reference.md) § "One-page layout budget (char math)" (calibrated
+  constants: LESSONS.md → "Pre-render layout budget", on a layout failure).
 
 **Honesty (hard constraint — the three-list skill gate + no fabrication):**
 - The profile's Skills section has three lists that gate every skill mention:
@@ -223,6 +231,8 @@ live schema** — the full field-by-field `tailored.yaml` schema and the bold-ma
     (check.py scans skills lines, summaries, and bullets).
 - A skill in none of the three lists fails validation — never add it silently; see Step 7
   (categorize new skills with the user).
+- **Need the exact gate semantics or a threshold** (skill-list matching, cover-letter word
+  counts, bullet/length limits)? Run `check.py --rules` (~1 KB) — never read the `check.py` source.
 - Every bullet must map to real content the user actually did — reword, never invent. The source
   of truth is the profile (`config.profile_md_path()`) **plus** the supporting library
   (`interviews/behavioral-story-bank/`, answer bank, prior applications, notes). A detail is
@@ -235,7 +245,7 @@ live schema** — the full field-by-field `tailored.yaml` schema and the bold-ma
 - **Honest partial fit:** if there's a real gap, name it briefly and reframe as fast-ramping (one
   clause, not a paragraph); refuse to claim experience the user does not have. Never fabricate.
 
-Rephrasing latitude, detail-enrichment rules, and the light-touch reorder defaults:
+**Trigger — unsure how far you may rephrase or enrich a bullet:** read ONLY
 [`reference.md`](reference.md) § "Rephrasing, detail enrichment & light-touch defaults".
 
 ### Step 5.5: Pre-render layout budget (one-shot the single page)
@@ -296,10 +306,12 @@ the fix lands under budget). Expect 1–2 cycles; **after 3, stop and report to 
 
 Checks can also be run standalone:
 `.venv/bin/python .agents/skills/resume-writer/scripts/check.py applications/6_drafted/<slug>/`.
-Submit the resume DOCX from `source/` to portals (PDFs are for humans). **Render internals
-(employer-header alignment, the schema-v4 `meta.yaml` gate, cover-letter render flags,
-master-resume updates, and the log-update commands): [`reference.md`](reference.md) § "Render &
-validate — operational detail" and LESSONS.md → "Rendering / layout".**
+**To learn exactly what check.py enforces (every gate + numeric threshold), run `check.py --rules`
+(~1 KB) — never read the validator source.** Submit the resume DOCX from `source/` to portals (PDFs
+are for humans). **Trigger — a render/layout failure the menu above doesn't resolve (LibreOffice /
+DOCX internals, employer-header alignment, the schema-v4 `meta.yaml` gate, cover-letter render flags,
+master-resume/log updates): read ONLY [`reference.md`](reference.md) § "Render & validate —
+operational detail" and LESSONS.md → "Rendering / layout".**
 
 ### Cover letters & bundled application `.txt` (one per JD)
 
@@ -318,19 +330,38 @@ with **name + contact line, then the salutation** (`Dear <Company> Hiring Team,`
 company/role subject line**; its body is **at least two developed, full-sentence paragraphs** (not
 telegraphic fragments) and ends `Sincerely,` + name. check.py enforces the numbers: each main
 paragraph 60–180 words (≥2 such paragraphs) and total body 200–450 words — write to those bands up
-front. When you can see the posting's actual
-application/screening questions, answer them in an extra **APPLICATION QUESTIONS** section appended
-after the three canonical ones. **Full templates, per-paragraph word counts, the enforced
-cover-letter structure/length (`check_cover_letter`), the WHY / PAST EXPERIENCE section shapes, the
-APPLICATION QUESTIONS mechanism, and the ATS optimization guidelines: [`reference.md`](reference.md).**
+front. **COVER LETTER body = two main paragraphs:** (1) interest + *researched* understanding of the
+company/product and why this specific role (name the role; concrete product specifics, never generic
+flattery); (2) your single most differentiating strength, proved with a real, quantified achievement
+mapped to the JD's top requirements (tell the story behind a bullet — don't relist). An optional
+25–45-word closing may follow.
+
+The other two sections are plain prose, every claim traceable to the profile / library:
+- **WHY THIS COMPANY & ROLE** — exactly two paragraphs, each a one-sentence summary then expand:
+  (1) what the company builds + a specific researched reason you're interested; (2) your most
+  relevant background mapped to the JD and why it's a strong mutual fit.
+- **PAST EXPERIENCE** — lead with the current role + scope, then the most JD-relevant achievements
+  across prior roles/projects in prose (a career narrative, not a company-by-company transcript).
+
+**Trigger — the posting shows its own application/screening questions** (user pastes them, a
+screenshot, or the JD lists them): append an extra **APPLICATION QUESTIONS** section after the three
+canonical ones and read ONLY [`reference.md`](reference.md) § "APPLICATION QUESTIONS section" for its
+mechanism. Full templates / word-count tables and the ATS guidelines also live in `reference.md` — a
+routine letter needs none of it.
 
 ### Step 7: Categorize New JD Skills in One Batch (ALWAYS do this at the end)
 
-After rendering, extract every concrete skill/technology the JD mentions (languages,
-frameworks, tools, platforms, methodologies — not soft skills) and compare against the
-profile's three stored lists (Approved / Weak / Never, matching case-insensitively and
-counting close variants like "Go"/"Golang" or "K8s"/"Kubernetes" as the same skill). Use the
-deduplicated, first-seen order recorded in Step 2.
+After rendering, compute the uncategorized-skill queue with the script instead of diffing in
+context — it reuses check.py's exact matching (aliases, nested `AWS (…)`, component-wise Weak), so
+its queue matches the render gate:
+
+```bash
+.venv/bin/python .agents/skills/resume-writer/scripts/skills_diff.py applications/6_drafted/<slug>/
+```
+
+It prints the verbatim JD skill phrases in NONE of the profile's Approved / Weak / Never lists (one
+per line), or `no uncategorized skills`. Present that queue as-is — no re-extraction. Still add a
+skill you know the JD names but the script missed, or one the user raised directly.
 
 For every JD skill in NONE of the lists, collect the complete queue and ask the user in one
 batch at the end of the run to categorize each term by its concrete resume consequence:
@@ -383,22 +414,23 @@ user which artifacts you produced and where (resume DOCX from `source/` to porta
 humans; each JD's bundled `.txt` — cover letter + why-fit + past experience — is copy-paste ready),
 then stop.
 
-## Triggers → deeper reference (read only when the trigger fires)
+## Triggers → deeper reference (read ONLY the named § when the trigger fires — never the whole file)
 
-- **Application folder covers several roles at one company** → decide one resume vs. a split, then
-  see [`reference.md`](reference.md) § "One resume, multiple roles (same company)" for Path A (one
-  resume, one folder — the default) and Path B (two resumes, split folders — only when the roles
-  are too divergent to tailor honestly with one resume; sets `target_position`).
-- **Deep company + JD research (per JD)** → [`reference.md`](reference.md) § "Deep company + JD
-  research".
-- **Full `meta.yaml` schema, later fields, enrichment** → the `application-tracker` skill
-  (`.agents/skills/application-tracker/SKILL.md`, "`meta.yaml` Schema") is the canonical owner.
-- **Cover-letter / bundle templates, word counts, `check_cover_letter`, APPLICATION QUESTIONS, ATS
-  guidelines** → [`reference.md`](reference.md).
-- **`tailored.yaml` full schema, folder-creation detail, one-page char math, rephrasing/light-touch
-  defaults, supporting library** → [`reference.md`](reference.md).
-- **Render / layout DOCX internals, calibrated layout constants, environment (venv, LibreOffice)**
-  → this skill's `LESSONS.md`.
-- **Application Folder Convention (canonical file tree)** → `AGENTS.md` → "Application Folder
-  Convention"; the source/ + per-JD bundled `.txt` layout summary is in
-  [`reference.md`](reference.md) § "Application folder layout".
+- **Folder covers several roles at one company** → read ONLY [`reference.md`](reference.md) §
+  "One resume, multiple roles (same company)" (Path A one-folder default; Path B splits +
+  `target_position` only when the roles are too divergent for one honest resume).
+- **Deep company + JD research (per JD)** → read ONLY [`reference.md`](reference.md) § "Deep company
+  + JD research".
+- **A `meta.yaml` field the Step-1 skeleton doesn't cover (later fields, enrichment)** → the
+  `application-tracker` `SKILL.md` § "`meta.yaml` Schema" is the canonical owner.
+- **Posting shows its own application/screening questions** → read ONLY [`reference.md`](reference.md)
+  § "APPLICATION QUESTIONS section" (full cover templates / word-count tables / ATS guidelines live
+  in the same file — only if a routine letter left you stuck).
+- **A `tailored.yaml` edge case** (legacy `employer:`/`experience:`, hand char-math, how far to
+  rephrase, supporting library) → read ONLY the matching [`reference.md`](reference.md) § ("tailored.yaml
+  schema" / "One-page layout budget (char math)" / "Rephrasing…" / "Supporting library…").
+- **A render / layout failure** (DOCX internals, calibrated constants, venv / LibreOffice) → read
+  ONLY this skill's `LESSONS.md` § "Rendering / layout" or "Pre-render layout budget".
+- **What check.py enforces** → run `check.py --rules` (never read the validator source).
+- **Canonical application file tree** → `AGENTS.md` → "Application Folder Convention"; the `source/`
+  + per-JD `.txt` layout summary is [`reference.md`](reference.md) § "Application folder layout".
