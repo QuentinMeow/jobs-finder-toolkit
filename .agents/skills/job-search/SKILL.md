@@ -144,11 +144,13 @@ text** — two LESSONS bind here:
   verify against the actual JD wording before relying on it for a policy decision.
 
 Fetch a candidate's JD text **verbatim** with `--digest` — the flag saves the full JD to disk
-exactly as before AND prints a compact deterministic **digest** that LOCATES the gate-relevant
-lines (title/level, workplace/location signal lines, visa/sponsorship sentences). Verify the
-workplace/visa/location/title gates **from the digest**; open the saved verbatim JD only when the
-digest is ambiguous or a gate signal is missing from it — the digest is a locator, never a verdict
-(contract: `reference.md` § JD digest). E.g. one not yet scaffolded:
+exactly as before AND, **at fetch time**, prints a compact deterministic **digest** that LOCATES the
+gate-relevant lines (title/level, workplace/location signal lines, visa/sponsorship sentences). Verify
+the workplace/visa/location/title gates **from the printed digest**; open the saved verbatim JD only
+when the digest is ambiguous or a gate signal is missing from it — the digest is a locator, never a
+verdict (contract: `reference.md` § JD digest). **`--digest` is a fetch-time aid only: for a JD file
+already saved on disk (e.g. one `handoff.py` fetched), read the file directly — do not re-run
+`fetch_jd` or rebuild a digest for it.** E.g. a posting not yet scaffolded:
 ```bash
 .venv/bin/python .agents/skills/job-search/scripts/fetch_jd.py <URL> --out tmp/web_artifacts/jd.md --digest
 ```

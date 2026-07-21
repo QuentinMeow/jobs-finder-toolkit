@@ -120,9 +120,11 @@ emits `likely`/`unlikely`, `remote`/`hybrid`, or a match/no-match call). Verify 
 location / title from the digest; **open the saved verbatim JD when the digest is ambiguous or a
 gate signal is missing from it** (its tail line gives the full path + byte count + this escape
 hatch). The verbatim JD stays on disk and is still required for `handoff.py`, drafting, and the
-honesty gates — the digest only saves the re-read during verification. Works on an
-already-saved file too (idempotent keep still emits the digest), so `fetch_jd <URL> --out
-<existing JD> --digest` verifies a JD `handoff.py` already fetched without re-downloading it.
+honesty gates — the digest only saves the re-read during verification. **Consume the digest at
+fetch time**, where it earns its keep by replacing the immediate full-JD read. For a JD file
+already saved on disk (e.g. one `handoff.py` fetched), read the file directly rather than re-running
+`fetch_jd` to rebuild a digest — an A/B on already-saved fixtures found digest-steered navigation
+cost more there than a direct read (first-encounter reads + ambiguity escalations ate the margin).
 
 ## Cross-company aggregators (span many employers per query)
 
