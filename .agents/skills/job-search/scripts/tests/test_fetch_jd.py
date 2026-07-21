@@ -311,10 +311,59 @@ color, religion, national origin, ancestry, citizenship, age, or disability.
 """
 
 
+# Saved JD that begins with the documented NON-VERBATIM provenance header
+# (reference.md JD-fetch fallback #2: scraper-extracted text saved WITH a
+# "> NOTE: non-verbatim — ..." note). The title must come from the posting body,
+# never the provenance note — with a real H1 (first case) or without one (second).
+JD_PROVENANCE_WITH_H1 = """> NOTE: non-verbatim — source page https://example.com/jobs/42 returned HTTP 403
+> on re-fetch; the text below is the scraper-extracted description from the search
+> pass, NOT the verbatim posting page. Confirm details against the live posting.
+
+# Senior Backend Engineer
+
+Location: Remote (US)
+We are unable to sponsor visas for this position.
+"""
+
+JD_PROVENANCE_NO_H1 = """> NOTE: non-verbatim — source page returned HTTP 403 on re-fetch; the text below is
+> the scraper-extracted description from the search pass, NOT the verbatim page.
+
+Staff Data Engineer at Snowflake. You will build the petabyte-scale ingestion
+platform. This role is hybrid in San Mateo, CA.
+"""
+
+
 class DigestHardeningTests(unittest.TestCase):
     def _digest(self, text: str) -> str:
         return fetch_jd.build_digest(
             text, jd_path="/x/JD.md", byte_count=len(text.encode("utf-8")))
+
+    def _title_line(self, digest: str) -> str:
+        return next(l for l in digest.splitlines() if l.startswith("TITLE:"))
+
+    def test_provenance_header_skipped_titles_the_h1(self):
+        # A leading "> NOTE: non-verbatim ..." block must not become the title; the
+        # real H1 below it is titled instead.
+        d = self._digest(JD_PROVENANCE_WITH_H1)
+        title = self._title_line(d)
+        self.assertEqual(title, "TITLE: Senior Backend Engineer")
+        self.assertNotIn("non-verbatim", title.lower())
+        self.assertNotIn("note", title.lower())
+        self.assertIn("senior", d)  # level resolves off the real title, not the note
+
+    def test_provenance_header_skipped_when_no_h1(self):
+        # No H1 (pure scraper prose): the title falls through to the first real
+        # content line, NOT the provenance note (the observed Snowflake-fixture bug).
+        d = self._digest(JD_PROVENANCE_NO_H1)
+        title = self._title_line(d)
+        self.assertNotIn("non-verbatim", title.lower())
+        self.assertNotIn("http 403", title.lower())
+        self.assertIn("Staff Data Engineer at Snowflake", title)
+
+    def test_provenance_skip_leaves_normal_jd_title_unchanged(self):
+        # A JD with no provenance marker is untouched by the skip.
+        d = self._digest(JD_REMOTE_DENIAL)
+        self.assertEqual(self._title_line(d), "TITLE: Senior Backend Engineer")
 
     def test_title_prefers_h1_over_nav_chrome(self):
         d = self._digest(JD_ATS_FOREIGN)

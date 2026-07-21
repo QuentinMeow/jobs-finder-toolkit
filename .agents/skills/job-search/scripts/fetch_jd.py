@@ -254,6 +254,11 @@ _NAV_CHROME = frozenset({
     "share", "share this job", "view all jobs", "all jobs", "see all jobs",
     "menu", "home", "careers", "job details",
 })
+# A non-verbatim provenance note (the reference.md JD-fetch fallback convention:
+# scraper-extracted text saved WITH a leading "> NOTE: non-verbatim — ..." header)
+# leads some saved JDs. Its marker is recognized so the header block is skipped and
+# the title comes from the real posting body, not the provenance note.
+_PROVENANCE_MARKER_RE = re.compile(r"non[- ]?verbatim", re.I)
 
 
 def _load_digest_helpers():
@@ -311,20 +316,45 @@ def _clip(text: str, width: int) -> str:
     return text if len(text) <= width else text[: width - 1].rstrip() + "…"
 
 
+def _skip_provenance_header(lines: list[str]) -> list[str]:
+    """Drop a leading non-verbatim provenance header (reference.md fallback convention).
+
+    Returns the lines AFTER a leading run of blockquote / marker lines when that run
+    carries the ``non-verbatim`` marker, so the title heuristic titles the posting
+    rather than the provenance note. Blank lines do not end the run; the first real
+    content line does. A normal JD (no such marker) is returned unchanged.
+    """
+    last_header = -1
+    has_marker = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue                       # blank lines do not end the header
+        marker = bool(_PROVENANCE_MARKER_RE.search(stripped))
+        if stripped.startswith(">") or marker:
+            last_header = i
+            has_marker = has_marker or marker
+            continue
+        break                              # first real content line ends the scan
+    return lines[last_header + 1:] if (has_marker and last_header >= 0) else lines
+
+
 def _digest_title(lines: list[str]) -> str:
     """The posting title: the first H1, else the first non-chrome non-empty line.
 
-    Scraped ATS pages frequently lead with nav chrome ("Back to jobs", "Apply")
-    before the real ``# <title>`` H1, so an H1 (when present) is the reliable title;
-    the fallback skips known chrome lines so a breadcrumb is never titled.
+    A leading non-verbatim provenance header (reference.md fallback convention) is
+    skipped first; scraped ATS pages also frequently lead with nav chrome ("Back to
+    jobs", "Apply") before the real ``# <title>`` H1, so an H1 (when present) is the
+    reliable title and the fallback skips chrome / blockquote lines.
     """
+    lines = _skip_provenance_header(lines)
     for line in lines:
         heading = re.match(r"^#\s+(.*\S)\s*$", line)   # H1 only ('# ', not '## ')
         if heading:
             return heading.group(1).strip()
     for line in lines:
         stripped = line.strip()
-        if not stripped:
+        if not stripped or stripped.startswith(">"):   # a title is never a blockquote
             continue
         marked = re.match(r"^#{1,6}\s+(.*)$", stripped)
         text = (marked.group(1).strip() if marked else stripped)
