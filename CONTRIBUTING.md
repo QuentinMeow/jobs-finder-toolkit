@@ -68,8 +68,9 @@ pre-commit hook and CI both fail on drift).
    above before committing; the tracked pre-commit hook (installed by
    `scripts/bootstrap_overlay.py`) re-runs the cheap ones.
 4. **Open the PR against `main`** and fill in the pull-request template — it
-   mirrors the gates: checks pass, eval canaries run if you touched skill
-   instruction files, no personal data.
+   mirrors the gates: checks pass, eval canaries run or a recorded skip
+   rationale per the risk-based gate if you touched skill instruction files,
+   no personal data.
 5. **CI must be green.** Fork PRs run the leak guard tokenless (structural + path
    checks) — a clean tree passes; if the guard fires on your PR, it found
    something that looks personal and it must come out, not be excepted.
@@ -82,11 +83,16 @@ pre-commit hook and CI both fail on drift).
 
 ## Eval gate for skill-instruction changes
 
-Any PR that touches a skill's instruction files — `.agents/skills/*/SKILL.md`,
-`LESSONS.md`, or `reference.md` — **must run that skill's canaries** in
-`evals/<skill>/` and report the results in the PR description (see
-`evals/README.md` for how). Instruction edits are delta-only, and consolidation
-must not drop a domain edge case.
+The eval gate on a skill's instruction files — `.agents/skills/*/SKILL.md`,
+`LESSONS.md`, or `reference.md` — is **risk-based**: the editing agent decides
+whether to run that skill's canaries in `evals/<skill>/` by judging the edit's
+**intention** (does it change what an agent does?) and **size**. Behavioral or
+large edits must run the canaries and report results in the PR description;
+mechanical or small edits (typos, path/flag fixes, semantics-preserving
+rewording) may skip with a **one-line skip rationale recorded in the PR**. See
+`evals/README.md` for the full run/skip criteria and how to record either
+outcome. Instruction edits are delta-only, and consolidation must not drop a
+domain edge case.
 
 ## No personal data — ever
 

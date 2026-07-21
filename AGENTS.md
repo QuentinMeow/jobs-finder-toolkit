@@ -115,10 +115,14 @@ Full directory table (every script + per-skill row): `docs/AGENTS-ANNEX.md` §3.
 - **Profile is user-owned**: ask before modifying the candidate profile (`config.profile_md_path()`).
 - **Doc ownership**: `README.md` is human-facing (no agent instructions); `AGENTS.md` is agent-facing
   (no human usage guides).
-- **Eval-gated harness edits**: any change to a skill's `SKILL.md`/`LESSONS.md`/`reference.md` must
-  pass that skill's canaries (`evals/<skill>/canaries.yaml`) before merge with no large efficiency
-  regression; record runs per `evals/README.md` (model-pinned). Harness self-edits are delta-only —
-  never full-file rewrites, and **consolidation never deletes a domain edge case.**
+- **Risk-based eval gate on harness edits**: for any change to a skill's
+  `SKILL.md`/`LESSONS.md`/`reference.md`, the editing agent decides whether to run that skill's
+  canaries (`evals/<skill>/canaries.yaml`) by judging the edit's **intention and size** —
+  behavioral or large edits must pass canaries before merge (no large efficiency regression,
+  model-pinned, runs recorded per `evals/README.md`); mechanical or small edits may skip **with a
+  recorded one-line rationale**. See `evals/README.md` for the run/skip criteria. Harness
+  self-edits are delta-only — never full-file rewrites, and **consolidation never deletes a domain
+  edge case.**
 
 ## Handy Commands
 

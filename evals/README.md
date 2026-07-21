@@ -21,7 +21,7 @@ Two jobs, one frozen set of prompts:
    (blind comparator; no significance claims — the ~300-sample quality math is unreachable at
    this repo's volume). See [`ab-protocol.md`](ab-protocol.md).
 
-## The eval-gated-merge rule (inviolable)
+## The eval-gated-merge rule (risk-based)
 
 From the self-evolution quality-control box (repo design README) and design doc §"quality gates"
 #5 — **Eval-gated merge:**
@@ -29,7 +29,39 @@ From the self-evolution quality-control box (repo design README) and design doc 
 > The canaries of an affected skill must PASS before a SKILL/LESSONS edit merges; model-pin the
 > eval run.
 
-Concretely, for any PR that edits `.agents/skills/<skill>/{SKILL.md,LESSONS.md,reference.md}`:
+**Relaxed to risk-based on 2026-07-20 (maintainer decision).** The mandatory per-edit canary run
+above proved too time-consuming, so canary runs are now **optional and agent-judged**. For any
+edit to `.agents/skills/<skill>/{SKILL.md,LESSONS.md,reference.md}`, the editing agent decides
+whether to run that skill's canaries by weighing the edit's **intention** (does it change what an
+agent *does*?) and **size**. The PASS-before-merge discipline above is unchanged for every edit
+that still triggers a run.
+
+**MUST run** the affected skill's canaries when the edit:
+
+- adds, removes, weakens, or reroutes any hard gate, guardrail, or preflight;
+- changes step semantics, protocols, verdict definitions, or deliverables;
+- restructures or retiers a file (moving content between the SKILL and reference tiers); or
+- is large — guideline: more than ~20 changed instruction lines in a skill, or edits touching 3+
+  instruction files of one skill.
+
+Also run when merging would create a combined **un-gated state** of multiple behavioral edits (the
+individually small pieces add up to a behavioral change at head).
+
+**MAY skip** when the edit is mechanical/small and leaves behavior unchanged:
+
+- typos, formatting, grammar;
+- correcting paths, flags, or labels to match code reality;
+- clarity rewording with unchanged semantics;
+- small additive factual notes (≲20 lines).
+
+**Every skip must be recorded** — one line in the PR description (or the commit body for a direct
+commit): `Eval gate: skipped — <intention + size rationale>`. A run is recorded as before, in
+`evals/results/`. Skips are not permanent exemptions: the **next** behavioral gate run at head
+always covers the accumulated state, not just its own triggering diff — so a later gated edit
+re-tests everything that skipped ahead of it.
+
+When a run is required, the mechanics are unchanged. For any PR that edits
+`.agents/skills/<skill>/{SKILL.md,LESSONS.md,reference.md}`:
 
 1. Identify the affected skill(s) from the diff.
 2. Run that skill's canaries (`evals/<skill>/canaries.yaml`) on the branch head.
@@ -40,8 +72,8 @@ Concretely, for any PR that edits `.agents/skills/<skill>/{SKILL.md,LESSONS.md,r
    (delta edits only; MEMORY→LESSONS→SKILL promotion needs a separate human-reviewed commit;
    consolidation may never delete a domain edge case; everything reverts via small commits).
 
-This gate is advisory tooling today (a human runs it before merge); a future CI hook can enforce
-it — see the repo AGENTS.md proposal in the P4 hand-off report.
+This gate is advisory tooling today (a human or the editing agent runs it before merge); a future
+CI hook can enforce it — see the repo AGENTS.md proposal in the P4 hand-off report.
 
 ## How to run a canary
 
