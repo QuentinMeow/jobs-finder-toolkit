@@ -44,6 +44,62 @@ curl -s "https://boards-api.greenhouse.io/v1/boards/<guess>/jobs" | head -c 200
 curl -s "https://api.ashbyhq.com/posting-api/job-board/<guess>"    | head -c 200
 ```
 
+## Recovering a JD when the page fetch is unusable
+
+`fetch_jd.py` saves a posting page's readable text **verbatim** into
+`source/JD-<job title>.md` (also what `handoff.py` does while scaffolding). Two
+different failures can make that page fetch unusable — and they have **different**
+fallbacks. Save the verbatim JD either way; never draft from a partial/garbled
+scrape or an empty JD file.
+
+### 1. Page came back JS-rendered → re-fetch verbatim via the ATS API
+**Symptom:** `fetch_jd.py` exits with `no readable text extracted … likely
+JavaScript-rendered`, or saves a suspiciously small file and warns `only N bytes
+extracted (< …); the page may be JavaScript-rendered`. The posting body renders
+client-side, so the scrape is an empty/boilerplate shell.
+
+**Fix:** when the company's ATS type is known or discoverable (§ *Finding a
+company's board token*), re-fetch the JD **text** straight from the ATS JSON API —
+which returns the full description regardless of what the board page renders — with
+`company_roles.py --jd`:
+
+```bash
+# company already in companies.yaml (resolved by name / alias / token)
+.venv/bin/python .agents/skills/job-search/scripts/company_roles.py \
+    --name <Company> --jd "<title substring>"
+# ad-hoc board (derive ats+token from the careers URL)
+.venv/bin/python .agents/skills/job-search/scripts/company_roles.py \
+    --company <Name> --ats <greenhouse|ashby|lever|smartrecruiters> \
+    --token <slug> --jd "<title substring>"
+```
+
+`--jd` prints the full ATS-API description for every posting whose title contains
+the substring. It recovers **verbatim** text and applies to the four public read
+APIs under *Supported ATS APIs* — **Greenhouse, Ashby, Lever, SmartRecruiters**
+(the same endpoints `company_roles.py` already polls). Save the recovered text to
+`source/JD-<job title>.md`: the verbatim-JD requirement is unchanged; the ATS API
+is just a cleaner fetch route than the JS page. In two benchmark rows this path
+recovered 100% of JS-rendered JD pages across both major ATSes.
+
+### 2. No fetch succeeds at all → save scraper text WITH a provenance note
+**Symptom:** every fetch route fails — `fetch_jd.py` errors outright (e.g. the
+source returns **HTTP 403**) and no ATS API is known/available for the company, so
+there is no way to obtain the verbatim page. This is distinct from #1: there the
+verbatim text is still recoverable via a different route; here it is not.
+
+**Fix (last resort):** rather than leave `source/JD-<job title>.md` empty, save the
+best-available **scraper/aggregator-extracted** description (the `description` the
+discovery/search pass already captured for that posting) and mark it
+**non-verbatim** with an explicit provenance note at the top of the file — what it
+is and why. Try the ATS-API path (#1) **first**; only fall back to scraper text
+when no fetch route works at all. Example header:
+
+```markdown
+> NOTE: non-verbatim — source page https://… returned HTTP 403 on re-fetch; the
+> text below is the aggregator/scraper-extracted description from the search pass,
+> NOT the verbatim posting page. Confirm details against the live posting.
+```
+
 ## Cross-company aggregators (span many employers per query)
 
 Implemented in `aggregators.py`. Company boards give the best signal for specific

@@ -362,6 +362,23 @@ class SponsorshipTests(unittest.TestCase):
             "unknown",
         )
 
+    # Regression: two real-world denial wordings the phrase list missed (GH issue
+    # #15 negation-phrase residual). Both previously classified as "likely" — a
+    # false positive — because the negation was missed while a positive substring
+    # ("immigration sponsorship" / "provide visa sponsorship") matched.
+    def test_immigration_sponsorship_will_not_be_available_is_unlikely(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "Immigration Sponsorship support will NOT be available for this position"),
+            "unlikely",
+        )
+
+    def test_unable_to_provide_visa_sponsorship_is_unlikely(self):
+        self.assertEqual(
+            classify_sponsorship("We are unable to provide visa sponsorship."),
+            "unlikely",
+        )
+
     def test_analyze_sets_sponsorship_from_description(self):
         metadata = analyze_job_metadata(
             company="Acme",

@@ -147,6 +147,10 @@ Fetch a candidate's JD text **verbatim** (no summarization) — e.g. one not yet
 ```bash
 .venv/bin/python .agents/skills/job-search/scripts/fetch_jd.py <URL> --out tmp/web_artifacts/jd.md
 ```
+If that page is JS-rendered (fetch_jd warns "JavaScript-rendered" / tiny output), recover the verbatim
+JD from the ATS API via `company_roles.py --jd` instead of accepting a partial scrape; if no fetch works
+at all (e.g. HTTP 403), save the scraper-extracted text with a non-verbatim provenance note — see
+reference.md § "Recovering a JD when the page fetch is unusable".
 Only hand off postings that passed the location policy (`config.location_policy()`). Then, for
 **each** selected posting, scaffold its folder with `handoff.py` (needs `--json-out` from Step 2):
 ```bash
