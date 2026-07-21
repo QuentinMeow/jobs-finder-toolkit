@@ -17,8 +17,24 @@ canaries:
       Tailor my resume for the Senior Software Engineer, Platform role at Example Corp
       (the JD is already saved under the example drafted folder). Produce the full application.
     setup: >
-      Default setup. Uses the shipped example JD. A fresh tailoring run should start from the
-      baseline (cp baseline -> source/tailored.yaml), not write from scratch.
+      ISOLATED fresh-tailoring scaffold (NOT the default in-place setup) so this canary
+      exercises the full fresh-tailoring path instead of stopping at the duplicate guard that
+      rw-duplicate-preflight owns (GH #16: the shipped example folder is already a COMPLETE
+      application, so a skill-faithful agent on the default setup detects it in pre-flight and
+      stops — never exercising any fresh-tailoring bullet). Stage a clean, initially-empty
+      applications tree instead: copy config.example.yaml to a temp config, rewrite
+      paths.applications_root (and discoveries_dir) to that isolated tree, and set
+      paths.profile_md / baseline_yaml / reference_docx to ABSOLUTE paths into the shipped
+      examples/** (the temp config resolves relative paths against its OWN dir, so absolute
+      paths keep the Jordan Rivers profile/baseline/reference reachable). Point JOBHUNT_CONFIG
+      at the temp config. Seed ONLY the handoff-scaffold inputs into
+      <isolated>/6_drafted/example-corp-senior-software-engineer/: meta.yaml and
+      source/JD-senior-software-engineer-platform.md, copied from the shipped
+      examples/applications/6_drafted/example-corp-senior-software-engineer/. Do NOT copy any
+      generated output (source/tailored.yaml, the resume/cover DOCX or PDF, or the bundled
+      ..._Application_*.txt) — the run must produce them. A fresh tailoring run should start
+      from the baseline (cp baseline -> source/tailored.yaml), not write from scratch. This
+      keeps rw-duplicate-preflight the sole owner of the already-complete-folder stop.
     expected_behavior:
       - "Runs pre-flight before creating anything (blacklist check via companies.yaml, applications-log, and existing status folders) and starts tailored.yaml FROM the baseline."
       - "Locked fields unchanged vs baseline (name, contact line, education, employer/title/dates/location); project titles exactly match [draft]/[backup] projects in the profile — no invented projects."
