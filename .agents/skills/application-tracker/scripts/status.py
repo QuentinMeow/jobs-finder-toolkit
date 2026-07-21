@@ -354,7 +354,11 @@ def check_metadata(statuses: list[str], as_json: bool = False) -> bool:
 def check_locations(statuses: list[str], as_json: bool = False) -> bool:
     """Flag applications whose posting location is outside the configured location policy.
 
-    Returns True when every scanned application matches the location criteria.
+    A row is a *mismatch* (hard failure) only when its location is a definite place
+    outside the policy — a foreign location or a non-preferred US office. An
+    *unknown* row (blank or unrecognized location) is surfaced for manual review
+    but is NOT a policy violation, so it does not fail the check. Returns True when
+    there are no mismatches (unknown/review rows do not flip the result).
     """
     rows = []
     for status in statuses:
@@ -377,10 +381,20 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
             })
 
     non_matching = [r for r in rows if not r["match"]]
+    # Split non-matching rows into definite policy violations (foreign / non-preferred
+    # US office) and "unknown" rows (blank / unrecognized location). Only the former
+    # fail the check; the latter are surfaced for manual review.
+    mismatches = [r for r in non_matching if r["category"] != "unknown"]
+    review = [r for r in non_matching if r["category"] == "unknown"]
 
     if as_json:
-        print(json.dumps({"rows": rows, "non_matching": non_matching}, indent=2))
-        return not non_matching
+        print(json.dumps({
+            "rows": rows,
+            "non_matching": non_matching,
+            "mismatches": mismatches,
+            "review": review,
+        }, indent=2))
+        return not mismatches
 
     if not rows:
         print(f"No applications found under: {', '.join(statuses)}")
@@ -396,13 +410,18 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
         print(f"{r['slug']:<{width}}  {mark:<5}  {r['category']:<13}  {loc}")
     print("\u2500" * (width + 40))
     print(f"Total: {len(rows)}  |  match: {len(rows) - len(non_matching)}  "
-          f"|  NON-matching: {len(non_matching)}")
-    if non_matching:
-        print("\nNon-matching (outside the configured location policy):")
-        for r in non_matching:
+          f"|  mismatch: {len(mismatches)}  |  review: {len(review)}")
+    if mismatches:
+        print("\nMismatches (outside the configured location policy):")
+        for r in mismatches:
             print(f"  - {r['slug']}  [{r['category']}]  "
                   f"{' | '.join(r['locations']) or '(none recorded)'}")
-    return not non_matching
+    if review:
+        print("\nReview (blank / unrecognized location \u2014 not a policy failure):")
+        for r in review:
+            print(f"  - {r['slug']}  [{r['category']}]  "
+                  f"{' | '.join(r['locations']) or '(none recorded)'}")
+    return not mismatches
 
 
 def find_application(slug: str) -> Path | None:
