@@ -4,7 +4,7 @@ Curated operational lessons from real usage — the hard-won engineering memory 
 internals + calibrated layout constants) that lives nowhere else. General ATS guidance,
 deliverable/multi-role rules, and the schema live in SKILL.md / reference.md / application-tracker.
 
-Last reviewed: 2026-07-19
+Last reviewed: 2026-07-20
 
 Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_confirmed: <date> · status: active -->`
 (gardener `lessons_report` parses these; `added` = the section's first git appearance, `last_confirmed` = last review date).
@@ -43,9 +43,14 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   (or `pdftoppm`) and eyeball the employer row alignment.
 
 ## Pre-render layout budget — calibrated constants
-<!-- added: 2026-04-16 · last_confirmed: 2026-07-19 · status: active -->
+<!-- added: 2026-04-16 · last_confirmed: 2026-07-20 · status: active -->
 `estimate_layout.py` predicts rendered height from `tailored.yaml` BEFORE rendering (Step 5.5),
 so the page is sized in one shot instead of "render → 2 pages → trim → re-render".
+`render.py` auto-runs this estimate as a pre-flight gate: it **aborts a CLEAR overflow** (est over
+budget by more than one rendered line of ±word-wrap noise) before any LibreOffice conversion, so a
+doomed layout never pays the render cost; `--skip-estimate` bypasses it. A *borderline* OVERFLOW is
+deliberately NOT aborted — the shipped example estimates ~739pt yet renders exactly 1 page, so the
+gate fires only beyond the noise band and check.py stays the authoritative post-render page gate.
 
 **Calibrated template geometry** (measured on the shipped Arial-10 reference DOCX, LibreOffice
 render; all read live from the DOCX so the numbers self-adjust if the template changes):
@@ -80,12 +85,18 @@ Prefer sizing CONTENT to the existing budget (trim bullets to ≤2 lines) over c
 approved template; only touch margins/spacing/font with the user's ok.
 
 ## Environment
-<!-- added: 2026-04-16 · last_confirmed: 2026-07-19 · status: active -->
+<!-- added: 2026-04-16 · last_confirmed: 2026-07-20 · status: active -->
 - Use the repo venv `.venv/bin/python` (uv-managed) — system pythons may be too old/blocked.
 - PDF conversion uses LibreOffice (`pdf_convert.py` probes `~/Applications/LibreOffice.app`
   then `/Applications/LibreOffice.app`). If Word/docx2pdf isn't available, rely on LibreOffice.
-- If `render.py` prints "PDF: skipped" (transient LibreOffice lock/first-run), convert manually
-  then re-run check.py: `soffice --headless --convert-to pdf --outdir <folder> "<folder>/<RESUME_STEM>.docx"`.
+  `render.py` converts the resume + every cover letter **concurrently**, each in its own
+  LibreOffice process with an isolated `-env:UserInstallation` profile (instances share one
+  profile lock otherwise and serialize/hang) — ~1.8x faster on the 2-PDF example (16.5s→9.1s).
+- The old transient "PDF: skipped" flake (LibreOffice exits 0 without writing the PDF) is now
+  handled inside `pdf_convert.py`: it verifies a real PDF landed (>1KB), clears stray lock state,
+  retries ONCE after a short backoff, and on a hard failure exits non-zero with a clear error
+  instead of a silent skip. If that hard error ever persists, convert manually then re-run
+  check.py: `soffice --headless --convert-to pdf --outdir <folder> "<folder>/<RESUME_STEM>.docx"`.
 - `**text**` markers in `tailored.yaml` render as bold runs; the baseline uses them for key phrases.
 - Always save the full JD text, not just the URL — postings get taken down. Review the
   `tailored.yaml` diff against the profile to catch drift or fabrication.

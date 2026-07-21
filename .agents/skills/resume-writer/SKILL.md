@@ -262,15 +262,21 @@ pre-check**. A verdict missing part (2) is incomplete.
 - **Never drop a project** to hit the budget; shorten bullets first, and only as a last resort
   (when shortening isn't enough) drop the single least JD-relevant project. On SPARSE, lengthen
   with real, traceable detail — never filler or invented content.
-- `render.py` prints this estimate up front too. See LESSONS.md → "Pre-render layout budget"
-  for the calibrated constants and the font / margin / line-spacing levers.
+- `render.py` runs this estimate itself and **aborts a clear overflow before any LibreOffice
+  conversion** (est over budget by more than the ±1-line word-wrap noise); borderline/TIGHT
+  still renders, and `--skip-estimate` bypasses the gate. Still simulate trims with
+  `estimate_layout.py` here, and check.py's post-render page count stays the authoritative gate.
+  See LESSONS.md → "Pre-render layout budget" for the calibrated constants and the font /
+  margin / line-spacing levers.
 
 ### Step 6: Render + Validate
 
 Ensure `meta.yaml` is schema v4 with complete structured metadata for every posting record before
 rendering (`status.py --check-metadata`; fill gaps with `status.py --enrich-metadata <folder>`).
-Then render — this writes the resume DOCX to `source/`, the PDF to root, and (for each
-`meta.yaml` role whose bundle exists) the cover letter DOCX/PDF, and runs check.py automatically:
+Then render — this first re-runs the one-page estimate as a pre-flight gate (aborting before any
+conversion on a clear overflow; `--skip-estimate` bypasses), then writes the resume DOCX to
+`source/`, the PDF to root, and (for each `meta.yaml` role whose bundle exists) the cover letter
+DOCX/PDF, and runs check.py automatically:
 
 ```bash
 .venv/bin/python .agents/skills/resume-writer/scripts/render.py applications/6_drafted/<slug>/
