@@ -35,6 +35,7 @@ shape, which is intentionally NOT copied into the human-facing ``meta.yaml``.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import math
 from datetime import date
@@ -45,8 +46,10 @@ import yaml
 
 try:  # Sibling shared module; layout is pure (stdlib + yaml), so no import cycle.
     from .layout import status_label_for_dir
+    from .location import assess_location
 except ImportError:  # Direct top-level import (tests + vendored self-contained skills).
     from layout import status_label_for_dir
+    from location import assess_location
 
 # The per-posting structured (mapping) fields, in display order. These carry the
 # nested ``{min, max, confidence, source}`` shape (job_level adds ``normalized``).
@@ -646,6 +649,33 @@ def extract_required_yoe(text: str | None) -> dict:
     return {key: details[key] for key in ("min", "max", "source")}
 
 
+def assess_required_yoe(text: str | None, *, cap: int | float | None = None) -> dict:
+    """Canonical tri-state required-YOE assessment.
+
+    One shared decision consumed by both production hard-filtering
+    (``scoring.experience_ok``) and the variant corpus/audit
+    (``filter_variants``), so the two can never drift:
+
+    - only a HIGH-confidence general requirement is decisive;
+    - with a ``cap`` a decisive minimum above the cap is ``no_match``;
+    - any other decisive requirement is ``match``;
+    - preferred / tool-specific / contextual / missing (non-high-confidence)
+      requirements are ``review`` — retained as metadata, never a hard drop.
+    """
+    details = extract_required_yoe_details(text)
+    if details.get("confidence") != "high":
+        decision = "review"
+    elif (
+        cap is not None
+        and details.get("min") is not None
+        and float(details["min"]) > float(cap)
+    ):
+        decision = "no_match"
+    else:
+        decision = "match"
+    return {"domain": "yoe", "decision": decision, "result": decision, **details}
+
+
 def _amount_currency(code: str | None, symbol: str | None) -> str | None:
     symbol_currency = {"$": "USD", "€": "EUR", "£": "GBP"}.get(symbol or "")
     code_currency = str(code or "").upper() or None
@@ -820,27 +850,27 @@ _REMOTE_WORKPLACE_TOKENS = (
 )
 
 
-def classify_workplace(location: str | None, description: str | None = "") -> str:
+def classify_workplace(
+    location: str | None,
+    description: str | None = "",
+    workplace_hint: str | None = "",
+) -> str:
     """Return ``onsite`` | ``hybrid`` | ``remote`` | ``unknown`` for a posting.
 
-    Reads the ``location`` string first (the most reliable signal): a ``hybrid``
-    mention wins, then any remote token, otherwise a concrete place is ``onsite``.
-    With no location string, best-effort scan the JD body; if even that is silent,
-    return ``unknown`` rather than guessing.
+    Delegates to the canonical full-evidence location assessment so an ATS office
+    list does not hide an explicit JD alternative such as "US hubs or remotely".
     """
-    loc = _clean(location)
-    if "hybrid" in loc:
-        return "hybrid"
-    if any(token in loc for token in _REMOTE_WORKPLACE_TOKENS):
-        return "remote"
-    if loc:
-        return "onsite"
-    text = _clean(_source_text(description))[:4000]
-    if "hybrid" in text:
-        return "hybrid"
-    if any(token in text for token in _REMOTE_WORKPLACE_TOKENS):
-        return "remote"
-    return "unknown"
+    assessment = assess_location(
+        location,
+        {
+            "allow_us_remote": True,
+            "us_only": False,
+            "require_match": False,
+        },
+        description=_source_text(description),
+        workplace_hint=workplace_hint,
+    )
+    return assessment.workplace
 
 
 # ---------------------------------------------------------------------------
@@ -856,9 +886,10 @@ _SPONSOR_NEGATIVE = (
     "do not sponsor", "not provide sponsorship", "unable to provide sponsorship",
     "unable to provide visa sponsorship", "not able to provide visa sponsorship",
     # "<subject> sponsorship ... will NOT be available" denial constructions
-    # (real JD wordings — see GH issue #15 negation-phrase residual).
+    # (real JD wordings — see GH issue #15 negation-phrase residual). Covers the
+    # bare and "support" subjects plus the explicit "visa sponsorship" subject.
     "sponsorship will not be available", "sponsorship support will not be available",
-    "without sponsorship",
+    "visa sponsorship will not be available", "without sponsorship",
     "without visa sponsorship", "without employer sponsorship",
     "sponsorship is not available", "sponsorship not available",
     "not eligible for sponsorship", "not eligible for visa sponsorship",
@@ -872,13 +903,124 @@ _SPONSOR_NEGATIVE = (
 )
 _SPONSOR_POSITIVE = (
     "sponsor h-1b", "sponsor h1b", "h-1b sponsorship", "h1b sponsorship",
-    "visa sponsorship available", "sponsorship available", "offer visa sponsorship",
+    "visa sponsorship available", "visa sponsorship is available",
+    "sponsorship available", "offer visa sponsorship",
     "provide visa sponsorship", "we sponsor", "will sponsor", "happy to sponsor",
     "open to sponsoring", "able to sponsor", "sponsor work visas", "sponsor visas",
     "green card sponsorship", "green card process", "perm process",
     "immigration sponsorship", "immigration support", "relocation and immigration",
     "cap-exempt", "cap exempt",
 )
+
+_SPONSOR_CONTEXT_RE = re.compile(
+    r"\b(?:visa|h-?1b|immigration|work authorization|green card|"
+    r"permanent residency|perm process|employment sponsorship)\b",
+    re.I,
+)
+_SPONSOR_SIGNAL_RE = re.compile(
+    r"\b(?:sponsor(?:ship|ing)?|visa|immigration|work authorization|"
+    r"h-?1b|green card|perm)\b",
+    re.I,
+)
+_SPONSOR_STRONG_POSITIVE = {
+    "sponsor h-1b", "sponsor h1b", "h-1b sponsorship", "h1b sponsorship",
+    "visa sponsorship available", "visa sponsorship is available",
+    "offer visa sponsorship",
+    "provide visa sponsorship", "sponsor work visas", "sponsor visas",
+    "green card sponsorship", "green card process", "perm process",
+    "immigration sponsorship", "cap-exempt", "cap exempt",
+}
+
+
+def _bounded_phrase_matches(text: str, phrases):
+    hits = []
+    for phrase in phrases:
+        pattern = re.compile(
+            r"(?<![a-z0-9])" + re.escape(phrase).replace(r"\ ", r"\s+")
+            + r"(?![a-z0-9])",
+            re.I,
+        )
+        hits.extend((phrase, match) for match in pattern.finditer(text))
+    return hits
+
+
+def _bounded_phrase_hits(text: str, phrases) -> list[str]:
+    return list(dict.fromkeys(
+        phrase for phrase, _match in _bounded_phrase_matches(text, phrases)))
+
+
+def assess_sponsorship(text: str | None) -> dict:
+    """Return an explainable tri-state sponsorship assessment.
+
+    Generic words such as "we sponsor" are positive only when their surrounding
+    sentence also contains immigration/work-authorization context. This prevents
+    employee-program or event sponsorship copy from passing a hard visa gate.
+    """
+    source = _clean(_source_text(text))
+    negative_matches = _bounded_phrase_matches(source, _SPONSOR_NEGATIVE)
+    negative = list(dict.fromkeys(phrase for phrase, _ in negative_matches))
+    positive: list[str] = []
+    for phrase, positive_match in _bounded_phrase_matches(source, _SPONSOR_POSITIVE):
+        if any(
+            positive_match.start() < negative_match.end()
+            and negative_match.start() < positive_match.end()
+            for _negative_phrase, negative_match in negative_matches
+        ):
+            continue
+        if phrase in _SPONSOR_STRONG_POSITIVE:
+            if phrase not in positive:
+                positive.append(phrase)
+            continue
+        window = source[
+            max(0, positive_match.start() - 120):positive_match.end() + 120
+        ]
+        if _SPONSOR_CONTEXT_RE.search(window):
+            if phrase not in positive:
+                positive.append(phrase)
+
+    if negative and positive:
+        decision, verdict, confidence = "review", "unknown", "low"
+        reason = "Conflicting sponsorship offer and denial language."
+    elif negative:
+        decision, verdict, confidence = "no_match", "unlikely", "high"
+        reason = "The posting explicitly denies sponsorship."
+    elif positive:
+        decision, verdict, confidence = "match", "likely", "high"
+        reason = "The posting explicitly offers immigration sponsorship."
+    else:
+        decision, verdict, confidence = "review", "unknown", "unknown"
+        reason = "The posting does not provide decisive sponsorship evidence."
+    rule_ids = [
+        *(f"sponsorship.negative.{phrase}" for phrase in negative),
+        *(f"sponsorship.positive.{phrase}" for phrase in positive),
+    ]
+    # The structural signature groups by rule FAMILY (polarity/conflict), not the
+    # exact matched phrase, so cosmetic wording variants of a denial or an offer
+    # collapse to one signature and no literal excerpt enters the signature.
+    families = sorted({
+        ".".join(rule_id.split(".", 2)[:2]) for rule_id in rule_ids
+    })
+    material = "|".join([
+        "sponsorship", decision, verdict, confidence, ",".join(families),
+    ])
+    return {
+        "decision": decision,
+        "result": decision,
+        "verdict": verdict,
+        "confidence": confidence,
+        "rule_ids": rule_ids,
+        "evidence": [*negative, *positive],
+        "signal_present": bool(_SPONSOR_SIGNAL_RE.search(source)),
+        "reason": reason,
+        "structural_signature": hashlib.sha256(
+            material.encode("utf-8")).hexdigest()[:16],
+    }
+
+
+def classify_sponsorship_evidence(text: str | None) -> tuple[str, list[str]]:
+    """Compatibility tuple of sponsorship verdict plus exact rule hits."""
+    assessment = assess_sponsorship(text)
+    return assessment["verdict"], list(assessment["evidence"])
 
 
 def classify_sponsorship(text: str | None) -> str:
@@ -888,14 +1030,7 @@ def classify_sponsorship(text: str | None) -> str:
     offer), an explicit offer -> ``likely``, otherwise ``unknown``. Advisory only —
     always confirm with the employer before relying on it.
     """
-    norm = _clean(_source_text(text))
-    if not norm:
-        return "unknown"
-    if any(phrase in norm for phrase in _SPONSOR_NEGATIVE):
-        return "unlikely"
-    if any(phrase in norm for phrase in _SPONSOR_POSITIVE):
-        return "likely"
-    return "unknown"
+    return assess_sponsorship(text)["verdict"]
 
 
 # ---------------------------------------------------------------------------

@@ -42,7 +42,7 @@ for _p in (SKILL_SCRIPTS, SKILL_SCRIPTS / "_vendor"):
     if str(_p) not in sys.path and _p.is_dir():
         sys.path.insert(0, str(_p))
 
-from _vendor.location import classify_location, is_match  # noqa: E402
+from _vendor.location import assess_location  # noqa: E402
 from registry import load_registry  # noqa: E402
 from sources import fetch_company  # noqa: E402
 
@@ -71,11 +71,15 @@ def _entry_from_registry(name: str) -> dict | None:
 
 
 def _verdict(posting) -> tuple[str, bool]:
-    """Location category + match, combining the location string and remote signal."""
-    loc = posting.location or ""
-    text = f"{loc} remote" if (posting.remote or "").lower() == "remote" else loc
-    cat = classify_location(text, _location_policy())
-    return cat, is_match(cat)
+    """Location category + match from the canonical full-evidence evaluator."""
+    assessment = assess_location(
+        posting.location,
+        _location_policy(),
+        title=posting.title,
+        description=posting.description,
+        workplace_hint=posting.remote,
+    )
+    return assessment.category, assessment.matched
 
 
 def gather(entry: dict) -> list[dict]:

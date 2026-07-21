@@ -73,7 +73,9 @@ def fetch_greenhouse(company: str, token: str) -> list[JobPosting]:
             title=j.get("title", "").strip(),
             url=j.get("absolute_url", ""),
             location=loc,
-            remote=_remote_from(loc + " " + desc[:400]),
+            # Raw location hint only; the shared full-evidence evaluator reads the
+            # complete JD later and owns the final workplace/location decision.
+            remote=_remote_from(loc),
             posted_at=parse_dt(j.get("first_published") or j.get("updated_at")),
             description=desc,
         ))
@@ -230,7 +232,7 @@ def fetch_workday(company: str, token: str, host: str, site: str,
             title=title,
             url=jp.get("externalUrl") or f"https://{host}/{site}{path}",
             location=loc,
-            remote=_remote_from(f"{loc} {remote_hint} {desc[:400]}"),
+            remote=_remote_from(f"{loc} {remote_hint}"),
             posted_at=parse_dt(jp.get("startDate")),
             description=desc,
         )
@@ -288,7 +290,7 @@ def fetch_amazon(company: str, search_terms: list[str] | None = None,
                 title=title,
                 url=f"https://www.amazon.jobs{path}",
                 location=loc,
-                remote=_remote_from(f"{loc} {desc[:400]}"),
+                remote=_remote_from(loc),
                 posted_at=_parse_amazon_date(j.get("posted_date")),
                 description=desc,
             )

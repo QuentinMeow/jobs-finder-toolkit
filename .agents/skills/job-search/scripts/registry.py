@@ -7,7 +7,8 @@ module so that name drift (e.g. registry "Arize" / token "arizeai" vs an
 aggregator's "Arize AI") no longer breaks matching.
 
 Entry shapes in companies.yaml:
-  - POLLED       : name, ats, token, [host, site, search_terms], tags, [aliases]
+  - POLLED       : name, ats, token, [host, site, search_terms], tags, [aliases],
+                   [poll_batch]
   - IDENTITY-ONLY: name, [aliases], blacklist    (no ats/token -> never polled)
 
 Match keys for an entry = normalized {name} + {aliases} + {token}. `canonical`
@@ -29,6 +30,12 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = SKILL_DIR / "companies.yaml"
 
 _WS_RE = re.compile(r"\s+")
+_BATCH_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+SUPPORTED_ATS = {
+    "greenhouse", "ashby", "lever", "smartrecruiters", "workday",
+    "amazon", "apple", "meta",
+}
 
 
 def normalize(name: str | None) -> str:
@@ -36,6 +43,69 @@ def normalize(name: str | None) -> str:
     if not name:
         return ""
     return _WS_RE.sub(" ", str(name).strip().lower())
+
+
+def lint_entries(entries: list[dict]) -> list[str]:
+    """Return deterministic offline schema/identity errors for registry rows."""
+    errors: list[str] = []
+    key_owner: dict[str, str] = {}
+    for index, entry in enumerate(entries):
+        label = f"companies[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{label}: entry must be a mapping")
+            continue
+
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            errors.append(f"{label}: name is required")
+            name = label
+        ats = str(entry.get("ats") or "").strip().lower()
+        token = str(entry.get("token") or "").strip()
+
+        if ats:
+            if ats not in SUPPORTED_ATS:
+                errors.append(f"{name}: unsupported ats {ats!r}")
+            if not token:
+                errors.append(f"{name}: token is required for a polled entry")
+            tags = entry.get("tags")
+            if not isinstance(tags, list) or not any(str(t).strip() for t in tags):
+                errors.append(f"{name}: non-empty tags list is required")
+            if ats == "workday":
+                for field in ("host", "site"):
+                    if not str(entry.get(field) or "").strip():
+                        errors.append(f"{name}: {field} is required for workday")
+        else:
+            if token:
+                errors.append(f"{name}: token requires ats")
+            if not entry.get("blacklist"):
+                errors.append(
+                    f"{name}: identity-only rows must carry a blacklist reason")
+
+        aliases = entry.get("aliases") or []
+        if not isinstance(aliases, list):
+            errors.append(f"{name}: aliases must be a list")
+            aliases = []
+        batch = entry.get("poll_batch")
+        if batch is not None and (
+                not isinstance(batch, str) or not _BATCH_RE.fullmatch(batch.strip())):
+            errors.append(
+                f"{name}: poll_batch must match {_BATCH_RE.pattern!r}")
+
+        raw_keys = [name, *aliases]
+        if token:
+            raw_keys.append(token)
+        for raw in raw_keys:
+            key = normalize(raw)
+            if not key:
+                errors.append(f"{name}: empty identity key")
+                continue
+            owner = key_owner.get(key)
+            if owner is not None and owner != name:
+                errors.append(
+                    f"{name}: identity key {key!r} collides with {owner!r}")
+            else:
+                key_owner[key] = name
+    return errors
 
 
 class Registry:
@@ -130,14 +200,33 @@ class Registry:
         return keys
 
     # ---- polling ----------------------------------------------------------- #
-    def poll_companies(self, tags: list[str] | None = None) -> list[dict]:
-        """Entries with an `ats` (identity-only rows excluded), tag-filtered."""
+    def poll_companies(
+        self,
+        tags: list[str] | None = None,
+        batches: list[str] | None = None,
+    ) -> list[dict]:
+        """Return pollable entries selected by domain tags and explicit batches.
+
+        Rows carrying ``poll_batch`` are opt-in so a large research expansion never
+        turns an ordinary profile run into a thousand-board crawl. Supplying batches
+        selects only those batches; omitting them keeps only unbatched legacy rows.
+        """
         pollable = [e for e in self.entries if e.get("ats")]
-        if not tags:
-            return pollable
-        tagset = {t.strip().lower() for t in tags}
-        return [c for c in pollable
-                if tagset & {str(t).lower() for t in (c.get("tags") or [])}]
+        if batches:
+            batchset = {str(b).strip().lower() for b in batches if str(b).strip()}
+            pollable = [
+                e for e in pollable
+                if str(e.get("poll_batch") or "").strip().lower() in batchset
+            ]
+        else:
+            pollable = [e for e in pollable if not e.get("poll_batch")]
+        if tags:
+            tagset = {str(t).strip().lower() for t in tags if str(t).strip()}
+            pollable = [
+                c for c in pollable
+                if tagset & {str(t).lower() for t in (c.get("tags") or [])}
+            ]
+        return pollable
 
 
 def _overlay_blacklist_paths() -> list[Path]:

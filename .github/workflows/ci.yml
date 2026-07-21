@@ -85,13 +85,23 @@ jobs:
       - name: Shared-module unit tests
         run: python -m unittest discover scripts/shared/tests
 
-      # 6. Publish leak-guard + exporter UNIT TESTS (required gate). Exercises the
+      # 6. Job-search tests include the deterministic high-stakes filter corpus,
+      #    snapshot/refilter parity, review preservation, and handoff contracts.
+      - name: Job-search unit tests + filter variant corpus
+        run: |
+          JOBHUNT_CONFIG="$PWD/config.example.yaml" \
+            python -m unittest discover \
+            -s .agents/skills/job-search/scripts/tests \
+            -t .agents/skills/job-search/scripts/tests
+          python .agents/skills/job-search/scripts/validate_filter_variants.py --check
+
+      # 7. Publish leak-guard + exporter UNIT TESTS (required gate). Exercises the
       #    guard's structural PII / path-denylist / fail-closed logic and the
       #    allowlist exporter end-to-end.
       - name: Leak-guard + exporter unit tests
         run: python -m unittest discover scripts/publish/tests
 
-      # 7. Public leak guard — BLOCKING. This is the public toolkit repo, so the
+      # 8. Public leak guard — BLOCKING. This is the public toolkit repo, so the
       #    guard must be completely clean (exit 0, zero findings); ANY finding is a
       #    regression. Armed with the JOBHUNT_PERSONAL_TOKENS repo secret when
       #    present. Fork PRs receive no secrets, so those runs are tokenless

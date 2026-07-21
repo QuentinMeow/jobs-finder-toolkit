@@ -39,6 +39,12 @@ Run these before opening a PR (all must pass; CI runs them too):
 # Canonical shared-module tests
 .venv/bin/python -m unittest discover -s scripts/shared/tests
 
+# Job-search pipeline tests + deterministic high-stakes filter corpus
+.venv/bin/python -m unittest discover \
+  -s .agents/skills/job-search/scripts/tests \
+  -t .agents/skills/job-search/scripts/tests
+.venv/bin/python .agents/skills/job-search/scripts/validate_filter_variants.py --check
+
 # Publish leak-guard + exporter unit tests
 .venv/bin/python -m unittest discover -s scripts/publish/tests
 

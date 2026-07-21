@@ -3,10 +3,10 @@
 
 Usage:
   .venv/bin/python .agents/skills/job-search/scripts/handoff.py \
-      --json <search.json> --select <"rank N" | "Company/Title"> \
+      --json <search.json> (--select <"rank N" | "Company/Title"> | --all) \
       [--applications-root DIR] [--status-dir 6_drafted] \
       [--research-date YYYY-MM-DD] [--skip-jd-fetch] \
-      [--allow-location-mismatch]
+      [--allow-location-mismatch] [--report REPORT.json]
 
 ``search.json`` is what ``search_jobs.py --json-out`` writes: a list of posting
 records (``JobPosting.to_dict()``), score-ranked. This tool takes ONE selected
@@ -85,6 +85,9 @@ from location import (  # noqa: E402  (vendored shared location policy)
 )
 
 DEFAULT_STATUS_DIR = "6_drafted"
+LIVE_STATUS_DIRS = (
+    "6_drafted", "5_applied", "4_in_progress", "3_rejected", "2_ignored",
+)
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _RANK_RE = re.compile(r"^\s*(?:rank\s+)?(\d+)\s*$", re.I)
@@ -147,6 +150,64 @@ def select_row(rows: list[dict], selector: str) -> dict:
             "select by rank instead"
         )
     return matches[0]
+
+
+def _posting_keys(root: Path) -> tuple[set[str], set[tuple[str, str]]]:
+    """Collect URL and company/role duplicate keys from logs and live folders."""
+    urls: set[str] = set()
+    pairs: set[tuple[str, str]] = set()
+
+    log_path = root / "0_profile" / "applications-log.yaml"
+    if log_path.exists():
+        data = yaml.safe_load(log_path.read_text(encoding="utf-8")) or {}
+        for posting in data.get("postings") or []:
+            if not isinstance(posting, dict):
+                continue
+            url = _norm(posting.get("url"))
+            company = _norm(posting.get("company"))
+            role = _norm(posting.get("role"))
+            if url:
+                urls.add(url.rstrip("/"))
+            if company and role:
+                pairs.add((company, role))
+
+    for status in LIVE_STATUS_DIRS:
+        status_dir = root / status
+        if not status_dir.exists():
+            continue
+        for meta_path in status_dir.glob("*/meta.yaml"):
+            try:
+                meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError):
+                continue
+            company = _norm(meta.get("company"))
+            jobs = meta.get("jobs") or []
+            if not jobs and meta.get("role"):
+                jobs = [{"role": meta.get("role"), "url": meta.get("url")}]
+            for job in jobs:
+                if not isinstance(job, dict):
+                    continue
+                url = _norm(job.get("url"))
+                role = _norm(job.get("role"))
+                if url:
+                    urls.add(url.rstrip("/"))
+                if company and role:
+                    pairs.add((company, role))
+    return urls, pairs
+
+
+def _duplicate_reason(
+    row: dict,
+    urls: set[str],
+    pairs: set[tuple[str, str]],
+) -> str | None:
+    url = _norm(row.get("url")).rstrip("/")
+    pair = (_norm(row.get("company")), _norm(row.get("title")))
+    if url and url in urls:
+        return "same URL already exists in the log or a live application folder"
+    if all(pair) and pair in pairs:
+        return "same company and role already exists in the log or a live folder"
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -390,10 +451,7 @@ def report_location(
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
-def run(args: argparse.Namespace) -> int:
-    rows = load_rows(Path(args.json).expanduser())
-    row = select_row(rows, args.select)
-
+def _run_row(row: dict, args: argparse.Namespace) -> tuple[int, Path]:
     company = str(row.get("company") or "").strip()
     role = str(row.get("title") or "").strip()
     if not company:
@@ -411,7 +469,7 @@ def run(args: argparse.Namespace) -> int:
             f"handoff: refusing to overwrite existing folder: {folder}",
             file=sys.stderr,
         )
-        return 2
+        return 2, folder
 
     jd_file = jd_filename(role)
     source_dir = folder / "source"
@@ -466,16 +524,115 @@ def run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # Location policy gate. A definite mismatch is the highest-priority failure
+    # ("do not draft this posting at all"), so it wins over an incomplete-metadata
+    # / missing-JD exit; ``--allow-location-mismatch`` downgrades it to a warning.
     location_blocked = report_location(
         loc_verdict, loc_cat, loc_locs, loc_offending, folder,
         allow_mismatch=args.allow_location_mismatch,
     )
-
-    # A location mismatch is the highest-priority failure: it means "do not draft
-    # this posting at all", so it wins over an incomplete-metadata / missing-JD exit.
     if location_blocked:
-        return 3
-    return 0 if (errors == [] and jd_ok) else 1
+        return 3, folder
+    return (0 if (errors == [] and jd_ok) else 1), folder
+
+
+# Exit codes _run_row returns, mapped to a bulk-report row status. A location
+# mismatch is auditable as its own status/count (distinct from an incomplete
+# scaffold) so a bulk run's report shows exactly why each folder is not clean.
+_BULK_STATUS_BY_CODE = {0: "created", 3: "location_mismatch"}
+
+
+def _run_bulk(rows: list[dict], args: argparse.Namespace) -> int:
+    root = _applications_root(args.applications_root)
+    urls, pairs = _posting_keys(root)
+    report: list[dict] = []
+    counts = {
+        "created": 0,
+        "incomplete": 0,
+        "location_mismatch": 0,
+        "duplicate": 0,
+        "failed": 0,
+    }
+
+    for index, row in enumerate(rows, 1):
+        reason = _duplicate_reason(row, urls, pairs)
+        if reason:
+            counts["duplicate"] += 1
+            report.append({
+                "rank": index,
+                "company": row.get("company"),
+                "title": row.get("title"),
+                "url": row.get("url"),
+                "status": "duplicate",
+                "detail": reason,
+            })
+            print(
+                f"handoff: skipped duplicate rank {index}: "
+                f"{row.get('company')} / {row.get('title')} ({reason})",
+                file=sys.stderr,
+            )
+            continue
+
+        try:
+            code, folder = _run_row(row, args)
+        except ValueError as exc:
+            counts["failed"] += 1
+            report.append({
+                "rank": index,
+                "company": row.get("company"),
+                "title": row.get("title"),
+                "url": row.get("url"),
+                "status": "failed",
+                "detail": str(exc),
+            })
+            print(f"handoff: rank {index} failed: {exc}", file=sys.stderr)
+            continue
+
+        status = _BULK_STATUS_BY_CODE.get(code, "incomplete")
+        counts[status] += 1
+        report.append({
+            "rank": index,
+            "company": row.get("company"),
+            "title": row.get("title"),
+            "url": row.get("url"),
+            "status": status,
+            "folder": str(folder),
+            "exit_code": code,
+        })
+        # A partial scaffold (or a mismatch folder left for review) is still a live
+        # folder and must block a second row.
+        url = _norm(row.get("url")).rstrip("/")
+        pair = (_norm(row.get("company")), _norm(row.get("title")))
+        if url:
+            urls.add(url)
+        if all(pair):
+            pairs.add(pair)
+
+    if args.report:
+        report_path = Path(args.report).expanduser()
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps({"counts": counts, "rows": report}, indent=2),
+            encoding="utf-8",
+        )
+    print(
+        "Bulk handoff: "
+        + " | ".join(f"{key}={value}" for key, value in counts.items())
+    )
+    # Any non-clean outcome (incomplete scaffold, location mismatch, or a hard
+    # failure) makes the bulk run exit non-zero.
+    return 1 if (
+        counts["incomplete"] or counts["location_mismatch"] or counts["failed"]
+    ) else 0
+
+
+def run(args: argparse.Namespace) -> int:
+    rows = load_rows(Path(args.json).expanduser())
+    if args.select_all:
+        return _run_bulk(rows, args)
+    row = select_row(rows, args.select)
+    code, _folder = _run_row(row, args)
+    return code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -483,8 +640,11 @@ def main(argv: list[str] | None = None) -> int:
         description="Scaffold an application folder from a ranked search result.")
     ap.add_argument("--json", required=True,
                     help="search_jobs.py --json-out file (list of posting records).")
-    ap.add_argument("--select", required=True,
-                    help='Which posting: "rank N" (1-based) or "Company/Title".')
+    selection = ap.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--select",
+                           help='Which posting: "rank N" (1-based) or "Company/Title".')
+    selection.add_argument("--all", dest="select_all", action="store_true",
+                           help="Scaffold every row after duplicate preflight.")
     ap.add_argument("--applications-root", default=None,
                     help="Applications root (default: the vendored config value).")
     ap.add_argument("--status-dir", default=DEFAULT_STATUS_DIR,
@@ -502,6 +662,9 @@ def main(argv: list[str] | None = None) -> int:
                          "configured location policy (foreign / non-preferred US "
                          "office). Without this flag a definite mismatch leaves the "
                          "folder on disk and exits non-zero (code 3).")
+    ap.add_argument("--report", default=None,
+                    help="Optional JSON report path for --all results (counts + "
+                         "per-row status, including location_mismatch).")
     args = ap.parse_args(argv)
 
     try:

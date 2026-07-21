@@ -112,5 +112,13 @@ class RequirementsTxtTests(unittest.TestCase):
         self.assertIn("python-jobspy", req)
 
 
+class ShippedProfileDefaultsTests(unittest.TestCase):
+    def test_example_enables_stage1_jobspy_baseline(self):
+        profile = search_jobs.load_yaml(
+            search_jobs.SKILL_DIR / "profiles" / "example.yaml")
+        self.assertTrue(profile["sources"]["jobspy"]["enabled"])
+        self.assertEqual(profile["sources"]["jobspy"]["sites"], ["indeed", "google"])
+
+
 if __name__ == "__main__":
     unittest.main()

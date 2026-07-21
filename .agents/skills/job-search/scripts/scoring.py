@@ -4,127 +4,191 @@ from __future__ import annotations
 import re
 
 from common import JobPosting, normalize, term_matches
-from job_metadata import extract_required_yoe_details
+from job_metadata import (
+    assess_required_yoe,
+    assess_sponsorship,
+    classify_level,
+    extract_required_yoe_details,
+)
+from location import assess_location
 from visa import classify_visa, visa_tags
 
-_US_STATE_NAMES = {
-    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
-    "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
-    "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine",
-    "maryland", "massachusetts", "michigan", "minnesota", "mississippi",
-    "missouri", "montana", "nebraska", "nevada", "new hampshire", "new jersey",
-    "new mexico", "new york", "north carolina", "north dakota", "ohio",
-    "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina",
-    "south dakota", "tennessee", "texas", "utah", "vermont", "virginia",
-    "washington", "west virginia", "wisconsin", "wyoming",
-}
-_US_STATE_ABBR = {
-    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL",
-    "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT",
-    "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI",
-    "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
-}
-_US_HUBS = {
-    "san francisco", "bay area", "silicon valley", "mountain view", "palo alto",
-    "menlo park", "sunnyvale", "santa clara", "san jose", "cupertino", "oakland",
-    "redwood city", "san mateo", "seattle", "bellevue", "redmond", "kirkland",
-    "new york", "brooklyn", "boston", "cambridge", "austin", "dallas", "houston",
-    "denver", "boulder", "chicago", "atlanta", "miami", "los angeles",
-    "san diego", "portland", "phoenix", "raleigh", "durham", "pittsburgh",
-    "philadelphia", "minneapolis", "nashville", "salt lake", "washington, d",
-}
-_US_TOKENS = ("united states", "usa", "u.s.", "u.s.a", "remote - us", "remote, us",
-              "remote (us", "us remote", "united states of america")
-_FOREIGN_TOKENS = (
-    "united kingdom", " uk", "uk)", "u.k", "london", "england", "scotland",
-    "ireland", "dublin", "germany", "berlin", "munich", "hamburg", "cologne",
-    "frankfurt", "karlsruhe", "nuremberg", "bremen", "stuttgart", "canada",
-    "toronto", "vancouver", "montreal", "france", "paris", "india",
-    "bangalore", "bengaluru", "hyderabad", "pune", "mumbai", "delhi", "chennai",
-    "singapore", "australia", "sydney", "melbourne", "netherlands", "amsterdam",
-    "spain", "madrid", "barcelona", "portugal", "lisbon", "poland", "warsaw",
-    "brazil", "sao paulo", "mexico", "japan", "tokyo", "korea", "china",
-    "israel", "tel aviv", "emea", "apac", "latam", "europe", "zurich", "geneva",
-    "sweden", "stockholm", "denmark", "copenhagen", "romania", "bucharest",
-    "philippines", "manila", "argentina", "colombia", "nigeria", "kenya",
-    "new zealand", "vietnam", "indonesia", "malaysia", "dubai", "abu dhabi",
+# Engineering role nouns that make a broad domain include ("infrastructure",
+# "platform", ...) an actual engineering title rather than a business/finance use.
+_ROLE_NOUN_RE = re.compile(
+    r"\b(engineer|engineers|engineering|developer|developers|swe|sde|sre|"
+    r"programmer|architect)\b")
+
+# Standalone role families that are self-sufficient titles even without one of the
+# nouns above (kept so a legitimate SRE / reliability title is never guarded out).
+_STANDALONE_ROLE_FAMILIES = (
+    "sre", "site reliability", "site reliability engineer", "reliability engineer",
 )
 
+# Broad single-word/domain include tokens that name a technical AREA, not a role.
+# On their own — with no engineering role noun in the title — they admit
+# non-engineering postings (e.g. a finance "Capital Markets Infrastructure
+# Financing" role), so a title matched ONLY via one of these must also show an
+# engineering role noun or a standalone role family.
+_BROAD_DOMAIN_TOKENS = frozenset({
+    "infrastructure", "platform", "compute", "cloud", "data", "systems",
+    "distributed systems", "networking", "network", "storage", "security",
+    "observability", "reliability", "devops", "api", "services", "backend",
+    "back end", "frontend", "front end", "full stack", "fullstack", "ml",
+    "ai", "machine learning",
+})
 
-def is_foreign(nloc: str) -> bool:
-    return any(tok in nloc for tok in _FOREIGN_TOKENS)
+# Leadership words that are ambiguous between an IC and a people-manager role and
+# are NOT already captured by the profile's explicit exclude list. Genuine
+# ambiguity is sent to review (conservative) rather than silently accepted; an
+# explicit manager/director/VP/"head of" title is still a hard exclude above.
+_AMBIGUOUS_LEADERSHIP_RE = re.compile(r"\b(leader|leadership)\b")
 
 
-def is_us(original_loc: str, nloc: str) -> bool:
-    if any(tok in nloc for tok in _US_TOKENS):
-        return True
-    if any(re.search(rf"\b{re.escape(s)}\b", nloc) for s in _US_STATE_NAMES):
-        return True
-    if any(h in nloc for h in _US_HUBS):
-        return True
-    # uppercase 2-letter state abbreviation in the original string (e.g. ", CA")
-    if any(ab in _US_STATE_ABBR for ab in re.findall(r"\b[A-Z]{2}\b", original_loc or "")):
-        return True
-    return False
+def _is_role_bearing(term: str) -> bool:
+    tn = normalize(term)
+    return bool(_ROLE_NOUN_RE.search(tn)) or tn in _STANDALONE_ROLE_FAMILIES
 
 
-def title_ok(posting: JobPosting, profile: dict) -> bool:
-    titles = profile.get("titles", {}) or {}
-    ntitle = normalize(posting.title)
-    include = titles.get("include") or []
-    exclude = titles.get("exclude") or []
+def _title_has_role(ntitle: str) -> bool:
+    return bool(_ROLE_NOUN_RE.search(ntitle)) or any(
+        fam in ntitle for fam in _STANDALONE_ROLE_FAMILIES)
+
+
+def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
+    """Canonical tri-state title/role assessment shared by production + corpus.
+
+    Precedence: explicit exclude family (manager/director/…) -> not-included ->
+    broad-domain-without-role guard -> leadership ambiguity (review) -> match.
+    The broad-domain guard is a GENERIC safeguard applied at assessment time; it
+    never edits the (user-owned) profile.
+    """
+    titles_cfg = titles_cfg or {}
+    ntitle = normalize(title)
+    include = titles_cfg.get("include") or []
+    exclude = titles_cfg.get("exclude") or []
     # Strip known non-level phrases before applying excludes, so their words don't
     # trip a rule — e.g. "Member of Technical Staff" must survive the "staff" exclude.
     ntitle_excl = ntitle
-    for phrase in titles.get("exclude_neutralize") or []:
+    for phrase in titles_cfg.get("exclude_neutralize") or []:
         ntitle_excl = ntitle_excl.replace(normalize(phrase), " ")
-    if exclude and any(term_matches(t, ntitle_excl) for t in exclude):
-        return False
-    if include:
-        return any(term_matches(t, ntitle) for t in include)
-    return True
+
+    level, level_signal = classify_level(title)
+
+    excluded = [t for t in exclude if term_matches(t, ntitle_excl)]
+    if excluded:
+        return _title_result(
+            "no_match", level, level_signal,
+            rule_ids=[f"title.excluded.{normalize(t)}" for t in excluded])
+
+    matched = [t for t in include if term_matches(t, ntitle)]
+    if include and not matched:
+        return _title_result(
+            "no_match", level, level_signal, rule_ids=["title.not_included"])
+
+    # Broad-domain guard: a title admitted ONLY by broad domain word(s) must also
+    # carry an engineering role noun or a standalone role family.
+    if include and matched and not any(_is_role_bearing(t) for t in matched):
+        broad = sorted({
+            normalize(t) for t in matched if normalize(t) in _BROAD_DOMAIN_TOKENS})
+        if broad and not _title_has_role(ntitle):
+            return _title_result(
+                "no_match", level, level_signal,
+                rule_ids=["title.broad_domain_without_role"],
+                evidence=[f"broad_domain:{','.join(broad)}"])
+
+    # Leadership/manager-family ambiguity -> conservative review.
+    if _AMBIGUOUS_LEADERSHIP_RE.search(ntitle_excl):
+        return _title_result(
+            "review", level, level_signal,
+            rule_ids=["title.leadership_ambiguous"],
+            review_reasons=["title_leadership_ambiguous"])
+
+    rule_ids = ([f"title.included.{normalize(t)}" for t in matched]
+                or ["title.included"])
+    return _title_result(
+        "match", level, level_signal, rule_ids=rule_ids,
+        evidence=[level_signal] if level != "unknown" else [])
+
+
+def _title_result(decision, level, level_signal, *, rule_ids,
+                  evidence=None, review_reasons=None):
+    confidence = "high" if level != "unknown" else "unknown"
+    if decision == "review":
+        confidence = "low"
+    return {
+        "domain": "title",
+        "decision": decision,
+        "result": decision,
+        "accepted": decision != "no_match",
+        "level": level,
+        "level_signal": level_signal,
+        "confidence": confidence,
+        "rule_ids": list(rule_ids),
+        "evidence": list(evidence or []),
+        "review_reasons": list(review_reasons or []),
+    }
+
+
+def title_ok(posting: JobPosting, profile: dict) -> bool:
+    """Keep a posting whose title is not a definite non-match.
+
+    Records the canonical title assessment (and any leadership-ambiguity review
+    reason) on the posting so the pipeline's review queue preserves ambiguous
+    titles instead of silently dropping or accepting them.
+    """
+    assessment = assess_title(posting.title, profile.get("titles") or {})
+    posting.filter_assessments["title"] = assessment
+    if assessment["review_reasons"]:
+        posting.review_reasons = list(dict.fromkeys(
+            [*posting.review_reasons, *assessment["review_reasons"]]))
+    return assessment["decision"] != "no_match"
 
 
 def location_ok(posting: JobPosting, profile: dict) -> bool:
     loc_cfg = profile.get("location", {}) or {}
-    nloc = normalize(posting.location)
-    preferred = loc_cfg.get("preferred") or []
-    remote = posting.remote in ("remote", "hybrid")
-    allow_remote = loc_cfg.get("allow_remote", True)
-    require = loc_cfg.get("require_match")
-    us_only = loc_cfg.get("us_only")
-
-    if not require and not us_only:
-        return True
-
-    # Foreign roles are dropped first — this wins over remote / preferred("remote") /
-    # US-abbrev false positives (e.g. "Germany (Remote)", "CA-Ontario-Toronto").
-    if is_foreign(nloc):
-        return False
-
-    # Strict mode: only preferred cities or remote.
-    if require:
-        if allow_remote and remote:
-            return True
-        return any(term_matches(p, nloc) for p in preferred)
-
-    # US-only gate: keep US-based, preferred, or (non-foreign) remote.
-    if any(term_matches(p, nloc) for p in preferred):
-        return True
-    if is_us(posting.location, nloc):
-        return True
-    return bool(allow_remote and remote)
+    assessment = assess_location(
+        posting.location,
+        {
+            "metro": loc_cfg.get("preferred") or [],
+            "allow_us_remote": loc_cfg.get("allow_remote", True),
+            "us_only": loc_cfg.get("us_only", False),
+            "require_match": loc_cfg.get("require_match", False),
+        },
+        title=posting.title,
+        description=posting.description,
+        workplace_hint=posting.remote,
+        hint_trusted=not str(posting.source or "").startswith("jobspy:"),
+    )
+    posting.workplace = assessment.workplace
+    posting.filter_assessments["location"] = assessment.to_dict()
+    posting.review_reasons = list(dict.fromkeys(
+        [*posting.review_reasons, *assessment.review_reasons]))
+    # Reviewable ambiguity is preserved for the pipeline's review queue. Definite
+    # non-matches alone are dropped here.
+    return assessment.decision != "no_match"
 
 
 def visa_ok(posting: JobPosting, profile: dict) -> bool:
     """Apply the profile's visa policy. Fills posting.visa_label/hits as a side effect."""
-    label, hits = classify_visa(posting.description or posting.title)
+    text = posting.description or posting.title
+    assessment = assess_sponsorship(text)
+    label, hits = classify_visa(text)
     posting.visa_label = label
     posting.visa_hits = hits
+    posting.sponsorship = assessment["verdict"]
+    posting.filter_assessments["sponsorship"] = assessment
     visa = profile.get("visa", {}) or {}
     if not visa.get("needs_sponsorship"):
         return True
     policy = visa.get("policy", "exclude_negative")
+    if assessment["decision"] == "review":
+        if assessment["signal_present"] or policy == "require_positive":
+            posting.review_reasons = list(dict.fromkeys([
+                *posting.review_reasons,
+                "sponsorship_requires_review",
+            ]))
+        return True
     if policy == "require_positive":
         return label == "yes"
     return label != "no"          # exclude_negative (default): keep yes + unclear
@@ -149,17 +213,16 @@ def parse_min_required_years(text: str | None) -> int | float | None:
 
 
 def experience_ok(posting: JobPosting, profile: dict) -> bool:
-    """Drop postings whose stated minimum YOE exceeds profile max_years_experience."""
+    """Drop postings whose stated minimum YOE exceeds profile max_years_experience.
+
+    Uses the shared ``assess_required_yoe`` so the hard filter, the score penalty,
+    and the variant corpus all agree on which requirements are decisive.
+    """
     cap = profile.get("max_years_experience")
     if cap is None:
         return True
-    blob = " ".join(
-        x for x in (posting.description, posting.title) if x
-    )
-    stated_min = parse_min_required_years(blob)
-    if stated_min is None:
-        return True
-    return stated_min <= int(cap)
+    blob = "\n".join(x for x in (posting.title, posting.description) if x)
+    return assess_required_yoe(blob, cap=int(cap))["decision"] != "no_match"
 
 
 # --------------------------------------------------------------------------- #
@@ -302,7 +365,9 @@ def score_posting(posting: JobPosting, profile: dict,
     # candidate has. Active only when the profile states `years_experience`.
     cand_yoe = profile.get("years_experience")
     if cand_yoe is not None:
-        req_min = (posting.required_yoe or {}).get("min")
+        required_yoe = posting.required_yoe or {}
+        req_min = (required_yoe.get("min")
+                   if required_yoe.get("confidence") == "high" else None)
         if req_min is not None and float(req_min) > float(cand_yoe):
             over = float(req_min) - float(cand_yoe)
             penalty = round(over * float(sen_cfg.get("yoe_fit_weight", 1.0)), 1)
@@ -344,12 +409,14 @@ def score_posting(posting: JobPosting, profile: dict,
                 reasons.append(f"DOL: {h1b} H-1B / {perm} PERM filings")
 
     # Location
-    loc_cfg = profile.get("location", {}) or {}
-    nloc = normalize(posting.location)
-    if any(term_matches(p, nloc) for p in (loc_cfg.get("preferred") or [])):
+    loc_assessment = posting.filter_assessments.get("location", {})
+    if loc_assessment.get("category") == "metro":
         score += 5; reasons.append(f"location: {posting.location}")
-    if posting.remote in ("remote", "hybrid"):
-        score += 3; reasons.append(posting.remote)
+    if (loc_assessment.get("category") == "us_remote"
+            and loc_assessment.get("workplace") == "remote"):
+        score += 3; reasons.append("remote")
+    if loc_assessment.get("decision") == "review":
+        reasons.append("location: manual review")
 
     # Recency (mild boost for very fresh)
     if posting.age_days is not None and posting.age_days <= 1:

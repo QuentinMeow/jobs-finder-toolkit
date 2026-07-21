@@ -13,7 +13,7 @@ for path in (SEARCH_SCRIPTS, SEARCH_VENDOR):
 from aggregators import _provided_range  # noqa: E402
 from common import JobPosting  # noqa: E402
 from job_metadata import validate_meta  # noqa: E402
-from scoring import experience_ok, parse_min_required_years  # noqa: E402
+from scoring import experience_ok, parse_min_required_years, score_posting  # noqa: E402
 from search_jobs import enrich_posting_metadata  # noqa: E402
 
 
@@ -40,6 +40,26 @@ class SearchJobMetadataTests(unittest.TestCase):
             "8+ years working with Kubernetes in production."
         ))
         self.assertFalse(experience_ok(required, profile))
+
+    def test_yoe_score_penalty_uses_same_high_confidence_threshold(self):
+        profile = {
+            "years_experience": 5,
+            "seniority": {"yoe_fit_weight": 2},
+        }
+        contextual = JobPosting(
+            source="test", company="Acme", title="Software Engineer",
+            url="https://example.test/contextual",
+            required_yoe={"min": 8, "confidence": "medium"},
+        )
+        required = JobPosting(
+            source="test", company="Acme", title="Software Engineer",
+            url="https://example.test/required",
+            required_yoe={"min": 8, "confidence": "high"},
+        )
+        score_posting(contextual, profile)
+        score_posting(required, profile)
+        self.assertEqual(contextual.score, 0)
+        self.assertEqual(required.score, -6)
 
     def test_aggregator_rejects_malformed_or_ambiguous_ranges(self):
         invalid = (

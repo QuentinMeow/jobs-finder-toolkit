@@ -1,0 +1,360 @@
+schema_version: 1
+variants:
+  - id: location-office-hubs-or-us-remote
+    domain: location
+    input:
+      title: Platform Engineer
+      location: San Francisco, CA • New York, NY • United States
+      workplace_hint: unknown
+      description: >-
+        This role can be held from one of our US hubs or remotely in the
+        United States.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+      evidence_contains: [jd_office_or_remote]
+
+  - id: location-hybrid-outside-preferred-metro
+    domain: location
+    input:
+      title: Platform Engineer
+      location: Austin, TX (Hybrid)
+      workplace_hint: hybrid
+      description: This is a hybrid role with three office days each week.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: other_us
+      workplace: hybrid
+
+  - id: location-remote-onsite-conflict
+    domain: location
+    input:
+      title: Reliability Engineer
+      location: Remote (US)
+      workplace_hint: remote
+      description: This role must work in-office five days per week.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [remote_onsite_conflict]
+
+  - id: location-mixed-us-foreign-scope
+    domain: location
+    input:
+      title: Software Engineer
+      location: Remote - US / London, United Kingdom
+      workplace_hint: remote
+      description: Build reliable distributed services.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [mixed_us_foreign_scope]
+
+  - id: location-remote-preferred-word-foreign
+    domain: location
+    input:
+      title: Software Engineer
+      location: Canada (Remote)
+      workplace_hint: remote
+      description: Build reliable distributed services.
+    # A profile that lists the generic workplace word "remote" among its preferred
+    # locations must NOT let "Canada (Remote)" match as a preferred metro.
+    policy:
+      metro: [springfield, remote]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: foreign
+
+  - id: location-remote-preferred-word-us-remote
+    domain: location
+    input:
+      title: Software Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: Build reliable distributed services.
+    policy:
+      metro: [springfield, remote]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+
+  - id: location-distributed-foreign-title
+    domain: location
+    input:
+      title: Senior Software Engineer, Canada
+      location: Distributed
+      workplace_hint: remote
+      description: Build reliable distributed services.
+    policy:
+      metro: [springfield, remote]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: foreign
+
+  - id: sponsorship-explicit-offer
+    domain: sponsorship
+    input:
+      text: Visa sponsorship is available for qualified candidates.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-explicit-denial
+    domain: sponsorship
+    input:
+      text: This role does not offer sponsorship.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-unrelated-program
+    domain: sponsorship
+    input:
+      text: We sponsor employee learning programs and community events.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-conflicting-role-language
+    domain: sponsorship
+    input:
+      text: We sponsor work visas in some cases, but this role has no sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: title-member-of-technical-staff
+    domain: title
+    input:
+      title: Member of Technical Staff, Software Engineer
+      profile:
+        titles:
+          include: [software engineer]
+          exclude: [staff, principal]
+          exclude_neutralize: [member of technical staff]
+    expect:
+      decision: match
+      accepted: true
+
+  - id: title-staff-engineer-excluded
+    domain: title
+    input:
+      title: Staff Software Engineer
+      profile:
+        titles:
+          include: [software engineer]
+          exclude: [staff, principal]
+          exclude_neutralize: [member of technical staff]
+    expect:
+      decision: no_match
+      accepted: false
+      level: staff
+
+  - id: title-broad-domain-finance-rejected
+    domain: title
+    input:
+      title: Capital Markets Infrastructure Financing Associate
+      profile:
+        titles:
+          include: [software engineer, infrastructure engineer, infrastructure]
+          exclude: [manager, director]
+    expect:
+      decision: no_match
+      accepted: false
+
+  - id: title-infrastructure-engineer-accepted
+    domain: title
+    input:
+      title: Infrastructure Engineer
+      profile:
+        titles:
+          include: [software engineer, infrastructure engineer, infrastructure]
+          exclude: [manager, director]
+    expect:
+      decision: match
+      accepted: true
+
+  - id: title-platform-engineer-accepted
+    domain: title
+    input:
+      title: Senior Platform Engineer
+      profile:
+        titles:
+          include: [platform engineer, platform, infrastructure]
+          exclude: [manager, director]
+    expect:
+      decision: match
+      accepted: true
+      level: senior
+
+  - id: title-engineering-leader-review
+    domain: title
+    input:
+      title: Engineering Leader
+      profile:
+        titles:
+          include: [software engineer, engineering]
+          exclude: [manager, director, head of, vp]
+    expect:
+      decision: review
+      accepted: true
+      review_contains: [title_leadership_ambiguous]
+
+  - id: title-engineering-manager-excluded
+    domain: title
+    input:
+      title: Engineering Manager
+      profile:
+        titles:
+          include: [software engineer, engineering]
+          exclude: [manager, director, head of, vp]
+    expect:
+      decision: no_match
+      accepted: false
+
+  - id: yoe-general-required
+    domain: yoe
+    input:
+      text: Requires at least 8 years of professional experience.
+    expect:
+      decision: match
+      min: 8
+      confidence: high
+      requirement_kind: required
+
+  - id: yoe-tool-contextual
+    domain: yoe
+    input:
+      text: Requires 8+ years of experience with Kubernetes.
+    expect:
+      decision: review
+      min: 8
+      confidence: medium
+      requirement_kind: contextual
+
+  - id: yoe-weak-general-required
+    domain: yoe
+    # A stated general requirement with no "required/minimum/must" cue and no
+    # "professional/industry" qualifier is only MEDIUM confidence, so it is a
+    # non-decisive review requirement rather than a hard filter — an intentional,
+    # recurring family that must not be treated as a novel unlabeled variant.
+    input:
+      text: Strong candidates bring 5 or more years building distributed systems.
+    expect:
+      decision: review
+      min: 5
+      confidence: medium
+      requirement_kind: required
+
+  # --- Intentional, recurring LOCATION review families ------------------------
+  # These preserve a posting for manual review at scale; each is a KNOWN shape so
+  # the strict snapshot audit does not fail on it, while runtime search still
+  # keeps it in the review queue. A genuinely new conflict/polarity shape (a new
+  # review-reason string) is still novel and still fails the audit.
+
+  - id: location-unclassified-bare-workplace-word
+    domain: location
+    # A location string that is only a workplace word ("Hybrid", "In-Office") or
+    # an unrecognized single place names no classifiable geography -> unknown.
+    input:
+      title: Software Engineer
+      location: Hybrid
+      workplace_hint: unknown
+      description: Join our team building reliable distributed services.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      category: unknown
+      review_contains: [unclassified_location]
+
+  - id: location-remote-grant-with-mandatory-hybrid-role
+    domain: location
+    # A genuine contradiction: the role is offered as remote AND described as a
+    # (non-optional) hybrid role. Preserved as review, never silently matched.
+    input:
+      title: Software Engineer
+      location: United States
+      workplace_hint: unknown
+      description: This position can be worked remotely. It is also a hybrid role.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [remote_hybrid_conflict]
+
+  - id: location-hybrid-tag-vs-jd-remote
+    domain: location
+    # The structured location tag says hybrid at a listed office while the JD says
+    # the role is fully remote: which applies depends on the candidate, so review.
+    input:
+      title: Software Engineer
+      location: Hybrid - Springfield
+      workplace_hint: unknown
+      description: This role is fully remote across the company.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      category: metro
+      review_contains: [location_hybrid_jd_remote_conflict]
+
+  - id: location-untrusted-remote-hint
+    domain: location
+    # Market scrapers can mark an office posting as remote without corroborating
+    # JD wording. Keep it in review; the hint alone never grants eligibility.
+    input:
+      title: Software Engineer
+      location: Lakeview, WA, US
+      workplace_hint: remote
+      hint_trusted: false
+      description: Build reliable distributed services with the platform team.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [uncorroborated_ats_workplace_hint]

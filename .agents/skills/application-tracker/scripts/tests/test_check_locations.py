@@ -24,17 +24,35 @@ STATUS = Path(__file__).resolve().parents[1] / "status.py"
 
 
 class CheckLocationsExitCodeTests(unittest.TestCase):
-    def _run(self, apps: dict[str, str]):
+    def _run(self, apps: dict[str, object]):
         """Run --check-locations over a temp drafted/ tree; return (rc, parsed_json)."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             drafted = root / "apps" / "6_drafted"
-            for slug, location in apps.items():
+            for slug, spec in apps.items():
                 app = drafted / slug
                 app.mkdir(parents=True)
-                (app / "meta.yaml").write_text(
-                    f'company: ExampleCorp\nlocation: "{location}"\n',
-                    encoding="utf-8")
+                if isinstance(spec, dict):
+                    source = app / "source"
+                    source.mkdir()
+                    jd_file = "JD-platform-engineer.md"
+                    (source / jd_file).write_text(
+                        str(spec.get("description") or ""), encoding="utf-8")
+                    meta = {
+                        "company": "ExampleCorp",
+                        "jobs": [{
+                            "role": "Platform Engineer",
+                            "jd_file": jd_file,
+                            "location": spec.get("location", ""),
+                            "workplace": spec.get("workplace", "unknown"),
+                        }],
+                    }
+                    (app / "meta.yaml").write_text(
+                        json.dumps(meta), encoding="utf-8")
+                else:
+                    (app / "meta.yaml").write_text(
+                        f'company: ExampleCorp\nlocation: "{spec}"\n',
+                        encoding="utf-8")
             (root / "config.yaml").write_text(textwrap.dedent(f"""\
                 paths:
                   applications_root: "{(root / 'apps').as_posix()}"
@@ -78,6 +96,21 @@ class CheckLocationsExitCodeTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertEqual(len(data["mismatches"]), 1)
         self.assertEqual(len(data["review"]), 1)
+
+    def test_office_list_with_jd_remote_alternative_matches(self):
+        rc, data = self._run({
+            "office-or-remote": {
+                "location": "San Francisco, CA • New York, NY • United States",
+                "workplace": "remote",
+                "description": (
+                    "This role can be held from one of our US hubs or remotely "
+                    "in the United States."
+                ),
+            },
+        })
+        self.assertEqual(rc, 0)
+        self.assertEqual(data["rows"][0]["category"], "us_remote")
+        self.assertEqual(data["rows"][0]["workplace"], "remote")
 
 
 if __name__ == "__main__":

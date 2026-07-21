@@ -145,7 +145,7 @@ sources:
     - distributed systems engineer
   query_location: "United States"
   jobspy:
-    enabled: false          # LinkedIn/Indeed/Glassdoor/Google scraper (needs python-jobspy)
+    enabled: true           # Stage 1 Indeed/Google baseline (needs python-jobspy)
     sites: [indeed, google]
     location: "United States"
     results_wanted: 25

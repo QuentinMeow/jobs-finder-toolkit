@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import io
+import json
 import sys
 import types
 import unittest
@@ -205,6 +206,28 @@ class RefilterEquivalenceTests(unittest.TestCase):
         self.assertIn("2.0d", md)
         self.assertIn("Cobalt Systems", md)
 
+    def test_uncertain_location_is_preserved_in_review_queue(self):
+        fetched_at = datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc)
+        posting = _posting(
+            "Review Systems", "Senior Backend Engineer", "Austin, TX",
+            "remote", fetched_at - timedelta(days=1),
+            "Python, Kubernetes, distributed systems.",
+        )
+        posting.source = "jobspy:indeed"
+        profile = search_jobs.load_yaml(EXAMPLE)
+        registry = load_registry()
+        args_ns = types.SimpleNamespace(
+            profile="example", include_considered=True,
+            search_log_skip_days=None, include_recent=True)
+        ctx = search_jobs.build_filter_context(profile, registry, args_ns)
+        kept, counts = search_jobs.filter_score_rank(
+            [posting], profile, ctx, max_age=None, top_k=40,
+            max_per_company=3, sponsor_index=None, company_levels={},
+            registry=registry, now=fetched_at)
+        self.assertEqual(kept, [])
+        self.assertEqual(counts["n_review"], 1)
+        self.assertEqual(counts["review_postings"][0].company, "Review Systems")
+
 
 class RefilterTTLTests(unittest.TestCase):
     def _write(self, tmp, *, hours_old):
@@ -265,7 +288,9 @@ class RefilterFetchFlagRejectionTests(unittest.TestCase):
     def test_fetch_affecting_flag_is_rejected(self):
         for flag in (["--stage", "2"], ["--no-companies"], ["--no-jobspy"],
                      ["--jobspy"], ["--aggregators", "jobicy"],
-                     ["--company-tags", "ai-lab"]):
+                     ["--no-aggregators"],
+                     ["--company-tags", "ai-lab"],
+                     ["--company-batches", "ai-expansion-01"]):
             with self.subTest(flag=flag[0]), TemporaryDirectory() as tmp:
                 snap_path = self._snapshot(tmp)
                 code, _out, _err = _run_main([
@@ -276,17 +301,34 @@ class RefilterFetchFlagRejectionTests(unittest.TestCase):
                 self.assertIn(flag[0], code)
 
     def test_filter_flags_are_allowed(self):
-        # --max-age-days / --top-k / --visa-policy are FILTER flags: refilter accepts.
+        # Date/top-k/all-matches/visa are FILTER flags: refilter accepts them.
         with TemporaryDirectory() as tmp:
             snap_path = self._snapshot(tmp)
             out_md = Path(tmp) / "o.md"
             code, _out, _err = _run_main([
                 "--profile", "example", "--cache-dir", tmp,
                 "--refilter", str(snap_path), "--max-age-days", "7", "--top-k", "10",
+                "--all-matches",
                 "--visa-policy", "exclude_negative", "--out", str(out_md),
                 "--sponsor-index", str(Path(tmp) / "none.json")])
             self.assertEqual(code, 0)
             self.assertTrue(out_md.exists())
+
+    def test_require_positive_activates_gate_for_generic_profile(self):
+        with TemporaryDirectory() as tmp:
+            snap_path = self._snapshot(tmp)
+            out_md = Path(tmp) / "o.md"
+            out_json = Path(tmp) / "o.json"
+            code, _out, _err = _run_main([
+                "--profile", "example", "--cache-dir", tmp,
+                "--refilter", str(snap_path),
+                "--visa-policy", "require_positive",
+                "--out", str(out_md), "--json-out", str(out_json),
+                "--sponsor-index", str(Path(tmp) / "none.json")])
+            self.assertEqual(code, 0)
+            # Synthetic rows state no positive sponsorship language. The explicit
+            # CLI policy therefore keeps none even though example.needs_sponsorship=false.
+            self.assertEqual(json.loads(out_json.read_text()), [])
 
     def test_profile_mismatch_is_rejected(self):
         with TemporaryDirectory() as tmp:

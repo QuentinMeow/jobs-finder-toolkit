@@ -167,6 +167,8 @@ class JobPosting:
     salary_range: dict | None = None
     score: float = 0.0
     reasons: list[str] = field(default_factory=list)
+    filter_assessments: dict = field(default_factory=dict)
+    review_reasons: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = asdict(self)

@@ -97,6 +97,19 @@ report is written to `<discoveries_dir>/<YYYYMMDD>-<profile>.md` (`config.discov
 `applications/1_discoveries/` by default). Use `--print-full` for the full-report stdout dump
 **only** when the user asks for it or a validation needs it.
 
+**Filter-variant gate.** A normal search never silently discards contradictory or unclassified
+high-stakes evidence: it preserves those postings in the `Review:` JSON path printed in the run
+summary. After every fresh fetch (and after a refilter used to make a final shortlist), run the
+deterministic snapshot audit on the printed `Snapshot:` path:
+```bash
+.venv/bin/python .agents/skills/job-search/scripts/validate_filter_variants.py \
+  --snapshot tmp/search_cache/<printed-snapshot>.json --profile example
+```
+Known location/workplace, sponsorship, title/seniority, and YOE shapes pass without AI. Exit 1
+means the report under `tmp/filter_variant_reports/` contains a new or conflicting structural
+variant: verify it against the real JD, update the deterministic classifier, and add only a
+fictional minimal regression to `filter_variants/corpus.yaml` before relying on that filter.
+
 Every fetch also writes a pre-filter snapshot to `tmp/search_cache/` (gitignored). **To widen the
 freshness window, change top-k, or re-emit JSON after a search, re-filter — never re-fetch:**
 ```bash
@@ -116,9 +129,16 @@ Common overrides (flags beat profile values):
 ... --profile example --ai-native-only                 # hard-filter to AI-native / AI-transitioning employers
 ... --profile example --no-jobspy                      # company boards + keyless aggregators only
 ... --profile example --json-out /tmp/matches.json       # machine-readable JSON (needed for handoff)
+# exhaustive opt-in registry cohort: board-only, no top-K/per-company truncation
+... --profile example --company-batches ai-expansion-01 --no-aggregators --all-matches \
+    --json-out tmp/matches.json
 ```
 More flags (`--company-tags`, `--aggregators`, `--no-companies`, `--max-per-company`,
 `--include-recent`, `--search-log-skip-days`): `reference.md` § Search flags.
+
+Rows with `poll_batch` in `companies.yaml` are deliberately excluded from ordinary profile runs;
+select them explicitly with `--company-batches`. Use `--no-aggregators --all-matches` for an
+exhaustive target-board cohort without unrelated market sources or shortlist truncation.
 
 **Visa:** with `--visa-policy require_positive`, only postings with an EXPLICIT sponsorship signal
 pass — warn the user this yields few results, and do **not** silently widen back to
@@ -164,6 +184,10 @@ Only hand off postings that passed the location policy (`config.location_policy(
 .venv/bin/python .agents/skills/job-search/scripts/handoff.py \
     --json /tmp/matches.json --select "rank 1"   # or --select "Company/Title"
 ```
+For a deliberately exhaustive, verified JSON set, `--all --report
+tmp/handoff-report.json` applies the same per-row scaffold plus a live-folder/log duplicate
+preflight and continues with an auditable result for every row.
+
 It creates `applications/6_drafted/<slug>/`, saves `source/JD-<job title>.md` **verbatim** (via
 `fetch_jd`), and writes a schema-v4 `meta.yaml` carrying the row's `status: "drafted"`, `location`,
 `url`, `posted_date`, `workplace`, `sponsorship`, `job_level`, `required_yoe`, and `salary_range` —
@@ -239,6 +263,8 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 | `scripts/fetch_jd.py` | Fetch one posting page and save its readable text **verbatim** (`<URL> --out <path>`; no summarization) |
 | `scripts/handoff.py` | Scaffold an application folder from one selected search row (`--json <search.json> --select <"rank N"\|"Company/Title">`): folder + verbatim JD (via `fetch_jd`) + schema-v4 `meta.yaml` (each posting `status: "drafted"`); validates before exit, refuses to overwrite |
 | `scripts/validate_companies.py` | Check that company tokens still resolve (skips identity-only rows) |
+| `scripts/validate_filter_variants.py` | Check the deterministic corpus and strictly audit a private pre-filter snapshot; exits nonzero with label stubs for new/conflicting high-stakes variants |
+| `filter_variants/corpus.yaml` | Public-safe fictional regressions for location/workplace, sponsorship, title/seniority, and required YOE |
 | `scripts/build_sponsor_index.py` | Optional DOL sponsorship enrichment (see reference.md) |
 | `scripts/registry.py` | Registry loader + resolver (canonical name, blacklist, poll targets, `tagged_keys` for the AI-native set) |
 | `scripts/_vendor/*.py` | **Generated** byte-identical copies of `scripts/shared/*.py` (keep this skill self-contained). Do not edit — regenerate with `scripts/vendoring/sync_vendored.py`; see `scripts/_vendor/README.md` |

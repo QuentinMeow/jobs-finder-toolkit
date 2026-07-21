@@ -5,7 +5,8 @@ Usage:
   .venv/bin/python .agents/skills/job-search/scripts/search_jobs.py \
       [--profile <label>] [--stage 1|2] [--max-age-days 3] [--top-k 40] \
       [--visa-policy exclude_negative|require_positive] [--ai-native-only] \
-      [--company-tags ai-lab,ai-infra] [--aggregators jobicy,themuse] \
+      [--company-tags ai-lab,ai-infra] [--company-batches ai-expansion-01] \
+      [--aggregators jobicy,themuse] [--no-aggregators] [--all-matches] \
       [--jobspy] [--no-jobspy] [--no-companies] [--out <discoveries_dir>/DATE-label.md]
 
   # Re-answer a filter/rank question (wider window, different top-k, re-emit JSON)
@@ -125,7 +126,9 @@ def default_cache_dir() -> Path:
 # required. Classified from code truth (see the fetch-task assembly in main):
 #   --stage         -> gates stage-2 keyed aggregators + JobSpy extended sites
 #   --company-tags  -> registry.poll_companies(tags) selects which boards are fetched
+#   --company-batches -> selects opt-in registry polling batches
 #   --aggregators   -> which keyless aggregators are fetched
+#   --no-aggregators -> disables all cross-company sources (including JobSpy)
 #   --no-companies  -> drops all company-board fetches
 #   --jobspy        -> force-enables the JobSpy scraper fetch tier
 #   --no-jobspy     -> disables the JobSpy scraper fetch tier
@@ -135,7 +138,8 @@ def default_cache_dir() -> Path:
 # note instead of a hard error. --workers only sets fetch concurrency (a no-op under
 # refilter). --profile is validated against the snapshot separately (below).
 FETCH_AFFECTING_FLAGS = (
-    "--stage", "--company-tags", "--aggregators",
+    "--stage", "--company-tags", "--company-batches", "--aggregators",
+    "--no-aggregators",
     "--no-companies", "--jobspy", "--no-jobspy",
 )
 
@@ -234,17 +238,26 @@ def run_tasks(tasks, workers: int = 12):
 
 
 def dedupe(postings):
-    seen, out = set(), []
+    """Keep the highest-scoring row for each canonical company/title pair."""
+    best: dict[tuple[str, str], object] = {}
+    order: list[tuple[str, str]] = []
     for p in postings:
-        key = (p.company.lower().strip(), p.title.lower().strip())
-        if not key[1] or key in seen:
+        key = (p.company.casefold().strip(), p.title.casefold().strip())
+        if not key[1]:
             continue
-        seen.add(key)
-        out.append(p)
-    return out
+        if key not in best:
+            best[key] = p
+            order.append(key)
+        elif p.score > best[key].score:
+            best[key] = p
+    return [best[key] for key in order]
 
 
-def select_diverse(postings, top_k: int, max_per_company: int | None):
+def select_diverse(
+    postings,
+    top_k: int | None,
+    max_per_company: int | None,
+):
     """Pick the top_k highest-scoring postings with a per-employer cap.
 
     `postings` must already be sorted best-first. Greedily takes up to
@@ -253,6 +266,8 @@ def select_diverse(postings, top_k: int, max_per_company: int | None):
     overflow rows backfill the remaining slots so a thin search still returns
     top_k. `max_per_company` <= 0 (or None) disables the cap.
     """
+    if top_k is None:
+        return postings
     if not max_per_company or max_per_company <= 0:
         return postings[:top_k]
     counts: Counter = Counter()
@@ -373,7 +388,7 @@ def is_recently_searched(
 
 def _display_loc(location: str, preferred: list[str]) -> str:
     """Show the preferred-metro segment first so multi-city roles are clear."""
-    segs = [s.strip() for s in re.split(r"[/;]", location or "") if s.strip()]
+    segs = [s.strip() for s in re.split(r"[/;•]", location or "") if s.strip()]
     if preferred:
         for s in segs:
             low = s.lower()
@@ -385,6 +400,9 @@ def _display_loc(location: str, preferred: list[str]) -> str:
 
 def enrich_posting_metadata(posting, company_levels: dict) -> None:
     """Attach structured handoff metadata used when a result becomes an application."""
+    assessed_workplace = (
+        posting.filter_assessments.get("location", {}).get("workplace")
+    )
     metadata = analyze_job_metadata(
         company=posting.company,
         title=posting.title,
@@ -395,6 +413,8 @@ def enrich_posting_metadata(posting, company_levels: dict) -> None:
     )
     for field, value in metadata.items():
         setattr(posting, field, value)
+    if assessed_workplace:
+        posting.workplace = assessed_workplace
 
 
 def _format_level(posting) -> str:
@@ -453,7 +473,8 @@ def render_markdown(kept, profile, meta) -> str:
              f"- Scanned {meta['n_raw']} postings \u2192 {len(kept)} matches "
              f"(skipped {meta.get('n_blacklisted', 0)} blacklisted + "
              f"{meta.get('n_considered', 0)} already-considered + "
-             f"{meta.get('n_recently_searched', 0)} recently-searched)",
+             f"{meta.get('n_recently_searched', 0)} recently-searched; "
+             f"{meta.get('n_review', 0)} preserved for filter review)",
              ""]
     if meta["errors"]:
         lines += ["> Source errors: " + "; ".join(meta["errors"][:12]), ""]
@@ -465,7 +486,12 @@ def render_markdown(kept, profile, meta) -> str:
     ]
     for i, p in enumerate(kept, 1):
         age = "?" if p.age_days is None else f"{p.age_days:.1f}d"
-        loc = (_display_loc(p.location, preferred).replace("|", "/")[:30] or p.remote)
+        display_loc = _display_loc(p.location, preferred).replace("|", "/")
+        if p.workplace == "remote":
+            display_loc = f"Remote — {display_loc}" if display_loc else "Remote"
+        elif p.workplace == "hybrid":
+            display_loc = f"Hybrid — {display_loc}" if display_loc else "Hybrid"
+        loc = (display_loc[:30] or p.remote)
         why = "; ".join(p.reasons)[:100].replace("|", "/")
         title = p.title.replace("|", "/")[:46]
         lines.append(
@@ -566,10 +592,15 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
     which is what makes refilter byte-identical to the fetch run that wrote the cache.
     """
     as_of = now.date()
-    kept = []
+    kept, review_postings = [], []
     n_blacklisted = n_considered = n_recently_searched = n_non_ai = 0
     ai_native_keys = ctx["ai_native_keys"]
     for p in postings:
+        p.filter_assessments = {}
+        p.review_reasons = []
+        canonical_company = registry.canonical(p.company)
+        if canonical_company:
+            p.company = canonical_company
         p.age_days = days_since(p.posted_at, now)
         if not title_ok(p, profile):
             continue
@@ -598,16 +629,23 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
             continue
         enrich_posting_metadata(p, company_levels)
         score_posting(p, profile, sponsor_index, is_ai_native_company=is_ai_native)
-        kept.append(p)
+        if p.review_reasons:
+            review_postings.append(p)
+        else:
+            kept.append(p)
 
     kept = dedupe(kept)
+    review_postings = dedupe(review_postings)
     kept.sort(key=lambda p: p.score, reverse=True)
+    review_postings.sort(key=lambda p: p.score, reverse=True)
     kept = select_diverse(kept, top_k, max_per_company)
     counts = {
         "n_blacklisted": n_blacklisted,
         "n_considered": n_considered,
         "n_recently_searched": n_recently_searched,
         "n_non_ai": n_non_ai,
+        "n_review": len(review_postings),
+        "review_postings": review_postings,
     }
     return kept, counts
 
@@ -626,6 +664,7 @@ def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
         "n_blacklisted": counts["n_blacklisted"],
         "n_considered": counts["n_considered"],
         "n_recently_searched": counts["n_recently_searched"],
+        "n_review": counts.get("n_review", 0),
         "max_per_company": max_per_company,
         "errors": errors,
     }
@@ -657,18 +696,42 @@ def render_compact_table(kept) -> str:
 
 
 def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
-                       json_path) -> str:
+                       json_path, review_path=None) -> str:
     """~5-line run summary printed above the compact table on default stdout."""
     aggs = meta["aggregators"]
     lines = [
         f"Stage {meta['stage']}: {meta['n_companies']} company boards + "
         f"{len(aggs)} aggregator sources reached [{', '.join(aggs) or 'none'}]",
-        f"Fetched {meta['n_raw']} postings -> kept {len(kept)}",
+        f"Fetched {meta['n_raw']} postings -> kept {len(kept)}"
+        f" + review {meta.get('n_review', 0)}",
         f"Snapshot:    {snapshot_display}",
         f"Discoveries: {discoveries_path}",
         f"JSON:        {json_path or '-'}",
     ]
+    if review_path:
+        lines.append(f"Review:      {review_path}")
     return "\n".join(lines)
+
+
+def write_review_report(postings, cache_dir: Path, profile: str) -> Path | None:
+    """Write uncertain high-stakes filter rows to gitignored scratch storage."""
+    path = Path(cache_dir) / f"{snapshot.safe_label(profile)}-filter-review.json"
+    if not postings:
+        path.unlink(missing_ok=True)
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": 1,
+        "profile": profile,
+        "count": len(postings),
+        "instruction": (
+            "Run validate_filter_variants.py --snapshot <snapshot> and label "
+            "new structural variants before changing a hard filter."
+        ),
+        "postings": [p.to_dict() for p in postings],
+    }
+    path.write_text(json.dumps(payload, indent=2))
+    return path
 
 
 def main() -> int:
@@ -685,6 +748,10 @@ def main() -> int:
                          "are set). Default: 1.")
     ap.add_argument("--max-age-days", type=float, default=None)
     ap.add_argument("--top-k", type=int, default=None)
+    ap.add_argument("--all-matches", action="store_true",
+                    help="Keep every passing posting; disables top-K truncation and "
+                         "the per-company diversity cap. Useful for exhaustive "
+                         "board batches and source-only bulk handoff.")
     ap.add_argument("--max-per-company", type=int, default=None,
                     help="Cap rows per employer in the shortlist so one company "
                          "can't dominate (overrides profile diversity.max_per_company; "
@@ -697,10 +764,16 @@ def main() -> int:
                          "Default is a soft score boost, keeping breadth.")
     ap.add_argument("--company-tags", default=None,
                     help="Comma-separated tags to select from companies.yaml.")
+    ap.add_argument("--company-batches", default=None,
+                    help="Comma-separated opt-in poll_batch values. Without this "
+                         "flag, batched expansion rows are not polled.")
     ap.add_argument("--aggregators", default=None,
                     help="Comma-separated KEYLESS aggregator names (override profile). "
                          "Options: arbeitnow,jobicy,remoteok,themuse. Keyed aggregators "
                          "(adzuna,jsearch) and JobSpy LinkedIn run in stage 2.")
+    ap.add_argument("--no-aggregators", action="store_true",
+                    help="Board-only run: disable keyless/keyed aggregators and "
+                         "JobSpy, regardless of profile settings.")
     ap.add_argument("--jobspy", action="store_true",
                     help="Force-enable the JobSpy scraper even if the profile has it off.")
     ap.add_argument("--no-jobspy", action="store_true",
@@ -753,10 +826,14 @@ def main() -> int:
     apply_visa_policy(profile, args.visa_policy)
     if args.ai_native_only:
         profile.setdefault("ai_company", {})["require"] = True
-    top_k = args.top_k or profile.get("top_k", 40)
+    top_k = (None if args.all_matches else
+             (args.top_k if args.top_k is not None else profile.get("top_k", 40)))
     div_cfg = profile.get("diversity", {}) or {}
-    max_per_company = (args.max_per_company if args.max_per_company is not None
-                       else div_cfg.get("max_per_company", 3))
+    max_per_company = (
+        0 if args.all_matches else
+        (args.max_per_company if args.max_per_company is not None
+         else div_cfg.get("max_per_company", 3))
+    )
     stage = args.stage
 
     sponsor_index = None
@@ -822,25 +899,40 @@ def main() -> int:
         # ---- FETCH: assemble tasks (two stages), fetch, then snapshot ----
         tasks = []
         companies = []
-        tags = (args.company_tags.split(",") if args.company_tags
-                else src_cfg.get("company_tags"))
+        batches = (args.company_batches.split(",") if args.company_batches else None)
+        # An explicit batch is already a bounded company selector. Do not
+        # accidentally intersect it with a profile's ordinary domain tags unless
+        # the caller also explicitly asks for --company-tags.
+        tags = (
+            args.company_tags.split(",") if args.company_tags
+            else (None if batches else src_cfg.get("company_tags"))
+        )
         if not args.no_companies:                     # stage 1: company ATS boards
-            companies = registry.poll_companies(tags)
+            companies = registry.poll_companies(tags, batches)
             tasks += [(f"board:{c['name']}", (lambda c=c: fetch_company(c)))
                       for c in companies]
 
         query_terms = resolve_query_terms(profile)
         query_location = src_cfg.get("query_location")
         jobspy_cfg = src_cfg.get("jobspy", {}) or {}
-        jobspy_on = bool(args.jobspy or jobspy_cfg.get("enabled")) and not args.no_jobspy
+        jobspy_on = (
+            bool(args.jobspy or jobspy_cfg.get("enabled"))
+            and not args.no_jobspy
+            and not args.no_aggregators
+        )
 
         # Aggregator names from CLI (keyless override) or profile. Keyed names listed
         # anywhere are deferred to stage 2; keyless ones run in stage 1.
-        prof_aggs = ([a.lower().strip() for a in args.aggregators.split(",")]
-                     if args.aggregators
-                     else [a.lower().strip() for a in (src_cfg.get("aggregators") or [])])
-        extended_aggs = [a.lower().strip()
-                         for a in (src_cfg.get("extended_aggregators") or [])]
+        prof_aggs = (
+            [] if args.no_aggregators else
+            ([a.lower().strip() for a in args.aggregators.split(",")]
+             if args.aggregators
+             else [a.lower().strip() for a in (src_cfg.get("aggregators") or [])])
+        )
+        extended_aggs = (
+            [] if args.no_aggregators else
+            [a.lower().strip() for a in (src_cfg.get("extended_aggregators") or [])]
+        )
         stage1_aggs = [a for a in prof_aggs if a in KEYLESS]
         keyed_wanted = [a for a in (prof_aggs + extended_aggs) if a in KEYED]
 
@@ -890,8 +982,10 @@ def main() -> int:
         # re-answer filter/rank questions without re-fetching (gitignored tmp/).
         source_selection = {
             "no_companies": bool(args.no_companies),
+            "no_aggregators": bool(args.no_aggregators),
             "jobspy_on": jobspy_on,
             "company_tags": tags,
+            "company_batches": batches,
             "aggregators": agg_labels,
             "n_companies": n_companies,
             "query_terms": query_terms,
@@ -910,6 +1004,14 @@ def main() -> int:
         postings, profile, ctx, max_age=max_age, top_k=top_k,
         max_per_company=max_per_company, sponsor_index=sponsor_index,
         company_levels=company_levels, registry=registry, now=now)
+    review_path = write_review_report(
+        counts.get("review_postings", []), cache_dir, args.profile)
+    if review_path:
+        print(
+            f"Preserved {counts['n_review']} uncertain posting(s) for manual "
+            f"filter review -> {review_path}",
+            file=sys.stderr,
+        )
 
     if (counts["n_blacklisted"] or counts["n_considered"]
             or counts["n_recently_searched"] or counts["n_non_ai"]):
@@ -946,7 +1048,8 @@ def main() -> int:
         print(md)
     else:
         print(render_run_summary(meta, kept, snapshot_display=snapshot_display,
-                                 discoveries_path=out_path, json_path=args.json_out))
+                                 discoveries_path=out_path, json_path=args.json_out,
+                                 review_path=review_path))
         print()
         print(render_compact_table(kept))
     return 0

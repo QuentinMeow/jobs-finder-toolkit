@@ -114,6 +114,20 @@ class HandoffTests(unittest.TestCase):
                 break
         return code, folder, stdout, err.getvalue()
 
+    def _run_all(self, rows, *extra):
+        json_path = self._write_json(rows)
+        report_path = self.tmp / "bulk-report.json"
+        argv = [
+            "--json", str(json_path), "--all",
+            "--applications-root", str(self.root),
+            "--report", str(report_path), *extra,
+        ]
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = handoff.main(argv)
+        report = json.loads(report_path.read_text()) if report_path.exists() else None
+        return code, report, out.getvalue(), err.getvalue()
+
     def _tracker_check(self) -> dict:
         """Subprocess the tracker's --check-metadata over the drafted folder."""
         config_yaml = self.tmp / "config.yaml"
@@ -229,6 +243,60 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(code2, 2)
         self.assertIn("refusing to overwrite", err2)
         self.assertEqual(sentinel.read_bytes(), original)   # untouched
+
+    def test_bulk_handoff_skips_live_duplicate_and_creates_new_role(self):
+        existing = _row(url=self.jd_url)
+        code1, _folder, _out, err1 = self._run([existing], "rank 1")
+        self.assertEqual(code1, 0, err1)
+        second_url = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
+        rows = [
+            existing,
+            _row(title="Platform Engineer", url=second_url),
+        ]
+        code, report, stdout, err = self._run_all(rows)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report["counts"]["duplicate"], 1)
+        self.assertEqual(report["counts"]["created"], 1)
+        self.assertIn("Bulk handoff:", stdout)
+        self.assertEqual(
+            len(list((self.root / "6_drafted").glob("*/meta.yaml"))), 2)
+
+    def test_bulk_all_reports_location_mismatch_and_exits_nonzero(self):
+        # --all must combine the location gate with bulk handoff: a mismatch row
+        # is a distinct, auditable outcome and makes the whole bulk run non-zero,
+        # while a clean row is still created in the same pass.
+        self._pin_policy(metro=("springfield",))
+        url2 = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
+        rows = [
+            _row(company="Alpha Systems", title="Staff Backend Engineer",
+                 url=self.jd_url, location="Austin, TX (Hybrid)", remote="hybrid"),
+            _row(company="Nimbus Robotics", title="Senior Platform Engineer",
+                 url=url2, location="Remote (US)", remote="remote"),
+        ]
+        code, report, stdout, err = self._run_all(rows)
+        self.assertEqual(code, 1, err)
+        self.assertEqual(report["counts"]["location_mismatch"], 1)
+        self.assertEqual(report["counts"]["created"], 1)
+        statuses = {row["status"] for row in report["rows"]}
+        self.assertIn("location_mismatch", statuses)
+        self.assertIn("created", statuses)
+        # The mismatch folder is left on disk for review (both folders present).
+        self.assertEqual(
+            len(list((self.root / "6_drafted").glob("*/meta.yaml"))), 2)
+        self.assertIn("location_mismatch", stdout)
+
+    def test_allow_location_mismatch_applies_to_bulk_all(self):
+        # With the override, a would-be mismatch is created (warned, not blocked).
+        self._pin_policy(metro=("springfield",))
+        rows = [_row(company="Alpha Systems", title="Staff Backend Engineer",
+                     url=self.jd_url, location="Austin, TX (Hybrid)",
+                     remote="hybrid")]
+        code, report, _stdout, err = self._run_all(rows, "--allow-location-mismatch")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report["counts"]["created"], 1)
+        self.assertEqual(report["counts"]["location_mismatch"], 0)
 
     def test_jd_fetch_failure_still_scaffolds_and_exits_nonzero(self):
         # A URL that cannot be fetched: the folder is scaffolded, exit is non-zero.

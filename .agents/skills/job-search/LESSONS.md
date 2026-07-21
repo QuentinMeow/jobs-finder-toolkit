@@ -71,6 +71,9 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   check false-matches Canada (`CA`) and India (`IN`) country codes. Foreign-first wins.
 - Dropped "ontario"/kept-narrow foreign tokens to avoid nuking US "Ontario, CA" /
   "Vancouver, WA"; Toronto/Montreal/Canada still catch Canadian roles.
+- Some boards publish only `Distributed` as the location and put the real country
+  in the title (`..., Canada`, `..., Canberra`, `..., Nordics`). Include the title
+  in foreign detection before treating a generic distributed/remote marker as US.
 
 ## Aggregators, JobSpy & LinkedIn/Indeed
 <!-- added: 2026-07-13 · last_confirmed: 2026-07-19 · status: active -->
@@ -99,3 +102,14 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   handoff facts. In a live run *every* match came back tagged remote — including postings whose
   JD text explicitly said hybrid or on-site. Verify workplace type from the saved JD text
   before handing off a posting or recording location facts.
+
+## Full-evidence filters and new variants
+<!-- added: 2026-07-21 · last_confirmed: 2026-07-21 · status: active -->
+- An ATS location can list several office hubs while the JD later offers a US-remote alternative.
+  Location/workplace decisions must read the full JD, not a short prefix or location string alone;
+  search, handoff metadata, and `--check-locations` must use the same assessment.
+- Hybrid at a non-preferred office is not generic remote. Contradictory remote/onsite evidence and
+  mixed US/foreign scope go to the review queue rather than being silently accepted or rejected.
+- After a fetch or final refilter, run `validate_filter_variants.py --snapshot ...`. Known semantic
+  shapes are deterministic and AI-free; an unknown structural signature is a maintenance failure
+  until its real JD is reviewed and a fictional minimal corpus regression is added.

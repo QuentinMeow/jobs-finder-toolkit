@@ -68,7 +68,7 @@ from layout import (
     status_label_for_dir,
     tailored_path,
 )
-from location import classify_locations, extract_jd_locations, is_match
+from location import assess_location, extract_jd_locations
 from metadata_editor import atomic_write_bytes, plan_field_updates
 
 # Output filename stems are candidate-identity-derived, so they come from config
@@ -245,6 +245,53 @@ def app_locations(info: dict, app_dir: Path) -> list[str]:
     return locs
 
 
+def app_location_assessment(info: dict, app_dir: Path):
+    """Assess every posting with its exact JD/workplace evidence; best match wins."""
+    assessments = []
+    jobs = info.get("jobs")
+    if isinstance(jobs, list) and jobs:
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            jd_text = ""
+            jd_file = str(job.get("jd_file") or "").strip()
+            if jd_file:
+                jd_path = source_dir(app_dir) / jd_file
+                try:
+                    jd_text = jd_path.read_text()
+                except OSError:
+                    pass
+            assessments.append(assess_location(
+                job.get("location"),
+                config.location_policy(),
+                title=job.get("role"),
+                description=jd_text,
+                workplace_hint=job.get("workplace"),
+            ))
+    else:
+        jd_texts = []
+        for jd_path in find_jd_files(app_dir):
+            try:
+                jd_texts.append(jd_path.read_text())
+            except OSError:
+                continue
+        assessments.append(assess_location(
+            info.get("location"),
+            config.location_policy(),
+            title=info.get("role"),
+            description="\n".join(jd_texts),
+        ))
+
+    for assessment in assessments:
+        if assessment.decision == "match":
+            return assessment
+    for assessment in assessments:
+        if assessment.decision == "review":
+            return assessment
+    return assessments[0] if assessments else assess_location(
+        "", config.location_policy())
+
+
 def _resolve_application_target(target: str | Path) -> Path | None:
     """Resolve a slug or application-folder path."""
     p = Path(target)
@@ -386,13 +433,17 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
                 continue
             info = load_application(app_dir, status)
             locs = app_locations(info, app_dir)
-            category, matched = classify_locations(locs, config.location_policy())
+            assessment = app_location_assessment(info, app_dir)
             rows.append({
                 "slug": app_dir.name,
                 "company": info.get("company", ""),
                 "status": status,
-                "category": category,
-                "match": matched,
+                "category": assessment.category,
+                "match": assessment.matched,
+                "decision": assessment.decision,
+                "workplace": assessment.workplace,
+                "evidence": list(assessment.evidence),
+                "review_reasons": list(assessment.review_reasons),
                 "locations": locs,
             })
 
@@ -400,8 +451,8 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
     # Split non-matching rows into definite policy violations (foreign / non-preferred
     # US office) and "unknown" rows (blank / unrecognized location). Only the former
     # fail the check; the latter are surfaced for manual review.
-    mismatches = [r for r in non_matching if r["category"] != "unknown"]
-    review = [r for r in non_matching if r["category"] == "unknown"]
+    mismatches = [r for r in non_matching if r["decision"] == "no_match"]
+    review = [r for r in non_matching if r["decision"] == "review"]
 
     if as_json:
         print(json.dumps({

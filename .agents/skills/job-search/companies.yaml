@@ -11,6 +11,8 @@
 # IS AI but that also fit another category) — marks employers as AI-native /
 # AI-transitioning. Profiles' `ai_company.company_tags` reads this family to boost
 # (or, with --ai-native-only, hard-filter to) "infra role AT an AI-native company".
+# `ai-adopter` is reserved for established companies with sourced evidence of an
+# aggressive AI transition; candidate-specific dated evidence stays in the private catalog.
 #
 # Optional per-entry keys (read by scripts/registry.py):
 #   aliases: [..]     extra match strings, only where identity drifts (the resolver
@@ -20,6 +22,9 @@
 #   blacklist: "..."  presence means NEVER consider this company; the string is the
 #                     reason (for your own records). Applies everywhere (company
 #                     boards AND aggregator hits), matched via name/aliases/token.
+#   poll_batch: "..."  opt-in board cohort for large registry expansions. Batched
+#                     rows are polled only with search_jobs.py --company-batches;
+#                     ordinary profile runs keep the unbatched registry footprint.
 #
 # IDENTITY-ONLY rows carry name + aliases + blacklist and OMIT ats/token: companies
 # we never poll but still want to exclude (e.g. aggregator-surfaced employers).
@@ -212,6 +217,104 @@ companies:
   - {name: Activision Blizzard, ats: workday, token: xboxgaming, host: xboxgaming.wd1.myworkdayjobs.com, site: CentralTech, tags: [bigtech, gaming]}
   - {name: Smartsheet, ats: greenhouse, token: smartsheet, tags: [bigtech, saas]}
 
+  # ---- Verified AI company expansion (opt-in batches) ----
+  # Dated evidence and unsupported-board results live only in the private catalog.
+  # Opt-in poll_batch keeps ordinary profile runs bounded.
+  # BEGIN GENERATED AI EXPANSION
+  - {name: Absci, ats: ashby, token: absci, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-01}
+  - {name: Accenture plc, ats: workday, token: accenture, aliases: [ACN], host: accenture.wd103.myworkdayjobs.com, site: AccentureCareers, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: AeroVironment, ats: workday, token: avav, host: avav.wd1.myworkdayjobs.com, site: AVAV, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: Air Liquide, ats: workday, token: airliquidehr, host: airliquidehr.wd3.myworkdayjobs.com, site: AirLiquideExternalCareer, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: AKASA, ats: ashby, token: akasa, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: Alteryx, ats: workday, token: alteryx, aliases: [AYX], host: alteryx.wd108.myworkdayjobs.com, site: AlteryxCareers, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: Amperon, ats: greenhouse, token: amperon, tags: [ai-native], poll_batch: ai-expansion-01}
+  - {name: Arctic Wolf, ats: workday, token: arcticwolf, host: arcticwolf.wd1.myworkdayjobs.com, site: External, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: Ares Management Corporation, ats: workday, token: aresmgmt, aliases: [ARES], host: aresmgmt.wd1.myworkdayjobs.com, site: External, tags: [ai-adopter, fintech], poll_batch: ai-expansion-01}
+  - {name: 'Assurant, Inc.', ats: workday, token: assurant, aliases: [AIZ], host: assurant.wd1.myworkdayjobs.com, site: Assurant_Careers, tags: [ai-adopter, fintech], poll_batch: ai-expansion-01}
+  - {name: Aurora Solar, ats: ashby, token: aurorasolar, tags: [ai-native], poll_batch: ai-expansion-01}
+  - {name: Axelera AI, ats: ashby, token: axelera, tags: [ai-native, healthcare], poll_batch: ai-expansion-01}
+  - {name: Axiom Space, ats: workday, token: axiomspace, host: axiomspace.wd5.myworkdayjobs.com, site: External_Career_Site, tags: [ai-native], poll_batch: ai-expansion-01}
+  - {name: Bandwidth, ats: greenhouse, token: bandwidth, aliases: [BAND], tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: Becton Dickinson, ats: workday, token: bdx, host: bdx.wd1.myworkdayjobs.com, site: EXTERNAL_CAREER_SITE_USA, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-01}
+  - {name: Bloom Energy, ats: workday, token: bloomenergy, host: bloomenergy.wd1.myworkdayjobs.com, site: BloomEnergyCareers, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-01}
+  - {name: Booz Allen Hamilton Holding Corporation, ats: workday, token: bah, aliases: [BAH], host: bah.wd1.myworkdayjobs.com, site: BAH_Jobs, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: BP, ats: workday, token: bpinternational, host: bpinternational.wd3.myworkdayjobs.com, site: bpCareers, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: Broadridge Financial Solutions, ats: workday, token: broadridge, aliases: [BR], host: broadridge.wd5.myworkdayjobs.com, site: Careers, tags: [ai-adopter, fintech], poll_batch: ai-expansion-01}
+  - {name: 'C.H. Robinson Worldwide, Inc.', ats: workday, token: chrobinson, aliases: [C.H. Robinson, CHRW], host: chrobinson.wd5.myworkdayjobs.com, site: CHRobinson, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: Capella Space, ats: greenhouse, token: capellaspace, tags: [ai-native], poll_batch: ai-expansion-01}
+  - {name: CCC Intelligent Solutions, ats: workday, token: cccis, aliases: [CCC], host: cccis.wd1.myworkdayjobs.com, site: broadbean_external, tags: [ai-adopter], poll_batch: ai-expansion-01}
+  - {name: Commonwealth Fusion Systems, ats: lever, token: cfsenergy, tags: [ai-native], poll_batch: ai-expansion-01}
+  - {name: Crusoe, ats: ashby, token: Crusoe, tags: [ai-native], poll_batch: ai-expansion-01}
+  - {name: d-Matrix, ats: ashby, token: d-Matrix, tags: [ai-native, healthcare], poll_batch: ai-expansion-01}
+  - {name: Darktrace, ats: workday, token: darktrace, aliases: [DARK], host: darktrace.wd3.myworkdayjobs.com, site: DarktaceExternal, tags: [ai-adopter], poll_batch: ai-expansion-02}
+  - {name: DDN, ats: ashby, token: ddn, tags: [ai-native], poll_batch: ai-expansion-02}
+  - {name: Deel, ats: ashby, token: Deel, tags: [ai-adopter], poll_batch: ai-expansion-02}
+  - {name: Deep Genomics, ats: lever, token: deepgenomics, tags: [ai-native, healthcare], poll_batch: ai-expansion-02}
+  - {name: Elevance Health, ats: workday, token: elevancehealth, aliases: [ELV, 'Elevance Health, Inc.'], host: elevancehealth.wd1.myworkdayjobs.com, site: ANT, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-02}
+  - {name: Fiddler AI, ats: ashby, token: fiddler-ai, tags: [ai-native], poll_batch: ai-expansion-02}
+  - {name: FLIR, ats: workday, token: flir, host: flir.wd1.myworkdayjobs.com, site: flircareers, tags: [ai-adopter], poll_batch: ai-expansion-02}
+  - {name: 'FormFactor, Inc.', ats: workday, token: formfactor, aliases: [FORM], host: formfactor.wd1.myworkdayjobs.com, site: FFI-Careers, tags: [ai-adopter, semiconductor], poll_batch: ai-expansion-02}
+  - {name: GE Vernova, ats: workday, token: gevernova, host: gevernova.wd5.myworkdayjobs.com, site: Vernova_ExternalSite, tags: [ai-adopter], poll_batch: ai-expansion-02}
+  - {name: Gecko Robotics, ats: ashby, token: gecko-robotics, tags: [ai-native, robotics], poll_batch: ai-expansion-02}
+  - {name: Gen Digital, ats: ashby, token: gen-digital, aliases: [GEN], tags: [ai-adopter, enterprise-infra], poll_batch: ai-expansion-02}
+  - {name: Getty Images, ats: lever, token: gettyimages, tags: [ai-adopter], poll_batch: ai-expansion-02}
+  - {name: Gilead Sciences, ats: workday, token: gilead, host: gilead.wd1.myworkdayjobs.com, site: gileadcareers, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-02}
+  - {name: HackerOne, ats: ashby, token: hackerone, tags: [ai-native, enterprise-infra], poll_batch: ai-expansion-02}
+  - {name: Hadrian, ats: ashby, token: hadrian-automation, tags: [ai-native], poll_batch: ai-expansion-02}
+  - {name: Harness, ats: greenhouse, token: harnessinc, tags: [ai-native, enterprise-infra], poll_batch: ai-expansion-02}
+  - {name: Hartford Financial Services, ats: workday, token: thehartford, aliases: [HIG, 'The Hartford Insurance Group, Inc.'], host: thehartford.wd5.myworkdayjobs.com, site: Careers_External, tags: [ai-adopter], poll_batch: ai-expansion-02}
+  - {name: HawkEye 360, ats: greenhouse, token: hawkeye360, tags: [ai-native], poll_batch: ai-expansion-02}
+  - {name: Helion Energy, ats: ashby, token: helion, tags: [ai-native], poll_batch: ai-expansion-02}
+  - {name: Hut 8, ats: greenhouse, token: hut8, tags: [ai-native, ai-infra, enterprise-infra], poll_batch: ai-expansion-02}
+  - {name: Illumina, ats: workday, token: illumina, host: illumina.wd1.myworkdayjobs.com, site: illumina-careers, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-02}
+  - {name: Immuta, ats: lever, token: immuta, tags: [ai-native, enterprise-infra], poll_batch: ai-expansion-02}
+  - {name: Inari, ats: workday, token: inari, host: inari.wd108.myworkdayjobs.com, site: Inari_Careers, tags: [ai-native, healthcare], poll_batch: ai-expansion-02}
+  - {name: 'IQVIA Holdings, Inc.', ats: workday, token: iqvia, aliases: [IQVIA, IQV], host: iqvia.wd1.myworkdayjobs.com, site: IQVIA, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-02}
+  - {name: Ironclad, ats: ashby, token: ironcladhq, tags: [ai-adopter], poll_batch: ai-expansion-02}
+  - {name: Itron, ats: workday, token: itron, host: itron.wd5.myworkdayjobs.com, site: Early_Careers, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-03}
+  - {name: KLA, ats: workday, token: kla, host: kla.wd1.myworkdayjobs.com, site: Search, tags: [ai-adopter], poll_batch: ai-expansion-03}
+  - {name: Kodiak AI, ats: greenhouse, token: kodiak, tags: [ai-adopter, robotics], poll_batch: ai-expansion-03}
+  - {name: Kyndryl, ats: workday, token: kyndryl, host: kyndryl.wd5.myworkdayjobs.com, site: KyndrylEarlyCareers, tags: [ai-native, enterprise-infra], poll_batch: ai-expansion-03}
+  - {name: Loft Orbital, ats: lever, token: loftorbital, tags: [ai-native], poll_batch: ai-expansion-03}
+  - {name: Mastercard, ats: workday, token: mastercard, aliases: [MA, Mastercard Incorporated], host: mastercard.wd1.myworkdayjobs.com, site: CorporateCareers, tags: [ai-adopter, fintech], poll_batch: ai-expansion-03}
+  - {name: Motorola Solutions, ats: workday, token: motorolasolutions, aliases: [MSI], host: motorolasolutions.wd5.myworkdayjobs.com, site: Careers, tags: [ai-adopter], poll_batch: ai-expansion-03}
+  - {name: Nabla, ats: ashby, token: nabla, tags: [ai-adopter], poll_batch: ai-expansion-03}
+  - {name: Nasdaq, ats: workday, token: nasdaq, aliases: [NDAQ, 'Nasdaq, Inc.'], host: nasdaq.wd1.myworkdayjobs.com, site: Global_External_Site, tags: [ai-adopter, fintech], poll_batch: ai-expansion-03}
+  - {name: Natera, ats: greenhouse, token: natera, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-03}
+  - {name: Outschool, ats: greenhouse, token: outschool, tags: [ai-adopter], poll_batch: ai-expansion-03}
+  - {name: Owkin, ats: ashby, token: owkin, tags: [ai-native, healthcare], poll_batch: ai-expansion-03}
+  - {name: Pendo, ats: greenhouse, token: pendo, tags: [ai-adopter], poll_batch: ai-expansion-03}
+  - {name: PTC, ats: workday, token: ptc, host: ptc.wd1.myworkdayjobs.com, site: PTC, tags: [ai-native, ai-infra], poll_batch: ai-expansion-03}
+  - {name: Rad AI, ats: ashby, token: radai, tags: [ai-native], poll_batch: ai-expansion-03}
+  - {name: Recursion, ats: greenhouse, token: recursionpharmaceuticals, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-03}
+  - {name: ResMed Inc., ats: workday, token: resmed, aliases: [ResMed, RMD], host: resmed.wd3.myworkdayjobs.com, site: ResMed_External_Careers, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-03}
+  - {name: RingCentral, ats: workday, token: ringcentral, aliases: [RNG], host: ringcentral.wd1.myworkdayjobs.com, site: RingCentral_Careers, tags: [ai-adopter], poll_batch: ai-expansion-03}
+  - {name: Samsung Electronics, ats: workday, token: sec, host: sec.wd3.myworkdayjobs.com, site: Samsung_Careers, tags: [ai-native, semiconductor], poll_batch: ai-expansion-03}
+  - {name: Semtech Corporation, ats: workday, token: semtech, aliases: [SMTC], host: semtech.wd1.myworkdayjobs.com, site: SemtechCareers, tags: [ai-adopter, semiconductor], poll_batch: ai-expansion-03}
+  - {name: Serve Robotics, ats: ashby, token: serverobotics, tags: [ai-adopter, robotics], poll_batch: ai-expansion-03}
+  - {name: SK hynix, ats: greenhouse, token: skhynixamerica, tags: [ai-native, semiconductor], poll_batch: ai-expansion-03}
+  - {name: Sprinklr, ats: workday, token: sprinklr, aliases: [CXM], host: sprinklr.wd1.myworkdayjobs.com, site: careers, tags: [ai-adopter], poll_batch: ai-expansion-03}
+  - {name: Stryker Corporation, ats: workday, token: stryker, aliases: [SYK], host: stryker.wd1.myworkdayjobs.com, site: StrykerCareers, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-03}
+  - {name: 'Tapestry, Inc.', ats: workday, token: tapestry, aliases: [TPR], host: tapestry.wd108.myworkdayjobs.com, site: Tapestry_Careers, tags: [ai-adopter, consumer], poll_batch: ai-expansion-03}
+  - {name: Target Corporation, ats: workday, token: target, aliases: [Target, TGT], host: target.wd5.myworkdayjobs.com, site: targetcareers, tags: [ai-adopter, consumer], poll_batch: ai-expansion-04}
+  - {name: Tenable, ats: greenhouse, token: tenableinc, aliases: [TENB], tags: [ai-adopter, enterprise-infra], poll_batch: ai-expansion-04}
+  - {name: Tenstorrent, ats: greenhouse, token: tenstorrent, tags: [ai-native, healthcare], poll_batch: ai-expansion-04}
+  - {name: Tokyo Electron, ats: workday, token: tel, host: tel.wd3.myworkdayjobs.com, site: TEE_Careers, tags: [ai-adopter], poll_batch: ai-expansion-04}
+  - {name: Topcon Positioning Systems, ats: workday, token: topcon, host: topcon.wd1.myworkdayjobs.com, site: TopconPositioningCareers, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-04}
+  - {name: Travelers, ats: workday, token: travelers, aliases: [TRV, 'The Travelers Companies, Inc.'], host: travelers.wd5.myworkdayjobs.com, site: External, tags: [ai-adopter], poll_batch: ai-expansion-04}
+  - {name: True Anomaly, ats: greenhouse, token: trueanomalyinc, tags: [ai-native], poll_batch: ai-expansion-04}
+  - {name: UiPath, ats: ashby, token: uipath, aliases: [PATH], tags: [ai-native], poll_batch: ai-expansion-04}
+  - {name: Valo Health, ats: greenhouse, token: valohealth, tags: [ai-native, healthcare], poll_batch: ai-expansion-04}
+  - {name: 'Ventas, Inc.', ats: workday, token: ventas, aliases: [VTR], host: ventas.wd503.myworkdayjobs.com, site: ventas_careers, tags: [ai-adopter], poll_batch: ai-expansion-04}
+  - {name: Visa Inc., ats: workday, token: visa, aliases: [Visa, V], host: visa.wd5.myworkdayjobs.com, site: Visa, tags: [ai-adopter, fintech], poll_batch: ai-expansion-04}
+  - {name: Waabi, ats: lever, token: waabi, tags: [ai-native, robotics], poll_batch: ai-expansion-04}
+  - {name: WeRide, ats: lever, token: weride, tags: [ai-adopter, robotics], poll_batch: ai-expansion-04}
+  - {name: Werner Enterprises, ats: workday, token: werner, aliases: [WERN, 'Werner Enterprises, Inc.'], host: werner.wd501.myworkdayjobs.com, site: Werner, tags: [ai-adopter], poll_batch: ai-expansion-04}
+  - {name: Xylem, ats: workday, token: xylem, host: xylem.wd5.myworkdayjobs.com, site: xylem-careers, tags: [ai-adopter, healthcare], poll_batch: ai-expansion-04}
+  - {name: Zebra Technologies, ats: workday, token: zebra, aliases: [ZBRA], host: zebra.wd501.myworkdayjobs.com, site: Zebra_careers, tags: [ai-adopter], poll_batch: ai-expansion-04}
+  - {name: Zilliz, ats: lever, token: zilliz, tags: [ai-native, data-platform], poll_batch: ai-expansion-04}
+  # END GENERATED AI EXPANSION
+  # 92 promoted companies across 4 batches.
   # ---- Blacklist ----
   # The PUBLIC registry ships identity + poll config only — it carries NO personal
   # skip rules. Candidate-specific blacklist rows (companies that don't sponsor, the

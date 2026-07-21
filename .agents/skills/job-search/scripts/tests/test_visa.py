@@ -21,7 +21,7 @@ for _p in (str(_SCRIPTS), str(_SCRIPTS / "_vendor")):
 from common import JobPosting  # noqa: E402
 from scoring import visa_ok  # noqa: E402
 from search_jobs import apply_visa_policy  # noqa: E402
-from visa import classify_visa  # noqa: E402
+from visa import classify_visa, visa_tags  # noqa: E402
 
 
 class NegatedSponsorshipTests(unittest.TestCase):
@@ -44,6 +44,23 @@ class NegatedSponsorshipTests(unittest.TestCase):
         label, _ = classify_visa(
             "We offer visa sponsorship and are happy to sponsor H-1B transfers.")
         self.assertEqual(label, "yes")
+
+    def test_non_immigration_sponsorship_copy_is_not_positive(self):
+        label, _ = classify_visa(
+            "We sponsor employee learning programs and community events.")
+        self.assertEqual(label, "unclear")
+
+    def test_perm_does_not_match_inside_unrelated_words(self):
+        self.assertNotIn(
+            "green_card_mentioned",
+            visa_tags("You will perform reliability work with proper permissions."),
+        )
+
+    def test_explicit_perm_process_still_tags_green_card(self):
+        self.assertIn(
+            "green_card_mentioned",
+            visa_tags("We support the PERM process for eligible employees."),
+        )
 
 
 class VisaPolicyBindingTests(unittest.TestCase):
@@ -73,9 +90,12 @@ class VisaPolicyBindingTests(unittest.TestCase):
         self.assertTrue(visa_ok(silent, profile))
 
         # The CLI flag now implies needs_sponsorship, so require_positive binds and
-        # drops a posting that never states sponsorship.
+        # diverts a posting that never states sponsorship to manual review rather
+        # than silently dropping it.
         apply_visa_policy(profile, "require_positive")
-        self.assertFalse(visa_ok(self._posting("Build backend services."), profile))
+        review = self._posting("Build backend services.")
+        self.assertTrue(visa_ok(review, profile))
+        self.assertIn("sponsorship_requires_review", review.review_reasons)
         # ...while keeping one that explicitly offers sponsorship.
         offer = self._posting("We provide visa sponsorship for this role.")
         self.assertTrue(visa_ok(offer, profile))

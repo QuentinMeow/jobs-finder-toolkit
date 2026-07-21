@@ -9,9 +9,11 @@ No network: pure rendering of hand-built postings.
 """
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 _SCRIPTS = Path(__file__).resolve().parents[1]
 for _p in (str(_SCRIPTS), str(_SCRIPTS / "_vendor")):
@@ -84,6 +86,30 @@ class CompactTableGoldenTests(unittest.TestCase):
         self.assertIn("Fetched 1234 postings -> kept 3", lines[1])
         self.assertIn("example-stage1-x.json", lines[2])
         self.assertTrue(lines[4].endswith("-"))       # JSON: - when no --json-out
+
+    def test_all_matches_bypasses_top_k_and_diversity(self):
+        postings = self._kept()
+        selected = search_jobs.select_diverse(
+            postings, top_k=None, max_per_company=1)
+        self.assertEqual(selected, postings)
+
+    def test_dedupe_keeps_highest_scoring_row_not_fetch_order(self):
+        low = _row("Acme AI", "Senior Backend Engineer",
+                   "https://acme.example/jobs/old", 10, "senior", 3, "unclear")
+        high = _row("acme ai", "senior backend engineer",
+                    "https://acme.example/jobs/best", 40, "senior", 1, "yes")
+        self.assertEqual(search_jobs.dedupe([low, high]), [high])
+
+    def test_review_report_is_written_and_stale_report_is_removed(self):
+        posting = self._kept()[0]
+        posting.review_reasons = ["location_requires_review"]
+        with TemporaryDirectory() as tmp:
+            path = search_jobs.write_review_report([posting], Path(tmp), "example")
+            self.assertTrue(path.is_file())
+            self.assertEqual(json.loads(path.read_text())["count"], 1)
+            self.assertIsNone(
+                search_jobs.write_review_report([], Path(tmp), "example"))
+            self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":

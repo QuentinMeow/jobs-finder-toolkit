@@ -264,8 +264,40 @@ PERM filings). This is optional and adds a scoring boost for employers with spon
 | `h1b_transfer_friendly` tag | +5 |
 | DOL employer history (if index present) | up to +10 |
 | Preferred location | +5 |
-| Remote/hybrid | +3 |
+| Confirmed US-remote | +3 |
 | Posted < 24h | +3 |
+
+## Filter confidence and variant audit
+
+High-stakes semantic filters do not coerce uncertainty to a rejection. The canonical location
+assessment combines the location field, title geography, full JD, ATS hint, and injected policy,
+then returns `match`, `no_match`, or `review` with confidence, stable rule/evidence IDs, a reason,
+and a structural signature. A non-preferred hybrid office is not remote; explicit office-or-US-
+remote wording matches; conflicts and mixed-region scope require review. Sponsorship uses the same
+tri-state contract, with bounded immigration context so unrelated uses of `sponsor` or `perm`
+cannot satisfy a hard positive gate. YOE filtering and penalties use only the same high-confidence
+general requirement.
+
+The public corpus is `filter_variants/corpus.yaml`. Check it without network:
+```bash
+.venv/bin/python .agents/skills/job-search/scripts/validate_filter_variants.py --check
+```
+
+Audit a real pre-filter snapshot privately:
+```bash
+.venv/bin/python .agents/skills/job-search/scripts/validate_filter_variants.py \
+  --snapshot tmp/search_cache/<printed-snapshot>.json --profile <label-or-path>
+```
+
+The normal search exits successfully and writes uncertain postings to the printed `Review:` path.
+The explicit audit replays production gate order, so a title rejection cannot generate downstream
+location/visa/YOE noise. It exits 1 for profile-relevant review structures whose semantic family
+has no fictional corpus label and writes grouped YAML stubs under `tmp/filter_variant_reports/`.
+A labeled intentional-review family stays in routine review output but does not fail every later
+snapshot. Review the full JD privately; never copy a real posting into the tracked corpus. Promote
+only a fictional minimal reproduction, then rerun corpus tests and the public leak guard. Detection
+is necessarily bounded: deterministic code can flag a new shape only when a known domain marker is
+present or evidence conflicts.
 
 ## Adding more sources
 
@@ -372,11 +404,20 @@ All overrides beat profile values (`search_jobs.py`):
 # restrict to specific company tags from companies.yaml
 ... --profile example --company-tags ai-lab,ai-infra,ai-native
 
+# opt into one or more large-registry polling cohorts; batched rows are otherwise skipped
+... --profile example --company-batches ai-expansion-01,ai-expansion-02
+
 # choose KEYLESS aggregators explicitly (override profile)
 ... --profile example --aggregators jobicy,remoteok,themuse
 
+# company-board sources only (disables every aggregator and JobSpy tier)
+... --profile example --no-aggregators
+
 # aggregators only, skip company boards
 ... --profile example --no-companies
+
+# keep every passing role instead of applying top-K or per-company diversity limits
+... --profile example --all-matches
 
 # also emit machine-readable JSON
 ... --profile example --json-out /tmp/matches.json
@@ -388,6 +429,11 @@ All overrides beat profile values (`search_jobs.py`):
 # or re-emit JSON in seconds (fetch-affecting flags like --stage/--aggregators refused)
 ... --profile example --refilter latest --max-age-days 7 --top-k 60
 ```
+
+Large expansions use `poll_batch` on registry rows. Normal profile runs exclude every
+batched row; `--company-batches` selects only the named cohorts and can still be combined
+with `--company-tags`. For an exhaustive target-company scan, combine
+`--company-batches ... --no-aggregators --all-matches --json-out ...`.
 
 ## Skip logic (blacklist + already-considered + recently-searched)
 

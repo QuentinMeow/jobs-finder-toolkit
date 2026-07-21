@@ -327,6 +327,20 @@ class WorkplaceTests(unittest.TestCase):
             "remote",
         )
 
+    def test_office_list_reads_remote_alternative_from_full_description(self):
+        description = (
+            "x" * 1900
+            + " This role can be held from one of our US hubs or remotely "
+              "in the United States."
+        )
+        self.assertEqual(
+            classify_workplace(
+                "San Francisco, CA • New York, NY • United States",
+                description,
+            ),
+            "remote",
+        )
+
     def test_unknown_when_nothing_signals_arrangement(self):
         self.assertEqual(classify_workplace("", "Build great products."), "unknown")
 
@@ -349,11 +363,11 @@ class SponsorshipTests(unittest.TestCase):
             "likely",
         )
 
-    def test_denial_beats_offer(self):
+    def test_conflicting_offer_and_denial_requires_review(self):
         self.assertEqual(
             classify_sponsorship(
                 "We sponsor visas in some cases, but this role has no sponsorship."),
-            "unlikely",
+            "unknown",
         )
 
     def test_silent_posting_is_unknown(self):
@@ -377,6 +391,21 @@ class SponsorshipTests(unittest.TestCase):
         self.assertEqual(
             classify_sponsorship("We are unable to provide visa sponsorship."),
             "unlikely",
+        )
+
+    def test_visa_sponsorship_will_not_be_available_is_unlikely(self):
+        # Explicit "visa sponsorship will not be available" subject wording.
+        self.assertEqual(
+            classify_sponsorship(
+                "Please note: visa sponsorship will not be available for this role."),
+            "unlikely",
+        )
+
+    def test_non_immigration_sponsorship_copy_is_unknown(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We sponsor employee learning programs and community events."),
+            "unknown",
         )
 
     def test_analyze_sets_sponsorship_from_description(self):
