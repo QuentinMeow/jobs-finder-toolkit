@@ -231,6 +231,8 @@ a legacy `employer:`/`experience:` layout, or a field the baseline doesn't show.
     (check.py scans skills lines, summaries, and bullets).
 - A skill in none of the three lists fails validation — never add it silently; see Step 7
   (categorize new skills with the user).
+- **Need the exact gate semantics or a threshold** (skill-list matching, cover-letter word
+  counts, bullet/length limits)? Run `check.py --rules` (~1 KB) — never read the `check.py` source.
 - Every bullet must map to real content the user actually did — reword, never invent. The source
   of truth is the profile (`config.profile_md_path()`) **plus** the supporting library
   (`interviews/behavioral-story-bank/`, answer bank, prior applications, notes). A detail is
