@@ -5,7 +5,8 @@ Usage:
   .venv/bin/python .agents/skills/job-search/scripts/handoff.py \
       --json <search.json> --select <"rank N" | "Company/Title"> \
       [--applications-root DIR] [--status-dir 6_drafted] \
-      [--research-date YYYY-MM-DD] [--skip-jd-fetch]
+      [--research-date YYYY-MM-DD] [--skip-jd-fetch] \
+      [--allow-location-mismatch]
 
 ``search.json`` is what ``search_jobs.py --json-out`` writes: a list of posting
 records (``JobPosting.to_dict()``), score-ranked. This tool takes ONE selected
@@ -27,14 +28,23 @@ drafting agent can start at gap analysis instead of re-transcribing ~10 fields:
    are left for the tracker's ``status.py --enrich-metadata`` follow-up.
 4. Validate with the vendored ``job_metadata`` validator before exit. On failure
    the tool exits non-zero and lists what is missing.
+5. Run the SAME location-policy check the tracker's ``status.py --check-locations``
+   uses (via the vendored ``location`` module + ``config.location_policy``). A
+   definite mismatch (a foreign posting or a non-preferred US office) LEAVES the
+   folder on disk, prints the verdict + the offending location string + a one-line
+   remedy to stderr, and exits non-zero (code 3) unless ``--allow-location-mismatch``
+   is passed. This catches a wrong-metro / foreign posting at handoff — before the
+   drafting leg pays for it — instead of only when the tracker gate runs later. A
+   blank / unrecognized location is surfaced for manual review but does NOT block
+   (identical to the tracker's ``review`` vs ``mismatch`` split).
 
 Stdout is exactly two lines: the folder path and the meta.yaml validation status.
-Everything else (fetch notes, gap diagnostics) goes to stderr.
+Everything else (fetch notes, gap diagnostics, the location verdict) goes to stderr.
 
 Self-contained: this script imports only its own sibling ``fetch_jd`` and the
-vendored ``job_metadata`` / ``metadata_editor`` modules. It never subprocesses
-another skill's scripts; the tracker's ``--enrich-metadata`` / ``--check-metadata``
-remain agent-invoked follow-ups.
+vendored ``job_metadata`` / ``metadata_editor`` / ``location`` / ``config`` modules.
+It never subprocesses another skill's scripts; the tracker's ``--enrich-metadata`` /
+``--check-metadata`` / ``--check-locations`` remain agent-invoked follow-ups.
 """
 from __future__ import annotations
 
@@ -67,6 +77,12 @@ from job_metadata import (  # noqa: E402
     validate_meta,
 )
 from metadata_editor import plan_metadata_edit  # noqa: E402
+from location import (  # noqa: E402  (vendored shared location policy)
+    classify_location,
+    classify_locations,
+    extract_jd_locations,
+    is_match,
+)
 
 DEFAULT_STATUS_DIR = "6_drafted"
 
@@ -265,6 +281,113 @@ def build_meta_bytes(row: dict, *, jd_file: str, research_date: str) -> tuple[by
 
 
 # --------------------------------------------------------------------------- #
+# Location policy gate (mirrors status.py --check-locations for one folder)
+# --------------------------------------------------------------------------- #
+def gather_locations(meta: dict, folder: Path) -> list[str]:
+    """Every posting-location string for the scaffolded application.
+
+    Mirrors the tracker's ``app_locations``: prefer the ``location`` recorded in
+    meta.yaml (top-level, then each ``jobs:`` entry); fall back to the ``Location:``
+    line(s) of any saved ``source/JD-*.md`` when meta.yaml records none.
+    """
+    locs: list[str] = []
+    top = str(meta.get("location") or "").strip()
+    if top:
+        locs.append(top)
+    jobs = meta.get("jobs")
+    if isinstance(jobs, list):
+        for job in jobs:
+            if isinstance(job, dict) and str(job.get("location") or "").strip():
+                locs.append(str(job["location"]).strip())
+    if locs:
+        return locs
+    source_dir = folder / "source"
+    if source_dir.is_dir():
+        for jd in sorted(source_dir.glob("JD-*.md")):
+            try:
+                locs.extend(extract_jd_locations(jd.read_text(encoding="utf-8")))
+            except OSError:
+                continue
+    return locs
+
+
+def check_location_policy(meta: dict, folder: Path) -> tuple[str, str, list[str], list[tuple[str, str]]]:
+    """Classify the folder's location(s) against ``config.location_policy()``.
+
+    Returns ``(verdict, category, locations, offending)`` where ``verdict`` is
+    ``"match"`` (a preferred-metro or US-remote posting), ``"mismatch"`` (a definite
+    policy violation — foreign or non-preferred US office) or ``"review"`` (blank /
+    unrecognized location). This is the exact split the tracker's
+    ``status.py --check-locations`` uses: only a definite ``mismatch`` is a hard
+    failure; ``review`` rows are surfaced but do not block. ``offending`` lists the
+    ``(location, category)`` pairs that fail the policy (populated for a mismatch).
+    """
+    import config  # vendored toolkit loader (location policy)
+    policy = config.location_policy()
+    locs = gather_locations(meta, folder)
+    category, matched = classify_locations(locs, policy)
+    if matched:
+        return "match", category, locs, []
+    if category == "unknown":
+        return "review", category, locs, []
+    offending = [
+        (loc, classify_location(loc, policy))
+        for loc in locs
+        if not is_match(classify_location(loc, policy))
+    ]
+    return "mismatch", category, locs, offending
+
+
+def report_location(
+    verdict: str,
+    category: str,
+    locs: list[str],
+    offending: list[tuple[str, str]],
+    folder: Path,
+    *,
+    allow_mismatch: bool,
+) -> bool:
+    """Emit the location verdict to stderr; return True iff drafting is blocked.
+
+    Keeps handoff's two-line stdout contract intact — every location message goes
+    to stderr alongside the other diagnostics. ``match`` and ``review`` are one
+    confirmation line each and never block; a ``mismatch`` blocks (returns True)
+    unless ``allow_mismatch`` overrides it.
+    """
+    shown = " | ".join(locs) if locs else "(none recorded)"
+    if verdict == "match":
+        print(f"handoff: location OK [{category}]: {shown}", file=sys.stderr)
+        return False
+    if verdict == "review":
+        print(
+            f"handoff: location NOT classifiable [{category}]: {shown} — review "
+            "it against the location policy manually before drafting.",
+            file=sys.stderr,
+        )
+        return False
+    # Definite mismatch (foreign / non-preferred US office).
+    detail = " | ".join(f"{loc} [{cat}]" for loc, cat in offending) or shown
+    print(
+        f"handoff: LOCATION POLICY MISMATCH [{category}] — this posting is outside "
+        f"the configured location policy: {detail}",
+        file=sys.stderr,
+    )
+    if allow_mismatch:
+        print(
+            "handoff: --allow-location-mismatch set; keeping the folder and "
+            "proceeding despite the mismatch.",
+            file=sys.stderr,
+        )
+        return False
+    print(
+        f"handoff: remedy — delete the folder ({folder}), or rerun with "
+        "--allow-location-mismatch if this location is intentional.",
+        file=sys.stderr,
+    )
+    return True
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
 def run(args: argparse.Namespace) -> int:
@@ -307,7 +430,12 @@ def run(args: argparse.Namespace) -> int:
         if not jd_ok:
             print(
                 f"handoff: JD not saved ({jd_msg}); scaffolded the folder anyway "
-                f"— save {source_dir / jd_file} manually before drafting.",
+                f"— save {source_dir / jd_file} manually before drafting. If the "
+                "page is JS-rendered, recover the verbatim JD via "
+                "`company_roles.py --jd`; if no fetch works at all (e.g. HTTP 403), "
+                "save the scraper-extracted text with a non-verbatim provenance note "
+                "(reference.md § \"Recovering a JD when the page fetch is "
+                "unusable\").",
                 file=sys.stderr,
             )
 
@@ -322,6 +450,9 @@ def run(args: argparse.Namespace) -> int:
     meta = yaml.safe_load(meta_bytes.decode("utf-8"))
     errors = validate_meta(meta, app_dir=folder)
 
+    # --- location policy gate (same verdict as status.py --check-locations)  #
+    loc_verdict, loc_cat, loc_locs, loc_offending = check_location_policy(meta, folder)
+
     print(folder)
     print(f"meta.yaml: {'valid' if not errors else 'INVALID'}")
     if errors:
@@ -334,6 +465,16 @@ def run(args: argparse.Namespace) -> int:
             "then `status.py --check-metadata`.",
             file=sys.stderr,
         )
+
+    location_blocked = report_location(
+        loc_verdict, loc_cat, loc_locs, loc_offending, folder,
+        allow_mismatch=args.allow_location_mismatch,
+    )
+
+    # A location mismatch is the highest-priority failure: it means "do not draft
+    # this posting at all", so it wins over an incomplete-metadata / missing-JD exit.
+    if location_blocked:
+        return 3
     return 0 if (errors == [] and jd_ok) else 1
 
 
@@ -356,6 +497,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--skip-jd-fetch", action="store_true",
                     help="Do not fetch the JD (offline/testing); the folder is "
                          "scaffolded but exits non-zero so the JD is saved manually.")
+    ap.add_argument("--allow-location-mismatch", action="store_true",
+                    help="Proceed even when the posting's location is outside the "
+                         "configured location policy (foreign / non-preferred US "
+                         "office). Without this flag a definite mismatch leaves the "
+                         "folder on disk and exits non-zero (code 3).")
     args = ap.parse_args(argv)
 
     try:

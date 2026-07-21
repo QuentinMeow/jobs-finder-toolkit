@@ -249,6 +249,107 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(code2, 2)
         self.assertIn("neither a rank", err2)
 
+    # -- location policy gate --------------------------------------------- #
+    def _pin_policy(self, *, metro=("springfield",), allow_us_remote=True,
+                    us_only=True):
+        """Point config discovery at a temp config with a known location policy.
+
+        handoff's location gate reads ``config.location_policy()``; pinning it makes
+        every location verdict deterministic regardless of any real/example config
+        that discovery would otherwise walk up to find.
+        """
+        import config  # vendored (same module handoff's gate imports)
+
+        cfg = self.tmp / "policy-config.yaml"
+        cfg.write_text(
+            "location_policy:\n"
+            f"  metro: [{', '.join(metro)}]\n"
+            f"  allow_us_remote: {'true' if allow_us_remote else 'false'}\n"
+            f"  us_only: {'true' if us_only else 'false'}\n",
+            encoding="utf-8",
+        )
+        prev = os.environ.get("JOBHUNT_CONFIG")
+        os.environ["JOBHUNT_CONFIG"] = str(cfg)
+        config._load.cache_clear()
+
+        def _restore():
+            if prev is None:
+                os.environ.pop("JOBHUNT_CONFIG", None)
+            else:
+                os.environ["JOBHUNT_CONFIG"] = prev
+            config._load.cache_clear()
+
+        self.addCleanup(_restore)
+
+    def test_location_mismatch_blocks_and_leaves_folder(self):
+        # A hybrid role in a non-preferred metro (the benchmark mis-handoff): the
+        # gate flags it, keeps the folder on disk, and exits non-zero (3).
+        self._pin_policy(metro=("springfield",))
+        row = _row(url=self.jd_url, location="Austin, TX (Hybrid)", remote="hybrid")
+        code, folder, stdout, err = self._run([row], "rank 1")
+        self.assertEqual(code, 3, err)
+        # Folder is NOT deleted — left for the agent to inspect / override / remove.
+        self.assertTrue(folder.is_dir())
+        self.assertTrue((folder / "meta.yaml").is_file())
+        # Verdict + offending location string + a remedy hint, all on stderr.
+        self.assertIn("MISMATCH", err)
+        self.assertIn("other_us", err)
+        self.assertIn("Austin", err)
+        self.assertIn("--allow-location-mismatch", err)
+        self.assertIn("delete the folder", err.lower())
+        # Stdout keeps its two-line contract (folder + meta status only).
+        self.assertNotIn("MISMATCH", stdout)
+
+    def test_location_mismatch_foreign_blocks(self):
+        self._pin_policy(metro=("springfield",))
+        row = _row(url=self.jd_url, location="London, United Kingdom", remote="")
+        code, folder, _out, err = self._run([row], "rank 1")
+        self.assertEqual(code, 3, err)
+        self.assertTrue(folder.is_dir())
+        self.assertIn("foreign", err)
+        self.assertIn("London", err)
+
+    def test_allow_location_mismatch_override_proceeds(self):
+        # With the override flag a mismatch is acknowledged but no longer blocks;
+        # the exit code then reflects only meta/JD completeness (here: clean -> 0).
+        self._pin_policy(metro=("springfield",))
+        row = _row(url=self.jd_url, location="Austin, TX (Hybrid)", remote="hybrid")
+        code, folder, _out, err = self._run(
+            [row], "rank 1", "--allow-location-mismatch")
+        self.assertEqual(code, 0, err)
+        self.assertTrue(folder.is_dir())
+        self.assertIn("MISMATCH", err)                      # still reported
+        self.assertIn("--allow-location-mismatch set", err)  # override acknowledged
+
+    def test_location_match_metro_confirmation(self):
+        # A preferred-metro posting matches -> one confirmation line, exit 0.
+        self._pin_policy(metro=("austin",))
+        row = _row(url=self.jd_url, location="Austin, TX", remote="")
+        code, folder, _out, err = self._run([row], "rank 1")
+        self.assertEqual(code, 0, err)
+        self.assertIn("location OK", err)
+        self.assertIn("metro", err)
+        self.assertNotIn("MISMATCH", err)
+
+    def test_location_match_us_remote_confirmation(self):
+        # US-remote is a match under the default allow_us_remote policy.
+        self._pin_policy(metro=("springfield",))
+        code, folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code, 0, err)
+        self.assertIn("location OK", err)
+        self.assertIn("us_remote", err)
+
+    def test_location_unknown_is_review_not_block(self):
+        # An unrecognized location is surfaced for review but does NOT block
+        # (mirrors the tracker's review-vs-mismatch split).
+        self._pin_policy(metro=("springfield",))
+        row = _row(url=self.jd_url, location="Mars Colony", remote="")
+        code, folder, _out, err = self._run([row], "rank 1")
+        self.assertEqual(code, 0, err)
+        self.assertTrue(folder.is_dir())
+        self.assertIn("NOT classifiable", err)
+        self.assertNotIn("MISMATCH", err)
+
 
 if __name__ == "__main__":
     unittest.main()
