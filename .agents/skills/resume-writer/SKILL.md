@@ -33,7 +33,7 @@ asks for deep research; and never re-read a file already in context.**
   location gate, `meta.yaml` schema validation, `check.py`, no-fabrication, and the three-list
   skill gate run the same regardless of mode. Mode changes how much *context and iteration* you
   spend, never which *validations* run.
-- A user's explicit instruction in the moment outranks the config mode (either direction).
+- A user's explicit instruction in the moment outranks the config mode (either direction). Never self-escalate to `full` — the mode changes only via config or an explicit user request.
 
 **Default deliverables — produce all of these unless the user opts out** (e.g. "resume only"), in
 `applications/6_drafted/<slug>/`: ONE tailored **resume** (DOCX in `source/`, PDF at root, covers
@@ -68,9 +68,12 @@ never create a second one.
   to proceed with. If the log might be stale, run `.venv/bin/python
   .agents/skills/application-tracker/scripts/status.py --sync-log` first, then re-read it — but
   still cross-check the live folders before creating a slug.
-- **Blacklist (hard block).** `.agents/skills/job-search/companies.yaml` — if the company's
-  registry entry has a `blacklist:` reason (match on name, aliases, or ATS token), do NOT create
-  an application; tell the user it's blacklisted.
+- **Blacklist (hard block).** Check the resolved company against the MERGED registry, not
+  `companies.yaml` alone: `registry.load_registry()` merges
+  `.agents/skills/job-search/companies.yaml` with the git-ignored `private/job-search/blacklist.yaml`
+  overlay at load time (`.agents/skills/job-search/scripts/registry.py`). If
+  `Registry.is_blacklisted(company)` reports a `blacklist:` reason (it resolves on name, aliases, or
+  ATS token), do NOT create an application; tell the user it's blacklisted.
 - **Location gate (hard requirement — respect the search criteria).** Confirm the posting
   satisfies `config.location_policy()` (allowed metros / US-remote / `us_only`). An on-site or
   hybrid role in a non-allowed metro with no allowed-metro office and no US-remote option, or a
@@ -249,7 +252,7 @@ prints an estimated height + verdict):
 give the user always has TWO parts: (1) the band verdict below, and (2) the statement that
 **check.py's post-render page count is the authoritative gate — the estimate is only a
 pre-check**. A verdict missing part (2) is incomplete.
-- **OK** ≤ ~715pt — 1 page with margin; proceed. **TIGHT** 715–734 — trim ~1 line.
+- **OK** ~660–~715pt — 1 page with margin; proceed. **TIGHT** 715–734 — trim ~1 line.
   **OVERFLOW** > 734 — will be 2 pages; shorten the longest bullets/summary before rendering.
   **SPARSE** < ~660 — may trip check.py's "too blank"; lengthen bullets with real detail.
 - Target **est ≤ ~715pt** (about one rendered line under the ~734pt budget) for a confident
@@ -307,7 +310,9 @@ line + `===` underline, in order — COVER LETTER, WHY THIS COMPANY & ROLE, PAST
 text only — **no Markdown, no `**bold**`, no bullet glyphs.** The **COVER LETTER** section starts
 with **name + contact line, then the salutation** (`Dear <Company> Hiring Team,`) — **NO
 company/role subject line**; its body is **at least two developed, full-sentence paragraphs** (not
-telegraphic fragments) and ends `Sincerely,` + name. When you can see the posting's actual
+telegraphic fragments) and ends `Sincerely,` + name. check.py enforces the numbers: each main
+paragraph 60–180 words (≥2 such paragraphs) and total body 200–450 words — write to those bands up
+front. When you can see the posting's actual
 application/screening questions, answer them in an extra **APPLICATION QUESTIONS** section appended
 after the three canonical ones. **Full templates, per-paragraph word counts, the enforced
 cover-letter structure/length (`check_cover_letter`), the WHY / PAST EXPERIENCE section shapes, the

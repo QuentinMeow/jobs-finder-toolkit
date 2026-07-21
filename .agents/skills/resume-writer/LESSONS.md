@@ -63,7 +63,7 @@ render; all read live from the DOCX so the numbers self-adjust if the template c
 - Model: `height = 140 + 16×extra_employers + Σ(lines×pitch + spacing)`; direct role bullets
   and project bullets use the same body-line model; `lines = ceil(plain_len / chars_per_line)`.
 
-**Verdict bands:** OK ≤ ~715pt · TIGHT 715–734 (trim ~1 line) · OVERFLOW > 734 (2 pages) ·
+**Verdict bands:** OK ~660–~715pt · TIGHT 715–734 (trim ~1 line) · OVERFLOW > 734 (2 pages) ·
 SPARSE < ~660 (risks check.py "too blank"). **Aim est ≤ ~715pt** (≈ one rendered line of margin)
 for a confident one-shot single page. Height for a KNOWN line count is ±~2pt; the irreducible
 error is word-wrap at a line boundary (±1 line ≈ ±12pt), so honor the one-line safety margin —

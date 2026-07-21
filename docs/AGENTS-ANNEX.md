@@ -56,7 +56,7 @@ frontmatter:
 
 - **PUBLIC skills** (SKILL.md + scripts are published; their generated PRODUCTS stay private):
   `ask-me-anything`, `job-search`, `resume-writer`, `application-tracker`,
-  `behavioral-interview-prep`, `company-research`, `gardener`.
+  `behavioral-interview-prep`, `company-research`, `outlook-email-assistant`, `gardener`.
 - **PRIVATE skill**: `coding-interview` — the ENTIRE skill (SKILL.md + product) lives only in
   the private overlay and never ships in the public repo.
 
@@ -98,10 +98,12 @@ by default, real data under `private/applications/`); only shared tooling (`scri
 meaningful subfolders (see §8 File & Folder Organization): `scripts/` fans out into
 `scripts/shared/`, `scripts/vendoring/`, and `scripts/maintenance/` (each skill bundles its
 own render/tracking scripts under `.agents/skills/<skill>/scripts/`). Application status is encoded by which sub-folder the application sits in
-(the folder is the source of truth for status); the profile directory (`<profile-dir>` — the
-directory containing `config.profile_md_path()`, where the skip-logs live; by convention
-`<applications_root>/0_profile/` in a real overlay, `examples/profile/` in the shipped
-example) and `config.discoveries_dir()` are support folders, not applications.
+(the folder is the source of truth for status); the profile-support directory
+(`<profile-dir>` = `config.applications_root()/0_profile/` — where the skip-logs and the
+tailoring card ALWAYS live, regardless of where `config.profile_md_path()` points; in the
+shipped example the profile file lives under `examples/profile/`, but this logs dir is
+`examples/applications/0_profile/`) and `config.discoveries_dir()` are support folders, not
+applications.
 
 | Path | Purpose |
 |------|---------|
@@ -109,8 +111,8 @@ example) and `config.discoveries_dir()` are support folders, not applications.
 | `config.profile_md_path()` (example: `examples/profile/profile.example.md`) | Comprehensive candidate profile: all experience, skills, and resume writing preferences |
 | `config.baseline_path()` | Canonical transcription of the approved resume — starting point for every tailored.yaml and the reference for locked-field validation |
 | `.agents/skills/job-search/companies.yaml` | Canonical company registry — public, single source of truth for company **identity**, ATS poll config, and tags. Ships NO personal skip rules; candidate-specific blacklist rows (companies that don't sponsor, the candidate's own employer) live in a git-ignored overlay `private/job-search/blacklist.yaml` merged at load time by `registry.py` (each row: identity-only + `blacklist:` reason, no `ats`/`token`). Never carries specific or dated postings |
-| `<profile-dir>/applications-log.yaml` | Auto-generated (via `status.py --sync-log`) list of postings already generated/considered — job-search skips them (new roles at the same company still surface) |
-| `<profile-dir>/company-search-log.yaml` | Last successful full-company search per employer — job-search skips within 7 days (`skip_within_days`); upserted by `--sync-log` (`created`) or `--log-search` (`no_suitable`) |
+| `<applications_root>/0_profile/applications-log.yaml` | Auto-generated (via `status.py --sync-log`) list of postings already generated/considered — job-search skips them (new roles at the same company still surface) |
+| `<applications_root>/0_profile/company-search-log.yaml` | Last successful full-company search per employer — job-search skips within 7 days (`skip_within_days`); upserted by `--sync-log` (`created`) or `--log-search` (`no_suitable`) |
 | `config.company_levels_path()` | Reusable, sourced company level/YOE/base-salary/total-compensation mappings used as a fallback when a live JD omits those facts; real dated research defaults beside the private profile, while the public toolkit ships only `examples/profile/company-levels.example.yaml` |
 | `<profile-dir>/resumes/` | The candidate's approved master resume file(s) |
 | `config.discoveries_dir()` | Ad-hoc research findings during the job search (job-search output, target-company lists) |

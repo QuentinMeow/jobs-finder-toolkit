@@ -45,7 +45,7 @@ This is the complete routine path — an ordinary search needs nothing below it.
   recently-searched skip logic, the location gate, `meta.yaml` schema validation on handoff,
   no-fabricated-postings, and JD-text verification before handoff run the same regardless of mode.
   Mode changes how much *context and iteration* you spend, never which *checks* run.
-- A user's explicit instruction in the moment outranks the config mode (either direction).
+- A user's explicit instruction in the moment outranks the config mode (either direction). Never self-escalate to `full` — the mode changes only via config or an explicit user request.
 
 ### Before you start
 1. Read `AGENTS.md` (traceability, no fabrication) and this skill's `LESSONS.md` (hard-won
@@ -64,7 +64,7 @@ This is the complete routine path — an ordinary search needs nothing below it.
 ### Step 1 — Confirm the profile and filters
 Profiles live in `profiles/<label>.yaml`; the default is `config.job_search.default_profile`
 (shipped demo: `example`). The profile — not the script — holds all criteria: **location**
-(`config.location_policy()`: `require_match` + `allow_remote` + `us_only`), **roles/keywords**,
+(`config.location_policy()`: `metro` + `allow_us_remote` + `us_only`; the profile's own `location:` block adds `preferred`/`allow_remote`/`require_match`), **roles/keywords**,
 **seniority** the allowed band, **experience** (drop JDs stating a minimum above
 `max_years_experience`; keep if unstated), and **visa** policy (e.g. `policy: exclude_negative`
 when sponsorship is required). To change scope, edit `profiles/<label>.yaml` or pass a flag

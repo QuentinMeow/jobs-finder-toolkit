@@ -7,8 +7,8 @@ operational detail, the supporting library, deep company + JD research, one-resu
 (Path A / Path B), the bundled-`.txt` templates + word counts, the cover-letter structure/length
 rules, the APPLICATION QUESTIONS mechanism, and the ATS optimization guidelines. Read the relevant
 section when its trigger fires. Everything candidate-specific still comes from `config` + the
-profile (`config.profile_md_path()`); `<profile-dir>` = the folder that holds
-`config.profile_md_path()` and the skip-logs (`config.applications_root()/0_profile/`).
+profile (`config.profile_md_path()`); `<profile-dir>` = `config.applications_root()/0_profile/` —
+the skip-log + tailoring-card directory (the profile file itself may live elsewhere).
 
 ## Application folder layout (source/ + per-JD bundled .txt)
 
@@ -351,7 +351,7 @@ a thank-you. The salutation and one-line closings do NOT count toward the two ma
 paragraphs.
 
 **Enforced length (hard limits — `check_cover_letter`):**
-- Each of the two main paragraphs: within **60-180 words** (write to the 70-150 target above).
+- Each of the two main paragraphs: within **60-180 words** (write to the paragraph targets above).
 - **At least two** paragraphs must land in that 60-180-word band.
 - Whole letter body: **200-450 words** total (target ~250-400; one page, never more).
 - No placeholder text (`to be written`, `TODO`, unfilled `<...>`), or the check fails.

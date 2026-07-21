@@ -51,7 +51,7 @@ Each application folder keeps a clean **root** (finished deliverables + tracking
 | root | `meta.yaml` | Application metadata this skill manages (status is the folder, not a field) |
 | root | `<RESUME_STEM>.pdf` | Final resume PDF (committed) |
 | root | `<COVER_STEM>_<job title>.pdf` | Final cover letter PDF (committed), one per JD |
-| root | `<APPLICATION_STEM>.txt` | Bundled copy-paste answers: COVER LETTER + WHY THIS COMPANY & ROLE + PAST EXPERIENCE sections |
+| root | `<APPLICATION_STEM>_<job title>.txt` | Bundled copy-paste answers (COVER LETTER + WHY THIS COMPANY & ROLE + PAST EXPERIENCE), one per JD |
 | root | `notes.md` | Optional: interview notes, company research, prep notes |
 | `source/` | `JD-<job title>.md` | Full job-description text, one file per posting, always `JD-`-prefixed |
 | `source/` | `tailored.yaml` | Tailored resume content (created by resume-writer) |

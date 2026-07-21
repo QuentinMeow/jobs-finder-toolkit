@@ -86,7 +86,7 @@ Full directory table (every script + per-skill row): `docs/AGENTS-ANNEX.md` §3.
    `outlook-email-assistant` (read personal Outlook mail, create repository-grounded reply drafts).
    Private `coding-interview` is at `.agents/skills/coding-interview/` when the overlay is mounted.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context.
-4. Read the candidate profile (`config.profile_md_path()`) before tailoring — source of truth.
+4. Before tailoring, read the tailoring card (`<applications_root>/0_profile/tailoring-card.md`) — the distilled default context; open the full profile (`config.profile_md_path()`, source of truth) only on the resume-writer skill's escalation triggers (card missing/stale/`--check` fail, or a JD domain the card doesn't cover).
 
 ## Guardrails (hard behavioral invariants)
 
