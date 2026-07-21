@@ -148,6 +148,9 @@ applications.
 | `.claude/skills/`, `.cursor/skills/` | Tool-compatibility symlinks to `.agents/skills` (for agents that look in their own skill directories) |
 | `.agents/MEMORY.md` | Cross-session hypotheses and learnings (gitignored) |
 | `tmp/` | Gitignored scratch space for **all** disposable, ad-hoc work — one-off ATS/API probes, fetched web artifacts, sanity checks — organized into purpose-named subfolders (`tmp/ats_scripts/`, `tmp/web_artifacts/`, `tmp/scratch/`). Never committed; created on demand; nothing in the toolkit may depend on it. See §9 Scratch & Temporary Files |
+| `todo/` | AI↔human async queue family (contract: `AGENTS.md` → Async Collaboration; map: `todo/README.md`): `inbox/` human→AI drop box, `tasks/` work items, `decisions/` owner questions with default paths, `reviews/` optional human-eyes items. Private mirror: `private/todo/` |
+| `design-decisions/` | Decided design questions — lightweight append-only ADR log; open questions live in `todo/decisions/` until decided |
+| `known-issues/` | Canonical detailed bug records (GitHub issues link here) |
 | `README.md` | Human-facing quickstart (capability-first: example output, then the workflow) |
 | `docs/ARCHITECTURE.md` | Human-facing design doc: render pipeline, config system, vendoring, CI gates, repo reference |
 | `AGENTS.md` | The agent-facing contract (core) |

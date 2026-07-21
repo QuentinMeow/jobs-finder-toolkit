@@ -1,4 +1,4 @@
-# unresolved-decisions/
+# todo/decisions/
 
 One file per decision that **needs the owner's input**. The owner reads these
 files cold — each MUST be fully self-contained: all background, the concrete
@@ -10,7 +10,7 @@ or a prior session.
 
 - Filename: `<kebab-slug>.md`.
 - **Public tree ⇒ leak-guard rules apply**; decisions about the owner's real
-  pipeline/identity go in `private/unresolved-decisions/` (same format).
+  pipeline/identity go in `private/todo/decisions/` (same format).
 - Every file states a **default path** — what agents will do (or deliberately
   not do) while the decision is pending, so pending never means stuck.
 - When the owner decides: move the file to `design-decisions/` (public or
@@ -18,14 +18,23 @@ or a prior session.
   and date. Delete it from here in the same commit.
 - Agents check this folder at session start for anything newly decided in
   conversation, and file new entries the moment they hit a genuinely
-  owner-owned fork — instead of blocking or guessing.
+  owner-owned fork — instead of blocking or guessing. `parked-until-revisit`
+  items are skipped unless their revisit condition matches the session's
+  work.
+- Every file ends with a `**Your answer:** ______` line — the owner's
+  expected answering surface. If a question is **mirrored from a doc's
+  decision block**, folding the answer must update BOTH surfaces in the
+  same commit, and on conflict **the doc block wins**.
+- An answer the owner gives in chat is written into this file in the same
+  turn, before any other work (chat has no file trace of its own).
 
 ## File format
 
 ```markdown
 # <Title — phrased as the question>
 
-- **Status**: awaiting-owner-input
+- **Status**: awaiting-owner-input | parked-until-revisit
+- **Revisit when**: (parked items only) the concrete condition that reopens this
 - **Filed**: YYYY-MM-DD
 - **Blocking?**: what work (if any) is blocked until decided
 - **Default path**: what happens if this stays unanswered

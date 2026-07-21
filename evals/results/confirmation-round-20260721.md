@@ -37,7 +37,7 @@ verification (a people-management role, two wrong-metro hybrids — one also
 10+ YOE over the profile cap, one sales/BD role matching only on a title
 substring). The subject refused to bend any gate, made zero handoffs, and
 filed the outcome as a self-contained decision doc
-(`private/unresolved-decisions/benchmark-search-leg-20260721-zero-eligible.md`).
+(`private/todo/decisions/benchmark-search-leg-20260721-zero-eligible.md`).
 Precedent: the scenario doc's own v1 attempt was invalidated identically;
 tokens do not enter a comparison row. Two structural findings: (1) the
 benchmark tree depletes its own future candidate pools — a scenario-v1.3 /
@@ -106,9 +106,9 @@ dimensions, same-JD frozen comparators):
 - Search-side levers carry live behavioral evidence (auto location gate
   exercised in rejections; digest canaries 5/5) but no clean comparison
   row yet — deferred to a fresh-pool day on fixtures v2
-  (`tasks/stage-fixtures-v2.md`), together with the benchmark-tree
+  (`todo/tasks/stage-fixtures-v2.md`), together with the benchmark-tree
   pool-depletion question
-  (`private/unresolved-decisions/benchmark-search-leg-20260721-zero-eligible.md`).
+  (`private/todo/decisions/benchmark-search-leg-20260721-zero-eligible.md`).
 - Ship decision: PR stack #38→#40 and #39→#41 stands as merge-ready on
   this evidence; the stage rows (`stage-tailor-20260721.md` ship verdict,
   `stage-s6-verification-20260721.md` no-ship-for-saved-files verdict)

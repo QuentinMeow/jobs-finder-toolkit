@@ -3,7 +3,7 @@
 One file per **decided** design question — a lightweight ADR log. These record
 choices already made (by the owner, or by an agent within its authority) so
 future sessions stop re-litigating them. Open questions that still need the
-owner's input live in `unresolved-decisions/` instead, and move here once
+owner's input live in `todo/decisions/` instead, and move here once
 decided.
 
 ## Rules

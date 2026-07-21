@@ -1,4 +1,4 @@
-# tasks/
+# todo/tasks/
 
 One file per task. Each file is **self-contained**: a reader (human or agent)
 should be able to pick up the task from the file alone, without hunting
@@ -9,10 +9,14 @@ through other docs, chat history, or issues.
 - Filename: `<kebab-slug>.md` (no numbering — slugs don't churn on insert/delete).
 - **Public tree ⇒ leak-guard rules apply**: no real names, employers,
   applied-to companies, or dated personal facts. A task tied to the owner's
-  real pipeline goes in `private/tasks/` instead (same format).
+  real pipeline goes in `private/todo/tasks/` instead (same format).
 - When a task is finished, set `Status: done` and keep the file for one PR
-  cycle, then delete it in the PR that closes it (no archive folder — git
-  history is the archive).
+  cycle — defined as: delete it in the **next** merged PR that touches
+  `todo/` after the one that completed it (no archive folder — git history
+  is the archive).
+- A task deleted as `dropped` or superseded leaves a one-line trace first —
+  in the doc that spawned it or in `known-issues/` — so a later session
+  reading that doc doesn't re-file it.
 
 ## File format
 

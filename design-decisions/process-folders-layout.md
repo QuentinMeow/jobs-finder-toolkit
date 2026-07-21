@@ -1,6 +1,8 @@
 # Process folders: tasks/, known-issues/, design-decisions/, unresolved-decisions/
 
 - **Status**: decided
+- **Superseded-by**: [process-folders-v2-todo-queue.md](process-folders-v2-todo-queue.md)
+  (2026-07-21 — `tasks/` and `unresolved-decisions/` moved under `todo/`)
 - **Date**: 2026-07-20
 - **Decided by**: owner (folders requested explicitly; layout details by agent within that mandate)
 
