@@ -130,6 +130,22 @@ to a resolved-table row). If a doc block and its queue mirror conflict, **the do
 An owner "answer" that is itself a question gets answered inside the block with concrete
 examples, stays open, and is mirrored into `todo/decisions/` so it cannot be lost.
 
+## Folder-Scoped Context (tree instructions)
+
+Some folders carry local context in their own `AGENTS.md`, with a sibling `CLAUDE.md → AGENTS.md`
+symlink so Claude Code lazy-loads it on first file-read there (Cursor applies nested AGENTS.md
+natively; this root contract itself loads via the root `CLAUDE.md` import shim). Leaf files are
+**additive-only** — pointers, or lines relocated out of always-loaded files; they never restate or
+override this contract, and a conflict is a bug in the leaf. Unbounded detail lives in that
+folder's `agents-references/`, reached only via task-conditioned pointer lines ("before <task>,
+read <file>"). Hard invariants live only in this file + hooks, never in leaves. After a context
+compaction, re-read the `AGENTS.md` of any routed folder you're still working in. Leaf creation is
+reactive — second folder-local correction or explicit owner ask; propose via `todo/decisions/`
+when unsure (design: `docs/design/tree-instructions/README.md`).
+
+Router:
+- Working under `docs/design/`? Read `docs/design/AGENTS.md` first (skip if your tool already injected it).
+
 ## Guardrails (hard behavioral invariants)
 
 - **Never fabricate** experience, metrics, titles, or technologies not in the profile. Reframe
