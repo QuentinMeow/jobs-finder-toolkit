@@ -15,12 +15,13 @@ if str(SHARED_DIR) not in sys.path:
 from metadata_editor import (  # noqa: E402
     MetadataChecksumMismatchError,
     atomic_write_bytes,
+    plan_field_updates,
     plan_metadata_edit,
 )
 
 
 def _metadata(*, with_salary: bool = False) -> dict:
-    """A schema-v3 flat metadata fragment for one jobs entry."""
+    """A schema-v4 flat metadata fragment for one jobs entry."""
     return {
         "workplace": "remote",
         "sponsorship": "unknown",
@@ -54,6 +55,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"jobs:\n"
             b"  - role: 'Senior Engineer' # exact title\n"
             b"    jd_file: JD-senior-engineer.md\n"
+            b"    status: drafted\n"
             b"    job_level: {} # generated placeholder\n"
             b"notes:\n"
             b'  - "Keep: quoted note"\n'
@@ -70,7 +72,7 @@ class MetadataEditorTests(unittest.TestCase):
         self.assertIn(b'  - "Keep: quoted note"', plan.output_bytes)
         self.assertIn(("jobs", 0, "job_level"), plan.changed_field_paths)
         result = yaml.safe_load(plan.output_bytes)
-        self.assertEqual(result["job_metadata_schema_version"], 3)
+        self.assertEqual(result["job_metadata_schema_version"], 4)
         self.assertEqual(result["jobs"][0]["job_level"]["normalized"], "senior")
 
     def test_multi_role_metadata_is_anchored_to_exact_records(self):
@@ -79,8 +81,10 @@ class MetadataEditorTests(unittest.TestCase):
             b"jobs:\n"
             b"  - role: Backend Engineer\n"
             b"    jd_file: JD-backend.md\n"
+            b"    status: drafted\n"
             b"  - role: Platform Engineer\n"
-            b"    jd_file: JD-platform.md"
+            b"    jd_file: JD-platform.md\n"
+            b"    status: drafted"
         )
         backend = _metadata()
         backend["job_level"] = {**backend["job_level"], "normalized": "mid"}
@@ -132,6 +136,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"jobs:\n"
             b"  - role: Senior Engineer\n"
             b"    jd_file: JD-senior-engineer.md\n"
+            b"    status: drafted\n"
             b"    salary_range: null\n"
         )
 
@@ -148,6 +153,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"jobs:\n"
             b"  - role: Senior Engineer\n"
             b"    jd_file: JD-senior-engineer.md\n"
+            b"    status: drafted\n"
             b"    salary_range: null\n"
         )
 
@@ -185,6 +191,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"jobs:\n"
             b"  - role: Senior Engineer\n"
             b"    jd_file: JD-senior-engineer.md\n"
+            b"    status: drafted\n"
             b"notes:\n"
             b"  - follow up with recruiter\n"
             b"  - owner: candidate\n"
@@ -258,6 +265,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"jobs:\n"
             b"  - role: Senior Engineer\n"
             b"    jd_file: JD-senior-engineer.md\n"
+            b"    status: drafted\n"
         )
         generated = {("jobs", 0): _metadata()}
 
@@ -270,6 +278,74 @@ class MetadataEditorTests(unittest.TestCase):
         self.assertFalse(second.changed)
         self.assertEqual(second.changed_field_paths, ())
         self.assertEqual(second.output_bytes, first.output_bytes)
+
+
+def _valid_v4_meta_bytes() -> bytes:
+    """A fully valid schema-v4 meta.yaml (single posting) for set-field tests."""
+    return (
+        b"job_metadata_schema_version: 4\n"
+        b"company: Acme\n"
+        b"jobs:\n"
+        b"  - role: Senior Engineer  # exact title\n"
+        b"    jd_file: JD-senior-engineer.md\n"
+        b"    status: drafted  # created by handoff\n"
+        b"    workplace: remote\n"
+        b"    sponsorship: unknown\n"
+        b"    job_level: {normalized: senior, min: 5.0, max: 5.8, confidence: low, source: title}\n"
+        b"    required_yoe: {min: 5, max: null, confidence: high, source: job_description}\n"
+        b"    salary_range: null\n"
+    )
+
+
+class FieldUpdateEditorTests(unittest.TestCase):
+    def test_overwrite_existing_status_preserves_comment_and_format(self):
+        raw = _valid_v4_meta_bytes()
+        plan = plan_field_updates(
+            raw, {("jobs", 0): {"status": "applied", "status_date": "2026-07-20"}})
+        self.assertFalse(plan.errors)
+        self.assertTrue(plan.changed)
+        # The overwrite keeps the trailing inline comment byte-for-byte.
+        self.assertIn(b"status: applied  # created by handoff", plan.output_bytes)
+        # The absent status_date is inserted.
+        result = yaml.safe_load(plan.output_bytes)
+        self.assertEqual(result["jobs"][0]["status"], "applied")
+        self.assertEqual(result["jobs"][0]["status_date"], "2026-07-20")
+        # Untouched fields keep their exact formatting (flow-style mappings, comment).
+        self.assertIn(b"role: Senior Engineer  # exact title", plan.output_bytes)
+        self.assertIn(b"required_yoe: {min: 5, max: null,", plan.output_bytes)
+        self.assertIn(
+            ("jobs", 0, "status"), plan.changed_field_paths)
+        self.assertIn(
+            ("jobs", 0, "status_date"), plan.changed_field_paths)
+
+    def test_stage_only_edit_leaves_status_untouched(self):
+        raw = _valid_v4_meta_bytes()
+        plan = plan_field_updates(raw, {("jobs", 0): {"stage": "onsite"}})
+        self.assertFalse(plan.errors)
+        result = yaml.safe_load(plan.output_bytes)
+        self.assertEqual(result["jobs"][0]["stage"], "onsite")
+        self.assertEqual(result["jobs"][0]["status"], "drafted")
+
+    def test_unknown_record_path_fails_closed(self):
+        raw = _valid_v4_meta_bytes()
+        plan = plan_field_updates(raw, {("jobs", 3): {"status": "applied"}})
+        self.assertTrue(plan.errors)
+        self.assertFalse(plan.changed)
+        self.assertEqual(plan.output_bytes, raw)
+
+    def test_invalid_status_value_is_rejected_by_the_gate(self):
+        raw = _valid_v4_meta_bytes()
+        plan = plan_field_updates(raw, {("jobs", 0): {"status": "offer"}})
+        self.assertTrue(plan.errors)
+        self.assertFalse(plan.changed)
+        self.assertEqual(plan.output_bytes, raw)
+
+    def test_setting_status_to_current_value_is_a_no_op(self):
+        raw = _valid_v4_meta_bytes()
+        plan = plan_field_updates(raw, {("jobs", 0): {"status": "drafted"}})
+        self.assertFalse(plan.errors)
+        self.assertFalse(plan.changed)
+        self.assertEqual(plan.output_bytes, raw)
 
 
 if __name__ == "__main__":

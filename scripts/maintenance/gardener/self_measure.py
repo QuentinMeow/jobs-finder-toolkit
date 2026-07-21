@@ -28,14 +28,10 @@ try:
 except ImportError:  # pragma: no cover
     config = C.config
 
-# Status label -> on-disk numbered folder (mirrors status.py STATUS_DIRS).
-STATUS_DIRS = {
-    "drafted": "6_drafted",
-    "applied": "5_applied",
-    "in_progress": "4_in_progress",
-    "rejected": "3_rejected",
-    "ignored": "2_ignored",
-}
+# Status label -> on-disk numbered folder. _common bootstraps scripts/shared onto
+# sys.path, so this imports the canonical mapping (the same one status.py uses)
+# instead of hand-maintaining a copy.
+from layout import STATUS_DIRS  # noqa: E402
 
 
 def _count_apps(status_dir: Path) -> int:
@@ -134,8 +130,9 @@ def run(apply: bool = False) -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
         header = (f"# gardener self-measure snapshot ({metrics['generated']}). "
                   f"Regenerable; do not hand-edit.\n"
-                  f"# Source of truth: the status folders + applications-log "
-                  f"({C.DESIGN_DOC}).\n")
+                  f"# Funnel counts the derived-rollup status folders (each folder "
+                  f"reflects its applications' per-job status rollup) + the "
+                  f"applications-log ({C.DESIGN_DOC}).\n")
         out.write_text(header + text, encoding="utf-8")
         print(f"  APPLY: wrote {C.rel(out)}")
     else:

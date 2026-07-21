@@ -1,4 +1,4 @@
-job_metadata_schema_version: 3
+job_metadata_schema_version: 4
 company: "Nimbus Robotics"
 research_date: "2026-07-20"
 channel: "fixture"
@@ -6,11 +6,12 @@ referrer: ""
 recruiter_email: ""
 comp_notes: ""
 next_action: "Run the isolated multi-experience render test"
-stage: ""
 notes: "Fully synthetic public E2E fixture; not an actual application."
 jobs:
   - role: "Senior Platform Engineer"
     jd_file: "JD-senior-platform-engineer.md"
+    status: "drafted"
+    stage: ""
     location: "Remote (US)"
     workplace: "remote"
     url: "__FIXTURE_ROOT_URI__/search/jd-page.html"

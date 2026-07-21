@@ -1,4 +1,4 @@
-"""Safely preview or insert schema-v3 job metadata into application meta.yaml files.
+"""Safely preview or insert schema-v4 job metadata into application meta.yaml files.
 
 The default is a dry run. ``--write`` is required to persist targeted,
 formatting-preserving edits. Every application carries a uniform ``jobs`` list
@@ -21,16 +21,8 @@ for _path in (_HERE, _HERE / "_vendor"):
 
 import config
 from job_metadata import analyze_job_metadata, load_company_levels
-from layout import application_dir, source_dir
+from layout import STATUS_DIRS, application_dir, source_dir
 from metadata_editor import atomic_write_bytes, plan_metadata_edit
-
-STATUS_DIRS = {
-    "drafted": "6_drafted",
-    "applied": "5_applied",
-    "in_progress": "4_in_progress",
-    "rejected": "3_rejected",
-    "ignored": "2_ignored",
-}
 
 
 def _resolve_target(target: str | Path) -> Path:
@@ -51,7 +43,7 @@ def _read_exact_jd(app_dir: Path, record: dict) -> str:
     if not named:
         raise ValueError(
             f"role {record.get('role')!r} has no jd_file; "
-            "schema-v3 metadata requires an exact JD association"
+            "schema-v4 metadata requires an exact JD association"
         )
     if Path(named).name != named:
         raise ValueError(f"jd_file must be a filename, not a path: {named!r}")
@@ -69,7 +61,7 @@ def _read_exact_jd(app_dir: Path, record: dict) -> str:
 def generated_metadata_by_path(app_dir: Path, meta: dict) -> dict[tuple, dict]:
     """Generate metadata for every posting using only exact JD associations.
 
-    Schema v3 is uniform: every application carries a ``jobs`` list (one entry
+    Schema v4 is uniform: every application carries a ``jobs`` list (one entry
     per posting), so there is no single-role top-level fallback.
     """
     reference = load_company_levels(config.company_levels_path())
@@ -77,7 +69,7 @@ def generated_metadata_by_path(app_dir: Path, meta: dict) -> dict[tuple, dict]:
     jobs = meta.get("jobs")
     if not isinstance(jobs, list) or not jobs:
         raise ValueError(
-            "schema-v3 metadata requires a non-empty jobs list (one entry per posting)"
+            "schema-v4 metadata requires a non-empty jobs list (one entry per posting)"
         )
     generated = {}
     for index, record in enumerate(jobs):
@@ -178,15 +170,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--statuses",
-        default="drafted",
-        help="Comma-separated status labels (default: drafted only; the v2 "
-             "archives in other status folders are intentionally frozen and "
-             "skipped). Use --all-statuses for the full fleet.",
-    )
-    parser.add_argument(
-        "--all-statuses",
-        action="store_true",
-        help="Backfill every status folder instead of the drafted-only default.",
+        default=None,
+        help="Comma-separated status labels (default: all status folders — the "
+             "fleet is uniformly schema v4). Options: "
+             f"{', '.join(STATUS_DIRS)}.",
     )
     parser.add_argument("--slug", default="", help="Preview one application slug/path.")
     parser.add_argument(
@@ -197,8 +184,10 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Emit machine-readable output.")
     args = parser.parse_args()
 
-    statuses = (list(STATUS_DIRS) if args.all_statuses
-                else [value.strip() for value in args.statuses.split(",") if value.strip()])
+    statuses = (
+        [value.strip() for value in args.statuses.split(",") if value.strip()]
+        if args.statuses else list(STATUS_DIRS)
+    )
     unknown = [value for value in statuses if value not in STATUS_DIRS]
     if unknown:
         parser.error(f"invalid status labels: {', '.join(unknown)}")

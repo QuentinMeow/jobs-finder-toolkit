@@ -1,4 +1,4 @@
-"""Pure helpers for structured, human-readable job metadata (schema v3).
+"""Pure helpers for structured, human-readable job metadata (schema v4).
 
 An application ``meta.yaml`` is something a person reads to decide "what is this
 posting and should I apply?". The per-posting facts are deliberately flat and
@@ -43,6 +43,11 @@ from typing import Any
 
 import yaml
 
+try:  # Sibling shared module; layout is pure (stdlib + yaml), so no import cycle.
+    from .layout import status_label_for_dir
+except ImportError:  # Direct top-level import (tests + vendored self-contained skills).
+    from layout import status_label_for_dir
+
 # The per-posting structured (mapping) fields, in display order. These carry the
 # nested ``{min, max, confidence, source}`` shape (job_level adds ``normalized``).
 METADATA_FIELDS = (
@@ -58,10 +63,44 @@ POSTING_METADATA_FIELDS = (
     "sponsorship",
     *METADATA_FIELDS,
 )
-APPLICATION_SCHEMA_VERSION = 3
+APPLICATION_SCHEMA_VERSION = 4
 
 WORKPLACE_VALUES = {"onsite", "hybrid", "remote", "unknown"}
 SPONSORSHIP_VALUES = {"likely", "unlikely", "unknown"}
+
+# Per-job status values (exactly the status-folder labels), ordered by ROLLUP
+# PRECEDENCE — highest first. ``derive_status`` walks this order and returns the
+# first tier that any job occupies, so one interviewing role lifts the whole
+# application to ``in_progress`` even if its siblings were rejected:
+#   in_progress > applied > drafted > rejected > ignored
+STATUS_VALUES = ("in_progress", "applied", "drafted", "rejected", "ignored")
+
+
+def derive_status(jobs: list[dict]) -> str:
+    """Roll a ``jobs`` list up to one overall status by ``STATUS_VALUES`` precedence.
+
+    The per-job ``status`` fields are the fine-grained source of truth; the overall
+    status (and thus the status folder an application belongs in) is DERIVED as the
+    highest-precedence per-job status. Raises ``ValueError`` on an empty list or any
+    job whose ``status`` is missing or not a known ``STATUS_VALUES`` label — the
+    validator guarantees valid per-job statuses upstream, so a raise here flags a
+    caller that skipped validation rather than a routine data condition.
+    """
+    if not isinstance(jobs, list) or not jobs:
+        raise ValueError("derive_status requires a non-empty jobs list")
+    present: set[str] = set()
+    for index, job in enumerate(jobs):
+        status = job.get("status") if isinstance(job, dict) else None
+        if status not in STATUS_VALUES:
+            raise ValueError(
+                f"jobs[{index}].status must be one of {', '.join(STATUS_VALUES)}; "
+                f"got {status!r}"
+            )
+        present.add(status)
+    for candidate in STATUS_VALUES:
+        if candidate in present:
+            return candidate
+    raise ValueError("no derivable status")  # unreachable: every status is valid
 
 NORMALIZED_LEVELS = {
     "intern",
@@ -106,7 +145,7 @@ SOURCE_TIERS = (
     "generic_heuristic",
 )
 TIER_RANK = {tier: index for index, tier in enumerate(SOURCE_TIERS)}
-# Map a fact's flat ``source`` label (the schema-v3 enum the extractor emits)
+# Map a fact's flat ``source`` label (the schema enum the extractor emits)
 # to a provenance tier, used when a fact carries no explicit ``tier``.
 SOURCE_TIER_MAP = {
     "job_description": "live_jd",
@@ -856,7 +895,7 @@ def classify_sponsorship(text: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Application meta.yaml layer (the flat, human-facing schema v3).
+# Application meta.yaml layer (the flat, human-facing schema v4).
 # ---------------------------------------------------------------------------
 def _google_range(normalized: str, level_entry: dict | None) -> tuple[float | None, float | None]:
     if isinstance(level_entry, dict):
@@ -1027,8 +1066,9 @@ def metadata_field_gaps(record: dict, metadata: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Validation (schema v3 is strict; there is no legacy/compat path).
+# Validation (schema v4 is strict; there is no legacy/compat path).
 # ---------------------------------------------------------------------------
+_STATUS_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 def _validate_numeric_range(
     value: Any,
     *,
@@ -1096,6 +1136,37 @@ def _validate_enum(value: Any, allowed: set[str], path: str) -> list[str]:
     return []
 
 
+def _validate_status(value: Any, path: str) -> list[str]:
+    """Require a per-job ``status`` in ``STATUS_VALUES`` (listed in precedence order)."""
+    if not str(value or "").strip():
+        return [f"{path} is required"]
+    if value not in STATUS_VALUES:
+        return [f"{path} must be one of {', '.join(STATUS_VALUES)}"]
+    return []
+
+
+def _validate_stage(value: Any, path: str) -> list[str]:
+    """Optional per-job ``stage``: free text. Absent/null is fine; must be a string."""
+    if value is None:
+        return []
+    if not isinstance(value, str):
+        return [f"{path} must be a string"]
+    return []
+
+
+def _validate_status_date(value: Any, path: str) -> list[str]:
+    """Optional per-job ``status_date``: a ``YYYY-MM-DD`` string. Absent/null/"" is fine."""
+    if value is None or value == "":
+        return []
+    if not isinstance(value, str) or not _STATUS_DATE_RE.fullmatch(value):
+        return [f"{path} must be a YYYY-MM-DD date string"]
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return [f"{path} must be a valid YYYY-MM-DD date"]
+    return []
+
+
 def _validate_job_level(level: Any, lead: str) -> list[str]:
     path = f"{lead}job_level"
     if not isinstance(level, dict):
@@ -1151,6 +1222,9 @@ def validate_job_metadata(record: dict, *, prefix: str = "") -> list[str]:
         record.get("workplace"), WORKPLACE_VALUES, f"{lead}workplace"))
     errors.extend(_validate_enum(
         record.get("sponsorship"), SPONSORSHIP_VALUES, f"{lead}sponsorship"))
+    errors.extend(_validate_status(record.get("status"), f"{lead}status"))
+    errors.extend(_validate_stage(record.get("stage"), f"{lead}stage"))
+    errors.extend(_validate_status_date(record.get("status_date"), f"{lead}status_date"))
     return errors
 
 
@@ -1194,7 +1268,14 @@ def validate_jd_file_associations(meta: dict, app_dir: str | Path) -> list[str]:
 
 
 def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]:
-    """Validate schema-v3 application metadata (a uniform ``jobs`` list)."""
+    """Validate schema-v4 application metadata (a uniform ``jobs`` list).
+
+    Each ``jobs`` entry carries a required per-job ``status`` (one of
+    ``STATUS_VALUES``) plus optional ``stage``/``status_date``; the top-level
+    ``stage`` field of v3 is gone and is now rejected. When ``app_dir`` sits inside
+    a known status folder, the folder label must equal ``derive_status(jobs)`` — a
+    manual folder move that skipped the CLI is flagged so it can be re-synced.
+    """
     version = meta.get("job_metadata_schema_version")
     if (
         isinstance(version, bool)
@@ -1208,6 +1289,13 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
     errors: list[str] = []
     if not str(meta.get("company") or "").strip():
         errors.append("company is required")
+    if "stage" in meta:
+        errors.append(
+            "top-level stage is not allowed in schema v4 (move it to per-job stage)")
+    if "status" in meta:
+        errors.append(
+            "top-level status is not allowed in schema v4 (status is per-job, "
+            "under jobs:)")
 
     jobs = meta.get("jobs")
     if not isinstance(jobs, list) or not jobs:
@@ -1226,4 +1314,19 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
 
     if app_dir is not None:
         errors.extend(validate_jd_file_associations(meta, app_dir))
+        # Folder-consistency: the overall status is DERIVED from the per-job
+        # statuses. When the app lives in a known status folder, that folder's
+        # label must equal the rollup, else a manual move drifted out of sync.
+        folder_label = status_label_for_dir(Path(app_dir).parent.name)
+        if folder_label is not None:
+            try:
+                derived = derive_status(jobs)
+            except ValueError:
+                derived = None  # invalid per-job statuses already reported above
+            if derived is not None and derived != folder_label:
+                errors.append(
+                    f"folder status '{folder_label}' does not match derived status "
+                    f"'{derived}' from the per-job statuses; re-sync with "
+                    f"`status.py --update <slug> {derived}` or `status.py --update-job`"
+                )
     return errors

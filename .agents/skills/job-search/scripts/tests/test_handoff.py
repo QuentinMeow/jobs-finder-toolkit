@@ -164,6 +164,13 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(job["required_yoe"]["min"], 5)
         self.assertEqual(job["salary_range"]["max"], 230000)
 
+    def test_scaffold_emits_schema_v4_and_status_drafted(self):
+        _code, folder, _out, _err = self._run([_row(url=self.jd_url)], "rank 1")
+        meta = yaml.safe_load((folder / "meta.yaml").read_text())
+        self.assertEqual(meta["job_metadata_schema_version"], 4)
+        # Handoff always creates a fresh DRAFTED application.
+        self.assertEqual(meta["jobs"][0]["status"], "drafted")
+
     def test_fresh_folder_passes_tracker_check_metadata(self):
         code, folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
         self.assertEqual(code, 0, err)

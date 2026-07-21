@@ -1,4 +1,4 @@
-"""Formatting-preserving edits for schema-v3 application job metadata."""
+"""Formatting-preserving edits for schema-v4 application job metadata."""
 
 from __future__ import annotations
 
@@ -196,7 +196,7 @@ def _posting_records(
     jobs = document.get("jobs")
     if not isinstance(jobs, list) or not jobs:
         return {}, [
-            "schema v3 requires a non-empty jobs list; manual migration is required"
+            "schema v4 requires a non-empty jobs list; manual migration is required"
         ]
 
     jobs_pair = root_items.get("jobs")
@@ -260,10 +260,10 @@ def plan_metadata_edit(
     *,
     verify_idempotence: bool = True,
 ) -> MetadataEditPlan:
-    """Plan a formatting-preserving schema-v3 metadata edit.
+    """Plan a formatting-preserving schema-v4 metadata edit.
 
     Record paths are ``("jobs", index)`` for entries in the uniform ``jobs``
-    sequence (schema v3 always uses a jobs list). The planner fails closed: any
+    sequence (schema v4 always uses a jobs list). The planner fails closed: any
     path, migration, parse, validation, semantic, or idempotence error returns
     the original bytes and no changed field paths.
     """
@@ -529,6 +529,161 @@ def plan_metadata_edit(
                 [f"idempotence verification failed: {details}"],
             )
     return plan
+
+
+def plan_field_updates(
+    raw: bytes,
+    updates_by_path: dict[RecordPath, dict[str, Any]],
+) -> MetadataEditPlan:
+    """Plan a formatting-preserving SET of per-job scalar fields.
+
+    ``updates_by_path`` maps a record path ``("jobs", index)`` to a mapping of
+    scalar field name -> new value. Unlike ``plan_metadata_edit`` (which only fills
+    empty/absent metadata placeholders and refuses to touch populated values), this
+    OVERWRITES the named scalar when present and INSERTS it when absent — the
+    machinery ``status.py`` uses to stamp per-job ``status`` / ``status_date`` /
+    ``stage`` on a transition. Values must be YAML scalars (the status fields are).
+
+    It shares every safety property of ``plan_metadata_edit``: it fails closed
+    (any parse/path/semantic/validation error returns the original bytes with no
+    edits), preserves comments/quoting/blank lines/newline style on untouched text,
+    compares the reparsed output to an expected document so nothing outside the
+    requested fields changes, and gates on ``validate_meta``. The gate runs WITHOUT
+    ``app_dir`` so the folder-consistency rule is not applied here — callers move
+    the folder AFTER stamping the new statuses, so the on-disk folder is expected to
+    lag the rollup at edit time.
+    """
+    before_sha256 = hashlib.sha256(raw).hexdigest()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return _error_plan(raw, before_sha256, [f"metadata is not valid UTF-8: {exc}"])
+
+    try:
+        document = yaml.safe_load(text)
+        root_node = yaml.compose(text)
+    except yaml.YAMLError as exc:
+        return _error_plan(raw, before_sha256, [f"invalid YAML: {exc}"])
+
+    if not isinstance(document, dict) or not isinstance(root_node, MappingNode):
+        return _error_plan(
+            raw, before_sha256,
+            ["metadata document must be a top-level YAML mapping"])
+
+    root_items, errors = _mapping_nodes(root_node, path=())
+    records, record_errors = _posting_records(document, root_node, root_items)
+    errors.extend(record_errors)
+
+    supplied_paths = set(updates_by_path)
+    expected_paths = set(records)
+    for path in sorted(supplied_paths - expected_paths, key=repr):
+        errors.append(
+            f"update record path {_path_text(path)} does not exist in this document")
+    if errors:
+        return _error_plan(raw, before_sha256, errors)
+
+    newline = _preferred_newline(text)
+    edits: list[_Edit] = []
+    changed_paths: list[FieldPath] = []
+    expected_document = copy.deepcopy(document)
+
+    for path in sorted(supplied_paths, key=repr):
+        record, record_node = records[path]
+        items, item_errors = _mapping_nodes(record_node, path=path)
+        errors.extend(item_errors)
+        updates = updates_by_path[path]
+        if not isinstance(updates, dict):
+            errors.append(f"updates for {_path_text(path)} must be a mapping")
+            continue
+
+        insert_entries: list[tuple[str, Any]] = []
+        for field, value in updates.items():
+            field_path = path + (field,)
+            _record_at(expected_document, path)[field] = copy.deepcopy(value)
+            changed_paths.append(field_path)
+            if field in items:
+                key_node, value_node = items[field]
+                if not isinstance(value_node, ScalarNode):
+                    errors.append(
+                        f"{_path_text(field_path)} is not a scalar value; "
+                        "manual migration is required")
+                    continue
+                if value_node.start_mark.index < key_node.end_mark.index:
+                    errors.append(
+                        f"{_path_text(field_path)} uses an aliased placeholder; "
+                        "manual migration is required")
+                    continue
+                parent_indent = key_node.start_mark.column
+                replacement = _dump_replacement_value(
+                    value,
+                    parent_indent=parent_indent,
+                    newline=newline,
+                    suffix=_line_suffix(text, value_node.end_mark.index),
+                )
+                edits.append(
+                    _Edit(
+                        value_node.start_mark.index,
+                        value_node.end_mark.index,
+                        replacement,
+                    )
+                )
+            else:
+                insert_entries.append((field, value))
+
+        if insert_entries:
+            if record_node.flow_style or not record_node.value:
+                errors.append(
+                    f"{_path_text(path)} cannot accept block-style field "
+                    "insertions; manual migration is required")
+                continue
+            last_value_node = record_node.value[-1][1]
+            insertion_index = _line_insertion_index(text, last_value_node.end_mark.index)
+            indent = record_node.value[0][0].start_mark.column
+            at_eof_without_newline = (
+                insertion_index == len(text) and not text.endswith(("\n", "\r"))
+            )
+            fragment = _dump_entries(
+                insert_entries,
+                indent=indent,
+                newline=newline,
+                terminate=not at_eof_without_newline,
+            )
+            if at_eof_without_newline:
+                fragment = newline + fragment
+            edits.append(_Edit(insertion_index, insertion_index, fragment))
+
+    if errors:
+        return _error_plan(raw, before_sha256, errors)
+
+    try:
+        output_bytes = _apply_edits(raw, text, edits)
+    except (IndexError, ValueError) as exc:
+        return _error_plan(
+            raw, before_sha256, [f"could not apply planned YAML edits: {exc}"])
+
+    try:
+        output_document = yaml.safe_load(output_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        return _error_plan(
+            raw, before_sha256, [f"planned output is not valid YAML: {exc}"])
+    if output_document != expected_document:
+        return _error_plan(
+            raw, before_sha256,
+            ["planned output changed values outside the requested field updates"])
+
+    validation_errors = validate_meta(output_document)
+    if validation_errors:
+        return _error_plan(
+            raw, before_sha256,
+            [f"planned output validation failed: {error}" for error in validation_errors])
+
+    return MetadataEditPlan(
+        before_sha256=before_sha256,
+        output_bytes=output_bytes,
+        changed_field_paths=tuple(changed_paths),
+        errors=(),
+        changed=output_bytes != raw,
+    )
 
 
 def atomic_write_bytes(

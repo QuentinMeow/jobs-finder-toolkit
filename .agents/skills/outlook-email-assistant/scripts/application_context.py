@@ -2,11 +2,18 @@
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from _vendor.layout import status_label_for_dir  # noqa: E402
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 STOPWORDS = {
@@ -24,6 +31,7 @@ class ApplicationMatch:
     roles: tuple[str, ...]
     recruiter_email: str
     context_files: tuple[Path, ...]
+    jobs: tuple[dict[str, Any], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -34,6 +42,7 @@ class ApplicationMatch:
             "roles": list(self.roles),
             "recruiter_email": self.recruiter_email,
             "context_files": [str(path) for path in self.context_files],
+            "jobs": [dict(job) for job in self.jobs],
         }
 
 
@@ -51,6 +60,13 @@ def _context_files(app_dir: Path) -> tuple[Path, ...]:
     return tuple(dict.fromkeys(path.resolve() for path in candidates))
 
 
+def _clean(value: Any) -> Any:
+    """Strip a string value, collapsing missing/blank values to ``None``."""
+    if isinstance(value, str):
+        value = value.strip()
+    return value or None
+
+
 def _records(applications_root: Path):
     for meta_path in sorted(applications_root.glob("*/**/meta.yaml")):
         app_dir = meta_path.parent
@@ -58,17 +74,30 @@ def _records(applications_root: Path):
             meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
         except (OSError, yaml.YAMLError):
             continue
-        jobs = meta.get("jobs") if isinstance(meta.get("jobs"), list) else []
-        roles = tuple(str(job.get("role", "")).strip() for job in jobs if isinstance(job, dict))
+        raw_jobs = meta.get("jobs") if isinstance(meta.get("jobs"), list) else []
+        jobs = [job for job in raw_jobs if isinstance(job, dict)]
+        roles = tuple(str(job.get("role", "")).strip() for job in jobs)
         if not roles and meta.get("role"):
             roles = (str(meta["role"]).strip(),)
+        # Per-job view for schema v4 (status/stage live on each job entry). v2/v3
+        # files predate this and simply lack the keys — degrade to null, never crash.
+        job_views = tuple(
+            {
+                "role": str(job.get("role", "")).strip(),
+                "status": _clean(job.get("status")),
+                "stage": _clean(job.get("stage")),
+            }
+            for job in jobs
+        )
+        folder_name = app_dir.parent.name
         yield {
             "path": app_dir.resolve(),
-            "status": app_dir.parent.name,
+            "status": status_label_for_dir(folder_name) or folder_name,
             "company": str(meta.get("company", "")).strip(),
             "roles": tuple(role for role in roles if role),
             "recruiter_email": str(meta.get("recruiter_email", "")).strip(),
             "slug": app_dir.name,
+            "jobs": job_views,
         }
 
 
@@ -111,6 +140,7 @@ def find_application_matches(
                 roles=roles,
                 recruiter_email=recruiter,
                 context_files=_context_files(record["path"]),
+                jobs=record["jobs"],
             )
         )
     matches.sort(key=lambda match: (-match.score, match.company.casefold(), str(match.path)))

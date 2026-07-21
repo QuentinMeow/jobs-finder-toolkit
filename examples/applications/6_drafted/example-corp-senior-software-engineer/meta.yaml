@@ -1,4 +1,4 @@
-job_metadata_schema_version: 3
+job_metadata_schema_version: 4
 company: "Example Corp"
 research_date: "2025-01-15"
 channel: ""
@@ -8,6 +8,7 @@ notes: "Fully fictional worked example shipped with the public toolkit."
 jobs:
   - role: "Senior Software Engineer, Platform"
     jd_file: "JD-senior-software-engineer-platform.md"
+    status: "drafted"
     location: "Remote (US)"
     workplace: "remote"
     url: ""

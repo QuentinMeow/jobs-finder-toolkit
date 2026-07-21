@@ -1,9 +1,12 @@
 """Scan applications/ status folders and print a summary table.
 
-Status is encoded by which folder an application lives in. The physical folders are
+The per-job `status` field in each meta.yaml (drafted|applied|in_progress|rejected|
+ignored) is the fine-grained source of truth; the overall status — the folder an
+application lives in — is the DERIVED ROLLUP of its jobs' statuses (precedence
+in_progress > applied > drafted > rejected > ignored). The physical folders are
 numbered so a file browser lists the whole applications/ tree in a stable order; the
-bare status LABEL (drafted, applied, …) stays the user-facing name (STATUS_DIRS maps
-label -> on-disk folder):
+bare status LABEL stays the user-facing name (STATUS_DIRS maps label -> on-disk
+folder):
 
     applications/6_drafted/<slug>/      -> drafted     (tailored, not yet submitted)
     applications/5_applied/<slug>/      -> applied      (submitted)
@@ -11,21 +14,24 @@ label -> on-disk folder):
     applications/3_rejected/<slug>/     -> rejected     (rejected at any stage)
     applications/2_ignored/<slug>/      -> ignored      (decided not to submit)
 
-The folder is the source of truth for status. `meta.yaml` holds the rest of the
-metadata (company, dates, `channel` = how the lead was found, referrer,
-next_action, notes; and per-posting role/workplace/sponsorship/level/YOE/salary
-under `jobs:`) and may keep a free-form `stage` note for finer tracking (e.g.
-"onsite scheduled"). Generation inputs (JD-<job-title>.md files, tailored.yaml,
-DOCX) live in each folder's source/ subfolder; the final resume/cover-letter PDFs,
-the bundled application .txt, and meta.yaml stay at the folder root. A single resume
-can target several roles at one company: those applications carry a `jobs:` list in
-meta.yaml and one JD-<job-title>.md file per posting. Non-application folders under
+Scripts keep the two in sync: `--update` and `--update-job` write per-job `status`
+in meta.yaml and then move the folder to match the recomputed rollup. `meta.yaml`
+holds the rest of the metadata (company, dates, `channel` = how the lead was found,
+referrer, next_action, notes; and per-posting role/workplace/sponsorship/level/YOE/
+salary plus a per-job free-form `stage` note like "onsite scheduled" under `jobs:`).
+Generation inputs (JD-<job-title>.md files, tailored.yaml, DOCX) live in each
+folder's source/ subfolder; the final resume/cover-letter PDFs, the bundled
+application .txt, and meta.yaml stay at the folder root. A single resume can target
+several roles at one company: those applications carry a `jobs:` list in meta.yaml
+and one JD-<job-title>.md file per posting. Non-application folders under
 applications/ (0_profile/, 1_discoveries/) are skipped.
 
 Usage:
     python .agents/skills/application-tracker/scripts/status.py
     python .agents/skills/application-tracker/scripts/status.py --json
     python .agents/skills/application-tracker/scripts/status.py --update google-ml-engineer-20260416 applied
+    python .agents/skills/application-tracker/scripts/status.py --update-job <slug> "Backend Engineer" in_progress --stage "onsite"
+    python .agents/skills/application-tracker/scripts/status.py --update-job <slug> 2 rejected
     python .agents/skills/application-tracker/scripts/status.py --enrich-metadata <slug>
     python .agents/skills/application-tracker/scripts/status.py --check-metadata
     python .agents/skills/application-tracker/scripts/status.py --sync-log
@@ -36,7 +42,7 @@ import argparse
 import json
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -52,9 +58,18 @@ for _p in (_HERE, _HERE / "_vendor"):
 
 import config
 from backfill_job_metadata import process_application
-from job_metadata import validate_meta
-from layout import application_dir, find_jd_files, source_dir, tailored_path
+from job_metadata import APPLICATION_SCHEMA_VERSION, derive_status, validate_meta
+from layout import (
+    STATUS_DIRS,
+    STATUS_FOLDERS,
+    application_dir,
+    find_jd_files,
+    source_dir,
+    status_label_for_dir,
+    tailored_path,
+)
 from location import classify_locations, extract_jd_locations, is_match
+from metadata_editor import atomic_write_bytes, plan_field_updates
 
 # Output filename stems are candidate-identity-derived, so they come from config
 # (kept under their historical module-level names for the file-presence globs).
@@ -66,20 +81,10 @@ APPLICATION_STEM = config.application_stem()
 # scanned folders — and thus behavior — are unchanged).
 APPLICATIONS_DIR = config.applications_root()
 
-# Status is the folder an application lives in. The physical folders are numbered so
-# a file browser lists the whole applications/ tree in a stable order; the bare status
-# LABEL (drafted, applied, …) stays the user-facing name used on the CLI and in the
-# printed table. STATUS_DIRS maps each label -> its on-disk folder name. These are the
-# only folders scanned as applications; anything else under applications/ (0_profile/,
-# 1_discoveries/) is ignored.
-STATUS_DIRS = {
-    "drafted": "6_drafted",
-    "applied": "5_applied",
-    "in_progress": "4_in_progress",
-    "rejected": "3_rejected",
-    "ignored": "2_ignored",
-}
-STATUS_FOLDERS = list(STATUS_DIRS)  # status labels, in pipeline order
+# STATUS_DIRS (label -> on-disk numbered folder) and STATUS_FOLDERS (labels in
+# pipeline order) are the shared source of truth; they are imported from the
+# vendored `layout` module. These are the only folders scanned as applications;
+# anything else under applications/ (0_profile/, 1_discoveries/) is ignored.
 
 
 def _status_dir(status: str) -> Path:
@@ -90,17 +95,14 @@ def _status_dir(status: str) -> Path:
 def _resolve_statuses(args) -> list[str]:
     """Resolve the status scope shared by the metadata/location subcommands.
 
-    Default scope is the drafted folder only: v2 archives in the other status
-    folders are intentionally frozen and excluded from validation/backfill.
-    ``--all-statuses`` opts into the full fleet; ``--statuses`` selects an explicit
-    subset. Exits non-zero on an unknown status label.
+    Default scope is the full fleet (every status folder) — the whole fleet is
+    uniformly schema v4. ``--statuses`` selects an explicit comma-separated subset.
+    Exits non-zero on an unknown status label.
     """
-    if getattr(args, "all_statuses", False):
-        statuses = list(STATUS_FOLDERS)
-    elif args.statuses:
+    if args.statuses:
         statuses = [s.strip() for s in args.statuses.split(",") if s.strip()]
     else:
-        statuses = ["drafted"]
+        statuses = list(STATUS_FOLDERS)
     unknown = [s for s in statuses if s not in STATUS_FOLDERS]
     if unknown:
         print(f"Error: invalid statuses: {', '.join(unknown)}", file=sys.stderr)
@@ -160,17 +162,31 @@ def load_application(app_dir: Path, status: str) -> dict | None:
         try:
             with open(meta) as f:
                 meta_data = yaml.safe_load(f) or {}
-            # The folder wins for status; pull everything else from meta.yaml.
-            # Structured job facts (job_level/required_yoe/salary_range) live per
-            # posting under `jobs`, so they are read from there, not the top level.
+            # The folder is the derived overall status; pull everything else from
+            # meta.yaml. Structured job facts (job_level/required_yoe/salary_range)
+            # and the per-job status/stage/status_date live per posting under
+            # `jobs`, so they are read from there, not the top level. The top-level
+            # `stage` field was removed in schema v4 (stage is now per-job).
             for key in ["company", "role", "research_date", "posted_date",
                         "channel", "referrer", "next_action", "notes", "location",
-                        "recruiter_email", "comp_notes", "url", "stage", "jobs",
+                        "recruiter_email", "comp_notes", "url", "jobs",
                         "job_metadata_schema_version"]:
                 if meta_data.get(key):
                     info[key] = meta_data[key]
         except Exception:
             pass
+
+    # An application is "mixed" when its postings do not all share one per-job
+    # status (e.g. one role rejected while another is still in progress). The
+    # folder shows the derived rollup; the [mixed] tag flags that the roles differ.
+    jobs_list = info.get("jobs")
+    if isinstance(jobs_list, list) and jobs_list:
+        job_statuses = {
+            str(j.get("status") or "").strip()
+            for j in jobs_list
+            if isinstance(j, dict) and str(j.get("status") or "").strip()
+        }
+        info["mixed"] = len(job_statuses) > 1
 
     # research_date is the canonical creation date; fall back to the
     # slug-derived date (parsed above).
@@ -238,7 +254,7 @@ def _resolve_application_target(target: str | Path) -> Path | None:
 
 
 def enrich_application_metadata(target: str | Path, *, overwrite: bool = False) -> Path:
-    """Safely insert missing schema-v3 job metadata into one ``meta.yaml``."""
+    """Safely insert missing schema-v4 job metadata into one ``meta.yaml``."""
     if overwrite:
         raise ValueError(
             "overwrite is disabled: the formatting-preserving editor only inserts "
@@ -261,7 +277,7 @@ def backfill_metadata(
     if overwrite:
         message = (
             "overwrite is disabled: bulk metadata editing may only insert missing "
-            "schema-v3 fields"
+            "schema-v4 fields"
         )
         if as_json:
             print(json.dumps({"mode": "error", "rows": [], "failures": [message]}, indent=2))
@@ -433,8 +449,80 @@ def find_application(slug: str) -> Path | None:
     return None
 
 
+def _load_v4_meta(meta_path: Path) -> tuple[dict, bytes]:
+    """Load a meta.yaml, failing loud (exit non-zero) unless it is parseable v4."""
+    if not meta_path.is_file():
+        print(f"Error: {meta_path} not found; cannot update per-job status",
+              file=sys.stderr)
+        sys.exit(1)
+    raw = meta_path.read_bytes()
+    try:
+        meta = yaml.safe_load(raw.decode("utf-8")) or {}
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        print(f"Error: could not parse {meta_path}: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if (not isinstance(meta, dict)
+            or meta.get("job_metadata_schema_version") != APPLICATION_SCHEMA_VERSION):
+        print(f"Error: {meta_path} is not schema v{APPLICATION_SCHEMA_VERSION}; "
+              "migrate it before updating status", file=sys.stderr)
+        sys.exit(1)
+    jobs = meta.get("jobs")
+    if not isinstance(jobs, list) or not jobs:
+        print(f"Error: {meta_path} has no jobs list", file=sys.stderr)
+        sys.exit(1)
+    return meta, raw
+
+
+def _write_field_updates(meta_path: Path, raw: bytes, updates: dict) -> bool:
+    """Apply per-job field updates via the formatting-preserving editor.
+
+    Returns True if the file changed. Fails loud (exit non-zero, no write) on any
+    editor/validation error so a status transition never half-applies.
+    """
+    plan = plan_field_updates(raw, updates)
+    if plan.errors:
+        print(f"Error: could not update per-job status in {meta_path}:",
+              file=sys.stderr)
+        for error in plan.errors:
+            print(f"  - {error}", file=sys.stderr)
+        sys.exit(1)
+    if plan.changed:
+        atomic_write_bytes(meta_path, plan.output_bytes,
+                           expected_sha256=plan.before_sha256)
+    return plan.changed
+
+
+def _move_application(slug: str, src: Path, new_status: str) -> bool:
+    """Move an application folder to new_status's folder; return True if it moved."""
+    current_label = status_label_for_dir(src.parent.name)
+    if current_label == new_status:
+        return False
+    dest_dir = _status_dir(new_status)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / slug
+    if dest.exists():
+        print(f"Error: {dest} already exists — resolve the duplicate first",
+              file=sys.stderr)
+        sys.exit(1)
+    shutil.move(str(src), str(dest))
+    print(f"Moved {slug}: {current_label or src.parent.name} -> {new_status}")
+    return True
+
+
+def _sync_log_hint(changed: bool, moved: bool) -> None:
+    """Remind to re-sync the postings log after any status write or folder move."""
+    if changed or moved:
+        print("Re-run `status.py --sync-log` to refresh the postings log.")
+
+
 def update_status(slug: str, new_status: str):
-    """Move an application folder into the target status folder."""
+    """Set every posting's status to new_status, stamp today, then move the folder.
+
+    The per-job `status` fields are the source of truth, so a whole-application
+    transition writes them all (stamping `status_date`) BEFORE moving the folder to
+    match the derived rollup. Fails loud (no move) if meta.yaml is missing,
+    unparseable, or not schema v4.
+    """
     if new_status not in STATUS_FOLDERS:
         print(f"Error: invalid status '{new_status}'. Must be one of: "
               f"{', '.join(STATUS_FOLDERS)}", file=sys.stderr)
@@ -446,21 +534,139 @@ def update_status(slug: str, new_status: str):
               f"({', '.join(STATUS_FOLDERS)})", file=sys.stderr)
         sys.exit(1)
 
-    current_status = src.parent.name
-    if current_status == new_status:
-        print(f"{slug} is already in '{new_status}' — nothing to do")
-        return
+    meta_path = src / "meta.yaml"
+    meta, raw = _load_v4_meta(meta_path)
+    today = date.today().isoformat()
+    updates = {
+        ("jobs", index): {"status": new_status, "status_date": today}
+        for index in range(len(meta["jobs"]))
+    }
+    changed = _write_field_updates(meta_path, raw, updates)
+    if changed:
+        print(f"{slug}: set all {len(meta['jobs'])} posting(s) to '{new_status}' "
+              f"(status_date {today})")
 
-    dest_dir = _status_dir(new_status)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / slug
-    if dest.exists():
-        print(f"Error: {dest} already exists — resolve the duplicate first",
-              file=sys.stderr)
+    moved = _move_application(slug, src, new_status)
+    if not changed and not moved:
+        print(f"{slug} is already fully '{new_status}' — nothing to do")
+    _sync_log_hint(changed, moved)
+
+
+def update_job_status(slug: str, role_match: str, status: str,
+                      stage: str | None = None):
+    """Set ONE posting's status (and/or stage), then re-derive & move the folder.
+
+    `role_match` is a case-insensitive substring of `jobs[].role` or a 1-based
+    integer index and must resolve to exactly one posting. `status` is one of the
+    five status labels or the literal `keep` (leave status unchanged — for a
+    stage-only edit, which then requires `--stage`). A status change stamps that
+    posting's `status_date`. After the edit the overall status is re-derived from
+    all postings; if it differs from the current folder the app is moved.
+    """
+    if status != "keep" and status not in STATUS_FOLDERS:
+        print(f"Error: STATUS must be one of {', '.join(STATUS_FOLDERS)} or 'keep'; "
+              f"got '{status}'", file=sys.stderr)
+        sys.exit(1)
+    if status == "keep" and stage is None:
+        print("Error: --update-job with status 'keep' is a stage-only edit and "
+              "requires --stage", file=sys.stderr)
         sys.exit(1)
 
-    shutil.move(str(src), str(dest))
-    print(f"Moved {slug}: {current_status} -> {new_status}")
+    src = find_application(slug)
+    if src is None:
+        print(f"Error: application '{slug}' not found under any status folder "
+              f"({', '.join(STATUS_FOLDERS)})", file=sys.stderr)
+        sys.exit(1)
+
+    meta_path = src / "meta.yaml"
+    meta, raw = _load_v4_meta(meta_path)
+    jobs = meta["jobs"]
+    index = _resolve_job_index(jobs, role_match)
+
+    job = jobs[index] if isinstance(jobs[index], dict) else {}
+    role = str(job.get("role") or "").strip() or f"job {index + 1}"
+    old_status = str(job.get("status") or "").strip() or "(unset)"
+
+    update: dict = {}
+    if status != "keep":
+        update["status"] = status
+        update["status_date"] = date.today().isoformat()
+    if stage is not None:
+        update["stage"] = stage
+
+    changed = _write_field_updates(meta_path, raw, {("jobs", index): update})
+
+    new_status = status if status != "keep" else old_status
+    change_bits = []
+    if status != "keep":
+        change_bits.append(f"status {old_status} -> {new_status}")
+    if stage is not None:
+        change_bits.append(f"stage -> {stage!r}")
+    detail = "; ".join(change_bits) if change_bits else "no change"
+    print(f"{slug} posting [{index + 1}] {role}: {detail}")
+    if not changed:
+        print(f"  (meta.yaml already matched — {detail})")
+
+    # Recompute the rollup from the edited postings and move the folder to match.
+    edited = yaml.safe_load(_read_after_edit(meta_path, raw, changed))
+    derived = derive_status(edited["jobs"])
+    moved = _move_application(slug, src, derived)
+    _sync_log_hint(changed, moved)
+
+
+def _read_after_edit(meta_path: Path, raw: bytes, changed: bool) -> str:
+    """Return the meta.yaml text reflecting the edit (re-read if it was written)."""
+    if changed:
+        return meta_path.read_text(encoding="utf-8")
+    return raw.decode("utf-8")
+
+
+def _resolve_job_index(jobs: list, role_match: str) -> int:
+    """Resolve a role substring or 1-based index to exactly one job index.
+
+    Lists the candidate postings and exits non-zero on no/ambiguous match.
+    """
+    token = str(role_match).strip()
+    if token.isdigit():
+        index = int(token) - 1
+        if 0 <= index < len(jobs):
+            return index
+        print(f"Error: posting index {token} out of range (1..{len(jobs)})",
+              file=sys.stderr)
+        _list_job_candidates(jobs)
+        sys.exit(1)
+
+    needle = token.casefold()
+    matches = [
+        i for i, j in enumerate(jobs)
+        if isinstance(j, dict) and needle in str(j.get("role") or "").casefold()
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        print(f"Error: no posting role matches {role_match!r}", file=sys.stderr)
+    else:
+        print(f"Error: {role_match!r} matches {len(matches)} postings; refine the "
+              "text or pass a 1-based index", file=sys.stderr)
+    _list_job_candidates(jobs)
+    sys.exit(1)
+
+
+def _list_job_candidates(jobs: list) -> None:
+    """Print the postings (1-based index, role, status) for disambiguation."""
+    print("Postings:", file=sys.stderr)
+    for i, j in enumerate(jobs):
+        if not isinstance(j, dict):
+            continue
+        role = str(j.get("role") or "").strip() or "(no role)"
+        status = str(j.get("status") or "").strip() or "(unset)"
+        print(f"  [{i + 1}] {role}  ({status})", file=sys.stderr)
+
+
+def _role_cell(a: dict) -> str:
+    """Role display cell; tag apps whose postings hold differing per-job statuses."""
+    role = a.get("role", "")
+    return f"{role} [mixed]" if a.get("mixed") else role
 
 
 def print_table(apps: list[dict]):
@@ -472,7 +678,7 @@ def print_table(apps: list[dict]):
 
     cols = {
         "Company": max(max((len(a["company"]) for a in apps), default=7), 7),
-        "Role": max(max((len(a["role"]) for a in apps), default=4), 4),
+        "Role": max(max((len(_role_cell(a)) for a in apps), default=4), 4),
         "Date": 10,
         "Status": max(max((len(a["status"]) for a in apps), default=6), 11),
         "Channel": max(max((len(a.get("channel", "")) for a in apps), default=7), 7),
@@ -499,7 +705,8 @@ def print_table(apps: list[dict]):
         files_str = "+".join(files) if files else "\u2014"
 
         channel = a.get("channel", "")
-        print(f"{a['company']:<{cols['Company']}}  {a['role']:<{cols['Role']}}  {a['date']:<{cols['Date']}}  {a['status']:<{cols['Status']}}  {channel:<{cols['Channel']}}  {files_str}")
+        role_cell = _role_cell(a)
+        print(f"{a['company']:<{cols['Company']}}  {role_cell:<{cols['Role']}}  {a['date']:<{cols['Date']}}  {a['status']:<{cols['Status']}}  {channel:<{cols['Channel']}}  {files_str}")
 
         # Show next_action if present
         if a.get("next_action"):
@@ -542,10 +749,10 @@ def build_log(apps: list[dict]) -> dict:
     """
     postings = []
     for a in sorted(apps, key=lambda x: (x.get("company", ""), x.get("slug", ""))):
+        folder_status = a.get("status", "")
         common = {
             "company": a.get("company", ""),
             "slug": a.get("slug", ""),
-            "status": a.get("status", ""),
             "date": a.get("date", ""),
         }
         jobs = a.get("jobs")
@@ -553,11 +760,16 @@ def build_log(apps: list[dict]) -> dict:
             for j in jobs:
                 if not isinstance(j, dict):
                     continue
+                # Each posting carries its OWN per-job status (not the folder's
+                # derived rollup), falling back to the folder only if unset.
                 postings.append({**common,
+                                 "status": str(j.get("status") or "").strip()
+                                 or folder_status,
                                  "role": j.get("role", ""),
                                  "url": j.get("url", "")})
         else:
             postings.append({**common,
+                             "status": folder_status,
                              "role": a.get("role", ""),
                              "url": a.get("url", "")})
     return {
@@ -746,23 +958,36 @@ def main():
     parser = argparse.ArgumentParser(description="Application status tracker")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--update", nargs=2, metavar=("SLUG", "STATUS"),
-                        help=f"Move an application to a status folder. "
-                             f"Valid statuses: {', '.join(STATUS_FOLDERS)}")
+                        help="Set EVERY posting's status to STATUS (stamping today's "
+                             "status_date) and move the folder to match. Valid "
+                             f"statuses: {', '.join(STATUS_FOLDERS)}")
+    parser.add_argument("--update-job", nargs=3,
+                        metavar=("SLUG", "ROLE_MATCH", "STATUS"),
+                        help="Set ONE posting's status. ROLE_MATCH is a "
+                             "case-insensitive substring of the role or a 1-based "
+                             "index (must match exactly one posting). STATUS is one "
+                             f"of {', '.join(STATUS_FOLDERS)} or 'keep' (stage-only, "
+                             "requires --stage). Re-derives the rollup and moves the "
+                             "folder if it changed.")
+    parser.add_argument("--stage", default=None, metavar="TEXT",
+                        help="Free-text per-job stage to set with --update-job "
+                             "(e.g. \"recruiter screen\", \"onsite\", \"offer\").")
     parser.add_argument("--sync-log", action="store_true",
                         help="Regenerate applications/0_profile/applications-log.yaml "
                              "(the postings job-search skips) from all folders, and upsert "
                              "company-search-log.yaml created entries.")
     parser.add_argument("--enrich-metadata", metavar="SLUG_OR_PATH",
-                        help="Safely insert missing schema-v3 per-posting metadata "
+                        help="Safely insert missing schema-v4 per-posting metadata "
                              "(workplace, sponsorship, job level, YOE, salary).")
     parser.add_argument("--backfill-metadata", action="store_true",
                         help="Preview metadata enrichment across --statuses without "
-                             "writing. Defaults to drafted.")
+                             "writing. Defaults to all status folders.")
     parser.add_argument("--write-metadata", action="store_true",
                         help="With --backfill-metadata, atomically persist verified "
                              "insert-only edits.")
     parser.add_argument("--check-metadata", action="store_true",
-                        help="Validate structured job metadata. Defaults to drafted.")
+                        help="Validate structured job metadata. Defaults to all "
+                             "status folders.")
     parser.add_argument("--log-search", metavar="COMPANY",
                         help="Record a successful company search for COMPANY.")
     parser.add_argument("--outcome", choices=["created", "no_suitable"],
@@ -772,21 +997,20 @@ def main():
     parser.add_argument("--check-locations", action="store_true",
                         help="Flag applications whose posting location is outside the "
                              "configured location policy (respects the search "
-                             "criteria). Defaults to the drafted folder.")
+                             "criteria). Defaults to all status folders.")
     parser.add_argument("--statuses", default=None,
                         help="Comma-separated status folders for --check-locations, "
                              "--check-metadata, or --backfill-metadata "
-                             f"(default: drafted). Options: {', '.join(STATUS_FOLDERS)}.")
-    parser.add_argument("--all-statuses", action="store_true",
-                        help="Full-fleet opt-in for --check-locations, "
-                             "--check-metadata, or --backfill-metadata. Without it "
-                             "these default to the drafted folder only; the v2 "
-                             "archives in other status folders are intentionally "
-                             "frozen and skipped.")
+                             f"(default: all). Options: {', '.join(STATUS_FOLDERS)}.")
     args = parser.parse_args()
 
     if args.update:
         update_status(args.update[0], args.update[1])
+        return
+
+    if args.update_job:
+        update_job_status(args.update_job[0], args.update_job[1],
+                          args.update_job[2], stage=args.stage)
         return
 
     if args.enrich_metadata:

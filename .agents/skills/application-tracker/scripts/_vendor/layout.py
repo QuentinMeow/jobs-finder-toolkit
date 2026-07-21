@@ -21,6 +21,28 @@ import yaml
 # bundled application .txt, and meta.yaml stay at the application-folder root.
 SOURCE_DIRNAME = "source"
 
+# ── Status folders ────────────────────────────────────────────
+# The physical folders are numbered so a file browser lists the whole
+# applications/ tree in a stable order; the bare status LABEL (drafted, applied,
+# …) is the user-facing name used on CLIs, in printed tables, and as the per-job
+# `status` value in meta.yaml. STATUS_DIRS maps each label -> its on-disk folder
+# name. These are the only folders scanned as applications; anything else under
+# applications/ (0_profile/, 1_discoveries/) is a support folder, not a status.
+STATUS_DIRS = {
+    "drafted": "6_drafted",
+    "applied": "5_applied",
+    "in_progress": "4_in_progress",
+    "rejected": "3_rejected",
+    "ignored": "2_ignored",
+}
+STATUS_FOLDERS = list(STATUS_DIRS)  # status labels, in pipeline order
+_DIR_TO_STATUS = {v: k for k, v in STATUS_DIRS.items()}
+
+
+def status_label_for_dir(dirname: str) -> str | None:
+    """Status label for an on-disk folder name ('5_applied' -> 'applied'), else None."""
+    return _DIR_TO_STATUS.get(str(dirname))
+
 
 def slugify_label(label: str) -> str:
     """Turn a target-position label into a filename-safe suffix.

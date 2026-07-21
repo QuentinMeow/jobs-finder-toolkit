@@ -53,7 +53,7 @@ class SearchJobMetadataTests(unittest.TestCase):
         )
         self.assertEqual(invalid, (None,) * len(invalid))
 
-    def test_search_to_metadata_to_schema_v3_validation(self):
+    def test_search_to_metadata_to_schema_v4_validation(self):
         posting = JobPosting(
             source="test",
             company="Acme",
@@ -74,11 +74,12 @@ class SearchJobMetadataTests(unittest.TestCase):
         )
         enrich_posting_metadata(posting, {})
         meta = {
-            "job_metadata_schema_version": 3,
+            "job_metadata_schema_version": 4,
             "company": posting.company,
             "jobs": [{
                 "role": posting.title,
                 "jd_file": "JD-senior-software-engineer.md",
+                "status": "drafted",
                 "workplace": posting.workplace,
                 "sponsorship": posting.sponsorship,
                 "job_level": posting.job_level,

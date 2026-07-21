@@ -19,7 +19,7 @@ drafting agent can start at gap analysis instead of re-transcribing ~10 fields:
    (imported, never subprocessed; exactly one fetch). If the fetch fails the
    folder is still scaffolded, but the tool exits non-zero telling the agent to
    save the JD manually.
-3. Write ``meta.yaml`` (schema v3), carrying over every structured fact the search
+3. Write ``meta.yaml`` (schema v4), carrying over every structured fact the search
    row already computed — level, YOE, salary, workplace, sponsorship, location,
    URL, posted date, source channel — using the vendored ``metadata_editor``
    (the same formatting-preserving editor the tracker's ``--enrich-metadata``
@@ -60,6 +60,7 @@ for _p in (str(_SKILL_SCRIPTS), str(_VENDOR)):
 
 import fetch_jd  # noqa: E402  (sibling skill module)
 from job_metadata import (  # noqa: E402
+    APPLICATION_SCHEMA_VERSION,
     POSTING_METADATA_FIELDS,
     SPONSORSHIP_VALUES,
     WORKPLACE_VALUES,
@@ -182,10 +183,10 @@ def save_jd(url: str, jd_path: Path) -> tuple[bool, str]:
 
 
 # --------------------------------------------------------------------------- #
-# meta.yaml (schema v3)
+# meta.yaml (schema v4)
 # --------------------------------------------------------------------------- #
 def carry_metadata(row: dict) -> dict:
-    """Carry the row's structured metadata into the schema-v3 posting shape.
+    """Carry the row's structured metadata into the schema-v4 posting shape.
 
     Every one of ``POSTING_METADATA_FIELDS`` is present (the editor requires the
     full set), but values are only carried when the row actually provides them:
@@ -232,7 +233,7 @@ def build_meta_bytes(row: dict, *, jd_file: str, research_date: str) -> tuple[by
     tracker can enrich it; ``editor_errors`` explains why nothing was carried.
     """
     scaffold = {
-        "job_metadata_schema_version": 3,
+        "job_metadata_schema_version": APPLICATION_SCHEMA_VERSION,
         "company": str(row.get("company") or ""),
         "research_date": research_date,
         "channel": str(row.get("source") or ""),
@@ -240,6 +241,8 @@ def build_meta_bytes(row: dict, *, jd_file: str, research_date: str) -> tuple[by
             {
                 "role": str(row.get("title") or ""),
                 "jd_file": jd_file,
+                # Handoff always creates a fresh DRAFTED application.
+                "status": "drafted",
                 "location": str(row.get("location") or ""),
                 "url": str(row.get("url") or ""),
                 "posted_date": _posted_date(row),
@@ -308,7 +311,7 @@ def run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
 
-    # --- meta.yaml (schema v3, facts carried from the row) ---------------- #
+    # --- meta.yaml (schema v4, facts carried from the row) ---------------- #
     meta_bytes, editor_errors = build_meta_bytes(
         row, jd_file=jd_file, research_date=research_date)
     (folder / "meta.yaml").write_bytes(meta_bytes)

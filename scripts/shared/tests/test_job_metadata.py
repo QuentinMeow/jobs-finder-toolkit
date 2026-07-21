@@ -10,10 +10,12 @@ if str(SHARED_DIR) not in sys.path:
 
 from job_metadata import (  # noqa: E402
     APPLICATION_SCHEMA_VERSION,
+    STATUS_VALUES,
     analyze_job_metadata,
     classify_level,
     classify_sponsorship,
     classify_workplace,
+    derive_status,
     extract_required_yoe,
     extract_required_yoe_details,
     extract_salary_range,
@@ -24,10 +26,11 @@ from job_metadata import (  # noqa: E402
 
 
 def _valid_job(**overrides) -> dict:
-    """A schema-v3 jobs entry that passes validation, with optional overrides."""
+    """A schema-v4 jobs entry that passes validation, with optional overrides."""
     job = {
         "role": "Senior Engineer",
         "jd_file": "JD-senior-engineer.md",
+        "status": "drafted",
         "location": "Remote (US)",
         "url": "https://example.test/jobs/1",
         "posted_date": "2026-07-18",
@@ -454,24 +457,25 @@ class ValidationTests(unittest.TestCase):
         del meta["job_metadata_schema_version"]
         self.assertEqual(
             validate_meta(meta),
-            ["job_metadata_schema_version must be 3"],
+            ["job_metadata_schema_version must be 4"],
         )
 
     def test_old_schema_version_is_rejected(self):
+        # v3 is now legacy: it is rejected outright, not migrated.
         self.assertEqual(
-            validate_meta({"job_metadata_schema_version": 2}),
-            ["job_metadata_schema_version must be 3"],
+            validate_meta({"job_metadata_schema_version": 3}),
+            ["job_metadata_schema_version must be 4"],
         )
 
     def test_float_schema_version_is_rejected(self):
         self.assertEqual(
-            validate_meta({"job_metadata_schema_version": 3.0}),
-            ["job_metadata_schema_version must be 3"],
+            validate_meta({"job_metadata_schema_version": 4.0}),
+            ["job_metadata_schema_version must be 4"],
         )
 
     def test_jobs_list_is_required(self):
         errors = validate_meta({
-            "job_metadata_schema_version": 3,
+            "job_metadata_schema_version": APPLICATION_SCHEMA_VERSION,
             "company": "Acme",
         })
         self.assertIn(
@@ -561,6 +565,111 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(any("duplicates another role" in error for error in errors))
         self.assertTrue(any(
             "unreferenced JD file: JD-platform.md" in error for error in errors))
+
+
+class DeriveStatusTests(unittest.TestCase):
+    def _jobs(self, *statuses) -> list:
+        return [{"status": s} for s in statuses]
+
+    def test_all_rejected_rolls_up_to_rejected(self):
+        self.assertEqual(derive_status(self._jobs("rejected", "rejected")), "rejected")
+
+    def test_in_progress_beats_applied_beats_drafted(self):
+        self.assertEqual(
+            derive_status(self._jobs("drafted", "applied", "in_progress")),
+            "in_progress")
+        self.assertEqual(
+            derive_status(self._jobs("drafted", "applied")), "applied")
+        self.assertEqual(
+            derive_status(self._jobs("drafted", "drafted")), "drafted")
+
+    def test_drafted_beats_rejected_beats_ignored(self):
+        self.assertEqual(
+            derive_status(self._jobs("ignored", "rejected", "drafted")), "drafted")
+        self.assertEqual(
+            derive_status(self._jobs("ignored", "rejected")), "rejected")
+        self.assertEqual(derive_status(self._jobs("ignored")), "ignored")
+
+    def test_mixed_applied_and_rejected_is_applied(self):
+        self.assertEqual(
+            derive_status(self._jobs("applied", "rejected")), "applied")
+
+    def test_precedence_order_is_documented_constant(self):
+        self.assertEqual(
+            STATUS_VALUES,
+            ("in_progress", "applied", "drafted", "rejected", "ignored"))
+
+    def test_empty_or_invalid_jobs_raise(self):
+        with self.assertRaises(ValueError):
+            derive_status([])
+        with self.assertRaises(ValueError):
+            derive_status([{"status": "offer"}])
+        with self.assertRaises(ValueError):
+            derive_status([{"role": "no status here"}])
+
+
+class SchemaV4JobFieldTests(unittest.TestCase):
+    def test_missing_status_is_rejected(self):
+        job = _valid_job()
+        del job["status"]
+        errors = validate_meta(_valid_meta(jobs=[job]))
+        self.assertIn("jobs[0].status is required", errors)
+
+    def test_bad_status_enum_is_rejected(self):
+        errors = validate_meta(_valid_meta(jobs=[_valid_job(status="offer")]))
+        self.assertTrue(any(
+            "jobs[0].status must be one of" in error for error in errors))
+
+    def test_optional_stage_and_status_date_pass(self):
+        job = _valid_job(status="applied", stage="onsite", status_date="2026-07-20")
+        self.assertEqual(validate_meta(_valid_meta(jobs=[job])), [])
+
+    def test_non_string_stage_is_rejected(self):
+        errors = validate_meta(_valid_meta(jobs=[_valid_job(stage=42)]))
+        self.assertIn("jobs[0].stage must be a string", errors)
+
+    def test_bad_status_date_format_is_rejected(self):
+        errors = validate_meta(_valid_meta(jobs=[_valid_job(status_date="07/20/2026")]))
+        self.assertTrue(any(
+            "jobs[0].status_date must be a YYYY-MM-DD" in error for error in errors))
+
+    def test_impossible_status_date_is_rejected(self):
+        errors = validate_meta(_valid_meta(jobs=[_valid_job(status_date="2026-13-40")]))
+        self.assertTrue(any("status_date" in error for error in errors))
+
+    def test_top_level_stage_is_rejected(self):
+        errors = validate_meta(_valid_meta(stage="onsite"))
+        self.assertTrue(any(
+            "top-level stage is not allowed" in error for error in errors))
+
+    def test_top_level_status_is_rejected(self):
+        errors = validate_meta(_valid_meta(status="applied"))
+        self.assertTrue(any(
+            "top-level status is not allowed" in error for error in errors))
+
+    def test_folder_consistency_mismatch_is_flagged(self):
+        # A drafted posting sitting in the 5_applied folder must be flagged.
+        with tempfile.TemporaryDirectory() as temporary:
+            applied = Path(temporary) / "5_applied"
+            app_dir = applied / "acme-senior-engineer-20260720"
+            source = app_dir / "source"
+            source.mkdir(parents=True)
+            (source / "JD-senior-engineer.md").write_text("Senior")
+            meta = _valid_meta(jobs=[_valid_job(status="drafted")])
+            errors = validate_meta(meta, app_dir=app_dir)
+        self.assertTrue(any(
+            "folder status 'applied' does not match derived status 'drafted'" in error
+            for error in errors))
+
+    def test_folder_consistency_holds_when_folder_matches_rollup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            applied = Path(temporary) / "5_applied"
+            app_dir = applied / "acme-senior-engineer-20260720"
+            source = app_dir / "source"
+            source.mkdir(parents=True)
+            (source / "JD-senior-engineer.md").write_text("Senior")
+            meta = _valid_meta(jobs=[_valid_job(status="applied")])
+            self.assertEqual(validate_meta(meta, app_dir=app_dir), [])
 
 
 if __name__ == "__main__":

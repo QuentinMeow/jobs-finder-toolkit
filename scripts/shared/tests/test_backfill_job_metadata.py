@@ -38,8 +38,8 @@ class BackfillJobMetadataTests(unittest.TestCase):
         self._write_meta({
             "company": "Acme",
             "jobs": [
-                {"role": "Zulu", "jd_file": "JD-zulu.md"},
-                {"role": "Alpha", "jd_file": "JD-alpha.md"},
+                {"role": "Zulu", "jd_file": "JD-zulu.md", "status": "drafted"},
+                {"role": "Alpha", "jd_file": "JD-alpha.md", "status": "drafted"},
             ],
         })
         with patch.object(
@@ -58,7 +58,7 @@ class BackfillJobMetadataTests(unittest.TestCase):
             "Requires at least 9 years of professional experience.")
         meta_path = self._write_meta({
             "company": "Acme",
-            "jobs": [{"role": "No Association"}],
+            "jobs": [{"role": "No Association", "status": "drafted"}],
         })
         before = meta_path.read_bytes()
         result = backfill_job_metadata.process_application(self.app, write=False)
@@ -70,7 +70,8 @@ class BackfillJobMetadataTests(unittest.TestCase):
             "Requires at least 4 years of professional experience.")
         meta_path = self._write_meta({
             "company": "Acme",
-            "jobs": [{"role": "Software Engineer", "jd_file": "JD-engineer.md"}],
+            "jobs": [{"role": "Software Engineer", "jd_file": "JD-engineer.md",
+                      "status": "drafted"}],
         })
         before = meta_path.read_bytes()
         with patch.object(
