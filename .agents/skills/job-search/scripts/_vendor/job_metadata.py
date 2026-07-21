@@ -854,7 +854,11 @@ _SPONSOR_NEGATIVE = (
     "not offering visa sponsorship", "unable to sponsor", "not able to sponsor",
     "cannot sponsor", "can not sponsor", "will not sponsor", "does not sponsor",
     "do not sponsor", "not provide sponsorship", "unable to provide sponsorship",
-    "not able to provide visa sponsorship", "without sponsorship",
+    "unable to provide visa sponsorship", "not able to provide visa sponsorship",
+    # "<subject> sponsorship ... will NOT be available" denial constructions
+    # (real JD wordings — see GH issue #15 negation-phrase residual).
+    "sponsorship will not be available", "sponsorship support will not be available",
+    "without sponsorship",
     "without visa sponsorship", "without employer sponsorship",
     "sponsorship is not available", "sponsorship not available",
     "not eligible for sponsorship", "not eligible for visa sponsorship",
