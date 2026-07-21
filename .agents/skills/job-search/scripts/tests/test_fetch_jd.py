@@ -230,5 +230,183 @@ class CliTests(unittest.TestCase):
         self.assertIn("could not fetch", stderr.lower())
 
 
+# --------------------------------------------------------------------------- #
+# Digest builder — constructed saved-JD texts (the digest works on the saved
+# markdown, so it is exercised directly, no fetch). Fictional postings only.
+# --------------------------------------------------------------------------- #
+
+# Remote role with an explicit sponsorship DENIAL whose sentence still contains
+# the word "sponsorship" (the LESSONS false-positive case).
+JD_REMOTE_DENIAL = """# Senior Backend Engineer
+
+## About the role
+- Location: Remote (US)
+We are a fully remote team building payments infrastructure.
+
+## Requirements
+- 5+ years of backend experience.
+- You must be authorized to work in the United States; we are unable to sponsor \
+visas or provide visa sponsorship for this position.
+"""
+
+# Hybrid role in a preferred metro (Springfield is a config.example metro) with an
+# explicit green-card / H-1B OFFER.
+JD_HYBRID_METRO = """# Machine Learning Engineer II
+
+Our headquarters are in Springfield. This is a hybrid role: 3 days a week in the \
+Springfield office, 2 remote.
+
+Location: Springfield, ST (Hybrid)
+
+## What we offer
+We happily sponsor H-1B transfers and support the green card process for strong \
+candidates. Relocation assistance is available.
+"""
+
+# Foreign-city role: the city is in the TITLE, on-site, requires relocation, with a
+# denial phrased ONLY via a job_metadata phrase-list entry not in the keyword regex.
+JD_FOREIGN_TITLE = """# Staff Software Engineer, London
+
+Location: London, United Kingdom
+
+You will join our on-site team in London; this role requires relocation to the UK.
+
+## Eligibility
+This role is open to permanent resident only applicants — gc only.
+"""
+
+# No workplace and no visa signals at all — placeholders must fire.
+JD_NO_SIGNALS = """# Data Analyst
+
+## About
+We analyze product metrics and build dashboards for the growth team.
+
+## Requirements
+- 3 years of SQL and Python.
+"""
+
+
+class DigestBuilderTests(unittest.TestCase):
+    def _digest(self, text: str, *, path="/apps/6_drafted/x/source/JD-role.md") -> str:
+        data = text.encode("utf-8")
+        return fetch_jd.build_digest(text, jd_path=path, byte_count=len(data))
+
+    def test_remote_denial(self):
+        d = self._digest(JD_REMOTE_DENIAL)
+        # (a) title + level
+        self.assertIn("TITLE: Senior Backend Engineer", d)
+        self.assertIn("LEVEL", d)
+        self.assertIn("senior", d)  # classify_level on the title
+        # (b) parsed location + workplace signal line
+        self.assertIn("Remote (US)", d)
+        self.assertIn("fully remote team", d)  # the remote-signal line, located
+        # (c) the DENIAL sentence, verbatim (not paraphrased, not classified)
+        self.assertIn(
+            "we are unable to sponsor visas or provide visa sponsorship for this "
+            "position.", d)
+        # LOCATOR, not a verdict: the classifier's likely/unlikely words never appear.
+        self.assertNotIn("unlikely", d)
+        self.assertNotIn("likely", d)
+        # (d) escape-hatch tail
+        self.assertIn("/apps/6_drafted/x/source/JD-role.md", d)
+        self.assertIn(f"{len(JD_REMOTE_DENIAL.encode())} bytes", d)
+        self.assertIn("open the JD", d)
+
+    def test_hybrid_metro(self):
+        d = self._digest(JD_HYBRID_METRO)
+        self.assertIn("TITLE: Machine Learning Engineer II", d)
+        self.assertIn("mid", d)  # "Engineer II" -> mid
+        # parsed hybrid location + the hybrid signal line
+        self.assertIn("Springfield, ST (Hybrid)", d)
+        self.assertIn("hybrid role", d)
+        # the OFFER sentence, located verbatim
+        self.assertIn("We happily sponsor H-1B transfers and support the green card "
+                      "process for strong candidates.", d)
+        # sentence-scoped: the unrelated trailing offer clause is not merged into the
+        # visa bullet (Relocation is a workplace signal, not a sponsorship sentence).
+        visa_block = d.split("VISA/SPONSORSHIP SENTENCES")[1]
+        self.assertNotIn("Relocation assistance is available", visa_block)
+
+    def test_foreign_city_title(self):
+        d = self._digest(JD_FOREIGN_TITLE)
+        self.assertIn("TITLE: Staff Software Engineer, London", d)
+        self.assertIn("staff", d)  # classify_level on the title
+        self.assertIn("London, United Kingdom", d)  # parsed foreign location
+        self.assertIn("relocation to the UK", d)     # on-site/relocation signal line
+        # Denial phrased ONLY via reused phrase-list entries ("permanent resident
+        # only" / "gc only") — no keyword-regex stem — must still be located, proving
+        # the classify_sponsorship phrase lists are reused, not just the keyword net.
+        self.assertIn("gc only", d.lower())
+
+    def test_no_signals_shows_placeholders(self):
+        d = self._digest(JD_NO_SIGNALS)
+        self.assertIn("TITLE: Data Analyst", d)
+        self.assertIn("no workplace/location keyword", d)
+        self.assertIn("no visa/sponsorship sentence found", d)
+
+    def test_digest_is_compact_vs_full_jd(self):
+        # A long JD (repeated prose + many bullets) still yields a small, roughly
+        # constant-size digest: it extracts signal lines, not the whole body.
+        filler = ("You will build and operate large-scale services that serve many "
+                  "requests per second, working across the stack. ")
+        big = (
+            "# Senior Platform Engineer\n"
+            "Location: San Francisco, CA (Hybrid)\n\n"
+            + "## About\n" + filler * 40 + "\n\n"
+            + "## Responsibilities\n"
+            + "\n".join(f"- Duty {i}: {filler}" for i in range(40)) + "\n\n"
+            + "We are unable to provide visa sponsorship for this role.\n"
+        )
+        data = big.encode("utf-8")
+        d = fetch_jd.build_digest(big, jd_path="/x/JD.md", byte_count=len(data))
+        self.assertLess(len(d.encode("utf-8")), len(data) // 2)
+        self.assertLess(len(d.encode("utf-8")), 3000)  # ~1-2 KB target, bounded
+        # Both gate signals still present despite the surrounding bulk.
+        self.assertIn("San Francisco, CA (Hybrid)", d)
+        self.assertIn("unable to provide visa sponsorship", d)
+
+
+class DigestCliTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_no_flag_stdout_is_exactly_the_path_line(self):
+        # Regression: without --digest, stdout is byte-identical to before — exactly
+        # the "path (N bytes)\n" line, no digest anywhere, on stdout or stderr.
+        url = (self.tmp / "ats.html").as_uri()
+        (self.tmp / "ats.html").write_text(ATS_PAGE, encoding="utf-8")
+        out = self.tmp / "JD.md"
+        code, stdout, stderr = _run_cli([url, "--out", str(out)])
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stdout, f"{out} ({out.stat().st_size} bytes)\n")
+        self.assertNotIn("DIGEST", stdout + stderr)
+
+    def test_digest_flag_appends_digest_after_base_line(self):
+        url = (self.tmp / "ats.html").as_uri()
+        (self.tmp / "ats.html").write_text(ATS_PAGE, encoding="utf-8")
+        out = self.tmp / "JD.md"
+        code, stdout, _stderr = _run_cli([url, "--out", str(out), "--digest"])
+        self.assertEqual(code, 0)
+        # The first stdout line is the unchanged base "path (N bytes)" line.
+        self.assertEqual(stdout.splitlines()[0], f"{out} ({out.stat().st_size} bytes)")
+        self.assertIn("JD DIGEST", stdout)
+        # ATS_PAGE carries a sponsorship offer sentence — it must be located.
+        self.assertIn("We sponsor H-1B transfers", stdout)
+
+    def test_digest_from_kept_existing_file_without_refetch(self):
+        # The common flow: handoff.py already saved the JD; --digest on the existing
+        # file emits the digest without re-fetching (a URL that would ERROR proves it).
+        out = self.tmp / "JD.md"
+        out.write_text(JD_REMOTE_DENIAL, encoding="utf-8")
+        bad_url = (self.tmp / "does-not-exist.html").as_uri()
+        code, stdout, _stderr = _run_cli([bad_url, "--out", str(out), "--digest"])
+        self.assertEqual(code, 0)
+        self.assertIn("[kept existing]", stdout.splitlines()[0])
+        self.assertIn("JD DIGEST", stdout)
+        self.assertIn("Remote (US)", stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

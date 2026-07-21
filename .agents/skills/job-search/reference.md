@@ -100,6 +100,30 @@ when no fetch route works at all. Example header:
 > NOT the verbatim posting page. Confirm details against the live posting.
 ```
 
+## JD digest (`--digest`): verify gates without reading the whole JD
+
+`fetch_jd.py --digest` saves the verbatim JD to disk exactly as before **and** prints a compact
+(~1–2 KB, roughly constant regardless of JD length) **deterministic locator** so the routine gate
+check in Step 4 does not require reading the full 10–26 KB file. It reuses this skill's vendored
+gate classifiers so it points at EXACTLY the signals the meta gates consume:
+
+- **Title + level** — the JD title and `job_metadata.classify_level`'s seniority read of it.
+- **Workplace / location** — the parsed `location.extract_jd_locations` value(s) plus every
+  workplace/location signal line (remote / hybrid / on-site / relocation / office / a `Location:`
+  line), each with ±1 line of context and its line number in the saved file.
+- **Visa / sponsorship** — every sponsorship sentence, located via the SAME
+  `classify_sponsorship` positive/negative phrase lists (plus a visa-keyword superset), printed
+  **verbatim**.
+
+**It is a locator, never a verdict** — it prints the sentences/lines and lets you judge (it never
+emits `likely`/`unlikely`, `remote`/`hybrid`, or a match/no-match call). Verify workplace / visa /
+location / title from the digest; **open the saved verbatim JD when the digest is ambiguous or a
+gate signal is missing from it** (its tail line gives the full path + byte count + this escape
+hatch). The verbatim JD stays on disk and is still required for `handoff.py`, drafting, and the
+honesty gates — the digest only saves the re-read during verification. Works on an
+already-saved file too (idempotent keep still emits the digest), so `fetch_jd <URL> --out
+<existing JD> --digest` verifies a JD `handoff.py` already fetched without re-downloading it.
+
 ## Cross-company aggregators (span many employers per query)
 
 Implemented in `aggregators.py`. Company boards give the best signal for specific

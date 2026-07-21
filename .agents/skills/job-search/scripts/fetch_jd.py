@@ -3,7 +3,7 @@
 
 Usage:
   .venv/bin/python .agents/skills/job-search/scripts/fetch_jd.py \
-      <URL> --out <path> [--force] [--timeout SECS]
+      <URL> --out <path> [--force] [--timeout SECS] [--digest]
 
 Downloads the posting page over stdlib ``urllib`` (a descriptive User-Agent, a
 timeout, HTTP redirects followed automatically) and extracts the human-readable
@@ -19,8 +19,20 @@ failure or an empty extraction exits non-zero with a clear stderr message; a
 suspiciously tiny extraction still saves but warns that the page may be
 JavaScript-rendered and suggests saving it manually.
 
-Stdlib only — no third-party dependencies, so it runs on any ``python`` and needs
-nothing vendored from the toolkit.
+``--digest`` additionally prints (after the saved path line, and whether the file
+was freshly fetched or kept) a compact, deterministic LOCATOR over the saved JD:
+it points a verifying agent at exactly the lines the hard gates read — title /
+level, workplace / location, and visa / sponsorship — so a routine gate check
+does not require reading the whole 10-26 KB file. The verbatim JD stays on disk
+unchanged and is still required for handoff / drafting / honesty gates; the digest
+is a locator, never a verdict (see ``build_digest``). Without ``--digest`` stdout
+and every side effect are byte-identical to before.
+
+The fetch / save path is stdlib only — no third-party dependencies, so it runs on
+any ``python``. ``--digest`` alone reuses the skill's vendored gate classifiers
+(``job_metadata`` / ``location`` under ``_vendor/``) so it locates EXACTLY the
+signals the meta gates consume; that import happens lazily, only when ``--digest``
+is passed, keeping the default path dependency-free.
 """
 from __future__ import annotations
 
@@ -169,6 +181,256 @@ def extract_readable_text(html_text: str) -> str:
     return parser.get_text()
 
 
+# --------------------------------------------------------------------------- #
+# Digest (--digest): a compact, deterministic LOCATOR over the saved JD.
+#
+# The verbatim JD stays on disk unchanged; the digest points a verifying agent at
+# exactly the lines the hard gates read — title/level, workplace/location, and
+# visa/sponsorship — so a routine gate check does not require re-reading the whole
+# 10-26 KB file. It is a locator, never a verdict: it reuses the SAME vendored
+# classifiers the meta gates consume (``job_metadata.classify_level`` and its
+# ``_SPONSOR_*`` phrase lists; ``location.extract_jd_locations``) to FIND the
+# gate-relevant lines and prints them VERBATIM for the agent to judge — the script
+# locates, the agent decides. Anything ambiguous or missing -> open the full file.
+# --------------------------------------------------------------------------- #
+
+_DIGEST_HEADER = (
+    "--- JD DIGEST (deterministic locator over the saved JD; verify the hard "
+    "gates from these lines, open the full JD for anything ambiguous) ---"
+)
+_DIGEST_LINE_WIDTH = 160         # per printed JD line (workplace/location context)
+_DIGEST_SENTENCE_WIDTH = 400     # per printed visa/sponsorship sentence
+_DIGEST_MAX_WORKPLACE_LINES = 40  # cap; overflow points to the full JD
+_DIGEST_MAX_VISA_SENTENCES = 20   # cap; overflow points to the full JD
+
+# Workplace / location signal keywords (the LESSONS gate: never trust the scraper
+# ``remote`` flag — read the JD's own words). ``reloc\w*`` catches relocate/
+# relocation; ``on[- ]?site`` catches onsite / on-site / on site. "distributed" is
+# deliberately excluded (location.py rejects it as an unreliable remote signal — it
+# false-matches "distributed systems"); "office" already covers "in-office".
+_WORKPLACE_KW_RE = re.compile(
+    r"\b(remote|hybrid|on[- ]?site|in[- ]?office|in[- ]?person|work from home|"
+    r"wfh|work remotely|reloc\w*|office|anywhere)\b",
+    re.I,
+)
+# Visa / sponsorship keyword stems — a SUPERSET of the distinctive stems in
+# ``job_metadata``'s ``_SPONSOR_NEGATIVE`` / ``_SPONSOR_POSITIVE`` phrase lists, so
+# a sentence carrying any sponsorship signal is located even for wordings the exact
+# phrase lists do not enumerate. The phrase lists themselves are ALSO matched
+# (below) so list-only phrasings like "gc only" / "perm process" are never missed.
+_VISA_KW_RE = re.compile(
+    r"(sponsor\w*|visa|h-?1b|green[- ]card|work authoriz\w*|authoriz\w* to work|"
+    r"citizen\w*|immigration|permanent resident\w*|cap[- ]exempt|perm process)",
+    re.I,
+)
+# Split a line into sentences on terminal punctuation (kept with the sentence).
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _load_digest_helpers():
+    """Lazily import the vendored gate classifiers the digest reuses.
+
+    Kept out of the module top level so the fetch/save path stays stdlib-only and
+    byte-identical without ``--digest``. Puts this skill's ``scripts/`` + ``_vendor/``
+    on ``sys.path`` (exactly as ``handoff.py`` does) and returns the reused symbols.
+    """
+    scripts_dir = Path(__file__).resolve().parent
+    vendor = scripts_dir / "_vendor"
+    for candidate in (str(scripts_dir), str(vendor)):
+        if candidate not in sys.path:
+            sys.path.insert(0, candidate)
+    from job_metadata import (  # noqa: E402  (vendored gate classifiers)
+        classify_level,
+        _SPONSOR_NEGATIVE,
+        _SPONSOR_POSITIVE,
+        _source_text,
+    )
+    from location import (  # noqa: E402  (vendored location policy helpers)
+        extract_jd_locations,
+        _JD_LOC_RE,
+    )
+    return {
+        "classify_level": classify_level,
+        "sponsor_phrases": tuple(_SPONSOR_NEGATIVE) + tuple(_SPONSOR_POSITIVE),
+        "unescape": _source_text,
+        "extract_jd_locations": extract_jd_locations,
+        "jd_loc_re": _JD_LOC_RE,
+    }
+
+
+def _clip(text: str, width: int) -> str:
+    text = text.strip()
+    return text if len(text) <= width else text[: width - 1].rstrip() + "…"
+
+
+def _digest_title(lines: list[str]) -> str:
+    """First non-empty line, with a leading markdown heading marker stripped."""
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        heading = re.match(r"^#{1,6}\s+(.*)$", stripped)
+        return (heading.group(1).strip() if heading else stripped)
+    return ""
+
+
+def _workplace_signal_lines(lines, helpers) -> tuple[list[str], bool]:
+    """Every workplace/location signal line (±1 line of context), deduped.
+
+    Interesting lines = ``Location:`` label lines (via location's own ``_JD_LOC_RE``)
+    plus lines matching a workplace keyword; each is shown with ±1 line of context
+    and marked ``>``. Blank context lines are dropped; a gap between blocks prints a
+    ``…`` separator. Returns (rendered_lines, truncated).
+    """
+    jd_loc_re = helpers["jd_loc_re"]
+    unescape = helpers["unescape"]
+    match_idxs = {i for i, ln in enumerate(lines) if jd_loc_re.match(ln)}
+    for i, ln in enumerate(lines):
+        norm = re.sub(r"\s+", " ", unescape(ln)).lower()
+        if _WORKPLACE_KW_RE.search(norm):
+            match_idxs.add(i)
+    context: set[int] = set()
+    for i in match_idxs:
+        for j in (i - 1, i, i + 1):
+            if 0 <= j < len(lines):
+                context.add(j)
+
+    rendered: list[str] = []
+    truncated = False
+    prev = None
+    for j in sorted(context):
+        raw = lines[j].strip()
+        if not raw and j not in match_idxs:
+            continue
+        if len(rendered) >= _DIGEST_MAX_WORKPLACE_LINES:
+            truncated = True
+            break
+        if prev is not None and j - prev > 1:
+            rendered.append("       …")
+        marker = ">" if j in match_idxs else " "
+        rendered.append(f"{marker} L{j + 1:>4} | {_clip(raw, _DIGEST_LINE_WIDTH)}")
+        prev = j
+    return rendered, truncated
+
+
+def _visa_sentences(lines, helpers) -> tuple[list[str], bool]:
+    """Every visa/sponsorship sentence, located (not classified), deduped.
+
+    A line is a candidate when it carries a visa keyword OR a phrase from the reused
+    ``classify_sponsorship`` phrase lists; within it, only the matching sentence(s)
+    are kept so a long paragraph does not drag its whole body in. Verbatim, no
+    verdict — the agent judges offer vs denial. Returns (sentences, truncated).
+    """
+    phrases = helpers["sponsor_phrases"]
+    unescape = helpers["unescape"]
+
+    def _is_signal(norm: str) -> bool:
+        return bool(_VISA_KW_RE.search(norm)) or any(p in norm for p in phrases)
+
+    found: list[str] = []
+    seen: set[str] = set()
+    truncated = False
+    for line in lines:
+        text = unescape(line)
+        if not _is_signal(re.sub(r"\s+", " ", text).strip().lower()):
+            continue
+        for sentence in _SENTENCE_SPLIT_RE.split(text):
+            clean = sentence.strip().lstrip("#-*•> ").strip()
+            norm = re.sub(r"\s+", " ", clean).strip().lower()
+            if not norm or not _is_signal(norm) or norm in seen:
+                continue
+            if len(found) >= _DIGEST_MAX_VISA_SENTENCES:
+                truncated = True
+                break
+            seen.add(norm)
+            found.append(_clip(clean, _DIGEST_SENTENCE_WIDTH))
+        if truncated:
+            break
+    return found, truncated
+
+
+def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> str:
+    """Build the deterministic ``--digest`` locator for one saved JD.
+
+    ``text`` is the verbatim saved JD; ``jd_path`` / ``byte_count`` describe the
+    file on disk (echoed in the tail escape-hatch line). ``helpers`` is the reused
+    vendored-classifier bundle from ``_load_digest_helpers`` (loaded on demand when
+    ``None``, so this is directly unit-testable). Output sections:
+
+      (a) title + ``job_metadata.classify_level`` level/seniority read;
+      (b) parsed ``Location:`` value(s) + every workplace/location signal line
+          (±1 context), the LESSON that the scraper ``remote`` flag is untrusted;
+      (c) every visa/sponsorship sentence located via the reused phrase lists +
+          keyword stems (printed, never classified);
+      (d) a tail line: full JD path + byte count + the LOCATOR/escape-hatch note.
+    """
+    helpers = helpers or _load_digest_helpers()
+    lines = text.splitlines()
+
+    # (a) title + level/seniority ----------------------------------------- #
+    title = _digest_title(lines) or "(none extracted)"
+    level, signal = helpers["classify_level"](title)
+    level_line = f"LEVEL (job_metadata.classify_level on title): {level}"
+    if level != "unknown" and signal:
+        level_line += f'  [signal: "{_clip(signal, 60)}"]'
+
+    # (b) workplace / location -------------------------------------------- #
+    parsed = helpers["extract_jd_locations"](text)
+    parsed_line = (
+        "PARSED LOCATION(S) (location.extract_jd_locations): " + " | ".join(parsed)
+        if parsed else
+        'PARSED LOCATION(S): (none on a "Location:" line — read the signal lines below)'
+    )
+    workplace_lines, wp_truncated = _workplace_signal_lines(lines, helpers)
+
+    # (c) visa / sponsorship ---------------------------------------------- #
+    visa_lines, visa_truncated = _visa_sentences(lines, helpers)
+
+    # ---- assemble -------------------------------------------------------- #
+    out: list[str] = [_DIGEST_HEADER, ""]
+    out.append(f"TITLE: {_clip(title, _DIGEST_LINE_WIDTH)}")
+    out.append(level_line)
+    out.append("")
+    out.append(parsed_line)
+    out.append(
+        "WORKPLACE/LOCATION SIGNAL LINES (±1 line context; L# = line in the saved "
+        "JD; '>' = signal line). Never trust a scraper 'remote' flag — judge from "
+        "these words:"
+    )
+    if workplace_lines:
+        out.extend(workplace_lines)
+        if wp_truncated:
+            out.append(
+                f"  … more than {_DIGEST_MAX_WORKPLACE_LINES} signal lines — open the "
+                "full JD for the rest.")
+    else:
+        out.append("  (no workplace/location keyword or 'Location:' line found)")
+    out.append("")
+    out.append(
+        "VISA/SPONSORSHIP SENTENCES (located via classify_sponsorship phrase lists "
+        "+ visa keywords — VERBATIM, NOT a verdict; you judge offer vs denial):"
+    )
+    if visa_lines:
+        out.extend(f"  • {s}" for s in visa_lines)
+        if visa_truncated:
+            out.append(
+                f"  … more than {_DIGEST_MAX_VISA_SENTENCES} sentences — open the "
+                "full JD for the rest.")
+    else:
+        out.append("  (no visa/sponsorship sentence found — sponsorship is 'unknown' "
+                   "from text; confirm with the employer)")
+    out.append("")
+    out.append(f"JD (verbatim, full): {jd_path} — {byte_count} bytes.")
+    out.append(
+        "NOTE: this digest only LOCATES gate-relevant lines; it is not a verdict and "
+        "may omit nuance. If any workplace / visa / location / title signal is "
+        "ambiguous or missing here, open the JD above and read it verbatim before "
+        "deciding. The verbatim JD is still required for handoff, drafting, and the "
+        "honesty gates."
+    )
+    return "\n".join(out)
+
+
 def fetch_page(url: str, timeout: float) -> str:
     """GET ``url`` (following redirects) and return the decoded body.
 
@@ -204,14 +466,25 @@ def main(argv: list[str] | None = None) -> int:
                          "(default: keep the existing file and report it).")
     ap.add_argument("--timeout", type=float, default=25.0,
                     help="Network timeout in seconds (default: %(default)s).")
+    ap.add_argument("--digest", action="store_true",
+                    help="Also print a compact, deterministic LOCATOR over the saved "
+                         "JD (title/level, workplace/location, visa/sponsorship "
+                         "signal lines) so gate verification does not require reading "
+                         "the whole file. The verbatim JD is saved unchanged either "
+                         "way; without --digest stdout is byte-identical to before.")
     args = ap.parse_args(argv)
 
     out_path = Path(args.out).expanduser()
 
-    # Idempotent: an existing file is authoritative — keep it, no fetch.
+    # Idempotent: an existing file is authoritative — keep it, no fetch. With
+    # --digest, still emit the digest from the file already on disk (the common
+    # flow: handoff.py saved the JD, now verify its gates without re-fetching).
     if out_path.exists() and not args.force:
         n = out_path.stat().st_size
         print(f"{out_path} ({n} bytes) [kept existing]")
+        if args.digest:
+            _emit_digest(out_path.read_text(encoding="utf-8", errors="replace"),
+                         out_path, n)
         return 0
 
     try:
@@ -239,7 +512,25 @@ def main(argv: list[str] | None = None) -> int:
               f"(< {_TINY_EXTRACTION_BYTES}); the page may be JavaScript-rendered. "
               f"Review {out_path}; if it is incomplete, save the posting text "
               f"manually.", file=sys.stderr)
+
+    if args.digest:
+        _emit_digest(text, out_path, n)
     return 0
+
+
+def _emit_digest(text: str, out_path: Path, byte_count: int) -> None:
+    """Print the digest to stdout; never let a digest error break the save contract.
+
+    The verbatim JD is already saved (or kept) and its status line already printed;
+    the digest is a best-effort add-on, so any failure building it degrades to a
+    one-line stderr note pointing at the full file rather than a non-zero exit.
+    """
+    try:
+        print()
+        print(build_digest(text, jd_path=str(out_path), byte_count=byte_count))
+    except Exception as exc:  # noqa: BLE001 — digest must never break the save
+        print(f"fetch_jd: could not build --digest ({exc}); read the full JD at "
+              f"{out_path}.", file=sys.stderr)
 
 
 if __name__ == "__main__":

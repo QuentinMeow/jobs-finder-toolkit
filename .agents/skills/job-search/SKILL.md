@@ -143,9 +143,14 @@ text** — two LESSONS bind here:
   sponsorship") whose text still contains sponsorship keywords. Treat any `yes` as a claim to
   verify against the actual JD wording before relying on it for a policy decision.
 
-Fetch a candidate's JD text **verbatim** (no summarization) — e.g. one not yet scaffolded:
+Fetch a candidate's JD text **verbatim** with `--digest` — the flag saves the full JD to disk
+exactly as before AND prints a compact deterministic **digest** that LOCATES the gate-relevant
+lines (title/level, workplace/location signal lines, visa/sponsorship sentences). Verify the
+workplace/visa/location/title gates **from the digest**; open the saved verbatim JD only when the
+digest is ambiguous or a gate signal is missing from it — the digest is a locator, never a verdict
+(contract: `reference.md` § JD digest). E.g. one not yet scaffolded:
 ```bash
-.venv/bin/python .agents/skills/job-search/scripts/fetch_jd.py <URL> --out tmp/web_artifacts/jd.md
+.venv/bin/python .agents/skills/job-search/scripts/fetch_jd.py <URL> --out tmp/web_artifacts/jd.md --digest
 ```
 If that page is JS-rendered (fetch_jd warns "JavaScript-rendered" / tiny output), recover the verbatim
 JD from the ATS API via `company_roles.py --jd` instead of accepting a partial scrape; if no fetch works
