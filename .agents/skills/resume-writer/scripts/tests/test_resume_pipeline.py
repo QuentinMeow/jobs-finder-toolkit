@@ -190,6 +190,25 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(check._mentioned_in_jd(
             "AWS Lambda", "Build event handlers with Lambda and Python."))
 
+    def test_slash_compound_weak_token_matches_component_wise(self):
+        weak = ["REST/gRPC APIs"]
+        self.assertTrue(check._in_list("REST/gRPC APIs", weak))
+        # A JD naming only one component (plus the shared word) satisfies it.
+        self.assertTrue(check._mentioned_in_jd(
+            "REST/gRPC APIs", "You will build REST APIs at scale."))
+        self.assertTrue(check._mentioned_in_jd(
+            "REST/gRPC APIs", "Design gRPC APIs for internal services."))
+        # The literal compound spelling still matches.
+        self.assertTrue(check._mentioned_in_jd(
+            "REST/gRPC APIs", "Experience with REST/gRPC APIs required."))
+        # The shared word must still be present — no API mention, no match.
+        self.assertFalse(check._mentioned_in_jd(
+            "REST/gRPC APIs", "We do only frontend styling work."))
+        # A lone slash-word with no shared word keeps its exact-spelling behavior:
+        # "CI/CD" must not be satisfied by "continuous delivery" alone.
+        self.assertFalse(check._mentioned_in_jd("CI/CD", "We value continuous delivery."))
+        self.assertTrue(check._mentioned_in_jd("CI/CD", "Own the CI/CD pipelines."))
+
     def test_role_filename_collisions_and_missing_jds_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             app = Path(tmp)

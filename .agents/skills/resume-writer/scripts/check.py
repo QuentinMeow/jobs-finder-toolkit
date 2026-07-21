@@ -35,6 +35,7 @@ render.py runs these checks automatically after rendering.
 """
 
 import argparse
+import itertools
 import re
 import sys
 from pathlib import Path
@@ -338,6 +339,28 @@ def _in_list(tok: str, skill_list: list[str] | str) -> bool:
     return bool(targets & allowed)
 
 
+def _component_variants(variant: str) -> set[str]:
+    """Expand a slash-compound skill token into 'component + shared word' phrases.
+
+    A token like ``rest/grpc apis`` names alternatives that share a trailing word,
+    so a JD that mentions only ``rest apis`` should still satisfy it. Split each
+    whitespace word on ``/`` and take the cross-product, keeping the shared
+    (non-slash) words in place -> ``{"rest apis", "grpc apis"}``. A token with no
+    slash, or a lone slash-word with no shared word (e.g. ``ci/cd``), yields
+    nothing, so its exact spelling is preserved by the caller's whole-token match.
+    """
+    words = variant.split()
+    if len(words) < 2 or not any("/" in w for w in words):
+        return set()
+    options = [w.split("/") if "/" in w else [w] for w in words]
+    out = set()
+    for combo in itertools.product(*options):
+        phrase = " ".join(part for part in combo if part)
+        if phrase and phrase != variant:
+            out.add(phrase)
+    return out
+
+
 def _mentioned_in_jd(tok: str, jd_text: str) -> bool:
     """Return true only for a boundary-aware, non-negated JD mention."""
     jd_text = _norm(jd_text)
@@ -352,6 +375,11 @@ def _mentioned_in_jd(tok: str, jd_text: str) -> bool:
         variants.update({"nodejs", "node js"})
     if "postgresql" in variants:
         variants.add("postgres")
+    # Slash-compound tokens ("REST/gRPC APIs") are satisfied by any component that
+    # shares the trailing word ("REST APIs" or "gRPC APIs"), not only the literal
+    # compound spelling. The whole-token variants above still match as before.
+    for variant in list(variants):
+        variants.update(_component_variants(variant))
 
     for variant in sorted(variants, key=len, reverse=True):
         pieces = [re.escape(piece) for piece in re.split(r"[\s.]+", variant) if piece]
