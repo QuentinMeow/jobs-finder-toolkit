@@ -28,7 +28,7 @@ PROFILE = """# Profile
 
 ### Approved (include in most resumes, if not all)
 
-- Programming Languages: Python, Java, Go
+- Programming Languages: Python, Java, Go, C++
 - Skills: Docker, Kubernetes, PostgreSQL, REST APIs
 
 ### Weak (user-facing: Weak or Selective — include ONLY when the JD mentions it)
@@ -92,9 +92,21 @@ class SkillsDiffTests(unittest.TestCase):
               "experience is required.")
         self.assertEqual(_queue(jd), [])
 
+    def test_standalone_degree_requirement_is_not_a_skill(self):
+        jd = "A PhD in computer science or equivalent practical experience is preferred."
+        self.assertEqual(_queue(jd), [])
+
     def test_single_letter_language_uses_safe_profile_alias(self):
         jd = "Experience programming in C or R is useful."
         self.assertEqual(_queue(jd), [])
+
+    def test_slash_compound_queues_only_uncategorized_components(self):
+        jd = "Experience with Docker/LXC/LXD and C/C++ is useful."
+        self.assertEqual(_queue(jd), ["LXC", "LXD"])
+
+    def test_slash_compound_drops_plain_english_components(self):
+        jd = "Partner with SRE/CRE/production teams."
+        self.assertEqual(_queue(jd), ["SRE", "CRE"])
 
     def test_cli_empty_queue_prints_message_and_exits_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
