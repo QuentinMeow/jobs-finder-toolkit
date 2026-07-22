@@ -1,4 +1,0 @@
-interface:
-  display_name: "Outlook Email Assistant"
-  short_description: "Review Outlook mail, sync pipelines, and draft replies"
-  default_prompt: "Use $outlook-email-assistant to review recruiter mail, reconcile clear application status changes, and create evidence-grounded reply drafts."

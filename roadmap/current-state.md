@@ -7,9 +7,13 @@
   `design/` (#57) and `skills/` + `automation/` (#58) in review; this PR
   adds `templates/`, `roadmap/`, `history/`, and the reconciler.
 - **Email program**: design merged (PR #54: `design/application-progress-calendar/`,
-  `design/raw-data-layer/03-provider-interfaces.md`, `04-email-download-categorization.md`);
-  implementation not started. The live Outlook assistant
-  (`skills/outlook-email-assistant/`) is draft-only and working.
+  `design/raw-data-layer/03-provider-interfaces.md`, `04-email-download-categorization.md`).
+  Stage 1 built on `email/stage-1-provider-contract`: send-less `MailProvider`
+  contract + audited transport + route allowlists (`automation/shared/mail/`),
+  Outlook relocated behind it unchanged, folder-walking `check_mail_safety.py`
+  in pre-commit, skill renamed `skills/email-assistant/` (no alias). Owner
+  follow-ups: the one read-only `--live` conformance run; rename the overlay's
+  `references_private/outlook-email-assistant/` folder. Stages 2-5 not started.
 - **Job store**: raw-data-layer stages 0–4 shipped (PRs #49–#53) — library,
   capture boundary, builder, pipeline integration, retention/gardener. The
   skip-logs remain the sole search/draft skip authorities (store projection

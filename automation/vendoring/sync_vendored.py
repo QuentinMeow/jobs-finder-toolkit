@@ -37,13 +37,13 @@ TARGETS: dict[str, list[str]] = {
         "skills/resume-writer/scripts/_vendor/config.py",
         "skills/application-tracker/scripts/_vendor/config.py",
         "skills/job-search/scripts/_vendor/config.py",
-        "skills/outlook-email-assistant/scripts/_vendor/config.py",
+        "skills/email-assistant/scripts/_vendor/config.py",
     ],
     "automation/shared/layout.py": [
         "skills/resume-writer/scripts/_vendor/layout.py",
         "skills/application-tracker/scripts/_vendor/layout.py",
         "skills/job-search/scripts/_vendor/layout.py",
-        "skills/outlook-email-assistant/scripts/_vendor/layout.py",
+        "skills/email-assistant/scripts/_vendor/layout.py",
     ],
     "automation/shared/location.py": [
         "skills/resume-writer/scripts/_vendor/location.py",
@@ -68,6 +68,12 @@ TARGETS: dict[str, list[str]] = {
 DIR_TARGETS: dict[str, list[str]] = {
     "automation/shared/store": [
         "skills/job-search/scripts/_vendor/store",
+    ],
+    # The send-less mail layer (contract + audited transport + isolated
+    # providers + safety checker). The email-assistant skill consumes it only
+    # through this vendored copy.
+    "automation/shared/mail": [
+        "skills/email-assistant/scripts/_vendor/mail",
     ],
 }
 

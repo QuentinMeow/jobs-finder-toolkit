@@ -48,8 +48,17 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 # Transition ONE posting in a multi-role app (role-match = role substring or 1-based index)
 .venv/bin/python skills/application-tracker/scripts/status.py --update-job <slug> "<role-match>" in_progress --stage "onsite"
 
-# Personal Outlook (draft-only; user sends manually; see skill for login/inbox/draft commands)
-.venv/bin/python skills/outlook-email-assistant/scripts/outlook_email.py doctor
+# Personal Outlook (draft-only; user sends manually; see the email-assistant skill
+# for login/inbox/draft commands)
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py doctor
+
+# Mail send-less safety check (folder-walks every provider; also run by pre-commit)
+.venv/bin/python automation/shared/mail/check_mail_safety.py --consumer skills/email-assistant/scripts
+
+# Provider conformance against the synthetic fixture mailbox (CI-safe)
+.venv/bin/python automation/shared/mail/contract/conformance.py
+# Owner opt-in READ-ONLY conformance against the real mailbox (never CI)
+.venv/bin/python automation/shared/mail/contract/conformance.py --provider outlook_graph --live
 
 # Extract content from a DOCX resume (utility)
 .venv/bin/python skills/resume-writer/scripts/extract.py path/to/resume.docx

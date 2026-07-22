@@ -122,7 +122,7 @@ Claude Code plugin marketplace via
 - `application-tracker` — pipeline status, structured `meta.yaml` facts, notes, skip-logs
 - `behavioral-interview-prep` — project-based STAR story banks and reusable answers
 - `company-research` — deep company + role research and an interview question bank
-- `outlook-email-assistant` — read personal Outlook mail and create job-context reply drafts; never sends
+- `email-assistant` — read personal Outlook mail and create job-context reply drafts; never sends
 - `gardener` — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
 
 ## Repo layout

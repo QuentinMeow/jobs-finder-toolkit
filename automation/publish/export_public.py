@@ -48,7 +48,7 @@ PUBLIC_SKILLS = [
     "application-tracker",
     "behavioral-interview-prep",
     "company-research",
-    "outlook-email-assistant",
+    "email-assistant",
     "gardener",
 ]
 

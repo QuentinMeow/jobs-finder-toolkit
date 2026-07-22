@@ -36,7 +36,7 @@ data in the public tree** — it ships only the fake "Jordan Rivers" example.
 **Skill visibility** is a `visibility: public|private` key in each `SKILL.md`. **PUBLIC skills**
 (SKILL.md + scripts published; PRODUCTS stay private): `ask-me-anything`, `job-search`,
 `resume-writer`, `application-tracker`, `behavioral-interview-prep`, `company-research`,
-`outlook-email-assistant`, `gardener`. **PRIVATE skill**: `coding-interview` — the entire skill
+`email-assistant`, `gardener`. **PRIVATE skill**: `coding-interview` — the entire skill
 lives only in the overlay.
 
 **PRODUCTS are always private** and mount under `private/` (real applications, discoveries,
@@ -94,7 +94,7 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
    it points you there. Route by need: `ask-me-anything` (new user / how it works / where to start),
    `job-search` (find/filter postings), `resume-writer` (tailoring), `application-tracker` (status),
    `behavioral-interview-prep`, `company-research` (company/role research + question bank),
-   `outlook-email-assistant` (read personal Outlook mail, create repository-grounded reply drafts).
+   `email-assistant` (read personal Outlook mail, create repository-grounded reply drafts).
    Private `coding-interview` is at `skills/coding-interview/` when the overlay is mounted.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context, and skim `memory/index.md`
    (generated) — open only the entries relevant to your task.
@@ -195,7 +195,7 @@ Router:
   `company-search-log.yaml`) — never draft a blacklisted company or re-surface a logged posting.
 - **Location policy**: only draft a role whose `location` matches `config.location_policy()`
   (preferred metros + US-remote); verify with `status.py --check-locations`.
-- **Email is draft-only**: the Outlook assistant may read mail and create/update messages only while
+- **Email is draft-only**: the email assistant may read mail and create/update messages only while
   Microsoft Graph confirms `isDraft: true`. Never request `Mail.Send`, expose a send
   command/tool/endpoint, or send email on the user's behalf. The user sends manually in Outlook.
 - **Honesty over optimization**: if the user's experience is a poor match, say so clearly.

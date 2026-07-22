@@ -38,8 +38,8 @@
       "description": "Deeply research a company and the specific role for interviews — product, hard technical challenges, competitive moat and defensibility, culture, comp, and a question bank."
     },
     {
-      "name": "outlook-email-assistant",
-      "source": "./skills/outlook-email-assistant",
+      "name": "email-assistant",
+      "source": "./skills/email-assistant",
       "description": "Read personal Outlook mail, connect recruiter messages to local job applications, and create repository-grounded reply drafts without ever sending email."
     },
     {
