@@ -217,6 +217,52 @@ companies:
   - {name: Activision Blizzard, ats: workday, token: xboxgaming, host: xboxgaming.wd1.myworkdayjobs.com, site: CentralTech, tags: [bigtech, gaming]}
   - {name: Smartsheet, ats: greenhouse, token: smartsheet, tags: [bigtech, saas]}
 
+  # ---- Screenshot-sourced target expansion (opt-in batch) ----
+  # Only reachable, non-empty boards with unambiguous employer identity.
+  - {name: HeyGen, ats: greenhouse, token: heygen, tags: [ai-native], poll_batch: image-leads-01}
+  - {name: Factory, ats: ashby, token: factory, aliases: [Factory AI], tags: [ai-lab, dev-tools], poll_batch: image-leads-01}
+  - {name: Letta, ats: ashby, token: letta, tags: [ai-lab, ai-infra], poll_batch: image-leads-01}
+  - {name: You.com, ats: greenhouse, token: youcom, tags: [ai-lab], poll_batch: image-leads-01}
+  - {name: Relevance AI, ats: ashby, token: relevanceai, aliases: [Relevance], tags: [ai-native], poll_batch: image-leads-01}
+  - {name: H Company, ats: ashby, token: hcompany, aliases: [Runner H], tags: [ai-lab], poll_batch: image-leads-01}
+  - {name: StackBlitz, ats: greenhouse, token: stackblitz, aliases: [Bolt.new], tags: [dev-tools, ai-native], poll_batch: image-leads-01}
+  - {name: Lovable, ats: ashby, token: lovable, tags: [dev-tools, ai-native], poll_batch: image-leads-01}
+  - {name: OpenHands, ats: ashby, token: openhands, aliases: [All Hands, All Hands AI], tags: [dev-tools, ai-native], poll_batch: image-leads-01}
+  - {name: Coframe, ats: ashby, token: coframe, tags: [ai-native], poll_batch: image-leads-01}
+  - {name: Zapier, ats: ashby, token: zapier, tags: [dev-tools, smb-fav], poll_batch: image-leads-01}
+  - {name: Make, ats: greenhouse, token: make, aliases: [Make.com, Integromat], tags: [dev-tools, smb-fav], poll_batch: image-leads-01}
+  - {name: Siena, ats: ashby, token: siena, aliases: [Siena AI], tags: [ai-native], poll_batch: image-leads-01}
+  - {name: Parloa, ats: greenhouse, token: parloa, tags: [ai-native], poll_batch: image-leads-01}
+  - {name: Intercom, ats: greenhouse, token: intercom, tags: [dev-tools], poll_batch: image-leads-01}
+  - {name: Juicebox, ats: ashby, token: juicebox, tags: [ai-native], poll_batch: image-leads-01}
+  - {name: DeepL, ats: ashby, token: deepl, tags: [ai-lab], poll_batch: image-leads-01}
+  - {name: PolyAI, ats: greenhouse, token: polyai, tags: [ai-native], poll_batch: image-leads-01}
+  - {name: Delphi, ats: ashby, token: delphi, tags: [ai-native, consumer], poll_batch: image-leads-01}
+  - {name: Point72, ats: greenhouse, token: point72, tags: [fintech], poll_batch: image-leads-01}
+  - {name: SHEIN, ats: greenhouse, token: shein, tags: [consumer], poll_batch: image-leads-01}
+  - {name: Q2, ats: workday, token: q2ebanking, host: q2ebanking.wd5.myworkdayjobs.com, site: Q2, tags: [fintech], poll_batch: image-leads-01}
+  - {name: Apollo.io, ats: greenhouse, token: apolloio, tags: [saas], poll_batch: image-leads-01}
+  - {name: Calendly, ats: greenhouse, token: calendly, tags: [saas], poll_batch: image-leads-01}
+  - {name: PandaDoc, ats: greenhouse, token: pandadoc, tags: [saas], poll_batch: image-leads-01}
+  - {name: Teachable, ats: greenhouse, token: teachablecareers, tags: [saas], poll_batch: image-leads-01}
+  - {name: Help Scout, ats: ashby, token: helpscout, tags: [saas], poll_batch: image-leads-01}
+  - {name: Jobber, ats: ashby, token: jobber, tags: [saas], poll_batch: image-leads-01}
+  - {name: ClickUp, ats: ashby, token: clickup, tags: [saas], poll_batch: image-leads-01}
+  - {name: Patreon, ats: ashby, token: patreon, tags: [consumer], poll_batch: image-leads-01}
+  - {name: Miro, ats: ashby, token: miro, tags: [saas], poll_batch: image-leads-01}
+  - {name: SurveyMonkey, ats: ashby, token: surveymonkey, tags: [saas], poll_batch: image-leads-01}
+  - {name: Brevo, ats: lever, token: brevo, aliases: [Sendinblue], tags: [saas], poll_batch: image-leads-01}
+  - {name: ActiveCampaign, ats: lever, token: activecampaign, tags: [saas], poll_batch: image-leads-01}
+  - {name: Pipedrive, ats: lever, token: pipedrive, tags: [saas], poll_batch: image-leads-01}
+  - {name: Copper CRM, ats: lever, token: copper-company, tags: [saas], poll_batch: image-leads-01}
+  - {name: ServiceTitan, ats: smartrecruiters, token: servicetitan, tags: [saas], poll_batch: image-leads-01}
+  - {name: Zendesk, ats: workday, token: zendesk, host: zendesk.wd1.myworkdayjobs.com, site: zendesk, tags: [saas], poll_batch: image-leads-01}
+  - {name: Hume AI, ats: greenhouse, token: humeai, tags: [ai-lab], poll_batch: image-leads-01}
+  - {name: Vitalize Care, ats: ashby, token: vitalize, tags: [ai-native, healthcare], poll_batch: image-leads-01}
+  - {name: Momentic, ats: ashby, token: momentic, tags: [ai-native, dev-tools], poll_batch: image-leads-01}
+  - {name: Method Security, ats: ashby, token: method.security, tags: [ai-native, enterprise-infra], poll_batch: image-leads-01}
+  - {name: Pulse AI, ats: ashby, token: pulse, tags: [ai-native, data-platform], poll_batch: image-leads-01}
+
   # ---- Verified AI company expansion (opt-in batches) ----
   # Dated evidence and unsupported-board results live only in the private catalog.
   # Opt-in poll_batch keeps ordinary profile runs bounded.
