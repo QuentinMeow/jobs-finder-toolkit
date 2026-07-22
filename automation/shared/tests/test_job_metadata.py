@@ -12,6 +12,7 @@ from job_metadata import (  # noqa: E402
     APPLICATION_SCHEMA_VERSION,
     STATUS_VALUES,
     analyze_job_metadata,
+    assess_required_yoe,
     classify_level,
     classify_sponsorship,
     classify_workplace,
@@ -114,6 +115,43 @@ class YoeExtractionTests(unittest.TestCase):
         self.assertIsNone(details["min"])
         self.assertEqual(details["source"], "not_stated")
         self.assertEqual(details["confidence"], "unknown")
+
+    def test_general_requirement_not_contaminated_by_adjacent_clause(self):
+        # A high, general requirement immediately followed by a lower, contextual
+        # leadership clause must stay high/general — the adjacent clause's wording
+        # must not bleed into this match's look-ahead and mark it contextual.
+        text = (
+            "Requires 15+ years of software engineering experience with at least "
+            "5+ years in senior leadership roles."
+        )
+        details = extract_required_yoe_details(text)
+        self.assertEqual(details["min"], 15)
+        self.assertEqual(details["confidence"], "high")
+        self.assertEqual(details["requirement_kind"], "required")
+
+    def test_high_general_requirement_hard_gates_over_cap(self):
+        # The same adjacency, now exercised through the shared tri-state gate: a
+        # decisive 15-year minimum above the cap is a hard no_match, not review.
+        text = (
+            "Requires 15+ years of software engineering experience with at least "
+            "5+ years in senior leadership roles."
+        )
+        self.assertEqual(assess_required_yoe(text, cap=8)["decision"], "no_match")
+        self.assertEqual(assess_required_yoe(text, cap=20)["decision"], "match")
+
+    def test_adjacent_tool_clauses_stay_contextual_review(self):
+        # Two genuine tool/domain clauses joined by a conjunction: each stays
+        # contextual/medium, so the decisive requirement is a non-hard-drop review
+        # rather than being wrongly promoted to a high, general gate.
+        text = (
+            "Requires 8+ years of experience with Kubernetes and 5+ years working "
+            "with Terraform."
+        )
+        result = assess_required_yoe(text, cap=8)
+        self.assertEqual(result["decision"], "review")
+        self.assertEqual(result["min"], 8)
+        self.assertEqual(result["confidence"], "medium")
+        self.assertEqual(result["requirement_kind"], "contextual")
 
 
 class SalaryExtractionTests(unittest.TestCase):
