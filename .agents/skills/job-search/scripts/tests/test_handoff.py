@@ -28,7 +28,40 @@ if str(_SCRIPTS_DIR) not in sys.path:
 import handoff  # noqa: E402
 from job_metadata import validate_meta  # noqa: E402
 
+import shutil  # noqa: E402
 import yaml  # noqa: E402
+
+# Test-safety (store stage 1): handoff fetches the JD via fetch_jd, which now
+# captures the page to the raw store. Isolate every capture in this module to a
+# throwaway data root (env beats the machine config's real store).
+_PRIOR_DATA_ROOT: str | None = None
+_TMP_DATA_ROOT: str | None = None
+
+
+def setUpModule():
+    global _PRIOR_DATA_ROOT, _TMP_DATA_ROOT
+    _PRIOR_DATA_ROOT = os.environ.get("JOBHUNT_DATA_ROOT")
+    _TMP_DATA_ROOT = tempfile.mkdtemp(prefix="handoff-capture-")
+    os.environ["JOBHUNT_DATA_ROOT"] = _TMP_DATA_ROOT
+    try:
+        import capture_hooks
+        capture_hooks._reset_for_tests()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def tearDownModule():
+    if _PRIOR_DATA_ROOT is None:
+        os.environ.pop("JOBHUNT_DATA_ROOT", None)
+    else:
+        os.environ["JOBHUNT_DATA_ROOT"] = _PRIOR_DATA_ROOT
+    try:
+        import capture_hooks
+        capture_hooks._reset_for_tests()
+    except Exception:  # noqa: BLE001
+        pass
+    if _TMP_DATA_ROOT:
+        shutil.rmtree(_TMP_DATA_ROOT, ignore_errors=True)
 
 # .agents/skills/job-search/scripts/tests/ -> repo root is five parents up.
 _REPO_ROOT = Path(__file__).resolve().parents[5]

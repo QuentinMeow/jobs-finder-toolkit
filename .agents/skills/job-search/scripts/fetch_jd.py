@@ -559,11 +559,41 @@ def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> s
     return "\n".join(out)
 
 
+def _capture_jd_page(url, *, status, body, headers=None, content_type=None,
+                     ok=True, error=None) -> None:
+    """Best-effort capture of a JD-page fetch (operation ``jd``); never raises.
+
+    The fetch_jd CLI does not know the ATS, so the source is ``web``. Import is
+    lazy so the default fetch path stays dependency-light, and any failure (or a
+    disabled store) is silently ignored — capture must never affect a JD fetch.
+
+    Only http(s) URLs are captured: a ``file://`` (or other local) scheme would
+    persist an absolute local path (with the username) into a manifest URL, so
+    those are skipped entirely.
+    """
+    if not str(url).lower().startswith(("http://", "https://")):
+        return
+    try:
+        scripts_dir = Path(__file__).resolve().parent
+        for cand in (str(scripts_dir), str(scripts_dir / "_vendor")):
+            if cand not in sys.path:
+                sys.path.insert(0, cand)
+        import capture_hooks  # noqa: E402  (lazy, best-effort)
+        capture_hooks.capture_jd(
+            url, capture_hooks.make_resp(status, body, content_type=content_type,
+                                         headers=headers, ok=ok, error=error),
+            source="web")
+    except Exception:  # noqa: BLE001 — capture must never break a JD fetch
+        pass
+
+
 def fetch_page(url: str, timeout: float) -> str:
     """GET ``url`` (following redirects) and return the decoded body.
 
     Raises ``FetchError`` with a human-readable message on any HTTP/network
-    failure so the CLI can report it and exit non-zero.
+    failure so the CLI can report it and exit non-zero. The raw bytes (including a
+    failed/empty response) are captured to the store as a ``jd`` fetch first —
+    capture-before-parse, best-effort, never affecting the fetch result.
     """
     req = urllib.request.Request(url, headers={
         "User-Agent": USER_AGENT,
@@ -574,10 +604,26 @@ def fetch_page(url: str, timeout: float) -> str:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
             charset = resp.headers.get_content_charset() or "utf-8"
+            hdrs = resp.headers
+            _capture_jd_page(
+                url, status=getattr(resp, "status", 200) or 200, body=raw,
+                headers=(dict(hdrs.items()) if hdrs else {}),
+                content_type=(hdrs.get_content_type() if hdrs else None), ok=True)
     except urllib.error.HTTPError as exc:
+        body = b""
+        try:
+            body = exc.read()
+        except Exception:  # noqa: BLE001
+            body = b""
+        _capture_jd_page(
+            url, status=exc.code, body=body,
+            headers=(dict(exc.headers.items()) if exc.headers else {}),
+            content_type=(exc.headers.get_content_type() if exc.headers else None),
+            ok=False, error=f"HTTP {exc.code} {exc.reason}")
         raise FetchError(f"HTTP {exc.code} {exc.reason} for {url}") from exc
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         reason = getattr(exc, "reason", exc)
+        _capture_jd_page(url, status=0, body=b"", ok=False, error=str(reason))
         raise FetchError(f"could not fetch {url}: {reason}") from exc
     return raw.decode(charset, "replace")
 

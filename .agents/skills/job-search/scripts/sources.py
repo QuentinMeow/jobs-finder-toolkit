@@ -14,8 +14,9 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-from common import (USER_AGENT, JobPosting, http_get, http_get_json,
-                    http_post_json, parse_dt, strip_html)
+import capture_hooks
+from common import (USER_AGENT, JobPosting, http_get, http_get_full, http_get_json,
+                    http_post_json, http_post_json_full, parse_dt, strip_html)
 
 # Default search terms used by big-tech fetchers (Workday / Amazon) so we query a
 # few relevant slices of a huge board instead of pulling every posting. Companies
@@ -62,7 +63,36 @@ def _remote_from(text: str, flag=None, workplace: str | None = None) -> str:
 
 def fetch_greenhouse(company: str, token: str) -> list[JobPosting]:
     url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"
-    data = http_get_json(url)
+    resp = http_get_full(url)
+    # Capture-before-parse: a complete Greenhouse board is a `board` in a group of
+    # one, attested complete only when we actually got a parseable 200. The raw
+    # blob lands here — before any parse below can fail.
+    # NOTE (Stage-2 normalization hook): Greenhouse `content=true` descriptions
+    # arrive HTML-ENTITY-ESCAPED (see strip_html's double html.unescape); the raw
+    # captures the escaped original verbatim, and Stage-2's *versioned* normalizer
+    # must unescape before any semantic content hash — else every poll looks changed.
+    item_count = capture_hooks.safe_item_count(resp.body, "jobs")
+    data, parse_ok = None, False
+    with capture_hooks.group("board", company, expected=1) as g:
+        capture_hooks.capture_board(company, url, resp, source="greenhouse",
+                                    item_count=item_count,
+                                    params={"content": "true"}, group=g)
+        # Attest complete ONLY after the body parses into the expected shape (a
+        # `jobs` list) — a network-truncated non-empty 200 must never attest a
+        # false complete.
+        if resp.ok and resp.body:
+            try:
+                data = json.loads(resp.body.decode("utf-8", "replace"))
+                parse_ok = True
+            except ValueError:
+                parse_ok = False
+        shape_ok = parse_ok and isinstance(data, dict) \
+            and isinstance(data.get("jobs"), list)
+        g.attest(complete=shape_ok)
+    if not resp.ok:
+        raise RuntimeError(f"GET failed for {url}: {resp.error}")
+    if not parse_ok:
+        raise RuntimeError(f"greenhouse: unparseable board for {url}")
     out = []
     for j in data.get("jobs", []):
         loc = (j.get("location") or {}).get("name", "") or ""
@@ -84,7 +114,25 @@ def fetch_greenhouse(company: str, token: str) -> list[JobPosting]:
 
 def fetch_ashby(company: str, token: str) -> list[JobPosting]:
     url = f"https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
-    data = http_get_json(url)
+    resp = http_get_full(url)
+    item_count = capture_hooks.safe_item_count(resp.body, "jobs")
+    data, parse_ok = None, False
+    with capture_hooks.group("board", company, expected=1) as g:
+        capture_hooks.capture_board(company, url, resp, source="ashby",
+                                    item_count=item_count, group=g)
+        if resp.ok and resp.body:
+            try:
+                data = json.loads(resp.body.decode("utf-8", "replace"))
+                parse_ok = True
+            except ValueError:
+                parse_ok = False
+        shape_ok = parse_ok and isinstance(data, dict) \
+            and isinstance(data.get("jobs"), list)
+        g.attest(complete=shape_ok)  # complete only after the expected shape parses
+    if not resp.ok:
+        raise RuntimeError(f"GET failed for {url}: {resp.error}")
+    if not parse_ok:
+        raise RuntimeError(f"ashby: unparseable board for {url}")
     out = []
     for j in data.get("jobs", []):
         if j.get("isListed") is False:
@@ -110,7 +158,24 @@ def fetch_ashby(company: str, token: str) -> list[JobPosting]:
 
 def fetch_lever(company: str, token: str) -> list[JobPosting]:
     url = f"https://api.lever.co/v0/postings/{token}?mode=json"
-    data = http_get_json(url)
+    resp = http_get_full(url)
+    item_count = capture_hooks.safe_item_count(resp.body)  # a top-level JSON array
+    data, parse_ok = None, False
+    with capture_hooks.group("board", company, expected=1) as g:
+        capture_hooks.capture_board(company, url, resp, source="lever",
+                                    item_count=item_count, params={"mode": "json"},
+                                    group=g)
+        if resp.ok and resp.body:
+            try:
+                data = json.loads(resp.body.decode("utf-8", "replace"))
+                parse_ok = True
+            except ValueError:
+                parse_ok = False
+        g.attest(complete=parse_ok and isinstance(data, list))  # complete only if list
+    if not resp.ok:
+        raise RuntimeError(f"GET failed for {url}: {resp.error}")
+    if not parse_ok:
+        raise RuntimeError(f"lever: unparseable board for {url}")
     if not isinstance(data, list):
         return []
     out = []
@@ -131,10 +196,49 @@ def fetch_lever(company: str, token: str) -> list[JobPosting]:
     return out
 
 
+def _sr_counts(body: bytes | None) -> tuple[int | None, int | None]:
+    """Best-effort ``(returned_count, totalFound)`` from a SmartRecruiters listing.
+
+    Never raises (over-capture only): returns ``(None, None)`` on any parse problem
+    so it can run before capture without ever blocking capture-of-raw.
+    """
+    if not body:
+        return None, None
+    try:
+        d = json.loads(body.decode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001
+        return None, None
+    if not isinstance(d, dict):
+        return None, None
+    content = d.get("content")
+    returned = len(content) if isinstance(content, list) else None
+    total = d.get("totalFound")
+    return returned, (total if isinstance(total, int) else None)
+
+
 def fetch_smartrecruiters(company: str, token: str) -> list[JobPosting]:
     """List postings, then fetch detail (description) for each."""
     base = f"https://api.smartrecruiters.com/v1/companies/{token}/postings"
-    data = http_get_json(f"{base}?limit=100")
+    list_url = f"{base}?limit=100"
+    resp = http_get_full(list_url)
+    returned, total_found = _sr_counts(resp.body)
+    # VERIFIED-AT-IMPLEMENTATION (2026-07-21): SmartRecruiters hard-truncates the
+    # listing at the `limit` cap — probes returned exactly 100 while `totalFound`
+    # was 243 / 280. So this is a `search` (absence means nothing), never attested
+    # complete; `totalFound > returned` (and, as a fallback, returned == cap) is the
+    # truncation signal, recorded verbatim in the request params.
+    truncated = bool(
+        (total_found is not None and returned is not None and total_found > returned)
+        or (returned is not None and returned >= 100))
+    with capture_hooks.group("search", company, expected=None) as g:
+        capture_hooks.capture_search(
+            company, list_url, resp, source="smartrecruiters", item_count=returned,
+            params={"limit": 100, "returned": returned, "total_found": total_found,
+                    "truncated": truncated}, group=g)
+        g.attest(complete=False)
+    if not resp.ok:
+        raise RuntimeError(f"GET failed for {list_url}: {resp.error}")
+    data = json.loads(resp.body.decode("utf-8", "replace"))
     out = []
     for j in data.get("content", []):
         loc = j.get("location") or {}
@@ -187,28 +291,56 @@ def fetch_workday(company: str, token: str, host: str, site: str,
     """
     base = f"https://{host}/wday/cxs/{token}/{site}"
     terms = search_terms if search_terms is not None else DEFAULT_BIGTECH_TERMS
-    seen_paths: dict[str, None] = {}
-    for term in terms:
-        offset = 0
-        while offset < 40:  # up to 2 pages (20/page) per term
+    search_url = f"{base}/jobs"
+
+    def _post_page(payload, group, term, offset, retries=2):
+        # Capture EACH attempt (failed bodies are failure history by design) and
+        # retry a 2xx body that will not parse — restoring the old http_post_json
+        # ValueError-retry semantics. Returns parsed data, or None to break the
+        # page loop (transport failure or exhausted retries → old raise-then-break).
+        for _ in range(retries + 1):
+            resp = http_post_json_full(search_url, payload)
+            capture_hooks.capture_search(
+                company, search_url, resp, source="workday",
+                item_count=capture_hooks.safe_item_count(resp.body, "jobPostings"),
+                query={"searchText": term},
+                pagination={"offset": offset, "limit": 20},
+                params={"searchText": term, "offset": offset, "limit": 20},
+                group=group)
+            if not resp.ok:
+                return None
             try:
-                data = http_post_json(f"{base}/jobs", {
-                    "appliedFacets": {}, "limit": 20, "offset": offset,
-                    "searchText": term,
-                })
-            except Exception:
+                return json.loads(resp.body.decode("utf-8", "replace"))
+            except ValueError:
+                continue
+        return None
+
+    seen_paths: dict[str, None] = {}
+    # One `search` group per company covering ALL its POST search-page requests
+    # (a keyword-sampled, capped board — never attested complete). expected is left
+    # open (we do not pre-commit to a request count); achieved = the real member
+    # count the group manifest records.
+    with capture_hooks.group("search", company, expected=None) as g:
+        for term in terms:
+            offset = 0
+            while offset < 40:  # up to 2 pages (20/page) per term
+                payload = {"appliedFacets": {}, "limit": 20, "offset": offset,
+                           "searchText": term}
+                data = _post_page(payload, g, term, offset)
+                if data is None:
+                    break
+                batch = data.get("jobPostings") or []
+                for jp in batch:
+                    path = jp.get("externalPath")
+                    title = (jp.get("title") or "").strip()
+                    if path and title and _title_prefilter(title):
+                        seen_paths.setdefault(path, None)
+                if len(batch) < 20 or len(seen_paths) >= max_candidates:
+                    break
+                offset += 20
+            if len(seen_paths) >= max_candidates:
                 break
-            batch = data.get("jobPostings") or []
-            for jp in batch:
-                path = jp.get("externalPath")
-                title = (jp.get("title") or "").strip()
-                if path and title and _title_prefilter(title):
-                    seen_paths.setdefault(path, None)
-            if len(batch) < 20 or len(seen_paths) >= max_candidates:
-                break
-            offset += 20
-        if len(seen_paths) >= max_candidates:
-            break
+        g.attest(complete=False)
 
     def _detail(path: str) -> JobPosting | None:
         try:
@@ -263,13 +395,29 @@ def fetch_amazon(company: str, search_terms: list[str] | None = None,
     """Fetch US postings from the amazon.jobs public search API (per term)."""
     terms = search_terms if search_terms is not None else DEFAULT_BIGTECH_TERMS
     seen: dict[str, JobPosting] = {}
+    # A keyword-sampled, result-capped search — never attested complete.
+    with capture_hooks.group("search", company, expected=None) as g:
+        _fetch_amazon_terms(company, terms, seen, max_candidates, g)
+        g.attest(complete=False)
+    return list(seen.values())
+
+
+def _fetch_amazon_terms(company, terms, seen, max_candidates, group) -> None:
     for term in terms:
+        search_url = ("https://www.amazon.jobs/en/search.json?"
+                      + f"base_query={term.replace(' ', '+')}&country=USA"
+                      + "&result_limit=40&sort=recent")
+        resp = http_get_full(search_url)
+        capture_hooks.capture_search(
+            company, search_url, resp, source="amazon",
+            item_count=capture_hooks.safe_item_count(resp.body, "jobs"),
+            query={"base_query": term, "country": "USA"},
+            params={"result_limit": 40, "sort": "recent"}, group=group)
+        if not resp.ok:
+            continue
         try:
-            data = http_get_json(
-                "https://www.amazon.jobs/en/search.json?"
-                + f"base_query={term.replace(' ', '+')}&country=USA"
-                + "&result_limit=40&sort=recent")
-        except Exception:
+            data = json.loads(resp.body.decode("utf-8", "replace"))
+        except ValueError:
             continue
         for j in data.get("jobs", []):
             if j.get("is_intern") or j.get("is_manager"):
@@ -298,7 +446,15 @@ def fetch_amazon(company: str, search_terms: list[str] | None = None,
                 break
         if len(seen) >= max_candidates:
             break
-    return list(seen.values())
+
+
+def _opener_resp(resp, body: bytes):
+    """Build a capture-shim HTTP result from a raw urllib opener response + bytes."""
+    hdrs = getattr(resp, "headers", None)
+    headers = dict(hdrs.items()) if hdrs else {}
+    ctype = hdrs.get_content_type() if hdrs else None
+    return capture_hooks.make_resp(getattr(resp, "status", 200) or 200, body,
+                                   content_type=ctype, headers=headers)
 
 
 def fetch_apple(company: str = "Apple", search_terms: list[str] | None = None,
@@ -308,15 +464,32 @@ def fetch_apple(company: str = "Apple", search_terms: list[str] | None = None,
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
     opener.addheaders = [("User-Agent", USER_AGENT), ("Accept", "application/json, */*")]
-    try:
-        opener.open("https://jobs.apple.com/en-us/search", timeout=25).read()
-        resp = opener.open("https://jobs.apple.com/api/v1/CSRFToken", timeout=25)
-        token = resp.headers.get("x-apple-csrf-token", "")
-    except Exception:
-        return []
-    if not token:
-        return []
     seen: dict[str, JobPosting] = {}
+    # One `search` group per run covering the cookie/CSRF handshake AND every search
+    # POST — a keyword-sampled, capped board, never attested complete.
+    with capture_hooks.group("search", company, expected=None) as g:
+        g.attest(complete=False)
+        try:
+            hs = opener.open("https://jobs.apple.com/en-us/search", timeout=25)
+            hs_body = hs.read()
+            capture_hooks.capture_search(company, "https://jobs.apple.com/en-us/search",
+                                         _opener_resp(hs, hs_body), source="apple",
+                                         params={"phase": "handshake"}, group=g)
+            resp = opener.open("https://jobs.apple.com/api/v1/CSRFToken", timeout=25)
+            csrf_body = resp.read()
+            token = resp.headers.get("x-apple-csrf-token", "")
+            capture_hooks.capture_search(company, "https://jobs.apple.com/api/v1/CSRFToken",
+                                         _opener_resp(resp, csrf_body), source="apple",
+                                         params={"phase": "csrf"}, group=g)
+        except Exception:
+            return []
+        if not token:
+            return []
+        _fetch_apple_terms(company, terms, seen, max_candidates, opener, token, g)
+    return list(seen.values())
+
+
+def _fetch_apple_terms(company, terms, seen, max_candidates, opener, token, group):
     for term in terms:
         for page in (1, 2):
             payload = json.dumps({
@@ -333,7 +506,14 @@ def fetch_apple(company: str = "Apple", search_terms: list[str] | None = None,
             try:
                 r = opener.open(req, timeout=25)
                 token = r.headers.get("x-apple-csrf-token", token)
-                data = json.loads(r.read().decode("utf-8", "replace"))
+                body = r.read()
+                capture_hooks.capture_search(
+                    company, "https://jobs.apple.com/api/v1/search",
+                    _opener_resp(r, body), source="apple",
+                    item_count=capture_hooks.safe_item_count(body),
+                    query={"query": term}, pagination={"page": page},
+                    params={"query": term, "page": page}, group=group)
+                data = json.loads(body.decode("utf-8", "replace"))
             except Exception:
                 break
             results = ((data.get("res") or {}).get("searchResults")) or []
@@ -366,7 +546,6 @@ def fetch_apple(company: str = "Apple", search_terms: list[str] | None = None,
                 break
         if len(seen) >= max_candidates:
             break
-    return list(seen.values())
 
 
 _META_LSD_RE = re.compile(r'"LSD",\[\],\{"token":"([^"]+)"')
@@ -382,17 +561,30 @@ def fetch_meta(company: str = "Meta", search_terms: list[str] | None = None,
     location gate still applies and tailoring fetches the full JD from the job URL.
     """
     terms = search_terms if search_terms is not None else DEFAULT_BIGTECH_TERMS
-    try:
-        page_html = http_get("https://www.metacareers.com/jobs")
-    except Exception:
-        return []
-    lm = _META_LSD_RE.search(page_html)
-    if not lm:
-        return []
-    lsd = lm.group(1)
-    hm = _META_HSI_RE.search(page_html)
-    hsi = hm.group(1) if hm else "0"
     seen: dict[str, JobPosting] = {}
+    # One `search` group covering the HTML bootstrap GET (for LSD/hsi) and every
+    # GraphQL POST — keyword-sampled, never attested complete.
+    with capture_hooks.group("search", company, expected=None) as g:
+        g.attest(complete=False)
+        page_resp = http_get_full("https://www.metacareers.com/jobs")
+        capture_hooks.capture_search(company, "https://www.metacareers.com/jobs",
+                                     page_resp, source="meta",
+                                     params={"phase": "bootstrap"}, group=g)
+        if not page_resp.ok:
+            return []
+        page_html = page_resp.body.decode("utf-8", "replace")
+        lm = _META_LSD_RE.search(page_html)
+        if not lm:
+            return []
+        lsd = lm.group(1)
+        hm = _META_HSI_RE.search(page_html)
+        hsi = hm.group(1) if hm else "0"
+        _fetch_meta_terms(company, terms, seen, max_candidates, doc_id, lsd, hsi, g)
+    return list(seen.values())
+
+
+def _fetch_meta_terms(company, terms, seen, max_candidates, doc_id, lsd, hsi, group):
+    url = "https://www.metacareers.com/api/graphql/"
     for term in terms:
         form = {
             "fb_api_caller_class": "RelayModern",
@@ -402,15 +594,19 @@ def fetch_meta(company: str = "Meta", search_terms: list[str] | None = None,
             "doc_id": doc_id, "lsd": lsd, "__a": "1", "__user": "0", "__hsi": hsi,
         }
         req = urllib.request.Request(
-            "https://www.metacareers.com/api/graphql/",
-            data=urllib.parse.urlencode(form).encode("utf-8"), method="POST",
+            url, data=urllib.parse.urlencode(form).encode("utf-8"), method="POST",
             headers={"Content-Type": "application/x-www-form-urlencoded",
                      "X-FB-LSD": lsd, "User-Agent": USER_AGENT,
                      "Origin": "https://www.metacareers.com",
                      "Referer": "https://www.metacareers.com/jobs"})
         try:
             with urllib.request.urlopen(req, timeout=25) as r:
-                data = json.loads(r.read().decode("utf-8", "replace"))
+                body = r.read()
+                capture_hooks.capture_search(company, url, _opener_resp(r, body),
+                                             source="meta", query={"q": term},
+                                             params={"q": term, "doc_id": doc_id},
+                                             group=group)
+                data = json.loads(body.decode("utf-8", "replace"))
         except Exception:
             continue
         node = (data.get("data") or {}).get("job_search_with_featured_jobs") or {}
@@ -430,7 +626,6 @@ def fetch_meta(company: str = "Meta", search_terms: list[str] | None = None,
                 break
         if len(seen) >= max_candidates:
             break
-    return list(seen.values())
 
 
 FETCHERS = {

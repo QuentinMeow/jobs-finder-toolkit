@@ -20,11 +20,50 @@ Stdlib + PyYAML only (JobSpy is imported lazily and is optional).
 """
 from __future__ import annotations
 
+import json
 import os
 import math
 import urllib.parse
 
-from common import JobPosting, http_get_json, parse_dt, strip_html
+import capture_hooks
+from common import (JobPosting, http_get_full, http_get_json, parse_dt,
+                    strip_html)
+
+
+def _redact_url(url: str, drop_params: tuple[str, ...]) -> str:
+    """Return ``url`` with the named query parameters removed (e.g. API keys).
+
+    Aggregators that carry credentials IN the URL (Adzuna's app_id/app_key) must
+    never store those in a manifest, so the captured URL is the redacted one while
+    the real request still uses the full URL.
+    """
+    parts = urllib.parse.urlsplit(url)
+    kept = [(k, v) for k, v in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+            if k not in drop_params]
+    return urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, parts.path,
+         urllib.parse.urlencode(kept), parts.fragment))
+
+
+def _get_scrape(source, url, *, headers=None, key=None, query=None, params=None,
+                capture_url=None):
+    """GET a cross-company aggregator page, capture its raw bytes as ``scrape``,
+    then parse — preserving the old raise-on-HTTP-failure contract.
+
+    Aggregators span many employers, so there is no company context (profile only).
+    ``scrape`` is opinion-grade evidence per the design (the source already
+    normalized the rows) — useful memory, excluded from any "rebuild fixes
+    classification" claim. ``capture_url`` overrides the stored URL when the real
+    URL carries a credential that must not be persisted.
+    """
+    resp = http_get_full(url, headers=headers)
+    capture_hooks.capture_scrape(
+        source, capture_url or url, resp,
+        item_count=capture_hooks.safe_item_count(resp.body, key),
+        query=query, params=params)
+    if not resp.ok:
+        raise RuntimeError(f"GET failed for {url}: {resp.error}")
+    return json.loads(resp.body.decode("utf-8", "replace"))
 
 # --------------------------------------------------------------------------- #
 # helpers
@@ -113,7 +152,9 @@ def fetch_arbeitnow(query_terms, location, max_age_days, pages: int = 3):
     for page in range(1, pages + 1):
         url = "https://www.arbeitnow.com/api/job-board-api?" + urllib.parse.urlencode(
             {"page": page})
-        data = http_get_json(url, headers={"Accept": "application/json"})
+        data = _get_scrape("arbeitnow", url, headers={"Accept": "application/json"},
+                           key="data", query={"terms": query_terms},
+                           params={"page": page})
         for j in data.get("data", []):
             out.append(JobPosting(
                 source="arbeitnow",
@@ -133,7 +174,8 @@ def fetch_arbeitnow(query_terms, location, max_age_days, pages: int = 3):
 def fetch_jobicy(query_terms, location, max_age_days):
     url = "https://jobicy.com/api/v2/remote-jobs?" + urllib.parse.urlencode(
         {"count": 100, "geo": "usa"})
-    data = http_get_json(url)
+    data = _get_scrape("jobicy", url, key="jobs",
+                       params={"count": 100, "geo": "usa"})
     out = []
     for j in data.get("jobs", []):
         out.append(JobPosting(
@@ -150,9 +192,9 @@ def fetch_jobicy(query_terms, location, max_age_days):
 
 
 def fetch_remoteok(query_terms, location, max_age_days):
-    data = http_get_json("https://remoteok.com/api",
-                         headers={"User-Agent": "jobs-finder/1.0 (+personal)",
-                                  "Accept": "application/json"})
+    data = _get_scrape("remoteok", "https://remoteok.com/api",
+                       headers={"User-Agent": "jobs-finder/1.0 (+personal)",
+                                "Accept": "application/json"})
     out = []
     for j in data if isinstance(data, list) else []:
         if not j.get("position"):        # first element is a legal notice
@@ -176,7 +218,8 @@ def fetch_themuse(query_terms, location, max_age_days, pages: int = 4):
     for page in range(0, pages):
         params = [("page", page), ("descending", "true")] + [("category", c) for c in cats]
         url = "https://www.themuse.com/api/public/jobs?" + urllib.parse.urlencode(params)
-        data = http_get_json(url)
+        data = _get_scrape("themuse", url, key="results",
+                           params={"page": page, "categories": cats})
         results = data.get("results", [])
         for j in results:
             locs = j.get("locations") or []
@@ -217,7 +260,11 @@ def fetch_adzuna(query_terms, location, max_age_days):
             params["where"] = location
         url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/1?" + \
             urllib.parse.urlencode(params)
-        data = http_get_json(url)
+        data = _get_scrape("adzuna", url, key="results", query={"term": term},
+                           params={"sort_by": "date",
+                                   "max_days_old": params.get("max_days_old"),
+                                   "where": location},
+                           capture_url=_redact_url(url, ("app_id", "app_key")))
         for j in data.get("results", []):
             out.append(JobPosting(
                 source="adzuna",
@@ -249,7 +296,10 @@ def fetch_jsearch(query_terms, location, max_age_days):
         query = f"{term} in {location}" if location else term
         url = "https://jsearch.p.rapidapi.com/search?" + urllib.parse.urlencode(
             {"query": query, "page": 1, "num_pages": 1, "date_posted": bucket})
-        data = http_get_json(url, headers=headers)
+        # The RapidAPI key rides in request HEADERS (not captured), so the URL is
+        # safe to store verbatim.
+        data = _get_scrape("jsearch", url, headers=headers, key="data",
+                           query={"query": query}, params={"date_posted": bucket})
         for j in data.get("data", []):
             city = j.get("job_city") or ""
             state = j.get("job_state") or ""
@@ -275,6 +325,43 @@ def fetch_jsearch(query_terms, location, max_age_days):
 # --------------------------------------------------------------------------- #
 # optional scraper: JobSpy (LinkedIn / Indeed / Glassdoor / Google / ZipRecruiter)
 # --------------------------------------------------------------------------- #
+def _json_safe(v):
+    """Coerce a JobSpy/pandas cell to a JSON-serializable, deterministic value."""
+    if v is None or isinstance(v, (str, bool, int)):
+        return v
+    if isinstance(v, float):
+        return None if (v != v or v in (float("inf"), float("-inf"))) else v
+    if isinstance(v, (list, tuple)):
+        return [_json_safe(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): _json_safe(x) for k, x in v.items()}
+    try:
+        import pandas as pd
+        if pd.isna(v):
+            return None
+    except Exception:  # noqa: BLE001
+        pass
+    if hasattr(v, "item"):                       # numpy scalar
+        try:
+            return _json_safe(v.item())
+        except Exception:  # noqa: BLE001
+            pass
+    return str(v)
+
+
+def _serialize_jobspy_rows(df) -> bytes:
+    """Deterministically serialize a JobSpy result frame to canonical JSON bytes.
+
+    JobSpy returns rows it already normalized (no raw HTTP to capture), so the
+    ``scrape`` payload is those rows serialized with SORTED keys and a stable order
+    — byte-stable for the same rows regardless of column insertion order.
+    """
+    records = [{str(k): _json_safe(v) for k, v in row.items()}
+               for _idx, row in df.iterrows()]
+    return json.dumps(records, sort_keys=True, ensure_ascii=False,
+                      separators=(",", ":")).encode("utf-8")
+
+
 def fetch_jobspy(query_terms, max_age_days, jobspy_cfg: dict,
                  sites=None, loc_cfg=None):
     """Scrape one JobSpy `location` on the given `sites`.
@@ -319,6 +406,19 @@ def fetch_jobspy(query_terms, max_age_days, jobspy_cfg: dict,
         if distance:                       # radius search (indeed/linkedin/glassdoor/zip)
             kwargs["distance"] = int(distance)
         df = scrape_jobs(**kwargs)
+        # Capture the scrape as deterministic JSON bytes (there is no raw HTTP to
+        # capture). tool_version already notes the store lib; the scraper is named
+        # in the request params (python-jobspy — opinion-grade evidence).
+        try:
+            capture_hooks.capture_scrape_bytes(
+                "jobspy", f"jobspy://{','.join(sites)}/{loc}?q={term}",
+                _serialize_jobspy_rows(df), content_type="application/json",
+                item_count=int(len(df)) if df is not None else 0,
+                query={"term": term, "location": loc, "is_remote": is_remote},
+                params={"scraper": "python-jobspy", "sites": list(sites),
+                        "results_wanted": results_wanted, "distance": distance})
+        except Exception:  # noqa: BLE001 — capture must never break the scrape
+            pass
         for _, row in df.iterrows():
             def g(k):
                 v = row.get(k)

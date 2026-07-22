@@ -22,6 +22,43 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 import fetch_jd  # noqa: E402
 
+import os  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+
+# Test-safety (store stage 1): fetch_jd now captures the JD page to the raw store.
+# The machine config.yaml points data_root at the REAL private store, so isolate
+# every capture in this module to a throwaway data root (env beats config) — no
+# unit test may ever write into private/data.
+_PRIOR_DATA_ROOT: str | None = None
+_TMP_DATA_ROOT: str | None = None
+
+
+def setUpModule():
+    global _PRIOR_DATA_ROOT, _TMP_DATA_ROOT
+    _PRIOR_DATA_ROOT = os.environ.get("JOBHUNT_DATA_ROOT")
+    _TMP_DATA_ROOT = tempfile.mkdtemp(prefix="fetchjd-capture-")
+    os.environ["JOBHUNT_DATA_ROOT"] = _TMP_DATA_ROOT
+    try:
+        import capture_hooks
+        capture_hooks._reset_for_tests()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def tearDownModule():
+    if _PRIOR_DATA_ROOT is None:
+        os.environ.pop("JOBHUNT_DATA_ROOT", None)
+    else:
+        os.environ["JOBHUNT_DATA_ROOT"] = _PRIOR_DATA_ROOT
+    try:
+        import capture_hooks
+        capture_hooks._reset_for_tests()
+    except Exception:  # noqa: BLE001
+        pass
+    if _TMP_DATA_ROOT:
+        shutil.rmtree(_TMP_DATA_ROOT, ignore_errors=True)
+
 
 # --------------------------------------------------------------------------- #
 # Fixtures — a fictional "Nimbus Robotics" posting; no real names/employers.

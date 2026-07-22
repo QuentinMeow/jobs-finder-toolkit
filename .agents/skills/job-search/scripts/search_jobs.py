@@ -75,6 +75,7 @@ from scoring import (  # noqa: E402
 )
 from sources import fetch_company  # noqa: E402
 import snapshot  # noqa: E402  (sibling: pre-filter fetch cache + --refilter helpers)
+import capture_hooks  # noqa: E402  (sibling: raw-store capture shim; lazy/no-op if unconfigured)
 
 try:
     import config  # noqa: E402  (vendored toolkit config loader)
@@ -897,6 +898,10 @@ def main() -> int:
               file=sys.stderr)
     else:
         # ---- FETCH: assemble tasks (two stages), fetch, then snapshot ----
+        # Tell the capture shim which profile is running (its neutral profile-NN
+        # slug is allocated lazily on first capture). This is the ONLY capture hook
+        # in this file; a store failure never affects the search below.
+        capture_hooks.set_run_context(args.profile)
         tasks = []
         companies = []
         batches = (args.company_batches.split(",") if args.company_batches else None)

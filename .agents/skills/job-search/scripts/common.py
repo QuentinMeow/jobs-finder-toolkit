@@ -8,6 +8,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field, asdict
@@ -23,22 +24,99 @@ _MULTINL_RE = re.compile(r"\n{3,}")
 
 # --------------------------------------------------------------------------- #
 # HTTP
+#
+# Two layers: full-fidelity variants (``*_full``) return an ``HttpResult`` with the
+# raw body BYTES + status + response headers + duration + error info WITHOUT raising
+# (so a fetcher can capture the raw — including a failed/empty response — BEFORE it
+# parses or re-raises); the classic string/JSON helpers are thin wrappers over them
+# that preserve the old raise-on-failure contract so no existing caller breaks.
 # --------------------------------------------------------------------------- #
-def http_get(url: str, timeout: int = 25, headers: dict | None = None,
-             retries: int = 2) -> str:
-    """GET a URL and return the decoded body. Raises on final failure."""
-    last_err: Exception | None = None
+@dataclass
+class HttpResult:
+    """One HTTP exchange, captured whole: bytes + metadata, success or failure.
+
+    ``status`` is the HTTP status (or ``0`` when the transport failed before any
+    response). ``body`` is the raw response bytes (an HTTP error response body is
+    captured too — failure history is data). ``ok`` is True only for a 2xx.
+    """
+    url: str
+    status: int
+    body: bytes
+    headers: dict
+    duration_ms: int
+    ok: bool
+    error: str | None = None
+    method: str = "GET"
+    content_type: str | None = None
+
+
+def _elapsed_ms(start: float) -> int:
+    return int((time.monotonic() - start) * 1000)
+
+
+def _do_request(req: urllib.request.Request, timeout: int, method: str,
+                retries: int) -> HttpResult:
+    """Perform ``req`` (with retries) and return an ``HttpResult`` — never raises."""
+    last: HttpResult | None = None
+    for _attempt in range(retries + 1):
+        start = time.monotonic()
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read()
+                headers = dict(resp.headers.items()) if resp.headers else {}
+                ctype = resp.headers.get_content_type() if resp.headers else None
+                return HttpResult(req.full_url, getattr(resp, "status", 200) or 200,
+                                  body, headers, _elapsed_ms(start), ok=True,
+                                  error=None, method=method, content_type=ctype)
+        except urllib.error.HTTPError as exc:
+            body = b""
+            try:
+                body = exc.read()
+            except Exception:  # noqa: BLE001
+                body = b""
+            headers = dict(exc.headers.items()) if exc.headers else {}
+            ctype = exc.headers.get_content_type() if exc.headers else None
+            last = HttpResult(req.full_url, exc.code, body, headers,
+                              _elapsed_ms(start), ok=False,
+                              error=f"HTTP {exc.code} {exc.reason}", method=method,
+                              content_type=ctype)
+        except (urllib.error.URLError, TimeoutError) as exc:
+            reason = getattr(exc, "reason", exc)
+            last = HttpResult(req.full_url, 0, b"", {}, _elapsed_ms(start),
+                              ok=False, error=str(reason), method=method)
+    return last  # type: ignore[return-value]  (retries >= 0 => always set)
+
+
+def http_get_full(url: str, timeout: int = 25, headers: dict | None = None,
+                  retries: int = 2) -> HttpResult:
+    """GET ``url`` and return the whole exchange (bytes + metadata), never raising."""
     hdrs = {"User-Agent": USER_AGENT, "Accept": "application/json, */*"}
     if headers:
         hdrs.update(headers)
-    for attempt in range(retries + 1):
-        try:
-            req = urllib.request.Request(url, headers=hdrs)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.read().decode("utf-8", "replace")
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
-            last_err = exc
-    raise RuntimeError(f"GET failed for {url}: {last_err}")
+    return _do_request(urllib.request.Request(url, headers=hdrs), timeout, "GET",
+                       retries)
+
+
+def http_post_json_full(url: str, payload: dict, timeout: int = 25,
+                        headers: dict | None = None,
+                        retries: int = 2) -> HttpResult:
+    """POST a JSON body and return the whole exchange (bytes + metadata), never raising."""
+    body = json.dumps(payload).encode("utf-8")
+    hdrs = {"User-Agent": USER_AGENT, "Accept": "application/json",
+            "Content-Type": "application/json"}
+    if headers:
+        hdrs.update(headers)
+    req = urllib.request.Request(url, data=body, headers=hdrs, method="POST")
+    return _do_request(req, timeout, "POST", retries)
+
+
+def http_get(url: str, timeout: int = 25, headers: dict | None = None,
+             retries: int = 2) -> str:
+    """GET a URL and return the decoded body. Raises on final failure."""
+    r = http_get_full(url, timeout=timeout, headers=headers, retries=retries)
+    if not r.ok:
+        raise RuntimeError(f"GET failed for {url}: {r.error}")
+    return r.body.decode("utf-8", "replace")
 
 
 def http_get_json(url: str, timeout: int = 25, headers: dict | None = None):
@@ -51,21 +129,14 @@ def http_post_json(url: str, payload: dict, timeout: int = 25,
 
     Used by ATS APIs that only accept POST search queries (e.g. Workday CXS).
     """
-    body = json.dumps(payload).encode("utf-8")
-    hdrs = {"User-Agent": USER_AGENT, "Accept": "application/json",
-            "Content-Type": "application/json"}
-    if headers:
-        hdrs.update(headers)
-    last_err: Exception | None = None
-    for attempt in range(retries + 1):
-        try:
-            req = urllib.request.Request(url, data=body, headers=hdrs, method="POST")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode("utf-8", "replace"))
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
-                ValueError) as exc:
-            last_err = exc
-    raise RuntimeError(f"POST failed for {url}: {last_err}")
+    r = http_post_json_full(url, payload, timeout=timeout, headers=headers,
+                            retries=retries)
+    if not r.ok:
+        raise RuntimeError(f"POST failed for {url}: {r.error}")
+    try:
+        return json.loads(r.body.decode("utf-8", "replace"))
+    except ValueError as exc:
+        raise RuntimeError(f"POST failed for {url}: {exc}") from exc
 
 
 # --------------------------------------------------------------------------- #
