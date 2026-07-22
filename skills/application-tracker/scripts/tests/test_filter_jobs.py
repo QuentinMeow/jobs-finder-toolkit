@@ -6,7 +6,7 @@ Run with (from the repo root):
         -p "test_filter*"
 
 filter_jobs.py reads its applications root from config at runtime, so each case builds
-a throwaway v4 fixture tree in a tmp dir and runs the script as a subprocess with
+a throwaway v5 fixture tree in a tmp dir and runs the script as a subprocess with
 JOBHUNT_CONFIG pointed at a matching config.yaml (no private overlay, fictional
 companies only). Mirrors test_check_locations.py's harness.
 """
@@ -37,15 +37,15 @@ STATUS_DIRS = {
 
 # ── fixture builders ──────────────────────────────────────────
 def _job(role, *, status=None, level=None, salary=None, yoe=None, posted=None,
-         workplace=None, sponsorship=None, fit=None, stage=None, location=None,
+         workplace=None, sponsorship=None, fit=None, progress=None, location=None,
          status_date=None, url=None, jd_file=None):
-    """Build a v4 `jobs:` entry. level/salary/yoe are (min, max) tuples or None.
+    """Build a v5 `jobs:` entry. level/salary/yoe are (min, max) tuples or None.
 
     A tuple with a None member (e.g. (5.0, None)) exercises the null-bound handling.
     """
     j = {"role": role}
     for key, val in (("status", status), ("status_date", status_date),
-                     ("stage", stage), ("location", location),
+                     ("progress", progress), ("location", location),
                      ("workplace", workplace), ("sponsorship", sponsorship),
                      ("fit", fit), ("url", url), ("jd_file", jd_file),
                      ("posted_date", posted)):
@@ -60,7 +60,7 @@ def _job(role, *, status=None, level=None, salary=None, yoe=None, posted=None,
     return j
 
 
-def _meta(company, jobs, *, version=4, research_date="2026-07-15",
+def _meta(company, jobs, *, version=5, research_date="2026-07-15",
           channel="cold", **extra):
     m = {"job_metadata_schema_version": version, "company": company,
          "research_date": research_date, "channel": channel, "jobs": jobs}
@@ -135,6 +135,38 @@ class FilterJobsTests(unittest.TestCase):
         self.assertEqual(recs[0]["role"], "Data Engineer")
         self.assertEqual(recs[0]["folder_status"], "applied")
         self.assertEqual(recs[0]["status"], "rejected")
+
+    # ── structured progress filtering (schema v5) ──────────────
+    def test_phase_and_progress_state_filters(self):
+        tree = {"in_progress": {
+            "aurora-screen": _meta("Aurora Dynamics", [_job(
+                "SRE", status="in_progress",
+                progress={"phase": "recruiter_screen",
+                          "state": "booking_required"})]),
+            "cobalt-loop": _meta("Cobalt Works", [_job(
+                "Backend", status="in_progress",
+                progress={"phase": "interview_loop",
+                          "state": "scheduled"})]),
+            "nimbus-loop": _meta("Nimbus Data", [_job(
+                "Platform", status="in_progress",
+                progress={"phase": "interview_loop",
+                          "state": "awaiting_schedule"})]),
+        }}
+        # Phase membership, OR within the comma list.
+        self.assertEqual(self._count(tree, "--phase", "interview_loop"), 2)
+        self.assertEqual(
+            self._count(tree, "--phase", "recruiter_screen,interview_loop"), 3)
+        # Progress-state membership.
+        recs = self._json(tree, "--progress-state", "booking_required")
+        self.assertEqual([r["company"] for r in recs], ["Aurora Dynamics"])
+        # AND across phase + state narrows to one.
+        self.assertEqual(
+            self._count(tree, "--phase", "interview_loop",
+                        "--progress-state", "scheduled"), 1)
+        # A job with no progress mapping fails an active progress filter.
+        bare = {"in_progress": {"bare": _meta("Bare Corp", [
+            _job("X", status="in_progress")])}}
+        self.assertEqual(self._count(bare, "--progress-state", "scheduled"), 0)
 
     # ── multi-role app -> multiple rows ────────────────────────
     def test_multi_role_app_produces_one_row_per_job(self):
@@ -261,7 +293,9 @@ class FilterJobsTests(unittest.TestCase):
     def test_json_record_shape(self):
         tree = {"in_progress": {"aurora": _meta("Aurora Dynamics", [_job(
             "Senior Platform Engineer", status="in_progress", status_date="2026-07-18",
-            stage="onsite", location="Remote (US)", workplace="remote",
+            progress={"phase": "interview_loop", "state": "awaiting_schedule",
+                      "label": "onsite"},
+            location="Remote (US)", workplace="remote",
             sponsorship="unknown", fit="strong", level=(5.0, 5.7),
             yoe=(5, None), salary=(185000, 240000), url="https://example.test/job",
             jd_file="JD-senior-platform-engineer.md")])}}
@@ -271,14 +305,17 @@ class FilterJobsTests(unittest.TestCase):
         expected_keys = {
             "status", "folder_status", "company", "role", "location", "workplace",
             "sponsorship", "fit", "job_level", "required_yoe", "salary_range",
-            "posted_date", "research_date", "channel", "stage", "status_date",
-            "url", "jd_file", "slug", "schema_version",
+            "posted_date", "research_date", "channel", "phase", "progress_state",
+            "progress_label", "status_date", "url", "jd_file", "slug",
+            "schema_version",
         }
         self.assertEqual(set(rec.keys()), expected_keys)
         # No internal helper keys leak into JSON.
         self.assertFalse(any(k.startswith("_") for k in rec))
         self.assertEqual(rec["status"], "in_progress")
-        self.assertEqual(rec["stage"], "onsite")
+        self.assertEqual(rec["phase"], "interview_loop")
+        self.assertEqual(rec["progress_state"], "awaiting_schedule")
+        self.assertEqual(rec["progress_label"], "onsite")
         self.assertEqual(rec["status_date"], "2026-07-18")
         self.assertEqual(rec["url"], "https://example.test/job")
         self.assertEqual(rec["jd_file"], "JD-senior-platform-engineer.md")
@@ -306,10 +343,10 @@ class FilterJobsTests(unittest.TestCase):
                       "Cobalt Works", "5.0–5.7", "185–240k", "1 job"):
             self.assertIn(token, out)
 
-    # ── non-v4 warning on stderr (still included best-effort) ───
-    def test_non_v4_warns_on_stderr_and_reads_v4_fields_only(self):
-        # A pre-v4 flat file (top-level role, no jobs: list) warns and yields no
-        # rows; a non-v4 file WITH a jobs: list warns but its entries still list
+    # ── non-v5 warning on stderr (still included best-effort) ───
+    def test_non_v5_warns_on_stderr_and_reads_v5_fields_only(self):
+        # A pre-v5 flat file (top-level role, no jobs: list) warns and yields no
+        # rows; a non-v5 file WITH a jobs: list warns but its entries still list
         # best-effort, with no per-job status and no legacy-shape translation.
         flat = {
             "job_metadata_schema_version": 2,
@@ -330,7 +367,7 @@ class FilterJobsTests(unittest.TestCase):
         rc, out, err = self._run_tree(tree, "--json")
         self.assertEqual(rc, 0)
         self.assertIn("job_metadata_schema_version", err)
-        self.assertIn("expected 4", err)
+        self.assertIn("expected 5", err)
         recs = json.loads(out)
         # Only the jobs:-list entry survives; the flat file contributes nothing.
         self.assertEqual([r["role"] for r in recs], ["Platform Engineer"])

@@ -56,7 +56,7 @@ each fact's `source` (provenance) so they never collide.
 Minimal creation-time skeleton (single posting — a one-element `jobs:` list; a multi-role
 folder is the same list with one entry per posting):
 ```yaml
-job_metadata_schema_version: 4
+job_metadata_schema_version: 5
 company: "Company Name"
 research_date: "YYYY-MM-DD"   # search date: when you generated this draft
 channel: ""                   # how you found it (linkedin | referral | recruiter | cold)
@@ -67,6 +67,9 @@ jobs:
   - role: "Role Title"
     jd_file: "JD-role-title.md"
     status: "drafted"         # REQUIRED at creation; every new jobs: entry is "drafted"
+    progress:                 # REQUIRED; a fresh draft always starts exactly here
+      phase: application_prep
+      state: action_required
     location: "City, ST"      # the posting's location, exactly as listed (city/hybrid/remote)
     workplace: ""             # enriched below: onsite | hybrid | remote | unknown
     url: ""
@@ -83,7 +86,7 @@ verbatim (must satisfy the location policy — see "Location gate"), and its exa
 associate JDs by index or sorted filename). **The `application-tracker` skill
 (`skills/application-tracker/SKILL.md`, "`meta.yaml` Schema") is the single canonical
 owner of the full field list, rules, and later fields (`recruiter_email`, `comp_notes`, and each
-job's `stage`/`status_date`)** — don't restate the schema here. After the full JD is saved, fill
+job's `progress`/`status_date`)** — don't restate the schema here. After the full JD is saved, fill
 the empty structured placeholders by handing off to its enrichment (enrichment never sets
 `status` — creation already stamped `drafted`, and later transitions go through
 `status.py --update`/`--update-job`). Here `applications/` stands for `config.applications_root()`
@@ -211,8 +214,9 @@ Calibrated constants and the font / margin / line-spacing levers: LESSONS.md →
 
 ## Render & validate — operational detail
 
-`check.py` strictly enforces schema version 4: `meta.yaml` must be `job_metadata_schema_version: 4`
-with a `jobs:` list, and each entry must carry a required per-job `status` plus a valid `workplace`
+`check.py` strictly enforces schema version 5: `meta.yaml` must be `job_metadata_schema_version: 5`
+with a `jobs:` list, and each entry must carry a required per-job `status` and `progress` summary
+plus a valid `workplace`
 and `sponsorship` word and complete `job_level`, `required_yoe`, and `salary_range` structures. `salary_range`
 may be `null` when no pay range is posted; the `job_level` and `required_yoe` structures
 must still exist with their bounds (unstated bounds are `null`).

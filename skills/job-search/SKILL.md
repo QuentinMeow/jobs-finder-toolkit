@@ -190,10 +190,11 @@ tmp/handoff-report.json` applies the same per-row scaffold plus a live-folder/lo
 preflight and continues with an auditable result for every row.
 
 It creates `applications/6_drafted/<slug>/`, saves `source/JD-<job title>.md` **verbatim** (via
-`fetch_jd`), and writes a schema-v4 `meta.yaml` carrying the row's `status: "drafted"`, `location`,
+`fetch_jd`), and writes a schema-v5 `meta.yaml` carrying the row's `status: "drafted"` (with its
+drafted `progress` summary), `location`,
 `url`, `posted_date`, `workplace`, `sponsorship`, `job_level`, `required_yoe`, and `salary_range` —
 so nothing is hand-transcribed (refuses to overwrite an existing folder). `meta.yaml` is always
-`job_metadata_schema_version: 4` with a uniform **`jobs:` list — one entry per posting, even a
+`job_metadata_schema_version: 5` with a uniform **`jobs:` list — one entry per posting, even a
 single role** (each entry created `status: "drafted"`) — and every entry carries an exact
 `jd_file`; never pair roles and JDs by index or sorted filename. If `handoff.py` reports gaps, run
 `skills/application-tracker/scripts/status.py --enrich-metadata <folder>` to fill missing
@@ -263,7 +264,7 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 | `scripts/search_jobs.py` | Main pipeline (two-stage fetch → filter → score → rank → output); `--stage`, `--ai-native-only`, `--no-jobspy`, `--max-per-company`, `--top-k`, `--max-age-days`, `--visa-policy`, `--refilter latest`, `--print-full` |
 | `scripts/company_roles.py` | Re-check ONE company's live board with a location-policy verdict (single-company re-search + JD dump) |
 | `scripts/fetch_jd.py` | Fetch one posting page and save its readable text **verbatim** (`<URL> --out <path>`; no summarization) |
-| `scripts/handoff.py` | Scaffold an application folder from one selected search row (`--json <search.json> --select <"rank N"\|"Company/Title">`): folder + verbatim JD (via `fetch_jd`) + schema-v4 `meta.yaml` (each posting `status: "drafted"`); validates before exit, refuses to overwrite |
+| `scripts/handoff.py` | Scaffold an application folder from one selected search row (`--json <search.json> --select <"rank N"\|"Company/Title">`): folder + verbatim JD (via `fetch_jd`) + schema-v5 `meta.yaml` (each posting `status: "drafted"`); validates before exit, refuses to overwrite |
 | `scripts/validate_companies.py` | Check that company tokens still resolve (skips identity-only rows) |
 | `scripts/validate_filter_variants.py` | Check the deterministic corpus and strictly audit a private pre-filter snapshot; exits nonzero with label stubs for new/conflicting high-stakes variants |
 | `filter_variants/corpus.yaml` | Public-safe fictional regressions for location/workplace, sponsorship, title/seniority, and required YOE |

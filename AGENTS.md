@@ -226,7 +226,7 @@ company-level import, log sync/record, DOCX extract, vendoring, hook install, de
 .venv/bin/python skills/resume-writer/scripts/render.py applications/6_drafted/<slug>/
 # Show all applications and their status (status = which folder each app lives in)
 .venv/bin/python skills/application-tracker/scripts/status.py
-# Populate/validate schema-v4 metadata (per-job status, level, YOE, salary) from JD + cache
+# Populate/validate schema-v5 metadata (per-job status, progress, level, YOE, salary) from JD + cache
 .venv/bin/python skills/application-tracker/scripts/status.py --enrich-metadata applications/6_drafted/<slug>/
 # Move an application to a different status folder (drafted|applied|in_progress|rejected|ignored)
 .venv/bin/python skills/application-tracker/scripts/status.py --update <slug> applied

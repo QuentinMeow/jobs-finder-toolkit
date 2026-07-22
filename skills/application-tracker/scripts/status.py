@@ -18,7 +18,7 @@ Scripts keep the two in sync: `--update` and `--update-job` write per-job `statu
 in meta.yaml and then move the folder to match the recomputed rollup. `meta.yaml`
 holds the rest of the metadata (company, dates, `channel` = how the lead was found,
 referrer, next_action, notes; and per-posting role/workplace/sponsorship/level/YOE/
-salary plus a per-job free-form `stage` note like "onsite scheduled" under `jobs:`).
+salary plus the structured per-job `progress` summary under `jobs:`).
 Generation inputs (JD-<job-title>.md files, tailored.yaml, DOCX) live in each
 folder's source/ subfolder; the final resume/cover-letter PDFs, the bundled
 application .txt, and meta.yaml stay at the folder root. A single resume can target
@@ -26,12 +26,21 @@ several roles at one company: those applications carry a `jobs:` list in meta.ya
 and one JD-<job-title>.md file per posting. Non-application folders under
 applications/ (0_profile/, 1_discoveries/) are skipped.
 
+Schema v5 adds a structured per-job ``progress`` summary ({phase, state,
+label?, calendar_item?}) and ONE private calendar/todo file resolved by
+``config.calendar_path()``. This tracker is the only writer that updates
+metadata and calendar together — transactionally, both or neither. Changing
+only phase/state NEVER moves an application between status folders.
+
 Usage:
     python skills/application-tracker/scripts/status.py
     python skills/application-tracker/scripts/status.py --json
     python skills/application-tracker/scripts/status.py --update google-ml-engineer-20260416 applied
-    python skills/application-tracker/scripts/status.py --update-job <slug> "Backend Engineer" in_progress --stage "onsite"
+    python skills/application-tracker/scripts/status.py --update-job <slug> "Backend Engineer" in_progress
     python skills/application-tracker/scripts/status.py --update-job <slug> 2 rejected
+    python skills/application-tracker/scripts/status.py --update-progress <slug> <role-match> --phase technical_interview --state booking_required [--label TEXT]
+    python skills/application-tracker/scripts/status.py --check-calendar
+    python skills/application-tracker/scripts/status.py --sync-calendar [--write]
     python skills/application-tracker/scripts/status.py --enrich-metadata <slug>
     python skills/application-tracker/scripts/status.py --check-metadata
     python skills/application-tracker/scripts/status.py --sync-log
@@ -58,7 +67,28 @@ for _p in (_HERE, _HERE / "_vendor"):
 
 import config
 from backfill_job_metadata import process_application
-from job_metadata import APPLICATION_SCHEMA_VERSION, derive_status, validate_meta
+from calendar_todos import (
+    CALENDAR_TEMPLATE,
+    CHECKED_BOX_TRANSITIONS,
+    STATE_SECTIONS,
+    parse_calendar,
+    plan_calendar_update,
+    default_entry_text,
+    generate_entry_id,
+    record_cancellation,
+    record_reschedule,
+)
+from job_metadata import (
+    APPLICATION_SCHEMA_VERSION,
+    PROGRESS_ACTION_STATES,
+    PROGRESS_PHASES,
+    PROGRESS_SCHEDULING_STATES,
+    PROGRESS_STATES,
+    PROGRESS_WAITING_STATES,
+    default_progress_for_status,
+    derive_status,
+    validate_meta,
+)
 from layout import (
     STATUS_DIRS,
     STATUS_FOLDERS,
@@ -69,7 +99,11 @@ from layout import (
     tailored_path,
 )
 from location import assess_location, extract_jd_locations
-from metadata_editor import atomic_write_bytes, plan_field_updates
+from metadata_editor import (
+    MetadataChecksumMismatchError,
+    atomic_write_bytes,
+    plan_field_updates,
+)
 
 # Output filename stems are candidate-identity-derived, so they come from config
 # (kept under their historical module-level names for the file-presence globs).
@@ -96,7 +130,7 @@ def _resolve_statuses(args) -> list[str]:
     """Resolve the status scope shared by the metadata/location subcommands.
 
     Default scope is the full fleet (every status folder) — the whole fleet is
-    uniformly schema v4. ``--statuses`` selects an explicit comma-separated subset.
+    uniformly schema v5. ``--statuses`` selects an explicit comma-separated subset.
     Exits non-zero on an unknown status label.
     """
     if args.statuses:
@@ -166,7 +200,7 @@ def load_application(app_dir: Path, status: str) -> dict | None:
             # meta.yaml. Structured job facts (job_level/required_yoe/salary_range)
             # and the per-job status/stage/status_date live per posting under
             # `jobs`, so they are read from there, not the top level. The top-level
-            # `stage` field was removed in schema v4 (stage is now per-job).
+            # retired `stage` field was replaced by the structured per-job `progress`.
             for key in ["company", "role", "research_date", "posted_date",
                         "channel", "referrer", "next_action", "notes", "location",
                         "recruiter_email", "comp_notes", "url", "jobs",
@@ -301,7 +335,7 @@ def _resolve_application_target(target: str | Path) -> Path | None:
 
 
 def enrich_application_metadata(target: str | Path, *, overwrite: bool = False) -> Path:
-    """Safely insert missing schema-v4 job metadata into one ``meta.yaml``."""
+    """Safely insert missing schema-v5 job metadata into one ``meta.yaml``."""
     if overwrite:
         raise ValueError(
             "overwrite is disabled: the formatting-preserving editor only inserts "
@@ -324,7 +358,7 @@ def backfill_metadata(
     if overwrite:
         message = (
             "overwrite is disabled: bulk metadata editing may only insert missing "
-            "schema-v4 fields"
+            "schema-v5 fields"
         )
         if as_json:
             print(json.dumps({"mode": "error", "rows": [], "failures": [message]}, indent=2))
@@ -500,8 +534,8 @@ def find_application(slug: str) -> Path | None:
     return None
 
 
-def _load_v4_meta(meta_path: Path) -> tuple[dict, bytes]:
-    """Load a meta.yaml, failing loud (exit non-zero) unless it is parseable v4."""
+def _load_v5_meta(meta_path: Path) -> tuple[dict, bytes]:
+    """Load a meta.yaml, failing loud (exit non-zero) unless it is parseable v5."""
     if not meta_path.is_file():
         print(f"Error: {meta_path} not found; cannot update per-job status",
               file=sys.stderr)
@@ -515,7 +549,7 @@ def _load_v4_meta(meta_path: Path) -> tuple[dict, bytes]:
     if (not isinstance(meta, dict)
             or meta.get("job_metadata_schema_version") != APPLICATION_SCHEMA_VERSION):
         print(f"Error: {meta_path} is not schema v{APPLICATION_SCHEMA_VERSION}; "
-              "migrate it before updating status", file=sys.stderr)
+              "run migrate_to_v5.py before updating status", file=sys.stderr)
         sys.exit(1)
     jobs = meta.get("jobs")
     if not isinstance(jobs, list) or not jobs:
@@ -524,23 +558,103 @@ def _load_v4_meta(meta_path: Path) -> tuple[dict, bytes]:
     return meta, raw
 
 
-def _write_field_updates(meta_path: Path, raw: bytes, updates: dict) -> bool:
-    """Apply per-job field updates via the formatting-preserving editor.
+# --------------------------------------------------------------------------- #
+# Calendar (the single private calendar/todo file) + transactional writes
+# --------------------------------------------------------------------------- #
+def _calendar_path() -> Path:
+    return config.calendar_path()
 
-    Returns True if the file changed. Fails loud (exit non-zero, no write) on any
-    editor/validation error so a status transition never half-applies.
+
+def _read_calendar_raw(*, create: bool = False) -> bytes | None:
+    """Current calendar bytes; optionally create the template file first."""
+    path = _calendar_path()
+    if not path.is_file():
+        if not create:
+            return None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "xb") as handle:
+            handle.write(CALENDAR_TEMPLATE.encode("utf-8"))
+    return path.read_bytes()
+
+
+def _entry_fields_for_progress(
+    entry, *, slug: str, job: dict, progress: dict, company: str
+) -> dict:
+    """Merge a job's new progress summary into its calendar entry fields."""
+    if entry is not None:
+        fields = entry.fields()
+    else:
+        fields = {
+            "id": progress.get("calendar_item"),
+            "application": slug,
+            "role": str(job.get("role") or ""),
+            "starts_at": None,
+            "timezone": None,
+            "follow_up_at": None,
+            "source": "manual",
+            "reschedule_to": None,
+            "reschedule_timezone": None,
+            "cancel": False,
+            "history": [],
+        }
+    fields["phase"] = progress.get("phase")
+    fields["state"] = progress.get("state")
+    fields["label"] = progress.get("label")
+    fields["_company"] = company
+    return fields
+
+
+def _commit_meta_and_calendar(
+    meta_writes: list[tuple[Path, bytes, object]],
+    calendar_plan,
+) -> bool:
+    """Apply meta plan(s) + one calendar plan as a transaction (all or none).
+
+    ``meta_writes`` rows are ``(meta_path, pre_image_bytes, plan)``; every plan
+    must already be error-free. Meta files are written first; the calendar
+    write commits the transaction. If the calendar write fails (e.g. a checksum
+    race with a concurrent human edit), every written meta file is rolled back
+    to its pre-image and the command exits non-zero — a one-sided write never
+    survives. Returns True when anything changed on disk.
     """
-    plan = plan_field_updates(raw, updates)
-    if plan.errors:
-        print(f"Error: could not update per-job status in {meta_path}:",
-              file=sys.stderr)
-        for error in plan.errors:
-            print(f"  - {error}", file=sys.stderr)
-        sys.exit(1)
-    if plan.changed:
-        atomic_write_bytes(meta_path, plan.output_bytes,
-                           expected_sha256=plan.before_sha256)
-    return plan.changed
+    import hashlib
+
+    written: list[tuple[Path, bytes, object]] = []
+
+    def rollback() -> None:
+        for meta_path, pre_image, plan in reversed(written):
+            try:
+                atomic_write_bytes(
+                    meta_path, pre_image,
+                    expected_sha256=hashlib.sha256(plan.output_bytes).hexdigest())
+            except (MetadataChecksumMismatchError, OSError) as exc:
+                print(f"Error: rollback of {meta_path} failed: {exc}; restore "
+                      "it manually from git", file=sys.stderr)
+
+    changed = False
+    for meta_path, pre_image, plan in meta_writes:
+        if not plan.changed:
+            continue
+        try:
+            atomic_write_bytes(meta_path, plan.output_bytes,
+                               expected_sha256=plan.before_sha256)
+        except (MetadataChecksumMismatchError, OSError) as exc:
+            rollback()
+            print(f"Error: could not write {meta_path}: {exc}", file=sys.stderr)
+            sys.exit(1)
+        written.append((meta_path, pre_image, plan))
+        changed = True
+    if calendar_plan is not None and calendar_plan.changed:
+        try:
+            atomic_write_bytes(_calendar_path(), calendar_plan.output_bytes,
+                               expected_sha256=calendar_plan.before_sha256)
+        except (MetadataChecksumMismatchError, OSError) as exc:
+            rollback()
+            print(f"Error: calendar write failed ({exc}); metadata changes were "
+                  "rolled back — review calendar.md and retry", file=sys.stderr)
+            sys.exit(1)
+        changed = True
+    return changed
 
 
 def _move_application(slug: str, src: Path, new_status: str) -> bool:
@@ -566,13 +680,64 @@ def _sync_log_hint(changed: bool, moved: bool) -> None:
         print("Re-run `status.py --sync-log` to refresh the postings log.")
 
 
+def _transition_calendar_plan(
+    slug: str, company: str, jobs_progress: list[tuple[dict, dict]]
+):
+    """Plan the calendar updates for jobs whose progress references an entry.
+
+    ``jobs_progress`` pairs each affected job dict with its NEW progress
+    summary. Jobs without a ``calendar_item`` need no calendar change. Returns
+    ``None`` when nothing references the calendar; exits non-zero on a missing
+    file/entry or a plan error (the caller writes nothing in that case).
+    """
+    referencing = [
+        (job, progress) for job, progress in jobs_progress
+        if str((progress or {}).get("calendar_item") or "").strip()
+    ]
+    if not referencing:
+        return None
+    raw = _read_calendar_raw()
+    if raw is None:
+        print(f"Error: calendar file {_calendar_path()} not found but "
+              f"{slug} references calendar entries; run --check-calendar",
+              file=sys.stderr)
+        sys.exit(1)
+    doc = parse_calendar(raw.decode("utf-8"))
+    if doc.errors:
+        print(f"Error: calendar file {_calendar_path()} failed validation:",
+              file=sys.stderr)
+        for error in doc.errors:
+            print(f"  - {error}", file=sys.stderr)
+        sys.exit(1)
+    upserts: dict[str, dict] = {}
+    for job, progress in referencing:
+        item = progress["calendar_item"]
+        entry = doc.entries.get(item)
+        if entry is None:
+            print(f"Error: {slug} references missing calendar entry '{item}'; "
+                  "run --check-calendar", file=sys.stderr)
+            sys.exit(1)
+        upserts[item] = _entry_fields_for_progress(
+            entry, slug=slug, job=job, progress=progress, company=company)
+    plan = plan_calendar_update(raw, upserts)
+    if plan.errors:
+        print("Error: could not plan the calendar update (nothing written):",
+              file=sys.stderr)
+        for error in plan.errors:
+            print(f"  - {error}", file=sys.stderr)
+        sys.exit(1)
+    return plan
+
+
 def update_status(slug: str, new_status: str):
     """Set every posting's status to new_status, stamp today, then move the folder.
 
     The per-job `status` fields are the source of truth, so a whole-application
-    transition writes them all (stamping `status_date`) BEFORE moving the folder to
-    match the derived rollup. Fails loud (no move) if meta.yaml is missing,
-    unparseable, or not schema v4.
+    transition writes them all (stamping `status_date` and the deterministic
+    `progress` summary for the new status) BEFORE moving the folder to match the
+    derived rollup. Jobs whose progress references a calendar entry get that
+    entry updated in the same transaction. Fails loud (no move, no partial
+    write) if meta.yaml is missing, unparseable, or not schema v5.
     """
     if new_status not in STATUS_FOLDERS:
         print(f"Error: invalid status '{new_status}'. Must be one of: "
@@ -586,14 +751,26 @@ def update_status(slug: str, new_status: str):
         sys.exit(1)
 
     meta_path = src / "meta.yaml"
-    meta, raw = _load_v4_meta(meta_path)
+    meta, raw = _load_v5_meta(meta_path)
     today = date.today().isoformat()
-    updates = {
-        ("jobs", index): {"status": new_status, "status_date": today}
-        for index in range(len(meta["jobs"]))
-    }
-    changed = _write_field_updates(meta_path, raw, updates)
-    if changed:
+    updates: dict = {}
+    jobs_progress: list[tuple[dict, dict]] = []
+    for index, job in enumerate(meta["jobs"]):
+        current = job.get("progress") if isinstance(job, dict) else None
+        progress = default_progress_for_status(new_status, current=current)
+        updates[("jobs", index)] = {
+            "status": new_status, "status_date": today, "progress": progress,
+        }
+        jobs_progress.append((job if isinstance(job, dict) else {}, progress))
+
+    plan = plan_field_updates(raw, updates)
+    if plan.errors:
+        _print_plan_errors(meta_path, plan)
+        sys.exit(1)
+    calendar_plan = _transition_calendar_plan(
+        slug, str(meta.get("company") or ""), jobs_progress)
+    changed = _commit_meta_and_calendar([(meta_path, raw, plan)], calendar_plan)
+    if plan.changed:
         print(f"{slug}: set all {len(meta['jobs'])} posting(s) to '{new_status}' "
               f"(status_date {today})")
 
@@ -603,24 +780,20 @@ def update_status(slug: str, new_status: str):
     _sync_log_hint(changed, moved)
 
 
-def update_job_status(slug: str, role_match: str, status: str,
-                      stage: str | None = None):
-    """Set ONE posting's status (and/or stage), then re-derive & move the folder.
+def update_job_status(slug: str, role_match: str, status: str):
+    """Set ONE posting's status, then re-derive the rollup & move the folder.
 
     `role_match` is a case-insensitive substring of `jobs[].role` or a 1-based
-    integer index and must resolve to exactly one posting. `status` is one of the
-    five status labels or the literal `keep` (leave status unchanged — for a
-    stage-only edit, which then requires `--stage`). A status change stamps that
-    posting's `status_date`. After the edit the overall status is re-derived from
-    all postings; if it differs from the current folder the app is moved.
+    integer index and must resolve to exactly one posting. `status` is one of
+    the five status labels; the transition stamps that posting's `status_date`
+    and resets its `progress` summary deterministically (phase/state details
+    beyond the coarse status belong to --update-progress). After the edit the
+    overall status is re-derived from all postings; if it differs from the
+    current folder the app is moved.
     """
-    if status != "keep" and status not in STATUS_FOLDERS:
-        print(f"Error: STATUS must be one of {', '.join(STATUS_FOLDERS)} or 'keep'; "
+    if status not in STATUS_FOLDERS:
+        print(f"Error: STATUS must be one of {', '.join(STATUS_FOLDERS)}; "
               f"got '{status}'", file=sys.stderr)
-        sys.exit(1)
-    if status == "keep" and stage is None:
-        print("Error: --update-job with status 'keep' is a stage-only edit and "
-              "requires --stage", file=sys.stderr)
         sys.exit(1)
 
     src = find_application(slug)
@@ -630,7 +803,7 @@ def update_job_status(slug: str, role_match: str, status: str,
         sys.exit(1)
 
     meta_path = src / "meta.yaml"
-    meta, raw = _load_v4_meta(meta_path)
+    meta, raw = _load_v5_meta(meta_path)
     jobs = meta["jobs"]
     index = _resolve_job_index(jobs, role_match)
 
@@ -638,31 +811,409 @@ def update_job_status(slug: str, role_match: str, status: str,
     role = str(job.get("role") or "").strip() or f"job {index + 1}"
     old_status = str(job.get("status") or "").strip() or "(unset)"
 
-    update: dict = {}
-    if status != "keep":
-        update["status"] = status
-        update["status_date"] = date.today().isoformat()
-    if stage is not None:
-        update["stage"] = stage
+    progress = default_progress_for_status(status, current=job.get("progress"))
+    update = {
+        "status": status,
+        "status_date": date.today().isoformat(),
+        "progress": progress,
+    }
+    plan = plan_field_updates(raw, {("jobs", index): update})
+    if plan.errors:
+        _print_plan_errors(meta_path, plan)
+        sys.exit(1)
+    calendar_plan = _transition_calendar_plan(
+        slug, str(meta.get("company") or ""), [(job, progress)])
+    changed = _commit_meta_and_calendar([(meta_path, raw, plan)], calendar_plan)
 
-    changed = _write_field_updates(meta_path, raw, {("jobs", index): update})
-
-    new_status = status if status != "keep" else old_status
-    change_bits = []
-    if status != "keep":
-        change_bits.append(f"status {old_status} -> {new_status}")
-    if stage is not None:
-        change_bits.append(f"stage -> {stage!r}")
-    detail = "; ".join(change_bits) if change_bits else "no change"
+    detail = f"status {old_status} -> {status}"
     print(f"{slug} posting [{index + 1}] {role}: {detail}")
     if not changed:
         print(f"  (meta.yaml already matched — {detail})")
 
     # Recompute the rollup from the edited postings and move the folder to match.
-    edited = yaml.safe_load(_read_after_edit(meta_path, raw, changed))
+    edited = yaml.safe_load(_read_after_edit(meta_path, raw, plan.changed))
     derived = derive_status(edited["jobs"])
     moved = _move_application(slug, src, derived)
     _sync_log_hint(changed, moved)
+
+
+def _print_plan_errors(meta_path: Path, plan) -> None:
+    print(f"Error: could not update {meta_path} (nothing written):",
+          file=sys.stderr)
+    for error in plan.errors:
+        print(f"  - {error}", file=sys.stderr)
+
+
+def _utc_now_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def update_progress(slug: str, role_match: str, *, phase: str, state: str,
+                    label: str | None = None):
+    """Set ONE posting's structured progress; never moves the status folder.
+
+    Writes ``jobs[].progress`` (phase, state, optional label, tool-stamped
+    ``updated_at``, ``source: manual``) and the calendar entry together,
+    transactionally. Entering a scheduling state (booking/waiting/scheduled/
+    reschedule) creates the calendar entry when the job has none — with a fresh
+    stable id recorded as ``progress.calendar_item``. ``--state scheduled``
+    requires the calendar entry to already carry the confirmed time + timezone
+    (record it in calendar.md, then run --sync-calendar --write).
+    """
+    if phase not in PROGRESS_PHASES:
+        print(f"Error: --phase must be one of {', '.join(PROGRESS_PHASES)}",
+              file=sys.stderr)
+        sys.exit(1)
+    if state not in PROGRESS_STATES:
+        print(f"Error: --state must be one of {', '.join(PROGRESS_STATES)}",
+              file=sys.stderr)
+        sys.exit(1)
+
+    src = find_application(slug)
+    if src is None:
+        print(f"Error: application '{slug}' not found under any status folder "
+              f"({', '.join(STATUS_FOLDERS)})", file=sys.stderr)
+        sys.exit(1)
+
+    meta_path = src / "meta.yaml"
+    meta, raw = _load_v5_meta(meta_path)
+    jobs = meta["jobs"]
+    index = _resolve_job_index(jobs, role_match)
+    job = jobs[index] if isinstance(jobs[index], dict) else {}
+    role = str(job.get("role") or "").strip() or f"job {index + 1}"
+    current = job.get("progress") if isinstance(job.get("progress"), dict) else {}
+
+    progress: dict = {"phase": phase, "state": state}
+    effective_label = label if label is not None else current.get("label")
+    if str(effective_label or "").strip():
+        progress["label"] = effective_label
+    calendar_item = str(current.get("calendar_item") or "").strip()
+
+    company = str(meta.get("company") or "")
+    calendar_plan = None
+    needs_entry = state in PROGRESS_SCHEDULING_STATES or calendar_item
+    if needs_entry:
+        raw_calendar = _read_calendar_raw(create=True)
+        doc = parse_calendar(raw_calendar.decode("utf-8"))
+        if doc.errors:
+            print(f"Error: calendar file {_calendar_path()} failed validation "
+                  "(fix it or run --check-calendar):", file=sys.stderr)
+            for error in doc.errors:
+                print(f"  - {error}", file=sys.stderr)
+            sys.exit(1)
+        entry = doc.entries.get(calendar_item) if calendar_item else None
+        if calendar_item and entry is None:
+            print(f"Error: {slug} references missing calendar entry "
+                  f"'{calendar_item}'; run --check-calendar", file=sys.stderr)
+            sys.exit(1)
+        if entry is None:
+            calendar_item = generate_entry_id(doc.entries, slug)
+        progress["calendar_item"] = calendar_item
+        fields = _entry_fields_for_progress(
+            entry, slug=slug, job=job, progress=progress, company=company)
+        calendar_plan = plan_calendar_update(
+            raw_calendar, {calendar_item: fields}, create_missing=entry is None)
+        if calendar_plan.errors:
+            print("Error: could not plan the calendar update (nothing written):",
+                  file=sys.stderr)
+            for error in calendar_plan.errors:
+                print(f"  - {error}", file=sys.stderr)
+            if state == "scheduled":
+                print("Hint: a scheduled entry needs the confirmed exact time + "
+                      "timezone. Record starts_at/timezone on the entry in "
+                      f"{_calendar_path()} and run --sync-calendar --write.",
+                      file=sys.stderr)
+            sys.exit(1)
+    elif str(current.get("calendar_item") or "").strip():
+        progress["calendar_item"] = current["calendar_item"]
+
+    progress["updated_at"] = _utc_now_stamp()
+    progress["source"] = {"kind": "manual", "ref": ""}
+
+    plan = plan_field_updates(raw, {("jobs", index): {"progress": progress}})
+    if plan.errors:
+        _print_plan_errors(meta_path, plan)
+        if state == "closed":
+            print("Hint: close a role with --update-job <slug> <role> "
+                  "rejected|ignored — that sets state 'closed' with it.",
+                  file=sys.stderr)
+        sys.exit(1)
+    _commit_meta_and_calendar([(meta_path, raw, plan)], calendar_plan)
+    bits = [f"phase -> {phase}", f"state -> {state}"]
+    if label is not None:
+        bits.append(f"label -> {label!r}")
+    print(f"{slug} posting [{index + 1}] {role}: {'; '.join(bits)}")
+    if calendar_plan is not None and calendar_plan.changed:
+        print(f"Updated calendar entry {progress['calendar_item']} -> "
+              f"{_calendar_path()}")
+    print("Progress-only update: the status folder is unchanged.")
+
+
+# --------------------------------------------------------------------------- #
+# Calendar verification + preview-first human-edit sync
+# --------------------------------------------------------------------------- #
+def _fleet_calendar_refs() -> dict[str, list[tuple[Path, dict, int, dict]]]:
+    """calendar_item -> [(meta_path, meta, job_index, job)] across the fleet."""
+    refs: dict[str, list[tuple[Path, dict, int, dict]]] = {}
+    for status in STATUS_FOLDERS:
+        status_dir = _status_dir(status)
+        if not status_dir.is_dir():
+            continue
+        for app_dir in sorted(status_dir.iterdir()):
+            meta_path = app_dir / "meta.yaml"
+            if not app_dir.is_dir() or not meta_path.is_file():
+                continue
+            try:
+                meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError):
+                continue
+            jobs = meta.get("jobs") if isinstance(meta, dict) else None
+            for index, job in enumerate(jobs if isinstance(jobs, list) else []):
+                if not isinstance(job, dict):
+                    continue
+                progress = job.get("progress")
+                item = str((progress or {}).get("calendar_item") or "").strip() \
+                    if isinstance(progress, dict) else ""
+                if item:
+                    refs.setdefault(item, []).append((meta_path, meta, index, job))
+    return refs
+
+
+def check_calendar(as_json: bool = False) -> bool:
+    """Verify calendar.md and its cross-links with per-job progress (read-only)."""
+    path = _calendar_path()
+    findings: list[str] = []
+    refs = _fleet_calendar_refs()
+    raw = _read_calendar_raw()
+    doc = None
+    if raw is None:
+        if refs:
+            findings.append(
+                f"calendar file {path} is missing but "
+                f"{len(refs)} progress entr{'y' if len(refs) == 1 else 'ies'} "
+                "reference calendar items")
+    else:
+        doc = parse_calendar(raw.decode("utf-8"))
+        findings.extend(doc.errors)
+
+    entries = doc.entries if doc is not None else {}
+    for item, holders in sorted(refs.items()):
+        if len(holders) > 1:
+            findings.append(
+                f"calendar entry '{item}' is referenced by multiple jobs: "
+                + ", ".join(h[0].parent.name for h in holders))
+        entry = entries.get(item)
+        if entry is None:
+            if doc is not None:
+                findings.append(
+                    f"{holders[0][0].parent.name}: progress.calendar_item "
+                    f"'{item}' has no calendar entry")
+            continue
+        meta_path, _meta, index, job = holders[0]
+        slug = meta_path.parent.name
+        progress = job.get("progress") or {}
+        if entry.application != slug:
+            findings.append(
+                f"entry '{item}': application '{entry.application}' does not "
+                f"match {slug}")
+        if entry.role != str(job.get("role") or ""):
+            findings.append(
+                f"entry '{item}': role '{entry.role}' does not match "
+                f"jobs[{index}].role of {slug}")
+        for field in ("phase", "state"):
+            if getattr(entry, field) != progress.get(field):
+                findings.append(
+                    f"entry '{item}': {field} '{getattr(entry, field)}' drifted "
+                    f"from meta progress '{progress.get(field)}' "
+                    "(run --sync-calendar)")
+        expected_section = STATE_SECTIONS.get(entry.state)
+        if expected_section and entry.section != expected_section:
+            findings.append(
+                f"entry '{item}': sits under '{entry.section}' but state "
+                f"'{entry.state}' belongs under '{expected_section}'")
+        if entry.checked and progress.get("state") in CHECKED_BOX_TRANSITIONS:
+            findings.append(
+                f"entry '{item}': box is checked — run --sync-calendar to fold "
+                "it into progress")
+        if entry.cancel or entry.reschedule_to:
+            findings.append(
+                f"entry '{item}': has a pending "
+                f"{'cancellation' if entry.cancel else 'reschedule'} proposal — "
+                "run --sync-calendar")
+    for item, entry in sorted(entries.items()):
+        if item not in refs:
+            findings.append(
+                f"entry '{item}': no job's progress.calendar_item references it "
+                f"(application '{entry.application}', role '{entry.role}')")
+
+    if as_json:
+        print(json.dumps({"calendar": str(path), "findings": findings}, indent=2))
+        return not findings
+    if not findings:
+        state = "absent (nothing references it)" if raw is None else "consistent"
+        print(f"Calendar {path}: {state}; "
+              f"{len(entries)} entr{'y' if len(entries) == 1 else 'ies'}, "
+              f"{len(refs)} referenced.")
+        return True
+    print(f"Calendar {path}: {len(findings)} finding(s)")
+    for finding in findings:
+        print(f"  - {finding}")
+    return False
+
+
+def _sync_proposals(doc, refs):
+    """Compute (proposal_rows, errors) mapping owner calendar edits to progress.
+
+    A proposal row is ``(entry_id, meta_path, job_index, new_progress,
+    new_entry_fields, description)``. Meta stays canonical for phase/state, so
+    entries that merely drifted are re-rendered from meta; the owner-edit
+    surfaces (checked box, reschedule_to, cancel: true) win over drift repair.
+    """
+    proposals = []
+    errors = []
+    for item, entry in sorted(doc.entries.items()):
+        holders = refs.get(item)
+        if not holders:
+            errors.append(
+                f"entry '{item}' is not referenced by any job's progress; "
+                "cannot sync it")
+            continue
+        if len(holders) > 1:
+            errors.append(f"entry '{item}' is referenced by multiple jobs")
+            continue
+        meta_path, meta, index, job = holders[0]
+        slug = meta_path.parent.name
+        progress = dict(job.get("progress") or {})
+        meta_state = progress.get("state")
+        company = str(meta.get("company") or "")
+        fields = entry.fields()
+        fields["_company"] = company
+
+        if meta_state == "closed":
+            new_state = None  # never reopen a closed role from the calendar
+        elif entry.cancel:
+            fields = record_cancellation(fields)
+            fields["_company"] = company
+            new_state = fields["state"]
+            description = (f"{slug} [{entry.role}]: cancellation recorded — "
+                           f"occurrence kept in history, state -> {new_state}")
+        elif entry.reschedule_to:
+            fields = record_reschedule(
+                fields, entry.reschedule_to, entry.reschedule_timezone)
+            fields["_company"] = company
+            new_state = "scheduled"
+            description = (f"{slug} [{entry.role}]: confirmed reschedule to "
+                           f"{fields['starts_at']} {fields['timezone']} — old "
+                           "occurrence kept as superseded, state -> scheduled")
+        elif entry.checked and meta_state in CHECKED_BOX_TRANSITIONS:
+            new_state = CHECKED_BOX_TRANSITIONS[meta_state]
+            fields["state"] = new_state
+            description = (f"{slug} [{entry.role}]: checked box — state "
+                           f"{meta_state} -> {new_state}")
+        else:
+            new_state = None
+
+        if new_state is None:
+            # Drift repair only: re-render the marker from canonical meta.
+            if (entry.phase, entry.state) != (
+                progress.get("phase"), progress.get("state")
+            ):
+                fields["phase"] = progress.get("phase")
+                fields["state"] = progress.get("state")
+                proposals.append((
+                    item, meta_path, index, None, fields,
+                    f"{slug} [{entry.role}]: re-render entry from meta progress "
+                    f"({progress.get('phase')}/{progress.get('state')})"))
+            continue
+
+        new_progress = dict(progress)
+        new_progress["state"] = new_state
+        new_progress["phase"] = progress.get("phase")
+        new_progress["updated_at"] = _utc_now_stamp()
+        new_progress["source"] = {"kind": "manual", "ref": ""}
+        fields["phase"] = new_progress["phase"]
+        proposals.append((item, meta_path, index, new_progress, fields, description))
+    return proposals, errors
+
+
+def sync_calendar(write: bool = False, as_json: bool = False) -> bool:
+    """Preview (default) or apply how owner edits to calendar.md map to progress.
+
+    Owner-edit surfaces: a checked box (action done / interview happened), a
+    filled ``reschedule_to`` + ``reschedule_timezone`` (confirmed replacement
+    time — the old occurrence is preserved as superseded), and ``cancel: true``
+    (occurrence cancelled, never auto-rejecting the role). ``--write`` applies
+    every proposal transactionally (all meta files + the calendar, or nothing).
+    """
+    path = _calendar_path()
+    raw = _read_calendar_raw()
+    refs = _fleet_calendar_refs()
+    if raw is None:
+        if refs:
+            print(f"Error: calendar file {path} is missing but progress "
+                  "references calendar entries", file=sys.stderr)
+            return False
+        print(f"No calendar file at {path}; nothing to sync.")
+        return True
+    doc = parse_calendar(raw.decode("utf-8"))
+    if doc.errors:
+        print(f"Error: calendar file {path} failed validation; fix these "
+              "before syncing:", file=sys.stderr)
+        for error in doc.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return False
+
+    proposals, errors = _sync_proposals(doc, refs)
+    if errors:
+        print("Error: cannot sync (nothing written):", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return False
+    if as_json:
+        print(json.dumps({
+            "mode": "write" if write else "dry_run",
+            "proposals": [row[5] for row in proposals],
+        }, indent=2))
+    if not proposals:
+        if not as_json:
+            print(f"Calendar {path}: nothing to sync.")
+        return True
+    if not as_json:
+        print(f"Calendar sync ({'WRITE' if write else 'DRY RUN'}):")
+        for row in proposals:
+            print(f"  - {row[5]}")
+    if not write:
+        if not as_json:
+            print("No files written. Re-run with --sync-calendar --write to apply.")
+        return True
+
+    # Group meta updates per file, plan everything, then commit transactionally.
+    upserts: dict[str, dict] = {}
+    by_meta: dict[Path, dict] = {}
+    for item, meta_path, index, new_progress, fields, _description in proposals:
+        upserts[item] = fields
+        if new_progress is not None:
+            by_meta.setdefault(meta_path, {})[("jobs", index)] = {
+                "progress": new_progress}
+    meta_writes = []
+    for meta_path, updates in sorted(by_meta.items()):
+        pre_image = meta_path.read_bytes()
+        plan = plan_field_updates(pre_image, updates)
+        if plan.errors:
+            _print_plan_errors(meta_path, plan)
+            return False
+        meta_writes.append((meta_path, pre_image, plan))
+    calendar_plan = plan_calendar_update(raw, upserts)
+    if calendar_plan.errors:
+        print("Error: could not plan the calendar update (nothing written):",
+              file=sys.stderr)
+        for error in calendar_plan.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return False
+    _commit_meta_and_calendar(meta_writes, calendar_plan)
+    print(f"Applied {len(proposals)} proposal(s); calendar and metadata "
+          "updated together.")
+    return True
 
 
 def _read_after_edit(meta_path: Path, raw: bytes, changed: bool) -> str:
@@ -774,6 +1325,62 @@ def print_table(apps: list[dict]):
         funnel = " | ".join(f"{s}: {status_counts.get(s, 0)}"
                             for s in STATUS_FOLDERS if s in status_counts)
         print(f"Funnel: {funnel}")
+
+    # Structured-progress health: "active with no action" is not the same as
+    # "active and stuck scheduling" — surface who owes an action and which
+    # bookings blew past their follow-up date.
+    action, overdue = _progress_attention(apps)
+    if action:
+        print("Action needed (owner owes an action):")
+        for line in action:
+            print(f"  -> {line}")
+    if overdue:
+        print("Overdue waiting (past follow-up, no confirmation):")
+        for line in overdue:
+            print(f"  -> {line}")
+
+
+def _progress_attention(apps: list[dict]) -> tuple[list[str], list[str]]:
+    """(action-needed lines, overdue-waiting lines) from per-job progress.
+
+    Overdue-waiting needs each entry's follow-up date, which lives in the
+    calendar file; the calendar is read best-effort here (this is a read-only
+    view — --check-calendar is the strict gate).
+    """
+    follow_ups: dict[str, str] = {}
+    raw = _read_calendar_raw()
+    if raw is not None:
+        try:
+            doc = parse_calendar(raw.decode("utf-8"))
+        except UnicodeDecodeError:
+            doc = None
+        if doc is not None:
+            for entry in doc.entries.values():
+                if entry.follow_up_at:
+                    follow_ups[entry.entry_id] = str(entry.follow_up_at)
+    today = date.today().isoformat()
+    action: list[str] = []
+    overdue: list[str] = []
+    for a in apps:
+        jobs = a.get("jobs")
+        if not isinstance(jobs, list):
+            continue
+        for job in jobs:
+            progress = job.get("progress") if isinstance(job, dict) else None
+            if not isinstance(progress, dict):
+                continue
+            state = str(progress.get("state") or "")
+            who = f"{a.get('company') or a.get('slug')} — {job.get('role')}"
+            label = str(progress.get("label") or "").strip()
+            suffix = f" ({label})" if label else ""
+            if state in PROGRESS_ACTION_STATES:
+                action.append(f"{who}: {state}{suffix}")
+            elif state in PROGRESS_WAITING_STATES:
+                follow = follow_ups.get(
+                    str(progress.get("calendar_item") or ""), "")[:10]
+                if follow and follow < today:
+                    overdue.append(f"{who}: {state}, follow-up was {follow}")
+    return action, overdue
 
 
 def collect_apps() -> list[dict]:
@@ -1017,18 +1624,40 @@ def main():
                         help="Set ONE posting's status. ROLE_MATCH is a "
                              "case-insensitive substring of the role or a 1-based "
                              "index (must match exactly one posting). STATUS is one "
-                             f"of {', '.join(STATUS_FOLDERS)} or 'keep' (stage-only, "
-                             "requires --stage). Re-derives the rollup and moves the "
-                             "folder if it changed.")
-    parser.add_argument("--stage", default=None, metavar="TEXT",
-                        help="Free-text per-job stage to set with --update-job "
-                             "(e.g. \"recruiter screen\", \"onsite\", \"offer\").")
+                             f"of {', '.join(STATUS_FOLDERS)}. Re-derives the "
+                             "rollup and moves the folder if it changed.")
+    parser.add_argument("--update-progress", nargs=2,
+                        metavar=("SLUG", "ROLE_MATCH"),
+                        help="Set ONE posting's structured progress (requires "
+                             "--phase and --state; optional --label). Updates "
+                             "meta.yaml and calendar.md together, transactionally; "
+                             "NEVER moves the status folder.")
+    parser.add_argument("--phase", default=None,
+                        help=f"Hiring phase for --update-progress: "
+                             f"{', '.join(PROGRESS_PHASES)}.")
+    parser.add_argument("--state", default=None,
+                        help=f"Workflow state for --update-progress: "
+                             f"{', '.join(PROGRESS_STATES)}.")
+    parser.add_argument("--label", default=None, metavar="TEXT",
+                        help="Employer-specific wording to keep alongside the "
+                             "normalized phase (required when --phase other; "
+                             "omit to keep the current label, pass '' to clear).")
+    parser.add_argument("--check-calendar", action="store_true",
+                        help="Verify calendar.md (markers, duplicate ids, "
+                             "scheduled time+timezone) and its cross-links with "
+                             "per-job progress. Read-only.")
+    parser.add_argument("--sync-calendar", action="store_true",
+                        help="Preview how owner edits to calendar.md (checked "
+                             "boxes, reschedule_to, cancel) map back to progress. "
+                             "Add --write to apply transactionally.")
+    parser.add_argument("--write", action="store_true",
+                        help="With --sync-calendar: apply the previewed proposals.")
     parser.add_argument("--sync-log", action="store_true",
                         help="Regenerate applications/0_profile/applications-log.yaml "
                              "(the postings job-search skips) from all folders, and upsert "
                              "company-search-log.yaml created entries.")
     parser.add_argument("--enrich-metadata", metavar="SLUG_OR_PATH",
-                        help="Safely insert missing schema-v4 per-posting metadata "
+                        help="Safely insert missing schema-v5 per-posting metadata "
                              "(workplace, sponsorship, job level, YOE, salary).")
     parser.add_argument("--backfill-metadata", action="store_true",
                         help="Preview metadata enrichment across --statuses without "
@@ -1061,8 +1690,27 @@ def main():
 
     if args.update_job:
         update_job_status(args.update_job[0], args.update_job[1],
-                          args.update_job[2], stage=args.stage)
+                          args.update_job[2])
         return
+
+    if args.update_progress:
+        if not args.phase or not args.state:
+            print("Error: --update-progress requires --phase and --state",
+                  file=sys.stderr)
+            sys.exit(1)
+        update_progress(args.update_progress[0], args.update_progress[1],
+                        phase=args.phase, state=args.state, label=args.label)
+        return
+
+    if args.check_calendar:
+        sys.exit(0 if check_calendar(as_json=args.json) else 1)
+
+    if args.sync_calendar:
+        sys.exit(0 if sync_calendar(write=args.write, as_json=args.json) else 1)
+
+    if args.write:
+        print("Error: --write requires --sync-calendar", file=sys.stderr)
+        sys.exit(1)
 
     if args.enrich_metadata:
         try:

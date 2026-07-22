@@ -30,6 +30,17 @@ class BackfillJobMetadataTests(unittest.TestCase):
         path.write_text(yaml.safe_dump(data, sort_keys=False))
         return path
 
+    @staticmethod
+    def _job(role: str, jd_file: str | None) -> dict:
+        job = {
+            "role": role,
+            "status": "drafted",
+            "progress": {"phase": "application_prep", "state": "action_required"},
+        }
+        if jd_file:
+            job["jd_file"] = jd_file
+        return job
+
     def test_multi_role_uses_exact_jd_file_not_index_order(self):
         (self.app / "source" / "JD-alpha.md").write_text(
             "Requires at least 2 years of professional experience.")
@@ -38,8 +49,8 @@ class BackfillJobMetadataTests(unittest.TestCase):
         self._write_meta({
             "company": "Acme",
             "jobs": [
-                {"role": "Zulu", "jd_file": "JD-zulu.md", "status": "drafted"},
-                {"role": "Alpha", "jd_file": "JD-alpha.md", "status": "drafted"},
+                self._job("Zulu", "JD-zulu.md"),
+                self._job("Alpha", "JD-alpha.md"),
             ],
         })
         with patch.object(
@@ -58,7 +69,7 @@ class BackfillJobMetadataTests(unittest.TestCase):
             "Requires at least 9 years of professional experience.")
         meta_path = self._write_meta({
             "company": "Acme",
-            "jobs": [{"role": "No Association", "status": "drafted"}],
+            "jobs": [self._job("No Association", None)],
         })
         before = meta_path.read_bytes()
         result = backfill_job_metadata.process_application(self.app, write=False)
@@ -70,8 +81,7 @@ class BackfillJobMetadataTests(unittest.TestCase):
             "Requires at least 4 years of professional experience.")
         meta_path = self._write_meta({
             "company": "Acme",
-            "jobs": [{"role": "Software Engineer", "jd_file": "JD-engineer.md",
-                      "status": "drafted"}],
+            "jobs": [self._job("Software Engineer", "JD-engineer.md")],
         })
         before = meta_path.read_bytes()
         with patch.object(

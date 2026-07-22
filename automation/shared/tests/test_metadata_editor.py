@@ -17,11 +17,12 @@ from metadata_editor import (  # noqa: E402
     atomic_write_bytes,
     plan_field_updates,
     plan_metadata_edit,
+    plan_v4_to_v5_migration,
 )
 
 
 def _metadata(*, with_salary: bool = False) -> dict:
-    """A schema-v4 flat metadata fragment for one jobs entry."""
+    """A schema-v5 flat metadata fragment for one jobs entry."""
     return {
         "workplace": "remote",
         "sponsorship": "unknown",
@@ -56,6 +57,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"  - role: 'Senior Engineer' # exact title\n"
             b"    jd_file: JD-senior-engineer.md\n"
             b"    status: drafted\n"
+            b"    progress: {phase: application_prep, state: action_required}\n"
             b"    job_level: {} # generated placeholder\n"
             b"notes:\n"
             b'  - "Keep: quoted note"\n'
@@ -72,7 +74,7 @@ class MetadataEditorTests(unittest.TestCase):
         self.assertIn(b'  - "Keep: quoted note"', plan.output_bytes)
         self.assertIn(("jobs", 0, "job_level"), plan.changed_field_paths)
         result = yaml.safe_load(plan.output_bytes)
-        self.assertEqual(result["job_metadata_schema_version"], 4)
+        self.assertEqual(result["job_metadata_schema_version"], 5)
         self.assertEqual(result["jobs"][0]["job_level"]["normalized"], "senior")
 
     def test_multi_role_metadata_is_anchored_to_exact_records(self):
@@ -82,9 +84,11 @@ class MetadataEditorTests(unittest.TestCase):
             b"  - role: Backend Engineer\n"
             b"    jd_file: JD-backend.md\n"
             b"    status: drafted\n"
+            b"    progress: {phase: application_prep, state: action_required}\n"
             b"  - role: Platform Engineer\n"
             b"    jd_file: JD-platform.md\n"
-            b"    status: drafted"
+            b"    status: drafted\n"
+            b"    progress: {phase: application_prep, state: action_required}"
         )
         backend = _metadata()
         backend["job_level"] = {**backend["job_level"], "normalized": "mid"}
@@ -137,6 +141,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"  - role: Senior Engineer\n"
             b"    jd_file: JD-senior-engineer.md\n"
             b"    status: drafted\n"
+            b"    progress: {phase: application_prep, state: action_required}\n"
             b"    salary_range: null\n"
         )
 
@@ -154,6 +159,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"  - role: Senior Engineer\n"
             b"    jd_file: JD-senior-engineer.md\n"
             b"    status: drafted\n"
+            b"    progress: {phase: application_prep, state: action_required}\n"
             b"    salary_range: null\n"
         )
 
@@ -192,6 +198,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"  - role: Senior Engineer\n"
             b"    jd_file: JD-senior-engineer.md\n"
             b"    status: drafted\n"
+            b"    progress: {phase: application_prep, state: action_required}\n"
             b"notes:\n"
             b"  - follow up with recruiter\n"
             b"  - owner: candidate\n"
@@ -266,6 +273,7 @@ class MetadataEditorTests(unittest.TestCase):
             b"  - role: Senior Engineer\n"
             b"    jd_file: JD-senior-engineer.md\n"
             b"    status: drafted\n"
+            b"    progress: {phase: application_prep, state: action_required}\n"
         )
         generated = {("jobs", 0): _metadata()}
 
@@ -280,15 +288,18 @@ class MetadataEditorTests(unittest.TestCase):
         self.assertEqual(second.output_bytes, first.output_bytes)
 
 
-def _valid_v4_meta_bytes() -> bytes:
-    """A fully valid schema-v4 meta.yaml (single posting) for set-field tests."""
+def _valid_v5_meta_bytes() -> bytes:
+    """A fully valid schema-v5 meta.yaml (single posting) for set-field tests."""
     return (
-        b"job_metadata_schema_version: 4\n"
+        b"job_metadata_schema_version: 5\n"
         b"company: Acme\n"
         b"jobs:\n"
         b"  - role: Senior Engineer  # exact title\n"
         b"    jd_file: JD-senior-engineer.md\n"
         b"    status: drafted  # created by handoff\n"
+        b"    progress:\n"
+        b"      phase: application_prep\n"
+        b"      state: action_required\n"
         b"    workplace: remote\n"
         b"    sponsorship: unknown\n"
         b"    job_level: {normalized: senior, min: 5.0, max: 5.8, confidence: low, source: title}\n"
@@ -299,9 +310,11 @@ def _valid_v4_meta_bytes() -> bytes:
 
 class FieldUpdateEditorTests(unittest.TestCase):
     def test_overwrite_existing_status_preserves_comment_and_format(self):
-        raw = _valid_v4_meta_bytes()
+        raw = _valid_v5_meta_bytes()
         plan = plan_field_updates(
-            raw, {("jobs", 0): {"status": "applied", "status_date": "2026-07-20"}})
+            raw, {("jobs", 0): {"status": "applied", "status_date": "2026-07-20",
+                                "progress": {"phase": "application_review",
+                                             "state": "waiting_employer"}}})
         self.assertFalse(plan.errors)
         self.assertTrue(plan.changed)
         # The overwrite keeps the trailing inline comment byte-for-byte.
@@ -310,6 +323,10 @@ class FieldUpdateEditorTests(unittest.TestCase):
         result = yaml.safe_load(plan.output_bytes)
         self.assertEqual(result["jobs"][0]["status"], "applied")
         self.assertEqual(result["jobs"][0]["status_date"], "2026-07-20")
+        # The tool-owned progress block is rewritten wholesale.
+        self.assertEqual(result["jobs"][0]["progress"],
+                         {"phase": "application_review",
+                          "state": "waiting_employer"})
         # Untouched fields keep their exact formatting (flow-style mappings, comment).
         self.assertIn(b"role: Senior Engineer  # exact title", plan.output_bytes)
         self.assertIn(b"required_yoe: {min: 5, max: null,", plan.output_bytes)
@@ -318,34 +335,264 @@ class FieldUpdateEditorTests(unittest.TestCase):
         self.assertIn(
             ("jobs", 0, "status_date"), plan.changed_field_paths)
 
-    def test_stage_only_edit_leaves_status_untouched(self):
-        raw = _valid_v4_meta_bytes()
-        plan = plan_field_updates(raw, {("jobs", 0): {"stage": "onsite"}})
+    def test_progress_only_update_leaves_status_untouched(self):
+        raw = _valid_v5_meta_bytes()
+        plan = plan_field_updates(raw, {("jobs", 0): {"progress": {
+            "phase": "recruiter_screen", "state": "booking_required",
+            "label": "Intro call"}}})
         self.assertFalse(plan.errors)
         result = yaml.safe_load(plan.output_bytes)
-        self.assertEqual(result["jobs"][0]["stage"], "onsite")
+        self.assertEqual(result["jobs"][0]["progress"]["state"], "booking_required")
+        self.assertEqual(result["jobs"][0]["progress"]["label"], "Intro call")
         self.assertEqual(result["jobs"][0]["status"], "drafted")
+        self.assertIn(b"status: drafted  # created by handoff", plan.output_bytes)
+
+    def test_retired_stage_update_is_rejected_by_the_gate(self):
+        raw = _valid_v5_meta_bytes()
+        plan = plan_field_updates(raw, {("jobs", 0): {"stage": "onsite"}})
+        self.assertTrue(plan.errors)
+        self.assertFalse(plan.changed)
+        self.assertEqual(plan.output_bytes, raw)
 
     def test_unknown_record_path_fails_closed(self):
-        raw = _valid_v4_meta_bytes()
+        raw = _valid_v5_meta_bytes()
         plan = plan_field_updates(raw, {("jobs", 3): {"status": "applied"}})
         self.assertTrue(plan.errors)
         self.assertFalse(plan.changed)
         self.assertEqual(plan.output_bytes, raw)
 
     def test_invalid_status_value_is_rejected_by_the_gate(self):
-        raw = _valid_v4_meta_bytes()
+        raw = _valid_v5_meta_bytes()
         plan = plan_field_updates(raw, {("jobs", 0): {"status": "offer"}})
         self.assertTrue(plan.errors)
         self.assertFalse(plan.changed)
         self.assertEqual(plan.output_bytes, raw)
 
     def test_setting_status_to_current_value_is_a_no_op(self):
-        raw = _valid_v4_meta_bytes()
+        raw = _valid_v5_meta_bytes()
         plan = plan_field_updates(raw, {("jobs", 0): {"status": "drafted"}})
         self.assertFalse(plan.errors)
         self.assertFalse(plan.changed)
         self.assertEqual(plan.output_bytes, raw)
+
+
+class MigrationV4ToV5Tests(unittest.TestCase):
+    def test_migration_preserves_formatting_and_maps_stage(self):
+        raw = (
+            b"job_metadata_schema_version: 4  # bumped by handoff\n"
+            b'company: "Acme Corp"\n'
+            b"research_date: '2026-07-01'\n"
+            b"jobs:\n"
+            b"  - role: 'Senior Engineer' # exact title\n"
+            b"    jd_file: JD-senior-engineer.md\n"
+            b"    status: in_progress\n"
+            b"    stage: onsite  # legacy free text\n"
+            b"    workplace: remote\n"
+            b"    sponsorship: unknown\n"
+            b"    job_level: {normalized: senior, min: 5.0, max: 5.8, confidence: low, source: title}\n"
+            b"    required_yoe: {min: 5, max: null, confidence: high, source: job_description}\n"
+            b"    salary_range: null\n"
+        )
+        plan = plan_v4_to_v5_migration(raw)
+        self.assertFalse(plan.errors)
+        self.assertTrue(plan.changed)
+        # The version scalar is rewritten in place, comment intact.
+        self.assertIn(b"job_metadata_schema_version: 5  # bumped by handoff",
+                      plan.output_bytes)
+        # The stage line is gone entirely; neighbors keep their formatting.
+        self.assertNotIn(b"stage:", plan.output_bytes)
+        self.assertIn(b"role: 'Senior Engineer' # exact title", plan.output_bytes)
+        self.assertIn(b"research_date: '2026-07-01'", plan.output_bytes)
+        result = yaml.safe_load(plan.output_bytes)
+        self.assertEqual(result["jobs"][0]["progress"],
+                         {"phase": "interview_loop", "state": "unknown",
+                          "label": "onsite"})
+
+    def test_migration_handles_multi_role_and_closed_statuses(self):
+        raw = (
+            b"job_metadata_schema_version: 4\n"
+            b"company: Acme\n"
+            b"jobs:\n"
+            b"  - role: Backend Engineer\n"
+            b"    jd_file: JD-backend.md\n"
+            b"    status: rejected\n"
+            b"    stage: ''\n"
+            b"    workplace: remote\n"
+            b"    sponsorship: unknown\n"
+            b"    job_level: {normalized: senior, min: 5.0, max: 5.8, confidence: low, source: title}\n"
+            b"    required_yoe: {min: 5, max: null, confidence: high, source: job_description}\n"
+            b"    salary_range: null\n"
+            b"  - role: Platform Engineer\n"
+            b"    jd_file: JD-platform.md\n"
+            b"    status: applied\n"
+            b"    workplace: remote\n"
+            b"    sponsorship: unknown\n"
+            b"    job_level: {normalized: senior, min: 5.0, max: 5.8, confidence: low, source: title}\n"
+            b"    required_yoe: {min: 5, max: null, confidence: high, source: job_description}\n"
+            b"    salary_range: null\n"
+        )
+        plan = plan_v4_to_v5_migration(raw)
+        self.assertFalse(plan.errors)
+        result = yaml.safe_load(plan.output_bytes)
+        self.assertEqual(result["jobs"][0]["progress"],
+                         {"phase": "application_review", "state": "closed"})
+        self.assertEqual(result["jobs"][1]["progress"],
+                         {"phase": "application_review",
+                          "state": "waiting_employer"})
+        self.assertNotIn(b"stage:", plan.output_bytes)
+
+    def test_already_v5_fails_closed(self):
+        plan = plan_v4_to_v5_migration(_valid_v5_meta_bytes())
+        self.assertTrue(any("already schema v5" in e for e in plan.errors))
+        self.assertFalse(plan.changed)
+        self.assertEqual(plan.output_bytes, _valid_v5_meta_bytes())
+
+    def test_pre_v4_fails_closed(self):
+        raw = b"job_metadata_schema_version: 3\ncompany: Acme\n"
+        plan = plan_v4_to_v5_migration(raw)
+        self.assertTrue(any("only schema v4" in e for e in plan.errors))
+        self.assertEqual(plan.output_bytes, raw)
+
+    def test_incomplete_v4_facts_fail_closed_without_partial_write(self):
+        # A v4 file whose facts cannot be retained (missing job_level etc.)
+        # refuses to migrate rather than producing an invalid v5 file.
+        raw = (
+            b"job_metadata_schema_version: 4\n"
+            b"company: Acme\n"
+            b"jobs:\n"
+            b"  - role: Backend Engineer\n"
+            b"    jd_file: JD-backend.md\n"
+            b"    status: drafted\n"
+        )
+        plan = plan_v4_to_v5_migration(raw)
+        self.assertTrue(any("validation failed" in e for e in plan.errors))
+        self.assertFalse(plan.changed)
+        self.assertEqual(plan.output_bytes, raw)
+
+
+class BlockMappingBoundaryTests(unittest.TestCase):
+    """Regressions for PyYAML block-collection end-mark overshoot.
+
+    A block mapping's end mark points at the token AFTER the mapping (the
+    next sibling record's line, or past the trailing newline at EOF), so
+    edits planned from it bled outside the node. Found by the
+    application-tracker canaries on 2026-07-22
+    (memory/known-issues/metadata-editor-block-mapping-field-insertion.md).
+    """
+
+    @staticmethod
+    def _progress_last_bytes() -> bytes:
+        """One posting whose mapping ENDS with the block progress (no
+        status_date) — the exact shape migrate_to_v5.py produces for a
+        never-transitioned job, and the shipped example fixture's shape."""
+        return (
+            b"job_metadata_schema_version: 5\n"
+            b"company: Acme\n"
+            b"jobs:\n"
+            b"  - role: Senior Engineer\n"
+            b"    jd_file: JD-senior-engineer.md\n"
+            b"    status: drafted\n"
+            b"    workplace: remote\n"
+            b"    sponsorship: unknown\n"
+            b"    job_level: {normalized: senior, min: 5.0, max: 5.8, confidence: low, source: title}\n"
+            b"    required_yoe: {min: 5, max: null, confidence: high, source: job_description}\n"
+            b"    salary_range: null\n"
+            b"    progress:\n"
+            b"      phase: application_prep\n"
+            b"      state: action_required\n"
+        )
+
+    @staticmethod
+    def _two_entry_block_facts_bytes(version: int, with_progress: bool) -> bytes:
+        """Two postings whose fact mappings are BLOCK style; entry 1 ends
+        with a block mapping, so a mis-clamped insertion lands in entry 2."""
+        progress = (
+            b"    progress:\n"
+            b"      phase: application_review\n"
+            b"      state: waiting_employer\n"
+        ) if with_progress else b""
+        entry = (
+            b"  - role: %s\n"
+            b"    jd_file: %s\n"
+            b"    status: applied\n"
+            + progress +
+            b"    workplace: remote\n"
+            b"    sponsorship: unknown\n"
+            b"    job_level:\n"
+            b"      normalized: mid\n"
+            b"      min: 4.0\n"
+            b"      max: 4.8\n"
+            b"      confidence: medium\n"
+            b"      source: title\n"
+            b"    required_yoe:\n"
+            b"      min: 3\n"
+            b"      max: 6\n"
+            b"      confidence: high\n"
+            b"      source: job_description\n"
+            b"    salary_range:\n"
+            b"      min: 140000\n"
+            b"      max: 175000\n"
+            b"      confidence: high\n"
+            b"      source: job_description\n"
+        )
+        return (
+            b"job_metadata_schema_version: %d\n" % version
+            + b"company: Acme\n"
+            + b"jobs:\n"
+            + entry % (b"Backend Engineer", b"JD-backend.md")
+            + entry % (b"Frontend Engineer", b"JD-frontend.md")
+        )
+
+    def test_transition_when_progress_block_is_the_last_field(self):
+        raw = self._progress_last_bytes()
+        plan = plan_field_updates(
+            raw, {("jobs", 0): {"status": "applied", "status_date": "2026-07-22",
+                                "progress": {"phase": "application_review",
+                                             "state": "waiting_employer"}}})
+        self.assertFalse(plan.errors)
+        self.assertTrue(plan.changed)
+        result = yaml.safe_load(plan.output_bytes)
+        self.assertEqual(result["jobs"][0]["status"], "applied")
+        self.assertEqual(result["jobs"][0]["status_date"], "2026-07-22")
+        self.assertEqual(result["jobs"][0]["progress"],
+                         {"phase": "application_review",
+                          "state": "waiting_employer"})
+        # The inserted line is a proper sibling field, not glued to the
+        # rewritten progress block's last line.
+        self.assertIn(b"\n    status_date: '2026-07-22'\n", plan.output_bytes)
+
+    def test_insertion_stays_inside_a_block_style_entry(self):
+        raw = self._two_entry_block_facts_bytes(5, with_progress=True)
+        plan = plan_field_updates(
+            raw, {("jobs", 0): {"status": "in_progress",
+                                "status_date": "2026-07-22",
+                                "progress": {"phase": "interview_loop",
+                                             "state": "unknown",
+                                             "label": "Onsite interview"}}})
+        self.assertFalse(plan.errors)
+        result = yaml.safe_load(plan.output_bytes)
+        self.assertEqual(result["jobs"][0]["status"], "in_progress")
+        self.assertEqual(result["jobs"][0]["status_date"], "2026-07-22")
+        # Entry 2 is untouched — semantically and byte-for-byte.
+        self.assertEqual(result["jobs"][1]["status"], "applied")
+        self.assertNotIn("status_date", result["jobs"][1])
+        original_entry_2 = raw.split(b"  - role: Frontend Engineer", 1)[1]
+        new_entry_2 = plan.output_bytes.split(b"  - role: Frontend Engineer", 1)[1]
+        self.assertEqual(new_entry_2, original_entry_2)
+
+    def test_migration_appends_progress_inside_block_style_entries(self):
+        raw = self._two_entry_block_facts_bytes(4, with_progress=False)
+        plan = plan_v4_to_v5_migration(raw)
+        self.assertFalse(plan.errors)
+        result = yaml.safe_load(plan.output_bytes)
+        self.assertEqual(result["job_metadata_schema_version"], 5)
+        for job in result["jobs"]:
+            self.assertEqual(job["progress"],
+                             {"phase": "application_review",
+                              "state": "waiting_employer"})
+        # Each progress block belongs to its own entry: entry 2 still starts
+        # with its role line directly after entry 1's appended progress.
+        self.assertIn(b"  - role: Frontend Engineer\n", plan.output_bytes)
 
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@ class ResumeMetadataValidationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.check = _load_check_module()
 
-    def test_non_v4_metadata_fails_the_render_check(self):
+    def test_unversioned_metadata_fails_the_render_check(self):
         with tempfile.TemporaryDirectory() as temporary:
             app_dir = Path(temporary)
             (app_dir / "meta.yaml").write_text(
@@ -35,28 +35,10 @@ class ResumeMetadataValidationTests(unittest.TestCase):
             self.check.check_application_metadata(checker, app_dir)
 
         self.assertTrue(any(
-            "job_metadata_schema_version must be 4" in failure
+            "job_metadata_schema_version must be 5" in failure
             for failure in checker.failures))
 
-    def test_legacy_v3_metadata_is_rejected(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            app_dir = Path(temporary)
-            (app_dir / "meta.yaml").write_text(
-                "job_metadata_schema_version: 3\n"
-                'company: "Example Corp"\n'
-                "jobs:\n"
-                '  - role: "Software Engineer"\n'
-                "    jd_file: JD-software-engineer.md\n"
-                "    status: drafted\n"
-            )
-            checker = self.check.Checker()
-            self.check.check_application_metadata(checker, app_dir)
-
-        self.assertTrue(any(
-            "job_metadata_schema_version must be 4" in failure
-            for failure in checker.failures))
-
-    def test_v4_metadata_is_validated_strictly(self):
+    def test_legacy_v4_metadata_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             app_dir = Path(temporary)
             (app_dir / "meta.yaml").write_text(
@@ -70,8 +52,27 @@ class ResumeMetadataValidationTests(unittest.TestCase):
             checker = self.check.Checker()
             self.check.check_application_metadata(checker, app_dir)
 
+        self.assertTrue(any(
+            "job_metadata_schema_version must be 5" in failure
+            for failure in checker.failures))
+
+    def test_v5_metadata_is_validated_strictly(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app_dir = Path(temporary)
+            (app_dir / "meta.yaml").write_text(
+                "job_metadata_schema_version: 5\n"
+                'company: "Example Corp"\n'
+                "jobs:\n"
+                '  - role: "Software Engineer"\n'
+                "    jd_file: JD-software-engineer.md\n"
+                "    status: drafted\n"
+            )
+            checker = self.check.Checker()
+            self.check.check_application_metadata(checker, app_dir)
+
         self.assertTrue(checker.failures)
         self.assertTrue(any("job_level" in failure for failure in checker.failures))
+        self.assertTrue(any("progress" in failure for failure in checker.failures))
 
 
 if __name__ == "__main__":

@@ -63,10 +63,10 @@ The `<Role>` suffix is the role's slug (underscores, via `layout.slugify_label`,
 `cover_letter.py` emit these names automatically — never hand-name or hand-place them.
 
 Root files:
-- `meta.yaml` — human-readable tracking metadata. Top-level `job_metadata_schema_version: 4`
+- `meta.yaml` — human-readable tracking metadata. Top-level `job_metadata_schema_version: 5`
  plus company-scope fields and a uniform **`jobs:` list — one entry per posting, always a list
  even for a single role** (each entry carries `role`, its exact `jd_file`, a required per-job
- `status` (optional `stage`/`status_date`), `location`, `workplace`, `sponsorship`, and the flat
+ `status` and structured `progress` (optional `status_date`), `location`, `workplace`, `sponsorship`, and the flat
  `job_level`/`required_yoe`/`salary_range` facts; no `total_compensation_range`). **The
  `application-tracker` skill (`skills/application-tracker/SKILL.md`,
  "`meta.yaml` Schema") is the single canonical owner of the full schema and rules** — read it

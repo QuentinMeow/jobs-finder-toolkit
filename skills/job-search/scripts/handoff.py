@@ -20,7 +20,7 @@ drafting agent can start at gap analysis instead of re-transcribing ~10 fields:
    (imported, never subprocessed; exactly one fetch). If the fetch fails the
    folder is still scaffolded, but the tool exits non-zero telling the agent to
    save the JD manually.
-3. Write ``meta.yaml`` (schema v4), carrying over every structured fact the search
+3. Write ``meta.yaml`` (schema v5), carrying over every structured fact the search
    row already computed — level, YOE, salary, workplace, sponsorship, location,
    URL, posted date, source channel — using the vendored ``metadata_editor``
    (the same formatting-preserving editor the tracker's ``--enrich-metadata``
@@ -298,10 +298,10 @@ def warn_if_stale(store_key: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# meta.yaml (schema v4)
+# meta.yaml (schema v5)
 # --------------------------------------------------------------------------- #
 def carry_metadata(row: dict) -> dict:
-    """Carry the row's structured metadata into the schema-v4 posting shape.
+    """Carry the row's structured metadata into the schema-v5 posting shape.
 
     Every one of ``POSTING_METADATA_FIELDS`` is present (the editor requires the
     full set), but values are only carried when the row actually provides them:
@@ -350,8 +350,10 @@ def build_meta_bytes(row: dict, *, jd_file: str, research_date: str) -> tuple[by
     job_entry = {
         "role": str(row.get("title") or ""),
         "jd_file": jd_file,
-        # Handoff always creates a fresh DRAFTED application.
+        # Handoff always creates a fresh DRAFTED application; schema v5 pairs
+        # that with the deterministic drafted progress summary.
         "status": "drafted",
+        "progress": {"phase": "application_prep", "state": "action_required"},
         "location": str(row.get("location") or ""),
         "url": str(row.get("url") or ""),
         "posted_date": _posted_date(row),
@@ -550,7 +552,7 @@ def _run_row(row: dict, args: argparse.Namespace) -> tuple[int, Path]:
     # Stale-posting hint (local store lookup by the copied store_key; never blocks).
     warn_if_stale(str(row.get("store_key") or "").strip())
 
-    # --- meta.yaml (schema v4, facts carried from the row) ---------------- #
+    # --- meta.yaml (schema v5, facts carried from the row) ---------------- #
     meta_bytes, editor_errors = build_meta_bytes(
         row, jd_file=jd_file, research_date=research_date)
     (folder / "meta.yaml").write_bytes(meta_bytes)

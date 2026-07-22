@@ -1,4 +1,4 @@
-job_metadata_schema_version: 4
+job_metadata_schema_version: 5
 company: "Example Corp"
 research_date: "2025-01-15"
 channel: ""
@@ -31,3 +31,6 @@ jobs:
       max: 195000
       confidence: high
       source: company_reference
+    progress:
+      phase: application_prep
+      state: action_required

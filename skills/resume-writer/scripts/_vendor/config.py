@@ -28,6 +28,7 @@ Config schema::
       company_levels_yaml: "relative/path.yaml"
       applications_root: "applications"
       discoveries_dir: "applications/1_discoveries"
+      calendar_md: "applications/0_profile/calendar.md"   # OPTIONAL
     job_search:
       default_profile: "default"
     generation:
@@ -197,6 +198,20 @@ def applications_root() -> Path:
 
 def discoveries_dir() -> Path:
     return _resolve(_paths().get("discoveries_dir"), "applications/1_discoveries")
+
+
+def calendar_path() -> Path:
+    """The single private calendar/todo file (``calendar.md``).
+
+    Defaults to ``<applications_root>/0_profile/calendar.md`` so a real
+    configuration resolves into the private overlay while the tracked example
+    config resolves into the fictional ``examples/`` tree. Override with
+    ``paths.calendar_md``.
+    """
+    configured = _paths().get("calendar_md")
+    if configured:
+        return _resolve(configured, "applications/0_profile/calendar.md")
+    return applications_root() / "0_profile" / "calendar.md"
 
 
 # ── raw-data-layer store root ─────────────────────────────────

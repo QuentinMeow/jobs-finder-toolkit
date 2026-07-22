@@ -1,4 +1,4 @@
-"""End-to-end tests for `status.py --update` / `--update-job` (schema v4).
+"""End-to-end tests for `status.py --update` / `--update-job` (schema v5).
 
 status.py resolves its applications root from config at import time, so each case
 runs it as a subprocess with JOBHUNT_CONFIG pointed at a throwaway config +
@@ -33,12 +33,24 @@ STATUS_DIRS = {
 }
 
 
+def _progress(status: str) -> dict:
+    """A valid progress summary for the given coarse status (v5 coupling)."""
+    if status == "drafted":
+        return {"phase": "application_prep", "state": "action_required"}
+    if status == "applied":
+        return {"phase": "application_review", "state": "waiting_employer"}
+    if status in ("rejected", "ignored"):
+        return {"phase": "recruiter_screen", "state": "closed"}
+    return {"phase": "recruiter_screen", "state": "unknown"}
+
+
 def _job(role: str, status: str, jd_file: str) -> dict:
-    """A fully valid schema-v4 posting (fictional data)."""
+    """A fully valid schema-v5 posting (fictional data)."""
     return {
         "role": role,
         "jd_file": jd_file,
         "status": status,
+        "progress": _progress(status),
         "workplace": "remote",
         "sponsorship": "unknown",
         "job_level": {"normalized": "senior", "min": 5.0, "max": 5.8,
@@ -61,7 +73,7 @@ class StatusTransitionTests(unittest.TestCase):
             """), encoding="utf-8")
 
     def _place(self, status_label: str, slug: str, jobs: list[dict],
-               *, version: int = 4) -> Path:
+               *, version: int = 5) -> Path:
         app = self.apps / STATUS_DIRS[status_label] / slug
         (app / "source").mkdir(parents=True)
         for job in jobs:
@@ -110,14 +122,17 @@ class StatusTransitionTests(unittest.TestCase):
         for job in meta["jobs"]:
             self.assertEqual(job["status"], "applied")
             self.assertEqual(job["status_date"], today)
+            # The transition also stamps the deterministic progress summary.
+            self.assertEqual(job["progress"]["phase"], "application_review")
+            self.assertEqual(job["progress"]["state"], "waiting_employer")
 
-    def test_update_refuses_non_v4_meta_without_moving(self):
+    def test_update_refuses_non_v5_meta_without_moving(self):
         slug = "example-corp-legacy-20260720"
         self._place("drafted", slug,
-                    [{"role": "Legacy", "jd_file": "JD-legacy.md"}], version=3)
+                    [{"role": "Legacy", "jd_file": "JD-legacy.md"}], version=4)
         proc = self._run("--update", slug, "applied")
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("schema v4", proc.stderr)
+        self.assertIn("schema v5", proc.stderr)
         self.assertEqual(self._find(slug)[0], "drafted")  # not moved
 
     # -- --update-job ------------------------------------------------------ #
@@ -134,8 +149,12 @@ class StatusTransitionTests(unittest.TestCase):
         self.assertEqual(label, "in_progress")
         meta = self._meta(app)
         self.assertEqual(meta["jobs"][0]["status"], "applied")     # untouched
+        self.assertEqual(meta["jobs"][0]["progress"]["state"], "waiting_employer")
         self.assertEqual(meta["jobs"][1]["status"], "in_progress")
         self.assertEqual(meta["jobs"][1]["status_date"], date.today().isoformat())
+        # Reopening keeps the phase but never guesses an active state.
+        self.assertEqual(meta["jobs"][1]["progress"]["phase"], "application_review")
+        self.assertEqual(meta["jobs"][1]["progress"]["state"], "unknown")
 
     def test_update_job_by_index(self):
         slug = "example-corp-multi-20260720"
@@ -174,35 +193,31 @@ class StatusTransitionTests(unittest.TestCase):
         self.assertIn("Senior Backend Engineer", proc.stderr)
         self.assertEqual(self._find(slug)[0], "applied")  # nothing moved
 
-    def test_update_job_stage_only_keep_requires_stage(self):
+    def test_update_job_keep_and_stage_flags_are_retired(self):
         slug = "example-corp-solo-20260720"
         self._place("in_progress", slug,
                     [_job("Backend Engineer", "in_progress", "JD-backend.md")])
-        missing = self._run("--update-job", slug, "backend", "keep")
-        self.assertNotEqual(missing.returncode, 0)
-        self.assertIn("--stage", missing.stderr)
+        keep = self._run("--update-job", slug, "backend", "keep")
+        self.assertNotEqual(keep.returncode, 0)  # v5: no stage-only edits
+        stage = self._run("--update-job", slug, "backend", "in_progress",
+                          "--stage", "onsite")
+        self.assertNotEqual(stage.returncode, 0)  # the flag no longer exists
+        meta = self._meta(self._find(slug)[1])
+        self.assertNotIn("stage", meta["jobs"][0])
 
-        proc = self._run("--update-job", slug, "backend", "keep",
-                         "--stage", "onsite scheduled")
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        label, app = self._find(slug)
-        self.assertEqual(label, "in_progress")  # status unchanged, no move
-        meta = self._meta(app)
-        self.assertEqual(meta["jobs"][0]["stage"], "onsite scheduled")
-        self.assertEqual(meta["jobs"][0]["status"], "in_progress")
-
-    def test_update_job_status_change_with_stage(self):
+    def test_update_job_to_rejected_closes_progress(self):
         slug = "example-corp-solo-20260720"
-        self._place("applied", slug,
-                    [_job("Backend Engineer", "applied", "JD-backend.md")])
-        proc = self._run("--update-job", slug, "backend", "in_progress",
-                         "--stage", "recruiter screen")
+        self._place("in_progress", slug,
+                    [_job("Backend Engineer", "in_progress", "JD-backend.md")])
+        proc = self._run("--update-job", slug, "backend", "rejected")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         label, app = self._find(slug)
-        self.assertEqual(label, "in_progress")
+        self.assertEqual(label, "rejected")
         meta = self._meta(app)
-        self.assertEqual(meta["jobs"][0]["status"], "in_progress")
-        self.assertEqual(meta["jobs"][0]["stage"], "recruiter screen")
+        self.assertEqual(meta["jobs"][0]["status"], "rejected")
+        # The last known phase survives; the state closes with the status.
+        self.assertEqual(meta["jobs"][0]["progress"]["phase"], "recruiter_screen")
+        self.assertEqual(meta["jobs"][0]["progress"]["state"], "closed")
 
 
 if __name__ == "__main__":

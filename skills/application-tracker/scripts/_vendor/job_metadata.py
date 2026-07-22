@@ -1,4 +1,4 @@
-"""Pure helpers for structured, human-readable job metadata (schema v4).
+"""Pure helpers for structured, human-readable job metadata (schema v5).
 
 An application ``meta.yaml`` is something a person reads to decide "what is this
 posting and should I apply?". The per-posting facts are deliberately flat and
@@ -66,7 +66,7 @@ POSTING_METADATA_FIELDS = (
     "sponsorship",
     *METADATA_FIELDS,
 )
-APPLICATION_SCHEMA_VERSION = 4
+APPLICATION_SCHEMA_VERSION = 5
 
 WORKPLACE_VALUES = {"onsite", "hybrid", "remote", "unknown"}
 SPONSORSHIP_VALUES = {"likely", "unlikely", "unknown"}
@@ -104,6 +104,173 @@ def derive_status(jobs: list[dict]) -> str:
         if candidate in present:
             return candidate
     raise ValueError("no derivable status")  # unreachable: every status is valid
+
+
+# ---------------------------------------------------------------------------
+# Structured per-job progress (schema v5). ``jobs[].progress`` replaces the
+# retired free-text ``stage`` with a normalized {phase, state} summary; ``label``
+# preserves employer-specific wording without expanding the enums.
+# ---------------------------------------------------------------------------
+# Hiring phases: "which hiring step is this role in?" — independent from
+# whether a time has been arranged. ``other`` requires a non-empty ``label``.
+PROGRESS_PHASES = (
+    "application_prep",
+    "application_review",
+    "recruiter_screen",
+    "assessment",
+    "hiring_manager",
+    "technical_interview",
+    "interview_loop",
+    "team_match",
+    "offer",
+    "background_check",
+    "onboarding",
+    "other",
+)
+# Workflow states: "what is happening now, and who needs to act?"
+PROGRESS_STATES = (
+    "unknown",
+    "action_required",
+    "booking_required",
+    "awaiting_schedule",
+    "scheduled",
+    "reschedule_required",
+    "reschedule_pending",
+    "waiting_employer",
+    "awaiting_result",
+    "closed",
+)
+# States projected onto the calendar file: the owner owes an action, a booking
+# is awaiting confirmation, or a confirmed time exists.
+PROGRESS_ACTION_STATES = ("action_required", "booking_required", "reschedule_required")
+PROGRESS_WAITING_STATES = ("awaiting_schedule", "reschedule_pending")
+# Scheduling-flow states: entering one of these creates/updates a calendar entry.
+PROGRESS_SCHEDULING_STATES = (
+    "booking_required",
+    "awaiting_schedule",
+    "scheduled",
+    "reschedule_required",
+    "reschedule_pending",
+)
+PROGRESS_SOURCE_KINDS = ("manual", "email")
+# Coarse statuses whose progress state must be (exactly) ``closed``.
+CLOSED_STATUSES = ("rejected", "ignored")
+
+CALENDAR_ITEM_RE = re.compile(r"^cal-[a-z0-9][a-z0-9-]*$")
+
+# Recognized legacy ``stage`` wordings -> hiring phase, used ONLY by the
+# deterministic v4 -> v5 migration. A stage text maps to a phase when exactly
+# one family below matches; anything else migrates as phase ``other`` with the
+# exact old text preserved in ``label``. Never guesses a workflow state.
+_LEGACY_STAGE_PHASES = (
+    ("recruiter_screen", ("recruiter", "phone screen", "screening call")),
+    ("assessment", ("assessment", "take-home", "take home", "online test", "coding challenge")),
+    ("hiring_manager", ("hiring manager",)),
+    ("technical_interview", ("technical screen", "technical interview", "tech screen",
+                             "coding interview", "system design")),
+    ("interview_loop", ("onsite", "on-site", "interview loop", "final round",
+                        "final loop", "virtual onsite", "panel")),
+    ("team_match", ("team match", "team matching")),
+    ("offer", ("offer",)),
+    ("background_check", ("background check", "background")),
+    ("onboarding", ("onboarding", "onboard")),
+)
+
+
+def legacy_stage_phase(stage: str | None) -> str | None:
+    """Map a legacy free-text stage to a phase when EXACTLY one family matches."""
+    text = _clean(stage)
+    if not text:
+        return None
+    matched = [
+        phase for phase, needles in _LEGACY_STAGE_PHASES
+        if any(needle in text for needle in needles)
+    ]
+    return matched[0] if len(matched) == 1 else None
+
+
+def default_progress_for_status(status: str, *, current: dict | None = None) -> dict:
+    """The deterministic progress summary for a coarse per-job status transition.
+
+    Mirrors the migration mapping (design/application-progress-calendar §6):
+    ``drafted`` -> application_prep + action_required; ``applied`` ->
+    application_review + waiting_employer; ``rejected``/``ignored`` keep the
+    last known phase with state ``closed``; ``in_progress`` keeps the current
+    phase (and any still-valid active state) but NEVER guesses — an unknown or
+    closed prior state becomes ``unknown``. ``label``/``calendar_item`` from the
+    current progress are preserved except on the drafted/applied resets.
+    """
+    current = current if isinstance(current, dict) else {}
+    keep_calendar = {
+        key: current[key] for key in ("calendar_item",) if current.get(key)
+    }
+    if status == "drafted":
+        return {"phase": "application_prep", "state": "action_required", **keep_calendar}
+    if status == "applied":
+        return {"phase": "application_review", "state": "waiting_employer", **keep_calendar}
+    phase = str(current.get("phase") or "").strip()
+    label = str(current.get("label") or "").strip()
+    if phase not in PROGRESS_PHASES:
+        phase, label = "other", (label or status)
+    out: dict = {"phase": phase}
+    if status in CLOSED_STATUSES:
+        out["state"] = "closed"
+    else:  # in_progress: keep a deliberately-set active state, never guess one.
+        state = str(current.get("state") or "").strip()
+        keepable = {
+            "action_required", "awaiting_result", *PROGRESS_SCHEDULING_STATES,
+        }
+        out["state"] = state if state in keepable else "unknown"
+    if label:
+        out["label"] = label
+    out.update(keep_calendar)
+    return out
+
+
+def migrate_job_progress(status: str | None, stage: str | None) -> dict:
+    """Deterministic v4 -> v5 progress for one job (design §6). Never guesses.
+
+    - ``drafted`` -> application_prep + action_required
+    - ``applied`` -> application_review + waiting_employer
+    - ``in_progress`` -> recognized legacy stage phase (else ``other``), state
+      ``unknown``; the exact old stage text (or the status literal when the
+      stage was empty) is preserved as ``label``.
+    - ``rejected``/``ignored`` -> state ``closed``; phase from the recognized
+      stage, else ``application_review`` for rejected (it was at least
+      submitted) / ``application_prep`` for ignored (never submitted), with any
+      unrecognized non-empty stage preserved via phase ``other`` + ``label``.
+
+    No migration invents a calendar item, timestamp, email source, or
+    completion event, so none of those keys ever appear in the result.
+    """
+    status_text = str(status or "").strip()
+    stage_text = str(stage or "").strip()
+    if status_text == "drafted":
+        out = {"phase": "application_prep", "state": "action_required"}
+    elif status_text == "applied":
+        out = {"phase": "application_review", "state": "waiting_employer"}
+    elif status_text == "in_progress":
+        phase = legacy_stage_phase(stage_text)
+        out = {"phase": phase or "other", "state": "unknown",
+               "label": stage_text or status_text}
+    elif status_text in CLOSED_STATUSES:
+        phase = legacy_stage_phase(stage_text)
+        if phase:
+            out = {"phase": phase, "state": "closed"}
+        elif stage_text:
+            out = {"phase": "other", "state": "closed", "label": stage_text}
+        else:
+            out = {
+                "phase": ("application_review" if status_text == "rejected"
+                          else "application_prep"),
+                "state": "closed",
+            }
+    else:
+        raise ValueError(f"cannot migrate unknown status {status!r}")
+    if stage_text and "label" not in out:
+        out["label"] = stage_text
+    return out
+
 
 NORMALIZED_LEVELS = {
     "intern",
@@ -1034,7 +1201,7 @@ def classify_sponsorship(text: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Application meta.yaml layer (the flat, human-facing schema v4).
+# Application meta.yaml layer (the flat, human-facing schema v5).
 # ---------------------------------------------------------------------------
 def _google_range(normalized: str, level_entry: dict | None) -> tuple[float | None, float | None]:
     if isinstance(level_entry, dict):
@@ -1205,7 +1372,7 @@ def metadata_field_gaps(record: dict, metadata: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Validation (schema v4 is strict; there is no legacy/compat path).
+# Validation (schema v5 is strict; there is no legacy/compat path).
 # ---------------------------------------------------------------------------
 _STATUS_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 def _validate_numeric_range(
@@ -1284,13 +1451,76 @@ def _validate_status(value: Any, path: str) -> list[str]:
     return []
 
 
-def _validate_stage(value: Any, path: str) -> list[str]:
-    """Optional per-job ``stage``: free text. Absent/null is fine; must be a string."""
-    if value is None:
-        return []
-    if not isinstance(value, str):
-        return [f"{path} must be a string"]
-    return []
+_ISO_TIMESTAMP_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)?$")
+
+
+def _validate_progress(value: Any, status: Any, path: str) -> list[str]:
+    """Validate the required per-job ``progress`` summary (schema v5).
+
+    ``phase``/``state`` are enum-gated; phase ``other`` requires a non-empty
+    ``label``; ``calendar_item`` must look like a calendar entry id;
+    ``updated_at`` (tool-stamped, never invented) must be ISO-8601;
+    ``source.kind`` is manual|email and an email source requires a ``ref``
+    (the neutral stored message key). The workflow state must agree with the
+    coarse status: rejected/ignored jobs are exactly ``closed``, active jobs
+    are never ``closed``.
+    """
+    if not isinstance(value, dict):
+        return [f"{path} is required and must be a mapping (schema v5)"]
+    errors: list[str] = []
+    phase = value.get("phase")
+    if phase not in PROGRESS_PHASES:
+        errors.append(f"{path}.phase must be one of {', '.join(PROGRESS_PHASES)}")
+    state = value.get("state")
+    if state not in PROGRESS_STATES:
+        errors.append(f"{path}.state must be one of {', '.join(PROGRESS_STATES)}")
+    label = value.get("label")
+    if label is not None and not isinstance(label, str):
+        errors.append(f"{path}.label must be a string")
+    if phase == "other" and not str(label or "").strip():
+        errors.append(f"{path}.label is required when phase is 'other'")
+    calendar_item = value.get("calendar_item")
+    if calendar_item not in (None, ""):
+        if not isinstance(calendar_item, str) or not CALENDAR_ITEM_RE.match(calendar_item):
+            errors.append(
+                f"{path}.calendar_item must be a calendar entry id "
+                "(cal-<lowercase-slug>)")
+    updated_at = value.get("updated_at")
+    if updated_at not in (None, ""):
+        if not isinstance(updated_at, str) or not _ISO_TIMESTAMP_RE.match(updated_at):
+            errors.append(f"{path}.updated_at must be an ISO-8601 timestamp")
+    source = value.get("source")
+    if source is not None:
+        if not isinstance(source, dict):
+            errors.append(f"{path}.source must be a mapping")
+        else:
+            kind = source.get("kind")
+            if kind not in PROGRESS_SOURCE_KINDS:
+                errors.append(
+                    f"{path}.source.kind must be one of "
+                    f"{', '.join(PROGRESS_SOURCE_KINDS)}")
+            ref = source.get("ref")
+            if ref is not None and not isinstance(ref, str):
+                errors.append(f"{path}.source.ref must be a string")
+            if kind == "email" and not str(ref or "").strip():
+                errors.append(
+                    f"{path}.source.ref is required for an email source "
+                    "(the neutral stored message key)")
+    unknown = [key for key in value
+               if key not in ("phase", "state", "label", "calendar_item",
+                              "updated_at", "source")]
+    if unknown:
+        errors.append(f"{path} has unknown key(s): {', '.join(sorted(unknown))}")
+    # Coarse-status coupling: closed <=> rejected/ignored.
+    if state in PROGRESS_STATES:
+        if status in CLOSED_STATUSES and state != "closed":
+            errors.append(
+                f"{path}.state must be 'closed' when status is {status!r}")
+        if state == "closed" and status not in CLOSED_STATUSES:
+            errors.append(
+                f"{path}.state 'closed' requires status rejected or ignored")
+    return errors
 
 
 def _validate_status_date(value: Any, path: str) -> list[str]:
@@ -1362,7 +1592,12 @@ def validate_job_metadata(record: dict, *, prefix: str = "") -> list[str]:
     errors.extend(_validate_enum(
         record.get("sponsorship"), SPONSORSHIP_VALUES, f"{lead}sponsorship"))
     errors.extend(_validate_status(record.get("status"), f"{lead}status"))
-    errors.extend(_validate_stage(record.get("stage"), f"{lead}stage"))
+    if "stage" in record:
+        errors.append(
+            f"{lead}stage was removed in schema v5 — migrate it to the "
+            f"structured {lead}progress summary (migrate_to_v5.py)")
+    errors.extend(_validate_progress(
+        record.get("progress"), record.get("status"), f"{lead}progress"))
     errors.extend(_validate_status_date(record.get("status_date"), f"{lead}status_date"))
     errors.extend(_validate_store_key(record.get("store_key"), f"{lead}store_key"))
     return errors
@@ -1425,13 +1660,15 @@ def validate_jd_file_associations(meta: dict, app_dir: str | Path) -> list[str]:
 
 
 def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]:
-    """Validate schema-v4 application metadata (a uniform ``jobs`` list).
+    """Validate schema-v5 application metadata (a uniform ``jobs`` list).
 
     Each ``jobs`` entry carries a required per-job ``status`` (one of
-    ``STATUS_VALUES``) plus optional ``stage``/``status_date``; the top-level
-    ``stage`` field of v3 is gone and is now rejected. When ``app_dir`` sits inside
-    a known status folder, the folder label must equal ``derive_status(jobs)`` — a
-    manual folder move that skipped the CLI is flagged so it can be re-synced.
+    ``STATUS_VALUES``) and a required structured ``progress`` summary
+    ({phase, state, label?, calendar_item?, updated_at?, source?}); the retired
+    free-text ``stage`` key (per-job or top-level) is rejected. When ``app_dir``
+    sits inside a known status folder, the folder label must equal
+    ``derive_status(jobs)`` — a manual folder move that skipped the CLI is
+    flagged so it can be re-synced.
     """
     version = meta.get("job_metadata_schema_version")
     if (
@@ -1448,10 +1685,11 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
         errors.append("company is required")
     if "stage" in meta:
         errors.append(
-            "top-level stage is not allowed in schema v4 (move it to per-job stage)")
+            "top-level stage is not allowed in schema v5 (stage was replaced by "
+            "per-job progress)")
     if "status" in meta:
         errors.append(
-            "top-level status is not allowed in schema v4 (status is per-job, "
+            "top-level status is not allowed in schema v5 (status is per-job, "
             "under jobs:)")
 
     jobs = meta.get("jobs")

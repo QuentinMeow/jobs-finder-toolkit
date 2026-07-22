@@ -79,13 +79,17 @@ def _records(applications_root: Path):
         roles = tuple(str(job.get("role", "")).strip() for job in jobs)
         if not roles and meta.get("role"):
             roles = (str(meta["role"]).strip(),)
-        # Per-job view for schema v4 (status/stage live on each job entry). v2/v3
-        # files predate this and simply lack the keys — degrade to null, never crash.
+        # Per-job view for schema v5 (status + structured progress live on each
+        # job entry). Older files simply lack the keys — degrade to null, never
+        # crash.
         job_views = tuple(
             {
                 "role": str(job.get("role", "")).strip(),
                 "status": _clean(job.get("status")),
-                "stage": _clean(job.get("stage")),
+                "phase": _clean((job.get("progress") or {}).get("phase")
+                                if isinstance(job.get("progress"), dict) else None),
+                "state": _clean((job.get("progress") or {}).get("state")
+                                if isinstance(job.get("progress"), dict) else None),
             }
             for job in jobs
         )

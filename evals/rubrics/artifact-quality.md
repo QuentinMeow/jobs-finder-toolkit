@@ -37,7 +37,7 @@ gate, no-fabrication, cover-letter structure), and the machine checks in
 ```bash
 # Resume + cover-letter validity (resolves baseline/profile from config; no rendering):
 .venv/bin/python skills/resume-writer/scripts/check.py <app_folder>/
-# Metadata schema v4 + location policy (a private overlay tree needs its JOBHUNT_CONFIG;
+# Metadata schema v5 + location policy (a private overlay tree needs its JOBHUNT_CONFIG;
 # the benchmark tree needs the benchmark config):
 JOBHUNT_CONFIG=<config> \
   .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata

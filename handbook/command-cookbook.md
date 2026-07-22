@@ -23,13 +23,15 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 # Show all applications and their status (status = which folder each app lives in)
 .venv/bin/python skills/application-tracker/scripts/status.py
 
-# Populate/validate schema-v4 level, required YOE, salary + approximate Google-equiv from JD + cache.
+# Populate/validate schema-v5 level, required YOE, salary + approximate Google-equiv from JD + cache.
 .venv/bin/python skills/application-tracker/scripts/status.py --enrich-metadata applications/6_drafted/<slug>/
-# Fleet preview: dry-run, covers ALL status folders (strict schema v4). Use --statuses <labels> to
+# Fleet preview: dry-run, covers ALL status folders (strict schema v5). Use --statuses <labels> to
 # narrow to a set; add --write only after reviewing the dry-run preview.
 .venv/bin/python skills/application-tracker/scripts/backfill_job_metadata.py
 # Validate structured metadata — ALL status folders by default; --statuses <labels> to narrow.
 .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata
+# Migrate v4 meta.yaml files to schema v5 (fleet dry-run diff; --write applies atomically)
+.venv/bin/python skills/application-tracker/scripts/migrate_to_v5.py
 
 # Import user-supplied/licensed company-level facts (YAML/JSON/CSV; dry-run by default)
 .venv/bin/python automation/maintenance/import_company_levels.py INPUT <company-levels.yaml>
@@ -46,7 +48,12 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 # (statuses: drafted | applied | in_progress | rejected | ignored)
 .venv/bin/python skills/application-tracker/scripts/status.py --update <slug> applied
 # Transition ONE posting in a multi-role app (role-match = role substring or 1-based index)
-.venv/bin/python skills/application-tracker/scripts/status.py --update-job <slug> "<role-match>" in_progress --stage "onsite"
+.venv/bin/python skills/application-tracker/scripts/status.py --update-job <slug> "<role-match>" in_progress
+# Set ONE posting's structured progress (meta + calendar together; never moves folders)
+.venv/bin/python skills/application-tracker/scripts/status.py --update-progress <slug> "<role-match>" --phase technical_interview --state booking_required
+# Verify calendar.md <-> progress consistency; preview/apply owner calendar edits
+.venv/bin/python skills/application-tracker/scripts/status.py --check-calendar
+.venv/bin/python skills/application-tracker/scripts/status.py --sync-calendar          # add --write to apply
 
 # Personal Outlook (draft-only; user sends manually; see the email-assistant skill
 # for login/inbox/draft commands)

@@ -10,6 +10,10 @@ paths:
   company_levels_yaml: "examples/profile/company-levels.example.yaml"
   applications_root: "examples/applications"
   discoveries_dir: "examples/applications/1_discoveries"
+  # The single calendar/todo file the application tracker maintains alongside
+  # per-job progress (interview schedules, booking todos, reschedule history).
+  # Defaults to <applications_root>/0_profile/calendar.md when omitted.
+  calendar_md: "examples/applications/0_profile/calendar.md"
 job_search:
   default_profile: "example"
 generation:

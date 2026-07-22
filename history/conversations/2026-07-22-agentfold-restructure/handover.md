@@ -26,3 +26,14 @@
   — still awaiting your answer ("leave parked" chosen this session, so the
   7 drafts stay frozen as the quality baseline).
 - Merge order: #57 → #58 → harness PR (each stacked on the previous).
+
+## Update (later the same session)
+
+- Email Stage 1 shipped as PR #60; Stage 2 (schema v5 + calendar) is PR'd
+  stacked on it, gated by a full 5/5 application-tracker canary run that
+  also caught and fixed a real metadata-editor bug (44d26fa) — details in
+  `evals/results/application-tracker-efcde9a-20260722.md`.
+- Owner to-dos after merging the stack: run `migrate_to_v5.py` (preview
+  then `--write`) on the private applications; one read-only `--live`
+  provider conformance run; optionally set `paths.calendar_md` in
+  `config.yaml`.

@@ -68,12 +68,13 @@ glob, so labeled names count.
 
 **Per-job `status` is the fine-grained source of truth; the status folder is the DERIVED overall
 status.** Each `jobs:` entry carries a required `status`
-(`drafted|applied|in_progress|rejected|ignored` — the same labels as the folders), an optional
-free-text `stage` (e.g. "recruiter screen", "onsite", "offer"), and an optional `status_date`
-(`YYYY-MM-DD`, stamped by tooling on each transition). The parent folder is the overall status
-rolled up from those per-job values (see "Overall status" below); the validator errors when the
-folder and the rollup disagree, and the scripts keep them in sync — a manual folder move must be
-re-synced via `status.py --update`. There is **no** top-level `status` or `stage` field.
+(`drafted|applied|in_progress|rejected|ignored` — the same labels as the folders), a required
+structured **`progress`** summary (see "Per-job progress" below — schema v5 replaced the retired
+free-text `stage` with it), and an optional `status_date` (`YYYY-MM-DD`, stamped by tooling on
+each transition). The parent folder is the overall status rolled up from those per-job values
+(see "Overall status" below); the validator errors when the folder and the rollup disagree, and
+the scripts keep them in sync — a manual folder move must be re-synced via `status.py --update`.
+There is **no** top-level `status` or `stage` field, and a per-job `stage` key is rejected.
 This skill is the canonical owner of the metadata schema. Resume-writer creates the
 initial file; job-search supplies posting facts; application-tracker validates and
 enriches them.
@@ -90,7 +91,7 @@ company-scope `channel` (how you found the lead) is named apart from the per-fac
 (provenance) on purpose, so the two never collide.
 
 ```yaml
-job_metadata_schema_version: 4
+job_metadata_schema_version: 5
 company: "Google"
 research_date: "2026-04-16"  # search date: when the draft was generated
 channel: "linkedin"          # how you found it (free text; e.g. linkedin | referral | recruiter | cold)
@@ -104,7 +105,13 @@ jobs:
     jd_file: "JD-ml-infrastructure-engineer.md"  # unique JD-<title>.md in source/
     status: "applied"        # REQUIRED: drafted | applied | in_progress | rejected | ignored
     status_date: "2026-04-20" # optional: date of this job's last status change (tooling-stamped)
-    stage: ""                # optional free text; meaningful mostly for in_progress (screen/onsite/offer)
+    progress:                # REQUIRED structured summary (replaces the retired free-text stage)
+      phase: application_review        # which hiring step (see "Per-job progress")
+      state: waiting_employer          # what is happening now / who acts next
+      # label: "Virtual technical screen"       # optional employer wording (required for phase: other)
+      # calendar_item: "cal-google-ml-infrastructure-engineer-01"  # links the calendar.md entry
+      # updated_at: "2026-04-20T17:03:00Z"      # tool-stamped; agents never invent timestamps
+      # source: {kind: manual, ref: ""}         # manual | email (email requires the stored message key)
     location: "Remote (US)"
     workplace: "remote"      # onsite | hybrid | remote | unknown (arrangement, not the city)
     url: "https://..."
@@ -134,14 +141,17 @@ jobs:
 rendering the pipeline table.
 
 Metadata rules:
-- Metadata uses the integer top-level `job_metadata_schema_version: 4`. There is **no
-  backward compatibility**: validators only accept version 4, and `status.py --check-metadata`
+- Metadata uses the integer top-level `job_metadata_schema_version: 5`. There is **no
+  backward compatibility**: validators only accept version 5, and `status.py --check-metadata`
   validates **every** status folder by default (`--statuses <labels>` narrows to a subset).
+  Migrate a v4 file with the preview-first `migrate_to_v5.py` (dry-run fleet diff; `--write`
+  applies checksum-guarded atomic edits).
 - Each `jobs:` entry carries a required `status` (`drafted|applied|in_progress|rejected|ignored`),
-  plus optional `stage` (free text) and `status_date` (`YYYY-MM-DD`, written by `status.py`
-  transitions — never fabricate it; absent is valid). The status folder must equal the rollup of
-  the per-job statuses (see "Overall status"); the validator errors on a mismatch and on any
-  top-level `status`/`stage` key.
+  a required `progress` mapping (see "Per-job progress"), and an optional `status_date`
+  (`YYYY-MM-DD`, written by `status.py` transitions — never fabricate it; absent is valid). The
+  status folder must equal the rollup of the per-job statuses (see "Overall status"); the
+  validator errors on a mismatch, on any top-level `status`/`stage` key, and on the retired
+  per-job `stage` key.
 - **Always a `jobs:` list** — one entry per posting, even a single-role application (a
   one-element list). `job_level`, `required_yoe`, and `salary_range` live inside each
   `jobs:` entry, never at company scope. `total_compensation_range` is not part of the
@@ -175,6 +185,42 @@ Metadata rules:
   `JD-*.md` in the folder must be associated with one role. There is no positional or
   sorted-filename fallback.
 
+### Per-job progress (phase + state + calendar link)
+
+`jobs[].progress` is the normalized "where is this role, and who acts next?" summary
+(design: `design/application-progress-calendar/README.md`). `label` preserves employer-specific
+wording so the enums never grow per company. Fields: required `phase` + `state`; optional
+`label`, `calendar_item` (the linked `calendar.md` entry id), tool-stamped `updated_at`,
+and `source` (`{kind: manual|email, ref}` — an email source requires the neutral stored
+message key, never a subject/sender/body).
+
+- **Phases** (which hiring step): `application_prep`, `application_review`, `recruiter_screen`,
+  `assessment`, `hiring_manager`, `technical_interview`, `interview_loop`, `team_match`,
+  `offer`, `background_check`, `onboarding`, `other` (a real employer-specific phase that
+  does not fit yet — `label` is then REQUIRED).
+- **States** (what is happening now): `unknown` (never guess), `action_required`,
+  `booking_required` (owner must pick a slot / send availability), `awaiting_schedule`
+  (availability sent, no confirmed time yet), `scheduled` (a specific future time AND
+  timezone are confirmed — they live on the calendar entry), `reschedule_required`,
+  `reschedule_pending`, `waiting_employer`, `awaiting_result`, `closed`.
+- **Coupling**: rejected/ignored jobs have state exactly `closed` (their last phase is kept
+  for funnel analysis); an active job is never `closed`. Changing only phase/state NEVER
+  moves an application between status folders.
+
+### The calendar file (`config.calendar_path()`)
+
+One private `calendar.md` (default `<applications_root>/0_profile/calendar.md`) holds every
+scheduling todo, confirmed interview time, follow-up date, and append-only reschedule history.
+Sections project entry state: **Action needed** (`action_required|booking_required|
+reschedule_required`), **Waiting for confirmation** (`awaiting_schedule|reschedule_pending`),
+**Scheduled** (confirmed times, chronological), and **My notes and personal todos** (owner-only).
+Tools own ONLY the `<!-- jobhunt-calendar ... -->` marked entries; unmarked lines are preserved
+byte-for-byte. A confirmed reschedule marks the old occurrence `superseded` and appends the
+replacement — old times are never overwritten; a time merely passing never completes an
+interview. **This tracker is the only writer, and it updates `meta.yaml` + `calendar.md`
+together, transactionally — both commit or neither.** Malformed markers, duplicate ids, a
+scheduled entry without exact time + timezone, and checksum races all fail closed.
+
 ### Overall status (folder = derived rollup)
 
 The status folder is the per-job statuses rolled up by precedence — any job at a higher tier
@@ -200,7 +246,7 @@ position-labeled filenames). The folder holds one `source/JD-<job title>.md` per
 each mapped one-to-one to a `jobs:` entry:
 
 ```yaml
-job_metadata_schema_version: 4
+job_metadata_schema_version: 5
 company: "Cohere"
 research_date: "2026-07-15"
 channel: "cold"
@@ -211,7 +257,11 @@ jobs:
     jd_file: "JD-senior-software-engineer-agent-infrastructure.md"
     status: "in_progress"    # this role reached an interview...
     status_date: "2026-07-19"
-    stage: "onsite"
+    progress:
+      phase: interview_loop
+      state: awaiting_schedule
+      label: "Virtual onsite"
+      calendar_item: "cal-cohere-senior-software-engineer-01"
     location: "Remote (US)"
     workplace: "remote"
     url: "https://..."
@@ -225,7 +275,9 @@ jobs:
     jd_file: "JD-site-reliability-engineer-inference-infrastructure.md"
     status: "rejected"       # ...while this one was closed
     status_date: "2026-07-18"
-    stage: ""
+    progress:
+      phase: recruiter_screen   # last known phase is kept for funnel analysis
+      state: closed
     location: "Remote (US)"
     workplace: "remote"
     url: "https://..."
@@ -273,16 +325,20 @@ status folder, use the posting-granularity filter:
 # Backend roles you qualify for (<=6 YOE), most-senior first
 .venv/bin/python skills/application-tracker/scripts/filter_jobs.py \
   --role backend --max-yoe 6 --sort level
-# Count in-progress postings at the onsite stage, as JSON
+# In-progress postings currently in an interview loop, as JSON
 .venv/bin/python skills/application-tracker/scripts/filter_jobs.py \
-  --status in_progress --stage onsite --json
+  --status in_progress --phase interview_loop --json
+# Everything where the owner owes a scheduling action
+.venv/bin/python skills/application-tracker/scripts/filter_jobs.py \
+  --progress-state action_required,booking_required,reschedule_required
 ```
 
-Filters AND across flags and OR within a comma list: `--status` · substring `--company` /
-`--role` / `--location` / `--stage` / `--slug` / `--channel` · `--workplace` · `--sponsorship` ·
-`--fit` · `--min-level` / `--max-level` · `--min-salary` · `--max-yoe` · `--posted-after` ·
-`--since`. Output is an aligned table (or `--json` / `--count`), with
-`--sort company|date|level|salary|fit|status` and `--limit N`.
+Filters AND across flags and OR within a comma list: `--status` · `--phase` /
+`--progress-state` (progress enums) · substring `--company` / `--role` / `--location` /
+`--slug` / `--channel` · `--workplace` · `--sponsorship` · `--fit` · `--min-level` /
+`--max-level` · `--min-salary` · `--max-yoe` · `--posted-after` · `--since`. Output is an
+aligned table (or `--json` / `--count`), with `--sort company|date|level|salary|fit|status`
+and `--limit N`.
 
 ### Enrich / Validate Job Metadata
 
@@ -302,7 +358,7 @@ level/experience/compensation facts:
 
 The editor preserves comments, quotes, blank lines, newline style, and unrelated fields.
 Unknown or unstated facts remain `null`/`not_stated`—never fabricate them. Validation is
-strict: only schema version 4 is accepted, and `--check-metadata` validates **every** status
+strict: only schema version 5 is accepted, and `--check-metadata` validates **every** status
 folder by default (`--statuses <labels>` narrows the scope).
 
 ### Update Status
@@ -325,19 +381,53 @@ today's `status_date`, then moves the folder:
 rollup and moves the folder only if the overall status changed:
 
 ```
-status.py --update-job <slug> <role-match> <status> [--stage TEXT]
+status.py --update-job <slug> <role-match> <status>
   <role-match>: case-insensitive substring of jobs[].role, OR a 1-based index;
                 must match exactly one posting (else lists candidates, exits non-zero).
-  <status>:     drafted | applied | in_progress | rejected | ignored | keep
-                ('keep' = stage-only edit; requires --stage)
+  <status>:     drafted | applied | in_progress | rejected | ignored
 Examples:
-  status.py --update-job acme-multi-20260720 "Backend Engineer" in_progress --stage "onsite"
+  status.py --update-job acme-multi-20260720 "Backend Engineer" in_progress
   status.py --update-job acme-multi-20260720 2 rejected
-  status.py --update-job acme-multi-20260720 backend keep --stage "offer"
 ```
+
+Every status transition also stamps that posting's deterministic `progress` summary
+(drafted -> `application_prep`/`action_required`; applied -> `application_review`/
+`waiting_employer`; rejected/ignored -> keep phase, state `closed`; in_progress -> keep phase,
+keep a deliberately-set scheduling state, else `unknown` — never guessed) and updates any
+linked calendar entry in the same transaction.
 
 If the user moves a folder **by hand**, it can drift from the rollup — re-sync it by running
 `status.py --update <slug> <status>` for the folder's new status.
+
+### Update Progress (phase/state — never moves folders)
+
+```
+status.py --update-progress <slug> <role-match> --phase <phase> --state <state> [--label TEXT]
+```
+
+Sets one posting's structured progress (with a tool-stamped `updated_at` and
+`source: {kind: manual}`), writing `meta.yaml` and `calendar.md` together — both or neither.
+Entering a scheduling state (`booking_required|awaiting_schedule|scheduled|reschedule_required|
+reschedule_pending`) creates the calendar entry when the job has none and records its stable id
+as `progress.calendar_item`. `--state scheduled` requires the entry to already carry the
+confirmed exact time + timezone (record them on the entry in `calendar.md`, then run
+`--sync-calendar --write`). Close a role via `--update-job ... rejected|ignored`, never via
+`--state closed`.
+
+### Calendar check & sync (human edits are proposals, preview-first)
+
+```
+status.py --check-calendar            # read-only: markers, duplicate ids, meta<->calendar drift
+status.py --sync-calendar             # preview how owner edits map back to progress
+status.py --sync-calendar --write     # apply the previewed proposals transactionally
+```
+
+Owner-edit surfaces the sync understands: a **checked box** (booking done -> `awaiting_schedule`;
+reschedule request sent -> `reschedule_pending`; interview happened -> `awaiting_result`; owed
+action done -> `waiting_employer`), a filled **`reschedule_to` + `reschedule_timezone`**
+(confirmed replacement — the old occurrence is kept as `superseded`), and **`cancel: true`**
+(occurrence recorded `cancelled`; the role is never auto-rejected). Anything malformed fails
+closed with a report instead of a partial write.
 
 ### Record Interview Notes
 
@@ -373,9 +463,14 @@ The `source/tailored.yaml` in each application folder IS the resume content used
 
 When the user asks "how's my pipeline?" or "what's my status?":
 1. Run `.venv/bin/python skills/application-tracker/scripts/status.py`
-2. Highlight any applications needing action (check `next_action` fields)
-3. Note stale applications (applied > 2 weeks ago with no status change)
-4. Show conversion rates if enough data exists
+2. Highlight any applications needing action — the table's **Action needed** block
+   (progress states `action_required|booking_required|reschedule_required`) plus
+   `next_action` fields
+3. Surface the **Overdue waiting** block (bookings past their calendar `follow_up_at`
+   with no confirmation) — "active with no action" is not the same as "active and
+   stuck scheduling"
+4. Note stale applications (applied > 2 weeks ago with no status change)
+5. Show conversion rates if enough data exists
 
 ## Job Discovery
 

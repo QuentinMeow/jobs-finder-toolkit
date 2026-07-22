@@ -26,11 +26,12 @@ from job_metadata import (  # noqa: E402
 
 
 def _valid_job(**overrides) -> dict:
-    """A schema-v4 jobs entry that passes validation, with optional overrides."""
+    """A schema-v5 jobs entry that passes validation, with optional overrides."""
     job = {
         "role": "Senior Engineer",
         "jd_file": "JD-senior-engineer.md",
         "status": "drafted",
+        "progress": {"phase": "application_prep", "state": "action_required"},
         "location": "Remote (US)",
         "url": "https://example.test/jobs/1",
         "posted_date": "2026-07-18",
@@ -503,20 +504,21 @@ class ValidationTests(unittest.TestCase):
         del meta["job_metadata_schema_version"]
         self.assertEqual(
             validate_meta(meta),
-            ["job_metadata_schema_version must be 4"],
+            [f"job_metadata_schema_version must be {APPLICATION_SCHEMA_VERSION}"],
         )
 
     def test_old_schema_version_is_rejected(self):
-        # v3 is now legacy: it is rejected outright, not migrated.
+        # v4 is now legacy: it is rejected outright, migrate with migrate_to_v5.
         self.assertEqual(
-            validate_meta({"job_metadata_schema_version": 3}),
-            ["job_metadata_schema_version must be 4"],
+            validate_meta({"job_metadata_schema_version": 4}),
+            [f"job_metadata_schema_version must be {APPLICATION_SCHEMA_VERSION}"],
         )
 
     def test_float_schema_version_is_rejected(self):
         self.assertEqual(
-            validate_meta({"job_metadata_schema_version": 4.0}),
-            ["job_metadata_schema_version must be 4"],
+            validate_meta({
+                "job_metadata_schema_version": float(APPLICATION_SCHEMA_VERSION)}),
+            [f"job_metadata_schema_version must be {APPLICATION_SCHEMA_VERSION}"],
         )
 
     def test_jobs_list_is_required(self):
@@ -654,7 +656,7 @@ class DeriveStatusTests(unittest.TestCase):
             derive_status([{"role": "no status here"}])
 
 
-class SchemaV4JobFieldTests(unittest.TestCase):
+class SchemaV5JobFieldTests(unittest.TestCase):
     def test_missing_status_is_rejected(self):
         job = _valid_job()
         del job["status"]
@@ -666,13 +668,17 @@ class SchemaV4JobFieldTests(unittest.TestCase):
         self.assertTrue(any(
             "jobs[0].status must be one of" in error for error in errors))
 
-    def test_optional_stage_and_status_date_pass(self):
-        job = _valid_job(status="applied", stage="onsite", status_date="2026-07-20")
+    def test_optional_status_date_passes(self):
+        job = _valid_job(
+            status="applied",
+            progress={"phase": "application_review", "state": "waiting_employer"},
+            status_date="2026-07-20")
         self.assertEqual(validate_meta(_valid_meta(jobs=[job])), [])
 
-    def test_non_string_stage_is_rejected(self):
-        errors = validate_meta(_valid_meta(jobs=[_valid_job(stage=42)]))
-        self.assertIn("jobs[0].stage must be a string", errors)
+    def test_retired_stage_key_is_rejected(self):
+        errors = validate_meta(_valid_meta(jobs=[_valid_job(stage="onsite")]))
+        self.assertTrue(any(
+            "jobs[0].stage was removed in schema v5" in error for error in errors))
 
     def test_bad_status_date_format_is_rejected(self):
         errors = validate_meta(_valid_meta(jobs=[_valid_job(status_date="07/20/2026")]))
@@ -716,6 +722,160 @@ class SchemaV4JobFieldTests(unittest.TestCase):
             (source / "JD-senior-engineer.md").write_text("Senior")
             meta = _valid_meta(jobs=[_valid_job(status="applied")])
             self.assertEqual(validate_meta(meta, app_dir=app_dir), [])
+
+
+class ProgressValidationTests(unittest.TestCase):
+    def _errors(self, **job_overrides) -> list[str]:
+        return validate_meta(_valid_meta(jobs=[_valid_job(**job_overrides)]))
+
+    def test_missing_progress_is_rejected(self):
+        job = _valid_job()
+        del job["progress"]
+        errors = validate_meta(_valid_meta(jobs=[job]))
+        self.assertTrue(any(
+            "jobs[0].progress is required" in error for error in errors))
+
+    def test_bad_phase_and_state_are_rejected(self):
+        errors = self._errors(progress={"phase": "vibes", "state": "chilling"})
+        self.assertTrue(any("progress.phase must be one of" in e for e in errors))
+        self.assertTrue(any("progress.state must be one of" in e for e in errors))
+
+    def test_phase_other_requires_label(self):
+        errors = self._errors(progress={"phase": "other", "state": "unknown"})
+        self.assertTrue(any(
+            "label is required when phase is 'other'" in e for e in errors))
+        ok = self._errors(progress={
+            "phase": "other", "state": "unknown", "label": "Bar raiser"})
+        self.assertEqual(ok, [])
+
+    def test_closed_state_couples_to_closed_statuses_both_ways(self):
+        # rejected/ignored REQUIRE state closed...
+        errors = self._errors(
+            status="rejected",
+            progress={"phase": "recruiter_screen", "state": "waiting_employer"})
+        self.assertTrue(any(
+            "state must be 'closed' when status is 'rejected'" in e
+            for e in errors))
+        # ...and closed requires rejected/ignored (an active role is never closed).
+        errors = self._errors(
+            status="applied",
+            progress={"phase": "application_review", "state": "closed"})
+        self.assertTrue(any(
+            "state 'closed' requires status rejected or ignored" in e
+            for e in errors))
+        # A rejected role keeps its last phase with state closed — valid.
+        ok = self._errors(
+            status="rejected",
+            progress={"phase": "interview_loop", "state": "closed"})
+        self.assertEqual(ok, [])
+
+    def test_email_source_requires_message_ref(self):
+        errors = self._errors(progress={
+            "phase": "recruiter_screen", "state": "booking_required",
+            "source": {"kind": "email"}})
+        self.assertTrue(any(
+            "source.ref is required for an email source" in e for e in errors))
+        ok = self._errors(progress={
+            "phase": "recruiter_screen", "state": "booking_required",
+            "source": {"kind": "email", "ref": "acct-01/abc123"}})
+        self.assertEqual(ok, [])
+
+    def test_manual_source_may_leave_ref_empty(self):
+        ok = self._errors(progress={
+            "phase": "recruiter_screen", "state": "booking_required",
+            "source": {"kind": "manual", "ref": ""}})
+        self.assertEqual(ok, [])
+
+    def test_calendar_item_pattern_and_unknown_keys_are_gated(self):
+        errors = self._errors(progress={
+            "phase": "technical_interview", "state": "awaiting_schedule",
+            "calendar_item": "CAL 7!", "surprise": True})
+        self.assertTrue(any("calendar_item must be" in e for e in errors))
+        self.assertTrue(any("unknown key(s): surprise" in e for e in errors))
+        ok = self._errors(progress={
+            "phase": "technical_interview", "state": "awaiting_schedule",
+            "calendar_item": "cal-acme-senior-engineer-01",
+            "updated_at": "2026-07-22T10:00:00Z"})
+        self.assertEqual(ok, [])
+
+    def test_bad_updated_at_is_rejected(self):
+        errors = self._errors(progress={
+            "phase": "recruiter_screen", "state": "unknown",
+            "updated_at": "yesterday-ish"})
+        self.assertTrue(any(
+            "updated_at must be an ISO-8601 timestamp" in e for e in errors))
+
+
+class ProgressMappingTests(unittest.TestCase):
+    def test_migrate_job_progress_is_deterministic(self):
+        from job_metadata import migrate_job_progress
+        self.assertEqual(
+            migrate_job_progress("drafted", ""),
+            {"phase": "application_prep", "state": "action_required"})
+        self.assertEqual(
+            migrate_job_progress("applied", None),
+            {"phase": "application_review", "state": "waiting_employer"})
+        # Recognized legacy stage -> phase; the exact old text becomes label.
+        self.assertEqual(
+            migrate_job_progress("in_progress", "onsite"),
+            {"phase": "interview_loop", "state": "unknown", "label": "onsite"})
+        # Unrecognized stage -> other + label; state is never guessed.
+        self.assertEqual(
+            migrate_job_progress("in_progress", "vibe check"),
+            {"phase": "other", "state": "unknown", "label": "vibe check"})
+        # Empty stage: the status literal is the only exact old text available.
+        self.assertEqual(
+            migrate_job_progress("in_progress", ""),
+            {"phase": "other", "state": "unknown", "label": "in_progress"})
+        # Closed roles retain a deterministic last-known phase.
+        self.assertEqual(
+            migrate_job_progress("rejected", ""),
+            {"phase": "application_review", "state": "closed"})
+        self.assertEqual(
+            migrate_job_progress("ignored", ""),
+            {"phase": "application_prep", "state": "closed"})
+        self.assertEqual(
+            migrate_job_progress("rejected", "recruiter screen"),
+            {"phase": "recruiter_screen", "state": "closed",
+             "label": "recruiter screen"})
+        with self.assertRaises(ValueError):
+            migrate_job_progress("offer", "")
+
+    def test_default_progress_for_status_transitions(self):
+        from job_metadata import default_progress_for_status
+        current = {"phase": "technical_interview", "state": "scheduled",
+                   "label": "Virtual screen", "calendar_item": "cal-acme-01"}
+        # Closing keeps phase + label + calendar link, state -> closed.
+        self.assertEqual(
+            default_progress_for_status("rejected", current=current),
+            {"phase": "technical_interview", "state": "closed",
+             "label": "Virtual screen", "calendar_item": "cal-acme-01"})
+        # Reopening to in_progress never resurrects 'closed' — state unknown.
+        closed = {"phase": "offer", "state": "closed"}
+        self.assertEqual(
+            default_progress_for_status("in_progress", current=closed),
+            {"phase": "offer", "state": "unknown"})
+        # A deliberately-set scheduling state survives the transition...
+        self.assertEqual(
+            default_progress_for_status("in_progress", current=current),
+            {"phase": "technical_interview", "state": "scheduled",
+             "label": "Virtual screen", "calendar_item": "cal-acme-01"})
+        # ...but a pre-engagement default (waiting_employer) is never carried
+        # into in_progress as if it were knowledge.
+        self.assertEqual(
+            default_progress_for_status(
+                "in_progress",
+                current={"phase": "application_review",
+                         "state": "waiting_employer"}),
+            {"phase": "application_review", "state": "unknown"})
+        # drafted/applied reset to the deterministic defaults (calendar kept).
+        self.assertEqual(
+            default_progress_for_status("drafted", current=current),
+            {"phase": "application_prep", "state": "action_required",
+             "calendar_item": "cal-acme-01"})
+        self.assertEqual(
+            default_progress_for_status("applied", current={}),
+            {"phase": "application_review", "state": "waiting_employer"})
 
 
 if __name__ == "__main__":

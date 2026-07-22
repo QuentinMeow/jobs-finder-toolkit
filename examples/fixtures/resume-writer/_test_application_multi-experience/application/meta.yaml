@@ -1,4 +1,4 @@
-job_metadata_schema_version: 4
+job_metadata_schema_version: 5
 company: "Nimbus Robotics"
 research_date: "2026-07-20"
 channel: "fixture"
@@ -11,7 +11,6 @@ jobs:
   - role: "Senior Platform Engineer"
     jd_file: "JD-senior-platform-engineer.md"
     status: "drafted"
-    stage: ""
     location: "Remote (US)"
     workplace: "remote"
     url: "__FIXTURE_ROOT_URI__/search/jd-page.html"
@@ -34,3 +33,6 @@ jobs:
       max: 230000
       confidence: "high"
       source: "job_description"
+    progress:
+      phase: application_prep
+      state: action_required

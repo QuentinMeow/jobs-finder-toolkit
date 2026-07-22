@@ -16,6 +16,7 @@
 
 - `memory/known-issues/claude-code-skill-tool-serves-stale-skill-md.md` — Claude Code `Skill` tool can serve a stale `SKILL.md` from outside the eval worktree
 - `memory/known-issues/location-title-only-foreign-leak.md` — Foreign role with generic location field classifies as us_remote when the city is only in the title
+- `memory/known-issues/metadata-editor-block-mapping-field-insertion.md` — metadata_editor mis-plans a field insertion after a block-style mapping in a non-final jobs entry
 - `memory/known-issues/render-py-pdf-skipped-libreoffice-flake.md` — `render.py` "PDF: skipped" transient LibreOffice lock/first-run flake
 - `memory/known-issues/rw-tailor-single-posting-canary-fixture-conflict.md` — Canary fixture conflict: `rw-tailor-single-posting` is unsatisfiable against the shipped complete example folder
 - `memory/known-issues/skills-diff-provenance-noise.md` — skills_diff.py queues non-skills from provenance notes and degree phrases

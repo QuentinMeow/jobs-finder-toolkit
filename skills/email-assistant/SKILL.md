@@ -92,7 +92,7 @@ with the repository. Treat this as a separate local workflow from drafting:
    scope:
 
    ```bash
-   # per-role evidence -> one posting (add --stage when the message names screen/onsite/offer)
+   # per-role evidence -> one posting (record the named round via --update-progress afterwards)
    .venv/bin/python skills/application-tracker/scripts/status.py \
      --update-job <slug> "<role-match>" <applied|in_progress|rejected>
    # whole-application evidence (receipt, or rejection closing every role) -> all postings + folder

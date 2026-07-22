@@ -19,14 +19,16 @@ class ApplicationContextTests(unittest.TestCase):
             app = root / "5_applied" / "example-corp-platform-engineer-20260720"
             (app / "source").mkdir(parents=True)
             (app / "meta.yaml").write_text(
-                f"""job_metadata_schema_version: 4
+                f"""job_metadata_schema_version: 5
 company: Example Corp
 recruiter_email: {recruiter}
 jobs:
   - role: Platform Engineer
     status: applied
     status_date: "2026-07-18"
-    stage: ""
+    progress:
+      phase: application_review
+      state: waiting_employer
 """,
                 encoding="utf-8",
             )
@@ -43,7 +45,8 @@ jobs:
             self.assertEqual(matches[0].status, "applied")
             self.assertEqual(
                 matches[0].jobs,
-                ({"role": "Platform Engineer", "status": "applied", "stage": None},),
+                ({"role": "Platform Engineer", "status": "applied",
+                  "phase": "application_review", "state": "waiting_employer"},),
             )
 
     def test_generic_role_words_do_not_create_false_match(self):
@@ -53,7 +56,7 @@ jobs:
             app = root / "5_applied" / "unrelated-senior-engineer"
             app.mkdir(parents=True)
             (app / "meta.yaml").write_text(
-                "job_metadata_schema_version: 4\n"
+                "job_metadata_schema_version: 5\n"
                 "company: Unrelated Inc\n"
                 "jobs:\n"
                 "  - role: Senior Software Engineer\n"
@@ -67,24 +70,30 @@ jobs:
             )
             self.assertEqual(matches, [])
 
-    def test_mixed_status_jobs_report_per_job_status_and_stage(self):
+    def test_mixed_status_jobs_report_per_job_status_and_progress(self):
         with tempfile.TemporaryDirectory() as tmp:
             recruiter = "recruiter" + chr(64) + "example.invalid"
             root = Path(tmp)
             app = root / "4_in_progress" / "north-star-labs-multi-role-20260710"
             app.mkdir(parents=True)
             (app / "meta.yaml").write_text(
-                f"""job_metadata_schema_version: 4
+                f"""job_metadata_schema_version: 5
 company: North Star Labs
 recruiter_email: {recruiter}
 jobs:
   - role: Backend Engineer
     status: rejected
     status_date: "2026-07-12"
+    progress:
+      phase: recruiter_screen
+      state: closed
   - role: Platform Engineer
     status: in_progress
     status_date: "2026-07-15"
-    stage: "onsite"
+    progress:
+      phase: interview_loop
+      state: awaiting_schedule
+      label: onsite
 """,
                 encoding="utf-8",
             )
@@ -99,15 +108,17 @@ jobs:
             self.assertEqual(
                 matches[0].jobs,
                 (
-                    {"role": "Backend Engineer", "status": "rejected", "stage": None},
-                    {"role": "Platform Engineer", "status": "in_progress", "stage": "onsite"},
+                    {"role": "Backend Engineer", "status": "rejected",
+                     "phase": "recruiter_screen", "state": "closed"},
+                    {"role": "Platform Engineer", "status": "in_progress",
+                     "phase": "interview_loop", "state": "awaiting_schedule"},
                 ),
             )
 
     def test_legacy_meta_without_per_job_status_degrades_gracefully(self):
-        # v2/v3 files predate per-job status/stage; matching must not crash and
-        # should report null status/stage rather than fabricating a value, while
-        # still falling back to the raw folder name for status when unmapped.
+        # Older files predate per-job status/progress; matching must not crash
+        # and should report null status/phase/state rather than fabricating a
+        # value, while still falling back to the raw folder name when unmapped.
         with tempfile.TemporaryDirectory() as tmp:
             recruiter = "recruiter" + chr(64) + "example.invalid"
             root = Path(tmp)
@@ -131,7 +142,8 @@ jobs:
             self.assertEqual(matches[0].status, "applied")
             self.assertEqual(
                 matches[0].jobs,
-                ({"role": "Platform Engineer", "status": None, "stage": None},),
+                ({"role": "Platform Engineer", "status": None,
+                  "phase": None, "state": None},),
             )
 
     def test_unmapped_folder_name_falls_back_to_raw_name(self):
@@ -141,7 +153,7 @@ jobs:
             app = root / "not_a_status_folder" / "quirky-labs-role"
             app.mkdir(parents=True)
             (app / "meta.yaml").write_text(
-                f"""job_metadata_schema_version: 4
+                f"""job_metadata_schema_version: 5
 company: Quirky Labs
 recruiter_email: {recruiter}
 jobs:

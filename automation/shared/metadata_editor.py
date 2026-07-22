@@ -1,4 +1,4 @@
-"""Formatting-preserving edits for schema-v4 application job metadata."""
+"""Formatting-preserving edits for schema-v5 application job metadata."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ try:
         APPLICATION_SCHEMA_VERSION,
         POSTING_METADATA_FIELDS,
         metadata_field_gaps,
+        migrate_job_progress,
         validate_meta,
     )
 except ImportError:  # Direct script/shared import used by the existing CLI tools.
@@ -26,6 +27,7 @@ except ImportError:  # Direct script/shared import used by the existing CLI tool
         APPLICATION_SCHEMA_VERSION,
         POSTING_METADATA_FIELDS,
         metadata_field_gaps,
+        migrate_job_progress,
         validate_meta,
     )
 
@@ -122,6 +124,29 @@ def _line_insertion_index(text: str, node_end: int) -> int:
     """Return the index after the node's physical line, including its comment."""
     newline = text.find("\n", node_end)
     return len(text) if newline < 0 else newline + 1
+
+
+def _reliable_end_index(node: Node) -> int:
+    """End index of ``node``'s own content, safe for edit planning.
+
+    PyYAML's end mark for a BLOCK collection points at the token that follows
+    the collection — which may be the next sibling record's line or EOF past
+    the trailing newline — so using it as an edit boundary bleeds into text
+    that does not belong to the node. Scalars and FLOW collections carry exact
+    end marks; for block collections, recurse to the deepest reliable child.
+    """
+    if isinstance(node, ScalarNode) or getattr(node, "flow_style", False):
+        return node.end_mark.index
+    end = node.start_mark.index
+    if isinstance(node, MappingNode):
+        children = [child for pair in node.value for child in pair]
+    elif isinstance(node, SequenceNode):
+        children = list(node.value)
+    else:
+        children = []
+    for child in children:
+        end = max(end, _reliable_end_index(child))
+    return end
 
 
 def _line_suffix(text: str, node_end: int) -> str:
@@ -425,16 +450,17 @@ def plan_metadata_edit(
                     ],
                 )
             parent_indent = key_node.start_mark.column
+            value_end = _reliable_end_index(value_node)
             replacement = _dump_replacement_value(
                 generated[field],
                 parent_indent=parent_indent,
                 newline=newline,
-                suffix=_line_suffix(text, value_node.end_mark.index),
+                suffix=_line_suffix(text, value_end),
             )
             edits.append(
                 _Edit(
                     value_node.start_mark.index,
-                    value_node.end_mark.index,
+                    value_end,
                     replacement,
                 )
             )
@@ -449,9 +475,8 @@ def plan_metadata_edit(
                         "insertions; manual migration is required"
                     ],
                 )
-            last_value_node = record_node.value[-1][1]
             insertion_index = _line_insertion_index(
-                text, last_value_node.end_mark.index
+                text, _reliable_end_index(record_node)
             )
             indent = record_node.value[0][0].start_mark.column
             at_eof_without_newline = (
@@ -538,11 +563,14 @@ def plan_field_updates(
     """Plan a formatting-preserving SET of per-job scalar fields.
 
     ``updates_by_path`` maps a record path ``("jobs", index)`` to a mapping of
-    scalar field name -> new value. Unlike ``plan_metadata_edit`` (which only fills
+    field name -> new value. Unlike ``plan_metadata_edit`` (which only fills
     empty/absent metadata placeholders and refuses to touch populated values), this
-    OVERWRITES the named scalar when present and INSERTS it when absent — the
+    OVERWRITES the named field when present and INSERTS it when absent — the
     machinery ``status.py`` uses to stamp per-job ``status`` / ``status_date`` /
-    ``stage`` on a transition. Values must be YAML scalars (the status fields are).
+    ``progress`` on a transition. Values are YAML scalars, or a mapping for a
+    TOOL-OWNED nested block (``progress``): a mapping value rewrites the whole
+    ``key: block`` region, so comments inside that one block do not survive —
+    every neighboring line still does.
 
     It shares every safety property of ``plan_metadata_edit``: it fails closed
     (any parse/path/semantic/validation error returns the original bytes with no
@@ -603,30 +631,51 @@ def plan_field_updates(
             changed_paths.append(field_path)
             if field in items:
                 key_node, value_node = items[field]
-                if not isinstance(value_node, ScalarNode):
-                    errors.append(
-                        f"{_path_text(field_path)} is not a scalar value; "
-                        "manual migration is required")
-                    continue
                 if value_node.start_mark.index < key_node.end_mark.index:
                     errors.append(
                         f"{_path_text(field_path)} uses an aliased placeholder; "
                         "manual migration is required")
                     continue
                 parent_indent = key_node.start_mark.column
-                replacement = _dump_replacement_value(
-                    value,
-                    parent_indent=parent_indent,
-                    newline=newline,
-                    suffix=_line_suffix(text, value_node.end_mark.index),
-                )
-                edits.append(
-                    _Edit(
-                        value_node.start_mark.index,
-                        value_node.end_mark.index,
-                        replacement,
+                suffix = _line_suffix(text, value_node.end_mark.index)
+                if isinstance(value_node, ScalarNode):
+                    replacement = _dump_replacement_value(
+                        value,
+                        parent_indent=parent_indent,
+                        newline=newline,
+                        suffix=suffix,
                     )
-                )
+                    edits.append(
+                        _Edit(
+                            value_node.start_mark.index,
+                            value_node.end_mark.index,
+                            replacement,
+                        )
+                    )
+                elif isinstance(value_node, MappingNode) and isinstance(value, dict):
+                    # Tool-owned nested block (e.g. jobs[].progress): rewrite the
+                    # whole `key: block` region from the key onward. Clamp the
+                    # region to the block's own content — its end mark overshoots.
+                    value_end = _reliable_end_index(value_node)
+                    rendered = _dump_replacement_value(
+                        value,
+                        parent_indent=parent_indent,
+                        newline=newline,
+                        suffix=_line_suffix(text, value_end),
+                    )
+                    joiner = "" if rendered.startswith(newline) else " "
+                    edits.append(
+                        _Edit(
+                            key_node.start_mark.index,
+                            value_end,
+                            f"{key_node.value}:{joiner}{rendered}",
+                        )
+                    )
+                else:
+                    errors.append(
+                        f"{_path_text(field_path)} is not a scalar or tool-owned "
+                        "mapping value; manual migration is required")
+                    continue
             else:
                 insert_entries.append((field, value))
 
@@ -636,8 +685,9 @@ def plan_field_updates(
                     f"{_path_text(path)} cannot accept block-style field "
                     "insertions; manual migration is required")
                 continue
-            last_value_node = record_node.value[-1][1]
-            insertion_index = _line_insertion_index(text, last_value_node.end_mark.index)
+            insertion_index = _line_insertion_index(
+                text, _reliable_end_index(record_node)
+            )
             indent = record_node.value[0][0].start_mark.column
             at_eof_without_newline = (
                 insertion_index == len(text) and not text.endswith(("\n", "\r"))
@@ -676,6 +726,174 @@ def plan_field_updates(
         return _error_plan(
             raw, before_sha256,
             [f"planned output validation failed: {error}" for error in validation_errors])
+
+    return MetadataEditPlan(
+        before_sha256=before_sha256,
+        output_bytes=output_bytes,
+        changed_field_paths=tuple(changed_paths),
+        errors=(),
+        changed=output_bytes != raw,
+    )
+
+
+def plan_v4_to_v5_migration(raw: bytes) -> MetadataEditPlan:
+    """Plan the formatting-preserving, deterministic v4 -> v5 migration.
+
+    Three minimal edits per file: the ``job_metadata_schema_version`` scalar is
+    rewritten ``4`` -> ``5`` in place, every per-job ``stage`` line is removed,
+    and a structured ``progress`` block (``migrate_job_progress``) is appended
+    to each job. Everything else — comments, quoting, blank lines, newline
+    style, field order — is preserved byte-for-byte.
+
+    Fails closed (original bytes, no edits) on: a non-v4 document (including an
+    already-migrated v5 one), YAML/shape problems, a preexisting ``progress``
+    key, a job whose facts cannot be retained, or any verification failure
+    (reparse mismatch or v5 validation errors on the planned output). No
+    migration invents a calendar time, timezone, email source, or completion
+    event.
+    """
+    before_sha256 = hashlib.sha256(raw).hexdigest()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return _error_plan(raw, before_sha256, [f"metadata is not valid UTF-8: {exc}"])
+
+    try:
+        document = yaml.safe_load(text)
+        root_node = yaml.compose(text)
+    except yaml.YAMLError as exc:
+        return _error_plan(raw, before_sha256, [f"invalid YAML: {exc}"])
+
+    if not isinstance(document, dict) or not isinstance(root_node, MappingNode):
+        return _error_plan(
+            raw, before_sha256,
+            ["metadata document must be a top-level YAML mapping"])
+
+    version = document.get("job_metadata_schema_version")
+    if version == APPLICATION_SCHEMA_VERSION:
+        return _error_plan(
+            raw, before_sha256,
+            [f"already schema v{APPLICATION_SCHEMA_VERSION}; nothing to migrate"])
+    if isinstance(version, bool) or version != 4:
+        return _error_plan(
+            raw, before_sha256,
+            [f"only schema v4 can be migrated to v5; found {version!r}"])
+
+    root_items, errors = _mapping_nodes(root_node, path=())
+    records, record_errors = _posting_records(document, root_node, root_items)
+    errors.extend(record_errors)
+    if errors:
+        return _error_plan(raw, before_sha256, errors)
+
+    newline = _preferred_newline(text)
+    edits: list[_Edit] = []
+    changed_paths: list[FieldPath] = [("job_metadata_schema_version",)]
+    expected_document = copy.deepcopy(document)
+    expected_document["job_metadata_schema_version"] = APPLICATION_SCHEMA_VERSION
+
+    version_key_node, version_value_node = root_items["job_metadata_schema_version"]
+    if not isinstance(version_value_node, ScalarNode) or (
+        version_value_node.start_mark.index < version_key_node.end_mark.index
+    ):
+        return _error_plan(
+            raw, before_sha256,
+            ["job_metadata_schema_version is not a plain scalar; "
+             "manual migration is required"])
+    edits.append(
+        _Edit(
+            version_value_node.start_mark.index,
+            version_value_node.end_mark.index,
+            str(APPLICATION_SCHEMA_VERSION),
+        )
+    )
+
+    for path in sorted(records, key=repr):
+        record, record_node = records[path]
+        items, item_errors = _mapping_nodes(record_node, path=path)
+        errors.extend(item_errors)
+        if "progress" in record:
+            errors.append(
+                f"{_path_text(path)}.progress already exists in a v4 document; "
+                "manual migration is required")
+            continue
+        try:
+            progress = migrate_job_progress(record.get("status"), record.get("stage"))
+        except ValueError as exc:
+            errors.append(f"{_path_text(path)}: {exc}")
+            continue
+
+        expected_record = _record_at(expected_document, path)
+        expected_record.pop("stage", None)
+        expected_record["progress"] = copy.deepcopy(progress)
+        changed_paths.append(path + ("progress",))
+
+        if "stage" in items:
+            stage_key_node, stage_value_node = items["stage"]
+            if not isinstance(stage_value_node, ScalarNode):
+                errors.append(
+                    f"{_path_text(path + ('stage',))} is not a scalar; "
+                    "manual migration is required")
+                continue
+            if record_node.value and record_node.value[0][0] is stage_key_node:
+                errors.append(
+                    f"{_path_text(path + ('stage',))} is the first key of its "
+                    "entry; manual migration is required")
+                continue
+            line_start = (
+                stage_key_node.start_mark.index - stage_key_node.start_mark.column
+            )
+            line_end = _line_insertion_index(text, stage_value_node.end_mark.index)
+            edits.append(_Edit(line_start, line_end, ""))
+            changed_paths.append(path + ("stage",))
+
+        if record_node.flow_style or not record_node.value:
+            errors.append(
+                f"{_path_text(path)} cannot accept a block-style progress "
+                "insertion; manual migration is required")
+            continue
+        insertion_index = _line_insertion_index(
+            text, _reliable_end_index(record_node)
+        )
+        indent = record_node.value[0][0].start_mark.column
+        at_eof_without_newline = (
+            insertion_index == len(text) and not text.endswith(("\n", "\r"))
+        )
+        fragment = _dump_entries(
+            [("progress", progress)],
+            indent=indent,
+            newline=newline,
+            terminate=not at_eof_without_newline,
+        )
+        if at_eof_without_newline:
+            fragment = newline + fragment
+        edits.append(_Edit(insertion_index, insertion_index, fragment))
+
+    if errors:
+        return _error_plan(raw, before_sha256, errors)
+
+    try:
+        output_bytes = _apply_edits(raw, text, edits)
+    except (IndexError, ValueError) as exc:
+        return _error_plan(
+            raw, before_sha256, [f"could not apply planned YAML edits: {exc}"])
+
+    try:
+        output_document = yaml.safe_load(output_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        return _error_plan(
+            raw, before_sha256, [f"planned output is not valid YAML: {exc}"])
+    if output_document != expected_document:
+        return _error_plan(
+            raw, before_sha256,
+            ["planned migration changed values outside the version, stage, and "
+             "progress fields"])
+
+    validation_errors = validate_meta(output_document)
+    if validation_errors:
+        return _error_plan(
+            raw, before_sha256,
+            [f"planned output validation failed: {error}"
+             for error in validation_errors])
 
     return MetadataEditPlan(
         before_sha256=before_sha256,

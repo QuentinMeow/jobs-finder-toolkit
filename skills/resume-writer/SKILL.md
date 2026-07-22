@@ -49,7 +49,7 @@ or `scripts/`; **≤ 8 subagents total per request**); `.agents/MEMORY.md` if it
 (cross-session learnings). **The routine path does NOT read this skill's `LESSONS.md`,
 `reference.md`, the `check.py` source, or the application-tracker `SKILL.md`** — open them only on
 the explicit inline triggers below (`LESSONS.md` = a render/layout failure, see Step 6). In
-particular, `handoff.py` already wrote a valid schema-v4 `meta.yaml`, so `status.py
+particular, `handoff.py` already wrote a valid schema-v5 `meta.yaml`, so `status.py
 --enrich-metadata`/`--check-metadata` are the only tracker follow-ups on the routine path.
 **Private overrides:** if this skill folder has a `references_private/`
 directory, read every file in it — those candidate-specific instructions/examples/preferences
@@ -118,7 +118,7 @@ metadata gaps, run `status.py --enrich-metadata <folder>` first).
 Otherwise generate a slug `<company>-<role>-<YYYYMMDD>` (lowercase, hyphens, no special chars),
 confirm it is unused under every status folder, and create the folder + its `source/` subfolder.
 Save the full JD text as `source/JD-<job title>.md` (one file per posting; never a bare `jd.md` —
-`check.py` concatenates every `JD-*.md`), and write a schema-v4 `meta.yaml` with a uniform
+`check.py` concatenates every `JD-*.md`), and write a schema-v5 `meta.yaml` with a uniform
 `jobs:` list (one entry per posting), **every entry created with `status: "drafted"`**. Newly
 generated applications always go under `applications/6_drafted/`, whose rollup for an all-drafted
 app is `drafted`. `render.py` emits every output filename automatically from the configured stems —
@@ -281,7 +281,7 @@ pre-check**. A verdict missing part (2) is incomplete.
 
 ### Step 6: Render + Validate
 
-Ensure `meta.yaml` is schema v4 with complete structured metadata for every posting record before
+Ensure `meta.yaml` is schema v5 with complete structured metadata for every posting record before
 rendering (`status.py --check-metadata`; fill gaps with `status.py --enrich-metadata <folder>`).
 Then render — this first re-runs the one-page estimate as a pre-flight gate (aborting before any
 conversion on a clear overflow; `--skip-estimate` bypasses), then writes the resume DOCX to
@@ -309,7 +309,7 @@ Checks can also be run standalone:
 **To learn exactly what check.py enforces (every gate + numeric threshold), run `check.py --rules`
 (~1 KB) — never read the validator source.** Submit the resume DOCX from `source/` to portals (PDFs
 are for humans). **Trigger — a render/layout failure the menu above doesn't resolve (LibreOffice /
-DOCX internals, employer-header alignment, the schema-v4 `meta.yaml` gate, cover-letter render flags,
+DOCX internals, employer-header alignment, the schema-v5 `meta.yaml` gate, cover-letter render flags,
 master-resume/log updates): read ONLY [`reference.md`](reference.md) § "Render & validate —
 operational detail" and LESSONS.md → "Rendering / layout".**
 

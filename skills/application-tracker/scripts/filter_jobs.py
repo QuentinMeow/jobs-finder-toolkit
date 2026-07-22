@@ -8,14 +8,16 @@ that pays 200k+", because one application folder can cover several postings whos
 per-job status, level, salary, and fit differ.
 
 meta.yaml is read leniently: a missing or misshapen field never crashes — the row just
-fails the corresponding filter. Files whose ``job_metadata_schema_version`` is not 4
+fails the corresponding filter. Files whose ``job_metadata_schema_version`` is not 5
 get a one-line stderr warning; their ``jobs:`` entries (if any) are still listed
-best-effort, but only v4 fields are read — there is no legacy-shape translation
-(run the tracker's validators to find and fix such files).
+best-effort, but only v5 fields are read — there is no legacy-shape translation
+(run the tracker's validators/migrator to find and fix such files).
 
-Schema-v4 meta.yaml carries a per-job ``status`` (drafted|applied|in_progress|rejected
+Schema-v5 meta.yaml carries a per-job ``status`` (drafted|applied|in_progress|rejected
 |ignored) — that field is what ``--status`` and the STATUS column use; the status
-folder is its derived rollup and is reported separately as ``folder_status``.
+folder is its derived rollup and is reported separately as ``folder_status``. The
+structured ``progress`` summary supplies ``--phase`` / ``--progress-state`` and the
+PHASE / P-STATE columns.
 
 Usage:
     .venv/bin/python skills/application-tracker/scripts/filter_jobs.py
@@ -46,7 +48,7 @@ import yaml  # noqa: E402  (import after sys.path bootstrap, by design)
 import config  # noqa: E402
 from layout import STATUS_DIRS, STATUS_FOLDERS  # noqa: E402
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Status labels ranked for --sort fit (best first) and for the folder-order status sort.
 _FIT_RANK = {"strong": 3, "good": 2, "partial": 1}
@@ -172,6 +174,7 @@ def _build_row(meta: dict, job: dict, folder_status: str, slug: str) -> dict:
                     if isinstance(job.get("required_yoe"), dict) else None)
     salary_range = (job.get("salary_range")
                     if isinstance(job.get("salary_range"), dict) else None)
+    progress = job.get("progress") if isinstance(job.get("progress"), dict) else {}
 
     fit = _s(job.get("fit"))
     per_job_status = _s(job.get("status"))
@@ -203,7 +206,9 @@ def _build_row(meta: dict, job: dict, folder_status: str, slug: str) -> dict:
         "posted_date": posted_date,
         "research_date": research_date,
         "channel": _s(meta.get("channel")),
-        "stage": _s(job.get("stage")),
+        "phase": _s(progress.get("phase")),
+        "progress_state": _s(progress.get("state")),
+        "progress_label": _s(progress.get("label")),
         "status_date": _s(job.get("status_date")),
         "url": _s(job.get("url")),
         "jd_file": _s(job.get("jd_file")),
@@ -288,7 +293,9 @@ def matches(row: dict, f: dict) -> bool:
         return False
     if not _sub_match(row["location"], f["location"]):
         return False
-    if not _sub_match(row["stage"], f["stage"]):
+    if not _mem_match(row["phase"], f["phase"]):
+        return False
+    if not _mem_match(row["progress_state"], f["progress_state"]):
         return False
     if not _sub_match(row["slug"], f["slug"]):
         return False
@@ -375,6 +382,8 @@ _COLUMNS = [
     ("STATUS", lambda r: r["status"], 11),
     ("COMPANY", lambda r: r["company"], 20),
     ("ROLE", lambda r: r["role"], 34),
+    ("PHASE", lambda r: r["phase"], 19),
+    ("P-STATE", lambda r: r["progress_state"], 19),
     ("LOCATION", lambda r: r["location"], 22),
     ("WP", lambda r: r["workplace"], 7),
     ("SPONSOR", lambda r: r["sponsorship"], 9),
@@ -439,7 +448,16 @@ def main():
     parser.add_argument("--company", help="Company substring (case-insensitive).")
     parser.add_argument("--role", help="Role substring (case-insensitive).")
     parser.add_argument("--location", help="Location substring (case-insensitive).")
-    parser.add_argument("--stage", help="Per-job stage substring (case-insensitive).")
+    parser.add_argument("--phase",
+                        help="Hiring phase (application_prep,application_review,"
+                             "recruiter_screen,assessment,hiring_manager,"
+                             "technical_interview,interview_loop,team_match,offer,"
+                             "background_check,onboarding,other). Comma = OR.")
+    parser.add_argument("--progress-state",
+                        help="Workflow state (unknown,action_required,"
+                             "booking_required,awaiting_schedule,scheduled,"
+                             "reschedule_required,reschedule_pending,"
+                             "waiting_employer,awaiting_result,closed). Comma = OR.")
     parser.add_argument("--slug", help="Application-folder slug substring.")
     parser.add_argument("--channel", help="Lead channel substring (case-insensitive).")
     parser.add_argument("--workplace",
@@ -484,7 +502,8 @@ def main():
         "company": _csv(args.company),
         "role": _csv(args.role),
         "location": _csv(args.location),
-        "stage": _csv(args.stage),
+        "phase": _csv(args.phase),
+        "progress_state": _csv(args.progress_state),
         "slug": _csv(args.slug),
         "channel": _csv(args.channel),
         "workplace": _csv(args.workplace),

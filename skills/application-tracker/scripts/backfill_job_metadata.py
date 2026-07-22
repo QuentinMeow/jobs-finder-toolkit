@@ -1,4 +1,4 @@
-"""Safely preview or insert schema-v4 job metadata into application meta.yaml files.
+"""Safely preview or insert schema-v5 job metadata into application meta.yaml files.
 
 The default is a dry run. ``--write`` is required to persist targeted,
 formatting-preserving edits. Every application carries a uniform ``jobs`` list
@@ -43,7 +43,7 @@ def _read_exact_jd(app_dir: Path, record: dict) -> str:
     if not named:
         raise ValueError(
             f"role {record.get('role')!r} has no jd_file; "
-            "schema-v4 metadata requires an exact JD association"
+            "schema-v5 metadata requires an exact JD association"
         )
     if Path(named).name != named:
         raise ValueError(f"jd_file must be a filename, not a path: {named!r}")
@@ -69,7 +69,7 @@ def generated_metadata_by_path(app_dir: Path, meta: dict) -> dict[tuple, dict]:
     jobs = meta.get("jobs")
     if not isinstance(jobs, list) or not jobs:
         raise ValueError(
-            "schema-v4 metadata requires a non-empty jobs list (one entry per posting)"
+            "schema-v5 metadata requires a non-empty jobs list (one entry per posting)"
         )
     generated = {}
     for index, record in enumerate(jobs):
@@ -172,7 +172,7 @@ def main() -> int:
         "--statuses",
         default=None,
         help="Comma-separated status labels (default: all status folders — the "
-             "fleet is uniformly schema v4). Options: "
+             "fleet is uniformly schema v5). Options: "
              f"{', '.join(STATUS_DIRS)}.",
     )
     parser.add_argument("--slug", default="", help="Preview one application slug/path.")
