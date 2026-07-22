@@ -3,6 +3,7 @@
 - **Priority**: P1 (next email round)
 - **Area**: tracker
 - **Source**: `design/application-progress-calendar/execution-plan.md` Stage 2
+- **Claimed-by**: claude (session 2026-07-22, branch email/stage-2-progress-calendar)
 
 ## Goal
 
