@@ -81,9 +81,17 @@ jobs:
 
       # 5. Shared-module unit tests: job-metadata extraction/validation, the
       #    formatting-preserving metadata editor, company-levels import, layout
-      #    helpers, and the search/backfill flows.
+      #    helpers, the search/backfill flows, and the raw-data-layer store
+      #    library (atomicity, blobs, capture, ledger, builder, identity,
+      #    annotations, validation, locking).
       - name: Shared-module unit tests
         run: python -m unittest discover scripts/shared/tests
+
+      # 5b. Validate the fictional example store and enforce its soft size
+      #     threshold. The store validator is zone-aware; the size check WARNS a
+      #     human over 100 KB and exits 0 (never a silent grow, never a hard block).
+      - name: Validate example store + fixture size
+        run: python scripts/store/validate_store.py examples/data --check-fixture-size
 
       # 6. Job-search tests include the deterministic high-stakes filter corpus,
       #    snapshot/refilter parity, review preservation, and handoff contracts.

@@ -1,0 +1,7 @@
+facts:
+  workplace: hybrid
+key: gh-1234567
+note: JD text confirms hybrid in Austin.
+schema_version: 1
+verified_at: '2026-07-14'
+verified_by: human

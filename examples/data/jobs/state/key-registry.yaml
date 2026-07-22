@@ -1,0 +1,6 @@
+keys:
+  gh-1234567:
+    aliases: []
+    pinned: true
+    reason: annotation
+schema_version: 1

@@ -11,6 +11,11 @@ their local copy here instead of reaching into the repo-root toolkit.
 | `layout.py` | `scripts/shared/layout.py` |
 | `job_metadata.py` | `scripts/shared/job_metadata.py` |
 | `metadata_editor.py` | `scripts/shared/metadata_editor.py` |
+| `store/` (directory) | `scripts/shared/store/` |
+
+The `store/` entry is a whole **directory** mirror (the raw-data-layer store
+library, imported as `from _vendor.store import ...`); the sync mirrors it
+recursively, byte-identical per file, dropping `__pycache__`/`*.pyc`.
 
 ## Rules
 

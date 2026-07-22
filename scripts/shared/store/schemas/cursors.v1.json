@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "store/cursors.v1",
+  "title": "Consumer cursors, version 1",
+  "description": "Each consumer's saved place. Cursors ride the materialization sequence (not timestamps) and live in state/ so a rebuild never resets them.",
+  "type": "object",
+  "required": ["schema_version", "cursors"],
+  "properties": {
+    "schema_version": {"type": "integer", "minimum": 1},
+    "cursors": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["seq"],
+        "properties": {
+          "seq": {"type": "integer", "minimum": 0},
+          "updated_at": {"type": "string"}
+        }
+      }
+    }
+  }
+}

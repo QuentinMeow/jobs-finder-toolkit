@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "store/key-registry.v1",
+  "title": "Entity key registry, version 1",
+  "description": "Identity pins. A pinned entity (has annotations or an application reference) is never silently re-keyed.",
+  "type": "object",
+  "required": ["schema_version", "keys"],
+  "properties": {
+    "schema_version": {"type": "integer", "minimum": 1},
+    "keys": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["pinned", "aliases"],
+        "properties": {
+          "pinned": {"type": "boolean"},
+          "reason": {"type": ["string", "null"]},
+          "aliases": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

@@ -199,6 +199,32 @@ def discoveries_dir() -> Path:
     return _resolve(_paths().get("discoveries_dir"), "applications/1_discoveries")
 
 
+# ── raw-data-layer store root ─────────────────────────────────
+DATA_ROOT_ENV_VAR = "JOBHUNT_DATA_ROOT"
+
+
+def data_root() -> Path | None:
+    """Root of the raw-data-layer store, or ``None`` when the store is DISABLED.
+
+    Discovery order: the ``JOBHUNT_DATA_ROOT`` env var wins; then a ``paths.data_root``
+    config value (resolved relative to the config file like every other path). When
+    neither is set the store is disabled — capture no-ops and the query/validate
+    tools print a clear "store not configured" message. There is deliberately NO
+    default (unlike the other paths): the store must never write into a tracked dir,
+    so CI and the example config leave ``data_root`` unset.
+    """
+    env = os.environ.get(DATA_ROOT_ENV_VAR)
+    if env:
+        return Path(env).expanduser().resolve()
+    configured = _paths().get("data_root")
+    if configured:
+        p = Path(configured).expanduser()
+        if p.is_absolute():
+            return p.resolve()
+        return (_config_dir() / p).resolve()
+    return None
+
+
 # ── job-search + location policy ─────────────────────────────
 def default_profile() -> str:
     js = _config().get("job_search") or {}

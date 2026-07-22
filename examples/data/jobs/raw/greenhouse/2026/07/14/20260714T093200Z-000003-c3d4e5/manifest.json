@@ -1,0 +1,21 @@
+{
+  "achieved": 2,
+  "attested_complete": true,
+  "context": {
+    "company": "examplecorp",
+    "profile": "profile-01"
+  },
+  "envelope_schema": 1,
+  "expected": 2,
+  "fetch_id": "20260714T093200Z-000003-c3d4e5",
+  "fetched_at": "2026-07-14T09:32:00Z",
+  "group_id": "20260714T093000Z-board-examplecorp",
+  "kind": "group",
+  "members": [
+    "20260714T093000Z-000001-a1b2c3",
+    "20260714T093100Z-000002-b2c3d4"
+  ],
+  "operation": "group",
+  "source": "greenhouse",
+  "tool_version": "capture-lib 1 / fixture-generator"
+}

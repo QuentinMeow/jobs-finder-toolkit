@@ -1,0 +1,34 @@
+company: examplecorp
+facts:
+  posted_at: '2026-07-12'
+  workplace_raw: hybrid
+first_seen: '2026-07-14T09:30:00Z'
+jd:
+  content_hash: 4f197ba0bf26ca20da5351a24184554887e4283fa3c33fce697cf37d4eed8d46
+  fetched_verbatim: true
+  file: jd.md
+key: gh-1234567
+last_seen: '2026-07-14T09:30:00Z'
+location: Austin, TX (Hybrid)
+opinions:
+  visa:
+    by: visa.py@fixture
+    from: 20260714T093000Z-000001-a1b2c3
+    hits: []
+    label: unclear
+  workplace:
+    by: location.py@fixture
+    from: 20260714T093000Z-000001-a1b2c3
+    value: hybrid
+provenance:
+  built_by: fixture-generator
+  fetch_ids:
+  - 20260714T093000Z-000001-a1b2c3
+  - 20260714T093100Z-000002-b2c3d4
+schema_version: 1
+source_ids:
+- board_token: examplecorp
+  id: '1234567'
+  source: greenhouse
+  url: https://boards.greenhouse.io/examplecorp/jobs/1234567
+title: Software Engineer, Control Plane

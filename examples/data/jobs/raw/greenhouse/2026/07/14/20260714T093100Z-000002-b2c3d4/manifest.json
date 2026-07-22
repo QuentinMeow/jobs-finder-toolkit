@@ -1,0 +1,32 @@
+{
+  "context": {
+    "company": "examplecorp",
+    "profile": "profile-01"
+  },
+  "duration_ms": 180,
+  "envelope_schema": 1,
+  "fetch_id": "20260714T093100Z-000002-b2c3d4",
+  "fetched_at": "2026-07-14T09:31:00Z",
+  "group": {
+    "attested_complete": null,
+    "expected": 2,
+    "group_id": "20260714T093000Z-board-examplecorp",
+    "member": 2
+  },
+  "group_id": "20260714T093000Z-board-examplecorp",
+  "operation": "jd",
+  "payload": {
+    "blob": "4f197ba0bf26ca20da5351a24184554887e4283fa3c33fce697cf37d4eed8d46",
+    "bytes_raw": 202,
+    "content_type": "text/markdown"
+  },
+  "request": {
+    "url": "https://boards.greenhouse.io/examplecorp/jobs/1234567"
+  },
+  "response_headers": {
+    "content-type": "text/html"
+  },
+  "source": "greenhouse",
+  "status": 200,
+  "tool_version": "capture-lib 1 / fixture-generator"
+}

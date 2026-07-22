@@ -1,0 +1,20 @@
+{
+  "context": {
+    "company": "examplecorp",
+    "profile": "profile-01"
+  },
+  "duration_ms": 90,
+  "envelope_schema": 1,
+  "error": "upstream 500 (empty body)",
+  "fetch_id": "20260715T093000Z-000004-d4e5f6",
+  "fetched_at": "2026-07-15T09:30:00Z",
+  "operation": "board",
+  "payload": null,
+  "request": {
+    "url": "https://boards.greenhouse.io/v1/boards/examplecorp/jobs"
+  },
+  "response_headers": {},
+  "source": "greenhouse",
+  "status": 500,
+  "tool_version": "capture-lib 1 / fixture-generator"
+}
