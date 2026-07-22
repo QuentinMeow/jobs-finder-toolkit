@@ -1,0 +1,8 @@
+tiers:
+  aggregator_sweeps:
+    prune_blobs_when:
+      all_of:
+        - posting_date_older_than_days: 90
+        - last_observed_older_than_days: 30
+  boards_and_jds:
+    prune_blobs_when: never

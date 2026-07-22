@@ -53,6 +53,7 @@ from _vendor.store.ledger import BuildLedger, check_clock_monotonic, pending_man
 from _vendor.store.locking import DomainLock, LockContention  # noqa: E402
 from _vendor.store.manifest import iter_manifests  # noqa: E402
 from _vendor.store.paths import detect_case_collision, domain_layout, validate_slug  # noqa: E402
+from _vendor.store.retention import load_frozen_facts  # noqa: E402
 from _vendor.store.validation import load_schema, validate as schema_validate  # noqa: E402
 from registry import Registry, _slugify, load_registry  # noqa: E402
 
@@ -687,6 +688,98 @@ def _carry_forward(derived_root: Path, fresh_keys: set) -> dict:
     return out
 
 
+def _reconstruct_from_frozen(frozen: dict, key: str):
+    """Rebuild an :class:`EntityBuild` from a ``state/frozen-facts/<key>.yaml`` snapshot.
+
+    The retention GC writes these before pruning a blob that feeds a materialized
+    entity. When BOTH the raw blob is pruned AND no derived entity is on disk (a
+    fresh rebuild on a pruned store), this is the ONLY way the entity survives — the
+    bounded, explicit exception to "everything re-derives from raw". Marked
+    ``provenance.carried + provenance.frozen``. Deterministic (pure function of the
+    snapshot), so incremental and rebuild reconstruct byte-identically. Returns
+    ``None`` for an empty/malformed snapshot (never a husk).
+    """
+    entity = frozen.get("entity")
+    if not isinstance(entity, dict) or not entity.get("key"):
+        return None
+    posting = dict(entity)
+    prov = dict(posting.get("provenance") or {})
+    prov["carried"] = True
+    prov["frozen"] = True
+    posting["provenance"] = prov
+    files = frozen.get("files") or {}
+    jd_text = files.get("jd.md", "") or ""
+    jd_versions = {}
+    for name, text in files.items():
+        if name.startswith("jd-") and name.endswith(".md"):
+            jd_versions[name[len("jd-"):-len(".md")]] = text
+    events = list(frozen.get("events") or [])
+    seq = next((int(e.get("seq", 0)) for e in events
+                if e.get("type") == "first_seen"), 0)
+    partition = validate_slug(_slugify(posting.get("company", "")) or "unknown",
+                              field="company partition")
+    return EntityBuild(key, partition, posting, jd_text, jd_versions, events), seq
+
+
+# Deterministic event ordering (matches _reduce: an observation is first_seen OR
+# seen[+changed]; within one (at, fetch) seen precedes changed).
+_EVENT_TYPE_ORDER = {"first_seen": 0, "seen": 1, "changed": 2}
+
+
+def _event_sort_key(e: dict):
+    return (e.get("at") or "", e.get("fetch") or "",
+            _EVENT_TYPE_ORDER.get(e.get("type"), 9))
+
+
+def _merge_frozen_into_fresh(eb: EntityBuild, frozen: dict) -> bool:
+    """Fold a frozen snapshot's pre-prune timeline into a freshly materialized entity.
+
+    MAJOR-1 fix. An entity fed by SEVERAL blobs where only SOME were pruned
+    materializes fresh from the surviving blobs alone — silently losing the pruned
+    observations and, with them, an accurate ``first_seen`` (store-core §5: a pruned
+    blob's manifest still proves it was observed, so the timeline stays re-derivable).
+    The frozen snapshot is the authoritative full-history record written at prune
+    time, so we restore the pruned observations from it: ``first_seen`` = min,
+    ``last_seen`` = max, the pruned fetches' events (frozen's classification wins for
+    any shared fetch — it saw the full history), the JD prior-versions the fresh
+    build lacks, and the union of ``fetch_ids``. Fresh keeps its current-state fields
+    (retention prunes OLD blobs, so the newest observation is a surviving one).
+
+    Returns ``True`` iff frozen contributed an observation the present raw lacks
+    (then marks ``provenance.carried`` + ``provenance.frozen``). Deterministic — a
+    pure function of ``eb`` + ``frozen`` — so incremental == rebuild == rebuild-twice.
+    """
+    fentity = frozen.get("entity")
+    if not isinstance(fentity, dict):
+        return False
+    frozen_events = list(frozen.get("events") or [])
+    frozen_fetches = {e.get("fetch") for e in frozen_events}
+    fresh_fetches = {e.get("fetch") for e in eb.events}
+    if not (frozen_fetches - fresh_fetches):
+        return False  # frozen holds no observation the present raw lacks — no-op
+    # Frozen's classification wins for shared fetches; fresh adds only NEW fetches.
+    merged = list(frozen_events) + [e for e in eb.events
+                                    if e.get("fetch") not in frozen_fetches]
+    merged.sort(key=_event_sort_key)
+    eb.events = merged
+    for name, text in (frozen.get("files") or {}).items():
+        if name.startswith("jd-") and name.endswith(".md"):
+            eb.jd_versions.setdefault(name[len("jd-"):-len(".md")], text)
+    ff, fl = fentity.get("first_seen"), fentity.get("last_seen")
+    cur_first, cur_last = eb.posting.get("first_seen"), eb.posting.get("last_seen")
+    if ff:
+        eb.posting["first_seen"] = min(cur_first, ff) if cur_first else ff
+    if fl:
+        eb.posting["last_seen"] = max(cur_last, fl) if cur_last else fl
+    prov = eb.posting.setdefault("provenance", {})
+    fresh_fids = set(prov.get("fetch_ids") or [])
+    frozen_fids = set((fentity.get("provenance") or {}).get("fetch_ids") or [])
+    prov["fetch_ids"] = sorted(fresh_fids | frozen_fids)
+    prov["carried"] = True
+    prov["frozen"] = True
+    return True
+
+
 # ── annotation merge + conflict queue (store-core §1) ────────
 def _append_conflict(path: Path, entity, field, opinion_value, human_value,
                      opinion_by) -> None:
@@ -771,7 +864,29 @@ def _build_entities(layout, registry, stamps):
     entities = {key: _reduce(key, obs, seq_of, stamps) for key, obs in groups.items()}
     entity_seq = {key: min(seq_of.get(o.fetch_id, 0) for o in obs)
                   for key, obs in groups.items()}
-    # Carry forward entities whose raw is absent this build (missing-raw tolerance).
+    fresh_keys = set(entities)
+    frozen_all = load_frozen_facts(layout)
+    # MAJOR-1: an entity fed by several blobs where only SOME were pruned materializes
+    # fresh from the survivors alone — merge the frozen full-history timeline back in
+    # (first_seen/events/jd-versions restored) and recompute its sequence over the
+    # union of fetches so a cursor still surfaces it correctly.
+    for key in fresh_keys:
+        frozen = frozen_all.get(key)
+        if frozen and _merge_frozen_into_fresh(entities[key], frozen):
+            fids = (entities[key].posting.get("provenance") or {}).get("fetch_ids") or []
+            entity_seq[key] = min((seq_of.get(f, 0) for f in fids),
+                                  default=entity_seq.get(key, 0))
+    # Reconstruct entities that materialized NO fresh observation (all their blobs
+    # pruned). Sourced from frozen facts REGARDLESS of whether derived is on disk, so
+    # a derived-present build and a derived-wiped build agree byte-for-byte (MINOR-1).
+    for key, frozen in frozen_all.items():
+        if key in fresh_keys:
+            continue
+        rec = _reconstruct_from_frozen(frozen, key)
+        if rec is not None:
+            entities[key], entity_seq[key] = rec[0], rec[1]
+    # Carry forward not-synced-here entities (raw absent, no tombstone, no frozen):
+    # keep the existing derived rather than drop it (missing-raw tolerance).
     for key, (eb, seq) in _carry_forward(layout.derived, set(entities)).items():
         entities[key] = eb
         entity_seq[key] = seq

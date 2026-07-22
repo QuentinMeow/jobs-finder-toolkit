@@ -13,6 +13,7 @@ Routines:
     skill-drift          flag baseline skills not in the profile's canonical lists (report-only)
     verify-links         check referenced paths + symlinks + vendor drift (exit 1 on break)
     self-measure         recompute the pipeline funnel + memory metrics (--apply writes yaml)
+    store-report         raw-data-layer store health (sizes/blobs/locks/validate; report-only)
 
 Usage:
     .venv/bin/python scripts/maintenance/gardener/gardener.py <routine> [--apply]
@@ -33,6 +34,7 @@ import expire_discoveries  # noqa: E402
 import lessons_report  # noqa: E402
 import self_measure  # noqa: E402
 import skill_drift  # noqa: E402
+import store_report  # noqa: E402
 import verify_links  # noqa: E402
 
 # Routine name -> (callable taking apply flag or nothing, supports_apply).
@@ -42,12 +44,14 @@ ROUTINES = {
     "lessons-report": (lambda apply: lessons_report.run(), False),
     "card-staleness": (lambda apply: card_staleness.run(), False),
     "skill-drift": (lambda apply: skill_drift.run(), False),
+    "store-report": (lambda apply: store_report.run(), False),
     "verify-links": (lambda apply: verify_links.run(), False),
     "self-measure": (lambda apply: self_measure.run(apply), True),
 }
 # Order used by --all (verify-links last so its exit code is the overall gate).
 ALL_ORDER = ["self-measure", "expire-discoveries", "compact-logs",
-             "lessons-report", "card-staleness", "skill-drift", "verify-links"]
+             "lessons-report", "card-staleness", "skill-drift", "store-report",
+             "verify-links"]
 
 
 def run_all() -> int:

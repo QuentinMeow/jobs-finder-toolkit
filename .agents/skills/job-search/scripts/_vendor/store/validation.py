@@ -47,6 +47,7 @@ SCHEMA_FILES = {
     "key-registry": "key-registry.v1.json",
     "identifiers": "identifiers.v1.json",
     "cursors": "cursors.v1.json",
+    "frozen-facts": "frozen-facts.v1.json",
     # Stage 2 — job-postings builder artifacts (derived + index + triage).
     "posting": "posting.v1.json",
     "posting-index-line": "posting-index-line.v1.json",
@@ -292,6 +293,23 @@ def _validate_domain(domain_root: Path, report: StoreReport) -> None:
     _validate_yaml_file(layout.key_registry, "key-registry", report)
     _validate_yaml_file(layout.identifiers, "identifiers", report)
     _validate_yaml_file(layout.cursors, "cursors", report)
+
+    # frozen-facts snapshots (retention GC) — state, informational, schema-checked
+    frozen_dir = layout.state / "frozen-facts"
+    if frozen_dir.is_dir():
+        for fpath in sorted(frozen_dir.glob("*.yaml")):
+            _validate_yaml_file(fpath, "frozen-facts", report)
+
+    # retention.yaml (the GC config) — parse it so a malformed rule is a loud error.
+    retention_yaml = domain_root / "retention.yaml"
+    if retention_yaml.exists():
+        from . import retention as _retention
+        try:
+            _retention.parse_config(
+                serialization.loads_yaml(retention_yaml.read_text(encoding="utf-8")))
+            report.counts["retention"] = report.counts.get("retention", 0) + 1
+        except _retention.RetentionError as exc:
+            report.errors.append(f"{retention_yaml}: {exc}")
 
 
 def validate_store(root: Path) -> StoreReport:

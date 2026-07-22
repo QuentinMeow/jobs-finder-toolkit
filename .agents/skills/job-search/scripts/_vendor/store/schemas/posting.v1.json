@@ -48,7 +48,9 @@
         "built_by": {"type": "string"},
         "fetch_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "normalizer_version": {"type": "integer", "minimum": 1},
-        "canonicalizer_version": {"type": "integer", "minimum": 1}
+        "canonicalizer_version": {"type": "integer", "minimum": 1},
+        "carried": {"type": "boolean", "description": "true when this entity was NOT fully re-derived from present raw this build (some observations came from an existing derived entity or from frozen facts because their raw blob is locally absent or was pruned)"},
+        "frozen": {"type": "boolean", "description": "true when frozen facts (state/frozen-facts/<key>.yaml, snapshotted before a retention prune) contributed to this entity — whether it was fully reconstructed from frozen facts or a partially-pruned entity had its pruned observations merged back in"}
       },
       "additionalProperties": true
     },

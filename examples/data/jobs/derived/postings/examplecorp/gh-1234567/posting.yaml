@@ -18,7 +18,7 @@ last_seen: '2026-07-15T09:30:00Z'
 location: Seattle, WA (Hybrid)
 opinions:
   level:
-    by: job_metadata.py@919ab5d5
+    by: job_metadata.py@3aebb9ea
     from: 20260715T093000Z-000002-b2c3d4
     value: unknown
   visa:
@@ -27,7 +27,7 @@ opinions:
     hits: []
     label: unclear
   workplace:
-    by: job_metadata.py@919ab5d5
+    by: job_metadata.py@3aebb9ea
     effective: hybrid
     from: 20260715T093000Z-000002-b2c3d4
     human: hybrid
@@ -36,7 +36,7 @@ opinions:
 profiles:
 - profile-01
 provenance:
-  built_by: build_postings.py@8e7a024b
+  built_by: build_postings.py@e0b4788a
   canonicalizer_version: 1
   fetch_ids:
   - 20260714T093000Z-000001-a1b2c3

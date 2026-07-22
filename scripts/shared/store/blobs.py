@@ -22,7 +22,8 @@ from pathlib import Path
 
 import zstandard
 
-from .atomic import atomic_write_bytes
+from . import serialization
+from .atomic import atomic_write_bytes, atomic_write_text
 from .constants import ZSTD_LEVEL
 
 # Availability states.
@@ -111,6 +112,53 @@ class BlobStore:
             compressed = zstandard.ZstdCompressor(level=self.level).compress(data)
             atomic_write_bytes(path, compressed)
         return BlobRef(sha256=sha, bytes_raw=len(data), ext=ext)
+
+    # ── prune (retention GC) ──
+    def write_tombstone(self, sha: str, *, reason: str | None = None,
+                        meta: dict | None = None) -> Path:
+        """Write the retention tombstone for ``sha`` (what :meth:`state` reads as pruned).
+
+        The tombstone is the ``<sha>.tombstone`` marker file next to where the blob
+        would live; its *existence* is the only thing :meth:`state` consults (it
+        returns ``pruned`` only when the blob file is absent AND this marker exists),
+        so the content is human-facing metadata only. Written atomically. The GC
+        writes the tombstone BEFORE deleting the blob, so a crash in the window leaves
+        blob-present-plus-tombstone — :meth:`state` still reads ``present`` (the blob
+        verifies), i.e. a re-sweepable "pruned-pending", never ``corrupt``.
+        """
+        record = {"tombstone": True, "sha": sha, "pruned_at": serialization.now_z()}
+        if reason:
+            record["reason"] = reason
+        if meta:
+            record["meta"] = meta
+        path = self.tombstone_path(sha)
+        atomic_write_text(path, serialization.dumps_json(record))
+        return path
+
+    def delete(self, sha: str, ext: str | None = None) -> bool:
+        """Delete the blob file for ``sha`` (idempotent). Returns ``True`` if removed.
+
+        Only the payload file is touched — never the tombstone or the manifest. After
+        a paired :meth:`write_tombstone` + :meth:`delete`, :meth:`state` reports
+        ``pruned``.
+        """
+        path = self.path_for(sha, ext) if ext else self.find(sha)
+        if path is not None and path.exists():
+            path.unlink()
+            return True
+        return False
+
+    def is_pruned_pending(self, sha: str, ext: str | None = None) -> bool:
+        """A tombstone exists but the blob file is still present (crash window).
+
+        The GC order is frozen-facts → tombstone → delete; a crash between the last
+        two leaves this re-sweepable state. It is NOT ``pruned`` yet (the bytes are
+        still here and verify), so the next GC pass re-completes the delete.
+        """
+        if not self.tombstone_path(sha).exists():
+            return False
+        path = self.path_for(sha, ext) if ext else self.find(sha)
+        return path is not None and path.exists()
 
     # ── read (verify-on-read) ──
     def read(self, sha: str, ext: str | None = None) -> bytes:

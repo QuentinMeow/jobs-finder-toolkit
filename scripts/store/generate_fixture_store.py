@@ -194,6 +194,19 @@ def _finalize(layout, root: Path):
                "cursors": {"shortlist-review": {"seq": 1,
                                                 "updated_at": "2026-07-14T10:05:00Z"}}}
     atomic_write_text(layout.cursors, serialization.dumps_yaml(cursors))
+    # The retention GC config at the DOMAIN root — the design's conservative defaults
+    # (boards/JDs kept forever; aggregator sweeps prune only when BOTH the posting is
+    # >90d old AND we last observed it >30d ago). On this fixture nothing is old
+    # enough, so GC is a documented no-op here — it just demonstrates the schema.
+    atomic_write_text(layout.root / "retention.yaml",
+                      "tiers:\n"
+                      "  aggregator_sweeps:\n"
+                      "    prune_blobs_when:\n"
+                      "      all_of:\n"
+                      "        - posting_date_older_than_days: 90\n"
+                      "        - last_observed_older_than_days: 30\n"
+                      "  boards_and_jds:\n"
+                      "    prune_blobs_when: never\n")
 
 
 def generate(root: Path) -> None:

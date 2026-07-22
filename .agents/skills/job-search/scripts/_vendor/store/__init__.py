@@ -32,6 +32,7 @@ from . import (  # noqa: F401  (re-exported submodules)
     manifest,
     paths,
     resolver,
+    retention,
     serialization,
     validation,
 )
