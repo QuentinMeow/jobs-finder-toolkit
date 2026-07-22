@@ -39,3 +39,7 @@ private/leak_tokens.txt
 /templates/
 /.agents/inputs/
 /.agents/skills/coding-interview/
+# Generated dated discovery reports under the EXAMPLE config (test/canary runs
+# write real dated files here because config.example.yaml points discoveries_dir
+# at this tracked dir). Only .gitkeep is meant to be tracked.
+examples/applications/1_discoveries/*.md

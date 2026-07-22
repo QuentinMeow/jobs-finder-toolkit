@@ -46,6 +46,7 @@ This is the complete routine path — an ordinary search needs nothing below it.
   no-fabricated-postings, and JD-text verification before handoff run the same regardless of mode.
   Mode changes how much *context and iteration* you spend, never which *checks* run.
 - A user's explicit instruction in the moment outranks the config mode (either direction). Never self-escalate to `full` — the mode changes only via config or an explicit user request.
+- **The store is memory, never verification:** stored facts (the `store:` summary line, `query_postings.py`) only route attention — acting on any posting (drafting, handoff) still requires the JD fetched live THIS session, and `handoff.py` refuses to scaffold without one.
 
 ### Before you start
 1. Read `AGENTS.md` (traceability, no fabrication) and this skill's `LESSONS.md` (hard-won
@@ -249,6 +250,7 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 | Reusable company leveling + compensation cache (`config.company_levels_path()`) | `reference.md` § Leveling cache |
 | Optional DOL sponsorship enrichment (`build_sponsor_index.py`) | `reference.md` § Optional DOL sponsorship enrichment |
 | Visa / US-location / recency heuristics; scoring weights | `reference.md` (Visa, US/location, Recency, Scoring) |
+| Cross-run job store: `query_postings.py` queries + cursor semantics, last-seen staleness cheat-sheet, `store_key` linkage | `reference.md` § Cross-run job store |
 
 ## Files
 

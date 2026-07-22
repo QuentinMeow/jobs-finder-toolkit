@@ -341,6 +341,61 @@ class HandoffTests(unittest.TestCase):
         self.assertFalse((folder / "source" / "JD-senior-platform-engineer.md").exists())
         self.assertIn("save", err.lower())
 
+    def test_fresh_jd_refusal_is_explicit(self):
+        # Store-is-never-verification: a missing session-fresh JD is an explicit
+        # refusal (non-zero exit + framing), with no override flag.
+        bad_url = (self.tmp / "nope.html").as_uri()
+        code, _folder, _out, err = self._run([_row(url=bad_url)], "rank 1")
+        self.assertNotEqual(code, 0)
+        self.assertIn("REFUSING", err)
+        self.assertIn("session-fresh", err.lower())
+        self.assertIn("verification", err.lower())
+
+    def test_store_key_copied_verbatim_into_meta_and_validates(self):
+        code, folder, _out, err = self._run(
+            [_row(url=self.jd_url, store_key="gh-1234567")], "rank 1")
+        self.assertEqual(code, 0, err)
+        meta = yaml.safe_load((folder / "meta.yaml").read_text())
+        self.assertEqual(meta["jobs"][0]["store_key"], "gh-1234567")
+        self.assertEqual(validate_meta(meta, app_dir=folder), [])
+
+    def test_no_store_key_field_when_absent(self):
+        _code, folder, _out, _err = self._run([_row(url=self.jd_url)], "rank 1")
+        meta = yaml.safe_load((folder / "meta.yaml").read_text())
+        self.assertNotIn("store_key", meta["jobs"][0])
+
+    def test_stale_last_seen_warns_fresh_is_quiet(self):
+        import io as _io
+        from contextlib import redirect_stderr as _rse
+        prior = os.environ.get("JOBHUNT_DATA_ROOT")
+        root = self.tmp / "store"
+        os.environ["JOBHUNT_DATA_ROOT"] = str(root)
+        try:
+            idx = root / "jobs" / "index" / "postings.jsonl"
+            idx.parent.mkdir(parents=True, exist_ok=True)
+            from datetime import datetime, timedelta, timezone
+            stale = (datetime.now(timezone.utc) - timedelta(days=30)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ")
+            fresh = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ")
+            lines = [{"_schema": 1, "built_at": stale, "note": "x"},
+                     {"key": "gh-stale", "last_seen": stale, "seq": 1},
+                     {"key": "gh-fresh", "last_seen": fresh, "seq": 2}]
+            idx.write_text("\n".join(json.dumps(l) for l in lines) + "\n")
+            buf = _io.StringIO()
+            with _rse(buf):
+                handoff.warn_if_stale("gh-stale")
+            self.assertIn("STALE", buf.getvalue())
+            buf2 = _io.StringIO()
+            with _rse(buf2):
+                handoff.warn_if_stale("gh-fresh")
+            self.assertEqual(buf2.getvalue(), "")
+        finally:
+            if prior is None:
+                os.environ.pop("JOBHUNT_DATA_ROOT", None)
+            else:
+                os.environ["JOBHUNT_DATA_ROOT"] = prior
+
     def test_rank_out_of_range_and_bad_selector(self):
         rows = [_row(url=self.jd_url)]
         code, _folder, _out, err = self._run(rows, "rank 5", "--skip-jd-fetch")

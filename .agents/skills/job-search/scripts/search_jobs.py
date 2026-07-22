@@ -697,7 +697,7 @@ def render_compact_table(kept) -> str:
 
 
 def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
-                       json_path, review_path=None) -> str:
+                       json_path, review_path=None, store_line=None) -> str:
     """~5-line run summary printed above the compact table on default stdout."""
     aggs = meta["aggregators"]
     lines = [
@@ -711,7 +711,108 @@ def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
     ]
     if review_path:
         lines.append(f"Review:      {review_path}")
+    # Store line (fetch path only; absent when the store is disabled → identical
+    # output to pre-store-integration).
+    if store_line:
+        lines.append(store_line)
     return "\n".join(lines)
+
+
+def run_post_fetch_store_build() -> tuple[str | None, dict]:
+    """Post-fetch incremental store build (FETCH path only). Totally guarded.
+
+    Returns ``(summary_line_or_None, {canonical_url: store_key})``. A disabled store,
+    a builder-lock contention (fail-fast, never block/retry), or ANY failure yields
+    ``(None, {})`` — the store is memory beside the search, and missing memory is
+    never an error. Store disabled ⇒ no line ⇒ byte-identical output to pre-store.
+    The build can add a few minutes at scale; the ``store: building index...`` notice
+    tells the user why the run is still working.
+    """
+    if config is None:
+        return None, {}
+    try:
+        data_root = config.data_root()
+    except Exception:  # noqa: BLE001
+        return None, {}
+    if data_root is None:
+        return None, {}
+    try:
+        import build_postings
+        from _vendor.store.locking import DomainLock, LockContention
+        from _vendor.store.paths import domain_layout
+        layout = domain_layout(data_root, "jobs")
+        layout.state.mkdir(parents=True, exist_ok=True)
+        print("store: building index...", file=sys.stderr)
+        try:
+            with DomainLock(layout.lock_path()):
+                build_postings.build_incremental(layout, load_registry())
+        except LockContention as exc:
+            print(f"store: {exc}", file=sys.stderr)  # fail-fast; ledger catches up next run
+        return _read_store_status(layout)
+    except Exception as exc:  # noqa: BLE001 — a store bug must never break the search
+        print(f"store: incremental build skipped ({exc}); search unaffected",
+              file=sys.stderr)
+        return None, {}
+
+
+def _read_store_status(layout) -> tuple[str | None, dict]:
+    """Read the fresh index: (summary line, canonical_url→store_key map)."""
+    from _vendor.store import serialization
+    from _vendor.store.atomic import read_jsonl
+    lines = read_jsonl(layout.index / "postings.jsonl")
+    rows = lines[1:] if lines else []
+    n = len(rows)
+    cursor_seq = 0
+    cursor_present = False
+    if layout.cursors.exists():
+        try:
+            data = serialization.loads_yaml(layout.cursors.read_text(encoding="utf-8"))
+            cur = (data or {}).get("cursors", {}).get("shortlist-review")
+            if cur is not None:
+                cursor_present = True
+                cursor_seq = int((cur or {}).get("seq", 0))
+        except Exception:  # noqa: BLE001
+            cursor_seq = 0
+    m = sum(1 for r in rows if int(r.get("seq", 0)) > cursor_seq)
+    # Collision-safe: a canonical_url that maps to MORE THAN ONE distinct key (a
+    # board posting and an aggregator shadow entity sharing a URL) resolves to NO
+    # key — a wrong store_key would land durably in meta.yaml, so absent beats wrong.
+    keys_by_url: dict[str, set] = {}
+    for r in rows:
+        cu, key = r.get("canonical_url"), r.get("key")
+        if cu and key:
+            keys_by_url.setdefault(cu, set()).add(key)
+    url_map = {cu: next(iter(keys)) for cu, keys in keys_by_url.items()
+               if len(keys) == 1}
+    # Honest wording: "M new since your last review" only makes sense once a cursor
+    # exists; otherwise every entity is trivially "new".
+    if cursor_present:
+        line = f"store: {n} tracked, {m} new since your last review"
+    else:
+        line = f"store: {n} tracked, {n} new (no review cursor yet — see reference)"
+    return line, url_map
+
+
+def _json_rows_with_store_key(kept, url_map) -> list[dict]:
+    """--json-out rows = to_dict() + a store_key looked up by canonicalized URL.
+
+    Added to the JSON payload ONLY (never to snapshots or the plain to_dict); a
+    missing match is ``store_key: null``, never an error. The canonicalizer is the
+    builder's own (drift-free — no second identity matcher).
+    """
+    try:
+        from posting_identity import canonicalize_url
+    except Exception:  # noqa: BLE001
+        canonicalize_url = None
+    rows = []
+    for p in kept:
+        d = p.to_dict()
+        key = None
+        if url_map and canonicalize_url is not None:
+            key = url_map.get(canonicalize_url(p.url or ""))
+        d["store_key"] = key
+        rows.append(d)
+    return rows
 
 
 def write_review_report(postings, cache_dir: Path, profile: str) -> Path | None:
@@ -847,6 +948,11 @@ def main() -> int:
     # These filter/score inputs are read fresh from the CURRENT flags + skip-logs on
     # both paths, so a refilter reflects the current filter intent.
     ctx = build_filter_context(profile, registry, args)
+
+    # Store integration runs on the FETCH path only (refilter is snapshot-only and
+    # never builds); defaults keep the refilter output byte-identical to today.
+    store_line: str | None = None
+    store_url_map: dict = {}
 
     if args.refilter is not None:
         # ---- REFILTER: no fetching; reuse a cached pre-filter snapshot ----
@@ -1004,6 +1110,11 @@ def main() -> int:
         print(f"Snapshot: wrote {n_raw} normalized postings -> {snap_path}",
               file=sys.stderr)
 
+        # Post-fetch: update the cross-run store (raw was captured during fetch) and
+        # get the "N tracked, M new" line + the URL→store_key map. Fully guarded —
+        # never blocks or breaks the search; skipped cleanly when the store is off.
+        store_line, store_url_map = run_post_fetch_store_build()
+
     # ---- shared: filter -> score -> rank -> render -> output ----
     kept, counts = filter_score_rank(
         postings, profile, ctx, max_age=max_age, top_k=top_k,
@@ -1043,7 +1154,7 @@ def main() -> int:
 
     if args.json_out:
         Path(args.json_out).write_text(
-            json.dumps([p.to_dict() for p in kept], indent=2))
+            json.dumps(_json_rows_with_store_key(kept, store_url_map), indent=2))
         print(f"Wrote JSON -> {args.json_out}", file=sys.stderr)
 
     # Default stdout is the compact contract (5-line summary + top-K table); the full
@@ -1054,7 +1165,7 @@ def main() -> int:
     else:
         print(render_run_summary(meta, kept, snapshot_display=snapshot_display,
                                  discoveries_path=out_path, json_path=args.json_out,
-                                 review_path=review_path))
+                                 review_path=review_path, store_line=store_line))
         print()
         print(render_compact_table(kept))
     return 0

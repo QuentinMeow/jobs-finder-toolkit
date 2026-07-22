@@ -259,6 +259,44 @@ def save_jd(url: str, jd_path: Path) -> tuple[bool, str]:
     return True, detail
 
 
+_STALE_LAST_SEEN_DAYS = 7
+
+
+def warn_if_stale(store_key: str) -> None:
+    """Warn (stderr) when the store's local last_seen for this posting is stale.
+
+    Queries the LOCAL index by key only (no network); the store never says
+    "closed", so a stale last_seen is a prompt to re-check the live board. Fully
+    guarded — a disabled/missing store is silent, never an error.
+    """
+    if not store_key:
+        return
+    try:
+        import config
+        data_root = config.data_root()
+        if data_root is None:
+            return
+        from _vendor.store.atomic import read_jsonl
+        from _vendor.store.paths import domain_layout
+        layout = domain_layout(data_root, "jobs")
+        rows = read_jsonl(layout.index / "postings.jsonl")
+        row = next((r for r in (rows[1:] if rows else [])
+                    if r.get("key") == store_key), None)
+        last_seen = row.get("last_seen") if row else None
+        if not last_seen:
+            return
+        seen = datetime.strptime(last_seen, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - seen).days
+        if age > _STALE_LAST_SEEN_DAYS:
+            print(
+                f"handoff: STALE — the store last observed this posting {age} days "
+                f"ago (last_seen {last_seen}). The store never says 'closed'; "
+                f"re-check the live board before drafting.", file=sys.stderr)
+    except Exception:  # noqa: BLE001 — the staleness hint must never break handoff
+        return
+
+
 # --------------------------------------------------------------------------- #
 # meta.yaml (schema v4)
 # --------------------------------------------------------------------------- #
@@ -309,22 +347,26 @@ def build_meta_bytes(row: dict, *, jd_file: str, research_date: str) -> tuple[by
     scaffold unchanged (no metadata) so the failure surfaces in validation and the
     tracker can enrich it; ``editor_errors`` explains why nothing was carried.
     """
+    job_entry = {
+        "role": str(row.get("title") or ""),
+        "jd_file": jd_file,
+        # Handoff always creates a fresh DRAFTED application.
+        "status": "drafted",
+        "location": str(row.get("location") or ""),
+        "url": str(row.get("url") or ""),
+        "posted_date": _posted_date(row),
+    }
+    # Durable link to the posting's store biography — COPIED verbatim from the
+    # search JSON (handoff never re-derives identity). Additive optional field.
+    store_key = str(row.get("store_key") or "").strip()
+    if store_key:
+        job_entry["store_key"] = store_key
     scaffold = {
         "job_metadata_schema_version": APPLICATION_SCHEMA_VERSION,
         "company": str(row.get("company") or ""),
         "research_date": research_date,
         "channel": str(row.get("source") or ""),
-        "jobs": [
-            {
-                "role": str(row.get("title") or ""),
-                "jd_file": jd_file,
-                # Handoff always creates a fresh DRAFTED application.
-                "status": "drafted",
-                "location": str(row.get("location") or ""),
-                "url": str(row.get("url") or ""),
-                "posted_date": _posted_date(row),
-            }
-        ],
+        "jobs": [job_entry],
     }
     raw = yaml.safe_dump(
         scaffold,
@@ -476,26 +518,37 @@ def _run_row(row: dict, args: argparse.Namespace) -> tuple[int, Path]:
     source_dir.mkdir(parents=True, exist_ok=False)
 
     # --- JD (verbatim, exactly one fetch) --------------------------------- #
+    # Fresh-JD refusal (store-is-never-verification): scaffolding without a
+    # session-fresh JD is NOT allowed — the store is memory that routes attention,
+    # never a substitute for the JD text you act on. A skip or a failed fetch is an
+    # explicit refusal (non-zero exit); there is no override flag.
     jd_ok = True
     if args.skip_jd_fetch:
         jd_ok = False
         print(
-            f"handoff: --skip-jd-fetch set; save {source_dir / jd_file} manually.",
+            f"handoff: REFUSING to treat this as ready — --skip-jd-fetch means no "
+            f"session-fresh JD, and the store is never a verification substitute. "
+            f"Save {source_dir / jd_file} live this session before drafting.",
             file=sys.stderr,
         )
     else:
         jd_ok, jd_msg = save_jd(str(row.get("url") or ""), source_dir / jd_file)
         if not jd_ok:
             print(
-                f"handoff: JD not saved ({jd_msg}); scaffolded the folder anyway "
-                f"— save {source_dir / jd_file} manually before drafting. If the "
-                "page is JS-rendered, recover the verbatim JD via "
-                "`company_roles.py --jd`; if no fetch works at all (e.g. HTTP 403), "
-                "save the scraper-extracted text with a non-verbatim provenance note "
-                "(reference.md § \"Recovering a JD when the page fetch is "
-                "unusable\").",
+                f"handoff: REFUSING to treat this as ready — no session-fresh JD "
+                f"({jd_msg}), and the store is never a verification substitute; you "
+                f"must act on the live JD text, not stored facts. The folder is "
+                f"scaffolded but NOT draftable until you save "
+                f"{source_dir / jd_file} live this session. If the page is "
+                "JS-rendered, recover the verbatim JD via `company_roles.py --jd`; "
+                "if no fetch works at all (e.g. HTTP 403), save the scraper-extracted "
+                "text with a non-verbatim provenance note (reference.md § "
+                "\"Recovering a JD when the page fetch is unusable\").",
                 file=sys.stderr,
             )
+
+    # Stale-posting hint (local store lookup by the copied store_key; never blocks).
+    warn_if_stale(str(row.get("store_key") or "").strip())
 
     # --- meta.yaml (schema v4, facts carried from the row) ---------------- #
     meta_bytes, editor_errors = build_meta_bytes(
