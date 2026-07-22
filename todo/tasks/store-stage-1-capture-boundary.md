@@ -1,6 +1,6 @@
 # Store stage 1 — capture at the jobs fetch boundary (write-only)
 
-- **Status**: todo
+- **Status**: in-progress (shipped in PR #50; only the multi-day measurement remains)
 - **Priority**: P1 (this round)
 - **Area**: harness
 - **Source**: raw-data-layer sign-off 2026-07-21; plan: docs/design/raw-data-layer/execution-plan.md
@@ -33,8 +33,8 @@ stage 2 lands.
 
 ## Definition of done
 
-- [ ] Every fetch path captures (shared-helper sources + the four bespoke flows, or bespoke ones explicitly deferred per-source in the PR description).
-- [ ] Test: induced parse failure leaves readable raw; concurrent two-process capture clean.
-- [ ] Greenhouse entity-escape normalization verified and versioned; SmartRecruiters cap behavior confirmed and recorded in the fetch-group attestation.
-- [ ] `search_jobs.py` output and timing unchanged (compare a before/after run).
-- [ ] Several days of real runs measured: growth/run, capture overhead <1 s, dedup ratio — numbers recorded in the PR.
+- [x] Every fetch path captures (shared-helper sources + the four bespoke flows; all landed — the real store now holds greenhouse/ashby/lever/workday/smartrecruiters/amazon/apple/meta + aggregators).
+- [x] Test: induced parse failure leaves readable raw; concurrent two-process capture clean.
+- [x] Greenhouse entity-escape normalization verified and versioned (Stage-2 `NORMALIZER_VERSION`, double `html.unescape`); SmartRecruiters cap behavior confirmed and recorded in the fetch-group attestation (`truncated` param).
+- [x] `search_jobs.py` output and timing unchanged (before/after run compared; capture is warn-only, lock-free).
+- [ ] Several days of real runs measured: growth/run, capture overhead <1 s, dedup ratio. **(2026-07-21)** Day-one numbers recorded in PR #50; the multi-day soak remains — leave open until the owner has run searches across several days and the growth/overhead/dedup trend is recorded here.

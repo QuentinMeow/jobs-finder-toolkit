@@ -11,6 +11,7 @@
     "company": {"type": "string"},
     "title": {"type": "string"},
     "location": {"type": "string"},
+    "canonical_url": {"type": "string", "description": "canonicalized primary source URL — the search pipeline's store_key join key"},
     "profiles": {"type": "array", "items": {"type": "string"}},
     "first_seen": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
     "last_seen": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},

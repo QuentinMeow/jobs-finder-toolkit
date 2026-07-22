@@ -501,12 +501,18 @@ def _effective(op_field: dict, subkey: str, default):
 def _index_row(eb: EntityBuild, seq: int) -> dict:
     p = eb.posting
     op = p.get("opinions") or {}
+    # Canonicalized primary source URL — the join key the search pipeline uses to
+    # thread store_key onto kept postings WITHOUT re-deriving identity (drift-free:
+    # the builder wrote it, the same canonicalizer version reads it).
+    src0 = (p.get("source_ids") or [{}])[0]
+    canonical_url = ident.canonicalize_url(src0.get("url", "") or "")
     row = {
         "key": eb.key,
         "identity": p.get("identity", "strong"),
         "company": p.get("company", ""),
         "title": p.get("title", ""),
         "location": p.get("location", ""),
+        "canonical_url": canonical_url,
         "profiles": p.get("profiles", []),
         "first_seen": p.get("first_seen"),
         "last_seen": p.get("last_seen"),

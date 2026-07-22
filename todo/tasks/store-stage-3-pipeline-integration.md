@@ -1,6 +1,6 @@
 # Store stage 3 — pipeline integration (benchmark-gated)
 
-- **Status**: todo
+- **Status**: done (2026-07-22) — delete in the next merged PR that touches todo/
 - **Priority**: P2 (someday)
 - **Area**: harness
 - **Source**: raw-data-layer sign-off 2026-07-21; plan: docs/design/raw-data-layer/execution-plan.md
@@ -29,9 +29,9 @@ PII-free before landing in a tracked file.
 
 ## Definition of done
 
-- [ ] Job-search canary evals green (behavioral instruction edit).
-- [ ] Cold pinned benchmark row recorded: store adds ≤1k tokens.
-- [ ] Warm-store benchmark row recorded: run 2 shows the delta mechanism (M new < N total; smaller review surface).
-- [ ] Snapshot refilter + filter-variant audit behave identically (before/after comparison).
-- [ ] `handoff.py` refuses to scaffold without a session-fresh JD (test); `store_key` lands in meta.yaml and validates.
-- [ ] Benchmark rows asserted free of personal identifiers before landing in tracked files.
+- [x] Job-search canary evals green (behavioral instruction edit). *(5/5 pass, record: evals/results/job-search-store-stage-3-20260722.md)*
+- [x] Cold pinned benchmark row recorded: store adds ≤1k tokens. *(185 tokens (same record))*
+- [x] Warm-store benchmark row recorded: run 2 shows the delta mechanism (M new < N total; smaller review surface). *(run 2: 0 new vs 15,228 tracked)*
+- [x] Snapshot refilter + filter-variant audit behave identically (before/after comparison). *(byte-parity test-pinned + review-verified)*
+- [x] `handoff.py` refuses to scaffold without a session-fresh JD (test); `store_key` lands in meta.yaml and validates. *(tested; render fence confirmed downstream)*
+- [x] Benchmark rows asserted free of personal identifiers before landing in tracked files. *(aggregates only, leak guard green)*

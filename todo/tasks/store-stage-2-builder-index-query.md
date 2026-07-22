@@ -1,6 +1,6 @@
 # Store stage 2 — builder, derived postings, index, query tool
 
-- **Status**: todo
+- **Status**: done (shipped in PR #51)
 - **Priority**: P1 (this round)
 - **Area**: harness
 - **Source**: raw-data-layer sign-off 2026-07-21; plan: docs/design/raw-data-layer/execution-plan.md
@@ -37,8 +37,10 @@ orphans enforced at zero.
 
 ## Definition of done
 
-- [ ] Determinism + incremental==rebuild equivalence green against several days of REAL stage-1 raw.
-- [ ] `--opinions-only` after a deliberate classifier tweak re-labels history and prints the diff report.
-- [ ] The design doc's query examples answer with zero network.
-- [ ] Annotation orphan count enforced at zero in rebuild verification.
-- [ ] Suppressed review queue populated on a real sweep; entries carry partial info + raw manifest path; pipeline timing unaffected.
+- [x] Determinism + incremental==rebuild equivalence green against several days of REAL stage-1 raw (byte-identical derived+index; incremental==rebuild AND rebuild==rebuild).
+- [x] `--opinions-only` after a deliberate classifier tweak re-labels history and prints the diff report (demoed on the real store, reverted after).
+- [x] The design doc's query examples answer with zero network (all §5 examples).
+- [x] Annotation orphan count enforced at zero in rebuild verification (hard-fail proven by test). Initially `--rebuild`-only; extended in the stage-2 review-fix round to run on every build path (incl. incremental) — it runs on all paths at head.
+- [x] Suppressed review queue populated on a real sweep; entries carry partial info + raw manifest path; pipeline timing unaffected.
+
+*Done in PR #51. Delete this file in the next merged PR that touches `todo/` (per todo/tasks/README.md).*

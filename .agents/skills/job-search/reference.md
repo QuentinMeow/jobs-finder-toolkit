@@ -570,3 +570,39 @@ Import only user-supplied/licensed files; the importer never fetches the web:
 Never schedule or implement public Levels.fyi scraping. Automated Levels.fyi imports
 require a user-supplied licensed export or licensed API access recorded in provenance.
 Employer postings are the first source; employer-authored ladders are second.
+
+## Cross-run job store
+
+A durable, cross-run memory of every posting the search fetched, beside the pipeline
+(never in front of it). Every fetch captures raw; a post-fetch incremental build
+updates it, and the run summary gains one line: `store: N tracked, M new since your
+last review`. If the store is disabled (`paths.data_root` / `JOBHUNT_DATA_ROOT` unset)
+the search behaves exactly as before — the store is memory, not freshness.
+
+**The store never says "closed."** A posting carries honest `last_seen` staleness
+only (on-demand polling; timelines legitimately have gaps). Treat a stale `last_seen`
+as a prompt to re-check the live board before acting — never as "the posting is gone."
+
+**The store is never a verification substitute.** Stored facts route attention; the
+JD text in front of you is what you act on. `handoff.py` refuses to scaffold without
+a JD fetched live this session, and copies the posting's `store_key` (threaded through
+`--json-out`) into the application's `meta.yaml` — the durable link to its biography.
+
+Query it with code, not AI (no network, no re-fetch):
+
+```bash
+query_postings.py --new-since-cursor shortlist-review --profile <slug>  # the delta review
+query_postings.py --company examplecorp                                 # one board's memory
+query_postings.py --visa yes --workplace remote --max-age-days 7        # code-side filter
+query_postings.py --key gh-1234567 --history                            # one posting's biography
+```
+
+**Cursors** ride the builder's materialization sequence (not timestamps), so a
+posting recovered by a bug fix still surfaces in the next delta. `--new-since-cursor
+NAME` shows entities past the cursor but never advances it; advance only AFTER acting
+on the delta with `--mark-reviewed NAME`; a manual `--since SEQ` override always
+exists. Never `cat` the index/blobs into context — always the query tool.
+
+The generated store map + cookbook lives at `<data_root>/README.md` (grep past the
+header, resolve an entity to its blob, decompress a blob). It is store-derived — never
+paste its rows, company+dates, or posting URLs into any public surface.

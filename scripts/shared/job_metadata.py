@@ -1364,7 +1364,25 @@ def validate_job_metadata(record: dict, *, prefix: str = "") -> list[str]:
     errors.extend(_validate_status(record.get("status"), f"{lead}status"))
     errors.extend(_validate_stage(record.get("stage"), f"{lead}stage"))
     errors.extend(_validate_status_date(record.get("status_date"), f"{lead}status_date"))
+    errors.extend(_validate_store_key(record.get("store_key"), f"{lead}store_key"))
     return errors
+
+
+_STORE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def _validate_store_key(value: Any, path: str) -> list[str]:
+    """Optional durable link to a raw-data-layer store entity (e.g. ``gh-1234567``).
+
+    Absent OR empty string (``""``, the documented unset default, matching every
+    sibling optional v4 field) is fine; a NON-empty value must be a lowercase store
+    entity key. Handoff copies it verbatim from the search JSON — never re-derived.
+    """
+    if value is None or value == "":
+        return []
+    if not isinstance(value, str) or not _STORE_KEY_RE.match(value):
+        return [f"{path} must be a store entity key ([a-z0-9-], e.g. gh-1234567)"]
+    return []
 
 
 def validate_jd_file_associations(meta: dict, app_dir: str | Path) -> list[str]:

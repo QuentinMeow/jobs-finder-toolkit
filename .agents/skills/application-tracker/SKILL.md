@@ -108,6 +108,7 @@ jobs:
     location: "Remote (US)"
     workplace: "remote"      # onsite | hybrid | remote | unknown (arrangement, not the city)
     url: "https://..."
+    store_key: ""            # optional: raw-data-layer store entity key (e.g. gh-1234567), copied by handoff.py from the search JSON — the durable link to the posting's biography; never hand-edited
     posted_date: ""          # when the JD was posted (from the posting site), if known
     sponsorship: "unknown"   # likely | unlikely | unknown (heuristic; always confirm)
     fit: "strong"            # optional quick read: strong | good | partial
