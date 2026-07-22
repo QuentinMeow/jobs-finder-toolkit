@@ -19,11 +19,11 @@ physically nested inside the main checkout.
 ```bash
 git worktree add .claude/worktrees/probe -b probe main
 cd .claude/worktrees/probe
-../../../.venv/bin/python -c "import sys; sys.path.insert(0, 'scripts/shared'); import config; print(config._config_path())"
+../../../.venv/bin/python -c "import sys; sys.path.insert(0, 'automation/shared'); import config; print(config._config_path())"
 # → prints the MAIN checkout's config.yaml, not config.example.yaml
 ```
 
-(Adjust the accessor name to whatever `scripts/shared/config.py` exposes for
+(Adjust the accessor name to whatever `automation/shared/config.py` exposes for
 the resolved path; the observable is the printed path.)
 
 ## Impact

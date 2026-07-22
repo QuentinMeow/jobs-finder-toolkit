@@ -11,7 +11,7 @@ and privacy model.
 - Never modify a user-owned private search profile or candidate profile.
 - Public corpus cases, tests, docs, URLs, employers, and posting text are wholly
   fictional and timeless. Raw harvests stay under `private/` or `tmp/`.
-- Edit canonical modules under `scripts/shared/`, then regenerate vendored copies;
+- Edit canonical modules under `automation/shared/`, then regenerate vendored copies;
   never hand-edit a `_vendor/` file.
 - Keep normal search recall-safe: `review` is retained and normal execution remains
   successful. Only the explicit audit and deterministic test gates fail on review
@@ -40,7 +40,7 @@ changed by the documentation-only work.
 
 ### 1.1 Add the assessment primitive
 
-Extend `scripts/shared/location.py` with a JSON-compatible posting assessment that
+Extend `automation/shared/location.py` with a JSON-compatible posting assessment that
 returns:
 
 - `result: match | no_match | review`;
@@ -61,11 +61,11 @@ the corpus can assert both evidence recognition and the final result.
 
 Migrate:
 
-- `.agents/skills/job-search/scripts/scoring.py`;
-- `.agents/skills/job-search/scripts/company_roles.py`;
-- `scripts/shared/job_metadata.py`;
-- `.agents/skills/job-search/scripts/handoff.py` metadata flow;
-- `.agents/skills/application-tracker/scripts/status.py --check-locations`;
+- `skills/job-search/scripts/scoring.py`;
+- `skills/job-search/scripts/company_roles.py`;
+- `automation/shared/job_metadata.py`;
+- `skills/job-search/scripts/handoff.py` metadata flow;
+- `skills/application-tracker/scripts/status.py --check-locations`;
 - discovery and targeted-role rendering.
 
 The tracker reads each job's exact `jd_file`, combines it with recorded location and
@@ -94,13 +94,13 @@ Add focused tests for:
 **Stage gate:**
 
 ```bash
-.venv/bin/python -m unittest discover -s scripts/shared/tests
+.venv/bin/python -m unittest discover -s automation/shared/tests
 .venv/bin/python -m unittest discover \
-  -s .agents/skills/job-search/scripts/tests \
-  -t .agents/skills/job-search/scripts/tests
+  -s skills/job-search/scripts/tests \
+  -t skills/job-search/scripts/tests
 .venv/bin/python -m unittest discover \
-  -s .agents/skills/application-tracker/scripts/tests
-.venv/bin/python scripts/vendoring/sync_vendored.py --check
+  -s skills/application-tracker/scripts/tests
+.venv/bin/python automation/vendoring/sync_vendored.py --check
 ```
 
 No location `review` case may disappear from the in-process result merely because
@@ -162,18 +162,18 @@ in any filter predicate or invariant that controls eligibility.
 **Stage gate:**
 
 ```bash
-.venv/bin/python -m unittest discover -s scripts/shared/tests
+.venv/bin/python -m unittest discover -s automation/shared/tests
 .venv/bin/python -m unittest discover \
-  -s .agents/skills/job-search/scripts/tests \
-  -t .agents/skills/job-search/scripts/tests
-.venv/bin/python scripts/vendoring/sync_vendored.py --check
+  -s skills/job-search/scripts/tests \
+  -t skills/job-search/scripts/tests
+.venv/bin/python automation/vendoring/sync_vendored.py --check
 ```
 
 ## Stage 3 — Build the semantic corpus and snapshot audit
 
 ### 3.1 Public corpus
 
-Add `.agents/skills/job-search/filter_variants/` with:
+Add `skills/job-search/filter_variants/` with:
 
 - a versioned schema;
 - maintainer instructions;
@@ -187,7 +187,7 @@ duplicates do not expand the corpus.
 
 ### 3.2 Corpus and signature library
 
-Add `.agents/skills/job-search/scripts/filter_variants.py` to:
+Add `skills/job-search/scripts/filter_variants.py` to:
 
 - parse and lint corpus records;
 - dispatch each domain to its production assessor;
@@ -201,17 +201,17 @@ title, location, URL, date, salary, and description values.
 
 ### 3.3 Validator and audit CLI
 
-Add `.agents/skills/job-search/scripts/validate_filter_variants.py` with two modes:
+Add `skills/job-search/scripts/validate_filter_variants.py` with two modes:
 
 ```bash
 # Public deterministic corpus; zero means every labeled case matches.
 .venv/bin/python \
-  .agents/skills/job-search/scripts/validate_filter_variants.py \
+  skills/job-search/scripts/validate_filter_variants.py \
   --check
 
 # Local no-network audit of a pre-filter snapshot.
 .venv/bin/python \
-  .agents/skills/job-search/scripts/validate_filter_variants.py \
+  skills/job-search/scripts/validate_filter_variants.py \
   --snapshot tmp/search_cache/example-stage1-latest.json \
   --profile example \
   --out tmp/filtering-variant-harvest/review.yaml
@@ -253,11 +253,11 @@ Prove that:
 
 ```bash
 .venv/bin/python \
-  .agents/skills/job-search/scripts/validate_filter_variants.py \
+  skills/job-search/scripts/validate_filter_variants.py \
   --check
 .venv/bin/python -m unittest discover \
-  -s .agents/skills/job-search/scripts/tests \
-  -t .agents/skills/job-search/scripts/tests
+  -s skills/job-search/scripts/tests \
+  -t skills/job-search/scripts/tests
 ```
 
 ## Stage 4 — Preserve the review queue in routine search
@@ -295,8 +295,8 @@ fresh in-memory run and `--refilter`, then assert:
 ```bash
 JOBHUNT_CONFIG="$PWD/config.example.yaml" \
   .venv/bin/python -m unittest discover \
-  -s .agents/skills/job-search/scripts/tests \
-  -t .agents/skills/job-search/scripts/tests
+  -s skills/job-search/scripts/tests \
+  -t skills/job-search/scripts/tests
 ```
 
 ## Stage 5 — Integrate public CI and maintenance instructions
@@ -305,7 +305,7 @@ JOBHUNT_CONFIG="$PWD/config.example.yaml" \
 
 Add:
 
-- corpus-driven location and metadata tests under `scripts/shared/tests/`;
+- corpus-driven location and metadata tests under `automation/shared/tests/`;
 - job-search semantic, invariant, audit, review-queue, and dedupe tests;
 - application-tracker parity tests;
 - a job-search unit-test step and corpus-validation step in
@@ -335,9 +335,9 @@ canaries on a pinned model and record the result per `evals/README.md`.
 **Stage gate:**
 
 ```bash
-.venv/bin/python scripts/metrics/instruction_budget.py --strict
-.venv/bin/python scripts/maintenance/gardener/gardener.py verify-links
-.venv/bin/python scripts/publish/check_public.py
+.venv/bin/python automation/metrics/instruction_budget.py --strict
+.venv/bin/python automation/maintenance/gardener/gardener.py verify-links
+.venv/bin/python automation/publish/check_public.py
 ```
 
 ## Stage 6 — Final verification and rollout
@@ -346,31 +346,31 @@ Run from the repository root with the public example config:
 
 ```bash
 # Regenerate, then prove every vendored consumer is byte-identical.
-.venv/bin/python scripts/vendoring/sync_vendored.py
-.venv/bin/python scripts/vendoring/sync_vendored.py --check
+.venv/bin/python automation/vendoring/sync_vendored.py
+.venv/bin/python automation/vendoring/sync_vendored.py --check
 
 # Deterministic semantic corpus.
 .venv/bin/python \
-  .agents/skills/job-search/scripts/validate_filter_variants.py \
+  skills/job-search/scripts/validate_filter_variants.py \
   --check
 
 # Unit and cross-layer regression suites.
-.venv/bin/python -m unittest discover -s scripts/shared/tests
+.venv/bin/python -m unittest discover -s automation/shared/tests
 JOBHUNT_CONFIG="$PWD/config.example.yaml" \
   .venv/bin/python -m unittest discover \
-  -s .agents/skills/job-search/scripts/tests \
-  -t .agents/skills/job-search/scripts/tests
+  -s skills/job-search/scripts/tests \
+  -t skills/job-search/scripts/tests
 JOBHUNT_CONFIG="$PWD/config.example.yaml" \
   .venv/bin/python -m unittest discover \
-  -s .agents/skills/application-tracker/scripts/tests
+  -s skills/application-tracker/scripts/tests
 .venv/bin/python -m unittest discover \
-  -s .agents/skills/resume-writer/scripts/tests
+  -s skills/resume-writer/scripts/tests
 
 # Syntax, instruction, link, and privacy gates.
-.venv/bin/python -m compileall scripts .agents/skills/*/scripts
-.venv/bin/python scripts/metrics/instruction_budget.py --strict
-.venv/bin/python scripts/maintenance/gardener/gardener.py verify-links
-.venv/bin/python scripts/publish/check_public.py
+.venv/bin/python -m compileall scripts skills/*/scripts
+.venv/bin/python automation/metrics/instruction_budget.py --strict
+.venv/bin/python automation/maintenance/gardener/gardener.py verify-links
+.venv/bin/python automation/publish/check_public.py
 ```
 
 Then run the job-search canaries and record their pinned-model results. The final

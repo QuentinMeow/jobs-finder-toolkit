@@ -31,7 +31,7 @@ From the self-evolution quality-control box (repo design README) and design doc 
 
 **Relaxed to risk-based on 2026-07-20 (maintainer decision).** The mandatory per-edit canary run
 above proved too time-consuming, so canary runs are now **optional and agent-judged**. For any
-edit to `.agents/skills/<skill>/{SKILL.md,LESSONS.md,reference.md}`, the editing agent decides
+edit to `skills/<skill>/{SKILL.md,LESSONS.md,reference.md}`, the editing agent decides
 whether to run that skill's canaries by weighing the edit's **intention** (does it change what an
 agent *does*?) and **size**. The PASS-before-merge discipline above is unchanged for every edit
 that still triggers a run.
@@ -61,7 +61,7 @@ always covers the accumulated state, not just its own triggering diff — so a l
 re-tests everything that skipped ahead of it.
 
 When a run is required, the mechanics are unchanged. For any PR that edits
-`.agents/skills/<skill>/{SKILL.md,LESSONS.md,reference.md}`:
+`skills/<skill>/{SKILL.md,LESSONS.md,reference.md}`:
 
 1. Identify the affected skill(s) from the diff.
 2. Run that skill's canaries (`evals/<skill>/canaries.yaml`) on the branch head.
@@ -108,7 +108,7 @@ for the directional quality half of an A/B.
 5. **Record efficiency** from the metrics log (Phase 3 hooks write `logs/metrics.jsonl`, keyed by
    git SHA):
    ```bash
-   .venv/bin/python scripts/metrics/report.py --by-sha
+   .venv/bin/python automation/metrics/report.py --by-sha
    ```
    Read `total_tokens` and `wall_clock_s` for the run's SHA; note `tool_calls`. Copy the
    pass/fail + numbers into a `evals/results/` file from the template.
@@ -168,6 +168,6 @@ evals/
 
 All canaries are **fully public**: only the "Jordan Rivers" fixture identity + fictional or
 real-public companies with fictional postings. Zero personal data (the leak guard must be
-completely clean — `scripts/publish/check_public.py` exits 0 with zero findings in this repo;
+completely clean — `automation/publish/check_public.py` exits 0 with zero findings in this repo;
 ANY finding is a regression). The private `coding-interview` skill is
 deliberately out of scope — evals must be runnable on a public-only checkout.

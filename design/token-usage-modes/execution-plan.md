@@ -13,13 +13,13 @@ a specific vendor or model.
 - **PR discipline** per `CONTRIBUTING.md`: one focused change per PR, branch
   `<type>/<short-slug>`, all four checks green (publish tests, instruction budget
   `--strict`, leak guard clean, gardener `verify-links`), vendored copies in sync.
-- **Eval gate**: any PR touching `.agents/skills/*/SKILL.md`, `LESSONS.md`, or
+- **Eval gate**: any PR touching `skills/*/SKILL.md`, `LESSONS.md`, or
   `reference.md` runs that skill's `evals/<skill>/canaries.yaml` and records results
   per `evals/README.md`. Instruction edits are delta-only.
 - **Vendoring** (AGENTS.md §Sharing Code Across Skills): a script used by one skill
   lives in that skill's `scripts/`; shared pure modules live canonically in
-  `scripts/shared/` and are copied into consumers' `scripts/_vendor/` via
-  `scripts/vendoring/sync_vendored.py` (drift-checked by pre-commit). Skills never
+  `automation/shared/` and are copied into consumers' `scripts/_vendor/` via
+  `automation/vendoring/sync_vendored.py` (drift-checked by pre-commit). Skills never
   import repo-root Python.
 - **Budget headroom warning**: `AGENTS.md` is at ~490 of its 500-line budget.
   Stages 0–1 must not add lines to it — new script usage is documented in SKILL.md
@@ -73,7 +73,7 @@ silently degrades (this cost 3 redundant full pipeline runs before diagnosis).
 
 ### S0.3 — LESSONS.md entries from the experiment *(public PR: `docs/job-search-lessons-remote-visa`, eval-gated)*
 
-Two delta-only entries in `.agents/skills/job-search/LESSONS.md` (budget: 160
+Two delta-only entries in `skills/job-search/LESSONS.md` (budget: 160
 lines — confirm headroom before writing):
 
 1. The market-scraper `remote` flag is unreliable (a whole run mistagged hybrid and
@@ -139,7 +139,7 @@ windows or re-emitting JSON, use `--refilter`; read the compact table, not the f
 Baseline behavior fetched each JD up to three times, once through an AI-summarizing
 tool, and saved nothing verbatim.
 
-**Spec**: `.agents/skills/job-search/scripts/fetch_jd.py <URL> --out <path>` —
+**Spec**: `skills/job-search/scripts/fetch_jd.py <URL> --out <path>` —
 downloads the posting page, extracts readable text (strip nav/script/boilerplate;
 stdlib `html.parser`, no new heavy dependencies), saves it verbatim, and prints
 only the saved path + byte count. Idempotent: if `--out` exists, it is kept
@@ -153,7 +153,7 @@ representative ATS page fixture, idempotency, `--force`.
 Baseline drafting agents hand-transcribed ~10 structured fields into `meta.yaml`
 and hand-built folders — token-expensive and where transcription errors happen.
 
-**Spec**: `.agents/skills/job-search/scripts/handoff.py --json <search.json>
+**Spec**: `skills/job-search/scripts/handoff.py --json <search.json>
 --select <rank | company/title>`:
 
 1. Creates the application folder under the applications root per AGENTS.md
@@ -170,7 +170,7 @@ and hand-built folders — token-expensive and where transcription errors happen
 
 **Vendoring change**: `handoff.py` needs `job_metadata.py` (already vendored into
 job-search) **and `metadata_editor.py` (today vendored into application-tracker
-only)** — add `scripts/shared/metadata_editor.py → job-search/_vendor/` to
+only)** — add `automation/shared/metadata_editor.py → job-search/_vendor/` to
 `sync_vendored.py` TARGETS and regenerate. `handoff.py` does *not* shell out to
 another skill's scripts (self-containment); the tracker's `--enrich-metadata` /
 `--check-metadata` remain the agent-invoked follow-ups and must pass on a fresh
@@ -190,7 +190,7 @@ re-verify or re-create what the scaffold already wrote.
 Baseline drafting agents each read ~17 KB profile+baseline plus a ~24 KB story
 bank at full fidelity, regardless of need.
 
-**Spec**: `.agents/skills/resume-writer/scripts/build_tailoring_card.py` compiles,
+**Spec**: `skills/resume-writer/scripts/build_tailoring_card.py` compiles,
 from the configured profile/baseline (`config.profile_md_path()`,
 `config.baseline_path()`) and the story bank directory:
 
@@ -262,7 +262,7 @@ hard gate — is mode-independent by construction.
 
 - **PR-I `feature/generation-mode-config`**: `generation.mode: token_saving|full`
   in `config.example.yaml` (default `token_saving`), accessor in
-  `scripts/shared/config.py` (+ vendor sync), `--mode` override on scripts whose
+  `automation/shared/config.py` (+ vendor sync), `--mode` override on scripts whose
   behavior differs (initially: output verbosity only).
 - **PR-J `docs/mode-semantics` (eval-gated, both skills)**: the Approach-3
   semantics table lands in each quickstart (token_saving column = the default

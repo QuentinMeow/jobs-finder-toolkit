@@ -2,7 +2,7 @@
 
 Expands `AGENTS.md` → "Configuration". Candidate identity, paths, and output
 filename stems are never hardcoded — they come from a config file loaded by
-`scripts/shared/config.py` (vendored into each consuming skill's
+`automation/shared/config.py` (vendored into each consuming skill's
 `scripts/_vendor/config.py`):
 
 - `config.yaml` (git-ignored) holds the real values. `config.example.yaml` (tracked) is a

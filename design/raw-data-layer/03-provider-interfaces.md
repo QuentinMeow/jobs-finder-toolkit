@@ -36,7 +36,7 @@ flowchart TB
         download["download-emails\n(archive + categorize)"]
         outreach["cold-outreach (future)\n(draft-only, one at a time)"]
     end
-    subgraph contract["scripts/shared/mail/contract/"]
+    subgraph contract["automation/shared/mail/contract/"]
         api["MailProvider interface\nread, search, delta-sync, draft ops\n— NO send operation exists —"]
         transport["audited HTTP transport\n+ per-provider route allowlist\n(send endpoints unreachable)"]
         conf["conformance suite\n(every provider must pass)"]

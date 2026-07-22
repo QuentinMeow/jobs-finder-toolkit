@@ -18,7 +18,7 @@ are exact.
   AGENTS 13,449 B + job-search skill 17,299 B (search) / AGENTS 13,449 B + resume skill 24,844 B
   (draft); the draft leg additionally read **reference.md + validator source ≈ 59–70 KB**.
 - **Live instruction/context file sizes** (bytes; `tok ≈ bytes/4`, the repo convention from
-  `scripts/metrics/instruction_budget.py`):
+  `automation/metrics/instruction_budget.py`):
 
   | Instruction / context file | bytes | ~tok | Boot? |
   |---|---:|---:|---|

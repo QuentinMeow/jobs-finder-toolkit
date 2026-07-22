@@ -380,7 +380,7 @@ standing no-backward-compatibility preference, and it is only possible
 *because* raw is kept.
 
 A public schema registry backs this: JSON Schema files in
-`scripts/shared/store/schemas/` (one per artifact type per major version)
+`automation/shared/store/schemas/` (one per artifact type per major version)
 plus `validate_store.py`, which walks a data root and validates everything
 it recognizes, zone-aware. CI runs it against the fictional fixture store in
 `examples/data/`; the gardener runs it against the real store.

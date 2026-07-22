@@ -74,7 +74,7 @@ sandbox) — realistically just `job-search` — vendor the single pure module i
 into the skill, with a drift check. Do **not** vendor into repo-only toolkit areas.
 
 ```
-.agents/skills/job-search/scripts/
+skills/job-search/scripts/
 ├── search_jobs.py
 ├── scoring.py               # uses _vendor.location (kills the duplicated rule)
 ├── company_roles.py         # uses _vendor.location (fixes today's broken import)

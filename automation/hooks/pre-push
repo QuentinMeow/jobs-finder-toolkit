@@ -1,0 +1,138 @@
+#!/bin/sh
+# Pre-push leak guard for the jobs-finder toolkit.
+#
+# Repo model (post-split): this is the PUBLIC toolkit repo. Personal data lives
+# in a separate private overlay repo mounted (git-ignored) at ./private/, so the
+# TRACKED tree here must always be publishable. This hook enforces that at push
+# time:
+#
+#   1. Remote-visibility gate. Look at the push destination:
+#        * GitHub remote + gh confirms PUBLIC   -> run the content leak guard
+#          (automation/publish/check_public.py). In a maintainer checkout the guard
+#          is armed with real identity tokens (config.yaml / private/
+#          leak_tokens.txt); in a contributor clone it still runs its
+#          token-independent structural checks. Guard fails -> REFUSE the push.
+#        * GitHub remote + gh confirms PRIVATE  -> allow without the guard (a
+#          private destination can hold anything; this also covers the private
+#          overlay repo).
+#        * GitHub remote + gh missing/errors    -> cannot verify; treat like an
+#          unknown remote and run the guard as a safety net.
+#        * Non-GitHub remote                    -> same: run the guard.
+#
+#   2. The guard is the gate, not the visibility itself: a clean tracked tree is
+#      safe to push anywhere; a dirty one is refused everywhere we cannot prove
+#      the destination private.
+#
+# Manual override (reported loudly):  JOBHUNT_ALLOW_PUSH=1 git push ...
+#
+# Install once (tracked, no git-config change):
+#   .venv/bin/python automation/bootstrap_overlay.py     # or:
+#   ln -sf ../../automation/hooks/pre-push .git/hooks/pre-push
+#
+# Bypass in an emergency with:  git push --no-verify
+set -e
+
+remote_name="$1"
+remote_url="$2"
+
+if [ "${JOBHUNT_ALLOW_PUSH:-}" = "1" ]; then
+    echo "pre-push: JOBHUNT_ALLOW_PUSH=1 set — SKIPPING all leak checks (manual override)." >&2
+    echo "pre-push: you are pushing WITHOUT the leak guard. Be certain this is intended." >&2
+    exit 0
+fi
+
+# ── 1. Remote-visibility gate ────────────────────────────────────────────────
+# Parse "<owner>/<repo>" out of common GitHub remote URL shapes:
+#   git@github.com:owner/repo(.git)
+#   https://github.com/owner/repo(.git)
+#   ssh://git@github.com/owner/repo(.git)
+owner_repo=""
+case "$remote_url" in
+    *github.com[:/]*)
+        owner_repo=$(printf '%s\n' "$remote_url" \
+            | sed -E 's#^.*github\.com[:/]+##; s#\.git$##; s#/$##')
+        ;;
+esac
+
+# run_guard: yes | no
+run_guard="yes"
+
+if [ -n "$owner_repo" ]; then
+    if command -v gh >/dev/null 2>&1; then
+        is_private=$(gh repo view "$owner_repo" --json isPrivate --jq '.isPrivate' 2>/dev/null || echo "")
+        case "$is_private" in
+            true)
+                echo "pre-push: remote '$owner_repo' is PRIVATE (verified via gh) — allowing without the guard."
+                run_guard="no"
+                ;;
+            false)
+                echo "pre-push: remote '$owner_repo' is PUBLIC — running the content leak guard."
+                ;;
+            *)
+                echo "pre-push: WARNING — could not verify visibility of '$owner_repo' via gh" >&2
+                echo "pre-push: (no auth / network?). Running the content leak guard as a safety net." >&2
+                ;;
+        esac
+    else
+        echo "pre-push: WARNING — 'gh' not found; cannot verify visibility of '$owner_repo'." >&2
+        echo "pre-push: Running the content leak guard as a safety net (install gh to skip on private remotes)." >&2
+    fi
+else
+    echo "pre-push: WARNING — non-GitHub remote '$remote_name' ($remote_url); cannot verify" >&2
+    echo "pre-push: its visibility. Running the content leak guard as a safety net." >&2
+fi
+
+# ── 2. Content leak guard ────────────────────────────────────────────────────
+if [ "$run_guard" = "no" ]; then
+    echo "pre-push: OK"
+    exit 0
+fi
+
+# Resolve a Python interpreter, worktree-aware:
+#   1. the repo venv at CWD (primary checkout — behavior unchanged);
+#   2. the primary checkout's venv via the git common dir (a worktree has no local .venv);
+#   3. a system python3/python, but only if it meets the 3.11 floor (CI uses 3.12).
+PY=".venv/bin/python"
+if [ ! -x "$PY" ]; then
+    PY=""
+    # In a worktree, .git is a file and the real repo (with its .venv) is the common dir.
+    # --git-common-dir output may be absolute or relative to CWD; both resolve here.
+    common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+    if [ -n "$common_dir" ] && [ -x "$common_dir/../.venv/bin/python" ]; then
+        PY="$common_dir/../.venv/bin/python"
+    fi
+fi
+if [ -z "$PY" ]; then
+    # No venv anywhere: accept a system interpreter only if it is >= 3.11.
+    for cand in python3 python; do
+        p="$(command -v "$cand" 2>/dev/null)" || continue
+        if "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+            PY="$p"
+            break
+        fi
+    done
+fi
+if [ -z "$PY" ]; then
+    sys_py="$(command -v python3 || command -v python || true)"
+    if [ -n "$sys_py" ]; then
+        ver="$("$sys_py" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo '?')"
+        echo "pre-push: repo requires Python 3.11+ to run the leak guard; found $ver at $sys_py." >&2
+    else
+        echo "pre-push: repo requires Python 3.11+ to run the leak guard; no python interpreter found." >&2
+    fi
+    echo "pre-push: create a .venv (python3.11 -m venv .venv) or point the hook at a 3.11+ interpreter." >&2
+    exit 1
+fi
+if [ -f "config.yaml" ] || [ -f "private/leak_tokens.txt" ]; then
+    echo "pre-push: leak guard is ARMED with real identity tokens."
+else
+    echo "pre-push: leak guard is NOT armed (no config.yaml / leak_tokens.txt);"
+    echo "pre-push: running its token-independent structural checks only."
+fi
+if ! "$PY" automation/publish/check_public.py; then
+    echo "pre-push: REFUSING push — leak guard found violations in the tracked tree." >&2
+    echo "pre-push: fix them, or override knowingly with JOBHUNT_ALLOW_PUSH=1." >&2
+    exit 1
+fi
+echo "pre-push: leak guard PASSED."
+echo "pre-push: OK"

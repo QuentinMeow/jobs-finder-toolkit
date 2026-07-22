@@ -19,16 +19,16 @@ private/
 # coding-interview skill symlink into the mounted overlay (private/skills/…). The
 # anchored trailing-slash rule at the bottom matches an in-place directory; this
 # unslashed rule matches the overlay symlink (git treats a symlink as a file).
-.agents/skills/coding-interview
+skills/coding-interview
 # Personal job-search profiles synced from the overlay; only the generic template
 # and example profiles are tracked (negations keep them addable).
-.agents/skills/job-search/profiles/*.yaml
-!.agents/skills/job-search/profiles/_TEMPLATE.yaml
-!.agents/skills/job-search/profiles/example.yaml
+skills/job-search/profiles/*.yaml
+!skills/job-search/profiles/_TEMPLATE.yaml
+!skills/job-search/profiles/example.yaml
 # Per-skill private references (candidate-specific skill content; never shipped).
 # The unslashed rule covers overlay symlinks; the trailing-slash rule covers directories.
-.agents/skills/*/references_private
-.agents/skills/*/references_private/
+skills/*/references_private
+skills/*/references_private/
 # Optional git-ignored personal token list consumed by the leak guard
 private/leak_tokens.txt
 # Private products (present only if you work in-place with your own data).
@@ -38,7 +38,7 @@ private/leak_tokens.txt
 /interviews/
 /templates/
 /.agents/inputs/
-/.agents/skills/coding-interview/
+/skills/coding-interview/
 # Generated dated discovery reports under the EXAMPLE config (test/canary runs
 # write real dated files here because config.example.yaml points discoveries_dir
 # at this tracked dir). Only .gitkeep is meant to be tracked.

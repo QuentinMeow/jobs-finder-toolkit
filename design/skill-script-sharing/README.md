@@ -27,9 +27,9 @@ Scripts in this repo currently live in two different worlds:
 1. **Repo-root toolkit scripts** under `scripts/`, bucketed by purpose:
    - `scripts/resume-render/` — `render.py`, `cover_letter.py`, `extract.py`, `pdf_convert.py`
    - `scripts/application-tracking/` — `status.py`, `migrate_layout.py`, `backfill_location.py`
-   - `scripts/shared/` — `check.py`, `location.py`
+   - `automation/shared/` — `check.py`, `location.py`
 2. **Skill-scoped scripts** under a skill folder, e.g.
-   `.agents/skills/job-search/scripts/` — `search_jobs.py`, `sources.py`, `scoring.py`,
+   `skills/job-search/scripts/` — `search_jobs.py`, `sources.py`, `scoring.py`,
    `visa.py`, `registry.py`, `aggregators.py`, `common.py`, `company_roles.py`,
    `validate_companies.py`, `build_sponsor_index.py`.
 
@@ -46,10 +46,10 @@ already breaking. Concrete symptoms (measured, not hypothetical — see §2).
 
 ### 2.1 Cross-boundary import via `sys.path` hacking — currently broken
 
-`.agents/skills/job-search/scripts/company_roles.py` reaches into the repo-root
+`skills/job-search/scripts/company_roles.py` reaches into the repo-root
 toolkit to reuse the location classifier:
 
-```29:45:.agents/skills/job-search/scripts/company_roles.py
+```29:45:skills/job-search/scripts/company_roles.py
 from __future__ import annotations
 
 import argparse
@@ -70,10 +70,10 @@ from sources import fetch_company  # noqa: E402
 ```
 
 It adds `<repo>/scripts` to `sys.path` and does `from location import ...`, but
-`location.py` was moved to `<repo>/scripts/shared/location.py`. Running it today:
+`location.py` was moved to `<repo>/automation/shared/location.py`. Running it today:
 
 ```
-$ .venv/bin/python .agents/skills/job-search/scripts/company_roles.py --name Anyscale
+$ .venv/bin/python skills/job-search/scripts/company_roles.py --name Anyscale
 ModuleNotFoundError: No module named 'location'
 ```
 
@@ -119,29 +119,29 @@ was never propagated to the skill docs. These paths appear in `SKILL.md` files b
 
 ```
 MISSING (stale ref): scripts/status.py       (real: scripts/application-tracking/status.py)
-MISSING (stale ref): scripts/check.py        (real: scripts/shared/check.py)
+MISSING (stale ref): scripts/check.py        (real: automation/shared/check.py)
 MISSING (stale ref): scripts/render.py       (real: scripts/resume-render/render.py)
 MISSING (stale ref): scripts/cover_letter.py (real: scripts/resume-render/cover_letter.py)
-MISSING (stale ref): scripts/location.py     (real: scripts/shared/location.py)
+MISSING (stale ref): scripts/location.py     (real: automation/shared/location.py)
 ```
 
 An agent that copy-pastes a command from `SKILL.md` runs a path that does not exist.
 
 ### 2.5 The location rule is already duplicated across the boundary
 
-`scripts/shared/location.py` re-implements the "preferred metro OR US-remote" rule
+`automation/shared/location.py` re-implements the "preferred metro OR US-remote" rule
 that the job-search skill's `scripts/scoring.py` (`location_ok`) also encodes — its
 own docstring calls this out:
 
-```1:15:scripts/shared/location.py
+```1:15:automation/shared/location.py
 """Classify a posting location string against the job-search location rule.
 ...
 that ``scripts/application-tracking/status.py --check-locations`` and
-``scripts/shared/check.py`` can flag drafts that do not respect the location
+``automation/shared/check.py`` can flag drafts that do not respect the location
 criteria.
 
 This mirrors the location logic in
-``.agents/skills/job-search/scripts/scoring.py`` (``location_ok``) but works from
+``skills/job-search/scripts/scoring.py`` (``location_ok``) but works from
 the raw location string alone (there is no separate ``remote`` field here).
 ```
 
@@ -155,8 +155,8 @@ Mapping who-uses-what:
 
 | Module | Home | Consumers | Cross-cutting? |
 |--------|------|-----------|----------------|
-| `location.py` | `scripts/shared/` | application-tracking (`status`, `backfill_location`), **wants** job-search (`company_roles`), conceptually job-search (`scoring`) | **Yes** — pure logic, no deps |
-| `check.py` stems/layout helpers (`RESUME_STEM`, `application_stem`, `application_roles`, `slugify_label`, `source_dir`) | `scripts/shared/` | resume-render (`render`, `cover_letter`), application-tracking (`status`, `migrate_layout`) | Yes — but only inside the "application" domain |
+| `location.py` | `automation/shared/` | application-tracking (`status`, `backfill_location`), **wants** job-search (`company_roles`), conceptually job-search (`scoring`) | **Yes** — pure logic, no deps |
+| `check.py` stems/layout helpers (`RESUME_STEM`, `application_stem`, `application_roles`, `slugify_label`, `source_dir`) | `automation/shared/` | resume-render (`render`, `cover_letter`), application-tracking (`status`, `migrate_layout`) | Yes — but only inside the "application" domain |
 | `pdf_convert.py` | `scripts/resume-render/` | resume-render only (`render`, `cover_letter`) | No — intra-bucket |
 | `registry.py` + `companies.yaml` | job-search skill | job-search only | No — skill-local |
 | `common/sources/scoring/visa/aggregators` | job-search skill | job-search only | No — skill-local |

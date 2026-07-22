@@ -61,7 +61,7 @@ switch; quality is unaffected by construction because only mechanical steps move
 ## Cons
 
 - **Engineering + maintenance cost.** New scripts need tests, vendoring sync
-  (`scripts/shared/` rules), and eval-gated SKILL.md updates to teach agents to use
+  (`automation/shared/` rules), and eval-gated SKILL.md updates to teach agents to use
   them.
 - **Doesn't touch the boot tax.** Agents still read the full instruction stack; the
   fixed ~30–40k tokens per drafting agent remain (that's Approach 1's job).

@@ -1,5 +1,5 @@
 # Canary set — application-tracker skill
-# Grounded in .agents/skills/application-tracker/{SKILL.md,LESSONS.md} (meta.yaml schema v4;
+# Grounded in skills/application-tracker/{SKILL.md,LESSONS.md} (meta.yaml schema v4;
 # each jobs: entry carries a per-job status and the folder is the DERIVED rollup by precedence
 # in_progress > applied > drafted > rejected > ignored; --check-metadata validates every status
 # folder by default; no total_compensation_range; every structured fact is {min,max,confidence,
@@ -18,7 +18,7 @@ canaries:
     prompt: "How's my pipeline looking? What needs my attention?"
     setup: "Default setup. Runs status.py over the examples/applications tree."
     expected_behavior:
-      - "Runs `.venv/bin/python .agents/skills/application-tracker/scripts/status.py` and reads each app's OVERALL status from the FOLDER it lives in (drafted/applied/in_progress/rejected/ignored) — the derived rollup of its per-job `status` fields, which the folder must agree with."
+      - "Runs `.venv/bin/python skills/application-tracker/scripts/status.py` and reads each app's OVERALL status from the FOLDER it lives in (drafted/applied/in_progress/rejected/ignored) — the derived rollup of its per-job `status` fields, which the folder must agree with."
       - "Summarizes the funnel and highlights apps needing action (non-empty `next_action`) and stale ones (applied > ~2 weeks with no change)."
       - "Does not move any folder or change any status (pipeline moves are the user's decision)."
     failure_modes:

@@ -12,7 +12,7 @@
 
 ## Symptom
 
-`classify_sponsorship()` (in `scripts/shared/job_metadata.py`) scans a job
+`classify_sponsorship()` (in `automation/shared/job_metadata.py`) scans a job
 description for an explicit sponsorship denial (`_SPONSOR_NEGATIVE`) or offer
 (`_SPONSOR_POSITIVE`) and returns `unlikely` / `likely` / `unknown` accordingly,
 with an explicit denial always winning. During a live gate run, two real JD
@@ -26,7 +26,7 @@ denial phrasings were found that the current `_SPONSOR_NEGATIVE` phrase list doe
 Note: an earlier, related bug — `--visa-policy require_positive` being a silent
 no-op when the profile ships `needs_sponsorship: false` — was also reported in GH
 issue #15 and has since been **fixed** (`apply_visa_policy()` in
-`.agents/skills/job-search/scripts/search_jobs.py` now sets
+`skills/job-search/scripts/search_jobs.py` now sets
 `visa["needs_sponsorship"] = True` whenever `--visa-policy` is passed). This file
 covers only the remaining, unfixed gap: the negative-phrase list itself.
 
@@ -34,7 +34,7 @@ covers only the remaining, unfixed gap: the negative-phrase list itself.
 
 ```bash
 .venv/bin/python -c "
-import sys; sys.path.insert(0, 'scripts/shared')
+import sys; sys.path.insert(0, 'automation/shared')
 from job_metadata import classify_sponsorship
 print(classify_sponsorship('Immigration Sponsorship support will NOT be available for this position.'))
 print(classify_sponsorship('We are unable to provide visa sponsorship.'))
@@ -53,7 +53,7 @@ signal the agent relies on for the visa gate.
 
 ## Root cause
 
-`_SPONSOR_NEGATIVE` in `scripts/shared/job_metadata.py` is a fixed tuple of
+`_SPONSOR_NEGATIVE` in `automation/shared/job_metadata.py` is a fixed tuple of
 substring phrases. It has near-miss entries — `"unable to provide sponsorship"`
 (no "visa") and `"not able to provide visa sponsorship"` (no "unable") — but
 neither matches `"unable to provide visa sponsorship"` verbatim, and it has no
@@ -62,11 +62,11 @@ all.
 
 ## Suggested fix
 
-Extend `_SPONSOR_NEGATIVE` in `scripts/shared/job_metadata.py` to cover both
+Extend `_SPONSOR_NEGATIVE` in `automation/shared/job_metadata.py` to cover both
 observed phrasings, e.g. add `"unable to provide visa sponsorship"` (in addition
 to the existing `"unable to provide sponsorship"`), and either add a literal
 `"will not be available"` / `"will not be provided"` entry or generalize the
 negation scan to a regex that tolerates an intervening subject between "will
 NOT" and "available"/"sponsor". Add both denial sentences as regression cases in
-`.agents/skills/job-search/scripts/tests/` (or wherever `classify_sponsorship`
+`skills/job-search/scripts/tests/` (or wherever `classify_sponsorship`
 already has coverage) so future phrase-list edits don't regress them.

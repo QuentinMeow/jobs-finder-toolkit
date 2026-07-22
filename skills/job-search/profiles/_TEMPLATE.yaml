@@ -1,0 +1,64 @@
+# Job-matching profile template. Copy to <label>.yaml and edit.
+# Run with: .venv/bin/python skills/job-search/scripts/search_jobs.py --profile <label>
+
+name: Your Name
+label: your-label
+updated: "YYYY-MM-DD"
+
+titles:
+  include:                 # title must contain >=1 of these (word-boundary, case-insensitive)
+    - software engineer
+  exclude:                 # drop if title contains any of these
+    - manager
+    - intern
+
+seniority:
+  target: [mid, senior, staff]   # desired level band; roles outside it are demoted
+  fit_weight: 6.0                # level-fit penalty per ladder step outside the band (0 = off)
+  # yoe_fit_weight: 1.0          # per-year penalty when required YOE > years_experience
+
+# years_experience: null        # your actual YOE; enables the YOE-fit penalty above
+
+keywords:
+  strong: []               # high weight (matched in title + description)
+  good: []                 # medium weight (matched in description)
+  negative: []             # reduce score for honest mis-fits
+
+location:
+  preferred: [remote]      # substring match against posting location
+  allow_remote: true
+  us_only: true            # keep only US-based / (non-foreign) remote roles; set false to allow global
+  require_match: false     # true = hard-filter to ONLY preferred cities / remote
+
+visa:
+  needs_sponsorship: false # true if you need work-visa sponsorship
+  h1b_transfer: false
+  perm_greencard: false
+  policy: exclude_negative # exclude_negative | require_positive
+
+max_age_days: 3            # only postings from the last N days
+
+# Optional: drop JDs that state a minimum YOE above this (keep if unstated; see scoring.experience_ok)
+max_years_experience: null
+
+comp:
+  min_base: null
+  min_total: null
+
+sources:
+  company_tags: [ai-lab, ai-infra, dev-tools]   # tags from companies.yaml
+  aggregators: [jobicy, remoteok, themuse]       # keyless; +arbeitnow (EU), +adzuna/jsearch (need keys)
+  query_terms:                                   # used by adzuna/jsearch/jobspy
+    - software engineer
+  query_location: "United States"
+  jobspy:
+    enabled: true           # Stage 1 Indeed/Google baseline (needs python-jobspy)
+    sites: [indeed, google]
+    location: "United States"
+    results_wanted: 25
+    max_terms: 3
+
+diversity:
+  max_per_company: 3        # cap rows per employer in the shortlist (0 = no cap)
+
+top_k: 40

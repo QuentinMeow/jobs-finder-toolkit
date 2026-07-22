@@ -20,8 +20,8 @@ Two layered repos so timeless tooling can be published while anything tied to a 
 or job hunt stays private. **Leak rule: never put real names, employers, or dated/time-sensitive
 data in the public tree** — it ships only the fake "Jordan Rivers" example.
 
-- **Public toolkit repo (this repo)** — timeless tooling (`scripts/`, public skills + their
-  scripts), the registry `.agents/skills/job-search/companies.yaml` (**identity only** — never
+- **Public toolkit repo (this repo)** — timeless tooling (`automation/`, public skills + their
+  scripts), the registry `skills/job-search/companies.yaml` (**identity only** — never
   specific or dated postings), a FAKE example candidate under `examples/`, general instructions.
   `config.example.yaml` is the tracked placeholder.
 - **Private overlay repo** — its own git repo, mounted at the git-ignored `private/` dir;
@@ -39,16 +39,16 @@ company-level cache, interviews, profile/baseline/reference DOCX); only the fake
 counterparts ship. **Personal content stays out of `SKILL.md`/`LESSONS.md`** — candidate DATA defers
 to `config.yaml`/the profile; residual personal skill guidance goes in a git-ignored per-skill
 `references_private/` (exporter prunes it; leak guard fails on any tracked file under it). **The leak
-guard** (`scripts/publish/check_public.py`) hardcodes NO identity — it derives personal tokens from
+guard** (`automation/publish/check_public.py`) hardcodes NO identity — it derives personal tokens from
 `config.yaml`/overlay/`JOBHUNT_PERSONAL_TOKENS` and scans text + `.docx`/`.pdf`; `export_public.py`
-runs it as the final publish gate. Routing: skills are discovered by listing `.agents/skills/`;
-private `coding-interview` appears via a git-ignored symlink `scripts/bootstrap_overlay.py` creates.
+runs it as the final publish gate. Routing: skills are discovered by listing `skills/`;
+private `coding-interview` appears via a git-ignored symlink `automation/bootstrap_overlay.py` creates.
 Full detail: `handbook/public-private-split.md`.
 
 ## Configuration
 
 Identity, paths, and output-filename stems are never hardcoded — they load via
-`scripts/shared/config.py` (vendored into each skill's `scripts/_vendor/config.py`). `config.yaml`
+`automation/shared/config.py` (vendored into each skill's `scripts/_vendor/config.py`). `config.yaml`
 (git-ignored) holds real values; `config.example.yaml` (tracked) is the neutral **"Jordan Rivers"**
 placeholder + fallback (discovery: `$JOBHUNT_CONFIG` → nearest `config.yaml` up from cwd then the
 loader dir → `config.example.yaml`). **Paths** always come from `config.*_path()` functions (profile,
@@ -67,10 +67,10 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
 |------|---------|
 | `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, output-stem config; example is the "Jordan Rivers" placeholder + fallback |
 | `config.profile_md_path()` / `config.baseline_path()` | Candidate profile (source of truth for tailoring) / canonical transcription of the approved resume (start point for every `tailored.yaml`) |
-| `.agents/skills/job-search/companies.yaml` | Canonical **public** registry (company identity, ATS config, tags); candidate blacklist rows live in git-ignored `private/job-search/blacklist.yaml` |
+| `skills/job-search/companies.yaml` | Canonical **public** registry (company identity, ATS config, tags); candidate blacklist rows live in git-ignored `private/job-search/blacklist.yaml` |
 | `config.applications_root()` / `config.discoveries_dir()` | All applications in numbered status folders `0_profile`…`6_drafted` (the folder is the derived overall status) / ad-hoc job-search research |
-| `.agents/skills/` | Canonical skills dir (PUBLIC skills — see Public vs Private; private `coding-interview` via symlink) |
-| `scripts/shared/`, `scripts/vendoring/`, `scripts/maintenance/`, `scripts/metrics/`, `scripts/publish/` | Canonical toolkit modules; vendoring; maintenance/gardener; budget metrics; publish/leak-guard |
+| `skills/` | Canonical skills dir (PUBLIC skills — see Public vs Private; private `coding-interview` via symlink) |
+| `automation/shared/`, `automation/vendoring/`, `automation/maintenance/`, `automation/metrics/`, `automation/publish/` | Canonical toolkit modules; vendoring; maintenance/gardener; budget metrics; publish/leak-guard |
 | `tmp/` | Gitignored scratch (purpose-named subfolders); never committed |
 | `message-queue/` (`needs-human/`: `decisions/`, `clarifications/`, `reviews/`; `needs-agent/`: `requests/`, `retries/`) | Async human↔agent messages, one file each, routed by **who acts next** (see Async Collaboration) |
 | `tasks/` (status folders `0_backlog`…`4_done`) | Work items; the folder a task sits in IS its status (`tasks/README.md`) |
@@ -87,7 +87,7 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
    `job-search` (find/filter postings), `resume-writer` (tailoring), `application-tracker` (status),
    `behavioral-interview-prep`, `company-research` (company/role research + question bank),
    `outlook-email-assistant` (read personal Outlook mail, create repository-grounded reply drafts).
-   Private `coding-interview` is at `.agents/skills/coding-interview/` when the overlay is mounted.
+   Private `coding-interview` is at `skills/coding-interview/` when the overlay is mounted.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context.
 4. Before tailoring, read the tailoring card (`<applications_root>/0_profile/tailoring-card.md`) — the distilled default context; open the full profile (`config.profile_md_path()`, source of truth) only on the resume-writer skill's escalation triggers (card missing/stale/`--check` fail, or a JD domain the card doesn't cover).
 
@@ -201,13 +201,13 @@ company-level import, log sync/record, DOCX extract, vendoring, hook install, de
 
 ```bash
 # Render a tailored resume (DOCX + PDF) + one cover letter per JD, then auto-validate.
-.venv/bin/python .agents/skills/resume-writer/scripts/render.py applications/6_drafted/<slug>/
+.venv/bin/python skills/resume-writer/scripts/render.py applications/6_drafted/<slug>/
 # Show all applications and their status (status = which folder each app lives in)
-.venv/bin/python .agents/skills/application-tracker/scripts/status.py
+.venv/bin/python skills/application-tracker/scripts/status.py
 # Populate/validate schema-v4 metadata (per-job status, level, YOE, salary) from JD + cache
-.venv/bin/python .agents/skills/application-tracker/scripts/status.py --enrich-metadata applications/6_drafted/<slug>/
+.venv/bin/python skills/application-tracker/scripts/status.py --enrich-metadata applications/6_drafted/<slug>/
 # Move an application to a different status folder (drafted|applied|in_progress|rejected|ignored)
-.venv/bin/python .agents/skills/application-tracker/scripts/status.py --update <slug> applied
+.venv/bin/python skills/application-tracker/scripts/status.py --update <slug> applied
 ```
 
 ## Conventions (quick reference)
@@ -217,8 +217,8 @@ Each expands in a named `handbook/` doc; the bolded name is the canonical sectio
 - **Memory Map** — agent-memory zones (read/append points), retention, writers; promotion plus
   **forgetting** (TTL/prune/demotion) enforced by the `gardener` (dry-run). Full table: `handbook/memory-map.md`.
 - **Sharing Code Across Skills** — skills are self-contained; a skill's `scripts/` **never** imports
-  repo-root Python. Pure toolkit modules live once in `scripts/shared/`, vendored (byte-identical)
-  into each skill's `scripts/_vendor/` via `scripts/vendoring/sync_vendored.py`; never edit a copy. Detail: `handbook/skills-and-vendoring.md`.
+  repo-root Python. Pure toolkit modules live once in `automation/shared/`, vendored (byte-identical)
+  into each skill's `scripts/_vendor/` via `automation/vendoring/sync_vendored.py`; never edit a copy. Detail: `handbook/skills-and-vendoring.md`.
 - **File & Folder Organization** — group files by purpose in a meaningful subfolder (never a
   generic *scripts*/*docs*/*data* bucket); reason tree-first before creating any file. Detail (incl. the
   coding-interview 150-char no-hard-wrap rule): `handbook/file-organization.md`.

@@ -7,7 +7,7 @@ Files".
 generically named directory.** A bare `scripts/` (or `utils/`, `lib/`, `inputs/`,
 `docs/`, `data/`, `misc/`) is too vague on its own: the folder name must announce what
 its contents are *for*. Prefer a purpose-scoped subfolder such as
-`scripts/shared/`, `scripts/vendoring/`, or `.agents/skills/<skill>/scripts/` over a
+`automation/shared/`, `automation/vendoring/`, or `skills/<skill>/scripts/` over a
 flat `scripts/`.
 
 **Before creating ANY new file, reason about the whole folder tree** and place the file
@@ -21,7 +21,7 @@ where its purpose is obvious:
   generic bucket (`scripts`, `docs`, `files`, `data`).
 - **Generic top-level folders must fan out into purpose subfolders.** `scripts/` splits
   into `shared/`, `vendoring/`, and `maintenance/`; each skill keeps its code under
-  `.agents/skills/<skill>/scripts/`. The former generic `docs/` was dissolved into
+  `skills/<skill>/scripts/`. The former generic `docs/` was dissolved into
   `handbook/` (reference) + `design/` (design programs) for exactly this reason. Follow
   the same pattern for anything new that would otherwise land in a generic root.
 - **Don't orphan single files at a generic root.** A lone reference PDF, asset, image, or
@@ -34,7 +34,7 @@ where its purpose is obvious:
   with this rule, flag it and propose a refactor rather than adding to the mess.
 
 Skill-scoped code is an accepted exception: a skill may keep its implementation in its own
-`.agents/skills/<skill>/scripts/` because the parent skill folder already names the purpose.
+`skills/<skill>/scripts/` because the parent skill folder already names the purpose.
 
 **Coding-interview files** (`interviews/company-specific/<company>/coding/`): a single-file
 solution stays flat as `<problem>.py`; give a problem its **own** subfolder
@@ -47,7 +47,7 @@ unless it exceeds 150 characters (see the `coding-interview` skill).
 Ad-hoc, throwaway work — one-off API/ATS probes, scraper snippets, fetched raw HTML/JSON,
 sanity-check scripts, any disposable intermediate — MUST live under the single top-level
 **`tmp/`** folder in **purpose-named subfolders**, never in the repo root or a tracked/product
-folder (`applications/`, `scripts/`, `templates/`, `.agents/skills/`, `interviews/`). A hard rule
+folder (`applications/`, `scripts/`, `templates/`, `skills/`, `interviews/`). A hard rule
 for every agent and skill; the old flat `tmp_*.py`-in-root habit is retired.
 
 - **Location & lifecycle:** everything disposable lives under `tmp/<purpose>/`. The whole `tmp/`

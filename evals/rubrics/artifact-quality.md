@@ -17,9 +17,9 @@ paths. A fresh grader needs only:
    - tailoring card: `<applications_root>/0_profile/tailoring-card.md`
 
 Grounded in the repo's own gates: `evals/rubrics/judging.md` (strict pass/fail, judge the artifact
-not the prose), `AGENTS.md` "Guardrails", `.agents/skills/resume-writer/SKILL.md` (three-list skill
+not the prose), `AGENTS.md` "Guardrails", `skills/resume-writer/SKILL.md` (three-list skill
 gate, no-fabrication, cover-letter structure), and the machine checks in
-`.agents/skills/resume-writer/scripts/check.py` + `.../application-tracker/scripts/status.py`.
+`skills/resume-writer/scripts/check.py` + `.../application-tracker/scripts/status.py`.
 
 ## Scoring discipline (read first)
 
@@ -36,13 +36,13 @@ gate, no-fabrication, cover-letter structure), and the machine checks in
 
 ```bash
 # Resume + cover-letter validity (resolves baseline/profile from config; no rendering):
-.venv/bin/python .agents/skills/resume-writer/scripts/check.py <app_folder>/
+.venv/bin/python skills/resume-writer/scripts/check.py <app_folder>/
 # Metadata schema v4 + location policy (a private overlay tree needs its JOBHUNT_CONFIG;
 # the benchmark tree needs the benchmark config):
 JOBHUNT_CONFIG=<config> \
-  .venv/bin/python .agents/skills/application-tracker/scripts/status.py --check-metadata
+  .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata
 JOBHUNT_CONFIG=<config> \
-  .venv/bin/python .agents/skills/application-tracker/scripts/status.py --check-locations
+  .venv/bin/python skills/application-tracker/scripts/status.py --check-locations
 ```
 `check.py` also prints a bullet-drift ratio (`N/M bullets differ from baseline`) and
 bottom-of-page fill warnings — capture both, they feed D2 and D6.

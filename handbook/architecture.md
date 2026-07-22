@@ -22,7 +22,7 @@ candidate profile (markdown) + job description
     → check.py validation                       (automatic, mandatory)
 ```
 
-Validation (`.agents/skills/resume-writer/scripts/check.py`) enforces locked identity
+Validation (`skills/resume-writer/scripts/check.py`) enforces locked identity
 fields, real project titles and skills, bullet counts/lengths, a one-page PDF, and a
 proper cover letter per posting. Resume YAML canonically uses an ordered `employers:`
 list; each job may carry conventional direct achievement bullets, named project blocks,
@@ -38,7 +38,7 @@ instead of a silently incomplete work history.
 ## Configuration
 
 Candidate identity, paths, and output filename stems are never hardcoded — they come
-from a git-ignored `config.yaml`, loaded by `scripts/shared/config.py` (vendored into
+from a git-ignored `config.yaml`, loaded by `automation/shared/config.py` (vendored into
 each skill). Discovery order: `$JOBHUNT_CONFIG` → the nearest `config.yaml` walking up
 from the current directory → the tracked `config.example.yaml` (the fictional
 **"Jordan Rivers"** placeholder), so every tool runs out of the box with the example
@@ -55,7 +55,7 @@ What the config supplies:
 | `paths.company_levels_yaml` | Optional reusable company level/YOE/compensation cache (its own schema-v2 file format, separate from application `meta.yaml`) |
 | `paths.applications_root` | Where the application pipeline folders live |
 | `paths.discoveries_dir` | Where job-search shortlists land |
-| `job_search.default_profile` | Which `.agents/skills/job-search/profiles/<label>.yaml` search profile to use |
+| `job_search.default_profile` | Which `skills/job-search/profiles/<label>.yaml` search profile to use |
 | `outlook_email.*` | Private personal-mailbox address, Microsoft public-client application ID, and `consumers` tenant selection; OAuth refresh state lives only in the OS keyring |
 | `location_policy` | Allowed metros + US-remote/us-only rules that gate application creation |
 
@@ -94,19 +94,19 @@ facts with a formatting-preserving, checksum-guarded editor.
 
 ## Self-contained skills (vendoring)
 
-Each skill under `.agents/skills/<skill>/` bundles its own `scripts/` plus a
+Each skill under `skills/<skill>/` bundles its own `scripts/` plus a
 `scripts/_vendor/` copy of the shared modules it needs (`config.py`, `layout.py`,
 `location.py`, `job_metadata.py`, `metadata_editor.py`). A skill never imports
 repo-root Python, so a single skill folder can be dropped into another project and
 keeps working.
 
-The canonical sources live in `scripts/shared/`; `scripts/vendoring/sync_vendored.py`
+The canonical sources live in `automation/shared/`; `automation/vendoring/sync_vendored.py`
 regenerates the byte-identical `_vendor/` copies, and its `--check` mode (run by the
 pre-commit hook and CI) fails on any drift. Edit the canonical source, never a copy.
 (This is "Approach 2" of the historical design exploration in
 `docs/design/skill-script-sharing/`.)
 
-Skills are discovered by listing `.agents/skills/` — any AI agent that reads
+Skills are discovered by listing `skills/` — any AI agent that reads
 `AGENTS.md` finds them there. `.claude/skills/` and `.cursor/skills/` are
 compatibility symlinks for tools that look in their own skill directories, and
 `.claude-plugin/marketplace.json` publishes the public skills as a Claude Code plugin
@@ -122,12 +122,12 @@ public tree clean:
 
 1. **`.gitignore`** anchors every private path (`private/`, `config.yaml`,
    `/applications/`, `/interviews/`, per-skill `references_private/`, …).
-2. **The leak guard** (`scripts/publish/check_public.py`) scans tracked files — paths,
+2. **The leak guard** (`automation/publish/check_public.py`) scans tracked files — paths,
    text, and `.docx`/`.pdf` content — for private trees, structural PII, and
    personal-identity tokens derived at runtime from your config and
    `private/leak_tokens.txt` (nothing hardcoded). It runs blocking in CI, in the
    pre-push hook, and by hand.
-3. **The exporter** (`scripts/publish/export_public.py`) can produce a sanitized copy
+3. **The exporter** (`automation/publish/export_public.py`) can produce a sanitized copy
    of any checkout; the leak-guard test suite drives it end-to-end.
 
 Full walkthrough: [`PRIVATE_OVERLAY.md`](PRIVATE_OVERLAY.md).
@@ -144,9 +144,9 @@ pull request:
    configs, including one-page PDF checks (LibreOffice is installed in CI).
 4. **Resume-writer unit tests** — schema normalization, extraction diagnostics,
    multi-employer rendering/layout, and an isolated `_test_application_` workflow.
-5. **Shared-module unit tests** — `scripts/shared/tests` (job metadata, the
+5. **Shared-module unit tests** — `automation/shared/tests` (job metadata, the
    formatting-preserving editor, layout, search/backfill).
-6. **Leak-guard + exporter unit tests** — `scripts/publish/tests`.
+6. **Leak-guard + exporter unit tests** — `automation/publish/tests`.
 7. **Public leak guard** — blocking; zero findings is the steady state.
 
 A separate `secret-scan` job runs gitleaks over the full history for credential
@@ -154,7 +154,7 @@ shapes the identity guard does not target.
 
 Local equivalents of all gates are listed in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) → "Running the checks"; the tracked git hooks
-(installed by `python scripts/bootstrap_overlay.py`) run the cheap ones on commit and
+(installed by `python automation/bootstrap_overlay.py`) run the cheap ones on commit and
 the leak guard on push.
 
 ## Repo reference
@@ -163,13 +163,13 @@ the leak guard on push.
 |------|---------|
 | `config.example.yaml` (tracked) / `config.yaml` (git-ignored) | Candidate identity, paths, filename stems; the example doubles as the no-config fallback |
 | `examples/` | The fictional "Jordan Rivers" dataset: profile, baseline, reference DOCX, a worked drafted application, screenshots, and the public resume/JD fixture matrix under `examples/fixtures/resume-writer/` |
-| `.agents/skills/<skill>/` | The skills — `SKILL.md` instructions + self-contained `scripts/` + `_vendor/` copies |
-| `.agents/skills/job-search/companies.yaml` | Canonical company registry: identity, ATS poll config, tags, blacklist — never dated postings |
-| `scripts/shared/` | Canonical shared modules, vendored into skills |
-| `scripts/vendoring/` | `sync_vendored.py` — regenerates `_vendor/` copies, checks drift |
-| `scripts/maintenance/` | The `gardener/` memory-hygiene routines and file-only `import_company_levels.py` |
-| `scripts/metrics/` | Opt-in local metrics hooks + the instruction-file size budget (`instruction_budget.py --strict`) |
-| `scripts/publish/` | Leak guard + exporter (the repo's privacy defenses) |
+| `skills/<skill>/` | The skills — `SKILL.md` instructions + self-contained `scripts/` + `_vendor/` copies |
+| `skills/job-search/companies.yaml` | Canonical company registry: identity, ATS poll config, tags, blacklist — never dated postings |
+| `automation/shared/` | Canonical shared modules, vendored into skills |
+| `automation/vendoring/` | `sync_vendored.py` — regenerates `_vendor/` copies, checks drift |
+| `automation/maintenance/` | The `gardener/` memory-hygiene routines and file-only `import_company_levels.py` |
+| `automation/metrics/` | Opt-in local metrics hooks + the instruction-file size budget (`instruction_budget.py --strict`) |
+| `automation/publish/` | Leak guard + exporter (the repo's privacy defenses) |
 | `evals/` | Per-skill canary evals gating skill-instruction changes (see `evals/README.md`) |
 | `hooks/` | Tracked git hooks: pre-commit (drift + compile + budget), pre-push (leak guard) |
 | `AGENTS.md` | The agent-facing contract: guardrails, conventions, memory map |

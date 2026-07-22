@@ -7,7 +7,7 @@ every run, just a cheaper preamble.
 ## The problem it targets
 
 Every subagent that touches a skill pays a fixed "boot tax" before its first useful
-token (est. tokens = bytes / 4, from `scripts/metrics/instruction_budget.py`):
+token (est. tokens = bytes / 4, from `automation/metrics/instruction_budget.py`):
 
 | File | ~tokens | Read by |
 |---|---|---|

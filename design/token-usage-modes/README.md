@@ -37,7 +37,7 @@ a mid-tier model and produced passing artifacts.
    useful step: `AGENTS.md` (40 KB), resume-writer `SKILL.md`/`LESSONS.md`/`reference.md`
    (59 KB), application-tracker `SKILL.md` (15 KB), candidate profile + baseline
    (17 KB), story bank (24 KB). The search agent read ~73 KB (~18k tokens). This
-   duplicates per agent in a fan-out. (Sizes: `scripts/metrics/instruction_budget.py`.)
+   duplicates per agent in a fan-out. (Sizes: `automation/metrics/instruction_budget.py`.)
 2. **Repeated identical fetches.** Widening the freshness window (0.084 → 1 → 3 days)
    plus a `--json-out` re-run cost **7 full pipeline invocations**, each re-fetching
    ~12k postings from 100+ boards and re-printing output into context. The fetches
@@ -136,7 +136,7 @@ the 2-draft total is normalized from the measured draft. Full record and follow-
 - Per-subagent totals come from the harness's task-completion usage line
   (tokens/tool-calls/duration); have each agent self-audit files read (`wc -c`) and
   large command outputs, as in this experiment.
-- Instruction-file sizes: `scripts/metrics/instruction_budget.py`.
+- Instruction-file sizes: `automation/metrics/instruction_budget.py`.
 - The benchmark scenario is "one search + two drafted applications, end-to-end";
   re-run it after each stage and append a row to the table above.
 

@@ -1,6 +1,6 @@
 <!--
 Per-machine result (network/board state + local model dependent). Per-SHA token metrics from
-scripts/metrics/report.py --by-sha are NOT available here: canaries ran as fresh subject subagents,
+automation/metrics/report.py --by-sha are NOT available here: canaries ran as fresh subject subagents,
 whose usage the metrics hook does not capture. Efficiency below is each subagent's own telemetry
 (subagent_tokens / tool_uses / duration_ms).
 -->

@@ -13,9 +13,9 @@ that landed in `application-tracker/SKILL.md` has real behavioral coverage.
 ## Context
 
 The `fix/instruction-clarity-adversarial-20260720` diff (`32fb3ef`) added a
-clarification to `.agents/skills/application-tracker/SKILL.md` about the bundled
+clarification to `skills/application-tracker/SKILL.md` about the bundled
 `.txt` file's naming (`_<job title>` suffix — confirmed present today at
-`.agents/skills/application-tracker/SKILL.md:55`:
+`skills/application-tracker/SKILL.md:55`:
 `` `<APPLICATION_STEM>_<job title>.txt` ``). The gate record's diff-coverage map
 lists this as `(no canary asserts .txt naming) — UNGATED`. Checked directly
 against `evals/application-tracker/canaries.yaml` as it stands today (93 lines,
@@ -30,7 +30,7 @@ application-tracker-side clarification this gap refers to — e.g. how
 
 Relevant files:
 - `evals/application-tracker/canaries.yaml` (where the new canary belongs)
-- `.agents/skills/application-tracker/SKILL.md` (the naming-convention table,
+- `skills/application-tracker/SKILL.md` (the naming-convention table,
   around the `<APPLICATION_STEM>_<job title>.txt` row)
 - `examples/applications/6_drafted/example-corp-senior-software-engineer/` (the
   shipped fixture already contains a correctly-named bundled `.txt` file to

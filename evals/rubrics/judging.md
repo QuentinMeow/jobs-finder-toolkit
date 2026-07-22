@@ -68,6 +68,6 @@ Before trusting any judge (a human or a fixed LLM judge prompt) for A/B, calibra
 Record every run — regression or A/B — from the one-page template
 [`../results/TEMPLATE.md`](../results/TEMPLATE.md). Copy it to
 `evals/results/<skill>-<git-sha>-<date>.md`, fill the `rubric_pass` and efficiency numbers
-(pull tokens/wall-clock from `scripts/metrics/report.py --by-sha`), and tag the model version.
+(pull tokens/wall-clock from `automation/metrics/report.py --by-sha`), and tag the model version.
 Results are per-machine (they depend on network/board state and the local model) — they are
 tracked for now and may be gitignored later; do not treat a result file as a shared source of truth.
