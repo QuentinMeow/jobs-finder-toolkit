@@ -35,6 +35,24 @@ Graph is the only provider today; the provider layer lives in `automation/shared
 
 The runtime, static policy checker, unit tests, and pre-commit hook all enforce this boundary.
 
+## Local 30-Day Store
+
+For a complete bounded review, sync Inbox, Sent Items, and Drafts into the private local store,
+then verify freshness before reading its content-free reconciliation projection:
+
+```bash
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py sync-store --days 30 --full
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py store-staleness
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py store-review
+```
+
+The store keeps full message bodies only under the git-ignored private email data root and stores
+attachment metadata, never attachment bytes. `store-review` is read-only, fails closed on stale or
+incomplete sync state, and emits neutral keys rather than subjects, addresses, or body text. Unknown
+company/role links remain unresolved until exact evidence or an approved private company-domain
+mapping exists. Until the store-first cutover gate is satisfied, retain the live review-window and
+exact-message preflight before any draft or application change.
+
 ## One-Time Setup
 
 Run:

@@ -3,6 +3,7 @@
 - **Priority**: P1 (after the provider contract)
 - **Area**: email
 - **Source**: `design/application-progress-calendar/execution-plan.md` Stage 3
+- **Claimed-by**: codex root session 2026-07-22
 
 ## Goal
 

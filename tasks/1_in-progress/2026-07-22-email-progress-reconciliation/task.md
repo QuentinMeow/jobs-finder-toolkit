@@ -3,6 +3,7 @@
 - **Priority**: P1 (after progress/calendar and email sync)
 - **Area**: email
 - **Source**: `design/application-progress-calendar/execution-plan.md` Stages 4–5
+- **Claimed-by**: codex root session 2026-07-22
 
 ## Goal
 

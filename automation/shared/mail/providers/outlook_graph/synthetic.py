@@ -104,6 +104,7 @@ class SyntheticGraphTransport:
         url: str,
         access_token: str,
         payload: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         # Mirror the real chokepoint: the allowlist runs before any dispatch.
         DraftOnlyRoutePolicy.assert_allowed(method, url)
@@ -119,6 +120,14 @@ class SyntheticGraphTransport:
         if method.upper() == "GET" and path.startswith("/v1.0/me/mailFolders/"):
             folder = path.split("/")[4]
             items = {"inbox": self.inbox, "drafts": self.drafts, "sentitems": self.sent}[folder]
+            if path.endswith("/messages/delta"):
+                return {
+                    "value": [dict(item) for item in items],
+                    "@odata.deltaLink": (
+                        "https://graph.microsoft.com/v1.0/me/mailFolders/"
+                        f"{folder}/messages/delta?token=synthetic"
+                    ),
+                }
             top = int(query.get("$top", ["50"])[0])
             skip = int(query.get("$skip", ["0"])[0])
             return {"value": [dict(item) for item in items[skip:skip + top]]}
@@ -128,6 +137,8 @@ class SyntheticGraphTransport:
             message = self.by_id.get(message_id)
             if message is None:
                 raise TransportError(f"synthetic mailbox has no message {message_id!r}")
+            if len(segments) == 6 and segments[5] == "attachments" and method.upper() == "GET":
+                return {"value": []}
             if len(segments) == 6 and segments[5] == "createReply" and method.upper() == "POST":
                 reply = self._register(self.drafts, {
                     "id": self._next_id("draft"),

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,16 @@ def _clean(value: Any) -> Any:
     return value or None
 
 
+def _email_domain(value: Any) -> str:
+    """Return a syntactically plausible address domain without exposing the address."""
+    if not isinstance(value, str):
+        return ""
+    domain = value.strip().casefold().rpartition("@")[2].rstrip(".")
+    if not domain or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+", domain):
+        return ""
+    return domain
+
+
 def _records(applications_root: Path):
     for meta_path in sorted(applications_root.glob("*/**/meta.yaml")):
         app_dir = meta_path.parent
@@ -103,6 +114,54 @@ def _records(applications_root: Path):
             "slug": app_dir.name,
             "jobs": job_views,
         }
+
+
+def store_review_applications(applications_root: Path) -> tuple[list[dict[str, Any]], dict[str, tuple[str, ...]]]:
+    """Load only tracker facts needed for a local, store-first reconciliation.
+
+    The output intentionally excludes recruiter addresses and application-file
+    paths.  Recruiter address *domains* are inferred in memory as a convenience
+    for existing applications; the reconciliation layer still rejects shared ATS
+    vendors before they can identify a company.
+    """
+    applications: list[dict[str, Any]] = []
+    inferred_domains: dict[str, set[str]] = defaultdict(set)
+    for meta_path in sorted(applications_root.glob("*/**/meta.yaml")):
+        try:
+            meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        if not isinstance(meta, dict):
+            continue
+        company = str(meta.get("company", "")).strip()
+        if not company:
+            continue
+        raw_jobs = meta.get("jobs") if isinstance(meta.get("jobs"), list) else []
+        jobs = []
+        for raw_job in raw_jobs:
+            if not isinstance(raw_job, dict):
+                continue
+            progress = raw_job.get("progress")
+            jobs.append(
+                {
+                    "role": str(raw_job.get("role", "")).strip(),
+                    "status": _clean(raw_job.get("status")),
+                    "url": _clean(raw_job.get("url")),
+                    "store_key": _clean(raw_job.get("store_key")),
+                    "requisition_id": _clean(
+                        raw_job.get("requisition_id") or raw_job.get("req_id")
+                    ),
+                    "progress": dict(progress) if isinstance(progress, dict) else {},
+                }
+            )
+        applications.append({"slug": meta_path.parent.name, "company": company, "jobs": jobs})
+        domain = _email_domain(meta.get("recruiter_email"))
+        if domain:
+            inferred_domains[company].add(domain)
+    applications.sort(key=lambda item: item["slug"])
+    return applications, {
+        company: tuple(sorted(domains)) for company, domains in sorted(inferred_domains.items())
+    }
 
 
 def find_application_matches(

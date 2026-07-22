@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "store/group-manifest.v1",
+  "title": "Fetch-group attestation manifest, version 1",
+  "description": "Written by the fetcher to close a multi-request group. Completeness is attested here, never inferred from HTTP 200.",
+  "type": "object",
+  "required": ["envelope_schema", "kind", "fetch_id", "group_id", "source", "operation", "fetched_at", "achieved", "attested_complete", "members"],
+  "properties": {
+    "envelope_schema": {"const": 1},
+    "kind": {"const": "group"},
+    "fetch_id": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9]{6}-[0-9a-f]{6}$"},
+    "group_id": {"type": "string"},
+    "source": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+    "operation": {"const": "group"},
+    "fetched_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "expected": {"type": ["integer", "null"]},
+    "achieved": {"type": "integer", "minimum": 0},
+    "attested_complete": {"type": ["boolean", "null"]},
+    "members": {"type": "array", "items": {"type": "string"}},
+    "tool_version": {"type": "string"},
+    "context": {"type": "object"}
+  }
+}

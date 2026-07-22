@@ -37,6 +37,9 @@ Config schema::
       account: "<personal-mailbox>"  # expected signed-in mailbox; private config only
       client_id: "..."               # public-client app registration ID; not a secret
       tenant: "consumers"             # personal Microsoft accounts only
+      company_domains:                # OPTIONAL safe company-domain link mapping
+        Example Company: [example.com]
+      company_domains_path: "private/email-company-domains.yaml"  # OPTIONAL mapping file
     location_policy:
       metro: [City, ...]          # preferred-metro tokens (candidate-specific)
       remote_tokens: [...]        # OPTIONAL; if omitted use location.py defaults
@@ -296,4 +299,24 @@ def outlook_email_config() -> dict:
         "account": str(mail.get("account", "")).strip(),
         "client_id": str(mail.get("client_id", "")).strip(),
         "tenant": str(mail.get("tenant", "consumers")).strip() or "consumers",
+    }
+
+
+def outlook_email_review_config() -> dict:
+    """Optional private context for a content-free local email-store review.
+
+    ``company_domains`` maps a company name to one or more non-ATS mail
+    domains.  A larger mapping may instead live in ``company_domains_path``;
+    its YAML top level uses the same mapping shape.  Neither setting is needed
+    for synchronization, and neither is ever printed by the email CLI.
+    """
+    mail = _config().get("outlook_email") or {}
+    configured_domains = mail.get("company_domains") or {}
+    configured_path = mail.get("company_domains_path")
+    path = None
+    if isinstance(configured_path, str) and configured_path.strip():
+        path = _resolve(configured_path.strip(), "private/email-company-domains.yaml")
+    return {
+        "company_domains": configured_domains,
+        "company_domains_path": path,
     }

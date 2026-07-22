@@ -158,15 +158,38 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(plan.output_bytes, base.encode())
 
     def test_move_to_scheduled_with_time_lands_in_scheduled_section(self):
-        base = _calendar_with(_fields())
+        base = _calendar_with(
+            _fields(state="awaiting_schedule"),
+            text="ExampleCorp — Senior Software Engineer: waiting for the confirmed time",
+            section=SECTION_WAITING,
+        )
         updated = _fields(state="scheduled", starts_at="2026-08-01T10:00:00",
                           timezone="America/Los_Angeles")
+        updated["_company"] = "ExampleCorp"
         plan = plan_calendar_update(base.encode(), {updated["id"]: updated})
         self.assertEqual(plan.errors, ())
         doc = parse_calendar(plan.output_bytes.decode())
         entry = doc.entries[updated["id"]]
         self.assertEqual(entry.section, SECTION_SCHEDULED)
         self.assertEqual(entry.starts_at, "2026-08-01T10:00:00")
+        self.assertEqual(
+            entry.text,
+            "ExampleCorp — Senior Software Engineer: confirmed interview",
+        )
+
+    def test_state_change_preserves_owner_authored_entry_text(self):
+        base = _calendar_with(
+            _fields(state="awaiting_schedule"),
+            text="Bring the architecture notes",
+            section=SECTION_WAITING,
+        )
+        updated = _fields(state="scheduled", starts_at="2026-08-01T10:00:00",
+                          timezone="America/Los_Angeles")
+        updated["_company"] = "ExampleCorp"
+        plan = plan_calendar_update(base.encode(), {updated["id"]: updated})
+        self.assertEqual(plan.errors, ())
+        entry = parse_calendar(plan.output_bytes.decode()).entries[updated["id"]]
+        self.assertEqual(entry.text, "Bring the architecture notes")
 
     def test_create_missing_requires_flag(self):
         fields = _fields()

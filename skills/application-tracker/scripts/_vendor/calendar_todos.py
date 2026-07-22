@@ -558,8 +558,18 @@ def plan_calendar_update(
         checked = state in CHECKED_STATES or (
             existing.checked if existing and state == existing.state else False
         )
-        text_line = existing.text if existing else default_entry_text(
-            str(fields.get("_company") or ""), str(fields.get("role") or ""), state)
+        company = str(fields.get("_company") or "")
+        role = str(fields.get("role") or "")
+        text_line = default_entry_text(company, role, state)
+        if existing:
+            previous_default = default_entry_text(company, role, existing.state)
+            # Preserve owner-authored wording, but advance labels that the tool
+            # itself generated for the previous scheduling state.
+            text_line = (
+                default_entry_text(company, role, state)
+                if existing.text == previous_default
+                else existing.text
+            )
         clean_fields = {k: v for k, v in fields.items() if not k.startswith("_")}
         rendered = render_entry(
             clean_fields, checked=checked, text=text_line, newline=doc.newline)

@@ -41,10 +41,9 @@ class ContractShapeTests(unittest.TestCase):
                 {"send_message": lambda self: None},
             )
 
-    def test_unsupported_capabilities_fail_closed_by_default(self):
+    def test_unsupported_search_capability_fails_closed(self):
         provider = conformance_fixture().provider
-        with self.assertRaises(CapabilityNotSupported):
-            provider.delta_sync("inbox")
+        self.assertTrue(provider.capabilities().delta_sync)
         with self.assertRaises(CapabilityNotSupported):
             provider.search("interview")
 
@@ -153,13 +152,13 @@ class LiveModeShapeTests(unittest.TestCase):
                 self.inner = inner
                 self.audit_log = []
 
-            def request(self, method, url, access_token, payload=None):
+            def request(self, method, url, access_token, payload=None, headers=None):
                 from urllib.parse import urlsplit
 
                 self.audit_log.append(
                     {"method": method.upper(), "path": urlsplit(url).path}
                 )
-                return self.inner.request(method, url, access_token, payload)
+                return self.inner.request(method, url, access_token, payload, headers)
 
         fixture.provider.transport = AuditingSyntheticTransport(fixture.transport)
         result = run_live(fixture.provider)
@@ -176,8 +175,8 @@ class LiveModeShapeTests(unittest.TestCase):
                 self.inner = inner
                 self.audit_log = [{"method": "POST", "path": "/v1.0/me/messages"}]
 
-            def request(self, method, url, access_token, payload=None):
-                return self.inner.request(method, url, access_token, payload)
+            def request(self, method, url, access_token, payload=None, headers=None):
+                return self.inner.request(method, url, access_token, payload, headers)
 
         fixture.provider.transport = MutatingTransport(fixture.transport)
         result = run_live(fixture.provider)
@@ -189,7 +188,7 @@ class LiveModeShapeTests(unittest.TestCase):
         caps = conformance_fixture().provider.capabilities()
         self.assertEqual(
             caps,
-            MailCapabilities(read=True, drafts=True, delta_sync=False, search=False),
+            MailCapabilities(read=True, drafts=True, delta_sync=True, search=False),
         )
 
 

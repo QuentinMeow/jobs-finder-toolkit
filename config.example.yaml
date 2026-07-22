@@ -31,6 +31,12 @@ outlook_email:
   account: ""
   client_id: ""
   tenant: "consumers"
+  # Optional explicit company -> email-domain mapping for ``store-review``.
+  # Keep real values in git-ignored config.yaml or this private mapping file;
+  # shared ATS domains (for example greenhouse.io) are rejected automatically.
+  # company_domains:
+  #   Example Company: [example.com]
+  # company_domains_path: "private/email-company-domains.yaml"
 location_policy:
   # Preferred-metro tokens (fictional placeholders for the "City, ST" example persona).
   metro: [springfield, fairview, riverside, lakemont]

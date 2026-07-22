@@ -39,6 +39,19 @@ class CapabilityNotSupported(MailProviderError):
     """The provider does not support this optional capability."""
 
 
+class MessageNotFound(MailProviderError):
+    """The provider explicitly confirmed that a message no longer exists.
+
+    Sync code may turn only this error into a hard-delete tombstone.  Network,
+    authorization, and malformed-response failures must remain failures: treating
+    one as a deletion would silently erase evidence during an outage.
+    """
+
+
+class SyncTokenExpired(MailProviderError):
+    """A provider rejected an opaque delta token; restart with a full sync."""
+
+
 @dataclass(frozen=True)
 class MailCapabilities:
     """What a provider can do. ``drafts=False`` providers are first-class."""
@@ -101,6 +114,56 @@ class MailProvider(abc.ABC):
     def review_window(self, limit: int = 20) -> dict[str, Any]:
         """Reconcile recent inbox mail against Sent and Drafts (read-only)."""
 
+    def list_folder(
+        self, folder: str, limit: int | None = None, since: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List an in-scope folder for archival sync.
+
+        ``None`` requests the provider's complete folder walk.  The default
+        adapter preserves compatibility with existing providers while keeping
+        the allowed email-store scope explicit (Inbox, Sent Items, Drafts).
+        """
+        if limit is None:
+            # A silent 2,000-message cap would turn a purported full inventory
+            # diff into false hard deletions. Providers must explicitly implement
+            # an unbounded folder walk before participating in archival sync.
+            raise CapabilityNotSupported(
+                f"{self.name}: complete folder sync requires list_folder override"
+            )
+        bounded = limit
+        if since is not None:
+            raise CapabilityNotSupported(
+                f"{self.name}: server-filtered folder sync requires list_folder override"
+            )
+        if folder == "inbox":
+            return self.list_inbox(bounded)
+        if folder == "sentitems":
+            return self.list_sent(bounded)
+        if folder == "drafts":
+            return self.list_drafts(bounded)
+        raise MailProviderError(f"{self.name}: unsupported mail folder {folder!r}")
+
+    def probe_folder(self, folder: str) -> dict[str, Any]:
+        """Cheap live watermark probe used before a store-first review.
+
+        A provider can override this with an item-count endpoint.  The portable
+        fallback performs one newest-first list request and returns its newest
+        message timestamp; that is enough to detect a wedged local watermark.
+        """
+        messages = self.list_folder(folder, limit=1)
+        latest = _message_time(messages[0]) if messages else None
+        return {"folder": folder, "latest_at": latest, "item_count": None}
+
+    def attachment_metadata(self, message_id: str) -> list[dict[str, Any]]:
+        """Return attachment metadata only, never attachment bytes.
+
+        Providers that cannot expose safe metadata fail closed.  A sync engine
+        must not replace this with a broad attachment-download request.
+        """
+        raise CapabilityNotSupported(
+            f"{self.name}: attachment metadata is not supported"
+        )
+
     # ── optional capabilities (fail closed by default) ───────────────────
     def delta_sync(
         self, folder: str, sync_token: str | None = None
@@ -134,3 +197,12 @@ class MailProvider(abc.ABC):
         :meth:`create_draft`; providers must run their duplicate-reply
         preflight (Sent/Drafts reconciliation) before any mailbox write."""
         raise CapabilityNotSupported(f"{self.name}: draft operations are not supported")
+
+
+def _message_time(message: dict[str, Any]) -> str | None:
+    """Return the first provider timestamp suitable for a folder watermark."""
+    for key in ("receivedDateTime", "sentDateTime", "lastModifiedDateTime"):
+        value = message.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None

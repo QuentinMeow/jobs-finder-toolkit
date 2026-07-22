@@ -19,8 +19,8 @@ class FakeTransport:
         self.responses = list(responses)
         self.calls = []
 
-    def request(self, method, url, access_token, payload=None):
-        self.calls.append((method, url, access_token, payload))
+    def request(self, method, url, access_token, payload=None, headers=None):
+        self.calls.append((method, url, access_token, payload, headers))
         return self.responses.pop(0)
 
 
@@ -33,6 +33,21 @@ class DraftOnlyGraphClientTests(unittest.TestCase):
         with self.assertRaises(DraftPolicyError):
             DraftOnlyRoutePolicy.assert_allowed(
                 "DELETE", "https://graph.microsoft.com/v1.0/me/messages/example"
+            )
+
+    def test_graph_parenthesized_folder_continuation_is_read_only_allowlisted(self):
+        DraftOnlyRoutePolicy.assert_allowed(
+            "GET",
+            "https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$skiptoken=opaque",
+        )
+        DraftOnlyRoutePolicy.assert_allowed(
+            "GET",
+            "https://graph.microsoft.com/v1.0/me/mailFolders('sentitems')/messages/delta?$deltatoken=opaque",
+        )
+        with self.assertRaises(DraftPolicyError):
+            DraftOnlyRoutePolicy.assert_allowed(
+                "POST",
+                "https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages",
             )
 
     def test_new_message_must_be_confirmed_as_draft(self):
@@ -110,6 +125,40 @@ class DraftOnlyGraphClientTests(unittest.TestCase):
         self.assertIn("%24top=50", transport.calls[0][1])
         self.assertIn("%24top=20", transport.calls[1][1])
         self.assertIn("%24skip=50", transport.calls[1][1])
+
+    def test_sync_reads_request_immutable_provider_ids(self):
+        transport = FakeTransport([{"id": "immutable-1", "body": {"content": "local only"}}])
+        client = DraftOnlyGraphClient("token", transport=transport)
+        self.assertEqual(client.read_message("immutable-1")["id"], "immutable-1")
+        self.assertEqual(transport.calls[0][4], {"Prefer": 'IdType="ImmutableId"'})
+
+    def test_attachment_metadata_select_never_requests_content_bytes(self):
+        transport = FakeTransport([{
+            "value": [{
+                "id": "attachment-1", "name": "offer.pdf", "size": 210000,
+                "contentType": "application/pdf", "isInline": False,
+            }]
+        }])
+        client = DraftOnlyGraphClient("token", transport=transport)
+        self.assertEqual(client.attachment_metadata("message-1"), [{
+            "attachment_id": "attachment-1", "name": "offer.pdf", "size": 210000,
+            "content_type": "application/pdf", "is_inline": False,
+        }])
+        self.assertIn("%24select=id%2Cname%2Csize%2CcontentType%2CisInline", transport.calls[0][1])
+        self.assertNotIn("contentBytes", transport.calls[0][1])
+
+    def test_delta_returns_opaque_link_and_explicit_field_set_version(self):
+        transport = FakeTransport([{
+            "value": [{"id": "immutable-1"}],
+            "@odata.deltaLink": (
+                "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?token=opaque"
+            ),
+        }])
+        client = DraftOnlyGraphClient("token", transport=transport)
+        delta = client.delta_sync("inbox")
+        self.assertEqual(delta["messages"], [{"id": "immutable-1"}])
+        self.assertIn("token=opaque", delta["sync_token"])
+        self.assertEqual(delta["field_set_version"], 1)
 
     def test_later_sent_reply_blocks_duplicate_draft_before_write(self):
         transport = FakeTransport(

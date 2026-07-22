@@ -402,11 +402,13 @@ If the user moves a folder **by hand**, it can drift from the rollup — re-sync
 ### Update Progress (phase/state — never moves folders)
 
 ```
-status.py --update-progress <slug> <role-match> --phase <phase> --state <state> [--label TEXT]
+status.py --update-progress <slug> <role-match> --phase <phase> --state <state> \
+  [--label TEXT] [--email-ref acct-01/<neutral-message-key>]
 ```
 
-Sets one posting's structured progress (with a tool-stamped `updated_at` and
-`source: {kind: manual}`), writing `meta.yaml` and `calendar.md` together — both or neither.
+Sets one posting's structured progress (with a tool-stamped `updated_at` and manual provenance by
+default); `--email-ref` records neutral email provenance in both metadata and the calendar marker.
+The command writes `meta.yaml` and `calendar.md` together — both or neither.
 Entering a scheduling state (`booking_required|awaiting_schedule|scheduled|reschedule_required|
 reschedule_pending`) creates the calendar entry when the job has none and records its stable id
 as `progress.calendar_item`. `--state scheduled` requires the entry to already carry the

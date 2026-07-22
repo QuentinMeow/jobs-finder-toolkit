@@ -81,7 +81,8 @@ _SCOPES_NAME_RE = re.compile(r"(?i)(?:^|_)scopes?$")
 CONSUMER_CLI_PINS: dict[str, set[str]] = {
     "outlook_email.py": {
         "doctor", "login", "logout", "inbox", "sent", "drafts", "review-window",
-        "read", "match-application", "create-draft", "create-reply-draft",
+        "read", "sync-store", "store-staleness", "store-review", "match-application", "create-draft",
+        "create-reply-draft",
     },
 }
 
