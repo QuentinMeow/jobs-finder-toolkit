@@ -6,7 +6,7 @@ Every design decision is resolved, including the follow-up jobs-derived and
 email git policies. See [the current implementation map](#implementation-state).
 Produced by: web research pass → first draft → five independent design
 reviews (three angle reviews, two adversarial) → owner answers → this
-regeneration. Remaining implementation tasks live in `todo/tasks/`. All docs follow
+regeneration. Remaining implementation tasks live in `tasks/0_backlog/`. All docs follow
 the writing rules in [docs/design/STYLE.md](../STYLE.md): every section
 self-contained, every reference clickable, every concept diagram in both
 Mermaid and plain-text form, every decision a self-contained block.
@@ -116,7 +116,7 @@ a path, manifest, or query output.
 
 The owner answered the full decision set on 2026-07-21. The authoritative
 ADR record is
-[design-decisions/raw-data-layer-decisions.md](../../../design-decisions/raw-data-layer-decisions.md);
+[memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md);
 each design doc carries a "Decisions (resolved)" table showing where every
 answer landed in its text.
 
@@ -125,11 +125,11 @@ The owner resolved the two follow-up git-policy questions on 2026-07-22:
 - The jobs store does not track `derived/`; it remains rebuildable and is
   too large and churn-heavy for git. `index/`, `annotations/`, and `state/`
   remain tracked. See
-  [the decision record](../../../design-decisions/derived-zone-git-tracking.md).
+  [the decision record](../../../memory/decisions/derived-zone-git-tracking.md).
 - The email store tracks only content-free index headers and safe
   annotations. Raw, derived, message rows, and quoted evidence remain out
   of git. See
-  [the decision record](../../../design-decisions/email-git-policy.md).
+  [the decision record](../../../memory/decisions/email-git-policy.md).
 
 **Answers that changed the design** (beyond accepting recommendations):
 
@@ -152,7 +152,7 @@ The owner resolved the two follow-up git-policy questions on 2026-07-22:
   **dual** (5 clean runs AND ≥300 job-related messages); at-rest protection
   is the private-machines assumption, documented.
 - Process folders were restructured by the same sign-off: open decisions
-  now live in `todo/decisions/` (the todo-queue convention in `AGENTS.md`).
+  now live in `message-queue/needs-human/decisions/` (the todo-queue convention in `AGENTS.md`).
 
 ## How this was produced
 
@@ -204,6 +204,6 @@ The owner resolved the two follow-up git-policy questions on 2026-07-22:
 
 *Owner space — anything written here is picked up by the next agent session
 (see the async-collaboration contract in `AGENTS.md`). Questions get
-answered in place; tasks get filed into `todo/` and linked back here.*
+answered in place; tasks get filed into `message-queue/` and linked back here.*
 
 - (none right now)

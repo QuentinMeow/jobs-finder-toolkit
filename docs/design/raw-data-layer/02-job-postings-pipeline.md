@@ -7,7 +7,7 @@ integration shipped in PRs #50–#52. The committed core
 [the lifecycle note](#4b-lifecycle-not-built-decided-2026-07-21));
 suppressed sweep rows get a review queue; log consolidation is deferred to
 the todo queue. Record:
-[design-decisions/raw-data-layer-decisions.md](../../../design-decisions/raw-data-layer-decisions.md);
+[memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md);
 summary in [Decisions (resolved)](#11-decisions-resolved). The remaining
 follow-ups are the multi-day capture measurement and the O(new) incremental
 build optimization. Writing follows [docs/design/STYLE.md](../STYLE.md).
@@ -126,7 +126,7 @@ acting on a posting still requires a fresh fetch.
 **Recommendation:** accepted — build the core (Stages 0–3 of the execution
 plan). Closure inference is not built (owner decision: on-demand polling,
 gap-tolerant timelines); reviving it would be a new decision in
-`todo/decisions/`.
+`message-queue/needs-human/decisions/`.
 
 ---
 
@@ -181,7 +181,7 @@ contract with limits:
 Widening what's recoverable means widening what's *requested* (e.g. more
 big-tech search terms) — a deliberate fetch-policy change with
 respectful-polling implications. The owner chose on-demand fetching at
-sign-off; any future widening is a new decision filed in `todo/decisions/`,
+sign-off; any future widening is a new decision filed in `message-queue/needs-human/decisions/`,
 never done silently.
 
 ## 2. The posting entity
@@ -305,7 +305,7 @@ inference is not built. Concretely:
   sources, suspect-empty quarantine for dead endpoints, the two-absence
   rule) was pruned from this doc as no-longer-needed material; it survives
   in git history. If a scheduled polling habit ever appears, reviving it is
-  a **new decision filed in `todo/decisions/`**, not a silent re-enable.
+  a **new decision filed in `message-queue/needs-human/decisions/`**, not a silent re-enable.
 - The fetch-group completeness attestation in
   [the store core](01-store-core.md#2-raw-zone-manifests-and-blobs) stays —
   it costs one manifest per observation and keeps the door open.
@@ -378,7 +378,7 @@ Four seams, all behavior-preserving:
    gate — the token-economics review showed a parallel skip mechanism
    would add agent-instruction surface for near-zero marginal skips.
    Long-term consolidation is deferred by owner decision — tracked as
-   `todo/decisions/logs-as-store-projections.md`.
+   `message-queue/needs-human/decisions/logs-as-store-projections.md`.
 4. `fetch_jd.py` **/** `company_roles.py`**.** Same capture hook; a JD fetched
   once at search time is on disk, verbatim, when drafting starts.
 
@@ -486,19 +486,19 @@ Findings that changed this document, in plain language:
 
 All three decisions were answered by the owner on 2026-07-21. Authoritative
 record:
-[design-decisions/raw-data-layer-decisions.md](../../../design-decisions/raw-data-layer-decisions.md).
+[memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md).
 Every answer is folded into the design text above.
 
 | Decision | Owner's answer | Where it landed in this doc |
 | --- | --- | --- |
 | Materialize obviously-unsuitable sweep rows as entities? | No — keep them out of the normal pipeline, but record each in a **review queue** (partial info + raw manifest path) for optional manual review; never blocks the pipeline | [The suppressed review queue](#7-capture-policy-what-counts-as-useful-raw) |
-| Should the search/application logs become store projections? | Defer — tracked as an open item in the todo queue (`todo/decisions/logs-as-store-projections.md`). The same answer also ordered the process-folder restructure: unresolved decisions now live under `todo/` (see the async-collaboration contract in `AGENTS.md`) | [Pipeline integration](#6-pipeline-integration), item 3 |
+| Should the search/application logs become store projections? | Defer — tracked as an open item in the todo queue (`message-queue/needs-human/decisions/logs-as-store-projections.md`). The same answer also ordered the process-folder restructure: unresolved decisions now live under `message-queue/` (see the async-collaboration contract in `AGENTS.md`) | [Pipeline integration](#6-pipeline-integration), item 3 |
 | Adopt a scheduled board-polling habit? | No — on-demand polling; timelines are allowed to have gaps | [The lifecycle note](#4b-lifecycle-not-built-decided-2026-07-21): closure inference not built, gap-tolerant timelines, honest last-seen staleness |
 
 ## 12. Human questions / additional tasks
 
 *Owner space — anything written here is picked up by the next agent session
 (see the async-collaboration contract in `AGENTS.md`). Questions get
-answered in place; tasks get filed into `todo/` and linked back here.*
+answered in place; tasks get filed into `message-queue/` and linked back here.*
 
 - (none right now)

@@ -3,9 +3,9 @@
 **Status:** signed off and partially implemented. Jobs stages 0–4 shipped
 in PRs #49–#53; the remaining work is the email track and two jobs-store
 follow-ups. The owner answered every decision; the record is
-[design-decisions/raw-data-layer-decisions.md](../../../design-decisions/raw-data-layer-decisions.md).
+[memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md).
 The later jobs-derived and email git-policy decisions are also resolved.
-Remaining tasks are filed in `todo/tasks/`. Scope note: the committed scope is capture + identity + index + query +
+Remaining tasks are filed in `tasks/0_backlog/`. Scope note: the committed scope is capture + identity + index + query +
 JD reuse + application linkage; closure/lifecycle inference is **not
 built** — the owner chose on-demand polling. Writing follows
 [docs/design/STYLE.md](../STYLE.md).
@@ -117,7 +117,7 @@ inference is not built — postings carry honest "last seen N days ago"
 staleness only (see
 [the lifecycle note](02-job-postings-pipeline.md#4b-lifecycle-not-built-decided-2026-07-21)).
 The pruned closure-inference spec survives in git history; reviving it is a
-new decision filed in `todo/decisions/`, and its test suite would be the
+new decision filed in `message-queue/needs-human/decisions/`, and its test suite would be the
 adversarial review's false-closure scenarios.
 
 ## Stage 3 — pipeline integration — SHIPPED (PR #52)
@@ -240,6 +240,6 @@ checklists.
 
 *Owner space — anything written here is picked up by the next agent session
 (see the async-collaboration contract in `AGENTS.md`). Questions get
-answered in place; tasks get filed into `todo/` and linked back here.*
+answered in place; tasks get filed into `message-queue/` and linked back here.*
 
 - (none right now)

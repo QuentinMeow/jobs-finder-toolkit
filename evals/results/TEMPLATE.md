@@ -79,7 +79,7 @@ significance claim.
 **Failure telemetry** (transcript miner over each run's session transcript): tool calls A/B `<n/n>`,
 failures by tool `<...>`, retry classification `<meaningless / transient / adaptive>`, tokens burned
 in failed + meaningless-retry turns `<n>`. Target: meaningless-retry = 0 (nonzero → file in
-`known-issues/`, not accepted as noise).
+`memory/known-issues/`, not accepted as noise).
 
 **Artifacts:** stage output for A and B saved under `private/benchmark/artifacts/<row-id>/` for the
 pairwise quality read.

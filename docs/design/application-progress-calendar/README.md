@@ -307,6 +307,6 @@ boundary.
 
 *Owner space — anything written here is picked up by the next agent session
 (see the async-collaboration contract in `AGENTS.md`). Questions get
-answered in place; tasks get filed into `todo/` and linked back here.*
+answered in place; tasks get filed into `message-queue/` and linked back here.*
 
 - (none right now)

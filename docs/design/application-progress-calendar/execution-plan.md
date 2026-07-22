@@ -19,7 +19,7 @@ provider conformance passes; a planted send-capable provider fixture fails
 the checker; one explicitly requested read-only live run passes. This stage
 does not download a mailbox or change application metadata.
 
-Task: `todo/tasks/email-provider-contract.md`.
+Task: `tasks/0_backlog/2026-07-22-email-provider-contract/task.md`.
 
 ## Stage 2 — tracker schema v5 and the single calendar file
 
@@ -42,7 +42,7 @@ updates never move status folders; malformed/duplicate calendar markers and
 checksum races fail without partial writes; manual unmarked content is
 preserved byte-for-byte; reschedule tests retain superseded times.
 
-Task: `todo/tasks/application-progress-calendar.md`.
+Task: `tasks/0_backlog/2026-07-22-application-progress-calendar/task.md`.
 
 ## Stage 3 — email download sync
 
@@ -57,7 +57,7 @@ mailbox; induced staleness produces the hard stale banner; moves and
 deletions have the documented semantics; attachment bytes never land in
 the store; no tracked fixture contains third-party content.
 
-Task: `todo/tasks/email-store-sync.md`.
+Task: `tasks/0_backlog/2026-07-22-email-store-sync/task.md`.
 
 ## Stage 4 — categorization, progress proposals, and reconciliation
 
@@ -78,7 +78,7 @@ Sent availability produces `awaiting_schedule`; confirmed replacement
 times preserve the old occurrence; metadata and calendar either both
 commit or neither does.
 
-Task: `todo/tasks/email-progress-reconciliation.md`.
+Task: `tasks/0_backlog/2026-07-22-email-progress-reconciliation/task.md`.
 
 ## Stage 5 — store-first review cutover
 
@@ -106,6 +106,6 @@ real application or mailbox as part of CI.
 
 *Owner space — anything written here is picked up by the next agent session
 (see the async-collaboration contract in `AGENTS.md`). Questions get
-answered in place; tasks get filed into `todo/` and linked back here.*
+answered in place; tasks get filed into `message-queue/` and linked back here.*
 
 - (none right now)

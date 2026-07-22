@@ -7,7 +7,7 @@ Folder scope, cutover criterion (now dual), unrelated-mail retention,
 at-rest posture, and attachments (metadata-only) are decided and folded in;
 the email git policy tracks only content-free index headers and safe
 annotations. Record:
-[design-decisions/raw-data-layer-decisions.md](../../../design-decisions/raw-data-layer-decisions.md).
+[memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md).
 The scheduling extension is in
 [the application-progress/calendar design](../application-progress-calendar/README.md).
 Writing follows [docs/design/STYLE.md](../STYLE.md).
@@ -344,7 +344,7 @@ promised "no bodies in tracked files" — a direct contradiction.)
 track only content-free index headers and safe annotations. Raw, derived,
 message index rows, and the evidence sidecar stay out of git because even
 subjects routinely carry third-party names. See
-[the decision record](../../../design-decisions/email-git-policy.md).
+[the decision record](../../../memory/decisions/email-git-policy.md).
 - **At-rest (decided 2026-07-21):** documented assumption — this runs on
 private machines and **the user is responsible for protecting the raw
 data**; no encryption tooling is built. (The owner asked what encryption
@@ -406,7 +406,7 @@ one of the trial. Cutover is your call on that evidence.
 | No staleness detection: a wedged sync silently reports "nothing new" while an interview invite ages in the real inbox. (adversarial-email; major)                                                                                                                 | The staleness tripwire + gardener checks — [Sync design](#1a-the-staleness-tripwire).                                                                                                                                  |
 | Mutable sync state under `raw/` would be garbage-collected by the store's cleanup sweep. (adversarial-email; major)                                                                                                                                               | Sync state lives in the `state/` zone — [Sync design](#1-sync-design).                                                                                                                                                 |
 | Deletion semantics were unspecified: archived/deleted messages would haunt queues forever, especially across full resyncs. (adversarial-email; major)                                                                                                             | Explicit move/delete semantics + resync inventory diff — [Sync design](#1-sync-design).                                                                                                                                |
-| Tracked annotations required quoted evidence while the privacy section promised no bodies in tracked files — a direct contradiction; and tracking derived subjects pushed third-party PII into git history. (adversarial-email + human-ergonomics/privacy; major) | Evidence sidecar (git-ignored); git-policy recommendation flipped — [Privacy](#6-privacy) and [the decision record](../../../design-decisions/email-git-policy.md).                                                |
+| Tracked annotations required quoted evidence while the privacy section promised no bodies in tracked files — a direct contradiction; and tracking derived subjects pushed third-party PII into git history. (adversarial-email + human-ergonomics/privacy; major) | Evidence sidecar (git-ignored); git-policy recommendation flipped — [Privacy](#6-privacy) and [the decision record](../../../memory/decisions/email-git-policy.md).                                                |
 | The side-by-side trial compared incomparable windows — noise would bury real failures. (adversarial-email; minor)                                                                                                                                                 | Intersection-based comparison with an explicit pass criterion — [Cutover](#7-cutover-proving-the-store-before-trusting-it).                                                                                            |
 | Third-party PII unacknowledged; attachments policy missing; no at-rest consideration; no command to read a stored body. (human-ergonomics/privacy; major/minor)                                                                                                   | [Privacy](#6-privacy) first bullet; attachment-metadata rule in [Sync design](#1-sync-design); the at-rest assumption in [Privacy](#6-privacy); the explicit read-stored command.                                                                   |
 | No reverse path from an application to its messages — the highest-stress investigation required a full-index grep. (human-ergonomics; major)                                                                                                                      | The by-application reverse index — [Cross-store join](#3b-the-cross-store-join).                                                                                                                                       |
@@ -418,8 +418,8 @@ one of the trial. Cutover is your call on that evidence.
 
 Five decisions were answered by the owner on 2026-07-21, and the email git
 policy was answered on 2026-07-22. The records are
-[the raw-data-layer sign-off](../../../design-decisions/raw-data-layer-decisions.md)
-and [the email git-policy follow-up](../../../design-decisions/email-git-policy.md).
+[the raw-data-layer sign-off](../../../memory/decisions/raw-data-layer-decisions.md)
+and [the email git-policy follow-up](../../../memory/decisions/email-git-policy.md).
 
 | Decision | Owner's answer | Where it landed in this doc |
 | --- | --- | --- |
@@ -428,12 +428,12 @@ and [the email git-policy follow-up](../../../design-decisions/email-git-policy.
 | Keep raw payloads of messages classified "unrelated"? | Keep | The category-never-drives-retention rule in [Sync design](#1-sync-design) |
 | At-rest encryption posture | Private-machines assumption; user is responsible for protecting raw data; no encryption tooling (owner's "what's the point?" question answered inline) | [Privacy](#6-privacy) |
 | Capture email attachments? | Content: never. **Metadata: yes** — filename, size, content type, provider attachment ID | [Sync design](#1-sync-design) |
-| Email git policy | Track only content-free index headers and safe annotations; keep raw, derived, message rows, and quoted evidence out of git | [Decision record](../../../design-decisions/email-git-policy.md) and [Privacy](#6-privacy) |
+| Email git policy | Track only content-free index headers and safe annotations; keep raw, derived, message rows, and quoted evidence out of git | [Decision record](../../../memory/decisions/email-git-policy.md) and [Privacy](#6-privacy) |
 
 ## 11. Human questions / additional tasks
 
 *Owner space — anything written here is picked up by the next agent session
 (see the async-collaboration contract in `AGENTS.md`). Questions get
-answered in place; tasks get filed into `todo/` and linked back here.*
+answered in place; tasks get filed into `message-queue/` and linked back here.*
 
 - (none right now)

@@ -3,7 +3,7 @@
 **Status:** accepted and implemented for the jobs domain. The shared store
 shipped in PR #49 and retention/gardener hardening in PR #53; the email
 domain remains planned. All design decisions are resolved; the record lives in
-[design-decisions/raw-data-layer-decisions.md](../../../design-decisions/raw-data-layer-decisions.md)
+[memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md)
 and a compact summary in [Decisions (resolved)](#13-decisions-resolved).
 The follow-up decision to keep `derived/` out of git supersedes the original
 small-zones assumption. Writing follows
@@ -591,13 +591,13 @@ and two adversarial reviews (jobs layer, email layer). Findings that changed
 
 All five decisions were answered by the owner on 2026-07-21. The
 authoritative record (with the full original options) is
-[design-decisions/raw-data-layer-decisions.md](../../../design-decisions/raw-data-layer-decisions.md);
+[memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md);
 this table is the working summary, and every answer is already folded into
 the design text above.
 
 | Decision | Owner's answer | Where it landed in this doc |
 | --- | --- | --- |
-| Track the store's small zones in the overlay git repo? | Follow-up decision: track `index/`, `annotations/`, and `state/`; gitignore both `raw/` and the large, rebuildable `derived/` zone. Everything must still work with locally missing raw. | [Follow-up decision record](../../../design-decisions/derived-zone-git-tracking.md), the "raw may be locally absent" rule in [Zones](#1-zones-and-their-contracts), and the blob-absence states in [Retention](#9-retention-and-growth) |
+| Track the store's small zones in the overlay git repo? | Follow-up decision: track `index/`, `annotations/`, and `state/`; gitignore both `raw/` and the large, rebuildable `derived/` zone. Everything must still work with locally missing raw. | [Follow-up decision record](../../../memory/decisions/derived-zone-git-tracking.md), the "raw may be locally absent" rule in [Zones](#1-zones-and-their-contracts), and the blob-absence states in [Retention](#9-retention-and-growth) |
 | Retention defaults for raw payloads | Replaced fixed day-counts with a **GC expression config** over posting-date and last-observed-date filters, AND by default, OR/single-filter supported | [The GC config](#the-gc-config-decided-2026-07-21) |
 | Builder lock behavior on contention | Fail fast | [Write discipline](#8-write-discipline-and-concurrency) |
 | Size budget for the public example store | Under 100 KB as a **soft threshold**: exceeding it warns a human; a human may approve and raise the (configurable) threshold | Execution-plan Stage 0 (the fixture check warns, never silently blocks or silently grows) |
@@ -607,6 +607,6 @@ the design text above.
 
 *Owner space — anything written here is picked up by the next agent session
 (see the async-collaboration contract in `AGENTS.md`). Questions get
-answered in place; tasks get filed into `todo/` and linked back here.*
+answered in place; tasks get filed into `message-queue/` and linked back here.*
 
 - (none right now)

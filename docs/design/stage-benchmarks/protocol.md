@@ -93,4 +93,4 @@ Every stage row and every future full row runs the transcript miner over its
 own session transcript and records: tool-call count, failure count by tool,
 retry classification (meaningless / transient / adaptive), tokens burned in
 failed+meaningless-retry turns. Target: keep "meaningless retry" at zero — a
-nonzero count is a bug to file in `known-issues/`, not noise to accept.
+nonzero count is a bug to file in `memory/known-issues/`, not noise to accept.

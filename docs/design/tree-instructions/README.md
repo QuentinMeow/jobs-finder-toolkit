@@ -76,7 +76,7 @@ validator task); Windows checkouts materialize symlinks as junk text files
 instead).
 
 **Recommendation:** adopted as revised. One seed leaf ships
-(`docs/design/`); the todo/ leaf from v1 was **deleted** after review
+(`docs/design/`); the message-queue/ leaf from v1 was **deleted** after review
 showed it was 100% restatement of always-loaded content with one
 self-contradictory clause — the queue contract lives in root, which every
 session loads anyway.
@@ -145,9 +145,9 @@ instruction-budget script's discovery source.
 ## 4. Growth policy: reactive, one seed
 
 Create a leaf only after the second folder-local correction, or on
-explicit owner ask; propose via `todo/decisions/` when unsure. Current
+explicit owner ask; propose via `message-queue/needs-human/decisions/` when unsure. Current
 tree: **one** leaf — `docs/design/` (pure pointers to its binding style
-contract). The v1 `todo/` leaf was deleted: its folder's contract is needed
+contract). The v1 `message-queue/` leaf was deleted: its folder's contract is needed
 at *boot and write time*, which read-triggered lazy-loading structurally
 misses, and it's already in the always-loaded root. Skills never get
 leaves — `SKILL.md` is the progressive-disclosure mechanism for *tasks*;
@@ -156,10 +156,10 @@ the tree covers *folders*; the two must not double-instruct.
 ## 5. Validation and export
 
 The corrected validator spec lives in
-`todo/tasks/tree-instructions-validator.md`: repo-root-relative path
+`tasks/0_backlog/2026-07-21-tree-instructions-validator/task.md`: repo-root-relative path
 existence; ≥1 pointer per reference file (v1's "exactly one" was the wrong
 cardinality); shim + router-line presence with absent-folder skip (public
-exports omit `todo/`, and routed-but-absent must not fail public CI); leaf
+exports omit `message-queue/`, and routed-but-absent must not fail public CI); leaf
 and AGENTS.md-chain budgets; broken-symlink hard-fail (the leak guard
 currently fails open on those); exporter regeneration of leaf shims (the
 exporter follows symlinks today, which would ship a duplicated regular
@@ -175,12 +175,12 @@ session and the repo's actual tooling. In plain language:
 | What the review found (severity)                                                                                                                                                                                                             | How v2 handles it                                                                                                                                  |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The router lived in a file the primary tool never auto-loads: no root `CLAUDE.md` existed, and the session proved root `AGENTS.md` was not injected at boot. (blocker)                                                                       | Root `CLAUDE.md` with an `@AGENTS.md` import — [the review's most important finding](#for-the-human-reviewer).                                     |
-| The `todo/` leaf was ~100% restatement of always-loaded content, contained one clause conflicting with the root contract, and its lazy-load trigger (file reads) structurally misses the write-time filing work it governed. (major)         | Leaf deleted, symlink deleted; queue contract stays in root — [Growth policy](#4-growth-policy-reactive-one-seed).                                 |
+| The `message-queue/` leaf was ~100% restatement of always-loaded content, contained one clause conflicting with the root contract, and its lazy-load trigger (file reads) structurally misses the write-time filing work it governed. (major)         | Leaf deleted, symlink deleted; queue contract stays in root — [Growth policy](#4-growth-policy-reactive-one-seed).                                 |
 | The `docs/design/` leaf inlined compressed copies of the style contract instead of pointing at it — the exact drift vector the design warns about. (major)                                                                                   | Stripped to 8 lines of pure pointers; the relocation-or-pointer rule added — [The three tiers](#1-the-three-tiers).                                |
 | Net token effect of v1 was negative: everything added, nothing removed. (major)                                                                                                                                                              | The relocation rule makes leaves net-zero-or-negative by construction.                                                                             |
 | The validator spec was unimplementable and already failing on the tree it claimed green (path-resolution base undefined, wrong pointer cardinality, chain budget counting files that never auto-load, unobservable gardener metric). (major) | Full respec in the validator task — [Validation and export](#5-validation-and-export).                                                             |
 | The instruction-budget script can't express leaf budgets without a schema change (filename-keyed budgets, no bytes dimension, fixed glob list). (major)                                                                                      | Honestly scoped in the validator task: role+path-keyed budgets, bytes column, router-driven discovery.                                             |
-| The exporter follows symlinks (shipping a duplicated `CLAUDE.md` file into the public repo) and ships a router pointing at `todo/`, which exports omit; the leak guard fails open on broken symlinks. (major)                                | Exporter shim-regeneration + absent-folder gating + fail-closed symlink check, all in the validator task; router/ritual lines are existence-gated. |
+| The exporter follows symlinks (shipping a duplicated `CLAUDE.md` file into the public repo) and ships a router pointing at `message-queue/`, which exports omit; the leak guard fails open on broken symlinks. (major)                                | Exporter shim-regeneration + absent-folder gating + fail-closed symlink check, all in the validator task; router/ritual lines are existence-gated. |
 | Compaction loss and stale leaves were named as risks but not mitigated. (major)                                                                                                                                                              | Compaction re-read rule in the router section; churn-ratio gardener report in the validator task.                                                  |
 | Style violations in the design's own docs (a banned bare section pointer, an invented decision-ID family, drifted diagram twins). (minor)                                                                                                    | Fixed; the growth-policy decision was recorded through the sanctioned Q-family.                                                                    |
 | Windows checkouts turn symlinks into junk text files, silently. (minor)                                                                                                                                                                      | Documented; root shim is a real file for exactly this reason — [Loading reality](#2-loading-reality-per-tool).                                     |
@@ -192,7 +192,7 @@ session and the repo's actual tooling. In plain language:
 
 | Decision | Owner's answer | Record |
 | --- | --- | --- |
-| When should new folder-scoped instruction leaves be created? | Reactively: after the second folder-local correction or an explicit owner request; use `todo/decisions/` when unsure, and require relocation-or-pointer-only content | [Tree-instruction growth policy](../../../design-decisions/tree-instruction-growth-policy.md) |
+| When should new folder-scoped instruction leaves be created? | Reactively: after the second folder-local correction or an explicit owner request; use `message-queue/needs-human/decisions/` when unsure, and require relocation-or-pointer-only content | [Tree-instruction growth policy](../../../memory/decisions/tree-instruction-growth-policy.md) |
 
 ## Research notes (provenance)
 
@@ -214,6 +214,6 @@ lazy injection, and root `AGENTS.md` (without a shim) was never loaded.
 
 *Owner space — anything written here is picked up by the next agent session
 (see the async-collaboration contract in `AGENTS.md`). Questions get
-answered in place; tasks get filed into `todo/` and linked back here.*
+answered in place; tasks get filed into `message-queue/` and linked back here.*
 
 - (none right now)

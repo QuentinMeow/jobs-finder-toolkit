@@ -5,9 +5,9 @@ answered exactly as recommended — rename with no alias, multi-account
 partitioning from day one, read-only live conformance behind `--live`, and
 Gmail read-only (revisit only if Gmail drafting becomes a real daily need).
 Record:
-[design-decisions/raw-data-layer-decisions.md](../../../design-decisions/raw-data-layer-decisions.md);
+[memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md);
 summary in [Decisions (resolved)](#5-decisions-resolved). The focused task
-is `todo/tasks/email-provider-contract.md`. Writing follows
+is `tasks/0_backlog/2026-07-22-email-provider-contract/task.md`. Writing follows
 [docs/design/STYLE.md](../STYLE.md).
 
 Part of the [raw-data-layer family](README.md); the
@@ -249,14 +249,14 @@ stay one file. Revisit if a job source ever grows auth or state.
 
 All four decisions were answered by the owner on 2026-07-21, each matching
 the recommendation. Authoritative record:
-[design-decisions/raw-data-layer-decisions.md](../../../design-decisions/raw-data-layer-decisions.md).
+[memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md).
 
 | Decision | Owner's answer | Where it landed in this doc |
 | --- | --- | --- |
 | Rename the Outlook email assistant skill? | Rename to `email-assistant` at refactor time, no alias | [How skills layer on top](#3-how-skills-layer-on-top) |
 | Design multi-account in from day one? | Yes — partition every zone by account now, implement single-account first | [Isolation rules](#2c-isolation-rules) and [the email store layout](04-email-download-categorization.md) |
 | Allow read-only live conformance runs against the real mailbox? | Yes, behind an explicit `--live` flag, never CI | [Isolation rules](#2c-isolation-rules) |
-| Gmail permission posture | Read-only (`gmail.readonly`); revisit only if Gmail drafting becomes a real daily need — that revisit is the owner-waiver path and would be a new decision in `todo/decisions/` | [The scope doctrine](#2a-the-gmail-scope-problem-and-the-scope-doctrine) |
+| Gmail permission posture | Read-only (`gmail.readonly`); revisit only if Gmail drafting becomes a real daily need — that revisit is the owner-waiver path and would be a new decision in `message-queue/needs-human/decisions/` | [The scope doctrine](#2a-the-gmail-scope-problem-and-the-scope-doctrine) |
 
 ## 6. What the reviews changed
 
@@ -273,6 +273,6 @@ the recommendation. Authoritative record:
 
 *Owner space — anything written here is picked up by the next agent session
 (see the async-collaboration contract in `AGENTS.md`). Questions get
-answered in place; tasks get filed into `todo/` and linked back here.*
+answered in place; tasks get filed into `message-queue/` and linked back here.*
 
 - (none right now)

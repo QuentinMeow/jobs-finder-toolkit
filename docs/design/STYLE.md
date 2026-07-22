@@ -95,10 +95,10 @@ across sessions. Two structures make that work:
   `**Your answer:**` line, the next agent session treats it as the decision
   event: fold the answer into the design text, move the block into a
   compact "Decisions (resolved)" table linking the ADR record in
-  `design-decisions/`, and prune the now-dead options. If the "answer" is
+  `memory/decisions/`, and prune the now-dead options. If the "answer" is
   itself a question, answer it **inside the block** (with concrete
   examples), keep the block open with a fresh answer line, and mirror the
-  open question into `todo/decisions/` so it can't be lost.
+  open question into `message-queue/needs-human/decisions/` so it can't be lost.
 - **Resolved tables stay two-way.** The owner may amend a
   "Decisions (resolved)" table row just like an answer line; agents check
   resolved tables for owner edits on every visit, not only open blocks.
@@ -106,7 +106,7 @@ across sessions. Two structures make that work:
   tasks` section** — free space the owner can write into at any time.
   Agents check it on every visit to the doc: questions get answered in
   place (append the answer under the question, dated); tasks get filed
-  into `todo/` and back-linked. Never delete the owner's text; append
+  into `message-queue/` and back-linked. Never delete the owner's text; append
   below it.
 
 Full queue semantics (statuses, folders, boot ritual): `AGENTS.md` →

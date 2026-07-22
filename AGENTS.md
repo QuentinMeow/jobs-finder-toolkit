@@ -72,7 +72,9 @@ Full directory table (every script + per-skill row): `docs/AGENTS-ANNEX.md` §3.
 | `.agents/skills/` | Canonical skills dir (PUBLIC skills — see Public vs Private; private `coding-interview` via symlink) |
 | `scripts/shared/`, `scripts/vendoring/`, `scripts/maintenance/`, `scripts/metrics/`, `scripts/publish/` | Canonical toolkit modules; vendoring; maintenance/gardener; budget metrics; publish/leak-guard |
 | `tmp/` | Gitignored scratch (purpose-named subfolders); never committed |
-| `todo/` (queues: `inbox/`, `tasks/`, `decisions/`, `reviews/`) / `design-decisions/`, `known-issues/` (records) | AI↔human async queue family (see Async Collaboration) / decided-question ADRs + canonical bug records |
+| `message-queue/` (`needs-human/`: `decisions/`, `clarifications/`, `reviews/`; `needs-agent/`: `requests/`, `retries/`) | Async human↔agent messages, one file each, routed by **who acts next** (see Async Collaboration) |
+| `tasks/` (status folders `0_backlog`…`4_done`) | Work items; the folder a task sits in IS its status (`tasks/README.md`) |
+| `memory/` (`decisions/` ADRs, `known-issues/`, `facts/`, `lessons/`) | Long-term project memory; ADRs are immutable — a reversal is a new file |
 | `README.md`, `docs/ARCHITECTURE.md` (human) / `AGENTS.md`, `docs/AGENTS-ANNEX.md` | Human quickstart + design doc / this agent contract (core) + its extended reference |
 
 ## Read Order (boot sequence)
@@ -89,35 +91,43 @@ Full directory table (every script + per-skill row): `docs/AGENTS-ANNEX.md` §3.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context.
 4. Before tailoring, read the tailoring card (`<applications_root>/0_profile/tailoring-card.md`) — the distilled default context; open the full profile (`config.profile_md_path()`, source of truth) only on the resume-writer skill's escalation triggers (card missing/stale/`--check` fail, or a JD domain the card doesn't cover).
 
-## Async Collaboration (todo/ queues + doc dialogue)
+## Async Collaboration (message-queue/ + tasks/ + doc dialogue)
 
 The owner and agents work asynchronously: each side writes files, the other picks them up next
-session. The queue lives in **`todo/`** (map + per-queue formats: `todo/README.md`; private-scope
-mirror: `private/todo/`): `inbox/` (human→AI free-form drop box), `tasks/` (self-contained work
-items), `decisions/` (owner-only questions, each with options + recommendation + a **default path**
-agents follow while pending), `reviews/` (optional human-eyes items). Records that are not queues
-stay at root: `design-decisions/` (decided, append-only), `known-issues/`.
+session. Messages live in **`message-queue/`**, split by **who acts next** (map + per-queue
+formats: `message-queue/README.md`; private-scope mirror: `private/message-queue/`):
+`needs-human/decisions/` (owner-only questions, each with options + recommendation + a **default
+path** agents follow while pending), `needs-human/clarifications/` (questions that matter soon;
+agent proceeds on a stated assumption), `needs-human/reviews/` (optional human-eyes items),
+`needs-agent/requests/` (human→AI free-form drop box), `needs-agent/retries/` (mechanical repair
+items). Work items live in **`tasks/`** — one folder per task, its status folder IS its status
+(`tasks/README.md`). Decided questions and bug records live in **`memory/`**.
 
 **Boot ritual** — run by the **top-level session only** (subagents never run it); skip entirely if
-`todo/` is absent (public exports omit it). Filenames first; open only what's relevant:
-1. `ls todo/inbox/` (+ `private/todo/inbox/` if mounted). For each item: act, or convert it
-   (task / decision / dated reply appended to the item), then delete the inbox file in the same
-   commit. **Valve:** if the user's request is explicitly narrow or items exceed 3, process what
-   fits and list the remainder by name in your reply — reporting satisfies "never skip silently".
-2. Scan `todo/decisions/` for new owner answers (they arrive in the queue file, in a doc's
-   decision block, or in chat; skip `parked` items unless their revisit condition matches this
-   session's work). **Claim before folding:** commit a one-line `Status: folding` edit to the
-   queue file first. Then fold the answer into the affected docs, update BOTH surfaces of a
-   mirrored question in the same commit, record it in `design-decisions/`, delete the queue file.
-   **An answer heard in chat is written into the queue file in the same turn, before any other
-   work** — chat is the only channel with no file trace of its own.
-3. Pick up `todo/tasks/` items when relevant to the session's work or when asked.
-4. Sweep `todo/reviews/`: delete items with a filled Resolution, or older than 30 days.
+`message-queue/` is absent (public exports omit it). Filenames first; open only what's relevant:
+1. `ls message-queue/needs-agent/requests/` (+ the `private/` mirror if mounted). For each item:
+   act, or convert it (task / decision / dated reply appended to the item), then delete the
+   request file in the same commit. **Valve:** if the user's request is explicitly narrow or items
+   exceed 3, process what fits and list the remainder by name in your reply — reporting satisfies
+   "never skip silently".
+2. `ls message-queue/needs-agent/retries/` — pick up repair items touching this session's area;
+   never delete one without fixing it or explicitly rejecting it in the file.
+3. Scan `message-queue/needs-human/decisions/` for new owner answers (they arrive in the queue
+   file, in a doc's decision block, or in chat; skip `parked` items unless their revisit condition
+   matches this session's work). **Claim before folding:** commit a one-line `Status: folding`
+   edit to the queue file first. Then fold the answer into the affected docs, update BOTH surfaces
+   of a mirrored question in the same commit, record it in `memory/decisions/`, delete the queue
+   file. **An answer heard in chat is written into the queue file in the same turn, before any
+   other work** — chat is the only channel with no file trace of its own.
+4. Pick up `tasks/0_backlog/` items when relevant to the session's work or when asked (claim
+   first: `Claimed-by` in `task.md`, move to `1_in-progress/`).
+5. Sweep `message-queue/needs-human/reviews/`: delete items with a filled Resolution, or older
+   than 30 days.
 
-**Always:** end your reply with one line per pending `decisions/`/`reviews/` item you filed or
-noticed — chat is the owner's only push channel. Before opening a PR whose work relied on a
-pending decision's default path, re-check that decision file. Never name or summarize
-`private/todo/` items in public PR descriptions or commit messages.
+**Always:** end your reply with one line per pending `needs-human/` item you filed or noticed —
+chat is the owner's only push channel. Before opening a PR whose work relied on a pending
+decision's default path, re-check that decision file. Never name or summarize
+`private/message-queue/` or `private/tasks/` items in public PR descriptions or commit messages.
 
 **Doc dialogue:** human-read documents carry two-way fields — decision blocks with
 `**Your answer:**` lines, "Decisions (resolved)" tables (the owner may amend those too — check
@@ -125,10 +135,11 @@ them on any visit), and a trailing `## Human questions / additional tasks` secti
 `docs/design/STYLE.md`, the decision-block and async-fields sections). On any visit to a doc: answer owner questions in place (dated,
 appended — never delete or overwrite owner text, and **re-read any two-way file immediately
 before writing it; if it changed since your last read, merge — never clobber**), file owner-added
-tasks into `todo/`, and treat a filled answer line as a decision event (fold in → record → prune
-to a resolved-table row). If a doc block and its queue mirror conflict, **the doc block wins**.
-An owner "answer" that is itself a question gets answered inside the block with concrete
-examples, stays open, and is mirrored into `todo/decisions/` so it cannot be lost.
+tasks into `tasks/0_backlog/`, and treat a filled answer line as a decision event (fold in →
+record → prune to a resolved-table row). If a doc block and its queue mirror conflict, **the doc
+block wins**. An owner "answer" that is itself a question gets answered inside the block with
+concrete examples, stays open, and is mirrored into `message-queue/needs-human/decisions/` so it
+cannot be lost.
 
 ## Folder-Scoped Context (tree instructions)
 
@@ -140,8 +151,8 @@ override this contract, and a conflict is a bug in the leaf. Unbounded detail li
 folder's `agents-references/`, reached only via task-conditioned pointer lines ("before <task>,
 read <file>"). Hard invariants live only in this file + hooks, never in leaves. After a context
 compaction, re-read the `AGENTS.md` of any routed folder you're still working in. Leaf creation is
-reactive — second folder-local correction or explicit owner ask; propose via `todo/decisions/`
-when unsure (design: `docs/design/tree-instructions/README.md`).
+reactive — second folder-local correction or explicit owner ask; propose via
+`message-queue/needs-human/decisions/` when unsure (design: `docs/design/tree-instructions/README.md`).
 
 Router:
 - Working under `docs/design/`? Read `docs/design/AGENTS.md` first (skip if your tool already injected it).
@@ -216,11 +227,11 @@ Each expands in the annex; the bolded name is the canonical section.
   `tmp/web_artifacts/`, `tmp/scratch/`) — never the repo root or a tracked/product folder. Annex §9.
 - **Subagent Budget** — a request that fans out launches **at most 8 subagents total** across all
   waves; reuse/resume or finish in the parent — never a ninth. Repo-wide cap. Annex §10.
-- **Process Folders** — the `todo/` queue family (see **Async Collaboration** above) plus the
-  root record folders `known-issues/` and `design-decisions/` (+ same-name `private/` mirrors for
-  leak-guarded content): one self-contained file per item, formats in each folder's README. Hit an
-  owner-owned fork? File it in `todo/decisions/` (with options + a default path) and continue —
-  don't block, don't guess.
+- **Process Folders** — `message-queue/` + `tasks/` (see **Async Collaboration** above) plus the
+  memory zones `memory/decisions/` and `memory/known-issues/` (+ same-name `private/` mirrors for
+  leak-guarded content): one self-contained item per file, formats in each folder's README. Hit an
+  owner-owned fork? File it in `message-queue/needs-human/decisions/` (with options + a default
+  path) and continue — don't block, don't guess.
 - **Shell & Paths** — the shell is **zsh**; always use **absolute paths** in bash calls (a subagent's
   working directory resets between calls, so relative paths break), and **quote** any `=`-leading
   argument or glob (`'--flag=val'`, `'*.md'`) so zsh does not mis-split or expand it.
