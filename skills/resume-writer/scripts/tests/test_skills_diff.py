@@ -39,6 +39,7 @@ PROFILE = """# Profile
 ### Never (never include in any resume)
 
 - Languages: Rust, Scala, C language, R language
+- Extractor artifacts: LinkedIn non-skill
 
 ## Experience
 
@@ -85,6 +86,10 @@ class SkillsDiffTests(unittest.TestCase):
         # Precision guard: bare capitalized words / acronyms are not skills.
         jd = ("About Example Corp\nSenior Software Engineer, Platform\n"
               "Partner with SRE teams and design public APIs and client SDKs.")
+        self.assertEqual(_queue(jd), [])
+
+    def test_explicit_non_skill_suppression_does_not_queue_company_name(self):
+        jd = "Coordinate integrations with LinkedIn."
         self.assertEqual(_queue(jd), [])
 
     def test_slash_separated_degree_requirements_are_not_skills(self):

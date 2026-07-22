@@ -201,6 +201,12 @@ def uncategorized_queue(jd_text: str, profile_text: str) -> list[str]:
                     or check._in_list(language, weak)
                     or check._in_list(language, never)):
                 return True
+        # A profile can suppress an extractor false positive without globally
+        # blocklisting the underlying word in valid resume prose/contact data.
+        # Example: "LinkedIn non-skill" keeps the company name out of this
+        # queue without making linkedin.com violate the Never gate.
+        if check._in_list(f"{phrase} non-skill", never):
+            return True
         # … plus the component-wise Weak semantics the gate uses: a Weak token
         # like "REST/gRPC APIs" is satisfied by a JD "REST APIs".
         return any(check._mentioned_in_jd(w, phrase) for w in weak)
