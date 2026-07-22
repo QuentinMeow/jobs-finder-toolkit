@@ -44,7 +44,7 @@
 
 ## Gate decision
 
-Per `docs/design/token-usage-modes/execution-plan.md` (a result ≥ ~25% off projection
+Per `design/token-usage-modes/execution-plan.md` (a result ≥ ~25% off projection
 pauses the next stage): **Stage 2 is paused pending maintainer review** — which coincides
 with the plan's built-in review pause. Recommended agenda for that review: (a) proceed
 with Stage 2 instruction tiering (boot tax is now the dominant, measured cost);

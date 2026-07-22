@@ -16,7 +16,7 @@ explicit confound paragraphs to be readable).
 
 ## Decision
 
-Adopt `docs/design/stage-benchmarks/protocol.md`: decompose each leg into
+Adopt `design/stage-benchmarks/protocol.md`: decompose each leg into
 stages with observable boundaries, freeze intermediate artifacts as fixtures
 under `private/benchmark/fixtures/` (versioned, capture-once), and A/B each
 lever on the one stage it touches (matched pairs, pinned model, one primary

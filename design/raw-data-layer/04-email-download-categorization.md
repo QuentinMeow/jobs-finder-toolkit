@@ -10,7 +10,7 @@ annotations. Record:
 [memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md).
 The scheduling extension is in
 [the application-progress/calendar design](../application-progress-calendar/README.md).
-Writing follows [docs/design/STYLE.md](../STYLE.md).
+Writing follows [handbook/doc-style.md](../STYLE.md).
 
 Builds on [the store core](01-store-core.md) and
 [the provider contract](03-provider-interfaces.md).

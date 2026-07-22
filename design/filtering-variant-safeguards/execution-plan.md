@@ -25,8 +25,8 @@ and privacy model.
 
 Create only:
 
-- `docs/design/filtering-variant-safeguards/README.md`;
-- `docs/design/filtering-variant-safeguards/execution-plan.md`.
+- `design/filtering-variant-safeguards/README.md`;
+- `design/filtering-variant-safeguards/execution-plan.md`.
 
 The design is complete when it records the tri-state assessment contract,
 full-evidence location/workplace behavior, both harness types, routine-versus-audit

@@ -8,7 +8,7 @@ Record:
 [memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md);
 summary in [Decisions (resolved)](#5-decisions-resolved). The focused task
 is `tasks/0_backlog/2026-07-22-email-provider-contract/task.md`. Writing follows
-[docs/design/STYLE.md](../STYLE.md).
+[handbook/doc-style.md](../STYLE.md).
 
 Part of the [raw-data-layer family](README.md); the
 [email store](04-email-download-categorization.md) builds on this.

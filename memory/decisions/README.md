@@ -14,7 +14,7 @@ decided.
 - Never rewrite a decision file to say something different — a reversal is a
   new file that links the old one (`Superseded-by:` / `Supersedes:` headers).
 - Larger design *proposals* (multi-approach explorations) stay in
-  `docs/design/<topic>/`; the decision file records the outcome and links there.
+  `design/<topic>/`; the decision file records the outcome and links there.
 
 ## File format
 

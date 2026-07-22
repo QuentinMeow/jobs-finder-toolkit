@@ -18,7 +18,7 @@ run (all observations, all entities), and the index zone is rewritten wholesale.
 At 15.2k entities that is ~3-4 minutes appended to every search run (the stage-3
 post-fetch build), and it grows linearly with the store. The design intent
 ("an incremental build amortizes parsing once per fetch",
-docs/design/raw-data-layer/02-job-postings-pipeline.md, alternatives table) is
+design/raw-data-layer/02-job-postings-pipeline.md, alternatives table) is
 O(new-manifests) work per run.
 
 ## Definition of done

@@ -8,7 +8,7 @@ The later jobs-derived and email git-policy decisions are also resolved.
 Remaining tasks are filed in `tasks/0_backlog/`. Scope note: the committed scope is capture + identity + index + query +
 JD reuse + application linkage; closure/lifecycle inference is **not
 built** — the owner chose on-demand polling. Writing follows
-[docs/design/STYLE.md](../STYLE.md).
+[handbook/doc-style.md](../STYLE.md).
 
 **Delivery style (owner preference):** stacked, focused PRs — one stage ≈
 one PR. Each stage lands green (CI + leak guard) and is useful on its own;

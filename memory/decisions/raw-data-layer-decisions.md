@@ -3,7 +3,7 @@
 - **Status**: decided; follow-up git-policy decisions were resolved on 2026-07-22
 - **Date**: 2026-07-21
 - **Decided by**: owner, answering the self-contained decision blocks in
-  `docs/design/raw-data-layer/` (v2, post-review)
+  `design/raw-data-layer/` (v2, post-review)
 
 ## Context
 
@@ -49,7 +49,7 @@ git history of those docs.
 ## Consequences
 
 - Jobs stages 0–4 shipped. The remaining email work is split into focused
-  tasks linked from `docs/design/application-progress-calendar/execution-plan.md`;
+  tasks linked from `design/application-progress-calendar/execution-plan.md`;
   no part is decision-blocked.
 - The lifecycle/closure-inference spec was pruned from doc 02 (recoverable
   from git history); reviving it requires a new `message-queue/needs-human/decisions/` item.

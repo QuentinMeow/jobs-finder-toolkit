@@ -10,7 +10,7 @@ the todo queue. Record:
 [memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md);
 summary in [Decisions (resolved)](#11-decisions-resolved). The remaining
 follow-ups are the multi-day capture measurement and the O(new) incremental
-build optimization. Writing follows [docs/design/STYLE.md](../STYLE.md).
+build optimization. Writing follows [handbook/doc-style.md](../STYLE.md).
 
 Builds on [the store core](01-store-core.md); implementation steps in
 [the execution plan](execution-plan.md).

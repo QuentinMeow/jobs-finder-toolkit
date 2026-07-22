@@ -47,7 +47,7 @@ canaries:
       - "Explains the public repo (timeless tooling + the fake example candidate) + an optional private overlay — real identity/applications/interviews mount under a git-ignored `private/` path that is its own git repo."
       - "Says config.yaml is git-ignored and its paths point at the private overlay; real profile/baseline/reference DOCX and all applications/interviews stay private."
       - "Explains the coding-interview skill ships ONLY with the private overlay, so it is not part of the public toolkit."
-      - "Points to the authoritative sources — AGENTS.md 'Public vs Private' and docs/PRIVATE_OVERLAY.md."
+      - "Points to the authoritative sources — AGENTS.md 'Public vs Private' and handbook/private-overlay.md."
     failure_modes:
       - "Suggests committing real identity to the public repo, or says config.yaml is tracked."
       - "Claims coding-interview is a public skill, or invents a different private-data location."

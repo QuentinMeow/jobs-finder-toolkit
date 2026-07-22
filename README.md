@@ -26,7 +26,7 @@ together:
 | **Privacy is architectural**           | Real data can live in a separate private overlay. A blocking leak guard checks paths, text, structural PII, identity tokens, and extractable DOCX/PDF content before the public toolkit can ship.                                                                                            |
 
 See the [feature inventory, competitor matrix, implementation deep dives, limitations,
-and sources](docs/comparisons/resume-writing-tools.md). The comparison was researched
+and sources](handbook/comparisons/resume-writing-tools.md). The comparison was researched
 on 2026-07-20; “not publicly documented” is evidence of differentiation, not a claim
 that another product could never implement the capability.
 
@@ -107,7 +107,7 @@ Keep your real profile, applications, and interview prep in a **private overlay*
 your own git repo mounted at the git-ignored `private/` directory. A leak guard
 (run blocking in CI and in the pre-push hook) screens every tracked file for your
 identity so nothing personal can ship by accident. Full walkthrough, including
-creating an overlay from scratch: [docs/PRIVATE_OVERLAY.md](docs/PRIVATE_OVERLAY.md).
+creating an overlay from scratch: [handbook/private-overlay.md](handbook/private-overlay.md).
 
 ## The skills
 
@@ -134,18 +134,19 @@ examples/                # fictional profile/templates/app + public resume/JD fi
 scripts/                 # shared modules, vendoring, maintenance, metrics, leak guard
 evals/                   # per-skill canary evals (gate skill-instruction changes)
 hooks/                   # tracked git hooks (drift check, compile, leak guard)
-docs/                    # design docs: ARCHITECTURE, PRIVATE_OVERLAY, METRICS
+handbook/                # extended reference: architecture, private overlay, metrics
+design/                  # active design programs (one folder per topic)
 AGENTS.md                # the agent-facing contract (guardrails + conventions)
 ```
 
 ## Learn more
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how it works: the render pipeline,
+- [handbook/architecture.md](handbook/architecture.md) — how it works: the render pipeline,
   config system, application-folder model, vendoring, CI gates, and the full repo
   reference table
-- [docs/PRIVATE_OVERLAY.md](docs/PRIVATE_OVERLAY.md) — the public/private two-repo
+- [handbook/private-overlay.md](handbook/private-overlay.md) — the public/private two-repo
   model and overlay setup
-- [docs/comparisons/resume-writing-tools.md](docs/comparisons/resume-writing-tools.md)
+- [handbook/comparisons/resume-writing-tools.md](handbook/comparisons/resume-writing-tools.md)
   — detailed feature inventory, market comparison, implementation deep dives, and
   official sources
 - [AGENTS.md](AGENTS.md) — the contract AI agents follow (no fabrication,

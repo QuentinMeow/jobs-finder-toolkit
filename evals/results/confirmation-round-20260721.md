@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Scenario | `docs/design/token-usage-modes/benchmark-scenario.md` v1.2 (isolated benchmark config; writes never touch the real pipeline) |
+| Scenario | `design/token-usage-modes/benchmark-scenario.md` v1.2 (isolated benchmark config; writes never touch the real pipeline) |
 | Head | `integration/round-20260721` @ 2d9bbec = main + #36 + #37 + #38 + #40 + #39 + #41 (handoff location gate, JD digest @ fetch, render parallel-PDF + estimate gate + flake retry, draft-leg token diet, process folders, stage-benchmark scaffolding) |
 | Reference | Stage-3 row 452,673 tok / 205 calls (search 121,391/9.1 min; drafts 169,243/13.6 min + 162,039/13.4 min), `evals/results/stage3-benchmark-20260720.md`; pinned program reference 484,593 |
 | Model | claude-sonnet-5 subject agents (pinned) |

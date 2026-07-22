@@ -7,7 +7,7 @@ email git policies. See [the current implementation map](#implementation-state).
 Produced by: web research pass → first draft → five independent design
 reviews (three angle reviews, two adversarial) → owner answers → this
 regeneration. Remaining implementation tasks live in `tasks/0_backlog/`. All docs follow
-the writing rules in [docs/design/STYLE.md](../STYLE.md): every section
+the writing rules in [handbook/doc-style.md](../STYLE.md): every section
 self-contained, every reference clickable, every concept diagram in both
 Mermaid and plain-text form, every decision a self-contained block.
 
@@ -184,7 +184,7 @@ The owner resolved the two follow-up git-policy questions on 2026-07-22:
 
 ## Relationship to existing work
 
-- **Complements the token-usage-modes program** (`docs/design/token-usage-modes/`):
+- **Complements the token-usage-modes program** (`design/token-usage-modes/`):
   that program cut instruction and iteration waste; this adds durable
   memory. They overlap on the search path (hence token-neutral there) and
   compose on the email path (where the next real savings live).

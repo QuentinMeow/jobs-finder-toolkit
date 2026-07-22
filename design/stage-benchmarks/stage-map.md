@@ -23,7 +23,7 @@ are exact.
   | Instruction / context file | bytes | ~tok | Boot? |
   |---|---:|---:|---|
   | `AGENTS.md` (core) | 14,282 | 3.6k | yes, both legs |
-  | `docs/AGENTS-ANNEX.md` | 37,645 | 9.4k | on-demand |
+  | `handbook/README.md` | 37,645 | 9.4k | on-demand |
   | job-search `SKILL.md` | 18,689 | 4.7k | yes, search |
   | job-search `reference.md` | 25,219 | 6.3k | on-demand |
   | job-search `LESSONS.md` | 6,921 | 1.7k | yes, search |

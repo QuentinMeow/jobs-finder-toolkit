@@ -3,11 +3,11 @@
 | Field | Value |
 |-------|-------|
 | Skills | `resume-writer` (7 canaries) + `job-search` (5) + `application-tracker` (4) — 16 affected |
-| Run kind | canary gate pre-merge for branch `fix/instruction-clarity-adversarial-20260720` (`32fb3ef` — "Instruction clarity fixes from adversarial review"). Diff touches `resume-writer/{SKILL.md,LESSONS.md,reference.md}`, `job-search/SKILL.md`, `application-tracker/SKILL.md`, `AGENTS.md`, `docs/AGENTS-ANNEX.md` — all three suites genuinely affected. |
+| Run kind | canary gate pre-merge for branch `fix/instruction-clarity-adversarial-20260720` (`32fb3ef` — "Instruction clarity fixes from adversarial review"). Diff touches `resume-writer/{SKILL.md,LESSONS.md,reference.md}`, `job-search/SKILL.md`, `application-tracker/SKILL.md`, `AGENTS.md`, `handbook/README.md` — all three suites genuinely affected. |
 | Git SHA | `32fb3ef` (branch head); each runnable canary run in its own detached worktree at `32fb3ef` |
 | Model version | runners `claude-sonnet-5` (one FRESH subagent session per canary); orchestrator/judge Opus (never delegates verdicts) |
 | Config mode | examples fallback; `JOBHUNT_CONFIG` pinned per runner to that worktree's `config.example.yaml` (`generation.mode: token_saving`); no private overlay |
-| Fixtures | issue #16 protocol — runner worktrees isolated under `/tmp/jobs-gate-32fb3ef/<id>` (up-tree of the primary repo's real `config.yaml`/`private/` deliberately avoided); runners read instruction files directly (Skill tool forbidden), `evals/`+`docs/design/` out of bounds. `at-enrich` fixture: `required_yoe`/`salary_range` blanked to placeholders. |
+| Fixtures | issue #16 protocol — runner worktrees isolated under `/tmp/jobs-gate-32fb3ef/<id>` (up-tree of the primary repo's real `config.yaml`/`private/` deliberately avoided); runners read instruction files directly (Skill tool forbidden), `evals/`+`design/` out of bounds. `at-enrich` fixture: `required_yoe`/`salary_range` blanked to placeholders. |
 | Date | 2026-07-20 |
 | Judge | manual — orchestrator per `evals/rubrics/judging.md`, all-bullets-strict, failure-modes auto-fail; artifacts inspected + every zero-write claim verified via each worktree's `git status` |
 

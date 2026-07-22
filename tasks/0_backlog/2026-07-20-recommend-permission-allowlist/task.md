@@ -17,7 +17,7 @@ Permissions are the owner's security posture, so agents must not edit
 `.claude/settings.local.json` themselves — this task is a recommendation the
 owner applies (the `/fewer-permission-prompts` skill can also generate one
 from transcripts). The repo deliberately has no tracked `.claude/settings.json`
-(see docs/METRICS.md rationale). Suggested starting allowlist, merged into the
+(see handbook/metrics.md rationale). Suggested starting allowlist, merged into the
 existing `permissions.allow` block (which already has `Bash(git *)`):
 
 ```json

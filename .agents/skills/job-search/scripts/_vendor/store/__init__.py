@@ -13,7 +13,7 @@ The package is stdlib + PyYAML + ``zstandard`` only and uses relative imports
 throughout, so it stays byte-identically vendorable into a self-contained skill.
 Capture is the only surface a live fetcher touches; it never raises and never locks.
 
-See ``docs/design/raw-data-layer/01-store-core.md`` for the full contract.
+See ``design/raw-data-layer/01-store-core.md`` for the full contract.
 """
 from __future__ import annotations
 

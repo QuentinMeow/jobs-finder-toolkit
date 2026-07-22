@@ -1,7 +1,7 @@
 """Retention garbage collector for the raw-data-layer store.
 
 Prunes payload blobs the domain's ``retention.yaml`` marks disposable, honoring the
-store-core contract exactly (``docs/design/raw-data-layer/01-store-core.md`` §9):
+store-core contract exactly (``design/raw-data-layer/01-store-core.md`` §9):
 
 - **manifests are never pruned** (they are the observation log);
 - a blob is deletable only when EVERY manifest referencing it is in a prunable tier

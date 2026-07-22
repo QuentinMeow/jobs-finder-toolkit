@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (after the provider contract)
 - **Area**: email
-- **Source**: `docs/design/application-progress-calendar/execution-plan.md` Stage 3
+- **Source**: `design/application-progress-calendar/execution-plan.md` Stage 3
 
 ## Goal
 
@@ -12,7 +12,7 @@ substrate for local email review and progress reconciliation.
 ## Context
 
 Implement the sync contract in
-`docs/design/raw-data-layer/04-email-download-categorization.md`: full
+`design/raw-data-layer/04-email-download-categorization.md`: full
 resync with inventory-diff tombstoning first, delta second, per-account and
 per-folder opaque state, provider-immutable message IDs, explicit move and
 delete semantics, and the live staleness tripwire. Capture attachment

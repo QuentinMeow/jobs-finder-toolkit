@@ -74,7 +74,8 @@ ALLOWLIST_DIRS = [
     "hooks",
     ".github",
     ".claude-plugin",
-    "docs",
+    "handbook",
+    "design",
 ] + [f".agents/skills/{skill}" for skill in PUBLIC_SKILLS]
 
 # The job-search profiles folder is allowlisted, but only these generic profile

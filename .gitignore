@@ -6,9 +6,9 @@ __pycache__/
 tmp/
 # Local machine config (copy config.example.yaml -> config.yaml and edit)
 config.yaml
-# Local Claude Code settings (personal permissions + opt-in metrics hooks; see docs/METRICS.md)
+# Local Claude Code settings (personal permissions + opt-in metrics hooks; see handbook/metrics.md)
 .claude/settings.local.json
-# Local metrics collection output (opt-in metrics hooks; see docs/METRICS.md)
+# Local metrics collection output (opt-in metrics hooks; see handbook/metrics.md)
 logs/
 # Cross-session scratch memory (ephemeral; see AGENTS.md Memory Map)
 .cursor/MEMORY.md

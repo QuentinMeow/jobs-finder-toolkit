@@ -7,7 +7,7 @@ review empirically confirmed the core mechanism in a live session (the
 folder shim really does lazy-load) and overturned four v1 mistakes, all
 fixed below and listed in [What the review changed](#6-what-the-review-changed).
 The owner chose reactive leaf growth on 2026-07-22. Writing follows
-[docs/design/STYLE.md](../STYLE.md).
+[handbook/doc-style.md](../STYLE.md).
 
 ---
 
@@ -32,9 +32,9 @@ exactly right for the root tier, and survives Windows checkouts).
 ```mermaid
 flowchart TB
     shim["CLAUDE.md (root, new)\ncontains @AGENTS.md import\n→ contract ACTUALLY loads at boot"]
-    root["AGENTS.md (root)\ninvariants + repo map + router lines:\n'Working under docs/design/? Read its AGENTS.md first\n(skip if your tool already injected it)'"]
-    leaf["docs/design/AGENTS.md — the one seed\n8 lines, PURE POINTERS, no restated content\n+ CLAUDE.md→AGENTS.md symlink (lazy-load shim)"]
-    style_["docs/design/STYLE.md and future\nagents-references/ files — loaded only when\na task-conditioned pointer fires"]
+    root["AGENTS.md (root)\ninvariants + repo map + router lines:\n'Working under design/? Read its AGENTS.md first\n(skip if your tool already injected it)'"]
+    leaf["design/AGENTS.md — the one seed\n8 lines, PURE POINTERS, no restated content\n+ CLAUDE.md→AGENTS.md symlink (lazy-load shim)"]
+    style_["handbook/doc-style.md and future\nagents-references/ files — loaded only when\na task-conditioned pointer fires"]
     shim --> root
     root -->|router line| leaf
     leaf -->|"'before writing a design doc, read STYLE.md'"| style_
@@ -48,14 +48,14 @@ Same picture, plain text:
 CLAUDE.md (root, NEW)  =  "@AGENTS.md"  → the contract actually loads at boot
     │
 AGENTS.md (root) — invariants + repo map + router lines, e.g.:
-    │   "Working under docs/design/? Read docs/design/AGENTS.md first
+    │   "Working under design/? Read design/AGENTS.md first
     │    (skip if your tool already injected it)."
     ▼   loaded lazily — only when an agent works in that folder
-docs/design/AGENTS.md — THE one seed leaf: 8 lines of pure pointers
+design/AGENTS.md — THE one seed leaf: 8 lines of pure pointers
     │   (+ sibling CLAUDE.md → AGENTS.md symlink, the lazy-load shim
     │    that a live session confirmed fires on first read there)
     ▼   loaded only when the pointed-at task actually comes up
-docs/design/STYLE.md / future agents-references/ files
+handbook/doc-style.md / future agents-references/ files
 ```
 
 *Takeaway: three tiers — boot, folder-entry, task — and a leaf may only
@@ -76,7 +76,7 @@ validator task); Windows checkouts materialize symlinks as junk text files
 instead).
 
 **Recommendation:** adopted as revised. One seed leaf ships
-(`docs/design/`); the message-queue/ leaf from v1 was **deleted** after review
+(`design/`); the message-queue/ leaf from v1 was **deleted** after review
 showed it was 100% restatement of always-loaded content with one
 self-contradictory clause — the queue contract lives in root, which every
 session loads anyway.
@@ -92,7 +92,7 @@ session loads anyway.
 | ---------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
 | Root       | `AGENTS.md`, injected via the root `CLAUDE.md` import shim                                                | At boot                                                                                                  | ≤500 lines (existing)                    | Hard invariants, repo map, conventions, router lines                        |
 | Leaf       | `<folder>/AGENTS.md` + sibling `CLAUDE.md` symlink                                                        | On first read in that folder (Claude Code), on working there (Cursor), via router line (everything else) | ≤100 lines AND ≤4 KiB; target well under | **Pointers, and lines relocated out of always-loaded files. Nothing else.** |
-| References | `<folder>/agents-references/*.md` (and `docs/design/STYLE.md`, grandfathered as this tier for its folder) | Only via a task-conditioned pointer                                                                      | ≤300 lines per file                      | Unbounded detail                                                            |
+| References | `<folder>/agents-references/*.md` (and `handbook/doc-style.md`, grandfathered as this tier for its folder) | Only via a task-conditioned pointer                                                                      | ≤300 lines per file                      | Unbounded detail                                                            |
 
 
 Four rules, each defusing a failure mode the review demonstrated:
@@ -133,7 +133,7 @@ The root `AGENTS.md` "Folder-Scoped Context" section carries one
 machine-parseable, imperative line per leaf:
 
 ```
-Working under `docs/design/`? Read `docs/design/AGENTS.md` first (skip if your tool already injected it).
+Working under `design/`? Read `design/AGENTS.md` first (skip if your tool already injected it).
 ```
 
 The "skip if already injected" clause prevents the double-load the v1
@@ -146,7 +146,7 @@ instruction-budget script's discovery source.
 
 Create a leaf only after the second folder-local correction, or on
 explicit owner ask; propose via `message-queue/needs-human/decisions/` when unsure. Current
-tree: **one** leaf — `docs/design/` (pure pointers to its binding style
+tree: **one** leaf — `design/` (pure pointers to its binding style
 contract). The v1 `message-queue/` leaf was deleted: its folder's contract is needed
 at *boot and write time*, which read-triggered lazy-loading structurally
 misses, and it's already in the always-loaded root. Skills never get
@@ -176,7 +176,7 @@ session and the repo's actual tooling. In plain language:
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The router lived in a file the primary tool never auto-loads: no root `CLAUDE.md` existed, and the session proved root `AGENTS.md` was not injected at boot. (blocker)                                                                       | Root `CLAUDE.md` with an `@AGENTS.md` import — [the review's most important finding](#for-the-human-reviewer).                                     |
 | The `message-queue/` leaf was ~100% restatement of always-loaded content, contained one clause conflicting with the root contract, and its lazy-load trigger (file reads) structurally misses the write-time filing work it governed. (major)         | Leaf deleted, symlink deleted; queue contract stays in root — [Growth policy](#4-growth-policy-reactive-one-seed).                                 |
-| The `docs/design/` leaf inlined compressed copies of the style contract instead of pointing at it — the exact drift vector the design warns about. (major)                                                                                   | Stripped to 8 lines of pure pointers; the relocation-or-pointer rule added — [The three tiers](#1-the-three-tiers).                                |
+| The `design/` leaf inlined compressed copies of the style contract instead of pointing at it — the exact drift vector the design warns about. (major)                                                                                   | Stripped to 8 lines of pure pointers; the relocation-or-pointer rule added — [The three tiers](#1-the-three-tiers).                                |
 | Net token effect of v1 was negative: everything added, nothing removed. (major)                                                                                                                                                              | The relocation rule makes leaves net-zero-or-negative by construction.                                                                             |
 | The validator spec was unimplementable and already failing on the tree it claimed green (path-resolution base undefined, wrong pointer cardinality, chain budget counting files that never auto-load, unobservable gardener metric). (major) | Full respec in the validator task — [Validation and export](#5-validation-and-export).                                                             |
 | The instruction-budget script can't express leaf budgets without a schema change (filename-keyed budgets, no bytes dimension, fixed glob list). (major)                                                                                      | Honestly scoped in the validator task: role+path-keyed budgets, bytes column, router-driven discovery.                                             |

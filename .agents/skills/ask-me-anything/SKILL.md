@@ -93,7 +93,7 @@ If you don't set `config.yaml`, the toolkit falls back to `config.example.yaml` 
 **Keep real data private.** Real profile/baseline/reference DOCX and all applications +
 interviews are personal products. Point `config.yaml`'s paths at the git-ignored **`private/`**
 overlay (its own git repo). See `AGENTS.md` → "Public vs Private"
-and `docs/PRIVATE_OVERLAY.md` for the two-repo model. Never commit real identity to the public
+and `handbook/private-overlay.md` for the two-repo model. Never commit real identity to the public
 repo — `config.yaml` itself is git-ignored.
 
 ## Step 1 — Profile & Filters (who you are, what you want)
@@ -228,7 +228,7 @@ optional **private overlay** (your real identity, applications, interviews, and 
 cloned the public repo, everything in Steps 0–5 works with the example config immediately; drop
 in your own `config.yaml` + private files to make it yours. For the authoritative model see
 **`AGENTS.md`** → "Public vs Private", the README's "Public + private (two-repo) setup", and
-`docs/PRIVATE_OVERLAY.md`.
+`handbook/private-overlay.md`.
 
 ## Answering "Ask Me Anything" Questions
 
@@ -242,7 +242,7 @@ Common ones:
 - **"How do I mark something as applied?"** → Step 4; move the folder or `status.py --update <slug> applied`.
 - **"How do I prep for the interview?"** → Step 5, `company-research` + `behavioral-interview-prep`.
 - **"Do I need API keys?"** → No for the default search; only for Stage-2 aggregators.
-- **"Where does my private data go?"** → the overlay / git-ignored paths; see `docs/PRIVATE_OVERLAY.md`.
+- **"Where does my private data go?"** → the overlay / git-ignored paths; see `handbook/private-overlay.md`.
 
 If a request is ambiguous (which role, which profile, apply vs ignore), ask before acting —
 never fabricate experience, and never move an application folder without the user's say-so.

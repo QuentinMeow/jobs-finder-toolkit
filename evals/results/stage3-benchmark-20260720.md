@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Scenario | `docs/design/token-usage-modes/benchmark-scenario.md` v1.2 (isolation via the dedicated benchmark config; writes never touch the real pipeline) |
+| Scenario | `design/token-usage-modes/benchmark-scenario.md` v1.2 (isolation via the dedicated benchmark config; writes never touch the real pipeline) |
 | Head | main @ `591cc6b` (Stage-2 tiering + Stage-3 `generation.mode` switch + PR #23 multi-experience + batched Step-7, all gated) |
 | Mode | `token_saving` (config default — every agent verified it from the accessor and reported it governing the run) |
 | Model | `claude-sonnet-5` subagents, model-pinned protocol |

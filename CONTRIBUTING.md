@@ -115,7 +115,7 @@ path checks only), which a clean tree passes by design.
 
 You can use this toolkit with your **own real data** and still contribute — that
 is exactly what the private-overlay design is for (see
-[`docs/PRIVATE_OVERLAY.md`](docs/PRIVATE_OVERLAY.md), including how to create
+[`handbook/private-overlay.md`](handbook/private-overlay.md), including how to create
 your own overlay from scratch):
 
 - Your data lives in the git-ignored `private/` mount (optionally your **own**

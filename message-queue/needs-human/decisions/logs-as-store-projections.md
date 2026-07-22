@@ -2,7 +2,7 @@
 
 - **Status**: parked-until-revisit (owner deferred, 2026-07-21)
 - **Filed**: 2026-07-21
-- **Source**: [raw-data-layer pipeline integration design](../../../docs/design/raw-data-layer/02-job-postings-pipeline.md#6-pipeline-integration)
+- **Source**: [raw-data-layer pipeline integration design](../../../design/raw-data-layer/02-job-postings-pipeline.md#6-pipeline-integration)
 - **Blocking?**: nothing
 - **Revisit when**: raw-data-layer execution-plan stage 3 (pipeline
   integration) has shipped and run for a few weeks
@@ -19,7 +19,7 @@ independently maintained files.
 Doing it now would couple safety-critical skip logic to brand-new
 infrastructure. The owner deferred at raw-data-layer sign-off; the store
 integration deliberately treats the logs as the sole skip authorities
-(design: `docs/design/raw-data-layer/02-job-postings-pipeline.md` →
+(design: `design/raw-data-layer/02-job-postings-pipeline.md` →
 "Pipeline integration").
 
 ## Default path while parked

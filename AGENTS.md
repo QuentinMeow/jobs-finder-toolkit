@@ -12,7 +12,7 @@ renders into a validated DOCX + PDF resume plus each JD's bundled `..._Applicati
 (timeless tooling + the fake **"Jordan Rivers"** example) with a **private overlay** for real
 identity/products. This is the core contract every agent reads BEFORE acting; extended detail —
 full command cookbook, complete directory table, long rationale, edge-case policies, setup — lives
-in `docs/AGENTS-ANNEX.md`; read the relevant § when a section points you there.
+in `handbook/` (index: `handbook/README.md`); read the named doc when a section points you there.
 
 ## Public vs Private (skills + products)
 
@@ -26,7 +26,7 @@ data in the public tree** — it ships only the fake "Jordan Rivers" example.
   `config.example.yaml` is the tracked placeholder.
 - **Private overlay repo** — its own git repo, mounted at the git-ignored `private/` dir;
   `config.yaml` points `paths.*` into it (real identity, profile, baseline, reference DOCX,
-  applications, interviews, private `coding-interview` skill). See `docs/PRIVATE_OVERLAY.md`.
+  applications, interviews, private `coding-interview` skill). See `handbook/private-overlay.md`.
 
 **Skill visibility** is a `visibility: public|private` key in each `SKILL.md`. **PUBLIC skills**
 (SKILL.md + scripts published; PRODUCTS stay private): `ask-me-anything`, `job-search`,
@@ -43,7 +43,7 @@ guard** (`scripts/publish/check_public.py`) hardcodes NO identity — it derives
 `config.yaml`/overlay/`JOBHUNT_PERSONAL_TOKENS` and scans text + `.docx`/`.pdf`; `export_public.py`
 runs it as the final publish gate. Routing: skills are discovered by listing `.agents/skills/`;
 private `coding-interview` appears via a git-ignored symlink `scripts/bootstrap_overlay.py` creates.
-Full detail: `docs/AGENTS-ANNEX.md` §2.
+Full detail: `handbook/public-private-split.md`.
 
 ## Configuration
 
@@ -57,11 +57,11 @@ under `private/`, the public example under `examples/`. **Output stems** come fr
 `config.resume_stem()`/`cover_stem()`/`application_stem()`; never hardcode a person's filename stem —
 use `<RESUME_STEM>`. **Generation mode**: `config.generation_mode()` returns `token_saving`
 (default) or `full` — a token-usage dial for search + drafting; hard gates run identically in both.
-Full function/path detail: `docs/AGENTS-ANNEX.md` §1.
+Full function/path detail: `handbook/configuration.md`.
 
 ## Repo Map (top level)
 
-Full directory table (every script + per-skill row): `docs/AGENTS-ANNEX.md` §3.
+Full directory table (every script + per-skill row): `handbook/repo-map.md`.
 
 | Path | Purpose |
 |------|---------|
@@ -75,15 +75,15 @@ Full directory table (every script + per-skill row): `docs/AGENTS-ANNEX.md` §3.
 | `message-queue/` (`needs-human/`: `decisions/`, `clarifications/`, `reviews/`; `needs-agent/`: `requests/`, `retries/`) | Async human↔agent messages, one file each, routed by **who acts next** (see Async Collaboration) |
 | `tasks/` (status folders `0_backlog`…`4_done`) | Work items; the folder a task sits in IS its status (`tasks/README.md`) |
 | `memory/` (`decisions/` ADRs, `known-issues/`, `facts/`, `lessons/`) | Long-term project memory; ADRs are immutable — a reversal is a new file |
-| `README.md`, `docs/ARCHITECTURE.md` (human) / `AGENTS.md`, `docs/AGENTS-ANNEX.md` | Human quickstart + design doc / this agent contract (core) + its extended reference |
+| `README.md`, `handbook/architecture.md` (human) / `AGENTS.md`, `handbook/README.md` | Human quickstart + design doc / this agent contract (core) + its extended reference |
 
 ## Read Order (boot sequence)
 
-1. Read this file first for repo orientation. Open `docs/AGENTS-ANNEX.md` on demand when you
-   need the full command cookbook, the complete directory table, or a detailed policy.
+1. Read this file first for repo orientation. Open the `handbook/` doc a section points to on
+   demand — command cookbook, full directory table, detailed policies (index: `handbook/README.md`).
 2. Read the relevant PUBLIC skill before working. Skills are **quickstart-first**: the SKILL.md
-   routine path handles the common case; open a skill's `reference.md` (and the annex) only when it
-   points you there. Route by need: `ask-me-anything` (new user / how it works / where to start),
+   routine path handles the common case; open a skill's `reference.md` (and the handbook) only when
+   it points you there. Route by need: `ask-me-anything` (new user / how it works / where to start),
    `job-search` (find/filter postings), `resume-writer` (tailoring), `application-tracker` (status),
    `behavioral-interview-prep`, `company-research` (company/role research + question bank),
    `outlook-email-assistant` (read personal Outlook mail, create repository-grounded reply drafts).
@@ -132,7 +132,7 @@ decision's default path, re-check that decision file. Never name or summarize
 **Doc dialogue:** human-read documents carry two-way fields — decision blocks with
 `**Your answer:**` lines, "Decisions (resolved)" tables (the owner may amend those too — check
 them on any visit), and a trailing `## Human questions / additional tasks` section (contract:
-`docs/design/STYLE.md`, the decision-block and async-fields sections). On any visit to a doc: answer owner questions in place (dated,
+`handbook/doc-style.md`, the decision-block and async-fields sections). On any visit to a doc: answer owner questions in place (dated,
 appended — never delete or overwrite owner text, and **re-read any two-way file immediately
 before writing it; if it changed since your last read, merge — never clobber**), file owner-added
 tasks into `tasks/0_backlog/`, and treat a filled answer line as a decision event (fold in →
@@ -152,17 +152,17 @@ folder's `agents-references/`, reached only via task-conditioned pointer lines (
 read <file>"). Hard invariants live only in this file + hooks, never in leaves. After a context
 compaction, re-read the `AGENTS.md` of any routed folder you're still working in. Leaf creation is
 reactive — second folder-local correction or explicit owner ask; propose via
-`message-queue/needs-human/decisions/` when unsure (design: `docs/design/tree-instructions/README.md`).
+`message-queue/needs-human/decisions/` when unsure (design: `design/tree-instructions/README.md`).
 
 Router:
-- Working under `docs/design/`? Read `docs/design/AGENTS.md` first (skip if your tool already injected it).
+- Working under `design/`? Read `design/AGENTS.md` first (skip if your tool already injected it).
 
 ## Guardrails (hard behavioral invariants)
 
 - **Never fabricate** experience, metrics, titles, or technologies not in the profile. Reframe
   and emphasize existing experience; never invent new experience.
 - **Traceability & anchored, not frozen**: start every `tailored.yaml` as a copy of the baseline;
-  every bullet maps to real, documented content (profile or the supporting library — annex §12).
+  every bullet maps to real, documented content (profile or the supporting library — `handbook/tailoring-guardrails.md`).
   Rephrase and add real, traceable detail, but locked fields, titles, and skill-list gating always hold.
 - **Validation is mandatory / hard gates**: `render.py` auto-runs `check.py` (locked
   identity/employer fields, real titles/skills, bullet counts, one-page PDF). A FAILed render must
@@ -171,7 +171,7 @@ Router:
   understanding of the company AND that JD (concrete real specifics, never invented claims). **One
   cover letter per JD — no shared/boilerplate letter.**
 - **Skill lists**: honor the profile's Approved / Weak / Never lists; JD skills in none of them
-  must be surfaced to the user for categorization, never added silently (full rule: annex §12).
+  must be surfaced to the user for categorization, never added silently (full rule: `handbook/tailoring-guardrails.md`).
 - **Blacklist/log preflight**: before searching or drafting, honor the company blacklist
   (`private/job-search/blacklist.yaml`) and the skip-logs (`applications-log.yaml`,
   `company-search-log.yaml`) — never draft a blacklisted company or re-surface a logged posting.
@@ -197,7 +197,7 @@ Router:
 
 Always use the repo venv `.venv/bin/python` (Python 3.11+). PDF conversion needs LibreOffice
 (override with `JOBHUNT_SOFFICE`). Full cookbook (validate-only, metadata backfill/validate,
-company-level import, log sync/record, DOCX extract, vendoring, hook install, deps): annex §4.
+company-level import, log sync/record, DOCX extract, vendoring, hook install, deps): `handbook/command-cookbook.md`.
 
 ```bash
 # Render a tailored resume (DOCX + PDF) + one cover letter per JD, then auto-validate.
@@ -212,21 +212,21 @@ company-level import, log sync/record, DOCX extract, vendoring, hook install, de
 
 ## Conventions (quick reference)
 
-Each expands in the annex; the bolded name is the canonical section.
+Each expands in a named `handbook/` doc; the bolded name is the canonical section.
 
 - **Memory Map** — agent-memory zones (read/append points), retention, writers; promotion plus
-  **forgetting** (TTL/prune/demotion) enforced by the `gardener` (dry-run). Full table: annex §5.
+  **forgetting** (TTL/prune/demotion) enforced by the `gardener` (dry-run). Full table: `handbook/memory-map.md`.
 - **Sharing Code Across Skills** — skills are self-contained; a skill's `scripts/` **never** imports
   repo-root Python. Pure toolkit modules live once in `scripts/shared/`, vendored (byte-identical)
-  into each skill's `scripts/_vendor/` via `scripts/vendoring/sync_vendored.py`; never edit a copy. Annex §7.
-- **File & Folder Organization** — group files by purpose in a meaningful subfolder (never a generic
-  `scripts/`/`docs/`/`data/`); reason tree-first before creating any file. Detail (incl. the
-  coding-interview 150-char no-hard-wrap rule): annex §8.
+  into each skill's `scripts/_vendor/` via `scripts/vendoring/sync_vendored.py`; never edit a copy. Detail: `handbook/skills-and-vendoring.md`.
+- **File & Folder Organization** — group files by purpose in a meaningful subfolder (never a
+  generic *scripts*/*docs*/*data* bucket); reason tree-first before creating any file. Detail (incl. the
+  coding-interview 150-char no-hard-wrap rule): `handbook/file-organization.md`.
 - **Scratch & Temporary Files** — throwaway work (probes, scraped HTML/JSON, sanity checks) lives ONLY
   under the top-level gitignored **`tmp/`** in purpose-named subfolders (`tmp/ats_scripts/`,
-  `tmp/web_artifacts/`, `tmp/scratch/`) — never the repo root or a tracked/product folder. Annex §9.
+  `tmp/web_artifacts/`, `tmp/scratch/`) — never the repo root or a tracked/product folder. Detail: `handbook/file-organization.md`.
 - **Subagent Budget** — a request that fans out launches **at most 8 subagents total** across all
-  waves; reuse/resume or finish in the parent — never a ninth. Repo-wide cap. Annex §10.
+  waves; reuse/resume or finish in the parent — never a ninth. Repo-wide cap (`handbook/subagent-budget.md`).
 - **Process Folders** — `message-queue/` + `tasks/` (see **Async Collaboration** above) plus the
   memory zones `memory/decisions/` and `memory/known-issues/` (+ same-name `private/` mirrors for
   leak-guarded content): one self-contained item per file, formats in each folder's README. Hit an
@@ -265,4 +265,4 @@ applications/6_drafted/<slug>/                     # multi-role: repeat cover/tx
 ```
 
 Full status-folder table, numeric-prefix rules, per-file (`meta.yaml`, `.txt` section format,
-`source/`) descriptions, and the divergent-role split: `docs/AGENTS-ANNEX.md` §11.
+`source/`) descriptions, and the divergent-role split: `handbook/application-folders.md`.

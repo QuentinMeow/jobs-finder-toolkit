@@ -37,7 +37,7 @@ gaps, all evidenced in the row:
 - `private/benchmark/fixtures/v2/` with the added raw-page + provenance-led
   cases, MANIFEST updated (provenance, SHA-256, replay commands).
 - A pinned stage-task prompt template in
-  `docs/design/stage-benchmarks/protocol.md` (or a new tasks section)
+  `design/stage-benchmarks/protocol.md` (or a new tasks section)
   encoding lessons 3's two rules.
 - One re-run of the S6 row on v2 fixtures with the fetch-time flow allowed,
   recorded in `evals/results/`.

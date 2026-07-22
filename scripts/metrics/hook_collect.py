@@ -4,7 +4,7 @@
 Reads a hook JSON payload from stdin and appends ONE JSON line to
 ``logs/metrics.jsonl``. Metrics are OPT-IN: wire these hooks (SessionStart,
 PostToolUse, Stop) from your local ``.claude/settings.local.json`` (see
-``docs/METRICS.md`` for the metric set and rationale); they are intentionally
+``handbook/metrics.md`` for the metric set and rationale); they are intentionally
 NOT tracked so contributors never run them by default.
 
 Modes (``argv[1]``):

@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (after progress/calendar and email sync)
 - **Area**: email
-- **Source**: `docs/design/application-progress-calendar/execution-plan.md` Stages 4–5
+- **Source**: `design/application-progress-calendar/execution-plan.md` Stages 4–5
 
 ## Goal
 

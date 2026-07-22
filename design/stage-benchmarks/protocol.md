@@ -1,7 +1,7 @@
 # Stage benchmarks (v1) — fine-grained, fixture-pinned measurement
 
 **Status:** adopted 2026-07-20. Successor to end-to-end-only measurement under
-`docs/design/token-usage-modes/benchmark-scenario.md` (which remains the
+`design/token-usage-modes/benchmark-scenario.md` (which remains the
 definition of the *confirmation row*; this protocol adds the per-stage layer
 beneath it). Operating rules inherit from `evals/ab-protocol.md` — matched
 pairs, one pre-registered primary metric, model-pinned runs.

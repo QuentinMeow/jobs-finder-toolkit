@@ -46,7 +46,7 @@ SHA. All future rows compare against that reference, like-for-like.
    the default path; diagnostics and rare flows move to `reference.md`.
 5. **AGENTS.md core/annex split** — core keeps boot-critical invariants
    (safety rules, repo map, common commands, boot sequence); the rest moves
-   to `docs/AGENTS-ANNEX.md` with pointers. **Merge is held** until the
+   to `handbook/README.md` with pointers. **Merge is held** until the
    concurrent worker's in-flight AGENTS.md additions land (see coordination),
    then their additions are ported into the new structure. Budget ratchet on
    the core follows once stable.

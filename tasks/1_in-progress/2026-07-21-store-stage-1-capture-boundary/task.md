@@ -3,7 +3,7 @@
 - **Note**: shipped in PR #50; only the multi-day measurement remains before review
 - **Priority**: P1 (this round)
 - **Area**: harness
-- **Source**: raw-data-layer sign-off 2026-07-21; plan: docs/design/raw-data-layer/execution-plan.md
+- **Source**: raw-data-layer sign-off 2026-07-21; plan: design/raw-data-layer/execution-plan.md
 
 ## Goal
 
@@ -14,7 +14,7 @@ is the narrative source of truth; this file carries the checklist.
 ## Context
 
 Wire capture into every job fetch path per
-docs/design/raw-data-layer/02-job-postings-pipeline.md §1: shared-helper
+design/raw-data-layer/02-job-postings-pipeline.md §1: shared-helper
 sources near-free; Workday/Amazon/Apple/Meta as explicitly costed bespoke
 work (fetch-group manifests; only Greenhouse/Ashby/Lever ever attest
 complete); aggregators + JobSpy as the `scrape` tier; JD fetches as `jd`.

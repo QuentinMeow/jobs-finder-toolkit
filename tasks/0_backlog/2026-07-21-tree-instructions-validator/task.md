@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (this round)
 - **Area**: harness
-- **Source**: docs/design/tree-instructions/README.md (2026-07-21, respecced
+- **Source**: design/tree-instructions/README.md (2026-07-21, respecced
   after adversarial review)
 
 ## Goal
@@ -45,7 +45,7 @@ of truth) instead of a tree walk.
 
 Exporter (`scripts/publish/export_public.py`) gaps:
 
-- `_copy_tree` follows symlinks, so an exported `docs/design/CLAUDE.md`
+- `_copy_tree` follows symlinks, so an exported `design/CLAUDE.md`
   becomes a duplicated regular file (a drift bomb). Extend
   `_regenerate_symlinks` to recreate leaf shims from the router table.
 - Decide/implement `message-queue/` handling in exports: either allowlist the queue
@@ -55,7 +55,7 @@ Exporter (`scripts/publish/export_public.py`) gaps:
 
 Gardener: stale-leaf report via **git commit-churn ratio** (leaf commits vs
 folder commits since leaf's last change), with a whitelist for deliberately
-stable leaves (e.g. `docs/design/` churns weekly by design while its style
+stable leaves (e.g. `design/` churns weekly by design while its style
 leaf should not).
 
 ## Definition of done

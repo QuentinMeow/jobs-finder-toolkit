@@ -4,7 +4,7 @@
 Stdlib-only and idempotent — safe to re-run. Correct links are left untouched, a
 foreign file or a foreign git hook is NEVER clobbered (it is warned about
 instead). This is the one-shot "make my checkout work" step referenced by
-``README.md``, ``docs/PRIVATE_OVERLAY.md``, and ``CONTRIBUTING.md``.
+``README.md``, ``handbook/private-overlay.md``, and ``CONTRIBUTING.md``.
 
 What it does:
   (a) If the private overlay is mounted at ``private/``: symlink the private

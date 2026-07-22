@@ -7,7 +7,7 @@ domain remains planned. All design decisions are resolved; the record lives in
 and a compact summary in [Decisions (resolved)](#13-decisions-resolved).
 The follow-up decision to keep `derived/` out of git supersedes the original
 small-zones assumption. Writing follows
-[docs/design/STYLE.md](../STYLE.md).
+[handbook/doc-style.md](../STYLE.md).
 
 Part of the [raw-data-layer family](README.md). The two consumers of this
 contract are the [job-postings pipeline](02-job-postings-pipeline.md) and the

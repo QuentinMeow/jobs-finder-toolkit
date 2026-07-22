@@ -19,7 +19,7 @@
 | `rw-layout-budget-verdict` | 0 → **1 (re-run)** | 78,104 / 65,141 | 313 / 164 | 27 / 22 | First run: bands/budget/simulate-first all correct (739→704pt in scratch, zero writes) but the user-facing verdict omitted "check.py is the authoritative gate" → FAIL (all-bullets-strict). Fixed by a one-clause protocol strengthening (`19c3ff8`); re-run states it verbatim → PASS. |
 | `rw-bundled-txt-structure` | 1 | 99,675 | 371 | 42 | Three `===` sections; contact→salutation, no subject; paras 96/139 words, 274-word body, check_cover_letter PASS; pypdf page verify; built missing card organically; JD nice-to-have without profile backing omitted. |
 | `rw-skill-gating-weak-never` | 1 | 60,046 | 142 | 15 | False premise caught (JD names neither term); Rust hard-blocked (Never, "even if the JD asked"); Kafka refused (Weak, no JD mention); zero edits (verified); cross-read check.py to confirm gate semantics. |
-| `rw-skill-category-question-consequences` | 1 | 76,525 | 111 | 16 | One question; three consequence labels byte-identical, in order, Other last; stopped without categorizing; followed core→annex §12 pointer on demand (annex discoverability works). |
+| `rw-skill-category-question-consequences` | 1 | 76,525 | 111 | 16 | One question; three consequence labels byte-identical, in order, Other last; stopped without categorizing; followed core→`handbook/tailoring-guardrails.md` pointer on demand (annex discoverability works). |
 | `rw-duplicate-preflight` | 1 | 52,910 | 86 | 11 | Folder-scan detection (not just log), zero writes (verified), refused duplicate slug, offered in-place refresh. |
 | `js-core-shortlist` | 1 | 78,363 | 226 | 18 | Real Stage-1 run (11,370 postings→40 matches); discoveries file with source+url on all 40 rows; ranked presentation with level/YOE/visa caveats; handoff offered, no tailoring. |
 | `js-visa-require-positive` | 1 | 100,668 | 450 | 40 | Diagnosed issue #15 no-op from scoring.py and made the gate real via scratch profile; JD-verified every company: Anthropic genuine, Walmart + xAI negation false-positives excluded with quotes; advisory-label caveats; no silent widening. Two new negation phrasings recorded on issue #15. |
@@ -47,7 +47,7 @@ full suite for a one-clause change.
   was missing, and the tailor run worked from card + baseline instead of the full
   profile — the previously 0-uptake instruction is exercised in 3/3 applicable runs.
 - **Annex discoverability works:** a runner followed the core Guardrail pointer into
-  `docs/AGENTS-ANNEX.md` §12 unprompted for the full skill-list rule.
+  `handbook/tailoring-guardrails.md` unprompted for the full skill-list rule.
 - **Efficiency:** within family of the pre-tiering gate runs (tailor 154k vs 145k —
   this fixture also had no pre-built card; gating 60k vs 43k; category 77k vs 56k;
   duplicate 53k vs 64k; layout 65k vs 63k). No blow-up; boot reads now include the

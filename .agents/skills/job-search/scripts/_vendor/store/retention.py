@@ -1,6 +1,6 @@
 """Retention GC — the config language, the reference-counted sweep, frozen facts.
 
-The store-core Retention contract (``docs/design/raw-data-layer/01-store-core.md``
+The store-core Retention contract (``design/raw-data-layer/01-store-core.md``
 §9) made concrete. Three ideas, kept strictly separated:
 
 1. **A GC expression config** (``retention.yaml`` at the domain root) over the only

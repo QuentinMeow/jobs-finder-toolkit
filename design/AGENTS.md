@@ -1,4 +1,4 @@
-# docs/design/ — local pointers (additive to the root contract)
+# design/ — local pointers (additive to the root contract)
 
 - Before writing, editing, or restructuring ANY design doc here, read
   [`STYLE.md`](STYLE.md) — the binding writing contract for this folder.

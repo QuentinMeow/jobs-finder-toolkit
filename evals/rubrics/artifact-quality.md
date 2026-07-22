@@ -13,7 +13,7 @@ paths. A fresh grader needs only:
    - baseline resume: `config.baseline_path()`
    - supporting library (traceability): the story bank and answer bank under the overlay's
      `interviews/`, plus any role-description reference kept beside the profile
-     (see `docs/AGENTS-ANNEX.md` §12 "supporting library")
+     (see `handbook/tailoring-guardrails.md` "supporting library")
    - tailoring card: `<applications_root>/0_profile/tailoring-card.md`
 
 Grounded in the repo's own gates: `evals/rubrics/judging.md` (strict pass/fail, judge the artifact

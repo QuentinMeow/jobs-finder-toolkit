@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Scenario | `docs/design/token-usage-modes/benchmark-scenario.md` v1.1 (pipeline-state-neutral) |
+| Scenario | `design/token-usage-modes/benchmark-scenario.md` v1.1 (pipeline-state-neutral) |
 | Reference head | `627a393` (Stage-1 state, pre-tiering), worktree checkout |
 | Post-Stage-2 heads | search @ `bbd62a4`; draft @ `e2f7a82` (delta = card-builder story-bank fix, scripts+test only — instruction stack byte-identical) |
 | Model | `claude-sonnet-5` subagents, per the model-pinned protocol |
