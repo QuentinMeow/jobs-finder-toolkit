@@ -38,7 +38,7 @@ PROFILE = """# Profile
 
 ### Never (never include in any resume)
 
-- Languages: Rust, Scala
+- Languages: Rust, Scala, C language, R language
 
 ## Experience
 
@@ -85,6 +85,15 @@ class SkillsDiffTests(unittest.TestCase):
         # Precision guard: bare capitalized words / acronyms are not skills.
         jd = ("About Example Corp\nSenior Software Engineer, Platform\n"
               "Partner with SRE teams and design public APIs and client SDKs.")
+        self.assertEqual(_queue(jd), [])
+
+    def test_slash_separated_degree_requirements_are_not_skills(self):
+        jd = ("A BS/MS/PhD in computer science or equivalent practical "
+              "experience is required.")
+        self.assertEqual(_queue(jd), [])
+
+    def test_single_letter_language_uses_safe_profile_alias(self):
+        jd = "Experience programming in C or R is useful."
         self.assertEqual(_queue(jd), [])
 
     def test_cli_empty_queue_prints_message_and_exits_zero(self):

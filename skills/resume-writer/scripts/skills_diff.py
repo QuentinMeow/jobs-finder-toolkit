@@ -103,6 +103,10 @@ LOWERCASE_CONCEPTS = frozenset({
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9+.#/-]*")
 _CAMEL_RE = re.compile(r"[a-z][A-Z]")
 _PUNCT_TECH_RE = re.compile(r"[/+#]")
+_DEGREE_CHAIN_RE = re.compile(
+    r"^(?:B(?:A|S)|M(?:A|S)|PhD)(?:/(?:B(?:A|S)|M(?:A|S)|PhD))+$",
+    re.I,
+)
 
 
 def _phrase_key(tokens: list[str]) -> str:
@@ -120,6 +124,8 @@ def _is_structural(token: str) -> bool:
 
 def _single_token_counts(token: str) -> bool:
     key = token.lower().strip(".")
+    if _DEGREE_CHAIN_RE.fullmatch(token.replace(".", "")):
+        return False
     if key in LOWERCASE_CONCEPTS:
         return True
     if key in KNOWN_TECH and re.search(r"[A-Z]", token):
@@ -171,6 +177,16 @@ def uncategorized_queue(jd_text: str, profile_text: str) -> list[str]:
                 or check._in_list(phrase, weak)
                 or check._in_list(phrase, never)):
             return True
+        # Store one-letter programming languages with an explicit "language"
+        # suffix: a bare Never token such as "C" can over-match unrelated
+        # resume text, but a JD's standalone "C" / "R" still belongs to that
+        # category and should not be re-queued.
+        if len(phrase) == 1 and phrase.isalpha():
+            language = f"{phrase} language"
+            if (check._in_list(language, approved)
+                    or check._in_list(language, weak)
+                    or check._in_list(language, never)):
+                return True
         # … plus the component-wise Weak semantics the gate uses: a Weak token
         # like "REST/gRPC APIs" is satisfied by a JD "REST APIs".
         return any(check._mentioned_in_jd(w, phrase) for w in weak)
