@@ -1,6 +1,6 @@
 # metadata_editor mis-plans a field insertion after a block-style mapping in a non-final jobs entry
 
-- **Status**: open
+- **Status**: fixed (commit 44d26fa, same branch — _reliable_end_index clamps all plan sites; 3 regression tests) — delete after one PR cycle
 - **Severity**: medium (wasted cost or manual workaround)
 - **Area**: tracker
 - **Source**: application-tracker canary run at-update-one-role-multi-app,
