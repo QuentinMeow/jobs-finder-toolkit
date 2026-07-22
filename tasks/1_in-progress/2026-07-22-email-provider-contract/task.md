@@ -3,6 +3,7 @@
 - **Priority**: P1 (next email round)
 - **Area**: email
 - **Source**: `design/application-progress-calendar/execution-plan.md` Stage 1
+- **Claimed-by**: claude (subagent session 2026-07-22, branch `email/stage-1-provider-contract`)
 
 ## Goal
 
