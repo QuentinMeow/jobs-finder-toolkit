@@ -22,12 +22,11 @@ from __future__ import annotations
 
 import json
 import os
-import math
 import urllib.parse
 
 import capture_hooks
 from common import (JobPosting, http_get_full, http_get_json, parse_dt,
-                    strip_html)
+                    provided_salary_range, strip_html)
 
 
 def _redact_url(url: str, drop_params: tuple[str, ...]) -> str:
@@ -90,58 +89,6 @@ def _date_bucket(max_age_days: float | None) -> str:
     if max_age_days <= 7:
         return "week"
     return "month"
-
-
-def _provided_range(low, high, *, currency=None, period=None, source="source_api"):
-    """Normalize an API-provided salary range without guessing missing bounds."""
-    try:
-        lo = float(low) if low is not None else None
-        hi = float(high) if high is not None else None
-    except (TypeError, ValueError):
-        return None
-    if lo is None and hi is None:
-        return None
-    if any(
-        value is not None and (not math.isfinite(value) or value < 0)
-        for value in (lo, hi)
-    ):
-        return None
-    if lo is not None and hi is not None and lo > hi:
-        return None
-    currency_code = str(currency or "").strip().upper()
-    if len(currency_code) != 3 or not currency_code.isalpha():
-        return None
-    raw_period = str(period or "").strip().lower()
-    period_map = {
-        "annual": "year",
-        "annually": "year",
-        "yearly": "year",
-        "yr": "year",
-        "monthly": "month",
-        "weekly": "week",
-        "daily": "day",
-        "hourly": "hour",
-        "hr": "hour",
-    }
-    normalized_period = period_map.get(raw_period, raw_period)
-    if normalized_period not in {"year", "month", "week", "day", "hour"}:
-        return None
-    limit = 100_000 if normalized_period == "hour" else 100_000_000
-    if any(value is not None and value > limit for value in (lo, hi)):
-        return None
-    return {
-        "min": int(lo) if lo is not None and lo.is_integer() else lo,
-        "max": int(hi) if hi is not None and hi.is_integer() else hi,
-        "currency": currency_code,
-        "period": normalized_period,
-        "source": source,
-        "provenance": {
-            "tier": "market_benchmark",
-            "provider": source,
-            "confidence": "medium",
-            "method": "structured_source_field",
-        },
-    }
 
 
 # --------------------------------------------------------------------------- #
@@ -275,7 +222,7 @@ def fetch_adzuna(query_terms, location, max_age_days):
                 remote=_remote_of((j.get("location") or {}).get("display_name", "")),
                 posted_at=parse_dt(j.get("created")),
                 description=strip_html(j.get("description")),
-                salary_range=_provided_range(
+                salary_range=provided_salary_range(
                     j.get("salary_min"), j.get("salary_max"),
                     source="adzuna_api"),
             ))
@@ -313,7 +260,7 @@ def fetch_jsearch(query_terms, location, max_age_days):
                 posted_at=parse_dt(j.get("job_posted_at_timestamp")
                                    or j.get("job_posted_at_datetime_utc")),
                 description=strip_html(j.get("job_description")),
-                salary_range=_provided_range(
+                salary_range=provided_salary_range(
                     j.get("job_min_salary"), j.get("job_max_salary"),
                     currency=j.get("job_salary_currency"),
                     period=j.get("job_salary_period"),
@@ -439,7 +386,7 @@ def fetch_jobspy(query_terms, max_age_days, jobspy_cfg: dict,
                         else _remote_of(str(g("location") or ""))),
                 posted_at=parse_dt(str(g("date_posted")) if g("date_posted") else None),
                 description=str(g("description") or ""),
-                salary_range=_provided_range(
+                salary_range=provided_salary_range(
                     g("min_amount"), g("max_amount"),
                     currency=g("currency"),
                     period=g("interval"),

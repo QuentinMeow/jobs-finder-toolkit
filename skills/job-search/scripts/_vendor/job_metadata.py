@@ -1032,6 +1032,87 @@ def classify_level(title: str | None) -> tuple[str, str]:
     return "unknown", value.strip() or "Not stated"
 
 
+# ---------------------------------------------------------------------------
+# JD-body level evidence (Decision 3c) — a conservative, EXPLICIT-phrase-only
+# fallback, never a guess. Unlike ``_LEVEL_RULES`` (which reads a bare seniority
+# word from a short TITLE, where "senior"/"staff" alone is unambiguous), a full
+# JD body is long free prose where a bare seniority word is far too noisy (e.g.
+# "our senior leadership team", "you will mentor staff"). Each rule below
+# therefore requires the word to be role-noun-qualified ("Staff Software
+# Engineer") or in an explicit "<level>-level role/position" phrase, or a
+# Google-style level code ("L6") — never a bare seniority word alone.
+# ---------------------------------------------------------------------------
+_JD_LEVEL_ROLE_RE = r"(?:software\s+)?(?:engineer|developer|programmer)\b"
+_JD_BODY_LEVEL_RULES = [
+    ("distinguished", re.compile(
+        rf"\b(?:distinguished|fellow)\s+{_JD_LEVEL_ROLE_RE}|"
+        r"\bthis (?:role|position) is (?:a\s+)?distinguished[- ]level\b|"
+        r"\bdistinguished[- ]level (?:role|position)\b",
+        re.I,
+    )),
+    ("senior_staff", re.compile(
+        rf"\bsenior\s+staff\s+{_JD_LEVEL_ROLE_RE}|"
+        r"\bthis (?:role|position) is (?:a\s+)?senior[- ]staff[- ]level\b|"
+        r"\bsenior[- ]staff[- ]level (?:role|position)\b",
+        re.I,
+    )),
+    ("principal", re.compile(
+        rf"\bprincipal\s+{_JD_LEVEL_ROLE_RE}|"
+        r"\bthis (?:role|position) is (?:a\s+)?principal[- ]level\b|"
+        r"\bprincipal[- ]level (?:role|position)\b",
+        re.I,
+    )),
+    ("staff", re.compile(
+        rf"\bstaff\s+{_JD_LEVEL_ROLE_RE}|"
+        r"\bthis (?:role|position) is (?:a\s+)?staff[- ]level\b|"
+        r"\bstaff[- ]level (?:role|position)\b",
+        re.I,
+    )),
+    ("senior", re.compile(
+        r"\bthis (?:role|position) is (?:a\s+)?senior[- ]level\b|"
+        r"\bsenior[- ]level (?:role|position)\b",
+        re.I,
+    )),
+    ("mid", re.compile(
+        r"\bthis (?:role|position) is (?:a\s+)?mid[- ]level\b|"
+        r"\bmid[- ]level (?:role|position)\b",
+        re.I,
+    )),
+    ("entry", re.compile(
+        r"\bthis (?:role|position) is (?:an?\s+)?entry[- ]level\b|"
+        r"\bentry[- ]level (?:role|position)\b",
+        re.I,
+    )),
+]
+# Google-style ladder codes ("L6"); bounded to a plausible IC range to avoid
+# stray alphanumeric noise ("L1 support tier") reading as a level.
+_JD_BODY_LEVEL_CODE_RE = re.compile(r"\bL([3-9]|10)\b")
+_LEVEL_CODE_MAP = {
+    3: "entry", 4: "mid", 5: "senior", 6: "staff", 7: "senior_staff",
+    8: "principal", 9: "distinguished", 10: "distinguished",
+}
+
+
+def classify_level_from_jd_body(text: str | None) -> tuple[str, str | None]:
+    """Conservative EXPLICIT JD-body level phrase -> ``(normalized, signal)``.
+
+    Returns ``("unknown", None)`` when no explicit phrase is present — the same
+    no-guessing rule used elsewhere (required YOE, salary). Never reads a bare
+    seniority word alone (too noisy in free JD prose); only a role-noun-
+    qualified phrase, an explicit "<level>-level role/position" phrase, or a
+    Google-style level code counts as evidence.
+    """
+    blob = _source_text(text)
+    for normalized, pattern in _JD_BODY_LEVEL_RULES:
+        match = pattern.search(blob)
+        if match:
+            return normalized, match.group(0)
+    code_match = _JD_BODY_LEVEL_CODE_RE.search(blob)
+    if code_match:
+        return _LEVEL_CODE_MAP[int(code_match.group(1))], code_match.group(0)
+    return "unknown", None
+
+
 def infer_level_from_yoe(minimum: int | float | None) -> str:
     """Conservative generic level fallback when a title has no seniority signal."""
     if minimum is None:
@@ -1333,7 +1414,18 @@ def analyze_job_metadata(
             normalized = infer_level_from_yoe(yoe_details["min"])
             level_source, level_confidence = "required_yoe", "low"
         else:
-            level_source, level_confidence = "generic", "low"
+            # Decision 3c: title and YOE are BOTH silent — a conservative,
+            # explicit JD-body level phrase (never a bare seniority word alone)
+            # is a low-confidence fill of last resort, ahead of the "generic"
+            # unknown fallback. Never changes occupation; a phrase-conflict-
+            # with-title review flag is handled by scoring.py (has the profile's
+            # target band, which this config-free module intentionally lacks).
+            jd_level, _jd_signal = classify_level_from_jd_body(description)
+            if jd_level != "unknown":
+                normalized = jd_level
+                level_source, level_confidence = "job_description", "low"
+            else:
+                level_source, level_confidence = "generic", "low"
     if normalized not in NORMALIZED_LEVELS:
         normalized = "unknown"
     low, high = _google_range(normalized, level_entry)

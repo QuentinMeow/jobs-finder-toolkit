@@ -110,6 +110,19 @@ class _StoreCase(unittest.TestCase):
         payload = resolve_blob(self.layout, entity)
         BlobStore(self.layout.blobs).find(payload["blob"]).unlink()
 
+    def _drop_raw_and_derived(self):
+        """Simulate a checkout that only has the committed index/state locally.
+
+        Mirrors the real incident: ``raw/`` + ``derived/`` are gitignored and never
+        reached this machine, while ``index/`` + ``state/`` are committed history.
+        """
+        shutil.rmtree(self.layout.raw, ignore_errors=True)
+        shutil.rmtree(self.layout.derived, ignore_errors=True)
+
+    def _index_rows_at(self, root):
+        idx = domain_layout(root, "jobs").index / "postings.jsonl"
+        return [json.loads(l) for l in idx.read_text().splitlines()][1:]
+
 
 # fictional greenhouse jobs
 def _job(jid, title, loc, content="Build things"):
@@ -422,6 +435,144 @@ class MigrationTests(_StoreCase):
         self.assertIn("migrated_from", ashby_entity)
         self.assertEqual(ashby_entity["migrated_from"]["key"], "gh-900")
         self.assertEqual(ashby_entity["migrated_from"]["ats"], "greenhouse")
+
+
+class IndexPreservationTests(_StoreCase):
+    """Decision 2: the committed index is a durable floor the builder never drops.
+
+    A key surviving only in the pre-existing ``index/postings.jsonl`` — no current
+    entity, no derived on disk, no tombstone — is preserved verbatim at its original
+    ``seq`` and marked ``carried``/``carried_from: index``; a key this build DID
+    materialize always wins its own row.
+    """
+
+    def test_fresh_rebuild_with_index_only_history_is_superset(self):
+        # Establish full derived+index history for gh-111 on a "prior machine".
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        orig_row = [r for r in self._index_rows() if r["key"] == "gh-111"][0]
+        self.assertNotIn("carried", orig_row)
+
+        # New checkout: only the committed index/state made it here (raw/derived
+        # never synced) — then a fresh capture of an UNRELATED posting.
+        self._drop_raw_and_derived()
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(20))
+
+        rc = self._build(["--rebuild"])
+        self.assertEqual(rc, 0)
+
+        # Superset: both the historical index-only key and the freshly built key.
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-222"})
+        rows = {r["key"]: r for r in self._index_rows()}
+        survivor = rows["gh-111"]
+        self.assertTrue(survivor["carried"])
+        self.assertEqual(survivor["carried_from"], "index")
+        self.assertEqual(survivor["seq"], orig_row["seq"])  # original seq preserved
+        # Every other field is preserved verbatim from the old index row.
+        for field in ("company", "title", "location", "first_seen", "last_seen"):
+            self.assertEqual(survivor[field], orig_row[field])
+        # Never fabricated as a derived artifact.
+        self.assertFalse((self.layout.derived / "postings" / "examplecorp"
+                          / "gh-111").exists())
+        fresh_row = rows["gh-222"]
+        self.assertNotIn("carried", fresh_row)
+
+        report = validate_store(self.data_root)
+        self.assertTrue(report.ok, report.errors)
+
+    def test_incremental_also_preserves_index_only_survivor(self):
+        # Same setup, but exercised through the incremental path (not just rebuild).
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        self._drop_raw_and_derived()
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(20))
+
+        rc = self._build([])  # incremental (default mode)
+        self.assertEqual(rc, 0)
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-222"})
+        survivor = [r for r in self._index_rows() if r["key"] == "gh-111"][0]
+        self.assertTrue(survivor["carried"])
+        self.assertEqual(survivor["carried_from"], "index")
+
+    def test_updated_current_entity_replaces_stale_index_row(self):
+        """Built entities win by key — a stale pre-existing index row never wins."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+
+        # Hand-corrupt the live index row to look like ancient, wildly-stale history
+        # (as if the committed index predates a real rename/relocation of this role).
+        idx_path = self.layout.index / "postings.jsonl"
+        lines = idx_path.read_text().splitlines()
+        rows = [json.loads(l) for l in lines]
+        for row in rows:
+            if row.get("key") == "gh-111":
+                row["title"] = "STALE TITLE FROM AN OLD ERA"
+                row["location"] = "Nowhere, XX"
+                row["seq"] = 999
+        atomic_write_text(idx_path, "".join(
+            json.dumps(r, sort_keys=True) + "\n" for r in rows))
+
+        # A fresh capture of the SAME entity (real raw present this run).
+        self._capture_gh([_job(111, "SWE", "Seattle, WA")], _dt(15))
+        rc = self._build(["--rebuild"])
+        self.assertEqual(rc, 0)
+
+        row = [r for r in self._index_rows() if r["key"] == "gh-111"][0]
+        self.assertEqual(row["title"], "SWE")
+        self.assertEqual(row["location"], "Seattle, WA")
+        self.assertNotIn("carried", row)
+        self.assertNotEqual(row["seq"], 999)  # real computed seq, not the stale one
+
+    def test_full_current_input_remains_unchanged(self):
+        """No index-only survivors on a full-raw machine — output is unaffected."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX"),
+                          _job(222, "SRE", "Remote, US")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        rows = self._index_rows()
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertNotIn("carried", row)
+            self.assertNotIn("carried_from", row)
+
+    def test_incremental_and_rebuild_agree_on_index_survivors(self):
+        """Incremental and rebuild compute the identical union + survivor set."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        orig_seq = {r["key"]: r["seq"] for r in self._index_rows()}
+
+        self._drop_raw_and_derived()
+        self._capture_gh([_job(333, "Platform Engineer", "NYC, NY")], _dt(16))
+
+        root_incr = Path(tempfile.mkdtemp(prefix="agree-incr-"))
+        root_rebuild = Path(tempfile.mkdtemp(prefix="agree-rebuild-"))
+        try:
+            shutil.rmtree(root_incr)
+            shutil.copytree(self.data_root, root_incr)
+            shutil.rmtree(root_rebuild)
+            shutil.copytree(self.data_root, root_rebuild)
+
+            rc_incr = bp.main(["--data-root", str(root_incr)])
+            rc_rebuild = bp.main(["--data-root", str(root_rebuild), "--rebuild"])
+            self.assertEqual(rc_incr, 0)
+            self.assertEqual(rc_rebuild, 0)
+
+            rows_incr = self._index_rows_at(root_incr)
+            rows_rebuild = self._index_rows_at(root_rebuild)
+            key = lambda r: r["key"]
+            self.assertEqual(sorted(rows_incr, key=key), sorted(rows_rebuild, key=key))
+
+            survivors = {r["key"] for r in rows_incr if r.get("carried_from") == "index"}
+            self.assertEqual(survivors, {"gh-111", "gh-222"})
+            for k in ("gh-111", "gh-222"):
+                row = [r for r in rows_incr if r["key"] == k][0]
+                self.assertEqual(row["seq"], orig_seq[k])
+            fresh = [r for r in rows_incr if r["key"] == "gh-333"][0]
+            self.assertNotIn("carried", fresh)
+        finally:
+            shutil.rmtree(root_incr, ignore_errors=True)
+            shutil.rmtree(root_rebuild, ignore_errors=True)
 
 
 if __name__ == "__main__":

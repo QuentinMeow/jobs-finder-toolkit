@@ -53,14 +53,22 @@ ASHBY = {"apiVersion": "1", "jobs": [{
     "id": "ax-1", "title": "Platform Engineer", "location": "Remote (US)",
     "jobUrl": "https://jobs.ashbyhq.com/examplecorp/ax-1",
     "descriptionPlain": "Do platform work", "publishedAt": "2026-07-11T00:00:00Z",
-    "isListed": True, "workplaceType": "Remote", "secondaryLocations": []}]}
+    "isListed": True, "workplaceType": "Remote", "secondaryLocations": [],
+    "compensation": {"summaryComponents": [{
+        "compensationType": "Salary", "minValue": 150000, "maxValue": 210000,
+        "currencyCode": "USD", "interval": "1 YEAR",
+    }]}}]}
 
 LEVER = [{
     "id": "lv-1", "text": "Site Reliability Engineer",
     "categories": {"location": "San Francisco, CA"},
     "hostedUrl": "https://jobs.lever.co/examplecorp/lv-1",
     "createdAt": 1720000000000, "descriptionPlain": "Keep it up",
-    "workplaceType": "on-site"}]
+    "additionalPlain": "Salary\n$140,000 - $190,000/year.",
+    "workplaceType": "on-site",
+    "salaryRange": {
+        "min": 140000, "max": 190000, "currency": "USD", "interval": "year",
+    }}]
 
 JOBICY = {"jobs": [{
     "id": 501, "url": "https://jobicy.com/jobs/501-backend", "jobTitle": "Backend Engineer",
@@ -124,6 +132,8 @@ class ParityTests(_IsolatedCapture):
         rows = pp.parse_ashby(body)
         self.assertEqual([_core(j) for j in live], [_core_row(r) for r in rows])
         self.assertEqual(rows[0]["native_id"], "ax-1")
+        self.assertEqual(rows[0]["salary_range"], live[0].salary_range)
+        self.assertEqual(rows[0]["salary_range"]["period"], "year")
 
     def test_lever_parity(self):
         body = json.dumps(LEVER).encode()
@@ -132,6 +142,10 @@ class ParityTests(_IsolatedCapture):
         rows = pp.parse_lever(body)
         self.assertEqual([_core(j) for j in live], [_core_row(r) for r in rows])
         self.assertEqual(rows[0]["native_id"], "lv-1")
+        self.assertEqual(rows[0]["description"], live[0].description)
+        self.assertIn("$140,000 - $190,000/year", rows[0]["description"])
+        self.assertEqual(rows[0]["salary_range"], live[0].salary_range)
+        self.assertEqual(rows[0]["salary_range"]["source"], "lever_api")
 
     def test_jobicy_parity_including_company(self):
         body = json.dumps(JOBICY).encode()

@@ -70,8 +70,8 @@ from common import days_since  # noqa: E402
 from job_metadata import analyze_job_metadata, load_company_levels  # noqa: E402
 from registry import Registry, load_registry  # noqa: E402
 from scoring import (  # noqa: E402
-    ai_company_ok, date_ok, experience_ok, location_ok, score_posting, title_ok,
-    visa_ok,
+    ai_company_ok, date_ok, experience_ok, location_ok, posting_quality_ok,
+    score_posting, title_ok, visa_ok,
 )
 from sources import fetch_company  # noqa: E402
 import snapshot  # noqa: E402  (sibling: pre-filter fetch cache + --refilter helpers)
@@ -613,7 +613,17 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
     """
     as_of = now.date()
     kept, review_postings = [], []
-    n_blacklisted = n_considered = n_recently_searched = n_non_ai = 0
+    n_blacklisted = n_considered = n_recently_searched = n_non_ai = n_low_quality = 0
+    n_occupation_ambiguous_overflow = 0
+    # Decision 3a bounded-rollout guard: the residual `title.occupation_ambiguous`
+    # review family (Member of Technical Staff, generalist titles, ...) preserves
+    # JD semantics instead of a silent hard drop, but a lexicon miss must never
+    # flood the review queue unbounded. The cap is applied only AFTER every other
+    # gate, metadata enrichment, dedupe, and score ordering; applying it here would
+    # let irrelevant early source rows consume the budget and hide later valid
+    # roles. Overflow is counted and surfaced; a profile can tune/disable the cap.
+    occupation_review_cap = (profile.get("titles") or {}).get(
+        "occupation_review_cap", 300)
     ai_native_keys = ctx["ai_native_keys"]
     for p in postings:
         p.filter_assessments = {}
@@ -622,6 +632,11 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
         if canonical_company:
             p.company = canonical_company
         p.age_days = days_since(p.posted_at, now)
+        # Gate 0 (production order matches filter_variants.audit_postings): an
+        # unfilled ATS template must never reach title/scoring as a real match.
+        if not posting_quality_ok(p):
+            n_low_quality += 1
+            continue
         if not title_ok(p, profile):
             continue
         if not date_ok(p, max_age):
@@ -659,12 +674,26 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
     review_postings = dedupe(review_postings)
     kept.sort(key=lambda p: p.score, reverse=True)
     review_postings.sort(key=lambda p: p.score, reverse=True)
+    if occupation_review_cap is not None:
+        cap = max(0, int(occupation_review_cap))
+        bounded_review = []
+        ambiguous_kept = 0
+        for posting in review_postings:
+            if "title_occupation_ambiguous" in posting.review_reasons:
+                if ambiguous_kept >= cap:
+                    n_occupation_ambiguous_overflow += 1
+                    continue
+                ambiguous_kept += 1
+            bounded_review.append(posting)
+        review_postings = bounded_review
     kept = select_diverse(kept, top_k, max_per_company)
     counts = {
         "n_blacklisted": n_blacklisted,
         "n_considered": n_considered,
         "n_recently_searched": n_recently_searched,
         "n_non_ai": n_non_ai,
+        "n_low_quality": n_low_quality,
+        "n_occupation_ambiguous_overflow": n_occupation_ambiguous_overflow,
         "n_review": len(review_postings),
         "review_postings": review_postings,
     }
@@ -686,6 +715,8 @@ def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
         "n_considered": counts["n_considered"],
         "n_recently_searched": counts["n_recently_searched"],
         "n_review": counts.get("n_review", 0),
+        "n_occupation_ambiguous_overflow": counts.get(
+            "n_occupation_ambiguous_overflow", 0),
         "max_per_company": max_per_company,
         "errors": errors,
     }
@@ -738,6 +769,22 @@ def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
     return "\n".join(lines)
 
 
+def _config_layer_present() -> bool:
+    """True when a REAL (non-example) config layer was discovered.
+
+    Distinguishes "no config module" / "only the tracked example config" (both
+    normal — CI and a bare public checkout) from "a real config.yaml exists but
+    left data_root unset", which is the actual disabled-and-silent case Decision
+    1 wants surfaced.
+    """
+    if config is None:
+        return False
+    try:
+        return config.config_path() != config.EXAMPLE_CONFIG
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def run_post_fetch_store_build() -> tuple[str | None, dict]:
     """Post-fetch incremental store build (FETCH path only). Totally guarded.
 
@@ -747,6 +794,13 @@ def run_post_fetch_store_build() -> tuple[str | None, dict]:
     never an error. Store disabled ⇒ no line ⇒ byte-identical output to pre-store.
     The build can add a few minutes at scale; the ``store: building index...`` notice
     tells the user why the run is still working.
+
+    Decision 1: ``config.data_root()`` keeps NO default (a correct CI/public-tree
+    safety invariant — it must never write into a tracked dir), but a real config
+    layer that simply never set ``paths.data_root``/``JOBHUNT_DATA_ROOT`` used to
+    no-op in total silence. A real config layer being present now gets a loud,
+    non-fatal stderr notice on this fetch path; the disabled default itself is
+    unchanged (a bare/example checkout still prints nothing).
     """
     if config is None:
         return None, {}
@@ -755,6 +809,12 @@ def run_post_fetch_store_build() -> tuple[str | None, dict]:
     except Exception:  # noqa: BLE001
         return None, {}
     if data_root is None:
+        if _config_layer_present():
+            print(
+                "store: not configured (set paths.data_root or JOBHUNT_DATA_ROOT "
+                "to capture raw postings) — search results are unaffected",
+                file=sys.stderr,
+            )
         return None, {}
     try:
         import build_postings
@@ -833,6 +893,14 @@ def _json_rows_with_store_key(kept, url_map) -> list[dict]:
         d["store_key"] = key
         rows.append(d)
     return rows
+
+
+def write_json_output(path: str | Path, kept, url_map) -> Path:
+    """Write handoff JSON, creating a caller-supplied output directory if needed."""
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(_json_rows_with_store_key(kept, url_map), indent=2))
+    return out
 
 
 def write_review_report(postings, cache_dir: Path, profile: str) -> Path | None:
@@ -1156,6 +1224,16 @@ def main() -> int:
               f"{counts['n_considered']} already-considered + "
               f"{counts['n_recently_searched']} recently-searched{extra} postings.",
               file=sys.stderr)
+    if counts.get("n_occupation_ambiguous_overflow"):
+        cap = (profile.get("titles") or {}).get("occupation_review_cap", 300)
+        print(
+            f"NOTE: {counts['n_occupation_ambiguous_overflow']} ambiguous-"
+            f"occupation posting(s) exceeded the review cap ({cap}) and were "
+            "omitted from the bounded review report after gating and scoring; "
+            "the overflow count remains visible. Raise "
+            "titles.occupation_review_cap to include them.",
+            file=sys.stderr,
+        )
 
     meta = build_meta(profile, args, stage=stage, n_companies=n_companies,
                       aggregators=agg_labels, n_raw=n_raw, counts=counts,
@@ -1173,9 +1251,8 @@ def main() -> int:
     print(f"Wrote {len(kept)} matches -> {out_path}", file=sys.stderr)
 
     if args.json_out:
-        Path(args.json_out).write_text(
-            json.dumps(_json_rows_with_store_key(kept, store_url_map), indent=2))
-        print(f"Wrote JSON -> {args.json_out}", file=sys.stderr)
+        json_path = write_json_output(args.json_out, kept, store_url_map)
+        print(f"Wrote JSON -> {json_path}", file=sys.stderr)
 
     # Default stdout is the compact contract (5-line summary + top-K table); the full
     # Markdown report always lands in the discoveries file, and --print-full restores

@@ -244,6 +244,141 @@ variants:
       decision: no_match
       accepted: false
 
+  - id: title-generalist-occupation-ambiguous-review
+    domain: title
+    # Decision 3a residual: a plausible/technical UNKNOWN occupation that is
+    # neither a clean include match nor a definite non-technical-occupation
+    # lexicon hit (e.g. an MTS-style generalist title) is a conservative
+    # review, never a silent hard drop — JD semantics still reach enrichment.
+    input:
+      title: Member of Technical Staff, Generalist
+      profile:
+        titles:
+          include: [software engineer, platform engineer]
+          exclude: [manager, director]
+          exclude_neutralize: [member of technical staff]
+    expect:
+      decision: review
+      accepted: true
+      review_contains: [title_occupation_ambiguous]
+
+  - id: title-nontechnical-recruiter-rejected
+    domain: title
+    # Decision 3a: a definite non-technical-occupation lexicon hit (generic,
+    # evidence-bearing occupation family — never a per-title alias) with no
+    # co-occurring engineering role noun stays a hard no_match, matching the
+    # asymmetry already given to the profile's own explicit excludes.
+    input:
+      title: Senior Technical Recruiter
+      profile:
+        titles:
+          include: [software engineer, platform engineer]
+          exclude: [manager, director]
+    expect:
+      decision: no_match
+      accepted: false
+
+  - id: quality-placeholder-title-rejected
+    domain: quality
+    # Decision (e): an unfilled ATS template with a literal bracketed title
+    # placeholder is STRONG evidence and a hard no_match — never accepted as
+    # a real posting regardless of what else the JD body says.
+    input:
+      title: <Job Title>
+      description: >-
+        <Job Title> at Example Telecom. Insert the job title here. Insert the
+        job title here. Insert the job title here.
+    expect:
+      decision: no_match
+      accepted: false
+
+  - id: quality-placeholder-compensation-review
+    domain: quality
+    # A bare compensation placeholder alone is weaker evidence than a literal
+    # title placeholder or a repeated template block, so it goes to review
+    # rather than a silent hard drop.
+    input:
+      title: Software Engineer
+      description: >-
+        Join Example Telecom's platform team building reliable distributed
+        systems. Compensation for this role is $XXX,XXX depending on
+        experience and location.
+    expect:
+      decision: review
+      accepted: true
+      review_contains: [posting_template_placeholder]
+
+  - id: quality-lorem-ipsum-rejected
+    domain: quality
+    input:
+      title: Software Engineer
+      description: Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+    expect:
+      decision: no_match
+      accepted: false
+
+  - id: quality-repeated-boilerplate-review
+    domain: quality
+    input:
+      title: Software Engineer
+      description: >-
+        Build reliable systems. Benefits vary by location and applicable local
+        law. Benefits vary by location and applicable local law. Benefits vary
+        by location and applicable local law.
+    expect:
+      decision: review
+      accepted: true
+      review_contains: [posting_template_placeholder]
+
+  - id: title-broad-domain-mts-occupation-review
+    domain: title
+    input:
+      title: Lead Member of Technical Staff, Compute Infrastructure
+      profile:
+        titles:
+          include: [software engineer, infrastructure]
+          exclude: [manager, director, staff]
+          exclude_neutralize: [member of technical staff]
+    expect:
+      decision: review
+      accepted: true
+      review_contains: [title_occupation_ambiguous]
+
+  - id: location-remote-hybrid-mixed-country-review
+    domain: location
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    input:
+      title: Platform Engineer
+      location: Fairview, WA; Toronto, Canada
+      description: This role may work remotely and follows a hybrid schedule.
+      workplace_hint: unknown
+    expect:
+      decision: review
+      review_contains: [remote_hybrid_conflict, mixed_us_foreign_scope]
+
+  - id: location-remote-onsite-hybrid-mixed-country-review
+    domain: location
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    input:
+      title: Technical Trainer
+      location: Remote, United States; Remote, Canada
+      description: >-
+        This is a fully remote role that can be performed remotely. Team
+        members also follow a hybrid schedule, work in office five days each
+        month, and may be required onsite for workshops.
+      workplace_hint: remote
+    expect:
+      decision: review
+      review_contains: [remote_onsite_conflict, remote_hybrid_conflict, mixed_us_foreign_scope]
+
   - id: yoe-general-required
     domain: yoe
     input:

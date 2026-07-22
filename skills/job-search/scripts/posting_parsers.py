@@ -12,7 +12,7 @@ Each parser returns ``list[Row]`` where a ``Row`` is a plain dict with the keys:
 
     source, operation, native_id, title, url, location,
     posted_at (isoformat|None), company_name (source-claimed|None),
-    description (plain text), workplace_raw, salary_text
+    description (plain text), workplace_raw, salary_text, salary_range
 
 ``native_id`` is the platform identifier the identity layer keys on
 (``posting_identity``); ``description`` is already ``strip_html``-flattened plain
@@ -34,7 +34,7 @@ import json
 import re
 import urllib.parse
 
-from common import parse_dt, strip_html
+from common import ashby_salary_range, parse_dt, provided_salary_range, strip_html
 
 
 def _flex_date(value) -> str | None:
@@ -53,7 +53,7 @@ def _flex_date(value) -> str | None:
 # ── versioned JD-text normalizer ─────────────────────────────
 # Bump = schema-change treatment (recorded per entity; a bump invalidates nothing
 # retroactively because hashes are recomputed on every rebuild).
-NORMALIZER_VERSION = 1
+NORMALIZER_VERSION = 2
 
 _WS_RE = re.compile(r"\s+")
 
@@ -78,7 +78,7 @@ def content_hash(raw: str | None) -> str:
 # ── row helper ───────────────────────────────────────────────
 def _row(source, operation, *, native_id, title, url, location,
          posted_at, company_name=None, description="", workplace_raw=None,
-         salary_text=None) -> dict:
+         salary_text=None, salary_range=None) -> dict:
     dt = parse_dt(posted_at)
     return {
         "source": source,
@@ -92,6 +92,7 @@ def _row(source, operation, *, native_id, title, url, location,
         "description": description or "",
         "workplace_raw": (workplace_raw or None),
         "salary_text": (salary_text or None),
+        "salary_range": (salary_range or None),
     }
 
 
@@ -160,6 +161,7 @@ def parse_ashby(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
                         or strip_html(j.get("descriptionHtml"))),
             workplace_raw=j.get("workplaceType"),
             salary_text=salary,
+            salary_range=ashby_salary_range(comp),
         ))
     return out
 
@@ -175,9 +177,17 @@ def parse_lever(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
         cats = j.get("categories") or {}
         rng = j.get("salaryRange") or {}
         salary = None
+        salary_range = None
         if rng.get("min") is not None or rng.get("max") is not None:
             salary = (f"{rng.get('currency', '')} {rng.get('min')}"
                       f"-{rng.get('max')}").strip()
+            salary_range = provided_salary_range(
+                rng.get("min"),
+                rng.get("max"),
+                currency=rng.get("currency"),
+                period=rng.get("interval"),
+                source="lever_api",
+            )
         out.append(_row(
             "lever", "board",
             native_id=j.get("id"),
@@ -185,10 +195,13 @@ def parse_lever(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
             url=j.get("hostedUrl") or j.get("applyUrl", ""),
             location=cats.get("location", "") or "",
             posted_at=j.get("createdAt"),
-            description=(j.get("descriptionPlain")
-                        or strip_html(j.get("description"))),
+            description="\n\n".join(part for part in (
+                j.get("descriptionPlain") or strip_html(j.get("description")),
+                j.get("additionalPlain") or strip_html(j.get("additional")),
+            ) if part),
             workplace_raw=j.get("workplaceType"),
             salary_text=salary,
+            salary_range=salary_range,
         ))
     return out
 

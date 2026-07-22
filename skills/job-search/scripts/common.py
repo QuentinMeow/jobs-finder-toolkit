@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import re
 import time
 import urllib.error
@@ -212,6 +213,106 @@ def days_since(dt: datetime | None, now: datetime | None = None) -> float | None
         return None
     now = now or datetime.now(timezone.utc)
     return (now - dt).total_seconds() / 86400.0
+
+
+# --------------------------------------------------------------------------- #
+# Structured, source-native compensation (shared by every fetcher/aggregator
+# that reads a STRUCTURED pay field off a board API — never an invented value).
+# --------------------------------------------------------------------------- #
+def provided_salary_range(low, high, *, currency=None, period=None,
+                          source="source_api"):
+    """Normalize an API-provided salary range without guessing missing bounds.
+
+    Accepts a range ONLY when it carries an explicit currency AND an explicit
+    period; either missing means ``None`` (stay unknown) — the same no-invented-
+    currency/period safeguard used for JD-text compensation parsing, so a
+    source-native structured range can never be more permissive than a JD-body
+    one. Shared by the cross-company aggregators (Adzuna/JSearch/JobSpy) and any
+    company-board fetcher with its own structured comp field (e.g. Ashby).
+    """
+    try:
+        lo = float(low) if low is not None else None
+        hi = float(high) if high is not None else None
+    except (TypeError, ValueError):
+        return None
+    if lo is None and hi is None:
+        return None
+    if any(
+        value is not None and (not math.isfinite(value) or value < 0)
+        for value in (lo, hi)
+    ):
+        return None
+    if lo is not None and hi is not None and lo > hi:
+        return None
+    currency_code = str(currency or "").strip().upper()
+    if len(currency_code) != 3 or not currency_code.isalpha():
+        return None
+    raw_period = str(period or "").strip().lower()
+    period_map = {
+        "annual": "year",
+        "annually": "year",
+        "yearly": "year",
+        "yr": "year",
+        "monthly": "month",
+        "weekly": "week",
+        "daily": "day",
+        "hourly": "hour",
+        "hr": "hour",
+    }
+    normalized_period = period_map.get(raw_period, raw_period)
+    if normalized_period not in {"year", "month", "week", "day", "hour"}:
+        return None
+    limit = 100_000 if normalized_period == "hour" else 100_000_000
+    if any(value is not None and value > limit for value in (lo, hi)):
+        return None
+    return {
+        "min": int(lo) if lo is not None and lo.is_integer() else lo,
+        "max": int(hi) if hi is not None and hi.is_integer() else hi,
+        "currency": currency_code,
+        "period": normalized_period,
+        "source": source,
+        "provenance": {
+            "tier": "market_benchmark",
+            "provider": source,
+            "confidence": "medium",
+            "method": "structured_source_field",
+        },
+    }
+
+
+_COMP_PERIOD_UNIT_RE = re.compile(r"(year|month|week|day|hour)", re.I)
+
+
+def ashby_salary_range(compensation: dict | None) -> dict | None:
+    """Normalize Ashby's explicit salary component without guessing.
+
+    Some boards expose ``summaryComponents`` while others expose only the
+    per-tier ``components`` list. Both carry the same source-native fields.
+    Only a salary component with bounds, currency, and interval is accepted.
+    """
+    if not isinstance(compensation, dict):
+        return None
+    components = list(compensation.get("summaryComponents") or [])
+    if not components:
+        for tier in compensation.get("compensationTiers") or []:
+            if isinstance(tier, dict):
+                components.extend(tier.get("components") or [])
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        if str(component.get("compensationType") or "").lower() != "salary":
+            continue
+        match = _COMP_PERIOD_UNIT_RE.search(str(component.get("interval") or ""))
+        parsed = provided_salary_range(
+            component.get("minValue"),
+            component.get("maxValue"),
+            currency=component.get("currencyCode"),
+            period=match.group(1).lower() if match else None,
+            source="ashby_api",
+        )
+        if parsed:
+            return parsed
+    return None
 
 
 # --------------------------------------------------------------------------- #

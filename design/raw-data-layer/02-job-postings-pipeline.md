@@ -112,6 +112,15 @@ jobs/
 └── state/                # read-cursors, build ledger, key registry
 ```
 
+`index/postings.jsonl` is also the durable query floor when a checkout has
+the tracked index but not the gitignored raw or derived zones. A build unions
+newly materialized entities with pre-existing index-only rows by key: current
+entities win, while surviving index-only rows retain their original sequence
+and are marked `carried_from: index`. Those rows remain honestly
+derived-absent—no synthetic `posting.yaml` is created—and their stale
+`last_seen` still requires a live-board check before action. `by-day/` and
+triage files remain event-derived and need not contain index-only history.
+
 **Pros:** classifier fixes retroactively re-label all history; "new since my
 last review" is one script call; JDs are fetched once and on disk when
 drafting starts; every application links to a durable posting record; any
@@ -206,6 +215,8 @@ last_seen: 2026-07-21T09:30:00Z      #   dates never overwrite it: reposts reset
 facts:                               # parsed verbatim from the source
   posted_at: 2026-07-12
   salary_text: "$140,000 - $170,000"
+  salary_range:                      # only when currency + period are explicit
+    {min: 140000, max: 170000, currency: USD, period: year, source: ats_api}
   workplace_raw: remote              # what the source CLAIMED
 opinions:                            # our classifiers — rebuildable, stamped
   visa: {label: unclear, hits: [], by: visa.py@<sha>, from: <fetch_id>}
@@ -283,7 +294,7 @@ glance.
 ## 4. Observations and timeline (committed core)
 
 The builder records only **directly observed facts**: first-seen, seen,
-field-changed (with old/new values; a JD text change also snapshots the
+field-changed (with old/new values, including structured salary changes; a JD text change also snapshots the
 prior version), written to each posting's event log and the by-day index.
 No inference, no absence-reasoning — that's the extension below. This alone
 answers "what appeared this week", "when did the salary text change", and

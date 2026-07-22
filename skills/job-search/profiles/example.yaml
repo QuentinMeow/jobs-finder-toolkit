@@ -43,6 +43,11 @@ titles:
     - research scientist
   exclude_neutralize:      # phrases stripped BEFORE applying exclude, so their words
     - member of technical staff   # don't trip a rule (MTS is an IC title, not "staff" level)
+  # occupation_review_cap: 300   # optional bounded-rollout guard (default 300): caps
+    # how many "plausible/technical but unknown occupation" titles (e.g. generalist
+    # MTS-style titles that are neither a clean include match nor a definite non-
+    # technical occupation) are preserved to the review queue in one run. Overflow
+    # beyond the cap is counted and printed to stderr, never silently dropped.
 
 seniority:
   target: [mid, senior]    # desired level band (mid..senior here)

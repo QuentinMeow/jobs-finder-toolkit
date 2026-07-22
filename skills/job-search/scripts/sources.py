@@ -15,8 +15,10 @@ import urllib.request
 from datetime import datetime, timezone
 
 import capture_hooks
-from common import (USER_AGENT, JobPosting, http_get, http_get_full, http_get_json,
-                    http_post_json, http_post_json_full, parse_dt, strip_html)
+from common import (USER_AGENT, JobPosting, ashby_salary_range, http_get,
+                    http_get_full, http_get_json, http_post_json,
+                    http_post_json_full, parse_dt, provided_salary_range,
+                    strip_html)
 
 # Default search terms used by big-tech fetchers (Workday / Amazon) so we query a
 # few relevant slices of a huge board instead of pulling every posting. Companies
@@ -152,6 +154,7 @@ def fetch_ashby(company: str, token: str) -> list[JobPosting]:
             remote=_remote_from(loc, j.get("isRemote"), j.get("workplaceType")),
             posted_at=parse_dt(j.get("publishedAt")),
             description=desc,
+            salary_range=ashby_salary_range(j.get("compensation")),
         ))
     return out
 
@@ -182,7 +185,10 @@ def fetch_lever(company: str, token: str) -> list[JobPosting]:
     for j in data:
         cats = j.get("categories") or {}
         loc = cats.get("location", "") or ""
-        desc = j.get("descriptionPlain") or strip_html(j.get("description"))
+        body = j.get("descriptionPlain") or strip_html(j.get("description"))
+        additional = j.get("additionalPlain") or strip_html(j.get("additional"))
+        desc = "\n\n".join(part for part in (body, additional) if part)
+        salary = j.get("salaryRange") or {}
         out.append(JobPosting(
             source="lever",
             company=company,
@@ -192,6 +198,13 @@ def fetch_lever(company: str, token: str) -> list[JobPosting]:
             remote=_remote_from(loc, workplace=j.get("workplaceType")),
             posted_at=parse_dt(j.get("createdAt")),
             description=desc,
+            salary_range=provided_salary_range(
+                salary.get("min"),
+                salary.get("max"),
+                currency=salary.get("currency"),
+                period=salary.get("interval"),
+                source="lever_api",
+            ),
         ))
     return out
 

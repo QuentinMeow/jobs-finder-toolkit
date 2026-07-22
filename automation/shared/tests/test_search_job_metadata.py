@@ -10,8 +10,7 @@ for path in (SEARCH_SCRIPTS, SEARCH_VENDOR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from aggregators import _provided_range  # noqa: E402
-from common import JobPosting  # noqa: E402
+from common import JobPosting, provided_salary_range  # noqa: E402
 from job_metadata import validate_meta  # noqa: E402
 from scoring import experience_ok, parse_min_required_years, score_posting  # noqa: E402
 from search_jobs import enrich_posting_metadata  # noqa: E402
@@ -63,13 +62,13 @@ class SearchJobMetadataTests(unittest.TestCase):
 
     def test_aggregator_rejects_malformed_or_ambiguous_ranges(self):
         invalid = (
-            _provided_range(-1, 10, currency="USD", period="year"),
-            _provided_range(math.nan, 10, currency="USD", period="year"),
-            _provided_range(20, 10, currency="USD", period="year"),
-            _provided_range(10, 20, currency=None, period="year"),
-            _provided_range(10, 20, currency="USD", period=None),
-            _provided_range(10, 20, currency="US", period="year"),
-            _provided_range(10, 20, currency="USD", period="mixed"),
+            provided_salary_range(-1, 10, currency="USD", period="year"),
+            provided_salary_range(math.nan, 10, currency="USD", period="year"),
+            provided_salary_range(20, 10, currency="USD", period="year"),
+            provided_salary_range(10, 20, currency=None, period="year"),
+            provided_salary_range(10, 20, currency="USD", period=None),
+            provided_salary_range(10, 20, currency="US", period="year"),
+            provided_salary_range(10, 20, currency="USD", period="mixed"),
         )
         self.assertEqual(invalid, (None,) * len(invalid))
 
@@ -84,7 +83,7 @@ class SearchJobMetadataTests(unittest.TestCase):
                 "Requires at least 5 years of professional experience. "
                 "The annual base salary range is USD $150,000-$200,000 per year."
             ),
-            salary_range=_provided_range(
+            salary_range=provided_salary_range(
                 140000,
                 190000,
                 currency="USD",

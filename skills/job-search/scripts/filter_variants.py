@@ -17,11 +17,12 @@ from job_metadata import (  # noqa: E402
     assess_required_yoe,
     assess_sponsorship,
 )
+from common import days_since, parse_dt  # noqa: E402
 from location import assess_location  # noqa: E402
-from scoring import assess_title  # noqa: E402
+from scoring import assess_posting_quality, assess_title  # noqa: E402
 
 CORPUS_PATH = HERE.parent / "filter_variants" / "corpus.yaml"
-DOMAINS = {"location", "sponsorship", "title", "yoe"}
+DOMAINS = {"location", "sponsorship", "title", "yoe", "quality"}
 
 _LOCATION_MARKER_RE = re.compile(
     r"\b(?:remote|remotely|hybrid|distributed|anywhere|worldwide|"
@@ -98,6 +99,8 @@ def run_case(case: dict) -> dict:
             inputs.get("title"), (inputs.get("profile") or {}).get("titles"))
     if domain == "yoe":
         return assess_required_yoe(inputs.get("text"))
+    if domain == "quality":
+        return assess_posting_quality(inputs.get("title"), inputs.get("description"))
     raise ValueError(f"unsupported variant domain: {domain}")
 
 
@@ -179,6 +182,9 @@ def structural_signature(domain: str, inputs: dict, actual: dict) -> str:
             str(actual.get("verdict") or ""),
             ",".join(sorted({_rule_family(r) for r in actual.get("rule_ids", [])})),
         ]
+    elif domain == "quality":
+        parts.append(
+            ",".join(sorted({_rule_family(r) for r in actual.get("rule_ids", [])})))
     else:  # yoe
         parts.append(str(actual.get("requirement_kind") or ""))
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
@@ -204,11 +210,15 @@ def audit_postings(
     postings: list[dict],
     profile: dict,
     corpus: dict,
+    *,
+    max_age: float | None = None,
+    now=None,
 ) -> list[dict]:
     """Return grouped, unlabeled signal-bearing variants from a private snapshot.
 
     The audit replays the SAME gate order as production
-    (``search_jobs.filter_score_rank``): title -> location -> sponsorship -> YOE.
+    (``search_jobs.filter_score_rank``): quality -> title -> date -> location ->
+    sponsorship -> YOE.
     A posting the production title gate would reject never generates a downstream
     location/sponsorship/YOE variant; a definite location ``no_match`` short-
     circuits the sponsorship/YOE gates exactly as production drops the row before
@@ -236,6 +246,17 @@ def audit_postings(
         description = str(posting.get("description") or "")
         location = str(posting.get("location") or "")
 
+        # --- Gate 0: posting quality (mirrors scoring.posting_quality_ok) -
+        quality_case = {"domain": "quality",
+                        "input": {"title": title, "description": description}}
+        quality_actual = run_case(quality_case)
+        if quality_actual["decision"] == "no_match":
+            continue  # an unfilled ATS template is dropped before any other gate
+        if quality_actual["decision"] == "review":
+            _add_pending(
+                pending, "quality", quality_case["input"], quality_actual, known,
+                posting, _excerpt(description, _LOCATION_MARKER_RE))
+
         # --- Gate 1: title (mirrors scoring.title_ok) ---------------------
         title_case = {"domain": "title", "input": {"title": title, "profile": profile}}
         title_actual = run_case(title_case)
@@ -245,6 +266,12 @@ def audit_postings(
             _add_pending(
                 pending, "title", title_case["input"], title_actual, known,
                 posting, title)
+
+        # --- Gate 1b: posting age (mirrors scoring.date_ok) ---------------
+        posted_at = parse_dt(posting.get("posted_at"))
+        age_days = days_since(posted_at, now) if posted_at and now else None
+        if max_age is not None and age_days is not None and age_days > max_age:
+            continue
 
         # --- Gate 2: location (mirrors scoring.location_ok) ---------------
         hint_trusted = not str(posting.get("source") or "").startswith("jobspy:")
@@ -327,3 +354,133 @@ def _add_pending(
             },
         }
     pending[key]["count"] += 1
+
+
+def _reject_family(domain: str, actual: dict) -> str:
+    """Coarse ``domain:rule-family`` key for a first-reject hard `no_match`.
+
+    Deliberately coarser than `structural_signature` (no confidence/evidence
+    split needed here) — this groups every hard-reject variant of the SAME rule
+    family (e.g. every ``title.excluded.*`` literal) under one census row.
+    """
+    # Location ``rule_ids`` begin with evidence channels (for example an ATS
+    # workplace hint), not the reason the row failed. The decisive no-match
+    # classification is its category (foreign/other_us); using the first rule ID
+    # produced misleading census families such as ``location:ats_hint_hybrid``.
+    if domain == "location":
+        return f"location:{actual.get('category') or 'unknown'}"
+    if domain == "yoe":
+        return "yoe:exceeds_cap"
+    rule_ids = actual.get("rule_ids") or []
+    if rule_ids:
+        return f"{domain}:{_rule_family(rule_ids[0])}"
+    verdict = actual.get("verdict")
+    return f"{domain}:{verdict}" if verdict else domain
+
+
+def first_reject_census(
+    postings: list[dict],
+    profile: dict,
+    *,
+    sample_size: int = 5,
+    max_age: float | None = None,
+    now=None,
+) -> dict:
+    """Replay the production gate order and report every hard `no_match`.
+
+    Decision 3b: unlike `audit_postings` (signal-bearing `review` rows only,
+    which SKIPS a title/location/sponsorship/YOE `no_match` outright), this
+    walks the SAME gate order (quality -> title -> date -> location -> sponsorship ->
+    YOE, mirroring `search_jobs.filter_score_rank`) and records, per FIRST-
+    reject rule family, the total count and a small, DETERMINISTIC sample (with
+    a JD excerpt) — the artifact needed to check false-negative recall, since
+    "snapshot audit clean" from `audit_postings` alone cannot speak to what the
+    hard gates silently dropped. Production gate order is untouched; a posting
+    that never reaches a later gate is never counted under that gate.
+    """
+    titles_cfg = profile.get("titles") or {}
+    loc_cfg = profile.get("location", {}) or {}
+    location_policy = {
+        "metro": loc_cfg.get("preferred") or [],
+        "allow_us_remote": loc_cfg.get("allow_remote", True),
+        "us_only": loc_cfg.get("us_only", False),
+        "require_match": loc_cfg.get("require_match", False),
+    }
+    visa_cfg = profile.get("visa", {}) or {}
+    needs_sponsorship = bool(visa_cfg.get("needs_sponsorship"))
+    cap = profile.get("max_years_experience")
+
+    families: dict[str, dict] = {}
+
+    def _record(family: str, posting: dict, excerpt: str) -> None:
+        entry = families.setdefault(family, {"count": 0, "candidates": []})
+        entry["count"] += 1
+        signature = hashlib.sha256(
+            f"{posting.get('source')}|{posting.get('url')}|{posting.get('title')}"
+            .encode("utf-8")
+        ).hexdigest()
+        entry["candidates"].append((signature, {
+            "source": posting.get("source"),
+            "company": posting.get("company"),
+            "title": posting.get("title"),
+            "url": posting.get("url"),
+            "location": posting.get("location"),
+            "excerpt": excerpt,
+        }))
+
+    for posting in postings:
+        title = str(posting.get("title") or "")
+        description = str(posting.get("description") or "")
+        location = str(posting.get("location") or "")
+
+        quality_actual = assess_posting_quality(title, description)
+        if quality_actual["decision"] == "no_match":
+            _record(_reject_family("quality", quality_actual), posting,
+                    _excerpt(description, _LOCATION_MARKER_RE))
+            continue
+
+        title_actual = run_case(
+            {"domain": "title", "input": {"title": title, "profile": profile}})
+        if title_actual["decision"] == "no_match":
+            _record(_reject_family("title", title_actual), posting, title)
+            continue
+
+        posted_at = parse_dt(posting.get("posted_at"))
+        age_days = days_since(posted_at, now) if posted_at and now else None
+        if max_age is not None and age_days is not None and age_days > max_age:
+            _record("date:older_than_window", posting, title)
+            continue
+
+        hint_trusted = not str(posting.get("source") or "").startswith("jobspy:")
+        location_actual = assess_location(
+            location, location_policy, title=title, description=description,
+            workplace_hint=posting.get("remote"), hint_trusted=hint_trusted,
+        ).to_dict()
+        if location_actual["decision"] == "no_match":
+            _record(_reject_family("location", location_actual), posting,
+                    _excerpt(description, _LOCATION_MARKER_RE))
+            continue
+
+        if needs_sponsorship:
+            sponsorship = assess_sponsorship(description)
+            if sponsorship["decision"] == "no_match":
+                _record(_reject_family("sponsorship", sponsorship), posting,
+                        _excerpt(description, _SPONSOR_MARKER_RE))
+                continue
+
+        blob = "\n".join(x for x in (title, description) if x)
+        yoe = assess_required_yoe(blob, cap=int(cap) if cap is not None else None)
+        if yoe["decision"] == "no_match":
+            _record(_reject_family("yoe", yoe), posting,
+                    _excerpt(blob, _YOE_MARKER_RE))
+
+    report = []
+    for family in sorted(families):
+        entry = families[family]
+        sample = [example for _sig, example in
+                  sorted(entry["candidates"], key=lambda item: item[0])[:sample_size]]
+        report.append({"family": family, "count": entry["count"], "sample": sample})
+    return {
+        "total_rejected": sum(entry["count"] for entry in families.values()),
+        "families": report,
+    }

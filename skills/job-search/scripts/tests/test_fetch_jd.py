@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 
 # Make the sibling script importable (skills/job-search/scripts/).
 _SCRIPTS_DIR = Path(__file__).resolve().parents[1]
@@ -265,6 +266,27 @@ class CliTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertFalse(out.exists())
         self.assertIn("could not fetch", stderr.lower())
+
+    def test_jobicy_uses_api_description_not_noisy_html_page(self):
+        import aggregators
+        prior_fetch = aggregators.fetch_jobicy
+        prior_cache = fetch_jd._JOBICY_JD_CACHE
+        self.addCleanup(setattr, aggregators, "fetch_jobicy", prior_fetch)
+        self.addCleanup(setattr, fetch_jd, "_JOBICY_JD_CACHE", prior_cache)
+        aggregators.fetch_jobicy = lambda *_args, **_kwargs: [
+            SimpleNamespace(
+                url="https://jobicy.com/jobs/501-backend-engineer",
+                description="Discrete source-native posting text.",
+            )
+        ]
+        fetch_jd._JOBICY_JD_CACHE = None
+        out = self.tmp / "JD.md"
+        code, _stdout, stderr = _run_cli([
+            "https://jobicy.com/jobs/501-backend-engineer",
+            "--out", str(out),
+        ])
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(out.read_text(), "Discrete source-native posting text.")
 
 
 # --------------------------------------------------------------------------- #

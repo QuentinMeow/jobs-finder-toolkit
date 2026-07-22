@@ -20,7 +20,9 @@
     "workplace": {"type": "string"},
     "level": {"type": "string"},
     "source": {"type": "string"},
-    "seq": {"type": "integer", "minimum": 1}
+    "seq": {"type": "integer", "minimum": 1},
+    "carried": {"type": "boolean", "description": "true when this row lacks derived backing this build — either a not-synced-here derived carry-forward, or a durable-floor index-only survivor (see carried_from)"},
+    "carried_from": {"type": "string", "enum": ["index"], "description": "provenance of a carried row: 'index' means the row survives only in the pre-existing index/postings.jsonl (no current entity, no derived on disk, no tombstone) and was preserved verbatim at its original seq"}
   },
   "additionalProperties": true
 }

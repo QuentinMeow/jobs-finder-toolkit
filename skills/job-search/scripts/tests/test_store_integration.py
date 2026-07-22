@@ -10,6 +10,8 @@ force-nulls config.data_root so it can never touch the machine's real store.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -171,6 +173,44 @@ class GuardedBuildTests(unittest.TestCase):
         self.assertEqual(
             url_map.get(canonicalize_url("https://boards.greenhouse.io/co/jobs/777")),
             "gh-777")
+
+
+class DisabledStoreNoticeTests(unittest.TestCase):
+    """Decision 1: a real config layer with data_root left unset gets a loud,
+    non-fatal stderr notice on the fetch path; an example/no config layer stays
+    silent (unchanged default) — see search_jobs._config_layer_present."""
+
+    def setUp(self):
+        self._orig_data_root = search_jobs.config.data_root
+        self._orig_config_path = search_jobs.config.config_path
+        search_jobs.config.data_root = lambda: None
+
+    def tearDown(self):
+        search_jobs.config.data_root = self._orig_data_root
+        search_jobs.config.config_path = self._orig_config_path
+
+    def test_notice_printed_when_real_config_layer_present(self):
+        search_jobs.config.config_path = lambda: Path("/tmp/real-config.yaml")
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            line, url_map = search_jobs.run_post_fetch_store_build()
+        self.assertIsNone(line)
+        self.assertEqual(url_map, {})
+        self.assertIn("store: not configured", buf.getvalue())
+        self.assertIn("JOBHUNT_DATA_ROOT", buf.getvalue())
+
+    def test_notice_silent_on_example_config(self):
+        search_jobs.config.config_path = lambda: search_jobs.config.EXAMPLE_CONFIG
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            line, url_map = search_jobs.run_post_fetch_store_build()
+        self.assertIsNone(line)
+        self.assertEqual(url_map, {})
+        self.assertEqual(buf.getvalue(), "")
+
+    def test_config_layer_present_helper_guards_exceptions(self):
+        search_jobs.config.config_path = lambda: (_ for _ in ()).throw(OSError("x"))
+        self.assertFalse(search_jobs._config_layer_present())
 
 
 class JsonThreadingTests(unittest.TestCase):

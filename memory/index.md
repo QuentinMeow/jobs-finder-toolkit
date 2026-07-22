@@ -7,6 +7,8 @@
 - `memory/decisions/derived-zone-git-tracking.md` — Keep the datastore's derived zone out of git
 - `memory/decisions/email-git-policy.md` — Track only safe email index headers and annotations
 - `memory/decisions/fine-grained-stage-benchmarks.md` — Benchmark at stage granularity with pinned fixtures, not only end-to-end
+- `memory/decisions/job-filter-triage-and-lineage.md` — Preserve ambiguous job roles and source metadata for review
+- `memory/decisions/job-index-durable-floor.md` — Preserve index-only job history during builds
 - `memory/decisions/process-folders-layout.md` — Process folders: tasks/, memory/known-issues/, memory/decisions/, unresolved-decisions/
 - `memory/decisions/process-folders-v2-todo-queue.md` — Process folders v2: the message-queue/ queue family
 - `memory/decisions/raw-data-layer-decisions.md` — Raw-data-layer design family: owner decisions

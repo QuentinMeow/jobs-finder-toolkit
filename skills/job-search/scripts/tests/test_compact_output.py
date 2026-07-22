@@ -111,6 +111,13 @@ class CompactTableGoldenTests(unittest.TestCase):
                 search_jobs.write_review_report([], Path(tmp), "example"))
             self.assertFalse(path.exists())
 
+    def test_json_output_creates_nested_parent_directory(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "nested" / "audit" / "matches.json"
+            written = search_jobs.write_json_output(path, self._kept(), {})
+            self.assertEqual(written, path)
+            self.assertEqual(len(json.loads(path.read_text())), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1]
@@ -13,6 +14,7 @@ for path in (SCRIPTS, SCRIPTS / "_vendor"):
 from filter_variants import (  # noqa: E402
     audit_postings,
     check_corpus,
+    first_reject_census,
     lint_corpus,
     load_corpus,
     structural_signature,
@@ -156,6 +158,154 @@ class FilterVariantCorpusTests(unittest.TestCase):
             "description": "Build backend systems.",
         }]
         self.assertEqual(audit_postings(postings, PROFILE, corpus), [])
+
+    def test_unfilled_ats_template_is_dropped_before_title_gate(self):
+        # Decision (e): Gate 0 (quality) runs BEFORE title, mirroring production
+        # (posting_quality_ok -> title_ok). A template whose placeholder title
+        # would otherwise also fail the title gate must show up as a quality
+        # rejection, never generate a downstream title/location variant.
+        corpus = load_corpus()
+        postings = [{
+            "source": "greenhouse",
+            "company": "Example Telecom",
+            "title": "<Job Title>",
+            "url": "https://example.test/jobs/template",
+            "location": "Remote (US)",
+            "remote": "remote",
+            "description": (
+                "<Job Title> at Example Telecom. Insert the job title here. "
+                "Insert the job title here. Insert the job title here."
+            ),
+        }]
+        self.assertEqual(audit_postings(postings, PROFILE, corpus), [])
+
+
+class FirstRejectCensusTests(unittest.TestCase):
+    """Decision 3b: the audit reports a first-reject census + bounded samples
+    rather than silently skipping every hard `no_match` (as `audit_postings`
+    does by design for its own review-only purpose)."""
+
+    def test_census_counts_by_first_rule_family_in_gate_order(self):
+        postings = [
+            {  # quality: unfilled ATS template -> rejected at Gate 0
+                "source": "greenhouse", "company": "Example Telecom",
+                "title": "<Job Title>",
+                "url": "https://example.test/jobs/template-1",
+                "location": "Remote (US)",
+                "description": (
+                    "<Job Title> at Example Telecom. Insert the job title here. "
+                    "Insert the job title here. Insert the job title here."
+                ),
+            },
+            {  # title: definite non-technical occupation -> rejected at Gate 1
+                "source": "greenhouse", "company": "Example Corp",
+                "title": "Senior Technical Recruiter",
+                "url": "https://example.test/jobs/recruiter-1",
+                "location": "Remote (US)",
+                "description": "Own full-cycle recruiting for engineering teams.",
+            },
+            {  # a second recruiter posting -> same family, count accumulates
+                "source": "greenhouse", "company": "Example Corp",
+                "title": "Technical Recruiter II",
+                "url": "https://example.test/jobs/recruiter-2",
+                "location": "Remote (US)",
+                "description": "Own full-cycle recruiting for engineering teams.",
+            },
+            {  # a clean match -> never counted in the census
+                "source": "greenhouse", "company": "Example Corp",
+                "title": "Platform Engineer",
+                "url": "https://example.test/jobs/clean-1",
+                "location": "Springfield, US",
+                "description": "Build reliable platform services.",
+            },
+        ]
+        report = first_reject_census(postings, PROFILE, sample_size=5)
+        self.assertEqual(report["total_rejected"], 3)
+        families = {row["family"]: row for row in report["families"]}
+        self.assertEqual(
+            families["quality:quality.placeholder_title"]["count"], 1)
+        self.assertEqual(
+            families["title:title.nontechnical_occupation"]["count"], 2)
+        # Sample rows carry an excerpt/URL for false-negative recall checks.
+        sample = families["title:title.nontechnical_occupation"]["sample"]
+        self.assertEqual(len(sample), 2)
+        self.assertIn("url", sample[0])
+
+    def test_sample_is_bounded_and_deterministic(self):
+        postings = [{
+            "source": "greenhouse", "company": "Example Corp",
+            "title": f"Technical Recruiter {i}",
+            "url": f"https://example.test/jobs/recruiter-{i}",
+            "location": "Remote (US)",
+            "description": "Own full-cycle recruiting for engineering teams.",
+        } for i in range(8)]
+        report_a = first_reject_census(postings, PROFILE, sample_size=3)
+        report_b = first_reject_census(list(reversed(postings)), PROFILE,
+                                        sample_size=3)
+        family = "title:title.nontechnical_occupation"
+        row_a = next(r for r in report_a["families"] if r["family"] == family)
+        row_b = next(r for r in report_b["families"] if r["family"] == family)
+        self.assertEqual(row_a["count"], 8)
+        self.assertEqual(len(row_a["sample"]), 3)          # bounded
+        self.assertEqual(row_a["sample"], row_b["sample"])  # order-independent
+
+    def test_location_family_names_the_reject_category_not_hint_evidence(self):
+        postings = [
+            {
+                "source": "ashby", "company": "Example Corp",
+                "title": "Platform Engineer",
+                "url": "https://example.test/jobs/other-us",
+                "location": "Austin, TX",
+                "remote": "onsite",
+                "description": "This is an onsite role.",
+            },
+            {
+                "source": "ashby", "company": "Example Corp",
+                "title": "Platform Engineer",
+                "url": "https://example.test/jobs/foreign",
+                "location": "Toronto, Canada",
+                "remote": "hybrid",
+                "description": "This is a hybrid role.",
+            },
+        ]
+        report = first_reject_census(postings, PROFILE, sample_size=5)
+        families = {row["family"] for row in report["families"]}
+        self.assertEqual(families, {"location:other_us", "location:foreign"})
+
+    def test_date_gate_precedes_location_in_the_census(self):
+        postings = [{
+            "source": "ashby", "company": "Example Corp",
+            "title": "Platform Engineer",
+            "url": "https://example.test/jobs/stale-foreign",
+            "location": "Toronto, Canada",
+            "posted_at": "2026-07-10T00:00:00Z",
+            "description": "Build platform services.",
+        }]
+        report = first_reject_census(
+            postings, PROFILE, sample_size=5, max_age=7,
+            now=datetime(2026, 7, 22, tzinfo=timezone.utc))
+        self.assertEqual(report["families"][0]["family"],
+                         "date:older_than_window")
+
+    def test_a_gate_never_double_counts_a_posting_rejected_earlier(self):
+        # A quality-template posting that would ALSO fail the title gate must
+        # be attributed only to its FIRST reject (quality), never counted
+        # again downstream — production drops it before title ever runs.
+        postings = [{
+            "source": "greenhouse", "company": "Example Telecom",
+            "title": "<Job Title>",
+            "url": "https://example.test/jobs/template-2",
+            "location": "Remote (US)",
+            "description": (
+                "<Job Title> at Example Telecom. Insert the job title here. "
+                "Insert the job title here. Insert the job title here."
+            ),
+        }]
+        report = first_reject_census(postings, PROFILE, sample_size=5)
+        self.assertEqual(report["total_rejected"], 1)
+        self.assertEqual(len(report["families"]), 1)
+        self.assertEqual(report["families"][0]["family"],
+                         "quality:quality.placeholder_title")
 
 
 if __name__ == "__main__":

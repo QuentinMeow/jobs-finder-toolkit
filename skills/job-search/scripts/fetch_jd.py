@@ -50,6 +50,7 @@ USER_AGENT = "jobs-finder-skill/1.0 (job posting fetch; +https://github.com/)"
 
 # Below this many extracted bytes we suspect a JavaScript-rendered shell and warn.
 _TINY_EXTRACTION_BYTES = 500
+_JOBICY_JD_CACHE: dict[str, str] | None = None
 
 # Chrome / non-content elements whose text is dropped wholesale.
 _SKIP_TAGS = frozenset({
@@ -628,6 +629,41 @@ def fetch_page(url: str, timeout: float) -> str:
     return raw.decode(charset, "replace")
 
 
+def fetch_source_native_text(url: str) -> str | None:
+    """Return a source-native JD when a public page mixes in unrelated listings.
+
+    Jobicy's HTML page includes recommendation-card text after the selected JD.
+    Its API returns the posting description as a discrete field, so use that
+    source-native boundary and fail closed if the selected posting is unavailable.
+    Other sources keep the normal page-extraction path.
+    """
+    match = re.search(
+        r"https?://(?:www\.)?jobicy\.com/jobs/(\d+)(?:[-/?#]|$)", url, re.I)
+    if not match:
+        return None
+
+    global _JOBICY_JD_CACHE
+    if _JOBICY_JD_CACHE is None:
+        try:
+            from aggregators import fetch_jobicy
+            postings = fetch_jobicy([], "", None)
+        except Exception as exc:  # noqa: BLE001 — report one source-specific failure
+            raise FetchError(f"could not fetch Jobicy API for {url}: {exc}") from exc
+        _JOBICY_JD_CACHE = {}
+        for posting in postings:
+            id_match = re.search(
+                r"https?://(?:www\.)?jobicy\.com/jobs/(\d+)(?:[-/?#]|$)",
+                posting.url or "", re.I)
+            if id_match and (posting.description or "").strip():
+                _JOBICY_JD_CACHE[id_match.group(1)] = posting.description.strip()
+
+    text = _JOBICY_JD_CACHE.get(match.group(1))
+    if not text:
+        raise FetchError(
+            f"Jobicy API did not return posting {match.group(1)} from {url}")
+    return text
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Fetch a job-posting page and save its readable text verbatim.")
@@ -662,12 +698,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        html_text = fetch_page(args.url, args.timeout)
+        text = fetch_source_native_text(args.url)
+        if text is None:
+            text = extract_readable_text(fetch_page(args.url, args.timeout))
     except FetchError as exc:
         print(f"fetch_jd: {exc}", file=sys.stderr)
         return 1
-
-    text = extract_readable_text(html_text)
 
     if not text.strip():
         print(f"fetch_jd: no readable text extracted from {args.url} — the page is "

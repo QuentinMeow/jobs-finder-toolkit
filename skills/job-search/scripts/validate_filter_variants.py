@@ -22,9 +22,11 @@ from filter_variants import (  # noqa: E402
     CORPUS_PATH,
     audit_postings,
     check_corpus,
+    first_reject_census,
     lint_corpus,
     load_corpus,
 )
+from common import parse_dt  # noqa: E402
 
 
 def _profile_path(value: str) -> Path:
@@ -65,6 +67,15 @@ def main(argv=None) -> int:
                         help="profile label/path; defaults to snapshot.profile")
     parser.add_argument("--out", type=Path,
                         help="pending YAML path (default: tmp/filter_variant_reports/)")
+    parser.add_argument("--census-out", type=Path,
+                        help="first-reject census YAML path (default: "
+                             "tmp/filter_variant_reports/<snapshot>-census.yaml)")
+    parser.add_argument("--census-sample-size", type=int, default=5,
+                        help="bounded deterministic sample size per reject family "
+                             "(default: 5)")
+    parser.add_argument("--max-age-days", type=float,
+                        help="replay the production posting-age gate; defaults to "
+                             "the profile's max_age_days")
     args = parser.parse_args(argv)
 
     corpus = load_corpus(args.corpus)
@@ -92,11 +103,40 @@ def main(argv=None) -> int:
         if not profile_ref:
             raise ValueError("provide --profile; snapshot has no profile")
         profile = _load_profile(str(profile_ref))
+        max_age = (args.max_age_days if args.max_age_days is not None
+                   else profile.get("max_age_days"))
+        snapshot_now = parse_dt(snapshot.get("fetched_at"))
     except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError) as exc:
         print(f"SNAPSHOT ERROR: {exc}", file=sys.stderr)
         return 2
 
-    pending = audit_postings(postings, profile, corpus)
+    # First-reject census (Decision 3b): report every hard `no_match`, grouped
+    # by rule family, with a bounded deterministic sample — the audit below only
+    # ever sees `review` rows, so this is the only artifact that speaks to
+    # false-negative recall at the hard gates.
+    census = first_reject_census(
+        postings, profile, sample_size=args.census_sample_size,
+        max_age=max_age, now=snapshot_now)
+    census_out = args.census_out or (
+        REPO_ROOT / "tmp" / "filter_variant_reports"
+        / f"{args.snapshot.stem}-census.yaml")
+    census_out.parent.mkdir(parents=True, exist_ok=True)
+    census_out.write_text(yaml.safe_dump({
+        "schema_version": 1,
+        "source_snapshot": str(args.snapshot),
+        "profile": str(profile_ref),
+        "max_age_days": max_age,
+        **census,
+    }, sort_keys=False, allow_unicode=True, width=120))
+    print(
+        f"First-reject census: {census['total_rejected']} of {len(postings)} "
+        f"postings hard-rejected across {len(census['families'])} rule "
+        f"famil{'y' if len(census['families']) == 1 else 'ies'} -> {census_out}",
+        file=sys.stderr,
+    )
+
+    pending = audit_postings(
+        postings, profile, corpus, max_age=max_age, now=snapshot_now)
     if not pending:
         print(f"snapshot audit clean: {len(postings)} postings, no new variants")
         return 0
@@ -107,6 +147,7 @@ def main(argv=None) -> int:
         "schema_version": 1,
         "source_snapshot": str(args.snapshot),
         "profile": str(profile_ref),
+        "max_age_days": max_age,
         "unknown_count": len(pending),
         "pending": pending,
     }, sort_keys=False, allow_unicode=True, width=120))

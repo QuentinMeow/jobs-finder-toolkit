@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 
 from common import JobPosting, normalize, term_matches
 from job_metadata import (
     assess_required_yoe,
     assess_sponsorship,
     classify_level,
+    classify_level_from_jd_body,
     extract_required_yoe_details,
 )
 from location import assess_location
@@ -42,7 +44,59 @@ _BROAD_DOMAIN_TOKENS = frozenset({
 # are NOT already captured by the profile's explicit exclude list. Genuine
 # ambiguity is sent to review (conservative) rather than silently accepted; an
 # explicit manager/director/VP/"head of" title is still a hard exclude above.
-_AMBIGUOUS_LEADERSHIP_RE = re.compile(r"\b(leader|leadership)\b")
+_AMBIGUOUS_LEADERSHIP_RE = re.compile(r"\b(lead|leader|leadership)\b")
+_EARLY_CAREER_RE = re.compile(
+    r"\b(?:new\s+(?:college\s+)?grad(?:uate)?|"
+    r"graduate\s+(?:software\s+)?engineer)\b",
+    re.I,
+)
+
+# Generic, evidence-bearing NON-TECHNICAL OCCUPATION lexicon (Decision 3a) — a
+# small, whole-term set naming common non-engineering occupation FAMILIES, never
+# a per-title/per-company alias. A title that hits one of these AND carries no
+# engineering role noun (see `_title_has_role`) is a definite non-technical
+# occupation and stays a hard `no_match`, matching the asymmetry already given
+# to the profile's explicit excludes. A title that ALSO carries a role noun
+# (e.g. "Customer Success Engineer", "Sales Engineer") is genuinely ambiguous,
+# not definite, so the lexicon is skipped for it — it falls through to the
+# normal include/broad-domain/leadership logic (and, worst case, the
+# `title.occupation_ambiguous` review residual) instead of a hard reject.
+_NONTECHNICAL_OCCUPATION_RULES = [
+    ("sales", re.compile(
+        r"\bsales\b|\baccount executive\b|\bbusiness development\b|"
+        r"\bbdr\b|\bsdr\b|\bcustomer success\b",
+        re.I)),
+    ("marketing", re.compile(
+        r"\bmarketing\b|\badvertising\b|\bbrand\s+manager\b|"
+        r"\bcontent\s+strategist\b|\bpartnerships?\s+(?:lead|manager|director)\b|"
+        r"\bpublic relations\b|\bcommunications\s+(?:lead|manager|specialist)\b",
+        re.I)),
+    ("recruiting", re.compile(
+        r"\brecruit(?:er|ing|ment)\b|\btalent acquisition\b|"
+        r"\bpeople operations\b|\bhuman resources\b|\bhr\b",
+        re.I)),
+    ("finance", re.compile(
+        r"\bfinance\b|\bfinancial\b|\bcapital markets?\b|\bfinancing\b|"
+        r"\baccounting\b|\baccountant\b|\bbanking\b|\bbanker\b|"
+        r"\bunderwrit(?:er|ing)\b|\bportfolio manager\b|"
+        r"\binvestment (?:banking|analyst)\b",
+        re.I)),
+    ("legal", re.compile(
+        r"\blegal\b|\bparalegal\b|\battorney\b|\bcounsel\b",
+        re.I)),
+    ("clinical", re.compile(
+        r"\bnurse\b|\bnursing\b|\bphysician\b|\bclinician\b|\btherapist\b|"
+        r"\bpharmacist\b|\bveterinar(?:y|ian)\b|\bclinical\b",
+        re.I)),
+    ("education", re.compile(
+        r"\bteacher\b|\bprofessor\b|\binstructor\b|\btutor\b|\bcurriculum\b",
+        re.I)),
+]
+
+
+def _nontechnical_occupation_hits(ntitle: str) -> list[str]:
+    return [name for name, pattern in _NONTECHNICAL_OCCUPATION_RULES
+            if pattern.search(ntitle)]
 
 
 def _is_role_bearing(term: str) -> bool:
@@ -58,10 +112,15 @@ def _title_has_role(ntitle: str) -> bool:
 def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
     """Canonical tri-state title/role assessment shared by production + corpus.
 
-    Precedence: explicit exclude family (manager/director/…) -> not-included ->
-    broad-domain-without-role guard -> leadership ambiguity (review) -> match.
-    The broad-domain guard is a GENERIC safeguard applied at assessment time; it
-    never edits the (user-owned) profile.
+    Precedence: explicit exclude family (manager/director/…) -> generic
+    non-technical-occupation lexicon -> not-included/broad-domain-without-role
+    residual (-> review, `title.occupation_ambiguous`) -> leadership ambiguity
+    (review) -> match. Only (i) an explicit profile exclude and (ii) a definite
+    non-technical-occupation lexicon hit are hard `no_match` (Decision 3a); every
+    other title that is neither a clean include match nor one of those two stays
+    a `review` row so JD semantics are never lost to a silent hard drop. The
+    broad-domain guard and the lexicon are GENERIC safeguards applied at
+    assessment time; neither ever edits the (user-owned) profile.
     """
     titles_cfg = titles_cfg or {}
     ntitle = normalize(title)
@@ -76,26 +135,51 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
     level, level_signal = classify_level(title)
 
     excluded = [t for t in exclude if term_matches(t, ntitle_excl)]
+    # Treat common wording variants as the profile's explicit "new grad"
+    # exclusion rather than requiring brittle phrase duplication in every profile.
+    if (any(normalize(term) == "new grad" for term in exclude)
+            and _EARLY_CAREER_RE.search(ntitle_excl)
+            and "new grad" not in [normalize(term) for term in excluded]):
+        excluded.append("new grad")
     if excluded:
         return _title_result(
             "no_match", level, level_signal,
             rule_ids=[f"title.excluded.{normalize(t)}" for t in excluded])
 
-    matched = [t for t in include if term_matches(t, ntitle)]
-    if include and not matched:
-        return _title_result(
-            "no_match", level, level_signal, rule_ids=["title.not_included"])
+    # Generic non-technical-occupation lexicon: hard no_match, but ONLY when the
+    # title carries no engineering role noun — a co-occurring role noun (e.g.
+    # "Customer Success Engineer", "Sales Engineer") makes the occupation
+    # genuinely ambiguous rather than definite, so it falls through instead.
+    if not _title_has_role(ntitle_excl):
+        nontechnical = _nontechnical_occupation_hits(ntitle_excl)
+        if nontechnical:
+            return _title_result(
+                "no_match", level, level_signal,
+                rule_ids=[f"title.nontechnical_occupation.{h}" for h in nontechnical],
+                evidence=[f"nontechnical_occupation:{','.join(nontechnical)}"])
 
-    # Broad-domain guard: a title admitted ONLY by broad domain word(s) must also
-    # carry an engineering role noun or a standalone role family.
-    if include and matched and not any(_is_role_bearing(t) for t in matched):
+    matched = [t for t in include if term_matches(t, ntitle)]
+    residual_rule_id, broad = None, []
+    if include and not matched:
+        residual_rule_id = "title.not_included"
+    elif include and matched and not any(_is_role_bearing(t) for t in matched):
+        # Broad-domain guard: a title admitted ONLY by broad domain word(s) must
+        # also carry an engineering role noun or a standalone role family.
         broad = sorted({
             normalize(t) for t in matched if normalize(t) in _BROAD_DOMAIN_TOKENS})
         if broad and not _title_has_role(ntitle):
-            return _title_result(
-                "no_match", level, level_signal,
-                rule_ids=["title.broad_domain_without_role"],
-                evidence=[f"broad_domain:{','.join(broad)}"])
+            residual_rule_id = "title.broad_domain_without_role"
+
+    if residual_rule_id:
+        # Neither a clean include match nor a definite non-technical occupation:
+        # a plausible/technical UNKNOWN occupation (e.g. "Member of Technical
+        # Staff", "Systems Generalist"). Conservative -> review, not a silent
+        # hard drop, so JD semantics still reach enrichment/adjudication.
+        return _title_result(
+            "review", level, level_signal,
+            rule_ids=[residual_rule_id, "title.occupation_ambiguous"],
+            evidence=[f"broad_domain:{','.join(broad)}"] if broad else [],
+            review_reasons=["title_occupation_ambiguous"])
 
     # Leadership/manager-family ambiguity -> conservative review.
     if _AMBIGUOUS_LEADERSHIP_RE.search(ntitle_excl):
@@ -192,6 +276,100 @@ def visa_ok(posting: JobPosting, profile: dict) -> bool:
     if policy == "require_positive":
         return label == "yes"
     return label != "no"          # exclude_negative (default): keep yes + unclear
+
+
+# --------------------------------------------------------------------------- #
+# Posting-quality gate: unfilled ATS templates must never be accepted as a real
+# posting. Generic, evidence-based placeholder detection — never a per-company
+# alias — so a fictional template shape is exactly as detectable as a real one.
+# --------------------------------------------------------------------------- #
+_PLACEHOLDER_TITLE_RE = re.compile(
+    r"<\s*job\s*title\s*>|\{\{\s*job\s*title\s*\}\}|\[\s*job\s*title\s*\]|"
+    r"<\s*role\s*title\s*>|<\s*position\s*title\s*>",
+    re.I,
+)
+# An unmistakable dollar-amount PLACEHOLDER token (never a real number): a
+# repeated literal digit-placeholder character in a money position.
+_PLACEHOLDER_COMP_RE = re.compile(
+    r"\$\s*x{2,}(?:[.,]x{3})*\b|\$\s*#{2,}(?:[.,]#{3})*\b|\$\s*n{2,}(?:[.,]n{3})*\b",
+    re.I,
+)
+_PLACEHOLDER_INSTRUCTION_RE = re.compile(
+    r"\binsert (?:the )?(?:job )?title here\b|\breplace\s+(?:this|the)\s+"
+    r"(?:text|placeholder)\s+with\b|\b\[insert[^\]]*\]|"
+    r"\bdo not (?:remove|delete) this (?:line|section)\b|"
+    r"\bplaceholder text\b|\btemplate instructions?\b",
+    re.I,
+)
+_PLACEHOLDER_LOREM_RE = re.compile(r"\blorem ipsum\b", re.I)
+_WS_COLLAPSE_RE = re.compile(r"\s+")
+
+
+def _repeated_line_hits(description: str, *, min_len: int = 24,
+                        min_repeats: int = 3) -> list[str]:
+    """Non-trivial lines/sentences repeated verbatim >= `min_repeats` times.
+
+    A generic signal for an unfilled ATS template that duplicates the SAME
+    instructional/placeholder block across multiple JD sections — literal-
+    duplicate-content detection, never a per-company alias.
+    """
+    lines = [_WS_COLLAPSE_RE.sub(" ", ln).strip()
+              for ln in re.split(r"[\n.]", description or "")]
+    counts = Counter(ln for ln in lines if len(ln) >= min_len)
+    return sorted(ln for ln, n in counts.items() if n >= min_repeats)
+
+
+def assess_posting_quality(title: str | None, description: str | None) -> dict:
+    """Detect an unfilled ATS template so it is never accepted as a real match.
+
+    Tri-state, mirroring the title gate: an unmistakable bracket/placeholder
+    TITLE token is STRONG evidence and a hard `no_match`. A repeated block, bare
+    compensation placeholder (``$XXX,XXX``), or generic instructional phrase is
+    weaker and goes to `review`: legitimate boards sometimes repeat legal,
+    benefit, or boilerplate sentences, so repetition alone must not hard-reject.
+    """
+    blob = f"{title or ''}\n{description or ''}"
+    strong: list[str] = []
+    weak: list[str] = []
+    if _PLACEHOLDER_TITLE_RE.search(blob):
+        strong.append("placeholder_title")
+    if _PLACEHOLDER_LOREM_RE.search(blob):
+        strong.append("placeholder_lorem_ipsum")
+    if _repeated_line_hits(description or ""):
+        weak.append("repeated_template_block")
+    if _PLACEHOLDER_COMP_RE.search(blob):
+        weak.append("placeholder_compensation")
+    if _PLACEHOLDER_INSTRUCTION_RE.search(blob):
+        weak.append("placeholder_instructions")
+
+    if strong:
+        decision = "no_match"
+    elif weak:
+        decision = "review"
+    else:
+        decision = "match"
+    hits = strong + weak
+    return {
+        "domain": "quality",
+        "decision": decision,
+        "result": decision,
+        "accepted": decision != "no_match",
+        "confidence": "high" if strong else ("low" if weak else "unknown"),
+        "rule_ids": [f"quality.{h}" for h in hits],
+        "evidence": list(hits),
+        "review_reasons": (["posting_template_placeholder"] if decision == "review"
+                           else []),
+    }
+
+
+def posting_quality_ok(posting: JobPosting) -> bool:
+    """Record the quality assessment and drop only a definite unfilled template."""
+    assessment = assess_posting_quality(posting.title, posting.description)
+    posting.filter_assessments["quality"] = assessment
+    if assessment["review_reasons"]:
+        posting.review_reasons = list(dict.fromkeys(
+            [*posting.review_reasons, *assessment["review_reasons"]]))
+    return assessment["decision"] != "no_match"
 
 
 def date_ok(posting: JobPosting, max_age_days: float | None) -> bool:
@@ -355,11 +533,27 @@ def score_posting(posting: JobPosting, profile: dict,
     # Level fit: demote roles whose parsed Google-equivalent level sits outside the
     # target seniority band, so a "senior" search isn't topped by staff+/entry roles.
     # Reuses the level parsed by enrich_posting_metadata; `fit_weight: 0` disables it.
+    band = target_level_band(profile)
     fit_delta, fit_note = level_fit_delta(
-        posting, target_level_band(profile), float(sen_cfg.get("fit_weight", 6.0)))
+        posting, band, float(sen_cfg.get("fit_weight", 6.0)))
     if fit_delta:
         score += fit_delta
         reasons.append("level " + fit_note)
+
+    # Decision 3c (conflict half): an explicit JD-body level phrase that
+    # materially exceeds the target band is flagged for review — the Snowflake
+    # case (a bare/under-signaled title whose JD body actually calls for a
+    # Staff+ engineer) — WITHOUT changing occupation or the title-derived
+    # job_level. This is independent of `enrich_posting_metadata`'s own
+    # silent-title-and-YOE fill, so it also fires when the title already
+    # carries its OWN (lower) level word.
+    if band is not None:
+        jd_level, jd_signal = classify_level_from_jd_body(posting.description)
+        jd_band = _LEVEL_BANDS.get(jd_level)
+        if jd_band is not None and jd_band[0] > band[1]:
+            posting.review_reasons = list(dict.fromkeys(
+                [*posting.review_reasons, "jd_level_conflicts_title"]))
+            reasons.append(f"jd body states {jd_level} level (review: {jd_signal!r})")
 
     # YOE fit (opt-in): demote roles asking materially more experience than the
     # candidate has. Active only when the profile states `years_experience`.
