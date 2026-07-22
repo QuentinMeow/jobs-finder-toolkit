@@ -33,6 +33,26 @@ _WS_RE = re.compile(r"\s+")
 _BATCH_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _SLUGIFY_RE = re.compile(r"[^a-z0-9]+")
 
+# Trailing legal / company-style suffix tokens. Two names that differ ONLY by a
+# run of these trailing tokens (plus surrounding punctuation / a trailing
+# possessive) name the same employer for identity purposes — e.g. "Acme" ==
+# "Acme Ltd." == "Acme Corp, Inc.". Kept deliberately conservative (no broad
+# fuzzy matching): tokens like "ai", "labs", "systems" carry real disambiguating
+# meaning (Arize vs Arize AI) and are NOT stripped.
+_LEGAL_SUFFIXES = {
+    "ltd", "limited", "inc", "incorporated", "corp", "corporation",
+    "co", "company", "llc", "llp", "lp", "plc", "gmbh",
+    "technologies", "technology",
+}
+# Characters trimmed from the edges of a token before the suffix comparison, so
+# "corp," / "inc." / a bare "acme," all reduce cleanly.
+_PUNCT = ".,"
+# Namespace sentinel for a suffix-stripped "comparable" key. Keeping comparable
+# keys in their own key-space (a real company name can never contain this
+# control char) means a comparable form only ever matches another comparable
+# form, never a raw/exact key that coincidentally equals the stripped base.
+_CMP_PREFIX = "\x00cmp\x00"
+
 
 def _slugify(value: str | None) -> str:
     """Mechanically map a name to a neutral ``[a-z0-9-]`` slug (store context form)."""
@@ -49,6 +69,36 @@ def normalize(name: str | None) -> str:
     if not name:
         return ""
     return _WS_RE.sub(" ", str(name).strip().lower())
+
+
+def comparable_base(name: str | None) -> str:
+    """Normalized name with trailing legal suffixes / possessive / edge-punctuation removed.
+
+    Strips ONLY from the trailing edge and never the last remaining token, so:
+      - "Acme Ltd."          -> "acme"       (suffix stripped)
+      - "Acme Corp, Inc."    -> "acme"       (repeated + punctuation)
+      - "McDonald's Co"      -> "mcdonald"   (suffix then possessive)
+      - "Inc Magazine"       -> "inc magazine" (a suffix word that is NOT trailing
+                                                is left intact)
+      - "Co" / "LLC"         -> "co" / "llc" (a name that is only a suffix word is
+                                              never emptied — short-legal-name guard)
+
+    Because it operates on whole whitespace tokens, an embedded look-alike
+    ("Coinbase", "Costar", "Incubator") is never mistaken for a suffix.
+    """
+    tokens = normalize(name).split()
+    changed = True
+    while tokens and changed:
+        changed = False
+        last = tokens[-1].strip(_PUNCT)
+        if last.endswith("'s") and len(last) > 2:      # trailing possessive
+            tokens[-1] = last[:-2]
+            changed = True
+            continue
+        if len(tokens) > 1 and last in _LEGAL_SUFFIXES:  # trailing legal suffix
+            tokens.pop()
+            changed = True
+    return " ".join(t.strip(_PUNCT) for t in tokens if t.strip(_PUNCT)).strip()
 
 
 def lint_entries(entries: list[dict]) -> list[str]:
@@ -142,6 +192,13 @@ class Registry:
         self._canonical_to_keys: dict[str, set[str]] = {}
         self._blacklist: dict[str, str] = {}   # canonical name -> reason
         self._slug_to_canonical: dict[str, str] = {}   # slugified key -> canonical
+        # Suffix-stripped fallbacks. `_comparable_to_canonical` resolves a raw
+        # variant to its canonical name ONLY when the stripped base is
+        # unambiguous; `_ambiguous_bases` are bases shared by >1 distinct
+        # registered company, for which we refuse to emit/resolve a comparable
+        # key at all (never conflate two known-distinct employers).
+        self._comparable_to_canonical: dict[str, str] = {}
+        self._ambiguous_bases: set[str] = set()
         self._build_index()
 
     def _entry_keys(self, entry: dict) -> set[str]:
@@ -179,22 +236,63 @@ class Registry:
                 reason = entry["blacklist"]
                 self._blacklist[canonical] = reason if isinstance(reason, str) else ""
 
+        # Build the comparable-base -> canonical fallback from the exact keys we
+        # just indexed. A base owned by two distinct canonicals is ambiguous and
+        # is dropped (canonical() abstains; no comparable key is emitted for it).
+        base_owners: dict[str, set[str]] = {}
+        for key, canonical in self._key_to_canonical.items():
+            base = comparable_base(key)
+            if base:
+                base_owners.setdefault(base, set()).add(canonical)
+        for base, owners in base_owners.items():
+            if len(owners) == 1:
+                self._comparable_to_canonical[base] = next(iter(owners))
+            else:
+                self._ambiguous_bases.add(base)
+
+    def _augment_with_comparable(self, keys: set[str]) -> set[str]:
+        """Add the namespaced comparable form of each key (skipping ambiguous bases)."""
+        out = set(keys)
+        for key in keys:
+            base = comparable_base(key)
+            if base and base not in self._ambiguous_bases:
+                out.add(_CMP_PREFIX + base)
+        out.discard("")
+        return out
+
     # ---- resolution -------------------------------------------------------- #
     def canonical(self, raw: str | None) -> str | None:
-        """Map a raw company string to its canonical display name, else None."""
-        return self._key_to_canonical.get(normalize(raw))
+        """Map a raw company string to its canonical display name, else None.
+
+        Exact normalized lookup first; then an unambiguous suffix-stripped
+        fallback, so an aggregator variant ("Acme Ltd.") resolves to the
+        registered short name ("Acme"). Abstains (None) when the stripped base is
+        shared by more than one registered company.
+        """
+        hit = self._key_to_canonical.get(normalize(raw))
+        if hit is not None:
+            return hit
+        base = comparable_base(raw)
+        if base and base not in self._ambiguous_bases:
+            return self._comparable_to_canonical.get(base)
+        return None
 
     def match_keys(self, raw: str | None) -> set[str]:
-        """All normalized match keys for the company `raw` resolves to.
+        """All match keys for the company `raw` resolves to.
 
-        Falls back to the single normalized raw string when unknown, so callers
-        can match aggregator-only companies not present in the registry.
+        Each set carries the exact normalized keys PLUS a namespaced comparable
+        form per key, so two spellings of one employer that differ only by a
+        trailing legal suffix ("Acme" vs "Acme Ltd.") intersect. Falls back to
+        the raw string (+ its comparable form) when unknown, so aggregator-only
+        companies absent from the registry still match across suffix variants.
         """
         canonical = self.canonical(raw)
-        if canonical is not None:
-            return set(self._canonical_to_keys.get(canonical, set()))
+        keys = (set(self._canonical_to_keys.get(canonical, set()))
+                if canonical is not None else set())
         norm = normalize(raw)
-        return {norm} if norm else set()
+        if norm:
+            keys.add(norm)
+        return self._augment_with_comparable(keys)
 
     def canonical_for_slug(self, slug: str | None) -> str | None:
         """Reverse a store ``context.company`` slug to the registry canonical name.
@@ -229,11 +327,11 @@ class Registry:
         return False, None
 
     def blacklisted_keys(self) -> set[str]:
-        """Every normalized match key belonging to a blacklisted company."""
+        """Every match key belonging to a blacklisted company (incl. comparable forms)."""
         keys: set[str] = set()
         for canonical in self._blacklist:
             keys |= self._canonical_to_keys.get(canonical, set())
-        return keys
+        return self._augment_with_comparable(keys)
 
     # ---- tag lookups ------------------------------------------------------- #
     def tagged_keys(self, tags: list[str] | None) -> set[str]:
@@ -253,7 +351,7 @@ class Registry:
             if tagset & etags:
                 keys |= self._entry_keys(entry)
         keys.discard("")
-        return keys
+        return self._augment_with_comparable(keys)
 
     # ---- polling ----------------------------------------------------------- #
     def poll_companies(

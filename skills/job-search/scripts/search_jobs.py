@@ -292,13 +292,19 @@ def _norm_url(url: str) -> str:
     return (url or "").strip().lower().rstrip("/")
 
 
-def load_considered() -> tuple[set[str], set[tuple[str, str]]]:
+def load_considered(
+    registry: Registry | None = None,
+) -> tuple[set[str], set[tuple[str, str]]]:
     """Postings already generated/considered (<applications_root>/0_profile/applications-log.yaml).
 
     The profile directory comes from the config layer (``profile_dir()``), so this is
     not tied to any candidate's directory and survives folder renames. Returns
-    (urls, (company, role) pairs). New roles at the same company are NOT in the pair
-    set, so they still surface.
+    (urls, (company_key, role) pairs). Each log row's company is expanded through the
+    registry's match keys (name/alias/token + suffix-variant comparable forms), so a
+    row stored under a short registry name matches an incoming aggregator posting that
+    names the same employer with a trailing legal suffix (and vice-versa) — honoring
+    the `reference.md` § Skip logic contract that identity resolves through the
+    registry. New roles at the same company are NOT in the pair set, so they surface.
     """
     path = profile_dir() / "applications-log.yaml"
     urls: set[str] = set()
@@ -311,14 +317,27 @@ def load_considered() -> tuple[set[str], set[tuple[str, str]]]:
             comp = (post.get("company") or "").strip().lower()
             role = (post.get("role") or "").strip().lower()
             if comp and role:
-                pairs.add((comp, role))
+                keys = (registry.match_keys(comp) if registry is not None
+                        else {comp})
+                keys.discard("")
+                for key in keys:
+                    pairs.add((key, role))
     return urls, pairs
 
 
-def already_considered(p, urls: set[str], pairs: set[tuple[str, str]]) -> bool:
+def already_considered(
+    p,
+    urls: set[str],
+    pairs: set[tuple[str, str]],
+    registry: Registry | None = None,
+) -> bool:
     if p.url and _norm_url(p.url) in urls:
         return True
-    return (p.company.strip().lower(), p.title.strip().lower()) in pairs
+    role = p.title.strip().lower()
+    keys = (registry.match_keys(p.company) if registry is not None
+            else {p.company.strip().lower()})
+    keys.discard("")
+    return any((key, role) in pairs for key in keys)
 
 
 def load_company_search_log(
@@ -565,7 +584,7 @@ def build_filter_context(profile: dict, registry: Registry, args) -> dict:
     of the cache. Returns a dict consumed by :func:`filter_score_rank`.
     """
     considered_urls, considered_pairs = (
-        (set(), set()) if args.include_considered else load_considered())
+        (set(), set()) if args.include_considered else load_considered(registry))
     skip_days, search_tokens = load_company_search_log(profile, registry)
     if args.search_log_skip_days is not None:
         skip_days = args.search_log_skip_days
@@ -621,7 +640,8 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
         if registry.is_blacklisted(p.company)[0]:
             n_blacklisted += 1
             continue
-        if already_considered(p, ctx["considered_urls"], ctx["considered_pairs"]):
+        if already_considered(
+                p, ctx["considered_urls"], ctx["considered_pairs"], registry):
             n_considered += 1
             continue
         if not ctx["ignore_search_log"] and is_recently_searched(

@@ -372,6 +372,16 @@ _GENERAL_EXPERIENCE_RE = re.compile(
     r"experience\b",
     re.I,
 )
+# The start of the NEXT independent YOE clause (e.g. the "5+ years" in
+# "... experience with at least 5+ years in leadership"). Used to bound one
+# match's forward look-ahead so an adjacent, separately-classified clause cannot
+# contaminate this match's confidence/kind — the later clause is scored on its
+# own pass. Kept deliberately loose (any "<n> years" mention) so any conjunction
+# or punctuation between the two clauses still ends the window.
+_NEXT_YOE_CLAUSE_RE = re.compile(
+    r"\b\d{1,2}(?:\.\d+)?\s*\+?\s*(?:years?|yrs?\.?)",
+    re.I,
+)
 
 _AMOUNT = (
     r"(?:(USD|CAD|EUR|GBP)\s*)?([$€£])?\s*"
@@ -735,6 +745,13 @@ def _yoe_candidate_confidence(blob: str, match: re.Match) -> tuple[str, str] | N
     can be displayed but cannot hard-filter a job-search result.
     """
     local, before, after = _yoe_match_context(blob, match.start(), match.end())
+    # Scope the forward look-ahead to THIS clause only. A later independent YOE
+    # clause ("... with at least 5+ years in leadership") is classified on its own
+    # match, so its tool/domain/leadership wording must not leak into this match's
+    # window and (mis)mark it contextual — the defect this guard fixes.
+    next_clause = _NEXT_YOE_CLAUSE_RE.search(after)
+    if next_clause:
+        after = after[:next_clause.start()]
     preference_window = f"{before[-60:]} {match.group(0)} {after[:30]}"
     if _PREFERRED_YOE_RE.search(preference_window):
         return None

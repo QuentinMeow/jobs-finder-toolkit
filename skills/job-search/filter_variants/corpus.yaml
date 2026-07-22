@@ -264,6 +264,41 @@ variants:
       confidence: medium
       requirement_kind: contextual
 
+  - id: yoe-general-then-adjacent-leadership-clause
+    domain: yoe
+    # Regression: a high, general requirement immediately followed by a lower,
+    # contextual leadership clause. The adjacent clause's "years in senior
+    # leadership" wording must NOT bleed into the 15-year match's look-ahead and
+    # downgrade it to contextual/medium. It stays high/general/required so the
+    # documented max_years_experience hard gate keeps firing (no_match at a cap
+    # below 15 — exercised directly in the job-metadata unit tests, since the
+    # corpus runs the cap-free assessment).
+    input:
+      text: >-
+        Requires 15+ years of software engineering experience with at least
+        5+ years in senior leadership roles.
+    expect:
+      decision: match
+      min: 15
+      confidence: high
+      requirement_kind: required
+
+  - id: yoe-adjacent-tool-clauses-stay-contextual
+    domain: yoe
+    # Guardrail for the same fix: two genuine tool/domain clauses joined by a
+    # conjunction each stay contextual/medium, so the decisive requirement is a
+    # non-hard-drop review — the scoping change must not over-promote a real
+    # tool-specific requirement to a high, general gate.
+    input:
+      text: >-
+        Requires 8+ years of experience with Kubernetes and 5+ years working
+        with Terraform.
+    expect:
+      decision: review
+      min: 8
+      confidence: medium
+      requirement_kind: contextual
+
   - id: yoe-weak-general-required
     domain: yoe
     # A stated general requirement with no "required/minimum/must" cue and no
