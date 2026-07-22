@@ -27,7 +27,7 @@ rename these folders back to unprefixed names.
 
 Agents should create applications under `applications/6_drafted/` and never move them
 between status folders unless the user explicitly asks (they manage moves manually, or
-via `.agents/skills/application-tracker/scripts/status.py --update <slug> <status>`).
+via `skills/application-tracker/scripts/status.py --update <slug> <status>`).
 
 Each application folder splits into a small set of **root** files (the finished
 deliverables you submit / paste, plus tracking metadata) and a **`source/`**
@@ -68,7 +68,7 @@ Root files:
  even for a single role** (each entry carries `role`, its exact `jd_file`, a required per-job
  `status` (optional `stage`/`status_date`), `location`, `workplace`, `sponsorship`, and the flat
  `job_level`/`required_yoe`/`salary_range` facts; no `total_compensation_range`). **The
- `application-tracker` skill (`.agents/skills/application-tracker/SKILL.md`,
+ `application-tracker` skill (`skills/application-tracker/SKILL.md`,
  "`meta.yaml` Schema") is the single canonical owner of the full schema and rules** — read it
  before writing or validating a `meta.yaml`; don't restate the field list elsewhere. Run
  `status.py --enrich-metadata <folder>` after saving the JD. The per-job `status` fields are the
@@ -76,7 +76,7 @@ Root files:
  of cover letters. Only create an application
  whose `location` matches the configured location policy (`config.location_policy()` — the
  candidate's preferred metros plus US-remote / `us_only` rule) — verify with
- `.agents/skills/application-tracker/scripts/status.py --check-locations`; a role that is
+ `skills/application-tracker/scripts/status.py --check-locations`; a role that is
  on-site/hybrid outside the allowed metros or non-US must not be drafted.
 - `..._Resume.pdf` — the single final resume PDF (generated, committed)
 - `..._Cover_Letter_<job title>.pdf` — one final cover-letter PDF per JD (generated, committed)

@@ -1,5 +1,5 @@
 # Canary set — company-research skill
-# Grounded in .agents/skills/company-research/{SKILL.md,LESSONS.md}: the Depth Bar, the
+# Grounded in skills/company-research/{SKILL.md,LESSONS.md}: the Depth Bar, the
 # evidence-based 5-Whys moat method (Claim -> Evidence -> Judgment), the fixed folder structure
 # (for-interview 01-09 + for-myself 01-05; always produce 03/05/09), and the never-fabricate
 # sourcing rules. Real-company canaries use Cloudflare (a well-documented public company) with a

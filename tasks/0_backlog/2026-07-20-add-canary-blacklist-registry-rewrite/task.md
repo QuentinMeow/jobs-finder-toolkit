@@ -15,9 +15,9 @@ adjacent-only to `rw-duplicate-preflight`.
 
 The `fix/instruction-clarity-adversarial-20260720` diff (landed at commit
 `32fb3ef`) reworded the pre-flight blacklist bullet in
-`.agents/skills/resume-writer/SKILL.md` to route through the merged registry's
+`skills/resume-writer/SKILL.md` to route through the merged registry's
 `registry.is_blacklisted()` (confirmed present today in
-`.agents/skills/job-search/scripts/registry.py`). The gate record's diff-coverage
+`skills/job-search/scripts/registry.py`). The gate record's diff-coverage
 map explicitly lists this change as `UNGATED (no canary drives a blacklisted
 company)` — `rw-duplicate-preflight` covers the adjacent already-drafted-folder
 stop, but no canary actually supplies a company that
@@ -29,9 +29,9 @@ gap is still open.
 Relevant files:
 - `evals/resume-writer/canaries.yaml` (where the new canary belongs, alongside
   `rw-duplicate-preflight`)
-- `.agents/skills/job-search/scripts/registry.py` (`is_blacklisted()`, the
+- `skills/job-search/scripts/registry.py` (`is_blacklisted()`, the
   behavior to exercise)
-- `.agents/skills/resume-writer/SKILL.md` (the pre-flight blacklist-check bullet
+- `skills/resume-writer/SKILL.md` (the pre-flight blacklist-check bullet
   that should route through the registry)
 - `examples/` (wherever a safe-to-ship example blacklist entry could live, so the
   canary doesn't need a real, personally-identifying blacklisted company —

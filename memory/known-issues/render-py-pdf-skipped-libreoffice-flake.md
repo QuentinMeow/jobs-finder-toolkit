@@ -3,7 +3,7 @@
 - **Status**: open
 - **Severity**: low (cosmetic — recoverable with a documented manual step)
 - **Area**: resume-writer
-- **Source**: `.agents/skills/resume-writer/LESSONS.md:87-88`
+- **Source**: `skills/resume-writer/LESSONS.md:87-88`
 
 ## Symptom
 
@@ -19,7 +19,7 @@ first invocation after a period without use, or when a prior `soffice` process
 left a lock file behind. General shape:
 
 ```bash
-.venv/bin/python .agents/skills/resume-writer/scripts/render.py "<application folder>/source/tailored.yaml"
+.venv/bin/python skills/resume-writer/scripts/render.py "<application folder>/source/tailored.yaml"
 # occasionally prints "PDF: skipped" instead of producing the .pdf
 ```
 
@@ -42,7 +42,7 @@ erroring, so `render.py` reports the PDF step as skipped rather than failed.
 ## Suggested fix
 
 No structural fix has landed; the current mitigation is the documented manual
-workaround in `.agents/skills/resume-writer/LESSONS.md`:
+workaround in `skills/resume-writer/LESSONS.md`:
 
 ```bash
 soffice --headless --convert-to pdf --outdir <folder> "<folder>/<RESUME_STEM>.docx"

@@ -6,7 +6,7 @@ person or a real job hunt stays private:
 
 - **Public toolkit repo (this repo)** — public-ready: ships only timeless, general
   information — the tooling (`scripts/`, public skills + their scripts), the company registry
-  `.agents/skills/job-search/companies.yaml` (**identity only** — never specific or dated
+  `skills/job-search/companies.yaml` (**identity only** — never specific or dated
   postings), a FAKE example candidate under `examples/` (`examples/profile/…`,
   `examples/templates/…`, `examples/applications/…`), and general instructions/techniques.
   `config.example.yaml` is the tracked placeholder.
@@ -43,14 +43,14 @@ guard fails on any tracked file under it, and `.gitignore` ignores it. Each `SKI
 `references_private/` (overrides the generic examples) when present, and to fall back to
 the generic examples otherwise.
 
-**The publish leak guard derives its tokens** (`scripts/publish/check_public.py` →
+**The publish leak guard derives its tokens** (`automation/publish/check_public.py` →
 `personal_tokens()`) from the git-ignored `config.yaml` identity, an optional git-ignored
 `private/leak_tokens.txt`, and the `JOBHUNT_PERSONAL_TOKENS` env var — it hardcodes NO
 real identity and scans both text and document-binary (`.docx`/`.pdf`) content. The
 exporter (`export_public.py`) always runs it against the copied tree as the final gate.
 
-**Routing**: skills are discovered by listing `.agents/skills/` — the skills table in
+**Routing**: skills are discovered by listing `skills/` — the skills table in
 `handbook/repo-map.md` names only the PUBLIC ones that ship in the repo. The private
-`coding-interview` skill appears in `.agents/skills/` via a git-ignored symlink that
-`scripts/bootstrap_overlay.py` creates, so it stays discoverable whenever the overlay is
+`coding-interview` skill appears in `skills/` via a git-ignored symlink that
+`automation/bootstrap_overlay.py` creates, so it stays discoverable whenever the overlay is
 mounted.

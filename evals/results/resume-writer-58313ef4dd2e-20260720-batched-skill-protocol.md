@@ -20,7 +20,7 @@
 
 Focused pass rate: **2/2**.
 
-Deterministic regression checks: `python -m unittest discover -s .agents/skills/resume-writer/scripts/tests -p "test_*.py"` passed **49/49**; `check.py` compiled; the updated seven-canary YAML parsed successfully. `pytest` was unavailable in the repository venv, so the built-in `unittest` runner was used.
+Deterministic regression checks: `python -m unittest discover -s skills/resume-writer/scripts/tests -p "test_*.py"` passed **49/49**; `check.py` compiled; the updated seven-canary YAML parsed successfully. `pytest` was unavailable in the repository venv, so the built-in `unittest` runner was used.
 
 ## Verdict
 

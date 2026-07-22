@@ -1,0 +1,162 @@
+# Job-matching profile — generic software-engineer example.
+#
+# A realistic, ready-to-copy general software-engineer search: broad SWE / backend
+# / platform / full-stack titles, common backend keywords, a couple of major metros
+# plus US-remote, and no posting-age filter. It contains ZERO personal specifics —
+# copy it to <label>.yaml, tune it, and point config.job_search.default_profile at it.
+#
+# Run with: .venv/bin/python skills/job-search/scripts/search_jobs.py --profile example
+
+name: Example Candidate
+label: example
+updated: "2026-01-01"
+
+# ---- Which postings count as candidates (title gate) ----
+titles:
+  include:                 # title must contain at least one (case-insensitive, word-boundary)
+    - software engineer
+    - backend engineer
+    - back end engineer
+    - full stack
+    - fullstack
+    - platform engineer
+    - infrastructure engineer
+    - infrastructure
+    - distributed systems
+    - site reliability
+    - reliability engineer
+    - cloud engineer
+    - api engineer
+    - services engineer
+  exclude:                 # drop if title contains any of these
+    - manager
+    - director
+    - head of
+    - vp
+    - intern
+    - new grad
+    - sales
+    - marketing
+    - recruiter
+    - designer
+    - data scientist
+    - research scientist
+  exclude_neutralize:      # phrases stripped BEFORE applying exclude, so their words
+    - member of technical staff   # don't trip a rule (MTS is an IC title, not "staff" level)
+
+seniority:
+  target: [mid, senior]    # desired level band (mid..senior here)
+  # Level-fit penalty: roles whose parsed Google-equivalent level sits OUTSIDE the
+  # target band are demoted by fit_weight per ladder step (so a mid/senior search
+  # isn't topped by staff+/entry roles). In-band and unknown levels aren't touched.
+  # Set to 0 to disable. Default 6.0.
+  fit_weight: 6.0
+  # yoe_fit_weight: 1.0    # penalty per year a role's required-min YOE exceeds
+                           # years_experience below (only applied when it is set).
+
+# Your actual years of experience (optional). When set, roles asking materially
+# more experience are demoted (see seniority.yoe_fit_weight). Leave null to skip.
+years_experience: null
+
+# Drop JDs that state a minimum YOE above this (see scoring.experience_ok); keep if unstated.
+max_years_experience: null
+
+# ---- Skill / keyword scoring ----
+keywords:
+  strong:                  # high weight (matched in title + description)
+    - python
+    - go
+    - golang
+    - java
+    - distributed systems
+    - microservices
+    - backend
+    - api
+    - kubernetes
+    - aws
+  good:                    # medium weight (matched in description)
+    - docker
+    - terraform
+    - postgres
+    - mysql
+    - redis
+    - kafka
+    - grpc
+    - rest
+    - ci/cd
+    - cloud
+    - sql
+    - observability
+    - node
+    - typescript
+  negative: []             # honest mis-fits — reduce score, not hard-filter
+
+# ---- Location / remote ----
+# A couple of common metros plus US-remote; keep US-only, don't hard-filter to the
+# metros so remote and other US roles still surface (preferred cities add a boost).
+location:
+  preferred:
+    - san francisco
+    - new york
+    - boston
+    - austin
+    - remote
+  allow_remote: true       # include US-remote roles
+  us_only: true            # keep only US-based / (non-foreign) remote roles
+  require_match: false     # false = keep all US + remote, boost preferred; true = hard-filter
+
+# ---- Visa / immigration ----
+visa:
+  needs_sponsorship: false # true if you need work-visa sponsorship
+  h1b_transfer: false
+  perm_greencard: false
+  # exclude_negative: drop only postings that explicitly deny sponsorship (keep yes + unclear)
+  # require_positive: keep ONLY postings that explicitly offer sponsorship (much stricter)
+  policy: exclude_negative
+
+# ---- Recency (posting age) — OFF by default ----
+# `null` = no posting-age filter; every currently-open matching role is considered
+# regardless of post date. Set a number (or pass --max-age-days N) for a "posted in
+# the last N days" run. This is SEPARATE from the company re-search window below.
+max_age_days: null
+
+# ---- Company re-search window (NOT posting age) ----
+# Skip a company whose last SUCCESSFUL full-board search (company-search-log.yaml)
+# is within this many days.
+company_search_log:
+  skip_within_days: 7
+
+# ---- Compensation (optional) ----
+comp:
+  min_base: null
+  min_total: null
+
+# ---- Sources ----
+sources:
+  # 1) Company ATS boards from companies.yaml, selected by tag.
+  company_tags: [ai-lab, ai-infra, dev-tools]
+  # 2) Cross-company keyword aggregators (keyless, on by default).
+  aggregators: [jobicy, remoteok, themuse]
+  # Search terms used by keyword aggregators (adzuna/jsearch/jobspy).
+  query_terms:
+    - software engineer
+    - backend engineer
+    - platform engineer
+    - distributed systems engineer
+  query_location: "United States"
+  jobspy:
+    enabled: true           # Stage 1 Indeed/Google baseline (needs python-jobspy)
+    sites: [indeed, google]
+    location: "United States"
+    results_wanted: 25
+    max_terms: 3
+    linkedin_fetch_description: false
+
+# ---- Shortlist diversity ----
+# Cap how many rows a single employer can occupy in the ranked shortlist, so one
+# company with many matching reqs can't dominate the top_k. Set 0 to disable.
+diversity:
+  max_per_company: 3
+
+# ---- Output ----
+top_k: 40

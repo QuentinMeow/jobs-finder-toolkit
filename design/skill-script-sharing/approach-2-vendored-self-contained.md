@@ -34,7 +34,7 @@ shared-lib/                              # canonical SOURCES (not imported direc
 └── sync_vendored.py                     # copies sources into every registered target
                                          # + registry of {source -> [targets]}
 
-.agents/skills/job-search/scripts/
+skills/job-search/scripts/
 ├── search_jobs.py
 ├── scoring.py                           # imports _vendor.location (no dup rule)
 ├── company_roles.py                     # imports _vendor.location  (fixes the bug)

@@ -27,7 +27,7 @@ Full restructure, no compatibility aliases, owner-confirmed scope:
    (`decisions/`, `known-issues/`, plus new `facts/` and `lessons/` zones).
 3. `docs/` dissolves into **`handbook/`** (operating docs) and top-level
    **`design/`** (design programs). *(separate PR)*
-4. `.agents/skills/` → visible **`skills/`** with agent-adapter symlinks;
+4. the hidden `.agents/skills/` → visible **`skills/`** with agent-adapter symlinks;
    `scripts/` → **`automation/`**. *(separate PR)*
 5. New components: **`templates/`** (single source of truth for file
    schemas), **`roadmap/`** (desired vs current state), **`history/`**

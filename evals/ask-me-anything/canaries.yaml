@@ -1,5 +1,5 @@
 # Canary set — ask-me-anything skill
-# Grounded in .agents/skills/ask-me-anything/SKILL.md: the five-step workflow (0 Setup ->
+# Grounded in skills/ask-me-anything/SKILL.md: the five-step workflow (0 Setup ->
 # 1 Profile & filters -> 2 Search -> 3 Generate -> 4 Review & track -> 5 Interview prep), the
 # repo structure, per-step dependencies, per-job status + derived-rollup folder, and the public vs private
 # (private/ overlay) model. This skill ORIENTS and routes — it does NOT do the work itself.
@@ -61,7 +61,7 @@ canaries:
     expected_behavior:
       - "Routes to Step 2 / the job-search skill and describes what it does (fetches live postings from 100+ ATS boards + keyless aggregators + JobSpy Indeed/Google, filters/ranks, writes a shortlist) — without running a search itself."
       - "Answers the keys question correctly — NO keys for the default Stage 1 run; only optional Stage 2 (`--stage 2`) needs RAPIDAPI_KEY / ADZUNA_* env vars, and missing keys are skipped quietly."
-      - "Names the real dependency (network + python-jobspy in the venv) and points to .agents/skills/job-search/SKILL.md for the full flag set."
+      - "Names the real dependency (network + python-jobspy in the venv) and points to skills/job-search/SKILL.md for the full flag set."
     failure_modes:
       - "Says API keys are required for basic search."
       - "Executes an actual job search instead of orienting/routing."

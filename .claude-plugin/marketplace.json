@@ -9,42 +9,42 @@
   "plugins": [
     {
       "name": "ask-me-anything",
-      "source": "./.agents/skills/ask-me-anything",
+      "source": "./skills/ask-me-anything",
       "description": "Orientation guide for the whole toolkit: the five-step job-hunting workflow, repo structure, and which skill and dependencies each step needs. Use when the user is new or asks how the repo works, where to start, or what to do next."
     },
     {
       "name": "job-search",
-      "source": "./.agents/skills/job-search",
+      "source": "./skills/job-search",
       "description": "Discover and rank fresh job postings that match a candidate profile, filtering by role, keywords, location, recency, and visa sponsorship (H-1B transfer / PERM / green card)."
     },
     {
       "name": "resume-writer",
-      "source": "./.agents/skills/resume-writer",
+      "source": "./skills/resume-writer",
       "description": "Tailor resumes for ATS optimization: analyze a job description for keyword fit, rewrite bullets, and render validated DOCX + PDF resumes and cover letters."
     },
     {
       "name": "application-tracker",
-      "source": "./.agents/skills/application-tracker",
+      "source": "./skills/application-tracker",
       "description": "Track job applications, manage statuses, review pipeline health, and record interview, company, recruiter, compensation, or next-action notes."
     },
     {
       "name": "behavioral-interview-prep",
-      "source": "./.agents/skills/behavioral-interview-prep",
+      "source": "./skills/behavioral-interview-prep",
       "description": "Build project-based behavioral story banks, map stories to common software-engineer question categories, and rewrite them into reusable STAR answers."
     },
     {
       "name": "company-research",
-      "source": "./.agents/skills/company-research",
+      "source": "./skills/company-research",
       "description": "Deeply research a company and the specific role for interviews — product, hard technical challenges, competitive moat and defensibility, culture, comp, and a question bank."
     },
     {
       "name": "outlook-email-assistant",
-      "source": "./.agents/skills/outlook-email-assistant",
+      "source": "./skills/outlook-email-assistant",
       "description": "Read personal Outlook mail, connect recruiter messages to local job applications, and create repository-grounded reply drafts without ever sending email."
     },
     {
       "name": "gardener",
-      "source": "./.agents/skills/gardener",
+      "source": "./skills/gardener",
       "description": "Periodic memory hygiene for the toolkit's agent-memory zones: expire stale discovery scans, prune old search-log rows, flag stale/duplicate LESSONS, verify links, and recompute the pipeline funnel. Dry-run by default; moves rather than deletes."
     }
   ]

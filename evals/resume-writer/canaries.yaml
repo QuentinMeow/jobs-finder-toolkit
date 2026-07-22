@@ -1,5 +1,5 @@
 # Canary set — resume-writer skill
-# Grounded in .agents/skills/resume-writer/{SKILL.md,LESSONS.md,reference.md} and the shipped
+# Grounded in skills/resume-writer/{SKILL.md,LESSONS.md,reference.md} and the shipped
 # examples/ worked draft (Example Corp — Senior Software Engineer, Platform) tailored from the
 # 'Jordan Rivers' baseline. Run per evals/README.md; judge per evals/rubrics/judging.md.
 skill: resume-writer

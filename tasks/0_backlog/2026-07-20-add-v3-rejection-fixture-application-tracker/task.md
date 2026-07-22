@@ -23,14 +23,14 @@ drafted` knowing the default is all folders; negative (v3-rejection) case not
 exercised by fixture." Checked directly against the canary file as it stands
 today — confirmed still true: no v3/legacy fixture exists anywhere under
 `examples/applications/`, so `status.py --check-metadata`'s v3-rejection branch
-(exercised in `.agents/skills/application-tracker/scripts/status.py`) has no
+(exercised in `skills/application-tracker/scripts/status.py`) has no
 canary-level coverage of an agent actually encountering and correctly reporting
 a rejected file.
 
 Relevant files:
 - `evals/application-tracker/canaries.yaml` (`at-validate-drafted-metadata`'s
   `setup:` field to extend, or a new canary id)
-- `.agents/skills/application-tracker/scripts/status.py` (`check_metadata()`,
+- `skills/application-tracker/scripts/status.py` (`check_metadata()`,
   where the v3/legacy-key rejection logic lives)
 - `examples/applications/` (where a new negative fixture folder would live —
   a synthetic, non-real company/application, per the examples directory's
@@ -46,6 +46,6 @@ Relevant files:
   not just confirm the valid ones.
 - Verification:
   ```bash
-  .venv/bin/python .agents/skills/application-tracker/scripts/status.py --check-metadata
+  .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata
   # must report the new legacy fixture as INVALID, alongside the existing valid rows
   ```

@@ -21,9 +21,9 @@ git-ignored in the public repo, your real data is never committed to the public 
 
 - The exported public repo's `.gitignore` ignores `private/`, `config.yaml`,
   every per-skill
-  `.agents/skills/*/references_private/` folder, and the private product folders
+  `skills/*/references_private/` folder, and the private product folders
   (`applications/`, `interviews/`, `templates/`, `.agents/inputs/`,
-  `.agents/skills/coding-interview/`). So you can work **in place** in a public
+  `skills/coding-interview/`). So you can work **in place** in a public
   checkout: drop your private files at those paths (or under `private/` and point
   `config.yaml` at them) and git will refuse to track them. This layered source
   checkout may carry private products on a private branch; the public exporter
@@ -31,17 +31,17 @@ git-ignored in the public repo, your real data is never committed to the public 
 - **Per-skill private notes.** Any candidate-specific skill guidance that used to be
   baked into a `SKILL.md` (real lead-project ordering, real metrics, personal
   anecdotes) lives in a git-ignored `references_private/` folder inside that skill
-  (e.g. `.agents/skills/resume-writer/references_private/`). Each `SKILL.md` reads it
+  (e.g. `skills/resume-writer/references_private/`). Each `SKILL.md` reads it
   when present (its "Before You Start" **Personalization** stanza) and otherwise falls
   back to the generic examples. The exporter prunes these folders and the leak guard
   fails on any tracked file under one.
-- **Guard tokens are config-derived.** `scripts/publish/check_public.py` hardcodes no
+- **Guard tokens are config-derived.** `automation/publish/check_public.py` hardcodes no
   identity; it derives its personal-token set from `config.yaml`, an optional
   `private/leak_tokens.txt`, and the `JOBHUNT_PERSONAL_TOKENS` env var, and scans both
   text and `.docx`/`.pdf` content.
-- Skills are discovered by listing `.agents/skills/` (see `AGENTS.md`). The private
+- Skills are discovered by listing `skills/` (see `AGENTS.md`). The private
   `coding-interview` skill appears there via a git-ignored symlink that
-  `scripts/bootstrap_overlay.py` creates when the overlay is mounted — so it is
+  `automation/bootstrap_overlay.py` creates when the overlay is mounted — so it is
   discoverable **only** when the overlay is mounted.
 - `config.yaml`'s `paths.*` are resolved **relative to the config file's
   directory**, so you can point them at `private/…` (or anywhere) and swap the
@@ -103,7 +103,7 @@ mkdir -p private/skills/references_private
 cp examples/profile/profile.example.md        private/profile/profile.md
 cp examples/profile/baseline.example.yaml     private/profile/baseline.yaml
 cp examples/templates/reference.example.docx  private/templates/reference.docx
-cp .agents/skills/job-search/profiles/_TEMPLATE.yaml private/job-search-profiles/my-default.yaml
+cp skills/job-search/profiles/_TEMPLATE.yaml private/job-search-profiles/my-default.yaml
 
 # 3. Arm the leak guard with your identity (one token per line: name variants,
 #    email localpart, phone, school, employers, distinctive project names):
@@ -117,7 +117,7 @@ cd ..
 
 # 5. Point the toolkit at it and wire everything up (see "Setup steps" below):
 cp config.example.yaml config.yaml     # edit candidate + paths.* to private/…
-python scripts/bootstrap_overlay.py
+python automation/bootstrap_overlay.py
 ```
 
 Git does not track empty directories, so the status folders under
@@ -179,23 +179,23 @@ empty until you have content (e.g. your own private interview-prep skill).
    overlay symlink and installs the tracked git hooks:
 
    ```bash
-   python scripts/bootstrap_overlay.py          # add --check to preview, make no changes
+   python automation/bootstrap_overlay.py          # add --check to preview, make no changes
    ```
 
    With `private/` mounted it symlinks (skipping any that already point correctly):
 
-   - `.agents/skills/coding-interview` → `private/skills/coding-interview` — the private skill;
+   - `skills/coding-interview` → `private/skills/coding-interview` — the private skill;
    - one link per `private/job-search-profiles/*.yaml` into
-     `.agents/skills/job-search/profiles/` — then point `config.job_search.default_profile` at one;
+     `skills/job-search/profiles/` — then point `config.job_search.default_profile` at one;
    - one link per `private/skills/references_private/<skill>/` into
-     `.agents/skills/<skill>/references_private/` when that public skill exists.
+     `skills/<skill>/references_private/` when that public skill exists.
 
-   It **always** installs `hooks/pre-commit` and `hooks/pre-push` into `.git/hooks`
+   It **always** installs `automation/hooks/pre-commit` and `automation/hooks/pre-push` into `.git/hooks`
    (never clobbering a foreign hook — it warns instead), and re-running is a safe
    no-op. The private skill, linked `references_private/` directories, and personal `*.yaml`
    profiles are git-ignored in the public repo, so they stay out of public history while remaining
    discoverable whenever the overlay is mounted. (The
-   `.agents/skills/job-search/profiles/` folder keeps only `example.yaml`, `_TEMPLATE.yaml`, and
+   `skills/job-search/profiles/` folder keeps only `example.yaml`, `_TEMPLATE.yaml`, and
    `README.md` public.)
 
 **Maintainer note.** The maintainer keeps the canonical overlay as its own private
@@ -206,11 +206,11 @@ GitHub repo, mounted at `private/` exactly as above. Strangers do not need
 
 This public repo is **canonical** — toolkit development happens here directly;
 there is no export/mirror step between a maintainer checkout and what you see.
-(The allowlist exporter, `scripts/publish/export_public.py`, seeded this repo's
+(The allowlist exporter, `automation/publish/export_public.py`, seeded this repo's
 fresh history from the maintainer's pre-split combined repo, and lives on as the
 end-to-end harness for the leak-guard test suite and as a sanitized-copy tool.)
 
-The gate is the leak guard (`scripts/publish/check_public.py`). It fails if any
+The gate is the leak guard (`automation/publish/check_public.py`). It fails if any
 private skill, `private/` path, tracked `references_private/` file, or
 personal-identity token (in a path, text content, or extracted `.docx`/`.pdf`
 content) is tracked. Its tokens are derived at runtime from `config.yaml` +
@@ -220,7 +220,7 @@ over: blocking in CI, in the pre-push hook before anything reaches a public
 remote, and by hand any time:
 
 ```bash
-.venv/bin/python scripts/publish/check_public.py
+.venv/bin/python automation/publish/check_public.py
 ```
 
 The steady state is **zero findings**; any finding is a regression to fix, never

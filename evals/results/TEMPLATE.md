@@ -1,7 +1,7 @@
 <!--
 One-page result-recording template. Copy to evals/results/<skill>-<git-sha>-<date>.md and fill.
 Results are per-machine (network/board state + local model dependent). Tracked for now; may be
-gitignored later. Pull tokens/wall-clock from: .venv/bin/python scripts/metrics/report.py --by-sha
+gitignored later. Pull tokens/wall-clock from: .venv/bin/python automation/metrics/report.py --by-sha
 -->
 # Eval result — <skill>
 

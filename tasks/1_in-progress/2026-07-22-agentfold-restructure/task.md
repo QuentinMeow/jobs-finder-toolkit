@@ -19,7 +19,7 @@ Planned stack:
 
 1. `todo/` → `message-queue/` + `tasks/`; records → `memory/` (this PR).
 2. `docs/` → `handbook/` + `design/` (annex split into named docs).
-3. `.agents/skills/` → `skills/`; `scripts/` → `automation/`.
+3. the hidden `.agents/skills/` dir → `skills/`; `scripts/` → `automation/`.
 4. Root-contract rewrite + `templates/` + `roadmap/` + `history/` +
    reconciler wired into pre-commit.
 5. Mirror the layout in the `private/` overlay repo.
@@ -27,7 +27,7 @@ Planned stack:
 ## Definition of done
 
 - No tracked file references a removed path (`todo/`, `design-decisions/`,
-  `known-issues/` at root, `docs/`, `.agents/skills/`, `scripts/`).
+  `known-issues/` at root, `docs/`, the hidden skills dir, `scripts/`).
 - `gardener.py verify-links` passes; CI (vendor drift, compile, tests, leak
   guard) passes on every PR in the stack.
 - The reconciler's checks pass on the restructured tree.

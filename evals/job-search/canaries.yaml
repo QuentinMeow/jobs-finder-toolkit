@@ -1,7 +1,7 @@
 # Canary set — job-search skill
 # Frozen regression + A/B prompts. Each canary is a self-contained user prompt plus a
 # plain-language rubric. Run per evals/README.md; judge per evals/rubrics/judging.md.
-# Grounded in .agents/skills/job-search/SKILL.md + LESSONS.md and the shipped
+# Grounded in skills/job-search/SKILL.md + LESSONS.md and the shipped
 # profiles/example.yaml (target [mid, senior]; us_only: true; visa exclude_negative;
 # max_age_days: null; exclude_neutralize includes 'member of technical staff').
 skill: job-search
@@ -16,7 +16,7 @@ canaries:
     prompt: "Find jobs matching my profile and give me a ranked shortlist."
     setup: >
       Default setup. Runs the default `example` profile
-      (.agents/skills/job-search/scripts/search_jobs.py --profile example), Stage 1.
+      (skills/job-search/scripts/search_jobs.py --profile example), Stage 1.
     expected_behavior:
       - "Runs search_jobs.py against the `example` profile (Stage 1 — company ATS boards + keyless aggregators + JobSpy Indeed/Google) rather than inventing postings."
       - "Writes the ranked shortlist to the discoveries dir (config.discoveries_dir(); examples/applications/1_discoveries/<YYYYMMDD>-example.md in examples fallback) AND presents the top matches in-chat."

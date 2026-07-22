@@ -47,7 +47,7 @@ counts. Therefore:
 
 9. **Efficiency (quantitative) — the primary result.** Aggregate per SHA:
    ```bash
-   .venv/bin/python scripts/metrics/report.py --by-sha
+   .venv/bin/python automation/metrics/report.py --by-sha
    ```
    Report the **mean and median** of the primary metric per variant, and the **per-pair delta**
    (B − A on the same prompt). Because pairs share the task, the paired delta is the low-variance

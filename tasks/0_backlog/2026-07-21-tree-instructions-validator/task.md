@@ -43,7 +43,7 @@ filename (root `AGENTS.md` ≠ leaf `AGENTS.md` budgets), a bytes column is
 added, and leaf discovery derives from the root router table (single source
 of truth) instead of a tree walk.
 
-Exporter (`scripts/publish/export_public.py`) gaps:
+Exporter (`automation/publish/export_public.py`) gaps:
 
 - `_copy_tree` follows symlinks, so an exported `design/CLAUDE.md`
   becomes a duplicated regular file (a drift bomb). Extend

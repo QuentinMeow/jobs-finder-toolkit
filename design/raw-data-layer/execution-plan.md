@@ -16,7 +16,7 @@ no stage depends on a later one.
 
 ## Stage 0 — store library, schemas, fixtures — SHIPPED (PR #49)
 
-Build the shared library `scripts/shared/store/` implementing
+Build the shared library `automation/shared/store/` implementing
 [the store-core contract](01-store-core.md): zone paths (including the
 `state/` zone), atomic write helpers (same-directory temp-and-rename,
 line-atomic JSONL append, torn-tail tolerance), the content-addressed blob

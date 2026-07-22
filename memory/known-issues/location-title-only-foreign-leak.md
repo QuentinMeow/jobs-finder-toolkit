@@ -10,7 +10,7 @@
 
 A posting whose foreign city appears only in the *title* (e.g. "Senior SRE —
 Bangalore") while its location field holds a generic value like
-"Hybrid or Remote" is classified `us_remote` by `scripts/shared/location.py`
+"Hybrid or Remote" is classified `us_remote` by `automation/shared/location.py`
 and survives location filtering.
 
 ## Reproduction

@@ -57,7 +57,7 @@ the fictional "Jordan Rivers" example candidate. Requires Python 3.11+
 ```bash
 git clone https://github.com/<owner>/jobs-finder-toolkit.git && cd jobs-finder-toolkit   # or your fork
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python .agents/skills/resume-writer/scripts/render.py examples/applications/6_drafted/example-corp-senior-software-engineer/
+.venv/bin/python skills/resume-writer/scripts/render.py examples/applications/6_drafted/example-corp-senior-software-engineer/
 ```
 
 That renders and validates the example resume + cover letter you see above. Then
@@ -87,7 +87,7 @@ move it to `5_applied/`, `4_in_progress/`, `3_rejected/`, or `2_ignored/` as thi
 progress (or ask the agent; the number prefix is a fixed sort key, not a sequence). `status.py` prints the pipeline any time:
 
 ```bash
-.venv/bin/python .agents/skills/application-tracker/scripts/status.py
+.venv/bin/python skills/application-tracker/scripts/status.py
 ```
 
 New here? Ask your agent anything — the `ask-me-anything` skill is the built-in
@@ -100,7 +100,7 @@ Your real identity never enters this repo. Copy the example config and point its
 
 ```bash
 cp config.example.yaml config.yaml     # edit: your name, your file paths
-python scripts/bootstrap_overlay.py    # wires git hooks (+ overlay symlinks if mounted)
+python automation/bootstrap_overlay.py    # wires git hooks (+ overlay symlinks if mounted)
 ```
 
 Keep your real profile, applications, and interview prep in a **private overlay** —
@@ -111,7 +111,7 @@ creating an overlay from scratch: [handbook/private-overlay.md](handbook/private
 
 ## The skills
 
-Skills live in [`.agents/skills/`](.agents/skills/) — self-contained (each bundles
+Skills live in [`skills/`](skills/) — self-contained (each bundles
 its scripts and vendored dependencies), agent-agnostic, and also published as a
 Claude Code plugin marketplace via
 [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json):
@@ -130,8 +130,8 @@ Claude Code plugin marketplace via
 ```
 config.example.yaml      # tracked "Jordan Rivers" placeholder (+ no-config fallback)
 examples/                # fictional profile/templates/app + public resume/JD fixtures
-.agents/skills/<skill>/  # the skills: SKILL.md + self-contained scripts
-scripts/                 # shared modules, vendoring, maintenance, metrics, leak guard
+skills/<skill>/  # the skills: SKILL.md + self-contained scripts
+automation/              # shared modules, vendoring, maintenance, metrics, leak guard, hooks
 evals/                   # per-skill canary evals (gate skill-instruction changes)
 hooks/                   # tracked git hooks (drift check, compile, leak guard)
 handbook/                # extended reference: architecture, private overlay, metrics

@@ -6,7 +6,7 @@ or appends learnings to, by lifecycle **zone** (maintainer-only design doc
 overlay-mounted, absent in contributor checkouts) with its retention +
 writer. Promotion (MEMORY→LESSONS→SKILL) exists; **forgetting**
 (TTL/prune/demotion) is enforced by the `gardener`
-(`.agents/skills/gardener/`, dry-run by default).
+(`skills/gardener/`, dry-run by default).
 
 | Location | Zone | Retention | Who writes |
 |----------|------|-----------|-----------|

@@ -34,7 +34,7 @@ jobsfinder/                         # installed package (was scripts/)
 │   ├── status.py
 │   ├── migrate_layout.py
 │   └── backfill_location.py
-├── check.py                        # validation (was scripts/shared/check.py)
+├── check.py                        # validation (was automation/shared/check.py)
 └── job_search/                     # skill implementation moved into the package
     ├── __init__.py
     ├── search_jobs.py
@@ -45,7 +45,7 @@ jobsfinder/                         # installed package (was scripts/)
 pyproject.toml                      # declares the package + deps + console scripts
 ```
 
-`.agents/skills/job-search/scripts/` becomes a **thin shim** that just calls the
+`skills/job-search/scripts/` becomes a **thin shim** that just calls the
 package, e.g. `search_jobs.py` → `from jobsfinder.job_search.search_jobs import main; main()`.
 
 ### Code sketch

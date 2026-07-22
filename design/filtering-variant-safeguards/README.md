@@ -113,7 +113,7 @@ is authoritative.
 
 ## Full-evidence location/workplace architecture
 
-`scripts/shared/location.py` becomes the canonical owner of a posting-level
+`automation/shared/location.py` becomes the canonical owner of a posting-level
 assessment. The job-search, application-tracker, and resume-writer skills consume
 byte-identical vendored copies.
 
@@ -208,7 +208,7 @@ and handoff. Missing, malformed, or low-confidence salary data must not affect
 ### 1. Labeled semantic corpus
 
 The public corpus lives under
-`.agents/skills/job-search/filter_variants/`. It contains a schema version, stable
+`skills/job-search/filter_variants/`. It contains a schema version, stable
 case IDs, a domain, fictional posting inputs, injected policy, and exact expected
 result/confidence/rule/evidence classes. It covers location/workplace,
 sponsorship, title/seniority, and required YOE.
@@ -307,8 +307,8 @@ candidate/employer identifiers never cross the boundary.
 
 ## Ownership
 
-- `scripts/shared/location.py`: canonical location/workplace assessment.
-- `scripts/shared/job_metadata.py`: canonical shared metadata evidence, including
+- `automation/shared/location.py`: canonical location/workplace assessment.
+- `automation/shared/job_metadata.py`: canonical shared metadata evidence, including
   workplace and required YOE extraction.
 - job-search `visa.py` and `scoring.py`: adapters and policy integration, not
   duplicate phrase truth.
@@ -319,4 +319,4 @@ candidate/employer identifiers never cross the boundary.
 - application-tracker: independent validation using the same vendored assessment.
 
 Vendored copies remain generated artifacts. Canonical shared modules are edited
-once and synchronized with `scripts/vendoring/sync_vendored.py`.
+once and synchronized with `automation/vendoring/sync_vendored.py`.

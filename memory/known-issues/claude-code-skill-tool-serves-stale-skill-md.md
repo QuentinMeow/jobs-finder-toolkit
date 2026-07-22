@@ -42,6 +42,6 @@ distinct from the primary checkout, rather than anything in this repository's
 No code fix available in this repository (the defect is in the harness, not the
 toolkit). Workaround, already adopted in later eval runs: inside any eval
 worktree, have the runner read instruction files directly by path (e.g. `Read
-.agents/skills/<skill>/SKILL.md`) instead of invoking the `Skill` tool, and note
+skills/<skill>/SKILL.md`) instead of invoking the `Skill` tool, and note
 this constraint in `evals/README.md` / the run's fixture setup so future gate
 runs adopt it by default rather than rediscovering it per-run.

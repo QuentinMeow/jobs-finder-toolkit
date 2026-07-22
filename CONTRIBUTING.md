@@ -25,7 +25,7 @@ Optionally wire the tracked git hooks (drift check + compile on commit) in one
 idempotent, stdlib-only step:
 
 ```bash
-python scripts/bootstrap_overlay.py        # installs hooks/pre-commit + hooks/pre-push
+python automation/bootstrap_overlay.py        # installs automation/hooks/pre-commit + automation/hooks/pre-push
 ```
 
 ## Running the checks
@@ -34,32 +34,32 @@ Run these before opening a PR (all must pass; CI runs them too):
 
 ```bash
 # Resume-writer schema/extraction/render tests (includes one fake multi-experience E2E)
-.venv/bin/python -m unittest discover -s .agents/skills/resume-writer/scripts/tests
+.venv/bin/python -m unittest discover -s skills/resume-writer/scripts/tests
 
 # Canonical shared-module tests
-.venv/bin/python -m unittest discover -s scripts/shared/tests
+.venv/bin/python -m unittest discover -s automation/shared/tests
 
 # Job-search pipeline tests + deterministic high-stakes filter corpus
 .venv/bin/python -m unittest discover \
-  -s .agents/skills/job-search/scripts/tests \
-  -t .agents/skills/job-search/scripts/tests
-.venv/bin/python .agents/skills/job-search/scripts/validate_filter_variants.py --check
+  -s skills/job-search/scripts/tests \
+  -t skills/job-search/scripts/tests
+.venv/bin/python skills/job-search/scripts/validate_filter_variants.py --check
 
 # Publish leak-guard + exporter unit tests
-.venv/bin/python -m unittest discover -s scripts/publish/tests
+.venv/bin/python -m unittest discover -s automation/publish/tests
 
 # Instruction-file size budget (strict)
-.venv/bin/python scripts/metrics/instruction_budget.py --strict
+.venv/bin/python automation/metrics/instruction_budget.py --strict
 
 # Public leak guard — must be COMPLETELY CLEAN (exit 0, zero findings)
-.venv/bin/python scripts/publish/check_public.py
+.venv/bin/python automation/publish/check_public.py
 
 # Link / symlink / vendor-drift check
-.venv/bin/python scripts/maintenance/gardener/gardener.py verify-links
+.venv/bin/python automation/maintenance/gardener/gardener.py verify-links
 ```
 
-Vendored copies must stay in sync; after editing a canonical `scripts/shared/`
-module, regenerate with `.venv/bin/python scripts/vendoring/sync_vendored.py` (the
+Vendored copies must stay in sync; after editing a canonical `automation/shared/`
+module, regenerate with `.venv/bin/python automation/vendoring/sync_vendored.py` (the
 pre-commit hook and CI both fail on drift).
 
 ## Commits & pull requests
@@ -72,7 +72,7 @@ pre-commit hook and CI both fail on drift).
 3. **Commit messages**: imperative subject line (≤72 chars) saying *what* changed;
    a short body saying *why* — especially for anything behavioral. Run the checks
    above before committing; the tracked pre-commit hook (installed by
-   `scripts/bootstrap_overlay.py`) re-runs the cheap ones.
+   `automation/bootstrap_overlay.py`) re-runs the cheap ones.
 4. **Open the PR against `main`** and fill in the pull-request template — it
    mirrors the gates: checks pass, eval canaries run or a recorded skip
    rationale per the risk-based gate if you touched skill instruction files,
@@ -89,7 +89,7 @@ pre-commit hook and CI both fail on drift).
 
 ## Eval gate for skill-instruction changes
 
-The eval gate on a skill's instruction files — `.agents/skills/*/SKILL.md`,
+The eval gate on a skill's instruction files — `skills/*/SKILL.md`,
 `LESSONS.md`, or `reference.md` — is **risk-based**: the editing agent decides
 whether to run that skill's canaries in `evals/<skill>/` by judging the edit's
 **intention** (does it change what an agent does?) and **size**. Behavioral or
@@ -106,7 +106,7 @@ This tree is PUBLIC. Never add real names, emails, phone numbers, employer or
 school names, home paths, or any other personal identity — in code, docs,
 comments, tests, or example data. Use the fictional Jordan Rivers fixture.
 
-The CI **leak guard (`scripts/publish/check_public.py`) is blocking**: it scans
+The CI **leak guard (`automation/publish/check_public.py`) is blocking**: it scans
 tracked files (text and `.docx`/`.pdf` content) for structural PII and private
 paths, and any finding fails the build. Fork PRs run it tokenless (structural +
 path checks only), which a clean tree passes by design.
@@ -131,10 +131,10 @@ your own overlay from scratch):
 
 ## Extra-careful review areas
 
-Changes under **`scripts/publish/`**, **`.github/`**, and **`hooks/`** are the
+Changes under **`automation/publish/`**, **`.github/`**, and **`hooks/`** are the
 repo's leak defenses (the guard, the exporter, CI, and the pre-push gate). PRs
 touching them get extra-careful review — keep those changes small, well-explained,
-and covered by the tests in `scripts/publish/tests/`.
+and covered by the tests in `automation/publish/tests/`.
 
 This is a single-maintainer repo, so there is no `CODEOWNERS` file; the maintainer
 reviews every PR.
