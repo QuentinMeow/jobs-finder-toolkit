@@ -84,3 +84,34 @@
 - Full battery re-verified on the combined branch: shared 285, publish 30,
   tracker 42, email-assistant 24, job-search 210, resume-writer 86,
   example render, reconcile, verify-links, armed leak guard — all green.
+
+## 2026-07-22 — session 3 (codex, owner calendar-UX review)
+
+- Researched task/calendar information hierarchy and real ATS pipeline models;
+  recorded the sources and resulting rules in
+  `design/application-progress-calendar/ux-revision.md`.
+- Reworked managed calendar rows so confirmed events lead with the local
+  date/time, todos lead with a verb and optional deadline, and the company +
+  role is a single link to `notes.md` or `meta.yaml`. Multi-line YAML markers
+  now upgrade to one hidden compact JSON line; duplicated email evidence is
+  omitted because metadata remains the provenance source.
+- Added optional `action`, `due_at`, `ends_at`, and `details` calendar fields;
+  direct scheduling flags on `--update-progress`; and preview-first
+  `--refresh-calendar [--write]` for a display-only migration. Renamed the
+  human sections to “Waiting and follow-up” and “Interview schedule”, while
+  retaining parser support for the original headings.
+- Expanded broad workflow coverage with assessment `in_progress`,
+  `decision_required`, `follow_up_required`, and `paused` states plus
+  `reference_check` and `work_authorization` phases. Employer-specific round
+  names remain `label` values instead of enum growth.
+- Refreshed the private calendar in place: five managed entries are consistent,
+  show their event/action signal, and link to current role context. Reorganized
+  unlinked events and cleanup todos without changing any application status.
+- Verification: shared 295 PASS; tracker 47 PASS; job-search suite PASS;
+  compile, vendor drift, 215 private metadata files, instruction budget, and
+  public leak guard PASS. Resume-writer ran 85/86 with only its documented
+  LibreOffice silent-PDF flake failing twice; the changed metadata logic passed.
+- Canary gate: pending before merge. The behavioral SKILL.md edit requires a
+  fresh-session 5-canary run; this session cannot create the required isolated
+  agent sessions under its collaboration policy. The previous same-day v5 run
+  was 5/5 but predates this UX revision.

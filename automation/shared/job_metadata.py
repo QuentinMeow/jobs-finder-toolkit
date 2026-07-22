@@ -122,8 +122,10 @@ PROGRESS_PHASES = (
     "technical_interview",
     "interview_loop",
     "team_match",
+    "reference_check",
     "offer",
     "background_check",
+    "work_authorization",
     "onboarding",
     "other",
 )
@@ -136,14 +138,33 @@ PROGRESS_STATES = (
     "scheduled",
     "reschedule_required",
     "reschedule_pending",
+    "in_progress",
+    "decision_required",
+    "follow_up_required",
     "waiting_employer",
     "awaiting_result",
+    "paused",
     "closed",
 )
-# States projected onto the calendar file: the owner owes an action, a booking
-# is awaiting confirmation, or a confirmed time exists.
-PROGRESS_ACTION_STATES = ("action_required", "booking_required", "reschedule_required")
-PROGRESS_WAITING_STATES = ("awaiting_schedule", "reschedule_pending")
+# States projected onto the calendar file. Keep the reporting states broad and
+# describe employer-specific work in ``label`` / the calendar action text: an
+# assessment, portfolio request, reference request, offer decision, or follow-
+# up should not require a new phase enum merely to become a clear todo.
+PROGRESS_ACTION_STATES = (
+    "action_required",
+    "booking_required",
+    "reschedule_required",
+    "in_progress",
+    "decision_required",
+    "follow_up_required",
+)
+PROGRESS_WAITING_STATES = (
+    "awaiting_schedule",
+    "reschedule_pending",
+    "waiting_employer",
+    "awaiting_result",
+    "paused",
+)
 # Scheduling-flow states: entering one of these creates/updates a calendar entry.
 PROGRESS_SCHEDULING_STATES = (
     "booking_required",
@@ -151,6 +172,11 @@ PROGRESS_SCHEDULING_STATES = (
     "scheduled",
     "reschedule_required",
     "reschedule_pending",
+)
+PROGRESS_CALENDAR_STATES = (
+    *PROGRESS_ACTION_STATES,
+    *PROGRESS_WAITING_STATES,
+    "scheduled",
 )
 PROGRESS_SOURCE_KINDS = ("manual", "email")
 # Coarse statuses whose progress state must be (exactly) ``closed``.
@@ -171,8 +197,10 @@ _LEGACY_STAGE_PHASES = (
     ("interview_loop", ("onsite", "on-site", "interview loop", "final round",
                         "final loop", "virtual onsite", "panel")),
     ("team_match", ("team match", "team matching")),
+    ("reference_check", ("reference check", "references")),
     ("offer", ("offer",)),
     ("background_check", ("background check", "background")),
+    ("work_authorization", ("work authorization", "immigration", "visa paperwork")),
     ("onboarding", ("onboarding", "onboard")),
 )
 
@@ -217,9 +245,7 @@ def default_progress_for_status(status: str, *, current: dict | None = None) -> 
         out["state"] = "closed"
     else:  # in_progress: keep a deliberately-set active state, never guess one.
         state = str(current.get("state") or "").strip()
-        keepable = {
-            "action_required", "awaiting_result", *PROGRESS_SCHEDULING_STATES,
-        }
+        keepable = set(PROGRESS_CALENDAR_STATES)
         out["state"] = state if state in keepable else "unknown"
     if label:
         out["label"] = label

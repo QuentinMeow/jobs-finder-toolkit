@@ -451,13 +451,16 @@ def main():
     parser.add_argument("--phase",
                         help="Hiring phase (application_prep,application_review,"
                              "recruiter_screen,assessment,hiring_manager,"
-                             "technical_interview,interview_loop,team_match,offer,"
-                             "background_check,onboarding,other). Comma = OR.")
+                             "technical_interview,interview_loop,team_match,"
+                             "reference_check,offer,background_check,"
+                             "work_authorization,onboarding,other). Comma = OR.")
     parser.add_argument("--progress-state",
                         help="Workflow state (unknown,action_required,"
                              "booking_required,awaiting_schedule,scheduled,"
                              "reschedule_required,reschedule_pending,"
-                             "waiting_employer,awaiting_result,closed). Comma = OR.")
+                             "in_progress,decision_required,follow_up_required,"
+                             "waiting_employer,awaiting_result,paused,closed). "
+                             "Comma = OR.")
     parser.add_argument("--slug", help="Application-folder slug substring.")
     parser.add_argument("--channel", help="Lead channel substring (case-insensitive).")
     parser.add_argument("--workplace",

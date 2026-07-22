@@ -14,8 +14,8 @@
   folder-walking `check_mail_safety.py` in pre-commit, skill renamed
   `skills/email-assistant/` (no alias; the overlay's `references_private`
   folder is already renamed). Stage 2 (tracker schema v5 + the single
-  calendar file) is implemented on `email/stage-2-progress-calendar`,
-  stacked on Stage 1. Stages 3–5 not started. Owner follow-up: the one
+  calendar file) is merged; its owner-review UX revision makes events and
+  todos scannable while retaining broad reporting phases. Stages 3–5 not started. Owner follow-up: the one
   read-only `--live` conformance run.
 - **Job store**: raw-data-layer stages 0–4 shipped (PRs #49–#53) — library,
   capture boundary, builder, pipeline integration, retention/gardener. The
@@ -26,9 +26,9 @@
   harness live.
 - **Tracker**: meta.yaml schema v5 (per-job status + folder rollup +
   structured `jobs[].progress` + the single `calendar.md` via
-  `config.calendar_path()`) is current on the stage-2 branch; v4 is rejected
-  after the preview-first `migrate_to_v5.py` cutover. The OWNER must run the
-  migration on `private/` applications before their next tracker run.
+  `config.calendar_path()`) is current; v4 is rejected after the preview-first
+  migration cutover. Calendar rows lead with the time or action, link to role
+  context, and keep machine metadata to one hidden compact line.
 - **Quality gates**: CI runs vendor drift, compileall, example render +
   validate, four unit suites, store fixture validation, leak guard, and
   gitleaks; pre-commit mirrors the fast checks + instruction budgets + the

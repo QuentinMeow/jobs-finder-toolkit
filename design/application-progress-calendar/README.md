@@ -1,10 +1,10 @@
 # Application progress, interview scheduling, and the calendar todo file
 
-**Status:** designed on 2026-07-22; implementation has not started. This
-design keeps the existing coarse application statuses, adds structured
-per-role progress, and introduces one private Markdown file for every
-interview schedule and scheduling action. The ordered delivery plan is in
-[execution-plan.md](execution-plan.md).
+**Status:** implemented on 2026-07-22. The owner-review correction to the
+human calendar and expanded transition coverage is recorded in
+[the calendar UX revision](ux-revision.md). This original design remains the
+record of the data-ownership and safety decisions; the ordered delivery plan
+is in [execution-plan.md](execution-plan.md).
 
 ## For the human reviewer
 

@@ -154,7 +154,8 @@ class StatusTransitionTests(unittest.TestCase):
         self.assertEqual(meta["jobs"][1]["status_date"], date.today().isoformat())
         # Reopening keeps the phase but never guesses an active state.
         self.assertEqual(meta["jobs"][1]["progress"]["phase"], "application_review")
-        self.assertEqual(meta["jobs"][1]["progress"]["state"], "unknown")
+        self.assertEqual(
+            meta["jobs"][1]["progress"]["state"], "waiting_employer")
 
     def test_update_job_by_index(self):
         slug = "example-corp-multi-20260720"

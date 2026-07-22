@@ -119,3 +119,28 @@ tracker run on real data, the owner must migrate the private fleet:
 .venv/bin/python skills/application-tracker/scripts/migrate_to_v5.py --write   # apply
 .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata
 ```
+
+## Owner-review UX revision (2026-07-22)
+
+Focused and regression results after the calendar UX correction:
+
+```text
+automation/shared/tests                         295 PASS
+skills/application-tracker/scripts/tests        47 PASS
+skills/job-search/scripts/tests                 PASS
+skills/resume-writer/scripts/tests              85 PASS, 1 known LibreOffice PDF flake
+compileall                                      PASS
+vendoring --check                               PASS
+status.py --check-calendar (private)            5 entries / 5 references, consistent
+status.py --check-metadata (private)            215 applications, 0 invalid
+instruction_budget.py --strict                  PASS
+check_public.py                                 PASS
+```
+
+The resume-writer failure repeated twice in the unchanged end-to-end PDF
+conversion test and matches `memory/known-issues/render-py-pdf-skipped-libreoffice-flake.md`:
+DOCX generation succeeded, but LibreOffice exited without creating its PDF.
+
+The application-tracker canaries must be rerun in fresh model-pinned sessions
+before merge because `SKILL.md` changed behavior. Unit/integration verification
+does not replace that instruction-harness gate.

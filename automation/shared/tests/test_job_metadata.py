@@ -843,6 +843,17 @@ class ProgressValidationTests(unittest.TestCase):
         self.assertTrue(any(
             "updated_at must be an ISO-8601 timestamp" in e for e in errors))
 
+    def test_extended_interview_process_phases_and_states_are_valid(self):
+        for phase, state in (
+            ("assessment", "in_progress"),
+            ("offer", "decision_required"),
+            ("reference_check", "follow_up_required"),
+            ("work_authorization", "paused"),
+        ):
+            with self.subTest(phase=phase, state=state):
+                self.assertEqual(
+                    self._errors(progress={"phase": phase, "state": state}), [])
+
 
 class ProgressMappingTests(unittest.TestCase):
     def test_migrate_job_progress_is_deterministic(self):
@@ -898,14 +909,14 @@ class ProgressMappingTests(unittest.TestCase):
             default_progress_for_status("in_progress", current=current),
             {"phase": "technical_interview", "state": "scheduled",
              "label": "Virtual screen", "calendar_item": "cal-acme-01"})
-        # ...but a pre-engagement default (waiting_employer) is never carried
-        # into in_progress as if it were knowledge.
+        # A known employer wait also survives; the status change alone should
+        # not erase who owns the next action.
         self.assertEqual(
             default_progress_for_status(
                 "in_progress",
                 current={"phase": "application_review",
                          "state": "waiting_employer"}),
-            {"phase": "application_review", "state": "unknown"})
+            {"phase": "application_review", "state": "waiting_employer"})
         # drafted/applied reset to the deterministic defaults (calendar kept).
         self.assertEqual(
             default_progress_for_status("drafted", current=current),

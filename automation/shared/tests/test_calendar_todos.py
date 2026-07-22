@@ -116,9 +116,10 @@ class ParseTests(unittest.TestCase):
         self.assertTrue(any("exact time" in e for e in doc.errors))
 
     def test_unknown_marker_key_fails(self):
-        # render_entry only emits known keys, so plant the stray key by hand.
+        # render_entry only emits known keys, so plant one in compact JSON.
         text = _calendar_with(_fields()).replace(
-            "  source: manual\n", "  source: manual\n  surprise: true\n")
+            '"state":"booking_required"',
+            '"state":"booking_required","surprise":true')
         doc = parse_calendar(text)
         self.assertTrue(any("unknown key(s): surprise" in e for e in doc.errors))
 
@@ -128,10 +129,22 @@ class ParseTests(unittest.TestCase):
         self.assertTrue(any("personal-notes section" in e for e in doc.errors))
 
     def test_missing_section_heading_fails(self):
-        text = CALENDAR_TEMPLATE.replace("## Scheduled\n", "")
+        text = CALENDAR_TEMPLATE.replace(f"{SECTION_SCHEDULED}\n", "")
         doc = parse_calendar(text)
-        self.assertTrue(any("missing required section heading '## Scheduled'" in e
+        self.assertTrue(any(f"missing required section heading '{SECTION_SCHEDULED}'" in e
                             for e in doc.errors))
+
+    def test_legacy_section_labels_parse_and_upgrade_on_write(self):
+        legacy = CALENDAR_TEMPLATE.replace(
+            SECTION_WAITING, "## Waiting for confirmation").replace(
+            SECTION_SCHEDULED, "## Scheduled")
+        fields = _fields()
+        plan = plan_calendar_update(
+            legacy.encode(), {fields["id"]: fields}, create_missing=True)
+        self.assertEqual(plan.errors, ())
+        output = plan.output_bytes.decode()
+        self.assertIn(SECTION_WAITING, output)
+        self.assertIn(SECTION_SCHEDULED, output)
 
 
 class PlanTests(unittest.TestCase):
@@ -174,8 +187,31 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(entry.starts_at, "2026-08-01T10:00:00")
         self.assertEqual(
             entry.text,
-            "ExampleCorp — Senior Software Engineer: confirmed interview",
+            "**Sat, Aug 1 · 10:00 AM PDT** — "
+            "ExampleCorp · Senior Software Engineer · Technical interview",
         )
+
+    def test_visible_row_prioritizes_action_due_date_and_details_link(self):
+        fields = _fields(
+            action="Submit the take-home",
+            due_at="2026-08-03",
+            details="../4_in_progress/examplecorp/meta.yaml",
+        )
+        fields["_company"] = "ExampleCorp"
+        plan = plan_calendar_update(
+            CALENDAR_TEMPLATE.encode(), {fields["id"]: fields},
+            create_missing=True)
+        self.assertEqual(plan.errors, ())
+        entry = parse_calendar(plan.output_bytes.decode()).entries[fields["id"]]
+        self.assertIn("**Submit the take-home**", entry.text)
+        self.assertIn("Due Mon, Aug 3", entry.text)
+        self.assertIn("[ExampleCorp · Senior Software Engineer]", entry.text)
+
+    def test_renderer_compacts_machine_details_to_one_hidden_line(self):
+        rendered = render_entry(_fields(), checked=False, text="Readable row")
+        self.assertEqual(len(rendered), 2)
+        self.assertIn("<!-- jobhunt-calendar {", rendered[1])
+        self.assertIn('"id":"cal-examplecorp', rendered[1])
 
     def test_state_change_preserves_owner_authored_entry_text(self):
         base = _calendar_with(

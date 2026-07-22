@@ -38,9 +38,10 @@ Usage:
     python skills/application-tracker/scripts/status.py --update google-ml-engineer-20260416 applied
     python skills/application-tracker/scripts/status.py --update-job <slug> "Backend Engineer" in_progress
     python skills/application-tracker/scripts/status.py --update-job <slug> 2 rejected
-    python skills/application-tracker/scripts/status.py --update-progress <slug> <role-match> --phase technical_interview --state booking_required [--label TEXT] [--email-ref MESSAGE_KEY]
+    python skills/application-tracker/scripts/status.py --update-progress <slug> <role-match> --phase technical_interview --state scheduled --starts-at <ISO> --timezone <IANA>
     python skills/application-tracker/scripts/status.py --check-calendar
     python skills/application-tracker/scripts/status.py --sync-calendar [--write]
+    python skills/application-tracker/scripts/status.py --refresh-calendar [--write]
     python skills/application-tracker/scripts/status.py --enrich-metadata <slug>
     python skills/application-tracker/scripts/status.py --check-metadata
     python skills/application-tracker/scripts/status.py --sync-log
@@ -49,6 +50,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
@@ -74,7 +76,6 @@ from calendar_todos import (
     STATE_SECTIONS,
     parse_calendar,
     plan_calendar_update,
-    default_entry_text,
     generate_entry_id,
     record_cancellation,
     record_reschedule,
@@ -82,8 +83,8 @@ from calendar_todos import (
 from job_metadata import (
     APPLICATION_SCHEMA_VERSION,
     PROGRESS_ACTION_STATES,
+    PROGRESS_CALENDAR_STATES,
     PROGRESS_PHASES,
-    PROGRESS_SCHEDULING_STATES,
     PROGRESS_STATES,
     PROGRESS_WAITING_STATES,
     default_progress_for_status,
@@ -567,6 +568,14 @@ def _calendar_path() -> Path:
     return config.calendar_path()
 
 
+def _details_reference(meta_path: Path) -> str:
+    """Relative role-context link for the human calendar row."""
+    target = meta_path.parent / "notes.md"
+    if not target.is_file():
+        target = meta_path
+    return Path(os.path.relpath(target, start=_calendar_path().parent)).as_posix()
+
+
 def _read_calendar_raw(*, create: bool = False) -> bytes | None:
     """Current calendar bytes; optionally create the template file first."""
     path = _calendar_path()
@@ -580,7 +589,8 @@ def _read_calendar_raw(*, create: bool = False) -> bytes | None:
 
 
 def _entry_fields_for_progress(
-    entry, *, slug: str, job: dict, progress: dict, company: str
+    entry, *, slug: str, job: dict, progress: dict, company: str,
+    meta_path: Path,
 ) -> dict:
     """Merge a job's new progress summary into its calendar entry fields."""
     if entry is not None:
@@ -590,9 +600,13 @@ def _entry_fields_for_progress(
             "id": progress.get("calendar_item"),
             "application": slug,
             "role": str(job.get("role") or ""),
+            "action": None,
+            "due_at": None,
             "starts_at": None,
+            "ends_at": None,
             "timezone": None,
             "follow_up_at": None,
+            "details": None,
             "source": "manual",
             "reschedule_to": None,
             "reschedule_timezone": None,
@@ -602,6 +616,11 @@ def _entry_fields_for_progress(
     fields["phase"] = progress.get("phase")
     fields["state"] = progress.get("state")
     fields["label"] = progress.get("label")
+    fields["details"] = _details_reference(meta_path)
+    if entry is not None and entry.state != progress.get("state") \
+            and progress.get("state") not in PROGRESS_ACTION_STATES:
+        fields["action"] = None
+        fields["due_at"] = None
     source = progress.get("source") if isinstance(progress.get("source"), dict) else {}
     if source.get("kind") == "email" and str(source.get("ref") or "").strip():
         fields["source"] = f"email:{str(source['ref']).strip()}"
@@ -686,7 +705,8 @@ def _sync_log_hint(changed: bool, moved: bool) -> None:
 
 
 def _transition_calendar_plan(
-    slug: str, company: str, jobs_progress: list[tuple[dict, dict]]
+    slug: str, company: str, jobs_progress: list[tuple[dict, dict]],
+    *, target_meta_path: Path,
 ):
     """Plan the calendar updates for jobs whose progress references an entry.
 
@@ -723,7 +743,8 @@ def _transition_calendar_plan(
                   "run --check-calendar", file=sys.stderr)
             sys.exit(1)
         upserts[item] = _entry_fields_for_progress(
-            entry, slug=slug, job=job, progress=progress, company=company)
+            entry, slug=slug, job=job, progress=progress, company=company,
+            meta_path=target_meta_path)
     plan = plan_calendar_update(raw, upserts)
     if plan.errors:
         print("Error: could not plan the calendar update (nothing written):",
@@ -773,7 +794,8 @@ def update_status(slug: str, new_status: str):
         _print_plan_errors(meta_path, plan)
         sys.exit(1)
     calendar_plan = _transition_calendar_plan(
-        slug, str(meta.get("company") or ""), jobs_progress)
+        slug, str(meta.get("company") or ""), jobs_progress,
+        target_meta_path=_status_dir(new_status) / slug / "meta.yaml")
     changed = _commit_meta_and_calendar([(meta_path, raw, plan)], calendar_plan)
     if plan.changed:
         print(f"{slug}: set all {len(meta['jobs'])} posting(s) to '{new_status}' "
@@ -826,8 +848,11 @@ def update_job_status(slug: str, role_match: str, status: str):
     if plan.errors:
         _print_plan_errors(meta_path, plan)
         sys.exit(1)
+    edited_preview = yaml.safe_load(plan.output_bytes.decode("utf-8"))
+    derived = derive_status(edited_preview["jobs"])
     calendar_plan = _transition_calendar_plan(
-        slug, str(meta.get("company") or ""), [(job, progress)])
+        slug, str(meta.get("company") or ""), [(job, progress)],
+        target_meta_path=_status_dir(derived) / slug / "meta.yaml")
     changed = _commit_meta_and_calendar([(meta_path, raw, plan)], calendar_plan)
 
     detail = f"status {old_status} -> {status}"
@@ -836,8 +861,6 @@ def update_job_status(slug: str, role_match: str, status: str):
         print(f"  (meta.yaml already matched — {detail})")
 
     # Recompute the rollup from the edited postings and move the folder to match.
-    edited = yaml.safe_load(_read_after_edit(meta_path, raw, plan.changed))
-    derived = derive_status(edited["jobs"])
     moved = _move_application(slug, src, derived)
     _sync_log_hint(changed, moved)
 
@@ -853,8 +876,13 @@ def _utc_now_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def update_progress(slug: str, role_match: str, *, phase: str, state: str,
-                    label: str | None = None, email_ref: str | None = None):
+def update_progress(
+    slug: str, role_match: str, *, phase: str, state: str,
+    label: str | None = None, email_ref: str | None = None,
+    action: str | None = None, due_at: str | None = None,
+    starts_at: str | None = None, ends_at: str | None = None,
+    timezone_name: str | None = None, follow_up_at: str | None = None,
+):
     """Set ONE posting's structured progress; never moves the status folder.
 
     Writes ``jobs[].progress`` (phase, state, optional label, tool-stamped
@@ -906,7 +934,7 @@ def update_progress(slug: str, role_match: str, *, phase: str, state: str,
 
     company = str(meta.get("company") or "")
     calendar_plan = None
-    needs_entry = state in PROGRESS_SCHEDULING_STATES or calendar_item
+    needs_entry = state in PROGRESS_CALENDAR_STATES or calendar_item
     if needs_entry:
         raw_calendar = _read_calendar_raw(create=True)
         doc = parse_calendar(raw_calendar.decode("utf-8"))
@@ -925,7 +953,15 @@ def update_progress(slug: str, role_match: str, *, phase: str, state: str,
             calendar_item = generate_entry_id(doc.entries, slug)
         progress["calendar_item"] = calendar_item
         fields = _entry_fields_for_progress(
-            entry, slug=slug, job=job, progress=progress, company=company)
+            entry, slug=slug, job=job, progress=progress, company=company,
+            meta_path=meta_path)
+        for key, value in (
+            ("action", action), ("due_at", due_at),
+            ("starts_at", starts_at), ("ends_at", ends_at),
+            ("timezone", timezone_name), ("follow_up_at", follow_up_at),
+        ):
+            if value is not None:
+                fields[key] = value or None
         calendar_plan = plan_calendar_update(
             raw_calendar, {calendar_item: fields}, create_missing=entry is None)
         if calendar_plan.errors:
@@ -934,9 +970,9 @@ def update_progress(slug: str, role_match: str, *, phase: str, state: str,
             for error in calendar_plan.errors:
                 print(f"  - {error}", file=sys.stderr)
             if state == "scheduled":
-                print("Hint: a scheduled entry needs the confirmed exact time + "
-                      "timezone. Record starts_at/timezone on the entry in "
-                      f"{_calendar_path()} and run --sync-calendar --write.",
+                print("Hint: pass --starts-at <ISO timestamp> and --timezone "
+                      "<IANA zone> (plus optional --ends-at) with the progress "
+                      "update.",
                       file=sys.stderr)
             sys.exit(1)
     elif str(current.get("calendar_item") or "").strip():
@@ -1075,6 +1111,83 @@ def check_calendar(as_json: bool = False) -> bool:
     return False
 
 
+def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
+    """Preview or re-render every managed row with the current compact UX.
+
+    Metadata remains canonical for phase/state. This command only refreshes
+    visible dates/actions, role links, and the hidden one-line markers; it does
+    not infer a transition or touch any application metadata.
+    """
+    path = _calendar_path()
+    raw = _read_calendar_raw()
+    refs = _fleet_calendar_refs()
+    if raw is None:
+        print(f"No calendar file at {path}; nothing to refresh.")
+        return not refs
+    doc = parse_calendar(raw.decode("utf-8"))
+    if doc.errors:
+        print(f"Error: calendar file {path} failed validation:", file=sys.stderr)
+        for error in doc.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return False
+
+    upserts: dict[str, dict] = {}
+    errors: list[str] = []
+    for item, holders in sorted(refs.items()):
+        if len(holders) != 1:
+            errors.append(f"entry '{item}' is referenced by {len(holders)} jobs")
+            continue
+        entry = doc.entries.get(item)
+        if entry is None:
+            errors.append(f"referenced entry '{item}' is missing")
+            continue
+        meta_path, meta, _index, job = holders[0]
+        progress = job.get("progress") if isinstance(job.get("progress"), dict) else {}
+        upserts[item] = _entry_fields_for_progress(
+            entry, slug=meta_path.parent.name, job=job, progress=progress,
+            company=str(meta.get("company") or ""), meta_path=meta_path)
+    for item in sorted(doc.entries):
+        if item not in refs:
+            errors.append(f"entry '{item}' is not referenced by application metadata")
+    if errors:
+        print("Error: cannot refresh calendar:", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return False
+
+    plan = plan_calendar_update(raw, upserts)
+    if plan.errors:
+        print("Error: could not refresh calendar:", file=sys.stderr)
+        for error in plan.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return False
+    summary = {
+        "calendar": str(path),
+        "entries": len(upserts),
+        "changed": plan.changed,
+        "mode": "write" if write else "dry_run",
+    }
+    if as_json:
+        print(json.dumps(summary, indent=2))
+    elif plan.changed:
+        print(f"Calendar refresh ({'WRITE' if write else 'DRY RUN'}): "
+              f"{len(upserts)} managed row(s) will be re-rendered.")
+    else:
+        print(f"Calendar {path}: already uses the current layout.")
+    if not plan.changed or not write:
+        if plan.changed and not as_json:
+            print("No files written. Re-run with --refresh-calendar --write.")
+        return True
+    try:
+        atomic_write_bytes(path, plan.output_bytes,
+                           expected_sha256=plan.before_sha256)
+    except (MetadataChecksumMismatchError, OSError) as exc:
+        print(f"Error: calendar refresh failed: {exc}", file=sys.stderr)
+        return False
+    print(f"Refreshed {len(upserts)} managed calendar row(s) -> {path}")
+    return True
+
+
 def _sync_proposals(doc, refs):
     """Compute (proposal_rows, errors) mapping owner calendar edits to progress.
 
@@ -1102,6 +1215,7 @@ def _sync_proposals(doc, refs):
         company = str(meta.get("company") or "")
         fields = entry.fields()
         fields["_company"] = company
+        fields["details"] = _details_reference(meta_path)
 
         if meta_state == "closed":
             new_state = None  # never reopen a closed role from the calendar
@@ -1228,13 +1342,6 @@ def sync_calendar(write: bool = False, as_json: bool = False) -> bool:
     print(f"Applied {len(proposals)} proposal(s); calendar and metadata "
           "updated together.")
     return True
-
-
-def _read_after_edit(meta_path: Path, raw: bytes, changed: bool) -> str:
-    """Return the meta.yaml text reflecting the edit (re-read if it was written)."""
-    if changed:
-        return meta_path.read_text(encoding="utf-8")
-    return raw.decode("utf-8")
 
 
 def _resolve_job_index(jobs: list, role_match: str) -> int:
@@ -1659,6 +1766,19 @@ def main():
     parser.add_argument("--email-ref", default=None, metavar="MESSAGE_KEY",
                         help="Neutral stored-message reference proving an email-"
                              "driven --update-progress. Omit for a manual update.")
+    parser.add_argument("--action", default=None, metavar="TEXT",
+                        help="Short verb-led calendar todo for --update-progress.")
+    parser.add_argument("--due-at", default=None, metavar="ISO_DATE_OR_TIME",
+                        help="Todo deadline for --update-progress.")
+    parser.add_argument("--starts-at", default=None, metavar="ISO_TIME",
+                        help="Confirmed event start for --update-progress.")
+    parser.add_argument("--ends-at", default=None, metavar="ISO_TIME",
+                        help="Optional confirmed event end (must follow start).")
+    parser.add_argument("--timezone", default=None, metavar="IANA_ZONE",
+                        help="Explicit event timezone, e.g. America/Los_Angeles.")
+    parser.add_argument("--follow-up-at", default=None,
+                        metavar="ISO_DATE_OR_TIME",
+                        help="When to follow up if the current wait is unresolved.")
     parser.add_argument("--check-calendar", action="store_true",
                         help="Verify calendar.md (markers, duplicate ids, "
                              "scheduled time+timezone) and its cross-links with "
@@ -1667,6 +1787,10 @@ def main():
                         help="Preview how owner edits to calendar.md (checked "
                              "boxes, reschedule_to, cancel) map back to progress. "
                              "Add --write to apply transactionally.")
+    parser.add_argument("--refresh-calendar", action="store_true",
+                        help="Preview re-rendering every managed row with visible "
+                             "dates/actions, role links, and compact markers. "
+                             "Add --write to apply; metadata is untouched.")
     parser.add_argument("--write", action="store_true",
                         help="With --sync-calendar: apply the previewed proposals.")
     parser.add_argument("--sync-log", action="store_true",
@@ -1717,7 +1841,10 @@ def main():
             sys.exit(1)
         update_progress(args.update_progress[0], args.update_progress[1],
                         phase=args.phase, state=args.state, label=args.label,
-                        email_ref=args.email_ref)
+                        email_ref=args.email_ref, action=args.action,
+                        due_at=args.due_at, starts_at=args.starts_at,
+                        ends_at=args.ends_at, timezone_name=args.timezone,
+                        follow_up_at=args.follow_up_at)
         return
 
     if args.check_calendar:
@@ -1726,8 +1853,12 @@ def main():
     if args.sync_calendar:
         sys.exit(0 if sync_calendar(write=args.write, as_json=args.json) else 1)
 
+    if args.refresh_calendar:
+        sys.exit(0 if refresh_calendar(write=args.write, as_json=args.json) else 1)
+
     if args.write:
-        print("Error: --write requires --sync-calendar", file=sys.stderr)
+        print("Error: --write requires --sync-calendar or --refresh-calendar",
+              file=sys.stderr)
         sys.exit(1)
 
     if args.enrich_metadata:

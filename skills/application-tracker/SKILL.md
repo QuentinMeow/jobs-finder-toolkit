@@ -196,24 +196,45 @@ message key, never a subject/sender/body).
 
 - **Phases** (which hiring step): `application_prep`, `application_review`, `recruiter_screen`,
   `assessment`, `hiring_manager`, `technical_interview`, `interview_loop`, `team_match`,
-  `offer`, `background_check`, `onboarding`, `other` (a real employer-specific phase that
-  does not fit yet — `label` is then REQUIRED).
+  `reference_check`, `offer`, `background_check`, `work_authorization`, `onboarding`, `other`
+  (a real employer-specific phase that does not fit yet — `label` is then REQUIRED).
 - **States** (what is happening now): `unknown` (never guess), `action_required`,
   `booking_required` (owner must pick a slot / send availability), `awaiting_schedule`
   (availability sent, no confirmed time yet), `scheduled` (a specific future time AND
   timezone are confirmed — they live on the calendar entry), `reschedule_required`,
-  `reschedule_pending`, `waiting_employer`, `awaiting_result`, `closed`.
+  `reschedule_pending`, `in_progress` (the owner is actively completing an assessment or
+  other deliverable), `decision_required`, `follow_up_required`, `waiting_employer`,
+  `awaiting_result`, `paused`, `closed`.
 - **Coupling**: rejected/ignored jobs have state exactly `closed` (their last phase is kept
   for funnel analysis); an active job is never `closed`. Changing only phase/state NEVER
   moves an application between status folders.
+
+The enums intentionally model broad reporting phases plus **who acts next**, not every company's
+round names. Put wording such as “CEO conversation”, “pair programming”, “portfolio review”,
+“virtual onsite”, or “competing-offer deadline” in `label`; put the concrete verb-led work in the
+calendar `action`. This covers the common paths without turning filtering into dozens of one-off
+states:
+
+- live steps: recruiter → hiring manager → technical screen → multi-round loop → team match;
+- asynchronous steps: assessment assigned (`action_required`) → being completed (`in_progress`)
+  → submitted (`awaiting_result`);
+- scheduling: book → await confirmation → scheduled → complete/await result, including both
+  sides of a reschedule, cancellation, and no-show follow-up;
+- late stage: references → offer review/negotiation (`decision_required`) → background check →
+  work authorization → onboarding;
+- interruptions: employer wait, explicit follow-up, process pause/headcount hold, or closure.
 
 ### The calendar file (`config.calendar_path()`)
 
 One private `calendar.md` (default `<applications_root>/0_profile/calendar.md`) holds every
 scheduling todo, confirmed interview time, follow-up date, and append-only reschedule history.
-Sections project entry state: **Action needed** (`action_required|booking_required|
-reschedule_required`), **Waiting for confirmation** (`awaiting_schedule|reschedule_pending`),
-**Scheduled** (confirmed times, chronological), and **My notes and personal todos** (owner-only).
+The visible row is deliberately small: **the date/time or action first**, company + role as the
+single context link, then the phase label. Full context stays in the linked `notes.md`/`meta.yaml`;
+the machine contract is one hidden JSON-comment line. Optional calendar fields include verb-led
+`action`, `due_at`, `starts_at`, `ends_at`, timezone, and `follow_up_at`.
+Sections project entry state: **Action needed** (owner work), **Waiting and follow-up**
+(employer/result/paused waits), **Interview schedule** (confirmed times, chronological), and
+**My notes and personal todos** (owner-only).
 Tools own ONLY the `<!-- jobhunt-calendar ... -->` marked entries; unmarked lines are preserved
 byte-for-byte. A confirmed reschedule marks the old occurrence `superseded` and appends the
 replacement — old times are never overwritten; a time merely passing never completes an
@@ -393,7 +414,7 @@ Examples:
 Every status transition also stamps that posting's deterministic `progress` summary
 (drafted -> `application_prep`/`action_required`; applied -> `application_review`/
 `waiting_employer`; rejected/ignored -> keep phase, state `closed`; in_progress -> keep phase,
-keep a deliberately-set scheduling state, else `unknown` — never guessed) and updates any
+keep a deliberately-set active workflow state, else `unknown` — never guessed) and updates any
 linked calendar entry in the same transaction.
 
 If the user moves a folder **by hand**, it can drift from the rollup — re-sync it by running
@@ -403,18 +424,19 @@ If the user moves a folder **by hand**, it can drift from the rollup — re-sync
 
 ```
 status.py --update-progress <slug> <role-match> --phase <phase> --state <state> \
-  [--label TEXT] [--email-ref acct-01/<neutral-message-key>]
+  [--label TEXT] [--action TEXT] [--due-at ISO_DATE_OR_TIME] \
+  [--starts-at ISO_TIME --ends-at ISO_TIME --timezone IANA_ZONE] \
+  [--follow-up-at ISO_DATE_OR_TIME] [--email-ref acct-01/<neutral-message-key>]
 ```
 
 Sets one posting's structured progress (with a tool-stamped `updated_at` and manual provenance by
-default); `--email-ref` records neutral email provenance in both metadata and the calendar marker.
+default); `--email-ref` records neutral email provenance in metadata. The calendar links back to
+that record instead of duplicating evidence identifiers.
 The command writes `meta.yaml` and `calendar.md` together — both or neither.
-Entering a scheduling state (`booking_required|awaiting_schedule|scheduled|reschedule_required|
-reschedule_pending`) creates the calendar entry when the job has none and records its stable id
-as `progress.calendar_item`. `--state scheduled` requires the entry to already carry the
-confirmed exact time + timezone (record them on the entry in `calendar.md`, then run
-`--sync-calendar --write`). Close a role via `--update-job ... rejected|ignored`, never via
-`--state closed`.
+Entering a calendar-relevant action, wait, or scheduled state creates the calendar entry when the
+job has none and records its stable id as `progress.calendar_item`. `--state scheduled` requires
+`--starts-at` plus `--timezone`; `--ends-at` records duration when known. Close a role via
+`--update-job ... rejected|ignored`, never via `--state closed`.
 
 ### Calendar check & sync (human edits are proposals, preview-first)
 
@@ -422,11 +444,14 @@ confirmed exact time + timezone (record them on the entry in `calendar.md`, then
 status.py --check-calendar            # read-only: markers, duplicate ids, meta<->calendar drift
 status.py --sync-calendar             # preview how owner edits map back to progress
 status.py --sync-calendar --write     # apply the previewed proposals transactionally
+status.py --refresh-calendar          # preview current compact rows + role links
+status.py --refresh-calendar --write  # re-render rows only; never changes progress
 ```
 
 Owner-edit surfaces the sync understands: a **checked box** (booking done -> `awaiting_schedule`;
 reschedule request sent -> `reschedule_pending`; interview happened -> `awaiting_result`; owed
-action done -> `waiting_employer`), a filled **`reschedule_to` + `reschedule_timezone`**
+action/assessment/follow-up done -> the appropriate waiting state), a filled
+**`reschedule_to` + `reschedule_timezone`**
 (confirmed replacement — the old occurrence is kept as `superseded`), and **`cancel: true`**
 (occurrence recorded `cancelled`; the role is never auto-rejected). Anything malformed fails
 closed with a report instead of a partial write.
@@ -466,7 +491,7 @@ The `source/tailored.yaml` in each application folder IS the resume content used
 When the user asks "how's my pipeline?" or "what's my status?":
 1. Run `.venv/bin/python skills/application-tracker/scripts/status.py`
 2. Highlight any applications needing action — the table's **Action needed** block
-   (progress states `action_required|booking_required|reschedule_required`) plus
+   (action, booking, reschedule, assessment-in-progress, decision, or follow-up states) plus
    `next_action` fields
 3. Surface the **Overdue waiting** block (bookings past their calendar `follow_up_at`
    with no confirmation) — "active with no action" is not the same as "active and

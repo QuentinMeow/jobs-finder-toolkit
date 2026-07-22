@@ -3,7 +3,7 @@
 - **Priority**: P1 (next email round)
 - **Area**: tracker
 - **Source**: `design/application-progress-calendar/execution-plan.md` Stage 2
-- **Claimed-by**: claude (session 2026-07-22, branch email/stage-2-progress-calendar)
+- **Claimed-by**: codex (session 2026-07-22, owner UX review follow-up)
 
 ## Goal
 
@@ -38,3 +38,7 @@ reschedule history. A past wall-clock time never implies completion.
   the confirmed replacement.
 - `filter_jobs.py` can filter phase and progress state; pipeline health
   surfaces action-needed and overdue-waiting items.
+- Calendar rows lead with the event time or verb-led todo, link to the role for
+  details, and keep machine metadata to one hidden compact line.
+- Assessments, decisions, follow-ups, pauses, reference checks, and work-
+  authorization steps are representable without company-specific enum growth.

@@ -1,10 +1,12 @@
-# Calendar and todos
+# Interview calendar
+
+Scan the bold date or action first. Open the linked role for full context.
 
 ## Action needed
 
-## Waiting for confirmation
+## Waiting and follow-up
 
-## Scheduled
+## Interview schedule
 
 ## My notes and personal todos
 

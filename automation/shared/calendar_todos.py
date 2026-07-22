@@ -10,29 +10,18 @@ File contract:
 
 - Four exact section headings, each appearing once::
 
-      ## Action needed              action_required | booking_required | reschedule_required
-      ## Waiting for confirmation   awaiting_schedule | reschedule_pending
-      ## Scheduled                  scheduled (future confirmed times, chronological)
+      ## Action needed              owner action / booking / decision / follow-up
+      ## Waiting and follow-up      scheduling / employer / result / paused waits
+      ## Interview schedule         confirmed times, chronological
       ## My notes and personal todos   owner-only; tooling never writes here
 
 - A tool-owned entry is a top-level checkbox bullet immediately followed by a
-  machine marker block::
+  compact, hidden machine marker. The visible row is the product; the marker
+  stays on one line so opening the Markdown source does not bury the agenda in
+  implementation detail::
 
-      - [ ] ExampleCorp — choose a technical-screen time
-        <!-- jobhunt-calendar
-        id: cal-examplecorp-senior-software-engineer-01
-        application: examplecorp-senior-software-engineer
-        role: Senior Software Engineer
-        phase: technical_interview
-        state: booking_required
-        starts_at: null
-        timezone: null
-        follow_up_at: null
-        source: manual
-        reschedule_to: null
-        reschedule_timezone: null
-        cancel: false
-        -->
+      - [ ] **Choose an interview time** — [ExampleCorp · Senior Software Engineer](../4_in_progress/examplecorp/meta.yaml)
+        <!-- jobhunt-calendar {"id":"cal-examplecorp-01",...} -->
 
 - ``starts_at``/``timezone`` describe the CURRENT confirmed occurrence; the
   append-only ``history:`` list preserves superseded and cancelled occurrences
@@ -54,9 +43,12 @@ and config-free; the application tracker is the only transactional writer.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -78,26 +70,30 @@ except ImportError:  # Direct top-level import (tests + vendored skills).
     )
 
 SECTION_ACTION = "## Action needed"
-SECTION_WAITING = "## Waiting for confirmation"
-SECTION_SCHEDULED = "## Scheduled"
+SECTION_WAITING = "## Waiting and follow-up"
+SECTION_SCHEDULED = "## Interview schedule"
 SECTION_NOTES = "## My notes and personal todos"
 SECTIONS = (SECTION_ACTION, SECTION_WAITING, SECTION_SCHEDULED, SECTION_NOTES)
+LEGACY_SECTION_ALIASES = {
+    "## Waiting for confirmation": SECTION_WAITING,
+    "## Scheduled": SECTION_SCHEDULED,
+}
+ALL_SECTION_HEADINGS = (*SECTIONS, *LEGACY_SECTION_ALIASES)
 # Sections whose marked entries tools may create, edit, and move.
 MANAGED_SECTIONS = (SECTION_ACTION, SECTION_WAITING, SECTION_SCHEDULED)
 
 MARKER_OPEN = "<!-- jobhunt-calendar"
 MARKER_CLOSE = "-->"
 
-# state -> the section a live entry belongs in. States absent here (unknown,
-# waiting_employer, awaiting_result, closed) keep the entry where it is with
-# its box checked — history stays auditable, nothing is deleted.
+# State -> the section a live entry belongs in. Unknown/closed entries keep
+# their last section so history stays auditable; nothing is deleted.
 STATE_SECTIONS = {
     **{state: SECTION_ACTION for state in PROGRESS_ACTION_STATES},
     **{state: SECTION_WAITING for state in PROGRESS_WAITING_STATES},
     "scheduled": SECTION_SCHEDULED,
 }
-# States rendered with a checked box (the pending action/event is done).
-CHECKED_STATES = ("awaiting_result", "closed", "waiting_employer")
+# Terminal roles render checked; active waits remain visibly open.
+CHECKED_STATES = ("closed",)
 
 # Owner checked the box -> the state the sync command proposes.
 CHECKED_BOX_TRANSITIONS = {
@@ -105,16 +101,20 @@ CHECKED_BOX_TRANSITIONS = {
     "reschedule_required": "reschedule_pending",  # replacement request sent
     "scheduled": "awaiting_result",              # interview happened
     "action_required": "waiting_employer",       # owed action completed
+    "in_progress": "awaiting_result",            # assessment/work submitted
+    "decision_required": "waiting_employer",     # decision sent
+    "follow_up_required": "waiting_employer",    # follow-up sent
 }
 
 # Marker payload keys. Required first; the rest default to null/false/empty.
 _REQUIRED_KEYS = ("id", "application", "role", "phase", "state")
 _OPTIONAL_KEYS = (
-    "label", "starts_at", "timezone", "follow_up_at", "source",
+    "label", "action", "due_at", "starts_at", "ends_at", "timezone",
+    "follow_up_at", "details", "source",
     "reschedule_to", "reschedule_timezone", "cancel", "history",
 )
 _HISTORY_STATUSES = ("superseded", "cancelled", "completed")
-_HISTORY_KEYS = ("starts_at", "timezone", "status", "recorded_at")
+_HISTORY_KEYS = ("starts_at", "ends_at", "timezone", "status", "recorded_at")
 
 _CHECKBOX_RE = re.compile(r"^- \[( |x|X)\] (.*)$")
 _DATETIME_RE = re.compile(
@@ -124,13 +124,15 @@ _DATE_OR_DATETIME_RE = re.compile(
 _TIMEZONE_RE = re.compile(r"^(UTC|[A-Za-z_]+(?:/[A-Za-z0-9_+\-]+)+)$")
 
 CALENDAR_TEMPLATE = """\
-# Calendar and todos
+# Interview calendar
+
+Scan the bold date or action first. Open the linked role for full context.
 
 ## Action needed
 
-## Waiting for confirmation
+## Waiting and follow-up
 
-## Scheduled
+## Interview schedule
 
 ## My notes and personal todos
 
@@ -148,9 +150,13 @@ class CalendarEntry:
     phase: str
     state: str
     label: str | None
+    action: str | None
+    due_at: str | None
     starts_at: str | None
+    ends_at: str | None
     timezone: str | None
     follow_up_at: str | None
+    details: str | None
     source: str | None
     reschedule_to: str | None
     reschedule_timezone: str | None
@@ -171,9 +177,13 @@ class CalendarEntry:
             "phase": self.phase,
             "state": self.state,
             "label": self.label,
+            "action": self.action,
+            "due_at": self.due_at,
             "starts_at": self.starts_at,
+            "ends_at": self.ends_at,
             "timezone": self.timezone,
             "follow_up_at": self.follow_up_at,
+            "details": self.details,
             "source": self.source,
             "reschedule_to": self.reschedule_to,
             "reschedule_timezone": self.reschedule_timezone,
@@ -238,12 +248,20 @@ def validate_entry_fields(fields: dict, *, context: str) -> list[str]:
     state = fields.get("state")
     if state is not None and state not in PROGRESS_STATES:
         errors.append(f"{context}: state must be one of {', '.join(PROGRESS_STATES)}")
-    for key in ("label", "source", "timezone", "reschedule_timezone"):
+    for key in (
+        "label", "action", "details", "source", "timezone",
+        "reschedule_timezone",
+    ):
         value = fields.get(key)
         if value is not None and not isinstance(value, str):
             errors.append(f"{context}: {key} must be a string or null")
+        if isinstance(value, str) and ("\n" in value or "\r" in value or "-->" in value):
+            errors.append(
+                f"{context}: {key} must be one line and cannot contain '-->'")
     for key, pattern in (("starts_at", _DATETIME_RE),
+                         ("ends_at", _DATETIME_RE),
                          ("reschedule_to", _DATETIME_RE),
+                         ("due_at", _DATE_OR_DATETIME_RE),
                          ("follow_up_at", _DATE_OR_DATETIME_RE)):
         value = fields.get(key)
         if value is None:
@@ -251,7 +269,7 @@ def validate_entry_fields(fields: dict, *, context: str) -> list[str]:
         if not isinstance(value, str) or not pattern.match(value):
             errors.append(
                 f"{context}: {key} must be an ISO-8601 "
-                f"{'date or timestamp' if key == 'follow_up_at' else 'timestamp with an exact time'}")
+                f"{'date or timestamp' if key in ('due_at', 'follow_up_at') else 'timestamp with an exact time'}")
     for key in ("timezone", "reschedule_timezone"):
         value = fields.get(key)
         if isinstance(value, str) and value and not _validate_timezone(value):
@@ -280,6 +298,16 @@ def validate_entry_fields(fields: dict, *, context: str) -> list[str]:
                 f"{context}: a scheduled entry requires starts_at with an exact time")
         if not str(fields.get("timezone") or "").strip():
             errors.append(f"{context}: a scheduled entry requires an explicit timezone")
+    if fields.get("ends_at") and not fields.get("starts_at"):
+        errors.append(f"{context}: ends_at requires starts_at")
+    if fields.get("starts_at") and fields.get("ends_at"):
+        try:
+            starts = datetime.fromisoformat(str(fields["starts_at"]).replace("Z", "+00:00"))
+            ends = datetime.fromisoformat(str(fields["ends_at"]).replace("Z", "+00:00"))
+            if ends <= starts:
+                errors.append(f"{context}: ends_at must be after starts_at")
+        except (TypeError, ValueError):
+            pass  # Shape errors above are more useful than a second parse error.
     if fields.get("reschedule_to") and not str(fields.get("reschedule_timezone") or "").strip():
         errors.append(f"{context}: reschedule_to requires reschedule_timezone")
     return errors
@@ -297,11 +325,12 @@ def parse_calendar(text: str) -> CalendarDocument:
 
     for index, line in enumerate(doc.lines):
         stripped = _line_text(line)
-        if stripped in SECTIONS:
-            if stripped in doc.sections:
-                doc.errors.append(f"line {index + 1}: duplicate section heading '{stripped}'")
+        canonical = LEGACY_SECTION_ALIASES.get(stripped, stripped)
+        if canonical in SECTIONS:
+            if canonical in doc.sections:
+                doc.errors.append(f"line {index + 1}: duplicate section heading '{canonical}'")
             else:
-                doc.sections[stripped] = index
+                doc.sections[canonical] = index
     for heading in SECTIONS:
         if heading not in doc.sections:
             doc.errors.append(f"missing required section heading '{heading}'")
@@ -310,11 +339,13 @@ def parse_calendar(text: str) -> CalendarDocument:
     index = 0
     while index < len(doc.lines):
         stripped = _line_text(doc.lines[index])
-        if stripped in SECTIONS:
-            current_section = stripped
+        canonical = LEGACY_SECTION_ALIASES.get(stripped, stripped)
+        if canonical in SECTIONS:
+            current_section = canonical
             index += 1
             continue
-        if stripped.strip() == MARKER_OPEN:
+        marker_text = stripped.strip()
+        if marker_text.startswith(MARKER_OPEN):
             context = f"line {index + 1}"
             bullet_index = index - 1
             bullet = _CHECKBOX_RE.match(_line_text(doc.lines[bullet_index])) \
@@ -325,27 +356,42 @@ def parse_calendar(text: str) -> CalendarDocument:
                     "'- [ ]' checkbox bullet")
                 index += 1
                 continue
-            indent = doc.lines[index][:len(doc.lines[index]) - len(doc.lines[index].lstrip())]
-            close_index = None
-            payload_lines: list[str] = []
-            probe = index + 1
-            while probe < len(doc.lines):
-                probe_text = _line_text(doc.lines[probe])
-                if probe_text.strip() == MARKER_CLOSE:
-                    close_index = probe
-                    break
-                if probe_text.strip() in (MARKER_OPEN, *SECTIONS):
-                    break
-                payload_lines.append(
-                    probe_text[len(indent):] if probe_text.startswith(indent)
-                    else probe_text.strip())
-                probe += 1
-            if close_index is None:
-                doc.errors.append(f"{context}: marker block is never closed with '-->'")
+            if marker_text == MARKER_OPEN:
+                # Legacy multi-line YAML markers remain readable; every entry
+                # touched by the planner is rewritten to the compact form.
+                indent = doc.lines[index][
+                    :len(doc.lines[index]) - len(doc.lines[index].lstrip())]
+                close_index = None
+                payload_lines: list[str] = []
+                probe = index + 1
+                while probe < len(doc.lines):
+                    probe_text = _line_text(doc.lines[probe])
+                    if probe_text.strip() == MARKER_CLOSE:
+                        close_index = probe
+                        break
+                    if probe_text.strip() in (MARKER_OPEN, *ALL_SECTION_HEADINGS):
+                        break
+                    payload_lines.append(
+                        probe_text[len(indent):] if probe_text.startswith(indent)
+                        else probe_text.strip())
+                    probe += 1
+                if close_index is None:
+                    doc.errors.append(
+                        f"{context}: marker block is never closed with '-->'")
+                    index += 1
+                    continue
+                payload_text = "\n".join(payload_lines)
+            elif marker_text.endswith(MARKER_CLOSE):
+                close_index = index
+                payload_text = marker_text[
+                    len(MARKER_OPEN):-len(MARKER_CLOSE)].strip()
+            else:
+                doc.errors.append(
+                    f"{context}: compact marker is never closed with '-->'")
                 index += 1
                 continue
             try:
-                payload = yaml.safe_load("\n".join(payload_lines)) or {}
+                payload = yaml.safe_load(payload_text) or {}
             except yaml.YAMLError as exc:
                 doc.errors.append(f"{context}: marker payload is not valid YAML: {exc}")
                 index = close_index + 1
@@ -372,9 +418,13 @@ def parse_calendar(text: str) -> CalendarDocument:
                 phase=str(payload.get("phase") or ""),
                 state=str(payload.get("state") or ""),
                 label=payload.get("label"),
+                action=payload.get("action"),
+                due_at=payload.get("due_at"),
                 starts_at=payload.get("starts_at"),
+                ends_at=payload.get("ends_at"),
                 timezone=payload.get("timezone"),
                 follow_up_at=payload.get("follow_up_at"),
+                details=payload.get("details"),
                 source=payload.get("source"),
                 reschedule_to=payload.get("reschedule_to"),
                 reschedule_timezone=payload.get("reschedule_timezone"),
@@ -395,32 +445,100 @@ def parse_calendar(text: str) -> CalendarDocument:
 
 
 def render_entry(fields: dict, *, checked: bool, text: str, newline: str = "\n") -> list[str]:
-    """Render one entry (bullet + marker block) as keepends lines."""
+    """Render one human row plus one compact, hidden machine marker."""
     box = "x" if checked else " "
     payload: dict[str, Any] = {key: fields.get(key) for key in _REQUIRED_KEYS}
-    payload["label"] = fields.get("label") or None
-    if payload["label"] is None:
-        del payload["label"]
-    for key in ("starts_at", "timezone", "follow_up_at"):
-        payload[key] = fields.get(key)
-    payload["source"] = fields.get("source") or "manual"
-    payload["reschedule_to"] = fields.get("reschedule_to")
-    payload["reschedule_timezone"] = fields.get("reschedule_timezone")
-    payload["cancel"] = bool(fields.get("cancel", False))
+    for key in (
+        "label", "action", "due_at", "starts_at", "ends_at", "timezone",
+        "follow_up_at", "details", "reschedule_to", "reschedule_timezone",
+    ):
+        if fields.get(key) not in (None, ""):
+            payload[key] = fields[key]
+    if fields.get("cancel", False):
+        payload["cancel"] = True
     history = fields.get("history") or []
     if history:
         payload["history"] = [dict(item) for item in history]
-    dumped = yaml.safe_dump(
-        payload, sort_keys=False, allow_unicode=True,
-        default_flow_style=False, width=4096).rstrip("\n")
-    lines = [f"- [{box}] {text}", f"  {MARKER_OPEN}"]
-    lines.extend(f"  {line}" if line else "" for line in dumped.splitlines())
-    lines.append(f"  {MARKER_CLOSE}")
+    dumped = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    lines = [f"- [{box}] {text}", f"  {MARKER_OPEN} {dumped} {MARKER_CLOSE}"]
     return [line + newline for line in lines]
 
 
-def default_entry_text(company: str, role: str, state: str) -> str:
-    """A readable default bullet line; the owner may edit it freely afterwards."""
+_PHASE_LABELS = {
+    "application_prep": "Application",
+    "application_review": "Application review",
+    "recruiter_screen": "Recruiter screen",
+    "assessment": "Assessment",
+    "hiring_manager": "Hiring manager",
+    "technical_interview": "Technical interview",
+    "interview_loop": "Interview loop",
+    "team_match": "Team match",
+    "reference_check": "Reference check",
+    "offer": "Offer",
+    "background_check": "Background check",
+    "work_authorization": "Work authorization",
+    "onboarding": "Onboarding",
+    "other": "Next step",
+}
+
+_STATE_LABELS = {
+    "action_required": "Complete next step",
+    "booking_required": "Choose an interview time",
+    "awaiting_schedule": "Waiting for confirmed time",
+    "scheduled": "Interview",
+    "reschedule_required": "Arrange a new interview time",
+    "reschedule_pending": "Waiting for rescheduled time",
+    "in_progress": "Complete current task",
+    "decision_required": "Make a decision",
+    "follow_up_required": "Follow up",
+    "waiting_employer": "Waiting on employer",
+    "awaiting_result": "Waiting for result",
+    "paused": "Process paused",
+    "closed": "Closed",
+    "unknown": "Status needs review",
+}
+
+
+def _markdown_text(value: str) -> str:
+    return str(value or "").replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _display_datetime(value: str | None, timezone_name: str | None) -> str | None:
+    """Compact agenda timestamp in the entry's explicit timezone."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if timezone_name:
+            zone = ZoneInfo(timezone_name)
+            parsed = parsed.replace(tzinfo=zone) if parsed.tzinfo is None else parsed.astimezone(zone)
+    except (TypeError, ValueError, ZoneInfoNotFoundError):
+        return str(value)
+    date_text = parsed.strftime("%a, %b %d").replace(" 0", " ")
+    time_text = parsed.strftime("%I:%M %p").lstrip("0")
+    zone_text = parsed.tzname() or timezone_name or ""
+    return f"{date_text} · {time_text}{f' {zone_text}' if zone_text else ''}"
+
+
+def _display_date_or_datetime(value: str | None, timezone_name: str | None) -> str | None:
+    if not value:
+        return None
+    if "T" not in str(value):
+        try:
+            return datetime.fromisoformat(str(value)).strftime("%a, %b %d").replace(" 0", " ")
+        except ValueError:
+            return str(value)
+    return _display_datetime(value, timezone_name)
+
+
+def _subject(company: str, role: str, details: str | None) -> str:
+    label = " · ".join(_markdown_text(part) for part in (company, role) if part)
+    if not label:
+        label = "Application"
+    return f"[{label}](<{details}>)" if details else label
+
+
+def _legacy_default_entry_text(company: str, role: str, state: str) -> str:
     subject = " — ".join(part for part in (company, role) if part)
     hints = {
         "booking_required": "choose an interview time",
@@ -432,6 +550,36 @@ def default_entry_text(company: str, role: str, state: str) -> str:
     }
     hint = hints.get(state, state.replace("_", " "))
     return f"{subject}: {hint}" if subject else hint
+
+
+def default_entry_text(
+    company: str, role: str, state: str, *, fields: dict | None = None,
+) -> str:
+    """Scannable task or agenda row; full context lives behind one role link."""
+    fields = fields or {}
+    subject = _subject(company, role, fields.get("details"))
+    stage = str(fields.get("label") or "").strip() or _PHASE_LABELS.get(
+        str(fields.get("phase") or ""), "Next step")
+    if state == "scheduled":
+        when = _display_datetime(fields.get("starts_at"), fields.get("timezone")) \
+            or "Time needs review"
+        end = _display_datetime(fields.get("ends_at"), fields.get("timezone"))
+        if end and " · " in end and " · " in when:
+            end_time = end.split(" · ", 1)[1]
+            when = f"{when}–{end_time}"
+        return f"**{when}** — {subject} · {_markdown_text(stage)}"
+
+    headline = str(fields.get("action") or "").strip() or _STATE_LABELS.get(
+        state, state.replace("_", " ").title())
+    bits = [f"**{_markdown_text(headline)}** — {subject}", _markdown_text(stage)]
+    due = _display_date_or_datetime(fields.get("due_at"), fields.get("timezone"))
+    follow_up = _display_date_or_datetime(
+        fields.get("follow_up_at"), fields.get("timezone"))
+    if due:
+        bits.append(f"Due {due}")
+    if follow_up:
+        bits.append(f"Follow up {follow_up}")
+    return " · ".join(bits)
 
 
 def generate_entry_id(existing_ids, application_slug: str) -> str:
@@ -456,13 +604,17 @@ def record_reschedule(fields: dict, new_starts_at: str, new_timezone: str) -> di
     out = dict(fields)
     history = [dict(item) for item in out.get("history") or []]
     if out.get("starts_at"):
-        history.append({
+        occurrence = {
             "starts_at": out.get("starts_at"),
             "timezone": out.get("timezone"),
             "status": "superseded",
-        })
+        }
+        if out.get("ends_at"):
+            occurrence["ends_at"] = out["ends_at"]
+        history.append(occurrence)
     out.update({
         "starts_at": new_starts_at,
+        "ends_at": None,
         "timezone": new_timezone,
         "state": "scheduled",
         "reschedule_to": None,
@@ -478,13 +630,17 @@ def record_cancellation(fields: dict, *, next_state: str = "action_required") ->
     out = dict(fields)
     history = [dict(item) for item in out.get("history") or []]
     if out.get("starts_at"):
-        history.append({
+        occurrence = {
             "starts_at": out.get("starts_at"),
             "timezone": out.get("timezone"),
             "status": "cancelled",
-        })
+        }
+        if out.get("ends_at"):
+            occurrence["ends_at"] = out["ends_at"]
+        history.append(occurrence)
     out.update({
         "starts_at": None,
+        "ends_at": None,
         "timezone": None,
         "state": next_state,
         "reschedule_to": None,
@@ -504,9 +660,12 @@ def _section_bounds(doc: CalendarDocument, heading: str) -> tuple[int, int]:
 
 
 def _entry_sort_key(lines: list[str]) -> str:
-    """Chronological key for a rendered scheduled entry (its starts_at line)."""
+    """Chronological key for a rendered scheduled entry."""
     for line in lines:
-        match = re.match(r"\s*starts_at:\s*['\"]?([0-9T:.+-]+)", _line_text(line))
+        match = re.search(r'"starts_at":"([0-9T:.+\-Z]+)"', _line_text(line))
+        if not match:  # Legacy multi-line marker.
+            match = re.match(
+                r"\s*starts_at:\s*['\"]?([0-9T:.+\-Z]+)", _line_text(line))
         if match:
             return match.group(1)
     return "~"
@@ -560,14 +719,18 @@ def plan_calendar_update(
         )
         company = str(fields.get("_company") or "")
         role = str(fields.get("role") or "")
-        text_line = default_entry_text(company, role, state)
+        text_line = default_entry_text(company, role, state, fields=fields)
         if existing:
-            previous_default = default_entry_text(company, role, existing.state)
+            existing_fields = existing.fields()
+            previous_default = default_entry_text(
+                company, role, existing.state, fields=existing_fields)
+            legacy_default = _legacy_default_entry_text(
+                company, role, existing.state)
             # Preserve owner-authored wording, but advance labels that the tool
             # itself generated for the previous scheduling state.
             text_line = (
-                default_entry_text(company, role, state)
-                if existing.text == previous_default
+                default_entry_text(company, role, state, fields=fields)
+                if existing.text in (previous_default, legacy_default)
                 else existing.text
             )
         clean_fields = {k: v for k, v in fields.items() if not k.startswith("_")}
@@ -592,8 +755,9 @@ def plan_calendar_update(
         interim = CalendarDocument(lines=lines, newline=doc.newline)
         for index, line in enumerate(lines):
             stripped = _line_text(line)
-            if stripped in SECTIONS and stripped not in interim.sections:
-                interim.sections[stripped] = index
+            canonical = LEGACY_SECTION_ALIASES.get(stripped, stripped)
+            if canonical in SECTIONS and canonical not in interim.sections:
+                interim.sections[canonical] = index
         if any(heading not in interim.sections for heading in SECTIONS):
             return CalendarEditPlan(
                 before_sha256, raw, (),
@@ -636,8 +800,18 @@ def plan_calendar_update(
             interim.sections = {}
             for index, line in enumerate(lines):
                 stripped = _line_text(line)
-                if stripped in SECTIONS and stripped not in interim.sections:
-                    interim.sections[stripped] = index
+                canonical = LEGACY_SECTION_ALIASES.get(stripped, stripped)
+                if canonical in SECTIONS and canonical not in interim.sections:
+                    interim.sections[canonical] = index
+
+    # Section headings are part of the tool contract, not owner prose. Any
+    # touch upgrades the two original labels to the clearer current wording.
+    for index, line in enumerate(lines):
+        stripped = _line_text(line)
+        canonical = LEGACY_SECTION_ALIASES.get(stripped)
+        if canonical:
+            ending = line[len(stripped):]
+            lines[index] = canonical + ending
 
     output_text = "".join(lines)
     output_doc = parse_calendar(output_text)
