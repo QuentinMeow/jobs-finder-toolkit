@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "store/suppressed-line.v1",
+  "title": "Suppressed review-queue line, version 1",
+  "description": "One line per structurally-foreign scrape row NOT materialized as an entity (tier 3). Carries the partial parsed info + the raw manifest path so a human can spot-check or recover one entry by hand. Write-only from the pipeline; never blocks a search; regenerable like any index artifact.",
+  "type": "object",
+  "required": ["title", "gate", "manifest"],
+  "properties": {
+    "company": {"type": "string"},
+    "title": {"type": "string"},
+    "location": {"type": "string"},
+    "gate": {"type": "string"},
+    "source": {"type": "string"},
+    "manifest": {"type": "string"},
+    "at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"}
+  },
+  "additionalProperties": true
+}

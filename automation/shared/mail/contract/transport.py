@@ -27,13 +27,17 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-from .interface import MailProviderError
+from .interface import MailProviderError, MessageNotFound
 
 AUDIT_LOG_ENV = "JOBHUNT_MAIL_AUDIT_LOG"
 
 
 class TransportError(MailProviderError):
     """The HTTP request failed (network, HTTP status, or malformed response)."""
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class RoutePolicy(abc.ABC):
@@ -107,6 +111,7 @@ class AuditedHttpTransport:
         url: str,
         access_token: str,
         payload: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         started = time.monotonic()
         path = urlsplit(url).path
@@ -116,21 +121,34 @@ class AuditedHttpTransport:
             self._audit(method, path, "denied", started)
             raise
         body = None if payload is None else json.dumps(payload).encode("utf-8")
-        headers = {
+        request_headers = {
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
         }
+        # Providers may add reviewed, non-secret protocol headers (for example
+        # Graph's immutable-ID preference).  They may not override auth or the
+        # JSON response contract at the shared transport boundary.
+        for key, value in (headers or {}).items():
+            normalized = str(key).strip()
+            if normalized.casefold() in {"authorization", "accept", "content-type"}:
+                raise TransportError(f"reserved transport header blocked: {normalized}")
+            request_headers[normalized] = str(value)
         if body is not None:
-            headers["Content-Type"] = "application/json"
-        request = Request(url, data=body, headers=headers, method=method.upper())
+            request_headers["Content-Type"] = "application/json"
+        request = Request(url, data=body, headers=request_headers, method=method.upper())
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 raw = response.read()
         except HTTPError as exc:
             self._audit(method, path, f"http_{exc.code}", started)
             detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 404:
+                raise MessageNotFound(
+                    f"{self.provider_label} confirmed the message was not found"
+                ) from exc
             raise TransportError(
-                f"{self.provider_label} returned HTTP {exc.code}: {detail[:1000]}"
+                f"{self.provider_label} returned HTTP {exc.code}: {detail[:1000]}",
+                status_code=exc.code,
             ) from exc
         except URLError as exc:
             self._audit(method, path, "connection_error", started)

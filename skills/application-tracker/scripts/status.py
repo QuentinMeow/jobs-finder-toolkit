@@ -38,7 +38,7 @@ Usage:
     python skills/application-tracker/scripts/status.py --update google-ml-engineer-20260416 applied
     python skills/application-tracker/scripts/status.py --update-job <slug> "Backend Engineer" in_progress
     python skills/application-tracker/scripts/status.py --update-job <slug> 2 rejected
-    python skills/application-tracker/scripts/status.py --update-progress <slug> <role-match> --phase technical_interview --state booking_required [--label TEXT]
+    python skills/application-tracker/scripts/status.py --update-progress <slug> <role-match> --phase technical_interview --state booking_required [--label TEXT] [--email-ref MESSAGE_KEY]
     python skills/application-tracker/scripts/status.py --check-calendar
     python skills/application-tracker/scripts/status.py --sync-calendar [--write]
     python skills/application-tracker/scripts/status.py --enrich-metadata <slug>
@@ -49,6 +49,7 @@ Usage:
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from datetime import date, datetime, timezone
@@ -108,6 +109,7 @@ from metadata_editor import (
 # Output filename stems are candidate-identity-derived, so they come from config
 # (kept under their historical module-level names for the file-presence globs).
 RESUME_STEM = config.resume_stem()
+_NEUTRAL_EMAIL_REF_RE = re.compile(r"^acct-\d+/[0-9a-f]{64}$")
 APPLICATION_STEM = config.application_stem()
 
 
@@ -600,6 +602,9 @@ def _entry_fields_for_progress(
     fields["phase"] = progress.get("phase")
     fields["state"] = progress.get("state")
     fields["label"] = progress.get("label")
+    source = progress.get("source") if isinstance(progress.get("source"), dict) else {}
+    if source.get("kind") == "email" and str(source.get("ref") or "").strip():
+        fields["source"] = f"email:{str(source['ref']).strip()}"
     fields["_company"] = company
     return fields
 
@@ -849,7 +854,7 @@ def _utc_now_stamp() -> str:
 
 
 def update_progress(slug: str, role_match: str, *, phase: str, state: str,
-                    label: str | None = None):
+                    label: str | None = None, email_ref: str | None = None):
     """Set ONE posting's structured progress; never moves the status folder.
 
     Writes ``jobs[].progress`` (phase, state, optional label, tool-stamped
@@ -867,6 +872,11 @@ def update_progress(slug: str, role_match: str, *, phase: str, state: str,
     if state not in PROGRESS_STATES:
         print(f"Error: --state must be one of {', '.join(PROGRESS_STATES)}",
               file=sys.stderr)
+        sys.exit(1)
+    normalized_email_ref = str(email_ref or "").strip()
+    if normalized_email_ref and not _NEUTRAL_EMAIL_REF_RE.fullmatch(normalized_email_ref):
+        print("Error: --email-ref must be a neutral acct-NN/<64-lowercase-hex> "
+              "stored-message reference", file=sys.stderr)
         sys.exit(1)
 
     src = find_application(slug)
@@ -887,6 +897,11 @@ def update_progress(slug: str, role_match: str, *, phase: str, state: str,
     effective_label = label if label is not None else current.get("label")
     if str(effective_label or "").strip():
         progress["label"] = effective_label
+    progress["source"] = (
+        {"kind": "email", "ref": normalized_email_ref}
+        if normalized_email_ref
+        else {"kind": "manual", "ref": ""}
+    )
     calendar_item = str(current.get("calendar_item") or "").strip()
 
     company = str(meta.get("company") or "")
@@ -928,7 +943,6 @@ def update_progress(slug: str, role_match: str, *, phase: str, state: str,
         progress["calendar_item"] = current["calendar_item"]
 
     progress["updated_at"] = _utc_now_stamp()
-    progress["source"] = {"kind": "manual", "ref": ""}
 
     plan = plan_field_updates(raw, {("jobs", index): {"progress": progress}})
     if plan.errors:
@@ -1642,6 +1656,9 @@ def main():
                         help="Employer-specific wording to keep alongside the "
                              "normalized phase (required when --phase other; "
                              "omit to keep the current label, pass '' to clear).")
+    parser.add_argument("--email-ref", default=None, metavar="MESSAGE_KEY",
+                        help="Neutral stored-message reference proving an email-"
+                             "driven --update-progress. Omit for a manual update.")
     parser.add_argument("--check-calendar", action="store_true",
                         help="Verify calendar.md (markers, duplicate ids, "
                              "scheduled time+timezone) and its cross-links with "
@@ -1699,7 +1716,8 @@ def main():
                   file=sys.stderr)
             sys.exit(1)
         update_progress(args.update_progress[0], args.update_progress[1],
-                        phase=args.phase, state=args.state, label=args.label)
+                        phase=args.phase, state=args.state, label=args.label,
+                        email_ref=args.email_ref)
         return
 
     if args.check_calendar:

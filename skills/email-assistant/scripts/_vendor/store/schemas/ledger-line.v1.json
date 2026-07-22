@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "store/ledger-line.v1",
+  "title": "Build-ledger line, version 1",
+  "description": "One processed fetch. seq is the monotonically increasing materialization sequence cursors ride. built_at is wall-clock and lives only here (excluded from determinism).",
+  "type": "object",
+  "required": ["fetch_id", "seq", "fetched_at", "built_at", "clock_ok"],
+  "properties": {
+    "fetch_id": {"type": "string"},
+    "seq": {"type": "integer", "minimum": 1},
+    "fetched_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "built_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "clock_ok": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}

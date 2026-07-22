@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "store/annotation.v1",
+  "title": "Human annotation file, version 1",
+  "description": "Facts a human verified for one entity. Survive rebuilds; win over machine opinions; an annotation matching no entity is a build-fatal orphan.",
+  "type": "object",
+  "required": ["schema_version", "key"],
+  "properties": {
+    "schema_version": {"type": "integer", "minimum": 1},
+    "key": {"type": "string"},
+    "verified_by": {"type": "string"},
+    "verified_at": {"type": "string"},
+    "facts": {"type": "object"}
+  },
+  "additionalProperties": true
+}

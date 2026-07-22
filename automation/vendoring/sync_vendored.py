@@ -71,6 +71,7 @@ TARGETS: dict[str, list[str]] = {
 DIR_TARGETS: dict[str, list[str]] = {
     "automation/shared/store": [
         "skills/job-search/scripts/_vendor/store",
+        "skills/email-assistant/scripts/_vendor/store",
     ],
     # The send-less mail layer (contract + audited transport + isolated
     # providers + safety checker). The email-assistant skill consumes it only

@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "store/identifiers.v1",
+  "title": "Neutral identifier registry, version 1",
+  "description": "Private lookup from neutral slug (profile-NN / acct-NN) to the real owner label. Lives in state/ (overlay only); leak-guard covers the real values.",
+  "type": "object",
+  "required": ["schema_version", "profile", "account"],
+  "properties": {
+    "schema_version": {"type": "integer", "minimum": 1},
+    "profile": {"type": "object", "additionalProperties": {"type": "string"}},
+    "account": {"type": "object", "additionalProperties": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

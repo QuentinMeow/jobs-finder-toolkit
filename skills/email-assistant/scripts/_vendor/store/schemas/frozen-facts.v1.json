@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "store/frozen-facts.v1",
+  "title": "Frozen facts snapshot, version 1",
+  "description": "state/frozen-facts/<entity-key>.yaml — an entity's source-derived facts, snapshotted before its raw payload blob is pruned so a later rebuild can carry it forward (marked carried+frozen) instead of leaving a data hole. NOT regenerable from raw once the blob is gone; lives in state/, never touched by a rebuild.",
+  "type": "object",
+  "required": ["schema_version", "key", "entity"],
+  "properties": {
+    "schema_version": {"type": "integer", "minimum": 1},
+    "key": {"type": "string"},
+    "frozen_at": {"type": "string"},
+    "entity": {
+      "type": "object",
+      "required": ["key"],
+      "description": "the full derived entity current-state dict (e.g. posting.yaml)",
+      "additionalProperties": true
+    },
+    "events": {"type": "array", "items": {"type": "object"}},
+    "files": {
+      "type": "object",
+      "description": "large sibling artifacts by filename (jd.md, jd-<hash>.md)",
+      "patternProperties": {"^.+$": {"type": "string"}},
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

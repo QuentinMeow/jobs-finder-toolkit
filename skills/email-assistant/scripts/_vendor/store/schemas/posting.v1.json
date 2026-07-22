@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "store/posting.v1",
+  "title": "Derived posting entity, version 1",
+  "description": "One folder per real-world posting. facts are parsed verbatim from the source; opinions are code-stamped and rebuildable; provenance records which fetches and which code version produced it. Regenerable from raw.",
+  "type": "object",
+  "required": ["schema_version", "key", "company", "title", "first_seen", "last_seen", "provenance"],
+  "properties": {
+    "schema_version": {"type": "integer", "minimum": 1},
+    "key": {"type": "string"},
+    "identity": {"type": "string", "enum": ["strong", "weak"]},
+    "company": {"type": "string"},
+    "title": {"type": "string"},
+    "location": {"type": "string"},
+    "profiles": {"type": "array", "items": {"type": "string"},
+                 "description": "sorted profile slugs whose fetches observed this posting"},
+    "human": {
+      "type": "object",
+      "description": "human-verified facts merged into the view (human wins over opinions)",
+      "properties": {
+        "facts": {"type": "object"},
+        "verified_by": {"type": "string"},
+        "verified_at": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "source_ids": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source"],
+        "properties": {
+          "source": {"type": "string"},
+          "id": {"type": ["string", "null"]},
+          "url": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "first_seen": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "last_seen": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "facts": {"type": "object"},
+    "opinions": {"type": "object"},
+    "provenance": {
+      "type": "object",
+      "required": ["built_by", "fetch_ids"],
+      "properties": {
+        "built_by": {"type": "string"},
+        "fetch_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "normalizer_version": {"type": "integer", "minimum": 1},
+        "canonicalizer_version": {"type": "integer", "minimum": 1},
+        "carried": {"type": "boolean", "description": "true when this entity was NOT fully re-derived from present raw this build (some observations came from an existing derived entity or from frozen facts because their raw blob is locally absent or was pruned)"},
+        "frozen": {"type": "boolean", "description": "true when frozen facts (state/frozen-facts/<key>.yaml, snapshotted before a retention prune) contributed to this entity — whether it was fully reconstructed from frozen facts or a partially-pruned entity had its pruned observations merged back in"}
+      },
+      "additionalProperties": true
+    },
+    "jd": {
+      "type": "object",
+      "required": ["file", "content_hash"],
+      "properties": {
+        "file": {"type": "string"},
+        "content_hash": {"type": "string"},
+        "normalizer_version": {"type": "integer", "minimum": 1},
+        "fetched_verbatim": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "migrated_from": {"type": "object"},
+    "possible_duplicate": {"type": "array"}
+  },
+  "additionalProperties": true
+}

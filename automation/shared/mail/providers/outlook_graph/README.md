@@ -18,8 +18,13 @@ Private and never tracked in the public toolkit:
 - OAuth refresh-token state in the operating-system keyring.
 - Mailbox content, suggested reply bodies, and any personal writing preferences.
 
-Mailbox content is streamed to the active agent and is not cached by these scripts. Disposable
-body files belong under `tmp/email-assistant/` and are removed after draft creation.
+Interactive review streams mailbox content to the active agent. The separate
+`sync-store` command may capture a requested private local window into the configured data root
+for evidence/rebuild purposes; raw bodies, derived messages, state, message rows, and quoted
+evidence remain outside Git. `store-review` first live-probes freshness, then prints a bounded,
+content-free summary by default; `store-review --details` is the explicit opt-in for the complete
+content-free record/projection view. Disposable draft-body files belong under `tmp/email-assistant/`
+and are removed after draft creation.
 
 ## Authentication contract
 
@@ -47,7 +52,9 @@ The client permits only these operations beneath `https://graph.microsoft.com/v1
 | `GET` | `/me/mailFolders/inbox/messages` | List recent inbox messages |
 | `GET` | `/me/mailFolders/sentitems/messages` | Reconcile whether an inbound message was answered |
 | `GET` | `/me/mailFolders/drafts/messages` | List existing drafts |
+| `GET` | `/me/mailFolders/{inbox,sentitems,drafts}/messages/delta` | Incremental local-store sync |
 | `GET` | `/me/messages/{id}` | Read one message or verify one draft |
+| `GET` | `/me/messages/{id}/attachments` | Attachment metadata only |
 | `POST` | `/me/messages` | Create a new draft |
 | `POST` | `/me/messages/{id}/createReply` | Create a reply draft |
 | `PATCH` | `/me/messages/{id}` | Update a confirmed draft body |
@@ -57,6 +64,10 @@ Every other route/method is rejected before network I/O. Draft-creating/updating
 it, then fetches and verifies it again. Before any reply-draft write, the client reads the source
 message and compares its conversation against recent Sent Items and Drafts. It refuses to create a
 reply draft when a later Sent reply or an existing conversation draft is found.
+
+Every Graph request carries `Prefer: IdType="ImmutableId"`; the local email store hashes the
+neutral account slug plus this move-stable provider ID. RFC Message-ID is correlation-only.
+Attachment collection constrains `$select` to metadata and never requests `contentBytes`.
 
 ## Defense in depth
 

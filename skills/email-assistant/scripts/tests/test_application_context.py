@@ -8,10 +8,43 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from application_context import find_application_matches
+from application_context import find_application_matches, store_review_applications
 
 
 class ApplicationContextTests(unittest.TestCase):
+    def test_store_review_context_keeps_only_tracker_facts_and_domains(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app = root / "5_applied" / "example-corp-platform-engineer-20260720"
+            app.mkdir(parents=True)
+            app.joinpath("meta.yaml").write_text(
+                """company: Example Corp
+recruiter_email: recruiter@example.com
+jobs:
+  - role: Platform Engineer
+    status: applied
+    url: https://jobs.example.com/platform
+    store_key: job-123
+    requisition_id: REQ-123
+    progress:
+      phase: application_review
+      state: waiting_employer
+""",
+                encoding="utf-8",
+            )
+            applications, domains = store_review_applications(root)
+            self.assertEqual(domains, {"Example Corp": ("example.com",)})
+            self.assertEqual(applications, [{
+                "slug": "example-corp-platform-engineer-20260720",
+                "company": "Example Corp",
+                "jobs": [{
+                    "role": "Platform Engineer", "status": "applied",
+                    "url": "https://jobs.example.com/platform", "store_key": "job-123",
+                    "requisition_id": "REQ-123",
+                    "progress": {"phase": "application_review", "state": "waiting_employer"},
+                }],
+            }])
+
     def test_company_and_recruiter_match_rank_first(self):
         with tempfile.TemporaryDirectory() as tmp:
             recruiter = "recruiter" + chr(64) + "example.invalid"

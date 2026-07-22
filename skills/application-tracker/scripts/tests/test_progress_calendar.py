@@ -170,6 +170,38 @@ class ProgressCalendarTests(unittest.TestCase):
         check = self._run(STATUS, "--check-calendar")
         self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
 
+    def test_update_progress_records_neutral_email_evidence_in_meta_and_calendar(self):
+        slug = "example-corp-solo-20260720"
+        self._place("in_progress", slug, [_job(
+            "Backend Engineer", "in_progress", "JD-backend.md",
+            {"phase": "recruiter_screen", "state": "unknown"})])
+        email_ref = "acct-01/" + "a" * 64
+        proc = self._run(
+            STATUS, "--update-progress", slug, "backend",
+            "--phase", "recruiter_screen", "--state", "booking_required",
+            "--email-ref", email_ref,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        _label, app = self._find(slug)
+        progress = self._meta(app)["jobs"][0]["progress"]
+        self.assertEqual(progress["source"], {"kind": "email", "ref": email_ref})
+        self.assertIn(f"source: email:{email_ref}", self.calendar.read_text())
+
+    def test_update_progress_rejects_non_neutral_email_reference(self):
+        slug = "example-corp-solo-20260720"
+        app = self._place("in_progress", slug, [_job(
+            "Backend Engineer", "in_progress", "JD-backend.md",
+            {"phase": "recruiter_screen", "state": "unknown"})])
+        before = (app / "meta.yaml").read_bytes()
+        proc = self._run(
+            STATUS, "--update-progress", slug, "backend",
+            "--phase", "recruiter_screen", "--state", "booking_required",
+            "--email-ref", "provider-message-id@example.com",
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("neutral acct-NN", proc.stderr)
+        self.assertEqual((app / "meta.yaml").read_bytes(), before)
+
     def test_update_progress_scheduled_without_time_fails_closed(self):
         slug = "example-corp-solo-20260720"
         app = self._place("in_progress", slug, [_job(
