@@ -10,6 +10,22 @@ For each story:
 3. Adjust the framing, not the facts.
 4. Be ready for follow-ups on trade-offs, metrics, and what you would do differently.
 
+## Answer Review Signals
+
+For every project answer, verify these signals before rendering:
+
+- **Exact ownership:** on-call responsibility, assignment, volunteering, and taking ownership are
+  not interchangeable. Use the factually correct relationship to the work.
+- **Logical setup:** establish the system/customer, risk, constraint, and why the candidate needed
+  to act before jumping to execution or a conclusion.
+- **Judgment:** explain the key decision, alternatives, or evidence—not only a list of tasks.
+- **Connected delivery:** after removing the visual `(Situation)` / `(Task)` / `(Action)` /
+  `(Result)` labels, the answer should still sound like one story with clear cause and sequence.
+- **Prominent impact:** identify the beneficiary, measurable or directional outcome, risk removed,
+  and durable mechanism or handoff. Do not leave impact as a vague final sentence.
+- **Follow-up depth:** retain technical, stakeholder, setback, measurement, and learning evidence in
+  the additive expansions and the two appended general-story reference views.
+
 ## Core Question Families
 
 ### Leadership / Initiative
@@ -253,28 +269,59 @@ These questions still benefit from story-bank prep, but they are not full STAR a
 
 ## Company Overlays
 
+Equivalent company principles are output aliases, not new answer sources. Keep the YAML source
+company-neutral, start its `outputs` list with `_general_03_<source-stem>`, and add the
+company-prefixed principle name after it. Reuse one source across companies only when the
+underlying answer strategy and evidence are genuinely the same.
+
 ### Amazon
 
-Most common themes:
-- Customer Obsession
-- Ownership
-- Invent and Simplify
-- Are Right, A Lot
-- Dive Deep
-- Bias for Action
-- Deliver Results
+Amazon leadership-principle coverage and neutral source families:
+- Customer Obsession → `customer-focus.yaml`
+- Ownership → `ownership.yaml`
+- Invent and Simplify → `simplify-complexity.yaml`
+- Are Right, A Lot → `sound-judgment.yaml`
+- Learn and Be Curious → `learn-quickly.yaml`
+- Hire and Develop the Best → `develop-others.yaml`
+- Insist on the Highest Standards → `raise-the-bar.yaml`
+- Think Big → `think-big.yaml`
+- Bias for Action → `bias-for-action.yaml`
+- Frugality → `resourcefulness.yaml`
+- Earn Trust → `earn-trust.yaml`
+- Dive Deep → `dive-deep.yaml`
+- Have Backbone; Disagree and Commit → `disagree-and-commit.yaml`
+- Deliver Results → `deliver-results.yaml`
+- Strive to be Earth's Best Employer → `build-a-better-workplace.yaml`
+- Success and Scale Bring Broad Responsibility → `responsible-scale.yaml`
+
+Each source starts with `_general_03_<source-slug>` and adds the corresponding
+`amazon-<leadership-principle>` output alias. Every source contains at least two distinct story
+options.
+
+Hand-maintained files (no YAML): `_general_01_*` for special prompts such as Tell me about
+yourself; `_general_02_story_*` for general project reference packs.
 
 Typical question angles:
 - Tell me about a time you had to earn trust.
 - Tell me about a time you disagreed and committed.
 - Tell me about a time you went deep into data or root cause.
 - Tell me about a time you delivered under constraints.
+- Tell me about a time you delivered an important result despite major obstacles.
+- Tell me about a time you inherited a stalled problem and drove it to completion.
+- Tell me about a time you had to choose the key inputs that would determine an outcome.
 
 Amazon framing tips:
 - make ownership explicit
 - use metrics whenever possible
 - be crisp about customer impact
 - emphasize the exact principle without naming it awkwardly every sentence
+
+Deliver Results at senior level:
+- lead with one outcome and one clean tension rather than combining several projects
+- identify the key input or decision that changed the trajectory, not just the effort spent
+- explain how quality, risk, and stakeholder impact were managed while moving quickly
+- show judgment beyond formal scope and make the candidate's own actions explicit
+- end with measurable impact plus a durable mechanism, handoff, or process improvement
 
 ### Google
 

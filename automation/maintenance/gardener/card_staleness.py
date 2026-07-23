@@ -34,7 +34,7 @@ try:
 except ImportError:  # pragma: no cover
     config = C.config
 
-STORY_BANK_REL = "interviews/behavioral-story-bank"
+STORY_BANK_REL = "interviews/behavioral/story-bank"
 CARD_REL = "0_profile/tailoring-card.md"
 BUILD_CMD = "skills/resume-writer/scripts/build_tailoring_card.py"
 SOURCE_LINE_RE = re.compile(r"- `([^`]+)` sha256:([0-9a-f]{64})")

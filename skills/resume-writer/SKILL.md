@@ -105,7 +105,7 @@ needs — the full files win on any conflict with the card):
 - **Gardener card-staleness warning** (or `build_tailoring_card.py --check` reports changed
   sources) → rebuild the card, then use it.
 - **The JD demands domains the card doesn't cover** → open the full profile
-  (`config.profile_md_path()`) and read **only the relevant `interviews/behavioral-story-bank/`
+  (`config.profile_md_path()`) and read **only the relevant `interviews/behavioral/story-bank/`
   sections** for that domain. Supporting-library detail: [`reference.md`](reference.md) §
   "Supporting library (real detail sources)".
 
@@ -235,7 +235,8 @@ a legacy `employer:`/`experience:` layout, or a field the baseline doesn't show.
   counts, bullet/length limits)? Run `check.py --rules` (~1 KB) — never read the `check.py` source.
 - Every bullet must map to real content the user actually did — reword, never invent. The source
   of truth is the profile (`config.profile_md_path()`) **plus** the supporting library
-  (`interviews/behavioral-story-bank/`, answer bank, prior applications, notes). A detail is
+  (`interviews/behavioral/story-bank/`, `interviews/behavioral/question-bank/`, prior
+  applications, notes). A detail is
   allowed on the resume if it is documented in one of these real sources.
 - You MAY enrich a bullet with a concrete, real detail pulled from the story bank (a scale figure,
   a named artifact, a real tool) as long as it is traceable to that source and does not contradict

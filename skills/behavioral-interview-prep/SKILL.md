@@ -1,7 +1,7 @@
 ---
 name: behavioral-interview-prep
 visibility: public
-description: Prepare project-based behavioral story banks from real experience, map stories to common software engineer behavioral question categories, and rewrite answers into reusable answer cores with optional short and long deep dives. Use when the user asks for behavioral interview prep, STAR answers, story bank creation, leadership/conflict/failure questions, or company-specific behavioral coaching.
+description: Prepare grounded behavioral answers from real project stories, map projects to common software engineer questions, and generate validated multi-project answers with connected STAR paragraphs, prominent impact, timed quick answers, technical expansions, and reusable story references. Use when the user asks for behavioral interview prep, STAR answers, story bank creation, leadership/conflict/failure questions, or company-specific behavioral coaching.
 ---
 
 # Behavioral Interview Prep
@@ -13,30 +13,34 @@ Use this skill when the user asks to:
 - create, expand, or backfill a project-based story-bank file
 - rewrite a story into a stronger behavioral interview answer
 - map one story to multiple common question families
-- turn notes into an `intro version`, a reusable high-level STAR answer, and optional short or long technical deep dives
+- turn notes into validated quick, combined, and technical behavioral answers
 - prepare for Amazon, Google, Meta, or other company-specific behavioral rounds
-- work in `interviews/behavioral-story-bank/`, `interviews/behavioral-answer-bank/`, or `interviews/company-specific/<company>/behavioral/`
+- work in `private/interviews/behavioral/story-bank/` or
+  `private/interviews/behavioral/question-bank/`
 
 ## Before You Start
 
 1. Read `AGENTS.md` for repo guardrails.
 2. Read your candidate profile (`config.profile_md_path()`) unless the user already provided complete story material.
 3. If the prep is company-specific, read the relevant JD file(s) — `config.applications_root()/<status>/<slug>/source/JD-<job title>.md` (one per posting) — and that folder's `notes.md` if present (the app usually lives in the `4_in_progress/<slug>/` folder by interview time).
-4. If a company-specific folder exists, read relevant files under `interviews/company-specific/<company>/behavioral/` (real interview products mount under `private/interviews/...`; see `AGENTS.md` → "Public vs Private").
+4. Read relevant company-prefixed files in `private/interviews/behavioral/question-bank/`.
 5. **Personalization / private overrides:** if this skill folder has a
    `references_private/` directory, read every file in it — those candidate-specific
    notes and examples OVERRIDE the generic examples in this SKILL.md. When it is absent
    (public / example mode), use the generic examples here and take all candidate
    specifics from `config` and the profile.
 6. Read `QUESTION_BANK.md` when selecting question families, follow-ups, or company overlays.
-7. Never fabricate facts, metrics, conflict, ownership, or technologies. Reframe only what is real.
-8. **Scratch stays in `tmp/`** (never the repo root or the `interviews/` tree — only finished
+7. Read `reference.md` before designing or changing timed answer modules or validation rules.
+8. Never fabricate facts, metrics, conflict, ownership, or technologies. Reframe only what is real.
+9. **Scratch stays in `tmp/`** (never the repo root or the `interviews/` tree — only finished
    story/answer files belong there). See `AGENTS.md` → "Scratch & Temporary Files".
 
 ## Core Rules
 
 - Use real experience only.
-- Default to `I` instead of `we`. Mention team context only when needed.
+- Write story and answer prose in first person. Use `I` for the candidate's actions and decisions;
+  use `we` only for genuinely shared work or outcomes. Do not erase collaborators or claim team
+  work as personal work, and do not replace `I` with a name or third-person narration.
 - Keep Situation and Task brief. Action should be about half the answer.
 - Quantify outcomes where honest. If no number exists, use scope, risk reduced, or workflow impact.
 - End with result plus learning, especially for failure, conflict, and feedback questions.
@@ -45,25 +49,86 @@ Use this skill when the user asks to:
 - A story is easier to trust when it has one clean tension, a few concrete actions, and a
   visible outcome. If it can't be summarized clearly in one sentence, it isn't yet sharp
   enough for interview use.
+- Before polishing, run a credibility pass. Flag altered or compressed chronology that changes
+  causality, invented motives or impact, unsupported metrics or praise, implausible solo credit,
+  unexplained role changes, and details the candidate cannot defend. Clarify, qualify, or omit
+  those claims instead of making the story more impressive by inventing support.
 - Prep follow-up readiness for every strong story: what alternatives you considered, how you
   measured success, what you'd do differently now, and how stakeholders reacted / how you kept
   alignment.
 - Treat project story-bank files as the canonical source of truth for behavioral stories. Question-based answer files should be shorter derived views that select and summarize only the relevant parts.
+- **Story-bank content is read-only by default.** Never create, expand, backfill, correct, or
+  rephrase a file under `behavioral/story-bank/` unless the user specifically asks to change the
+  story bank. Moving an unchanged file during an explicitly requested folder migration is allowed.
 - A story-bank file is one project or major workstream, not one interview question. Make it intentionally long and chronological, with details from all useful aspects: context, stakes, ownership, constraints, technical decisions, execution, collaboration, conflict, mistakes, trade-offs, results, metrics, and lessons.
 - In story-bank detail sections, every paragraph should begin with a short parenthesized tag that combines targeting area and content summary, such as `(Ambiguity - monolith-to-microservices split had unclear service boundaries)` or `(Influence - component owners needed reproducible evidence before engaging)`.
-- Story banks may start as minimal skeletons. When a question answer contains new manually added facts, better phrasing, or extra detail that is not already in the relevant story-bank file, update the story bank first or immediately after updating the answer.
-- If saving into an answer-bank folder, default to one numbered file per question.
-- Reserve `00` for `Tell me about yourself`.
-- One question file can contain multiple answer options when different projects fit the same prompt well.
-- In persisted answer-bank Markdown files, keep the `#` title visible and wrap each main section in a collapsible `<details>` block. Each answer option, such as `Answer Option A` and `Answer Option B`, should be its own folded section.
+- If user-provided facts for a question answer differ from or extend a story-bank file, use the
+  user's correction in the question source, flag the mismatch, and leave the story bank unchanged
+  unless the user also asks to update it.
+- Similar or near-identical behavioral questions share one company-neutral YAML source under
+  `behavioral/question-bank/sources/`. Name the source after the question family, such as
+  `deliver-results.yaml`, never after one company's principle.
+- Every source declares an ordered `outputs` list. The first output slug must be
+  `_general_03_<source-stem>` (for example, `_general_03_deliver-results`). Add one
+  company-prefixed output alias per matching principle or value, such as
+  `amazon-deliver-results`; all aliases render from the same answers.
+- Hand-maintained question-bank Markdown uses numbered `_general_` prefixes by purpose:
+  - `_general_01_<topic>.md` — non-obvious or special-purpose answers (for example, Tell me about
+    yourself); no YAML source; exempt from STAR/timing validation.
+  - `_general_02_story_<project>.md` — reusable general project story packs (not tied to one
+    question family); hand-maintained.
+  - `_general_03_<question-family>.md` — generated from YAML; behavioral STAR answers.
+  - `<company>-<principle-or-value>.md` — company overlays generated from the same YAML (for example,
+    `amazon-deliver-results.md`).
+- In interview answers, avoid employer-internal product codenames when a generic description is
+  clearer: say **image GC and cross-region replication service**, **self-hosted container registry
+  (similar to ECR)**, and **remote shell for Kubernetes containers (similar to kubectl exec)** instead
+  of internal service names.
+- Every generated question source must contain at least two answer options. Store them as an
+  `answers` list; every item must have a distinct `project_title` and use one project/angle.
+- In persisted answer-bank Markdown files, keep the `#` title visible. Wrap each project answer in
+  a collapsed outer `<details>` block whose summary uses **Answer N** in bold plus the project
+  title in normal weight, then a horizontal rule before nested sections. Nested module summaries
+  use *italic* labels and word-count timing; do not bold nested titles.
 - When the user wants bullet-style answers, make each bullet start with a short parenthesized tag like `(Signal)`, `(Context)`, `(Judgment)`, or `(Impact)`.
-- Do not force STAR onto `Tell me about yourself`; use `present -> past -> future` there even if the rest of the bank is STAR-based.
-- Prefer one reusable answer core over separate `1 minute`, `2 minute`, and `5 minute` scripts. The core should be high-level enough to speak shorter or longer depending on interviewer pacing.
-- Use deep dives as optional follow-up modules. Introduce them with a bridge like, "If useful, I can go deeper on the technical design."
-- For company culture/principle prep, optimize for interview-time navigation: create exactly one short numbered file per principle or value, not one giant aggregate file.
-- Any tag, initial summary, or STAR label that introduces verbal talking material must be on its own line. Put the actual spoken answer text on the next line so it is easy to spot during an interview.
-- Treat standalone STAR labels as header-like text with no trailing colon.
+- Do not force STAR onto `Tell me about yourself`; use `present -> past -> future` there even if
+  the rest of the bank is STAR-based. End the concise default answer with a natural bridge that
+  offers optional technical follow-ups, such as, "If useful, I can go deeper on either project."
+- Every project answer has four modules: a self-contained `quick_answer`, a self-contained
+  `combined_answer` that integrates the quick answer with the short deep-dive material, an additive
+  `technical_deep_dive_short`, and an additive `technical_deep_dive_long`.
+- The quick answer targets 90 seconds and must be between 75 and 130 seconds at the configured
+  speaking rate. Default to a conservative 120 words per minute. This gate applies to chat answers
+  and proposed packages too; count the actual words instead of merely declaring timing settings.
+- Render each module as four compact visual paragraphs: `(Situation) ...`, `(Task) ...`,
+  `(Action) ...`, `(Result) ...`. Do not render large STAR headings or isolated summary lines.
+  The labels are navigation aids and are not spoken.
+- Each module must sound like one connected story when the labels are removed. Use cause, contrast,
+  and sequence transitions such as “because,” “so,” “after,” “while,” and “as a result.” Do not
+  produce a stack of disconnected short sentences.
+- Make personal ownership explicit and factually correct: distinguish being on-call, being assigned,
+  volunteering, and taking ownership. Never replace one with another because it sounds stronger.
+- Impact is a primary answer component, not an afterthought. State who or what benefited, the
+  measurable or directional change, the risk avoided, and the durable effect. Give Result enough
+  space to be memorable while keeping Action the largest paragraph.
+- Introduce expansions with a natural bridge such as, "If useful, I can explain how I made that
+  rollout safe." The bridge is navigation text, not part of STAR timing.
+- Append two general-story references to every project answer: a tagged timeline view with explicit
+  logical connections, and tagged isolated focus areas. Every isolated focus area must state the
+  specific problem, what the candidate personally did, and the impact.
+- For company culture/principle prep, optimize for interview-time navigation: create exactly one
+  company-prefixed generated answer file per principle or value, not one giant aggregate file.
+- Enumerate every requested principle before drafting. Generate a principle source only when at
+  least two distinct grounded stories support it; list unsupported principles as evidence gaps
+  instead of inventing a second story or silently omitting them.
+- A principle package is complete only when every proposed file has full source-valid modules and
+  both reference views. Do not substitute an outline, “combined-answer additions,” or a module
+  summary for the actual answer content. If the package is large, finish it in explicit waves.
+- Put each visual STAR label at the start of its spoken paragraph, for example
+  `(Situation) The service...`. Never emit a standalone STAR label or summary sentence.
 - Avoid generic section titles that only describe the format in interview-time prep files. Use a descriptive project-and-angle heading, then start the STAR labels immediately.
+- Use plain, spoken language: familiar words, short sentences, contractions where natural, and one
+  idea per sentence. Avoid ornamental wording and interview jargon.
 
 ## Default Workflow
 
@@ -73,17 +138,22 @@ Use this skill when the user asks to:
    - `project story-bank creation or expansion`
    - `specific question`
    - `company-specific prep`
-2. Build or update the story bank:
+2. Select grounded source material:
    - derive or select the relevant project/workstream
-   - create or update one long chronological story file per project
-   - consolidate facts from profile, raw notes, existing answer files, and company-specific variants
-   - preserve source-grounded details and mark unknowns as gaps instead of inventing them
+   - read the relevant story-bank file and other user-provided evidence
+   - do not modify story-bank content unless the user explicitly requested that modification
+   - preserve source-grounded details and mark unknowns or source conflicts instead of inventing them
 3. Map each story to likely question families.
-4. Generate reusable answer modules:
-   - `Intro version`: one concise project/story summary for quick setup or story selection
-   - `Reusable STAR answer`: high-level Situation, Task, Action, Result that can be spoken shorter or longer
-   - `Technical deep dive - short`: optional follow-up with the most important implementation details
-   - `Technical deep dive - long`: optional follow-up with trade-offs, failure modes, stakeholder handling, and lessons
+4. For a specific behavioral question, write the source YAML before the Markdown:
+   - choose a company-neutral question-family slug and primary natural question
+   - list similar question variants and ordered `_general_03_` / company-prefixed output aliases
+   - create an `answers` list with at least two titled projects
+   - create a self-contained `quick_answer` targeting 90 seconds within the 75-130 second gate
+   - create a self-contained `combined_answer` that integrates the quick and short-deep-dive facts
+   - create non-repeating short and long additive technical expansions
+   - write one connected paragraph per STAR point and make impact explicit
+   - add both tagged general-story reference styles for every project
+   - validate the YAML, render the Markdown, and check that generated output is current
 5. Tailor the framing:
    - Amazon: LP fit, ownership, customer impact, dive deep, delivery
    - Google: collaboration, ambiguity, learning, leadership, judgment
@@ -92,28 +162,34 @@ Use this skill when the user asks to:
    - answers the question asked
    - action-heavy and specific
    - believable under follow-up
+   - passes the credibility review for chronology, causality, motives, metrics, role, and credit
    - length fits spoken delivery
+   - every quick answer's measured word count passes the 75-130 second gate
+   - every proposed source passes `answer_bank.py validate`; for response-only work, validate
+     temporary sources under top-level `tmp/` and delete them afterward
 7. If persisting to an answer bank:
-   - create or update numbered files
-   - keep formatting consistent across files
-   - allow multiple answer options in one file when helpful
-   - wrap persisted top-level sections in `<details>` blocks so the user can expand only the section they want to review
+   - create or update the neutral question-family YAML source
+   - validate it before rendering
+   - render every declared output alias deterministically
+   - run the private content tests under `behavioral/question-bank/tests/`
+   - wrap each answer and nested module in collapsed `<details>` blocks (combined → quick → deep dives → references)
 
 ## File Location
 
-Use `interviews/behavioral-answer-bank/` for reusable, company-neutral answers.
-Use `interviews/behavioral-story-bank/` for canonical project-based stories.
+All real behavioral products live under `private/interviews/behavioral/`.
+Use `private/interviews/behavioral/question-bank/` for question-based answers. Specific behavioral
+answers are generated Markdown aliases backed by shared, company-neutral YAML under
+`question-bank/sources/`. Generated behavioral question files use `_general_03_<family>.md`;
+company overlays use `<company>-<principle>.md`. Hand-maintained files use `_general_01_` or
+`_general_02_story_` prefixes (see Core Rules). Content tests live under `question-bank/tests/`.
+Use `private/interviews/behavioral/story-bank/` for canonical project-based stories.
 Each file should be one project or major workstream, for example
-`interviews/behavioral-story-bank/payments-microservices-migration.md`.
-Use `interviews/company-specific/<company>/behavioral/` for company-specific
-behavioral prep, recruiter screens, interview-loop notes, and tailored answer
-variants. Related coding practice for the same company belongs in
-`interviews/company-specific/<company>/coding/`.
+`private/interviews/behavioral/story-bank/payments-microservices-migration.md`.
 
-For company culture principles or values, use one file per principle:
-`interviews/company-specific/<company>/behavioral/NN-principle-name.md`.
-If the company publishes 11 principles, create exactly 11 files. Keep each file
-short enough to scan during an interview.
+Reusable company-principle answers belong in the answer bank and use a company-prefixed output
+name, such as `question-bank/amazon-deliver-results.md`, while the shared source remains
+`question-bank/sources/deliver-results.yaml`. Keep company-specific behavioral products in this
+same question bank; use company-prefixed filenames instead of a separate company folder.
 
 ## Story Bank Coverage
 
@@ -131,13 +207,14 @@ Aim for 8-10 reusable project stories covering:
 
 For canonical question families and company overlays, read [QUESTION_BANK.md](QUESTION_BANK.md).
 
-When coverage is incomplete, create skeleton files anyway if there is enough real
-material. A useful skeleton should list known facts, chronological paragraphs,
-likely question families, reusable proof points, and explicit gaps to fill later.
+When the user explicitly asks to add story-bank coverage and the material is incomplete, a useful
+skeleton should list known facts, chronological paragraphs, likely question families, reusable
+proof points, and explicit gaps to fill later. Do not create it during question-answer work alone.
 
 ## Preferred Output
 
-When saving a project story-bank file, prefer this structure:
+Only when the user explicitly asks to create or change a project story-bank file, prefer this
+structure:
 
 ```markdown
 # [Project or workstream name]
@@ -205,17 +282,23 @@ When building a high-level story bank in chat, use this structure:
 - Result: [quantified outcome]
 - Learning: [what changed afterward]
 
-#### Intro version
-[one-sentence story/project summary]
+#### Quick answer
+[(Situation), (Task), (Action), and (Result) paragraphs; connected and self-contained]
 
-#### Reusable STAR answer
-[high-level answer core]
+#### Self-contained combined answer
+[quick answer plus short technical detail, rewritten as one connected answer]
 
 #### Technical deep dive - short
-[optional focused follow-up]
+[optional additive expansion containing only new detail]
 
 #### Technical deep dive - long
-[optional expanded follow-up]
+[optional additive expansion containing only new detail]
+
+#### General story reference - timeline
+[tagged chronological paragraphs with cause-and-effect transitions]
+
+#### General story reference - isolated areas
+[tagged problem -> personal action -> impact paragraphs]
 ```
 
 When the user gives a single story and wants question mapping, use:
@@ -229,10 +312,10 @@ When the user gives a single story and wants question mapping, use:
 ## Recommended Angle
 [Why this story works for those questions]
 
-## Intro version
+## Quick answer
 ...
 
-## Reusable STAR answer
+## Self-contained combined answer
 ...
 
 ## Technical deep dive - short
@@ -242,154 +325,119 @@ When the user gives a single story and wants question mapping, use:
 ...
 ```
 
-When saving a persisted answer bank to files, prefer this structure:
+Specific behavioral answer Markdown is rendered from a shared source's output aliases. Prefer this
+generated structure:
 
 ```markdown
-# [Question text]
+# [Question or principle name]
+
+## Similar questions
+- [variant]
+- [variant]
+
+## Answer 1 — [Project title]
 
 <details>
-<summary><strong>What the recruiter is actually looking for</strong></summary>
+<summary><strong>Answer 1</strong> — [Project title]</summary>
 
-- (Signal) ...
-- (Signal) ...
+---
+
+<details>
+<summary><em>Self-contained · quick + short deep dive</em> · [N] words / about [M:SS]</summary>
+
+[(Situation), (Task), (Action), and (Result) paragraphs that integrate both layers.]
 
 </details>
 
 <details>
-<summary><strong>Answer Option A - [Project or angle]</strong></summary>
+<summary><em>Quick answer</em> · [N] words / about [M:SS] · target 1:30</summary>
 
-### Why this answer works
-- (Fit) ...
-- (Fit) ...
+(Situation) [Connected setup paragraph.]
 
-### Intro version
-- (Hook) ...
+(Task) [Accurate ownership and responsibility paragraph.]
 
-### Reusable STAR answer
+(Action) [Largest paragraph with reasoning, decisions, and execution.]
 
-#### Situation
-- (Context) ...
-
-#### Task
-- (Ownership) ...
-
-#### Action
-- (Judgment) ...
-- (Execution) ...
-
-#### Result
-- (Impact) ...
-- (Learning) ...
-
-### Technical deep dive - short
-...
-
-### Technical deep dive - long
-...
+(Result) [Prominent measurable/directional impact and durable effect.]
 
 </details>
 
 <details>
-<summary><strong>Answer Option B - [Optional second project]</strong></summary>
+<summary><em>Technical deep dives</em></summary>
 
-...
+<details>
+<summary><em>Deep dive · short</em> · [N] words / about [M:SS] · new material</summary>
+
+[Natural bridge.]
+[Compact STAR paragraphs containing only new detail.]
+
+</details>
+
+<details>
+<summary><em>Deep dive · long</em> · [N] words / about [M:SS] · new material</summary>
+
+[Natural bridge.]
+[Deeper compact STAR paragraphs containing only new detail.]
+
+</details>
+
+</details>
+
+<details>
+<summary><em>Reference</em> · timeline</summary>
+
+(Context: [area]) [Paragraph.]
+(Execution: [area]) [Paragraph.]
+(Impact: [area]) [Paragraph.]
+
+</details>
+
+<details>
+<summary><em>Reference</em> · isolated problem / action / impact</summary>
+
+(Technical: [area]) [Problem.] To address that, [personal action.] As a result, [impact.]
+
+</details>
 
 </details>
 ```
 
-For `00-tell-me-about-yourself.md`, prefer this structure instead:
+For `_general_01_tell-me-about-yourself.md`, use `present -> past -> future` and hand-maintain the
+Markdown. It may use optional follow-up modules, but it is not a STAR answer and must not be placed
+under `question-bank/sources/`. In chat and persisted versions, include an explicit spoken bridge
+from the default answer to those optional follow-ups.
 
-```markdown
-# Tell me about yourself
-
-<details>
-<summary><strong>What the recruiter is actually looking for</strong></summary>
-
-- (Signal) ...
-
-</details>
-
-<details>
-<summary><strong>Answer Option A - [Default version]</strong></summary>
-
-### Why this answer works
-- (Fit) ...
-
-### Intro version
-- (Present) ...
-- (Project) ...
-- (Future) ...
-
-### Reusable answer core
-- (Present) ...
-- (Past) ...
-- (Future) ...
-
-### Technical deep dive - short
-...
-
-### Technical deep dive - long
-...
-
-</details>
-```
-
-When saving company culture/principle answers, prefer this compact structure:
-
-```markdown
-# NN. [Company Principle]
-
-## [Project or workstream] - [specific story angle or outcome]
-
-**Situation**
-[brief setup]
-
-**Task**
-[your responsibility]
-
-**Action**
-[2-4 action-heavy sentences]
-
-**Result**
-[impact plus learning]
-
-## Add More Examples
-
-### Answer Option B - [Story]
-
-**Situation**
-
-**Task**
-
-**Action**
-
-**Result**
-```
-
-Avoid recruiter-analysis sections, long deep dives, and full indexes in these
-principle files unless the user asks for them. The goal is fast navigation while
-speaking.
+Company culture/principle answers use the same generated structure as other specific behavioral
+questions. Keep one principle per company-prefixed file, with at least two titled project answers.
 
 ## Answer Module Guidance
 
-- `Intro version`: one sentence or a few short bullets. Use it to select or set up the story, not to answer the whole question.
-- `Reusable STAR answer`: the default answer core. Keep setup short, make Action the largest section, and include result plus learning.
-- `Technical deep dive - short`: a focused follow-up for the strongest technical design points. Keep it compact enough for an interviewer who asks one follow-up.
-- `Technical deep dive - long`: an expanded follow-up for deep technical probing. Add trade-offs, failure modes, stakeholder handling, and lessons without repeating the whole answer core.
+- `Quick answer`: the self-contained default. Target 90 seconds; enforce 75-130 seconds. Keep setup
+  short, make Action the largest paragraph, and give Result explicit impact and durable effect.
+- `Self-contained combined answer`: integrates the quick answer and short technical material into
+  one smooth answer. Do not mechanically concatenate two scripts.
+- `Technical deep dive - short`: an optional follow-up containing only detail not already spoken
+  in the quick answer.
+- `Technical deep dive - long`: an alternative expanded follow-up containing only new detail.
+  Add trade-offs, failure modes, stakeholder handling, and lessons.
+- `General story references`: append both a connected timeline and isolated problem/action/impact
+  views. These are reference material, not timed scripts.
 
 ## Special Cases
 
 - `Failure`: include ownership, recovery, and learning. Do not make the story sound like somebody else caused everything.
 - `Conflict`: focus on professional disagreement, alignment steps, and improved working relationship.
 - `Weakness`: use a real but manageable weakness, then show a concrete improvement plan and evidence of progress.
-- `Tell me about yourself`: not full STAR; use `present -> past -> future`. Keep a project-summary intro, then a reusable high-level answer core, then optional short/long technical deep dives.
+- `Tell me about yourself`: use `_general_01_<topic>.md`; use `present -> past -> future`, not STAR,
+  and end the default answer with a bridge to optional technical follow-ups.
 - `Why this company`: connect the user's background to the team's work and mission. Avoid generic praise.
 
 ## Optional Persistence
 
 If the user wants prep saved for a specific application:
-- prefer `interviews/company-specific/<company>/behavioral/` for reusable company-specific prep
-- prefer `interviews/behavioral-story-bank/` when saving or expanding source project stories that multiple answer files will reuse
+- save reusable company-specific answers in `private/interviews/behavioral/question-bank/` with a
+  company-prefixed output alias backed by a neutral shared source
+- change `private/interviews/behavioral/story-bank/` only when the user explicitly asks
 - update `config.applications_root()/<status>/<slug>/notes.md` only when the note is tied to one application record
 - add a `## Behavioral Prep` section rather than editing the base profile
 - do not edit your candidate profile (`config.profile_md_path()`) unless the user explicitly asks
@@ -406,14 +454,28 @@ Strong mapping:
 - cross-functional collaboration
 
 Strong answer-module shape:
-- intro: one project summary
-- reusable STAR answer: problem, action, result, learning
-- optional deep dive: technical details only when invited
+- quick answer: connected, self-contained STAR paragraphs with prominent impact
+- combined answer: a natural rewrite that integrates quick and short technical detail
+- short expansion: new technical detail only, used after asking permission
+- long expansion: alternative deeper detail, still without repeating the core
+- story references: one connected timeline plus isolated problem/action/impact areas
 
 ## Final Checks
 
 - Would this still sound true if the interviewer drilled into the technical details?
-- Is your role explicit?
-- Is the result concrete?
+- Are chronology and causality explicit, with unsupported motives, metrics, praise, or solo credit
+  qualified or removed?
+- Is the ownership wording exact — on-call, assigned, volunteered, or took ownership?
+- Does each answer read as one connected spoken story after removing the visual STAR labels?
+- Is the impact prominent, concrete, and tied to a beneficiary, risk, metric, or durable change?
 - Is there more action than setup?
+- Does the quick answer target 90 seconds and stay within 75-130 seconds?
+- Is the combined answer self-contained instead of a mechanical concatenation?
+- Do the technical expansions add detail instead of repeating the quick answer?
+- Does every project answer end with both required tagged general-story reference styles?
+- Does every `Tell me about yourself` answer include a natural bridge to optional technical depth?
+- Does the neutral source start with `_general_03_<source-stem>` and include every applicable
+  company-prefixed alias?
+- Are there at least two distinct project answers?
+- Did the YAML validate and generate every current Markdown alias exactly?
 - Did you tailor the framing without changing the facts?

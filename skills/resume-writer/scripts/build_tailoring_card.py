@@ -9,13 +9,13 @@ the JD demands a deep dive (see the resume-writer SKILL.md workflow).
 Inputs (via the vendored config accessors — self-contained skill, no repo-root imports):
   * profile markdown  — ``config.profile_md_path()``
   * baseline yaml      — ``config.baseline_path()``
-  * story bank         — ``interviews/behavioral-story-bank/`` under the OVERLAY ROOT,
+  * story bank         — ``interviews/behavioral/story-bank/`` under the OVERLAY ROOT,
                          derived as ``config.applications_root().parent`` — NOT the config
                          file's directory. In the real deployment ``config.yaml`` sits at the
                          repo root while the private overlay is mounted at ``private/``; the
                          applications root (``private/applications``) is what locates the
                          overlay, so its parent (``private/``) is the overlay root and the
-                         story bank lives at ``private/interviews/behavioral-story-bank/``.
+                         story bank lives at ``private/interviews/behavioral/story-bank/``.
                          (An overlay-resident ``config.yaml`` resolves to the same place.)
                          With no ``config.yaml`` present the config falls back to the tracked
                          example config, whose applications root is ``examples/applications``
@@ -69,7 +69,7 @@ from resume_schema import ResumeSchemaError, normalize_resume  # noqa: E402
 
 CEILING_BYTES = 8192          # ~2k tokens target ceiling for the card
 BYTES_PER_TOKEN = 4           # est. tokens = bytes / 4 (repo-wide convention)
-STORY_BANK_REL = "interviews/behavioral-story-bank"
+STORY_BANK_REL = "interviews/behavioral/story-bank"
 CARD_REL = "0_profile/tailoring-card.md"
 BUILD_CMD = "skills/resume-writer/scripts/build_tailoring_card.py"
 

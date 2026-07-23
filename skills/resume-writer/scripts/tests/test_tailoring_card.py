@@ -73,7 +73,7 @@ class TailoringCardTests(unittest.TestCase):
         shutil.copy(PROFILE_FIXTURE, tmp / "profile.md")
         shutil.copy(BASELINE_FIXTURE, tmp / "baseline.yaml")
         if with_story:
-            sb = tmp / "interviews" / "behavioral-story-bank"
+            sb = tmp / "interviews" / "behavioral" / "story-bank"
             sb.mkdir(parents=True)
             (sb / "payments-migration.md").write_text(
                 "# Payments platform microservices migration\n\n"
@@ -201,7 +201,7 @@ class TailoringCardTests(unittest.TestCase):
         text = self._card(tmp).read_text(encoding="utf-8")
         self.assertIn("Payments platform microservices migration", text)
         self.assertIn("Read the full story", text)
-        self.assertIn("interviews/behavioral-story-bank/payments-migration.md", text)
+        self.assertIn("interviews/behavioral/story-bank/payments-migration.md", text)
 
     def test_story_bank_resolved_from_overlay_root_not_config_dir(self):
         # Real-deployment shape: config.yaml at the repo root, the private overlay
@@ -215,7 +215,7 @@ class TailoringCardTests(unittest.TestCase):
         (overlay / "applications" / "0_profile").mkdir(parents=True)
         shutil.copy(PROFILE_FIXTURE, overlay / "profile.md")
         shutil.copy(BASELINE_FIXTURE, overlay / "baseline.yaml")
-        sb = overlay / "interviews" / "behavioral-story-bank"
+        sb = overlay / "interviews" / "behavioral" / "story-bank"
         sb.mkdir(parents=True)
         (sb / "payments-migration.md").write_text(
             "# Payments platform microservices migration\n\n"
@@ -242,7 +242,7 @@ class TailoringCardTests(unittest.TestCase):
         self.assertIn("(1 story)", text)
         # Digest pointer stays config-relative (absolute-free), reaching into the overlay.
         self.assertIn(
-            "private/interviews/behavioral-story-bank/payments-migration.md", text)
+            "private/interviews/behavioral/story-bank/payments-migration.md", text)
 
     # ── staleness / no-op protection ─────────────────────────
     def test_check_reports_current_then_stale_after_mutation(self):
