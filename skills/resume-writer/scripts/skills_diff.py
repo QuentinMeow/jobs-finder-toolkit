@@ -104,7 +104,7 @@ _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9+.#/-]*")
 _CAMEL_RE = re.compile(r"[a-z][A-Z]")
 _PUNCT_TECH_RE = re.compile(r"[/+#]")
 _DEGREE_CHAIN_RE = re.compile(
-    r"^(?:B(?:A|S)|M(?:A|S)|PhD)(?:/(?:B(?:A|S)|M(?:A|S)|PhD))+$",
+    r"^(?:B(?:A|S)|M(?:A|S)|PhD)(?:/(?:B(?:A|S)|M(?:A|S)|PhD))*$",
     re.I,
 )
 
@@ -131,6 +131,20 @@ def _single_token_counts(token: str) -> bool:
     if key in KNOWN_TECH and re.search(r"[A-Z]", token):
         return True
     return _is_structural(token)
+
+
+def _compound_components(phrase: str) -> list[str]:
+    """Return skill-like slash components, excluding plain English fragments."""
+    if "/" not in phrase:
+        return []
+    parts = [part.strip() for part in phrase.split("/") if part.strip()]
+    if len(parts) < 2:
+        return []
+    return [
+        part for part in parts
+        if _single_token_counts(part)
+        or (part.isupper() and len(part) >= 2)
+    ]
 
 
 def extract_skill_phrases(jd_text: str) -> list[str]:
@@ -187,11 +201,28 @@ def uncategorized_queue(jd_text: str, profile_text: str) -> list[str]:
                     or check._in_list(language, weak)
                     or check._in_list(language, never)):
                 return True
+        # A profile can suppress an extractor false positive without globally
+        # blocklisting the underlying word in valid resume prose/contact data.
+        # Example: "LinkedIn non-skill" keeps the company name out of this
+        # queue without making linkedin.com violate the Never gate.
+        if check._in_list(f"{phrase} non-skill", never):
+            return True
         # … plus the component-wise Weak semantics the gate uses: a Weak token
         # like "REST/gRPC APIs" is satisfied by a JD "REST APIs".
         return any(check._mentioned_in_jd(w, phrase) for w in weak)
 
-    return [p for p in extract_skill_phrases(jd_text) if not _categorized(p)]
+    queue: list[str] = []
+    seen: set[str] = set()
+    for phrase in extract_skill_phrases(jd_text):
+        if _categorized(phrase):
+            continue
+        candidates = _compound_components(phrase) or [phrase]
+        for candidate in candidates:
+            key = check._skill_key(candidate)
+            if key and key not in seen and not _categorized(candidate):
+                seen.add(key)
+                queue.append(candidate)
+    return queue
 
 
 def _read_jd_text(target: Path) -> str:
