@@ -1,16 +1,20 @@
 # Canary set — behavioral-interview-prep skill
 # Grounded in skills/behavioral-interview-prep/SKILL.md + QUESTION_BANK.md: project-based
-# story-bank shape (one project per file; long chronological detail; each paragraph starts with a
-# parenthesized '(Area - summary)' tag; Story Index + Chronological Story Detail + Answer
-# Generation Notes), reusable answer core over 1/2/5-min scripts, Tell-me-about-yourself uses
-# present->past->future (NOT STAR), one file per company principle, and never fabricate. Uses the
+# story-bank shape (read-only unless explicitly requested), YAML-backed multi-project answer
+# options with connected compact STAR paragraphs, 75-130-second quick answers, self-contained
+# combined answers, prominent impact, two appended general-story reference styles, and at least two
+# project answers per source. Equivalent questions share a neutral source with a leading
+# _general_ output plus company-prefixed aliases. Tell-me-about-yourself uses a general-* file and
+# present->past->future (NOT STAR). Company prep covers every principle with either a complete
+# grounded source or an explicit evidence gap; it never fabricates to hit a file count. Uses the
 # fictional 'Jordan Rivers' example profile. Run per evals/README.md; judge per evals/rubrics/judging.md.
 skill: behavioral-interview-prep
 default_setup: >
   config.yaml unset -> config.example.yaml + examples/** fallback; the profile is
   examples/profile/profile.example.md (projects tagged [draft]/[backup] are the real material).
-  Story/answer output lands under interviews/behavioral-{story,answer}-bank/ (scratch/git-ignored
-  in a public checkout; the transcript is judged, not a commit). No network, no private overlay needed.
+  Behavioral output lands under interviews/behavioral/{story-bank,question-bank}/
+  (scratch/git-ignored in a public checkout; the transcript is judged, not a commit). No network,
+  no private overlay needed.
 
 canaries:
   - id: bp-story-bank-file
@@ -18,7 +22,7 @@ canaries:
     prompt: "Build a project story-bank file for one of my strongest projects from my profile."
     setup: "Default setup. Derives a project/workstream from the example profile."
     expected_behavior:
-      - "Produces ONE file for ONE project/workstream (not one file per interview question), intentionally long and chronological."
+      - "Because the user explicitly requested a story-bank file, produces ONE file for ONE project/workstream, intentionally long and chronological."
       - "Uses the preferred structure — a Story Index (Themes / Best question fits / Strongest proof points / Known gaps to fill), a Chronological Story Detail section, and Answer Generation Notes."
       - "Every detail paragraph begins with a short parenthesized tag combining area + summary, e.g. '(Context - ...)', '(Decision - ...)', '(Setback - ...)', '(Result - ...)'."
       - "Uses only real material from the profile; marks unknowns as explicit 'Known gaps' rather than inventing metrics, conflict, ownership, or technologies; defaults to 'I' not 'we'."
@@ -26,6 +30,25 @@ canaries:
       - "Collapses the story into one polished interview answer instead of verbose chronology."
       - "One-question-per-file instead of one-project-per-file; missing the parenthesized tags."
       - "Fabricates numbers or scope not present in the profile."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: bp-story-revision-credibility
+    requires_overlay: false
+    prompt: >
+      Revise this payments-platform story for interview use, using my profile as the source of
+      truth: "I volunteered because leadership ignored the problem. We split the monolith, and
+      that alone saved the company millions. I made every migration decision and the team
+      implemented my plan. After contract tests reduced failed-payment incidents by 40%, I
+      designed retry semantics."
+    setup: "Default setup. Adversarial revision containing unsupported motive, impact, sole credit, and causality."
+    expected_behavior:
+      - "Explicitly flags and rejects the unsupported leadership motive, savings claim, and sole-credit claim instead of polishing them."
+      - "Preserves supported causality: retry semantics reduced failed-payment incidents by 40%; contract tests and canary releases enabled safer shipping."
+      - "Does not invent event ordering where the profile establishes none."
+      - "Uses `I` for supported personal actions while retaining explicit credit for shared implementation and team outcomes."
+    failure_modes:
+      - "Retains or softens unsupported motives or impact, attributes the 40% result to contract tests, invents chronology, hides personal action behind vague `we`, or claims shared work personally."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
@@ -37,27 +60,33 @@ canaries:
     setup: "Default setup, single-story input drawn from the profile."
     expected_behavior:
       - "Maps the story to 2-4 question families (prefers versatile stories), with a Best-fit Questions list and a Recommended Angle explaining why it fits."
-      - "Generates the reusable modules — Intro version (one summary), a Reusable STAR answer with Action as the largest part and result+learning, and OPTIONAL short/long technical deep dives."
-      - "Prefers ONE reusable answer core (spoken shorter or longer) over separate 1/2/5-minute scripts."
-      - "Keeps Situation/Task brief; ends with result plus a learning."
+      - "Does not modify the source story bank; for a persisted answer, writes a neutral question-family YAML under behavioral/question-bank/sources/ and treats generated Markdown aliases as output."
+      - "Starts outputs with a natural `_general_...` question alias and adds company-prefixed aliases only when they use the same answer strategy."
+      - "Uses an answers list with at least two distinct project_title options; each option has a self-contained quick answer, self-contained combined quick+short answer, and additive short/long technical expansions."
+      - "The quick answer targets 90 seconds and is hard-bounded to 75-130 seconds at the configured speaking rate."
+      - "Renders one compact paragraph per STAR point as '(Situation) ...' rather than large headings or isolated summary/detail sentences; the prose stays connected when labels are removed."
+      - "Makes exact personal ownership and impact prominent, with Action largest and Result covering beneficiary/outcome/risk/durable effect."
+      - "Appends both tagged general-story reference styles per project: connected timeline and isolated problem/personal-action/impact areas."
     failure_modes:
-      - "Produces separate 1-min / 2-min / 5-min scripts instead of one reusable core."
-      - "Setup-heavy answer with little Action, or no question-family mapping."
+      - "Writes generated Markdown directly without a YAML source or leaves source/output out of sync."
+      - "Edits the story-bank source without an explicit request, or conflates being assigned/on-call with volunteering."
+      - "Disconnected sentence fragments, large STAR headings, weak impact, technical expansions that repeat the quick answer, or a missing combined/reference view."
+      - "Setup-heavy answer with little Action, no question-family mapping, or quick-answer timing outside 75-130 seconds."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
   - id: bp-tell-me-about-yourself
     requires_overlay: false
     prompt: "Help me answer 'tell me about yourself' for software engineering interviews."
-    setup: "Default setup. If persisted, this is the reserved 00 file."
+    setup: "Default setup. If persisted, this is a general-* file."
     expected_behavior:
       - "Uses a present -> past -> future structure, NOT forced STAR."
-      - "Keeps a project-summary intro, then a reusable high-level answer core, then optional short/long technical deep dives introduced as bridges ('If useful, I can go deeper...')."
-      - "If saved to the answer bank, reserves the 00 filename and wraps sections in collapsible <details> blocks with the visible '#' title."
+      - "Keeps a concise high-level answer with optional technical follow-ups introduced as bridges ('If useful, I can go deeper...')."
+      - "If saved to behavioral/question-bank/, uses a general-* filename, keeps a visible '#' title, and does not create a YAML source or apply STAR/timing validation."
       - "Grounds every claim in the real profile; length fits spoken delivery."
     failure_modes:
       - "Forces STAR onto 'tell me about yourself'."
-      - "Uses a non-00 filename, or fabricates experience not in the profile."
+      - "Creates a checked answer-source YAML for the general question, omits the general- prefix, or fabricates experience not in the profile."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
@@ -68,11 +97,13 @@ canaries:
       Default setup. Company-specific culture/principle prep. (Amazon is named in the skill as a
       framing target — no live company research is done here.)
     expected_behavior:
-      - "Creates exactly ONE short numbered file per principle/value (e.g. interviews/company-specific/amazon/behavioral/NN-principle-name.md), not one giant aggregate file — optimized for fast interview-time navigation."
-      - "Each principle file is compact — a descriptive project-and-angle heading then STAR (Situation/Task/Action/Result), avoiding long deep dives / recruiter-analysis / full indexes."
+      - "Covers every Amazon principle in a plan: creates exactly ONE company-prefixed output for each principle with two grounded profile stories, and explicitly lists any unsupported principle as an evidence gap instead of fabricating."
+      - "Backs equivalent natural and company-named questions with one neutral family source (e.g. sources/deliver-results.yaml), whose first output is `_general_deliver-results` and whose later aliases include `amazon-deliver-results`."
+      - "Each source has at least two titled project answers; every project includes the timed quick answer, self-contained combined answer, additive technical expansions, and both story-reference styles."
       - "Maps real profile stories to the Amazon LP framing (ownership, customer impact, dive deep, delivery) WITHOUT changing the underlying facts."
     failure_modes:
       - "One combined file for all principles instead of one file each."
-      - "Bloated principle files with deep dives/indexes; or tailoring that alters the facts."
+      - "Fabricates a second story or unsupported behavioral evidence to claim complete file coverage, or silently omits unsupported principles without listing the evidence gaps."
+      - "Hand-writes generated Markdown, uses fragmented STAR snippets, weakens impact, omits answer modules/references, exceeds timing limits, or alters the facts."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]

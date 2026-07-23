@@ -190,7 +190,7 @@ Once you hear back (folder in `4_in_progress/`), prep with two skills:
   visa) and a **question bank**. Saved under `interviews/company-specific/<company>/company-info/`.
   > "Research <company> for my upcoming interview and build a question bank."
 - **`behavioral-interview-prep`** — project-based STAR story bank and reusable answers under
-  `interviews/behavioral-story-bank/` and `interviews/behavioral-answer-bank/`.
+  `interviews/behavioral/story-bank/` and `interviews/behavioral/question-bank/`.
   > "Build behavioral stories from my profile and map them to Amazon LPs."
 
 (Real interview products mount under the private overlay — `private/interviews/...`.)

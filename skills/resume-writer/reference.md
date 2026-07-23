@@ -121,10 +121,10 @@ divergent multi-role split (Path B) — see "Path B" below; leave it unset other
 Beyond the tailoring card / profile, skim the supporting library for real, verifiable detail you
 can pull into bullets (open only on the SKILL.md trigger "the JD demands domains the card doesn't
 cover", and read only the relevant sections):
-- `interviews/behavioral-story-bank/` — deep, first-person write-ups of real projects
+- `interviews/behavioral/story-bank/` — deep, first-person write-ups of real projects
   (concrete scale, artifacts, and metrics). These are the richest source of legitimate
   detail beyond the profile.
-- `interviews/behavioral-answer-bank/`, prior tailorings in other
+- `interviews/behavioral/question-bank/`, prior tailorings in other
   `applications/<status>/<slug>/` folders, and `notes.md` files — additional real context.
 - Everything here describes work the user actually did; it is a valid source of truth
   alongside the profile. It is NOT license to invent — only to surface real detail.
@@ -183,7 +183,7 @@ automatically; violating them fails the render.
 - You may **add real detail from the supporting library** (see "Supporting library (real detail
   sources)" above) to make
   a bullet more concrete and JD-relevant — e.g., pull specific scale, a named artifact, or a
-  real tool from `interviews/behavioral-story-bank/` when it strengthens the match. The
+  real tool from `interviews/behavioral/story-bank/` when it strengthens the match. The
   detail must be traceable to a real source and must fit the 45-215 char limit.
 - This is still not a rewrite: change wording and add real specifics, but do not invent
   facts, and do not turn every bullet over. The check.py 60%-reworded warning is now a soft
