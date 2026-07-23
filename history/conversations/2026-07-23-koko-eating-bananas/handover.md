@@ -17,8 +17,9 @@ The screenshot-based Python practice solution is complete in the private overlay
 
 ## Where things stand
 
-- Complete locally and uncommitted. All six cases pass, Python compilation
-  succeeds, and no line exceeds the private coding-practice 150-character limit.
+- Complete and published in private PR #26. All six cases pass, Python
+  compilation succeeds, and no line exceeds the private coding-practice
+  150-character limit.
 
 ## Needs your attention
 

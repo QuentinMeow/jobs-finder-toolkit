@@ -16,9 +16,10 @@ generation its exclusive operational focus.
 
 ## Where things stand
 
-- Complete locally and uncommitted. The diff is whitespace-clean, the file is
-  below 500 lines, and the skill-creator validator passes on a compatibility
-  copy that omits the repository-required `visibility: private` field.
+- Complete and published in private PR #26. The diff is whitespace-clean, the
+  file is below 500 lines, and the skill-creator validator passes on a
+  compatibility copy that omits the repository-required `visibility: private`
+  field.
 - No coding-interview canaries exist: `evals/README.md` deliberately excludes
   the private skill from the public-only eval harness.
 
