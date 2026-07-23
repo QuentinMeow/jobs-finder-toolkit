@@ -11,7 +11,13 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import outlook_email as cli
-from outlook_email import CLI_COMMANDS, _store_review, _store_review_summary, build_parser
+from outlook_email import (
+    CLI_COMMANDS,
+    _compact_messages,
+    _store_review,
+    _store_review_summary,
+    build_parser,
+)
 
 
 class CliPolicyTests(unittest.TestCase):
@@ -33,6 +39,30 @@ class CliPolicyTests(unittest.TestCase):
         self.assertEqual(args.days, 30)
         self.assertFalse(args.all)
         self.assertFalse(args.full)
+
+    def test_live_lists_accept_since_and_compact_without_body_preview(self):
+        args = build_parser().parse_args(
+            ["inbox", "--limit", "2000", "--since", "2026-04-24T07:00:00Z", "--compact"]
+        )
+        self.assertEqual(args.limit, 2000)
+        self.assertEqual(args.since, "2026-04-24T07:00:00Z")
+        self.assertTrue(args.compact)
+        self.assertEqual(
+            _compact_messages(
+                [{
+                    "id": "message-1",
+                    "subject": "Interview",
+                    "bodyPreview": "private mailbox content",
+                    "webLink": "https://outlook.example/message-1",
+                    "receivedDateTime": "2026-07-23T19:18:40Z",
+                }]
+            ),
+            [{
+                "id": "message-1",
+                "subject": "Interview",
+                "receivedDateTime": "2026-07-23T19:18:40Z",
+            }],
+        )
 
     def test_store_review_uses_the_same_freshness_tolerance(self):
         args = build_parser().parse_args(["store-review"])
