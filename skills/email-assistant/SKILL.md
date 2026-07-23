@@ -1,7 +1,7 @@
 ---
 name: email-assistant
 visibility: public
-description: Read a personal Microsoft Outlook mailbox, connect recruiter or hiring-team messages to job applications in this repository, reconcile evidence-backed application status changes, draft grounded replies, and save them as Outlook drafts through Microsoft Graph. Use when the user asks to review, summarize, prioritize, or reply to Outlook email, or update their job pipeline from recruiter or hiring-team messages. This skill is permanently draft-only and must never send email.
+description: Read a personal Microsoft Outlook mailbox, connect recruiter or hiring-team messages to job applications in this repository, maintain action-first application notes and interview calendar events, reconcile evidence-backed application status changes, draft grounded replies, and save them as Outlook drafts through Microsoft Graph. Use when the user asks to review, summarize, prioritize, or reply to Outlook email, update application notes or calendar events from recruiter messages, or reconcile their job pipeline. This skill is permanently draft-only and must never send email.
 ---
 
 # Email Assistant
@@ -35,7 +35,7 @@ Graph is the only provider today; the provider layer lives in `automation/shared
 
 The runtime, static policy checker, unit tests, and pre-commit hook all enforce this boundary.
 
-## Local 30-Day Store
+## Local Bounded Store
 
 For a complete bounded review, sync Inbox, Sent Items, and Drafts into the private local store,
 then verify freshness before reading its content-free reconciliation projection:
@@ -44,6 +44,22 @@ then verify freshness before reading its content-free reconciliation projection:
 .venv/bin/python skills/email-assistant/scripts/outlook_email.py sync-store --days 30 --full
 .venv/bin/python skills/email-assistant/scripts/outlook_email.py store-staleness
 .venv/bin/python skills/email-assistant/scripts/outlook_email.py store-review
+```
+
+Set `--days` to the user-requested window (for example, `--days 90`) rather than silently applying
+the 30-day example. Include Inbox and Sent Items for the complete communication timeline; use Drafts
+only to reconcile unsent work, and never present a draft as a sent communication.
+
+If a transient Graph failure prevents a complete store refresh, keep the review read-only and use
+the bounded live fallback with the same exact start timestamp. `--compact` retains message IDs,
+subjects, participants, and timestamps while omitting body previews and web links; reopen only
+relevant messages with `read`:
+
+```bash
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py \
+  inbox --limit 2000 --since '2026-04-24T07:00:00Z' --compact
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py \
+  sent --limit 2000 --since '2026-04-24T07:00:00Z' --compact
 ```
 
 The store keeps full message bodies only under the git-ignored private email data root and stores
@@ -104,8 +120,8 @@ with the repository. Treat this as a separate local workflow from drafting:
 4. For a multi-role application, land a per-role outcome as **that posting's** `status` (via
    `--update-job` in the next step); the folder then follows the rollup automatically — one rejected
    role no longer forces the whole folder, and any confirmed active interview rolls the folder up to
-   `in_progress`. Also record a concise dated outcome for the role in the application's `notes.md`
-   (the narrative log); the status itself now lives in `meta.yaml`, not in `notes.md`.
+   `in_progress`. Update the application's `notes.md` through the communication-notes protocol below;
+   the status itself lives in `meta.yaml`, not in `notes.md`.
 5. Make a confirmed transition only through the application-tracker command, matched to the evidence
    scope:
 
@@ -122,8 +138,82 @@ with the repository. Treat this as a separate local workflow from drafting:
    the affected role (for per-role updates), previous status, new status, and the message evidence.
    Also report ambiguous or already-current matches that were intentionally left unchanged.
 
-Never copy full mailbox bodies into application files. Save only the minimum outcome note needed
-for pipeline traceability, and keep personal mailbox details out of the public repository.
+Never copy full mailbox bodies into application files. Save concise paraphrases needed for the
+communication timeline and pipeline traceability, and keep personal mailbox details out of the
+public repository.
+
+## Application Communication Notes
+
+For every requested mailbox review, maintain one private `notes.md` communication record per
+unambiguously matched application. Associate mail by exact company plus role, job ID, recruiter
+domain, or established conversation evidence; a company name alone is insufficient when multiple
+applications could match. Include every matched Inbox and Sent message in the bounded review
+window—one entry per message, not one blended thread summary. Skip alerts, newsletters, and other
+mail that is not actually part of the application process.
+
+Preserve existing interview preparation, technical exercises, and other hand-written content. Add
+or refresh these sections immediately after the note title, in this order:
+
+```markdown
+## Upcoming Events & To-Dos
+
+- [ ] 2026-08-04 10:00 AM PT — Technical interview; interviewer: Casey Lee; calendar: confirmed
+- [ ] Waiting — Morgan Chen (Recruiter) to send the onsite schedule
+
+## People
+
+- **Morgan Chen** — Recruiter, Example Corp — morgan@example.com
+- **Casey Lee** — Interviewer, Infrastructure — role inferred from explicit email signature
+
+## Email Timeline
+
+### 2026-07-23 2:15 PM PT — Inbound — Technical interview confirmation
+
+- **People:** Morgan Chen; Casey Lee
+- **Summary:** Confirmed a 60-minute infrastructure interview for August 4 and named Casey as the interviewer.
+- **Outcome / next step:** Calendar event confirmed; prepare system-design examples.
+```
+
+Apply these rules:
+
+- Keep `Upcoming Events & To-Dos` at the top and actionable. List only open work, future events, and
+  explicit waits, with the responsible person when known. Do not invent deadlines. Remove resolved
+  items from this dashboard after their resolution is captured in the timeline; write `None
+  currently.` when there are no open items.
+- Record exact event date, time, duration, and timezone from the message. Preserve the sender's
+  timezone and add the user's local equivalent when useful. Proposed availability, a scheduling
+  link, or “we will schedule” is a to-do—not a confirmed event.
+- In `People`, deduplicate people across the thread. Record the person's explicit name, recruiting
+  or interview role, team/company, and email address when present. Do not guess a name or role from
+  an opaque address; label uncertain facts as unknown rather than inferring them.
+- Keep `Email Timeline` reverse chronological. Each Inbox or Sent message gets its own dated,
+  direction-labeled entry with subject, relevant people, a one-to-three-sentence paraphrase, and
+  the resulting outcome or next action. Never paste full bodies, long quotations, signatures,
+  opaque provider message IDs, or irrelevant personal details.
+- Deduplicate by stable message evidence before editing. A later review updates an existing entry
+  instead of appending the same email again. A Draft may inform the current to-do dashboard, but
+  label it as unsent and never put it in the sent communication timeline.
+- Status changes still go through `status.py`; do not let prose in `notes.md` become a second status
+  authority.
+
+## Interview Calendar Reconciliation
+
+When the user asks to update a calendar, use the connected Outlook Calendar capability; never widen
+the audited email provider's Graph route or permission allowlist. For each exact future interview
+time found in matched mail:
+
+1. Read the mailbox timezone, then search the relevant calendar window for the company, role, stage,
+   and exact start time. Fetch plausible matches before writing.
+2. If an organizer-created invitation or equivalent event already represents the interview, leave it
+   unchanged and mark the note dashboard `calendar: confirmed`.
+3. If no event exists and the email confirms a start, duration/end, and timezone, create one personal
+   event titled `Interview — <Company> — <Stage or Role>`. Do not add external attendees, because
+   that can notify them; list recruiter/interviewer names and the evidence date in the body instead.
+   Carry over an explicit meeting link or location, mark the time busy, and use a 30-minute reminder.
+4. Update only an unambiguous personal event when later email explicitly reschedules it. Never guess
+   a timezone or duration, respond to an invitation, create an event from proposed availability, or
+   duplicate an existing event. Keep unresolved scheduling requests as top-of-note to-dos.
+5. Report every created, updated, already-present, and intentionally skipped event with its evidence.
 
 ## Drafting Workflow
 

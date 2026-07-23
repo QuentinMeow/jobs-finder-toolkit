@@ -57,6 +57,23 @@ def _json(value: Any) -> None:
     print(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True))
 
 
+def _compact_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep live bounded-review output useful without streaming body previews."""
+    fields = (
+        "id",
+        "subject",
+        "from",
+        "toRecipients",
+        "receivedDateTime",
+        "sentDateTime",
+        "lastModifiedDateTime",
+        "isDraft",
+        "conversationId",
+    )
+    return [{key: message.get(key) for key in fields if message.get(key) is not None}
+            for message in messages]
+
+
 def _settings(validate: bool = True) -> OutlookSettings:
     raw = config.outlook_email_config()
     settings = OutlookSettings(
@@ -109,6 +126,16 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         command = subparsers.add_parser(name, help=help_text)
         command.add_argument("--limit", type=int, default=10)
+        if name in {"inbox", "sent"}:
+            command.add_argument(
+                "--since",
+                help="server-filter messages at or after this ISO-8601 timestamp",
+            )
+            command.add_argument(
+                "--compact",
+                action="store_true",
+                help="omit body previews and web links from list output",
+            )
 
     read = subparsers.add_parser("read", help="read one message by Graph message ID")
     read.add_argument("--message-id", required=True)
@@ -379,9 +406,11 @@ def main(argv: list[str] | None = None) -> int:
         _json(report if args.details else _store_review_summary(report))
         return code
     if args.command == "inbox":
-        _json(client.list_inbox(args.limit))
+        messages = client.list_folder("inbox", args.limit, args.since)
+        _json(_compact_messages(messages) if args.compact else messages)
     elif args.command == "sent":
-        _json(client.list_sent(args.limit))
+        messages = client.list_folder("sentitems", args.limit, args.since)
+        _json(_compact_messages(messages) if args.compact else messages)
     elif args.command == "drafts":
         _json(client.list_drafts(args.limit))
     elif args.command == "review-window":

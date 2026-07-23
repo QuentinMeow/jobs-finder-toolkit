@@ -66,10 +66,30 @@ canaries:
       - "Runs review-window first, reads each candidate message, and confirms each application with sender plus exact role or job-ID evidence — down to the exact posting for per-role evidence — before changing local status."
       - "Applies each single-role outcome to that posting with `status.py --update-job <slug> \"<role>\" in_progress|rejected` (the folder then follows the rollup); reserves `--update` for whole-application evidence (a receipt, or a rejection closing every tracked role). Then syncs applications-log.yaml."
       - "Leaves the ambiguous company-only match unchanged and reports why; a single closed role lands as that posting's per-job status via --update-job, never a whole-folder move to rejected."
-      - "Also records a concise dated outcome in the role's notes.md, and reports every local old-to-new transition (with the affected role) plus already-current and ambiguous matches, without changing mailbox state or copying full message bodies into tracked files."
+      - "Maintains the matched application's notes.md with Upcoming Events & To-Dos first, deduplicated People, and one concise reverse-chronological entry per matched Inbox/Sent message; reports every local old-to-new transition (with the affected role) plus already-current and ambiguous matches without copying full bodies."
     failure_modes:
       - "Moves an application from a weak company-only match, stale message, job alert, or unrelated role."
       - "Uses `--update` (whole application) for single-role evidence, hand-edits meta.yaml/notes.md to carry the status, moves a whole multi-role application for one rejected role, or mutates mailbox state."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: oea-communication-notes-and-calendar
+    requires_overlay: false
+    prompt: "Review the last 90 days of job-related Outlook email, organize each matched application's notes, and update my calendar for confirmed interviews."
+    setup: >
+      Mock two Inbox messages and one Sent reply for the fictional Example Corp application. The
+      first message asks the candidate to choose a time, the Sent reply provides availability, and
+      the latest message confirms a 60-minute interview with named recruiter and interviewer in an
+      explicit timezone. Mock one already-existing organizer invitation and one unrelated event.
+    expected_behavior:
+      - "Uses the requested 90-day bounded Inbox/Sent review, matches each message unambiguously to the exact application, and does not treat Drafts as sent mail."
+      - "Places Upcoming Events & To-Dos immediately after the notes title, followed by deduplicated People and a reverse-chronological Email Timeline with one concise paraphrased entry per matched Inbox/Sent message."
+      - "Captures the recruiter and interviewer names/roles only from explicit evidence, removes resolved scheduling work from the open dashboard, and preserves unrelated existing application-note content."
+      - "Reads mailbox timezone and searches/fetches plausible calendar matches before writing; recognizes the existing organizer invitation as the confirmed interview and creates no duplicate or attendee notification."
+      - "Does not create an event from proposed availability or a scheduling link, guess missing time data, copy full email bodies/provider IDs, or make prose the status authority."
+    failure_modes:
+      - "Blends a thread into one timeline entry, omits named contacts, or buries open actions below legacy notes."
+      - "Creates a duplicate event, adds external attendees, treats a Draft as sent, or stores full mailbox content in notes."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
