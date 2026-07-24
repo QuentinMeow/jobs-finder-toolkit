@@ -254,6 +254,124 @@ class HandoffTests(unittest.TestCase):
         self.assertIsNotNone(folder, err)
         self.assertTrue(folder.name.startswith("nimbus-robotics-senior-platform-engineer-"))
 
+    # -- one-folder-per-company grouping ---------------------------------- #
+    def _run_raw(self, rows, *argv_extra):
+        """Run handoff.main with arbitrary argv; return (code, stdout, stderr)."""
+        json_path = self._write_json(rows)
+        argv = ["--json", str(json_path),
+                "--applications-root", str(self.root), *argv_extra]
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = handoff.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def _drafted_metas(self) -> list[dict]:
+        return [yaml.safe_load(p.read_text())
+                for p in (self.root / "6_drafted").glob("*/meta.yaml")]
+
+    def test_select_company_groups_roles_into_one_folder(self):
+        # DEFAULT: a bare "Company" selector puts every role in ONE folder with a
+        # multi-role jobs: list — the one-folder-per-company default.
+        url2 = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
+        rows = [
+            _row(title="Senior Platform Engineer", url=self.jd_url),
+            _row(title="Backend Infrastructure Engineer", url=url2),
+        ]
+        code, _out, err = self._run_raw(rows, "--select", "Nimbus Robotics")
+        self.assertEqual(code, 0, err)
+        metas = self._drafted_metas()
+        self.assertEqual(len(metas), 1, "expected ONE folder for the company")
+        self.assertEqual(len(metas[0]["jobs"]), 2)
+        self.assertEqual({j["role"] for j in metas[0]["jobs"]},
+                         {"Senior Platform Engineer", "Backend Infrastructure Engineer"})
+        # Lead (highest-ranked) role drives the folder slug.
+        folder = next((self.root / "6_drafted").glob("*"))
+        self.assertTrue(folder.name.startswith(
+            "nimbus-robotics-senior-platform-engineer-"))
+        # Each posting keeps its OWN verbatim JD file.
+        src = folder / "source"
+        self.assertTrue((src / "JD-senior-platform-engineer.md").is_file())
+        self.assertTrue((src / "JD-backend-infrastructure-engineer.md").is_file())
+        self.assertIn("grouped 2", err)
+
+    def test_all_groups_one_folder_per_company(self):
+        url2 = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
+        url3 = (self.tmp / "jd3.html").as_uri()
+        (self.tmp / "jd3.html").write_text(JD_PAGE, encoding="utf-8")
+        rows = [
+            _row(title="Senior Platform Engineer", url=self.jd_url),
+            _row(title="Backend Infrastructure Engineer", url=url2),
+            _row(company="Alpha Systems", title="Staff Backend Engineer", url=url3),
+        ]
+        code, report, _stdout, err = self._run_all(rows)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report["counts"]["created"], 2)  # two companies -> two folders
+        by_company = {m["company"]: m for m in self._drafted_metas()}
+        self.assertEqual(len(by_company["Nimbus Robotics"]["jobs"]), 2)
+        self.assertEqual(len(by_company["Alpha Systems"]["jobs"]), 1)
+
+    def test_split_forces_one_folder_per_posting(self):
+        # The divergent-roles escape hatch: --split keeps the old per-posting layout.
+        url2 = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
+        rows = [
+            _row(title="Senior Platform Engineer", url=self.jd_url),
+            _row(title="Backend Infrastructure Engineer", url=url2),
+        ]
+        code, report, _stdout, err = self._run_all(rows, "--split")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report["counts"]["created"], 2)  # split -> two folders
+        self.assertEqual(len(self._drafted_metas()), 2)
+        for meta in self._drafted_metas():
+            self.assertEqual(len(meta["jobs"]), 1)
+
+    def test_rank_list_groups_same_company(self):
+        url2 = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
+        url3 = (self.tmp / "jd3.html").as_uri()
+        (self.tmp / "jd3.html").write_text(JD_PAGE, encoding="utf-8")
+        rows = [
+            _row(title="Senior Platform Engineer", url=self.jd_url),
+            _row(title="Backend Infrastructure Engineer", url=url2),
+            _row(company="Alpha Systems", title="Staff Backend Engineer", url=url3),
+        ]
+        code, _out, err = self._run_raw(rows, "--select", "rank 1,2")
+        self.assertEqual(code, 0, err)
+        metas = self._drafted_metas()
+        self.assertEqual(len(metas), 1)  # ranks 1,2 are both Nimbus -> one folder
+        self.assertEqual(len(metas[0]["jobs"]), 2)
+
+    def test_group_drops_location_mismatch_posting(self):
+        # A multi-role company folder keeps only postings that pass the location
+        # policy; a definite mismatch is dropped (not a whole-folder block).
+        self._pin_policy(metro=("springfield",))
+        url2 = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
+        rows = [
+            _row(title="Senior Platform Engineer", url=self.jd_url,
+                 location="Remote (US)", remote="remote"),                 # match
+            _row(title="Austin Onsite Engineer", url=url2,
+                 location="Austin, TX (Hybrid)", remote="hybrid"),         # mismatch
+        ]
+        code, _out, err = self._run_raw(rows, "--select", "Nimbus Robotics")
+        self.assertEqual(code, 0, err)
+        metas = self._drafted_metas()
+        self.assertEqual(len(metas), 1)
+        self.assertEqual(len(metas[0]["jobs"]), 1)  # the mismatch posting dropped
+        self.assertEqual(metas[0]["jobs"][0]["role"], "Senior Platform Engineer")
+        self.assertIn("dropping", err)
+
+    def test_unique_jd_filename_disambiguates_collisions(self):
+        used: set[str] = set()
+        self.assertEqual(handoff.unique_jd_filename("Backend Engineer!", used),
+                         "JD-backend-engineer.md")
+        self.assertEqual(handoff.unique_jd_filename("Backend Engineer", used),
+                         "JD-backend-engineer-2.md")
+        self.assertEqual(handoff.unique_jd_filename("backend engineer", used),
+                         "JD-backend-engineer-3.md")
+
     def test_missing_required_field_diagnostics(self):
         row = _row(url=self.jd_url)
         del row["job_level"]

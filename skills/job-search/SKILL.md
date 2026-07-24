@@ -179,24 +179,42 @@ If that page is JS-rendered (fetch_jd warns "JavaScript-rendered" / tiny output)
 JD from the ATS API via `company_roles.py --jd` instead of accepting a partial scrape; if no fetch works
 at all (e.g. HTTP 403), save the scraper-extracted text with a non-verbatim provenance note — see
 reference.md § "Recovering a JD when the page fetch is unusable".
-Only hand off postings that passed the location policy (`config.location_policy()`). Then, for
-**each** selected posting, scaffold its folder with `handoff.py` (needs `--json-out` from Step 2):
-```bash
-.venv/bin/python skills/job-search/scripts/handoff.py \
-    --json /tmp/matches.json --select "rank 1"   # or --select "Company/Title"
-```
-For a deliberately exhaustive, verified JSON set, `--all --report
-tmp/handoff-report.json` applies the same per-row scaffold plus a live-folder/log duplicate
-preflight and continues with an auditable result for every row.
+Only hand off postings that passed the location policy (`config.location_policy()`).
 
-It creates `applications/6_drafted/<slug>/`, saves `source/JD-<job title>.md` **verbatim** (via
-`fetch_jd`), and writes a schema-v5 `meta.yaml` carrying the row's `status: "drafted"` (with its
-drafted `progress` summary), `location`,
-`url`, `posted_date`, `workplace`, `sponsorship`, `job_level`, `required_yoe`, and `salary_range` —
-so nothing is hand-transcribed (refuses to overwrite an existing folder). `meta.yaml` is always
-`job_metadata_schema_version: 5` with a uniform **`jobs:` list — one entry per posting, even a
-single role** (each entry created `status: "drafted"`) — and every entry carries an exact
-`jd_file`; never pair roles and JDs by index or sorted filename. If `handoff.py` reports gaps, run
+**Group by company first — ONE application folder per company is the default.** Before scaffolding,
+group your selected postings by company. **All of a company's roles from ONE search session go into
+ONE folder** — one resume, a multi-role `jobs:` list, and one cover letter per role — never a folder
+per role. `handoff.py` does this automatically for any selection that spans several postings at the
+same company. **Split into separate folders ONLY when a company's roles are too divergent for one
+honest resume** (e.g. a pure agentic-AI product role vs. a pure Kubernetes-infra role, with little
+skill overlap) — then pass `--split`, or hand off each divergent role individually. A *different*
+company always gets its own folder; a role you find in a *later* search session may become its own
+folder then. Scaffold with `handoff.py` (needs `--json-out` from Step 2):
+```bash
+# one posting -> one single-role folder
+.venv/bin/python skills/job-search/scripts/handoff.py \
+    --json /tmp/matches.json --select "rank 1"            # or --select "Company/Title"
+# several roles at ONE company -> ONE multi-role folder (the default grouping)
+.venv/bin/python skills/job-search/scripts/handoff.py \
+    --json /tmp/matches.json --select "Acme Corp"          # or --select "rank 1,3,5"
+# whole shortlist -> one folder PER COMPANY (add --split only for divergent roles)
+.venv/bin/python skills/job-search/scripts/handoff.py \
+    --json /tmp/matches.json --all --report tmp/handoff-report.json
+```
+`--all` (and any multi-posting `--select`) groups **one folder per company** after a live-folder/log
+duplicate preflight, continuing with an auditable per-company result; `--split` forces the old
+one-folder-per-posting layout for a divergent set. When grouping, a posting that fails the location
+policy is dropped from its company folder (each drop reported) instead of blocking the folder.
+
+It creates `applications/6_drafted/<slug>/`, saves one `source/JD-<job title>.md` per posting
+**verbatim** (via `fetch_jd`), and writes a schema-v5 `meta.yaml` carrying each posting's
+`status: "drafted"` (with its drafted `progress` summary), `location`, `url`, `posted_date`,
+`workplace`, `sponsorship`, `job_level`, `required_yoe`, and `salary_range` — so nothing is
+hand-transcribed (refuses to overwrite an existing folder). `meta.yaml` is always
+`job_metadata_schema_version: 5` with a uniform **`jobs:` list — one entry per posting** (a grouped
+company folder has several entries; a single-role folder has one), each created `status: "drafted"`
+and carrying an exact `jd_file`; never pair roles and JDs by index or sorted filename. If
+`handoff.py` reports gaps, run
 `skills/application-tracker/scripts/status.py --enrich-metadata <folder>` to fill missing
 facts (it consults the reusable company cache for level/YOE).
 
@@ -264,7 +282,7 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 | `scripts/search_jobs.py` | Main pipeline (two-stage fetch → filter → score → rank → output); `--stage`, `--ai-native-only`, `--no-jobspy`, `--max-per-company`, `--top-k`, `--max-age-days`, `--visa-policy`, `--refilter latest`, `--print-full` |
 | `scripts/company_roles.py` | Re-check ONE company's live board with a location-policy verdict (single-company re-search + JD dump) |
 | `scripts/fetch_jd.py` | Fetch one posting page and save its readable text **verbatim** (`<URL> --out <path>`; no summarization) |
-| `scripts/handoff.py` | Scaffold an application folder from one selected search row (`--json <search.json> --select <"rank N"\|"Company/Title">`): folder + verbatim JD (via `fetch_jd`) + schema-v5 `meta.yaml` (each posting `status: "drafted"`); validates before exit, refuses to overwrite |
+| `scripts/handoff.py` | Scaffold application folder(s) from selected search rows (`--json <search.json> --select <"rank N"\|"rank N,M"\|"Company"\|"Company/Title">` or `--all`): **one folder per company by default** (multi-role `jobs:` list, one JD + cover letter per posting; `--split` forces one-per-posting for divergent roles) + verbatim JD (via `fetch_jd`) + schema-v5 `meta.yaml` (each posting `status: "drafted"`); validates before exit, refuses to overwrite |
 | `scripts/validate_companies.py` | Check that company tokens still resolve (skips identity-only rows) |
 | `scripts/validate_filter_variants.py` | Check the deterministic corpus and strictly audit a private pre-filter snapshot; exits nonzero with label stubs for new/conflicting high-stakes variants |
 | `filter_variants/corpus.yaml` | Public-safe fictional regressions for location/workplace, sponsorship, title/seniority, and required YOE |

@@ -68,10 +68,19 @@ never create a second one.
   `meta.yaml` — company, `role` or `jobs:` entries, URLs). If this exact posting (same company +
   role, or same URL) already exists in any status folder or the log, **stop** — point the user at
   that folder and offer to refresh it instead, and do **not** `mkdir` a second folder or create a
-  new dated slug for the same company+role/URL. A *new* role at an already-applied company is fine
-  to proceed with. If the log might be stale, run `.venv/bin/python
+  new dated slug for the same company+role/URL. A *new* role at a company you applied to in a
+  **prior** session is fine to proceed with (add a new folder, or extend the existing one). If the
+  log might be stale, run `.venv/bin/python
   skills/application-tracker/scripts/status.py --sync-log` first, then re-read it — but
   still cross-check the live folders before creating a slug.
+- **One folder per company (default grouping — do NOT make a folder per role).** When THIS request
+  covers several roles at the **same company** (a multi-role ask, or a job-search handoff of several
+  same-company postings), create **ONE** application folder for that company — one resume, a
+  multi-role `jobs:` list, and one cover letter per role — never a separate folder per role. **Split
+  into per-role folders ONLY when the roles are too divergent for one honest resume** (e.g. a pure
+  agentic-AI product role vs. a pure Kubernetes-infra role, with little skill overlap). This is the
+  Path A default / Path B split — read "One resume, multiple roles (same company)" (trigger below)
+  before creating folders for a multi-role company. Different companies always get their own folder.
 - **Blacklist (hard block).** Check the resolved company against the MERGED registry, not
   `companies.yaml` alone: `registry.load_registry()` merges
   `skills/job-search/companies.yaml` with the git-ignored `private/job-search/blacklist.yaml`
@@ -119,7 +128,10 @@ Otherwise generate a slug `<company>-<role>-<YYYYMMDD>` (lowercase, hyphens, no 
 confirm it is unused under every status folder, and create the folder + its `source/` subfolder.
 Save the full JD text as `source/JD-<job title>.md` (one file per posting; never a bare `jd.md` —
 `check.py` concatenates every `JD-*.md`), and write a schema-v5 `meta.yaml` with a uniform
-`jobs:` list (one entry per posting), **every entry created with `status: "drafted"`**. Newly
+`jobs:` list (one entry per posting), **every entry created with `status: "drafted"`**. **For
+several roles at ONE company, create ONE folder** with one `JD-<title>.md` + one `jobs:` entry per
+posting (the Preflight one-folder-per-company default); split into per-role folders only for
+divergent roles (the multi-role trigger below). Newly
 generated applications always go under `applications/6_drafted/`, whose rollup for an all-drafted
 app is `drafted`. `render.py` emits every output filename automatically from the configured stems —
 never hand-name or hand-place files. **Trigger — hand-creating the folder (no `handoff.py` scaffold):
