@@ -152,7 +152,7 @@ interviews/company-specific/<company>/company-info/
 │   ├── 03-technical-challenges-deep-dive.md    # the HARD problems, why hard, how solved (multi deep-dive)
 │   ├── 04-business-customers-competitors.md    # customers, market, monetization, rivals
 │   ├── 05-competitive-moat-and-differentiation.md  # why UNIQUE + moat/defensibility/growth (5-Whys, evidence)
-│   ├── 06-ai-strategy-and-future.md            # AI thesis, roadmap signals, future bets
+│   ├── 06-ai-strategy-and-future.md            # AI-era survival + AI strategy (shipped/planned), non-obvious AI edge, internal AI adoption, future bets
 │   ├── 07-engineering-team-and-culture.md      # eng org, sibling teams, how they ship, values
 │   ├── 08-role-deep-dive.md                    # THIS job: charter, scope, stack, fit, gaps
 │   └── 09-question-bank.md                      # deep questions for HM / engineers / leadership
@@ -170,8 +170,10 @@ Rules:
 - `for-interview` = things to *discuss/demonstrate* (depth + POV);
   `for-myself` = things to *know/decide*. Keep comp/WLB/visa out of the question
   bank; they live in `for-myself`.
-- Always produce `03`, `05`, and `09` — the deep-dive and differentiation files and
-  the question bank are the point of this skill.
+- Always produce `03`, `05`, `06`, and `09` — the deep-dive, differentiation, and
+  AI-strategy files plus the question bank are the point of this skill. (`06` scales
+  with AI exposure: for a company AI barely touches, still answer its three questions
+  — briefly, and say *why* exposure is low — rather than skipping it.)
 
 ## What Goes in Each File
 
@@ -200,8 +202,21 @@ Rules:
   competitive advantage**, **how defensible it is against each competitor**, and its
   **growth potential** — every moat/defensibility/growth claim stress-tested with a
   **5-Whys** chain that stops at evidence, not company claims.
-- **06 ai-strategy-and-future** — the AI thesis, how AI reshapes the roadmap,
-  recent launches as evidence, and plausible/defensible future directions.
+- **06 ai-strategy-and-future** — the third centerpiece for any AI-exposed company.
+  See template below. Beyond the AI thesis, how AI reshapes the roadmap, recent
+  launches as evidence, and plausible/defensible future directions, it must answer
+  three questions explicitly: **(a) AI-era survival & strategy** — is AI a tailwind
+  or an existential threat to this product, and what AI-first / AI-native strategy
+  have they *already shipped* vs. only *announced / planned* (separate the two, with
+  evidence and dates); **(b) the non-obvious AI edge** — reasoned, often
+  *not-publicly-stated* structural reasons this product is unusually well- (or
+  poorly-) positioned to win as AI commoditizes its layer — derive them from their
+  data/distribution/workflow/regulatory position, not their press releases, and label
+  `[inference]`; **(c) internal AI adoption** — how aggressively they use AI *inside*
+  the company (leadership mandates, dev tooling like Cursor / Claude Code, eval/agent
+  workflows, hiring signals like this JD) and whether they ship AI in *both* internal
+  tooling *and* user-facing product. End with a **My read** on how real the AI story
+  is versus AI-washing.
 - **07 engineering-team-and-culture** — eng org and sibling teams (ATS list is
   gold), how they ship, engineering values, OSS/community posture.
 - **08 role-deep-dive** — the team's charter, concrete scope, stack, success bar,
@@ -297,11 +312,62 @@ runway is left — stated as a judgment, distinct from the company's claims.
 > contestable**, not absolute. **Evidence:** check take-rate stability, multi-homing
 > rates, and whether a funded competitor already gained share in any market.
 
+## AI Strategy Template (`06-ai-strategy-and-future.md`)
+
+This file answers the question every candidate now faces: *in the AI era, does this
+company win, survive, or get disrupted — and does it actually run on AI or just talk
+about it?* Same discipline as `05`: separate **what they say** from **what's
+observable** from **your judgment**, tag confidence, and label reasoned inferences
+`[inference]`. Do NOT restate an "AI-first" tagline as a finding — test it.
+
+```markdown
+## AI-era survival & strategy
+Is AI a **tailwind, a headwind, or an existential threat** to this product? Reason
+from the product's job-to-be-done: what does AI make cheaper/obsolete, and what does
+it make more valuable? Then inventory their AI strategy, **separating shipped from
+promised**:
+- **Already shipped** — AI features/products live in the hands of users or engineers,
+  with dates and evidence (changelog, blog, release). Tag `[confirmed]`/`[likely]`.
+- **Announced / planned** — roadmap statements, exec quotes, job reqs (this JD is a
+  signal), acquisitions/partnerships. Mark aspiration `[inference]`; do not treat a
+  press release as a shipped capability.
+- **AI-first / AI-native posture** — is AI bolted on (a chatbot on the side) or woven
+  into the core product/architecture/business model? Give the concrete evidence.
+
+## The non-obvious AI edge
+Reasoned, often *not-publicly-stated* structural reasons this company is unusually
+well- (or poorly-) positioned as AI commoditizes its layer. Derive these from their
+assets, not their marketing — proprietary/first-party data, distribution &
+integration lock-in, workflow/system-of-record ownership, regulatory or trust moats,
+switching costs, unit-economics headroom to spend on inference. For each: state the
+edge, WHY it matters specifically under AI (`[inference]`), and what observable proof
+would confirm or kill it. Also name the *inverse* — where the same AI wave most
+threatens them (a well-capitalized incumbent, a model owner moving down-stack, or
+commoditization of what they charge for).
+
+## Internal AI adoption
+How aggressively the company uses AI *inside* the walls, and whether it ships AI on
+*both* sides:
+- **Engineering & ops adoption** — leadership mandates, mandated/encouraged dev tools
+  (Cursor, Claude Code, Copilot), agent/eval/automation workflows, "AI-native
+  engineer" expectations. Cite the signal (JD language, blog, exec post, Glassdoor);
+  a JD like this one is itself strong evidence of an internal AI push.
+- **Internal vs. user-facing AI** — do they build AI for internal productivity, for
+  the customer-facing product, or both? Name each concrete surface.
+- **What it signals** — culture (build-vs-buy, speed), and what daily work in this
+  role would actually look like. Mark inferences `[inference]`.
+
+## My read
+Your synthesized verdict: is the AI story **real and structural**, **early but
+credible**, or **AI-washing**? How exposed are they to disruption, and how much of the
+edge is defensible? State it as a judgment, distinct from the company's claims.
+```
+
 ## Question Bank Guidance (`09-question-bank.md`)
 
 Questions must make the user look like they already understand the product *and its
 hard problems and strategy*. Beyond product-depth questions, this file **must**
-include two deep groups:
+include three deep groups:
 
 - **Hard Problems & Challenges** — questions about the *specific* engineering and
   business challenges the company is solving (drawn from `03`). e.g. "You do X at Y
@@ -314,6 +380,13 @@ include two deep groups:
   the default — network effects, switching costs, or something else?" / "Where does
   the next order of magnitude of growth come from, and what's the biggest thing that
   has to go right?"
+- **AI Strategy & Adoption** — questions about **AI-era survival, the AI-native
+  roadmap, and how AI is actually used inside** (drawn from `06`). e.g. "You've
+  shipped <AI feature>; where's the line today between what's in production and what's
+  still prototype?" / "As LLMs commoditize <layer of your product>, what's the part
+  competitors *still* can't copy — and is it your data, your distribution, or your
+  workflow lock-in?" / "How AI-native is day-to-day engineering here — what's mandated
+  vs. encouraged, and where has an agent/eval workflow actually replaced manual work?"
 
 Also include: `For the Hiring Manager`, `For Engineers on the team`, `For a
 Skip-level / Leadership`, `For the Recruiter (logistics)`. Prefer ~4–8 sharp
@@ -337,7 +410,16 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
   they *still* couldn't replicate — and how do you know it's holding?
 - (Growth) Where does the next 10x of revenue come from — new segments, new products,
   or deeper penetration — and what's the biggest risk to that path?
-```
+
+### AI Strategy & Adoption
+
+- (Strategy) You've shipped <AI feature>; where's the line right now between what's in
+  production and what's still a prototype, and what's the next thing you'd ship?
+- (Moat under AI) As models commoditize <layer>, what's the part a well-funded rival
+  *still* can't copy — your first-party data, distribution, or workflow lock-in?
+- (Internal adoption) How AI-native is engineering day-to-day — what's mandated vs.
+  encouraged (Cursor / Claude Code / agents), and where has an eval/agent workflow
+  actually replaced manual work?
 
 ## Formatting Conventions
 
@@ -362,9 +444,11 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
       then 03 technical-challenges-deep-dive (3–6 dives + My read)
 - [ ] Write 05 moat & differentiation: contrarian bet + moat (5-Whys + evidence) +
       defensibility scorecard + growth potential + risks + My read
-- [ ] Write 01, 04, 06, 07, 08 (facts + POV + confidence tags + Sources)
+- [ ] Write 06 AI strategy: AI-era survival + shipped-vs-planned strategy + non-obvious
+      AI edge ([inference]) + internal AI adoption (internal & user-facing) + My read
+- [ ] Write 01, 04, 07, 08 (facts + POV + confidence tags + Sources)
 - [ ] Write for-myself/ 01–05
-- [ ] Write 09 question-bank incl. Hard-Problems and Differentiation/Moat/Growth groups
+- [ ] Write 09 question-bank incl. Hard-Problems, Differentiation/Moat/Growth, and AI-Strategy/Adoption groups
 - [ ] Write README index + TL;DR
 - [ ] Final check (below)
 ```
@@ -382,11 +466,17 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
   in evidence** (not a restated company claim)? Is there a **defensibility verdict**
   per competitor/threat and an **evidence-based growth-potential** read? Are
   **Claim / Evidence / Judgment** kept distinct?
+- **AI-strategy rigor:** Does `06` answer all three — **(a)** AI-era survival with
+  shipped-vs-planned strategy separated (dates/evidence), **(b)** a non-obvious AI
+  edge derived from real assets and labeled `[inference]` (plus the inverse threat),
+  and **(c)** internal AI adoption covering *both* internal and user-facing AI — and
+  end with a **My read** that calls real strategy vs. AI-washing? Is an "AI-first"
+  tagline tested, not parroted?
 - **Concreteness:** Named subsystems/repos/posts/competitors/customers, not
   generalities?
-- **Questions:** Do they probe the hard problems, the moat's durability, and growth —
-  not generic curiosity? Could a senior engineer at the company tell the user did
-  real homework?
+- **Questions:** Do they probe the hard problems, the moat's durability, growth, and
+  the AI strategy/adoption — not generic curiosity? Could a senior engineer at the
+  company tell the user did real homework?
 - **Honesty:** Every fact defensible under push-back or tagged `[unverified]`/
   `[inference]`? Nothing fabricated?
 - **for-myself:** Genuinely useful for an offer decision; visa/H-1B flagged where

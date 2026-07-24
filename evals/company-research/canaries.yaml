@@ -1,9 +1,11 @@
 # Canary set — company-research skill
 # Grounded in skills/company-research/{SKILL.md,LESSONS.md}: the Depth Bar, the
-# evidence-based 5-Whys moat method (Claim -> Evidence -> Judgment), the fixed folder structure
-# (for-interview 01-09 + for-myself 01-05; always produce 03/05/09), and the never-fabricate
-# sourcing rules. Real-company canaries use Cloudflare (a well-documented public company) with a
-# FICTIONAL posting; the honesty canary uses the fictional Example Corp so no real facts exist.
+# evidence-based 5-Whys moat method (Claim -> Evidence -> Judgment), the AI-strategy file's three
+# questions (AI-era survival + shipped-vs-planned strategy / non-obvious AI edge / internal AI
+# adoption), the fixed folder structure (for-interview 01-09 + for-myself 01-05; always produce
+# 03/05/06/09), and the never-fabricate sourcing rules. Real-company canaries use Cloudflare (a
+# well-documented public company) with a FICTIONAL posting; the honesty canary uses the fictional
+# Example Corp so no real facts exist.
 # Run per evals/README.md; judge per evals/rubrics/judging.md.
 skill: company-research
 default_setup: >
@@ -21,7 +23,7 @@ canaries:
     setup: "Default setup. Real company (Cloudflare), fictional posting. Network required."
     expected_behavior:
       - "Creates the full folder — for-interview/ 01-09 and for-myself/ 01-05, plus a README index with a TL;DR, research date, and a master source list."
-      - "Actually produces 03 (technical-challenges-deep-dive, 3-6 dives), 05 (moat and differentiation), and 09 (question bank) — these three are the point of the skill."
+      - "Actually produces 03 (technical-challenges-deep-dive, 3-6 dives), 05 (moat and differentiation), 06 (AI strategy — survival + shipped-vs-planned + non-obvious edge + internal adoption), and 09 (question bank) — these are the point of the skill."
       - "Clears the Depth Bar — every major fact answers 'so what?' / 'why is this hard?', names concrete subsystems/repos/blog-posts/competitors (not 'scalable, reliable infra'), and each deep-dive section ends with a 'My read' POV."
       - "Writes 02 for a cold reader: a jargon-free product answer before component names, prerequisite concepts defined in order, at least one concrete end-to-end use case, and explicit company-hosted versus customer-owned boundaries."
       - "Does live research (fetches primary sources, cites the specific artifact) rather than writing from memory; marks non-first-party claims [confirmed]/[likely]/[unverified] and inferences [inference]."
@@ -71,12 +73,31 @@ canaries:
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
+  - id: cr-ai-strategy
+    requires_overlay: false
+    prompt: >
+      For Cloudflare, write the AI strategy & future file: how does it survive/win in the AI era,
+      what's its non-obvious AI edge, and how much does it use AI internally?
+    setup: "Default setup. Focuses on 06-ai-strategy-and-future.md. Live network research required."
+    expected_behavior:
+      - "Answers AI-era survival explicitly — is AI a tailwind/headwind/existential threat to the product — reasoned from the product's job-to-be-done, not a restated tagline."
+      - "Separates AI strategy that is ALREADY SHIPPED (features live to users/engineers, with dates + evidence, tagged [confirmed]/[likely]) from what is only ANNOUNCED/PLANNED (roadmap, exec quotes, job reqs, partnerships), marking aspiration [inference]."
+      - "Derives a non-obvious AI edge from real structural assets (first-party data, distribution/integration lock-in, workflow/system-of-record ownership, regulatory/trust moat, unit-economics headroom) labeled [inference], and names the inverse threat (model owner moving down-stack, commoditization)."
+      - "Covers internal AI adoption — how aggressively they use AI inside (mandates, dev tools like Cursor/Claude Code, agent/eval workflows) AND whether they ship AI in both internal tooling and user-facing product, each surface named."
+      - "Ends with a 'My read' that judges real/structural vs. early-but-credible vs. AI-washing; keeps Claim/Evidence/Judgment distinct with confidence tags."
+    failure_modes:
+      - "Parrots an 'AI-first' tagline or lists AI press releases as if shipped, without separating shipped from planned."
+      - "Only lists user-facing AI features and never assesses survival, the non-obvious edge, or internal adoption."
+      - "Asserts an AI edge with no structural reasoning/evidence and no [inference] label; omits the 'My read' verdict."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
   - id: cr-question-bank
     requires_overlay: false
     prompt: "Give me the question bank to ask Cloudflare's hiring manager and engineers."
     setup: "Default setup. Focuses on 09-question-bank.md. Network helpful (grounds specifics)."
     expected_behavior:
-      - "Includes the two required deep groups — 'Hard Problems and Challenges' (drawn from 03) and 'Differentiation, Moat and Growth' (drawn from 05) — plus HM / Engineers / Skip-level / Recruiter groups."
+      - "Includes the three required deep groups — 'Hard Problems and Challenges' (drawn from 03), 'Differentiation, Moat and Growth' (drawn from 05), and 'AI Strategy and Adoption' (drawn from 06) — plus HM / Engineers / Skip-level / Recruiter groups."
       - "Each question names a SPECIFIC product, repo, blog post, competitor, or customer and carries a short parenthesized intent tag — not generic curiosity."
       - "Questions make the candidate sound like they already understand the hard problems and strategy; comp/WLB/visa probes are kept out (those belong in for-myself/)."
     failure_modes:
