@@ -1,7 +1,7 @@
 ---
 name: company-research
 visibility: public
-description: Deeply research a company and the specific role for an interview — product, the hard technical challenges and why they're hard, competitive moat/defensibility/growth (evidence-based, 5-Whys — not company claims), AI strategy, eng culture, the role deep-dive, plus offer-decision facts (funding/stage, comp, WLB, ratings, visa/H-1B) and a hiring-manager/engineer question bank. Use when the user asks to research a company, prep for an interview, understand a company's product/challenges/moat/defensibility/growth/strategy, or build company-info for an application.
+description: Deeply research a company and the specific role for an interview — product, company size, the hard technical challenges and why they're hard, competitive moat/defensibility/growth (evidence-based, 5-Whys — not company claims), a 1–100 competitor scorecard rating the company against each rival, how the company embraces AI publicly (customer-facing) and privately (internal adoption), eng culture, the role deep-dive, a prepared "why this company / why not competitors" pitch, plus offer-decision facts (funding/stage, comp, WLB, ratings, visa/H-1B) and a 1–100 "how good is this place to work" company rating and a hiring-manager/engineer question bank. Use when the user asks to research a company, prep for an interview, understand a company's product/challenges/moat/defensibility/growth/strategy, rate a company or its competitors, or build company-info for an application.
 ---
 
 # Company Research
@@ -52,9 +52,10 @@ company, it is not done yet.
 ## When to Use
 
 Use this skill when the user asks to:
-- research a company they're interviewing with (product, challenges, moat, stage)
+- research a company they're interviewing with (product, size, challenges, moat, stage)
 - understand the specific team/role they're applying for
-- prep deep questions to ask a hiring manager or engineer interviewer
+- rate a company as a place to work, or score it against its competitors
+- prep a "why this company / why not competitors" answer, or deep questions to ask
 - gather personal-decision facts (funding/stage, comp, WLB, ratings, H-1B)
 - build or refresh `interviews/company-specific/<company>/company-info/`
 
@@ -147,21 +148,23 @@ under the private overlay — `private/interviews/...`; see `AGENTS.md` → "Pub
 interviews/company-specific/<company>/company-info/
 ├── README.md                                  # index, research date, TL;DR, sources
 ├── for-interview/                              # discuss/demonstrate WITH interviewers
-│   ├── 01-company-overview.md                  # what they do, founding, stage, size, thesis
+│   ├── 01-company-overview.md                  # what they do, founding, stage, SIZE (headcount/revenue/valuation), thesis
 │   ├── 02-product-and-technology.md            # products, how it works, architecture, stack
 │   ├── 03-technical-challenges-deep-dive.md    # the HARD problems, why hard, how solved (multi deep-dive)
-│   ├── 04-business-customers-competitors.md    # customers, market, monetization, rivals
+│   ├── 04-business-customers-competitors.md    # customers, market, monetization, rivals + 1–100 competitor scorecard (company vs each rival)
 │   ├── 05-competitive-moat-and-differentiation.md  # why UNIQUE + moat/defensibility/growth (5-Whys, evidence)
-│   ├── 06-ai-strategy-and-future.md            # AI-era survival + AI strategy (shipped/planned), non-obvious AI edge, internal AI adoption, future bets
+│   ├── 06-ai-strategy-and-future.md            # AI embrace PUBLIC (customer-facing) + PRIVATE (internal adoption); shipped vs planned, non-obvious AI edge, future bets
 │   ├── 07-engineering-team-and-culture.md      # eng org, sibling teams, how they ship, values
 │   ├── 08-role-deep-dive.md                    # THIS job: charter, scope, stack, fit, gaps
-│   └── 09-question-bank.md                      # deep questions for HM / engineers / leadership
+│   ├── 09-question-bank.md                      # WHY THIS COMPANY / why-not-competitors pitch + deep questions for HM / engineers / leadership
+│   └── 10-why-this-company.md                   # prepared, personalized "why you / why us / why not competitor X" answers (≥2 angles)
 └── for-myself/                                 # personal offer-decision facts (not talking points)
     ├── 01-funding-and-company-stage.md
     ├── 02-compensation-and-benefits.md
     ├── 03-work-life-balance.md
     ├── 04-employee-ratings-and-sentiment.md
-    └── 05-visa-sponsorship-and-logistics.md
+    ├── 05-visa-sponsorship-and-logistics.md
+    └── 06-company-rating.md                     # 1–100 "how good is this place to work" score (company + working style only; NO personal prefs)
 ```
 
 Rules:
@@ -170,16 +173,31 @@ Rules:
 - `for-interview` = things to *discuss/demonstrate* (depth + POV);
   `for-myself` = things to *know/decide*. Keep comp/WLB/visa out of the question
   bank; they live in `for-myself`.
-- Always produce `03`, `05`, `06`, and `09` — the deep-dive, differentiation, and
-  AI-strategy files plus the question bank are the point of this skill. (`06` scales
-  with AI exposure: for a company AI barely touches, still answer its three questions
-  — briefly, and say *why* exposure is low — rather than skipping it.)
+- Always produce `03`, `05`, `06`, `09`, and `10`, the **1–100 competitor scorecard**
+  in `04`, and the **1–100 company rating** in `for-myself/06` — the deep-dive,
+  differentiation, AI-embrace, question bank, why-this-company pitch, competitor
+  scorecard, and company rating are the point of this skill. (`06` scales with AI
+  exposure: for a company AI barely touches, still answer its questions — briefly,
+  and say *why* exposure is low — rather than skipping it.)
+- **Two different 1–100 ratings, kept distinct:** the `04` competitor scorecard rates
+  *product/competitive strength* of the company **and every named rival** (an
+  outward, interview-facing comparison); the `for-myself/06` company rating scores
+  *how good the company is to work at* (an inward, decision-facing index). Never
+  conflate them or reuse one number for the other.
 
 ## What Goes in Each File
 
 **for-interview/**
-- **01 company-overview** — one-liner, founding, HQ/remote, stage, headcount, the
-  company *thesis* (the bet they're making about the world) — with confidence tags.
+- **01 company-overview** — one-liner, founding, HQ/remote, stage, the company
+  *thesis* (the bet they're making about the world), and — **always** — the company's
+  **size**, stated as concretely as the evidence allows: total headcount (and its
+  trend — growing / flat / post-layoffs, with dates), engineering headcount if
+  findable, number of offices/geos, and the best available scale-of-business figure
+  (annual revenue and market cap for public companies; last valuation + total raised
+  for private; customer/user count if that's the truest size signal). Never omit size:
+  if a figure can't be sourced, give a bounded estimate `[inference]` (e.g. "~500–800
+  from LinkedIn headcount + team page") and say where to confirm. Tag every figure
+  with confidence and a date.
 - **02 product-and-technology** — a **cold-reader product walkthrough**, not a
   component inventory. Assume zero prior company/product/domain knowledge. Start
   with a jargon-free 30-second answer: product category, user, problem, and outcome.
@@ -195,7 +213,10 @@ Rules:
 - **03 technical-challenges-deep-dive** — the centerpiece. See template below.
   **3–6 deep dives**, each on a genuinely hard problem at their scale.
 - **04 business-customers-competitors** — who pays and why, named customers, market
-  and monetization model, the competitor set (named).
+  and monetization model, the competitor set (named), **and a 1–100 competitor
+  scorecard** that rates the target company *and every named rival* on
+  product/competitive strength (see the Competitor Scorecard Template below). This is
+  a product review through a competitive lens: don't just list rivals, *rate* them.
 - **05 competitive-moat-and-differentiation** — the second centerpiece. See
   template below. Why the product/path/direction is *unique* (the contrarian bet) and
   a rigorous, **evidence-based** assessment of the **product moat / sustainable
@@ -203,9 +224,13 @@ Rules:
   **growth potential** — every moat/defensibility/growth claim stress-tested with a
   **5-Whys** chain that stops at evidence, not company claims.
 - **06 ai-strategy-and-future** — the third centerpiece for any AI-exposed company.
-  See template below. Beyond the AI thesis, how AI reshapes the roadmap, recent
-  launches as evidence, and plausible/defensible future directions, it must answer
-  three questions explicitly: **(a) AI-era survival & strategy** — is AI a tailwind
+  Frame it explicitly around **how the company embraces AI on two axes: publicly
+  (customer-facing AI products, launches, and announcements) and privately (internal
+  AI usage and adoption inside the walls — dev tooling, agent/eval workflows,
+  leadership mandates)**. See template below. Beyond the AI thesis, how AI reshapes
+  the roadmap, recent launches as evidence, and plausible/defensible future
+  directions, it must answer three questions explicitly: **(a) AI-era survival &
+  strategy** — is AI a tailwind
   or an existential threat to this product, and what AI-first / AI-native strategy
   have they *already shipped* vs. only *announced / planned* (separate the two, with
   evidence and dates); **(b) the non-obvious AI edge** — reasoned, often
@@ -221,6 +246,12 @@ Rules:
   gold), how they ship, engineering values, OSS/community posture.
 - **08 role-deep-dive** — the team's charter, concrete scope, stack, success bar,
   an honest **fit map** to the user's real experience, and **gaps to prepare for**.
+- **09 question-bank** — the "why this company / why not competitors" pitch plus the
+  deep questions to ask. See the Question Bank Guidance below.
+- **10 why-this-company** — the prepared, *personalized* answer to the single most
+  common interview question ("why do you want to work here / why us over competitor
+  X?"), grounded in the candidate's real background and career interests, with **at
+  least two angles**. See the Why-This-Company Template below.
 
 **for-myself/**
 - **01 funding-and-company-stage** — rounds/amounts/dates, lead + notable investors,
@@ -234,6 +265,15 @@ Rules:
 - **05 visa-sponsorship-and-logistics** — H-1B transfer / green-card sponsorship
   (check h1bdata.info / MyVisaJobs / USCIS disclosures; JD often silent →
   `[unverified] — confirm with recruiter`), work location, time zones, relocation.
+- **06 company-rating** — a single **1–100 "how good is this company to work at"
+  score**, computed from a fixed, weighted rubric that judges the *company itself and
+  its general working style only* (future/growth, stability, WLB, eng culture,
+  comp competitiveness, career growth, sentiment). **Deliberately excludes personal
+  preferences** (location, visa/sponsorship, commute, personal comp target, team
+  vibe fit) — those live elsewhere in `for-myself` and must not move this number, so
+  the score is comparable across every company you research. See the Company Rating
+  Template below. Show the sub-scores, the weighted math, the band, evidence +
+  confidence per dimension, and a one-line **My read**.
 
 ## Deep-Dive Template (`03-technical-challenges-deep-dive.md`)
 
@@ -363,11 +403,119 @@ credible**, or **AI-washing**? How exposed are they to disruption, and how much 
 edge is defensible? State it as a judgment, distinct from the company's claims.
 ```
 
+## Competitor Scorecard Template (in `04-business-customers-competitors.md`)
+
+A product review is not finished at a *list* of rivals — **rate them**. Score the
+target company **and every named competitor** on the same 1–100 scale so the reader
+sees exactly where this company sits in the field. This is the *outward,
+product/competitive-strength* rating (distinct from the `for-myself/06` company
+rating, which is about working there).
+
+Method — six weighted dimensions, each scored 0–100 from evidence, then a weighted
+sum (weights must total 100; keep them fixed across all entities in the table):
+
+| Dimension | Weight | What it measures |
+|-----------|-------:|------------------|
+| Product capability & breadth | 25 | how good/complete the product is at the core job-to-be-done |
+| Market position & traction | 20 | share, named customers, adoption, revenue scale |
+| Moat / defensibility | 20 | how hard it is to displace them (from `05`) |
+| Technology & execution velocity | 15 | engineering quality, ship rate, reliability |
+| Momentum / growth trajectory | 10 | are they gaining or losing ground, and how fast |
+| AI positioning | 10 | how well-placed to win (not lose) as AI reshapes the layer (from `06`) |
+
+Rules:
+- Produce a **table**: one row per entity (the company first, then each rival), a
+  column per dimension sub-score, and the final weighted 1–100. Then 1–2 sentences of
+  **My read** per rival: on which axis the company beats or loses to them, with
+  evidence.
+- Sub-scores are evidence-based judgments, not vibes — tag the weak ones
+  `[unverified]`/`[inference]`, and if a whole entity is thinly sourced, give a range
+  and say so rather than a false-precision number.
+- Band legend (reuse everywhere a 1–100 appears): **85–100** category leader ·
+  **70–84** strong · **55–69** credible/mid-pack · **40–54** trailing · **<40** weak.
+
+## Company Rating Template (`for-myself/06-company-rating.md`)
+
+A single **1–100 "how good is this company to work at" score** from a fixed, weighted
+rubric. It judges the **company itself and its general working style only** — so the
+number is **comparable across every company you research**. **Hard exclusion:** do NOT
+let personal preferences move it — location, visa/sponsorship, commute, your personal
+comp target, or personal domain interest are handled elsewhere in `for-myself` and are
+out of scope here.
+
+Method — seven weighted dimensions, each scored 0–100 from evidence, then a weighted
+sum (weights total 100):
+
+| Dimension | Weight | What it measures (company-level, not personal) |
+|-----------|-------:|------------------------------------------------|
+| Future & growth potential | 25 | product/company trajectory, market tailwind, AI-era durability (from `05`/`06`) |
+| Financial stability & stage | 20 | profitability/runway, funding health, layoff history, concentration risk (from `for-myself/01`) |
+| Work–life balance & sustainability | 15 | realistic pace, hours, on-call, PTO culture (from `for-myself/03`) |
+| Engineering culture & technical quality | 15 | rigor, autonomy, tooling, AI adoption, how they ship (from `07`) |
+| Compensation competitiveness | 10 | pay/equity vs. market **as a company norm** (not your target) (from `for-myself/02`/`04`) |
+| Career growth & learning | 10 | scope, mobility, mentorship, résumé/brand value |
+| Employee sentiment & reputation | 5 | Glassdoor/Blind/Repvue trend + attrition signals (from `for-myself/04`) |
+
+Rules:
+- Show the **sub-score, the weight, and the contribution (sub-score × weight ÷ 100)**
+  for each dimension, then the summed **final 1–100** and its band (same legend as the
+  competitor scorecard).
+- Cite evidence + a confidence tag per dimension. If key dimensions are `[unverified]`,
+  give the score as a **range** and flag which facts would tighten it — never fake
+  precision.
+- End with a one-paragraph **My read**: the biggest upside, the biggest risk, and
+  whether the headline number over- or under-states the reality.
+
+## Why-This-Company Template (`10-why-this-company.md`)
+
+The single most common interview question is "why do you want to work here (and why us
+over competitor X)?" Prepare a **personalized, honest** answer grounded in the
+candidate's *real* background and career interests — **not** generic enthusiasm.
+Provide **at least two angles**, and when the application spans multiple role types
+(e.g. a multi-posting `meta.yaml`), give an angle per distinct role type so the same
+company research serves each interview.
+
+**Personalization (read this):** ground every angle in the candidate's actual
+background and **career-direction preferences** — from the profile
+(`config.profile_md_path()`) and, when present, this skill's `references_private/`
+notes, which **OVERRIDE** the generic guidance here (see "Before You Start"). In public
+/ example mode (no `references_private/`), derive the threads from the profile and JD
+only, and keep the candidate's specifics out of the tracked skill.
+
+```markdown
+## Angle 1 — <role type / framing> (e.g. the <specific posting> role)
+- **The hook:** what *specifically* about this company/product/team pulls you in —
+  concrete, drawn from `01`–`08` (a real product, hard problem, or bet), not a tagline.
+- **Why you (fit):** the 2–3 genuine threads from your background + interests that
+  connect to this exact role (traceable to the profile — never invented).
+- **Why not competitor X / Y:** the specific, honest contrast (from `04`/`05`) — what
+  this company has that the alternative doesn't, phrased as *your* reason to prefer it,
+  not a knock on the rival.
+- **The forward-looking line:** where you want to grow and why this role is the vehicle.
+
+## Angle 2 — <different role type / framing>
+(same structure, from a genuinely different angle)
+
+## Curveballs
+- "Why not <bigger rival / the obvious alternative>?" — a one-line honest answer.
+- "Why leave your current company?" — grounded and non-negative.
+```
+
 ## Question Bank Guidance (`09-question-bank.md`)
 
+**Always open `09` with the candidate's own pitch — "Why this company / why not
+competitors."** Before the questions to *ask*, `09` must lead with a required
+`## Why this company / Why not competitors` section that answers the question the
+candidate will be *asked*: summarize the prepared, personalized answer and link to the
+fuller `10-why-this-company.md` (at least two angles, grounded in the candidate's real
+background/interests — see the Why-This-Company Template). Name the specific
+competitors this company is chosen *over* and the honest reason, drawn from `04`/`05`.
+Keep personal specifics sourced from the profile / `references_private/`, never
+invented.
+
 Questions must make the user look like they already understand the product *and its
-hard problems and strategy*. Beyond product-depth questions, this file **must**
-include three deep groups:
+hard problems and strategy*. Beyond that pitch and the product-depth questions, this
+file **must** include three deep groups:
 
 - **Hard Problems & Challenges** — questions about the *specific* engineering and
   business challenges the company is solving (drawn from `03`). e.g. "You do X at Y
@@ -431,7 +579,9 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
   files stay scannable (bullets, short sections).
 - Confidence/inference tags go on the specific claim, not the whole file.
 - README index: 4–6 bullet TL;DR ("the pitch + the bet, in your words"), file map,
-  research date, master source list.
+  research date, master source list. Surface the headline numbers up top: company
+  **size**, the **company rating (1–100)** with its band, and the company's rank +
+  score in the **competitor scorecard**.
 
 ## Workflow
 
@@ -444,12 +594,18 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
       then 03 technical-challenges-deep-dive (3–6 dives + My read)
 - [ ] Write 05 moat & differentiation: contrarian bet + moat (5-Whys + evidence) +
       defensibility scorecard + growth potential + risks + My read
-- [ ] Write 06 AI strategy: AI-era survival + shipped-vs-planned strategy + non-obvious
-      AI edge ([inference]) + internal AI adoption (internal & user-facing) + My read
-- [ ] Write 01, 04, 07, 08 (facts + POV + confidence tags + Sources)
-- [ ] Write for-myself/ 01–05
-- [ ] Write 09 question-bank incl. Hard-Problems, Differentiation/Moat/Growth, and AI-Strategy/Adoption groups
-- [ ] Write README index + TL;DR
+- [ ] Write 06 AI embrace: public (customer-facing) + private (internal adoption);
+      AI-era survival + shipped-vs-planned + non-obvious AI edge ([inference]) + My read
+- [ ] Write 01 (incl. company SIZE — headcount/trend/revenue/valuation), 07, 08
+      (facts + POV + confidence tags + Sources)
+- [ ] Write 04 business/customers/competitors + the 1–100 competitor scorecard
+      (company + every rival, weighted, banded, evidence)
+- [ ] Write for-myself/ 01–05, then for-myself/06 company rating (1–100, weighted
+      rubric, company + working style only, NO personal prefs, show the math)
+- [ ] Write 09 question-bank: LEAD with "why this company / why not competitors", then
+      Hard-Problems, Differentiation/Moat/Growth, and AI-Strategy/Adoption groups
+- [ ] Write 10 why-this-company (≥2 personalized angles; per role type when multi-posting)
+- [ ] Write README index + TL;DR (surface both 1–100 numbers: competitor rank + company rating)
 - [ ] Final check (below)
 ```
 
@@ -466,12 +622,26 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
   in evidence** (not a restated company claim)? Is there a **defensibility verdict**
   per competitor/threat and an **evidence-based growth-potential** read? Are
   **Claim / Evidence / Judgment** kept distinct?
-- **AI-strategy rigor:** Does `06` answer all three — **(a)** AI-era survival with
-  shipped-vs-planned strategy separated (dates/evidence), **(b)** a non-obvious AI
-  edge derived from real assets and labeled `[inference]` (plus the inverse threat),
-  and **(c)** internal AI adoption covering *both* internal and user-facing AI — and
-  end with a **My read** that calls real strategy vs. AI-washing? Is an "AI-first"
-  tagline tested, not parroted?
+- **AI-strategy rigor:** Does `06` frame AI embrace on **both axes — publicly
+  (customer-facing products/launches) and privately (internal adoption)** — and answer
+  all three: **(a)** AI-era survival with shipped-vs-planned strategy separated
+  (dates/evidence), **(b)** a non-obvious AI edge derived from real assets and labeled
+  `[inference]` (plus the inverse threat), and **(c)** internal AI adoption covering
+  *both* internal and user-facing AI — ending with a **My read** that calls real
+  strategy vs. AI-washing? Is an "AI-first" tagline tested, not parroted?
+- **Size:** Is the company's **size** stated concretely in `01` — headcount + its
+  trend, plus the best scale-of-business figure (revenue/market cap or
+  valuation/raised) — with dates and confidence, never omitted (bounded `[inference]`
+  if unsourced)?
+- **Ratings rigor:** Are **both 1–100 numbers present and kept distinct** — the `04`
+  **competitor scorecard** (target company + *every* named rival, weighted, banded,
+  evidence-tagged sub-scores) and the `for-myself/06` **company rating** (fixed
+  weighted rubric, company + working-style only, personal prefs **excluded**, with the
+  math shown)? Is neither number false-precision over `[unverified]` inputs?
+- **Why-this-company:** Does `10` give **≥2 honest, personalized angles** grounded in
+  the candidate's *real* background/interests (an angle per role type when the app is
+  multi-posting), each with a specific **"why not competitor X"** — and does `09` lead
+  with that pitch? Nothing invented beyond the profile / `references_private/`?
 - **Concreteness:** Named subsystems/repos/posts/competitors/customers, not
   generalities?
 - **Questions:** Do they probe the hard problems, the moat's durability, growth, and
