@@ -1,42 +1,62 @@
 #!/usr/bin/env python3
-"""Bridge a ranked search result into a scaffolded application folder.
+"""Bridge ranked search results into scaffolded application folder(s).
 
 Usage:
   .venv/bin/python skills/job-search/scripts/handoff.py \
-      --json <search.json> (--select <"rank N" | "Company/Title"> | --all) \
-      [--applications-root DIR] [--status-dir 6_drafted] \
+      --json <search.json> \
+      (--select <"rank N" | "rank N,M,P" | "Company" | "Company/Title"> | --all) \
+      [--split] [--applications-root DIR] [--status-dir 6_drafted] \
       [--research-date YYYY-MM-DD] [--skip-jd-fetch] \
       [--allow-location-mismatch] [--report REPORT.json]
 
 ``search.json`` is what ``search_jobs.py --json-out`` writes: a list of posting
-records (``JobPosting.to_dict()``), score-ranked. This tool takes ONE selected
-row and does the deterministic, transcription-error-prone folder setup so the
-drafting agent can start at gap analysis instead of re-transcribing ~10 fields:
+records (``JobPosting.to_dict()``), score-ranked. This tool takes the selected
+row(s) and does the deterministic, transcription-error-prone folder setup so the
+drafting agent can start at gap analysis instead of re-transcribing ~10 fields.
 
-1. Create ``<applications_root>/<status-dir>/<slug>/`` per the AGENTS.md
-   Application Folder Convention (``<company>-<role>-<YYYYMMDD>`` slug). The tool
+**One folder per company by default.** When a selection spans several postings at
+the same company (``--select "Company"``, a multi-rank ``--select "rank N,M"``, or
+``--all``), they are GROUPED into ONE application folder with a multi-entry
+``jobs:`` list — one resume per company, one ``JD-<title>.md`` + one cover letter
+per posting — matching the resume-writer "one resume, multiple roles" default.
+Pass ``--split`` to force the old one-folder-per-posting layout (the divergent-
+roles path — use it when a company's roles are too different for one honest
+resume). A single ``--select "rank N"`` / ``--select "Company/Title"`` always
+produces exactly one single-role folder.
+
+For each resulting folder the tool:
+
+1. Creates ``<applications_root>/<status-dir>/<slug>/`` per the AGENTS.md
+   Application Folder Convention (``<company>-<lead role>-<YYYYMMDD>`` slug; the
+   lead role is the highest-ranked posting in a grouped folder). The tool
    REFUSES to overwrite an existing folder.
-2. Save ``source/JD-<job title>.md`` VERBATIM via the sibling ``fetch_jd`` module
-   (imported, never subprocessed; exactly one fetch). If the fetch fails the
-   folder is still scaffolded, but the tool exits non-zero telling the agent to
-   save the JD manually.
-3. Write ``meta.yaml`` (schema v5), carrying over every structured fact the search
-   row already computed — level, YOE, salary, workplace, sponsorship, location,
-   URL, posted date, source channel — using the vendored ``metadata_editor``
-   (the same formatting-preserving editor the tracker's ``--enrich-metadata``
-   uses, so a later enrich is a no-op). Facts the row lacks are NOT invented; they
-   are left for the tracker's ``status.py --enrich-metadata`` follow-up.
+2. Saves ``source/JD-<job title>.md`` VERBATIM via the sibling ``fetch_jd`` module
+   (imported, never subprocessed; exactly one fetch per posting). If a fetch fails
+   the folder is still scaffolded, but the tool exits non-zero telling the agent to
+   save that JD manually.
+3. Writes ``meta.yaml`` (schema v5) with one ``jobs:`` entry per posting, carrying
+   over every structured fact each search row already computed — level, YOE,
+   salary, workplace, sponsorship, location, URL, posted date, source channel —
+   using the vendored ``metadata_editor`` (the same formatting-preserving editor
+   the tracker's ``--enrich-metadata`` uses, so a later enrich is a no-op). Facts a
+   row lacks are NOT invented; they are left for the tracker's
+   ``status.py --enrich-metadata`` follow-up.
 4. Validate with the vendored ``job_metadata`` validator before exit. On failure
    the tool exits non-zero and lists what is missing.
 5. Run the SAME location-policy check the tracker's ``status.py --check-locations``
    uses (via the vendored ``location`` module + ``config.location_policy``). A
-   definite mismatch (a foreign posting or a non-preferred US office) LEAVES the
-   folder on disk, prints the verdict + the offending location string + a one-line
-   remedy to stderr, and exits non-zero (code 3) unless ``--allow-location-mismatch``
-   is passed. This catches a wrong-metro / foreign posting at handoff — before the
-   drafting leg pays for it — instead of only when the tracker gate runs later. A
-   blank / unrecognized location is surfaced for manual review but does NOT block
-   (identical to the tracker's ``review`` vs ``mismatch`` split).
+   definite mismatch (a foreign posting or a non-preferred US office) LEAVES a
+   single-role folder on disk, prints the verdict + the offending location string
+   + a one-line remedy to stderr, and exits non-zero (code 3) unless
+   ``--allow-location-mismatch`` is passed. This catches a wrong-metro / foreign
+   posting at handoff — before the drafting leg pays for it — instead of only when
+   the tracker gate runs later. A blank / unrecognized location is surfaced for
+   manual review but does NOT block (identical to the tracker's ``review`` vs
+   ``mismatch`` split). When GROUPING several postings into one company folder,
+   definite-mismatch postings are instead dropped from that folder (each reported
+   to stderr) so only policy-matching roles are kept — matching the resume-writer
+   rule "for a multi-role company, keep only the postings that match the policy";
+   ``--allow-location-mismatch`` keeps them all.
 
 Stdout is exactly two lines: the folder path and the meta.yaml validation status.
 Everything else (fetch notes, gap diagnostics, the location verdict) goes to stderr.
@@ -91,6 +111,8 @@ LIVE_STATUS_DIRS = (
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _RANK_RE = re.compile(r"^\s*(?:rank\s+)?(\d+)\s*$", re.I)
+# A comma-separated rank list: "rank 1,3,5" or "1, 3, 5".
+_RANK_LIST_RE = re.compile(r"^\s*(?:ranks?\s+)?(\d+(?:\s*,\s*\d+)*)\s*$", re.I)
 
 
 # --------------------------------------------------------------------------- #
@@ -117,39 +139,83 @@ def _norm(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
 
 
-def select_row(rows: list[dict], selector: str) -> dict:
-    """Select one posting by ``rank N`` (1-based) or ``Company/Title``."""
-    rank_match = _RANK_RE.match(selector)
-    if rank_match:
-        rank = int(rank_match.group(1))
-        if not 1 <= rank <= len(rows):
-            raise ValueError(
-                f"rank {rank} is out of range (1..{len(rows)} postings available)"
-            )
-        return rows[rank - 1]
+def select_rows(rows: list[dict], selector: str) -> list[dict]:
+    """Select one or more postings; return them in selection order.
 
-    if "/" not in selector:
-        raise ValueError(
-            f"--select {selector!r} is neither a rank ('rank N') nor a "
-            "'Company/Title' pair"
-        )
-    company, title = selector.split("/", 1)
-    matches = [
-        row for row in rows
-        if _norm(row.get("company")) == _norm(company)
-        and _norm(row.get("title")) == _norm(title)
+    Accepted selectors:
+    - ``"rank N"`` / ``"N"``          → that single posting.
+    - ``"rank N,M,P"`` / ``"N,M,P"``  → those postings (grouped by company later).
+    - ``"Company/Title"``             → that single posting (exact company + title).
+    - ``"Company"``                   → every posting for that company (one folder).
+
+    Grouping into folders happens downstream (``group_by_company``); this function
+    only resolves the selector to a list of rows.
+    """
+    selector = (selector or "").strip()
+
+    rank_list = _RANK_LIST_RE.match(selector)
+    if rank_list:
+        picked: list[dict] = []
+        for token in re.split(r"\s*,\s*", rank_list.group(1)):
+            rank = int(token)
+            if not 1 <= rank <= len(rows):
+                raise ValueError(
+                    f"rank {rank} is out of range (1..{len(rows)} postings available)"
+                )
+            picked.append(rows[rank - 1])
+        return picked
+
+    if "/" in selector:
+        company, title = selector.split("/", 1)
+        matches = [
+            row for row in rows
+            if _norm(row.get("company")) == _norm(company)
+            and _norm(row.get("title")) == _norm(title)
+        ]
+        if not matches:
+            raise ValueError(
+                f"no posting matches company/title {selector!r}; "
+                "use the exact company and title from the search table"
+            )
+        if len(matches) > 1:
+            raise ValueError(
+                f"company/title {selector!r} matches {len(matches)} postings; "
+                "select by rank instead"
+            )
+        return matches
+
+    # A bare token with no '/' and not a rank is a COMPANY selector: take every
+    # posting for that company (they group into one folder by default).
+    company_rows = [
+        row for row in rows if _norm(row.get("company")) == _norm(selector)
     ]
-    if not matches:
+    if not company_rows:
         raise ValueError(
-            f"no posting matches company/title {selector!r}; "
-            "use the exact company and title from the search table"
+            f"--select {selector!r} is neither a rank ('rank N' / 'N,M'), a "
+            "'Company/Title' pair, nor a company with postings in the search JSON"
         )
-    if len(matches) > 1:
-        raise ValueError(
-            f"company/title {selector!r} matches {len(matches)} postings; "
-            "select by rank instead"
-        )
-    return matches[0]
+    return company_rows
+
+
+def group_by_company(rows: list[dict], *, split: bool = False) -> list[list[dict]]:
+    """Group selected rows into per-folder buckets.
+
+    Default (``split=False``): ONE bucket per company — the one-folder-per-company
+    default. Buckets and the rows inside them preserve first-seen (score-ranked)
+    order, so bucket[0] is the company's lead role (used for the folder slug).
+    ``split=True``: one bucket per posting (the divergent-roles escape hatch).
+    """
+    if split:
+        return [[row] for row in rows]
+    buckets: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for row in rows:
+        key = _norm(row.get("company"))
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(row)
+    return [buckets[key] for key in order]
 
 
 def _posting_keys(root: Path) -> tuple[set[str], set[tuple[str, str]]]:
@@ -228,6 +294,26 @@ def folder_slug(company: str, role: str, date_str: str) -> str:
 def jd_filename(role: str) -> str:
     """``JD-<job title>.md`` — the exact per-posting JD file name."""
     return f"JD-{slugify(role)}.md"
+
+
+def unique_jd_filename(role: str, used: set[str]) -> str:
+    """A ``JD-<job title>.md`` name unique within one folder's ``source/``.
+
+    A grouped multi-role folder can hold two postings whose titles slugify the
+    same; disambiguate the collision with a ``-2``/``-3`` suffix so every posting
+    keeps its own verbatim JD file. ``used`` is mutated with the returned name.
+    """
+    base = jd_filename(role)
+    if base not in used:
+        used.add(base)
+        return base
+    stem = base[:-3]  # strip trailing ".md"
+    index = 2
+    while f"{stem}-{index}.md" in used:
+        index += 1
+    name = f"{stem}-{index}.md"
+    used.add(name)
+    return name
 
 
 def _applications_root(override: str | None) -> Path:
@@ -337,38 +423,49 @@ def _posted_date(row: dict) -> str:
     return raw[:10] if raw else ""
 
 
-def build_meta_bytes(row: dict, *, jd_file: str, research_date: str) -> tuple[bytes, list[str]]:
-    """Build meta.yaml bytes for the row; return (bytes, editor_errors).
+def build_meta_bytes(
+    rows: list[dict], *, jd_files: list[str], research_date: str
+) -> tuple[bytes, list[str]]:
+    """Build meta.yaml bytes for one folder; return (bytes, editor_errors).
 
-    A scaffold (company scope + one job entry of descriptive fields) is rendered
-    first, then the vendored ``plan_metadata_edit`` inserts the five metadata
-    fields carried from the row — the same formatting-preserving path the tracker
-    uses. If the carried metadata is incomplete/invalid the editor returns the
-    scaffold unchanged (no metadata) so the failure surfaces in validation and the
-    tracker can enrich it; ``editor_errors`` explains why nothing was carried.
+    ``rows`` is one folder's posting(s) — a single row for a single-role folder or
+    several same-company rows for a grouped multi-role folder; ``jd_files`` is the
+    parallel list of per-posting ``JD-<title>.md`` names. Company-scope fields come
+    from the lead (first) row. A scaffold (company scope + one job entry of
+    descriptive fields per posting) is rendered first, then the vendored
+    ``plan_metadata_edit`` inserts the five metadata fields carried from each row —
+    the same formatting-preserving path the tracker uses. If a row's carried
+    metadata is incomplete/invalid the editor returns the scaffold unchanged for it
+    (no metadata) so the failure surfaces in validation and the tracker can enrich
+    it; ``editor_errors`` explains why nothing was carried.
     """
-    job_entry = {
-        "role": str(row.get("title") or ""),
-        "jd_file": jd_file,
-        # Handoff always creates a fresh DRAFTED application; schema v5 pairs
-        # that with the deterministic drafted progress summary.
-        "status": "drafted",
-        "progress": {"phase": "application_prep", "state": "action_required"},
-        "location": str(row.get("location") or ""),
-        "url": str(row.get("url") or ""),
-        "posted_date": _posted_date(row),
-    }
-    # Durable link to the posting's store biography — COPIED verbatim from the
-    # search JSON (handoff never re-derives identity). Additive optional field.
-    store_key = str(row.get("store_key") or "").strip()
-    if store_key:
-        job_entry["store_key"] = store_key
+    lead = rows[0]
+    job_entries: list[dict] = []
+    for row, jd_file in zip(rows, jd_files):
+        job_entry = {
+            "role": str(row.get("title") or ""),
+            "jd_file": jd_file,
+            # Handoff always creates a fresh DRAFTED application; schema v5 pairs
+            # that with the deterministic drafted progress summary.
+            "status": "drafted",
+            "progress": {"phase": "application_prep", "state": "action_required"},
+            "location": str(row.get("location") or ""),
+            "url": str(row.get("url") or ""),
+            "posted_date": _posted_date(row),
+        }
+        # Durable link to the posting's store biography — COPIED verbatim from the
+        # search JSON (handoff never re-derives identity). Additive optional field.
+        store_key = str(row.get("store_key") or "").strip()
+        if store_key:
+            job_entry["store_key"] = store_key
+        job_entries.append(job_entry)
+
     scaffold = {
         "job_metadata_schema_version": APPLICATION_SCHEMA_VERSION,
-        "company": str(row.get("company") or ""),
+        "company": str(lead.get("company") or ""),
         "research_date": research_date,
-        "channel": str(row.get("source") or ""),
-        "jobs": [job_entry],
+        "channel": str(lead.get("source") or ""),
+        "jobs": job_entries,
     }
     raw = yaml.safe_dump(
         scaffold,
@@ -378,7 +475,8 @@ def build_meta_bytes(row: dict, *, jd_file: str, research_date: str) -> tuple[by
         width=4096,
     ).encode("utf-8")
 
-    generated = {("jobs", 0): carry_metadata(row)}
+    generated = {("jobs", index): carry_metadata(row)
+                 for index, row in enumerate(rows)}
     plan = plan_metadata_edit(raw, generated)
     # On success output_bytes is the filled meta.yaml; on any editor error it is
     # the scaffold unchanged (fail-closed), which validation then flags.
@@ -492,20 +590,51 @@ def report_location(
     return True
 
 
+def row_location_verdict(row: dict) -> tuple[str, str]:
+    """Classify ONE search row's location against ``config.location_policy()``.
+
+    Returns ``(verdict, category)`` — ``"match"`` (preferred metro / US-remote),
+    ``"mismatch"`` (a definite policy violation: foreign or non-preferred US
+    office), or ``"review"`` (blank / unrecognized). Used by the grouping path to
+    drop definite mismatches from a multi-role company folder before it is built,
+    keeping only policy-matching postings.
+    """
+    import config  # vendored toolkit loader (location policy)
+    policy = config.location_policy()
+    loc = str(row.get("location") or "").strip()
+    if not loc:
+        return "review", "unknown"
+    category = classify_location(loc, policy)
+    if is_match(category):
+        return "match", category
+    if category == "unknown":
+        return "review", category
+    return "mismatch", category
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
-def _run_row(row: dict, args: argparse.Namespace) -> tuple[int, Path]:
-    company = str(row.get("company") or "").strip()
-    role = str(row.get("title") or "").strip()
+def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
+    """Scaffold ONE application folder from a group of same-company posting(s).
+
+    A single-element group is a single-role folder (unchanged behavior, including
+    the definite-mismatch block that leaves the folder + exits 3). A multi-element
+    group is a one-folder-per-company multi-role folder: definite location
+    mismatches are dropped from it (each reported) unless
+    ``--allow-location-mismatch`` is set, and the folder slug uses the lead
+    (highest-ranked) posting's role.
+    """
+    company = str(group[0].get("company") or "").strip()
+    lead_role = str(group[0].get("title") or "").strip()
     if not company:
         raise ValueError("selected posting has no company; cannot build a folder slug")
-    if not role:
+    if not lead_role:
         raise ValueError("selected posting has no title; cannot build a folder slug")
 
     research_date = args.research_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     root = _applications_root(args.applications_root)
-    slug = folder_slug(company, role, research_date)
+    slug = folder_slug(company, lead_role, research_date)
     folder = root / args.status_dir / slug
 
     if folder.exists():
@@ -515,46 +644,80 @@ def _run_row(row: dict, args: argparse.Namespace) -> tuple[int, Path]:
         )
         return 2, folder
 
-    jd_file = jd_filename(role)
+    # --- multi-role location pre-filter ----------------------------------- #
+    # When grouping several postings into one company folder, keep only the ones
+    # that satisfy the location policy (resume-writer: "for a multi-role company,
+    # keep only the postings that match the policy"). A SINGLE-role folder is not
+    # pre-filtered — its definite mismatch stays a loud block (code 3) below, so an
+    # explicitly selected off-policy posting is never silently dropped.
+    rows = list(group)
+    if len(rows) > 1 and not args.allow_location_mismatch:
+        kept: list[dict] = []
+        for row in rows:
+            verdict, category = row_location_verdict(row)
+            if verdict == "mismatch":
+                print(
+                    f"handoff: dropping {row.get('title')!r} from the {company} "
+                    f"folder — location {str(row.get('location') or '')!r} "
+                    f"[{category}] is outside the configured location policy.",
+                    file=sys.stderr,
+                )
+                continue
+            kept.append(row)
+        if not kept:
+            print(
+                f"handoff: no {company} posting satisfies the location policy; "
+                "nothing scaffolded (rerun with --allow-location-mismatch to keep "
+                "them, or --split to handle roles individually).",
+                file=sys.stderr,
+            )
+            return 3, folder
+        rows = kept
+
     source_dir = folder / "source"
     source_dir.mkdir(parents=True, exist_ok=False)
 
-    # --- JD (verbatim, exactly one fetch) --------------------------------- #
+    # --- JD (verbatim, exactly one fetch per posting) --------------------- #
     # Fresh-JD refusal (store-is-never-verification): scaffolding without a
     # session-fresh JD is NOT allowed — the store is memory that routes attention,
     # never a substitute for the JD text you act on. A skip or a failed fetch is an
     # explicit refusal (non-zero exit); there is no override flag.
     jd_ok = True
-    if args.skip_jd_fetch:
-        jd_ok = False
-        print(
-            f"handoff: REFUSING to treat this as ready — --skip-jd-fetch means no "
-            f"session-fresh JD, and the store is never a verification substitute. "
-            f"Save {source_dir / jd_file} live this session before drafting.",
-            file=sys.stderr,
-        )
-    else:
-        jd_ok, jd_msg = save_jd(str(row.get("url") or ""), source_dir / jd_file)
-        if not jd_ok:
+    used_jd_names: set[str] = set()
+    jd_files: list[str] = []
+    for row in rows:
+        jd_file = unique_jd_filename(str(row.get("title") or ""), used_jd_names)
+        jd_files.append(jd_file)
+        if args.skip_jd_fetch:
+            jd_ok = False
             print(
-                f"handoff: REFUSING to treat this as ready — no session-fresh JD "
-                f"({jd_msg}), and the store is never a verification substitute; you "
-                f"must act on the live JD text, not stored facts. The folder is "
-                f"scaffolded but NOT draftable until you save "
-                f"{source_dir / jd_file} live this session. If the page is "
-                "JS-rendered, recover the verbatim JD via `company_roles.py --jd`; "
-                "if no fetch works at all (e.g. HTTP 403), save the scraper-extracted "
-                "text with a non-verbatim provenance note (reference.md § "
-                "\"Recovering a JD when the page fetch is unusable\").",
+                f"handoff: REFUSING to treat this as ready — --skip-jd-fetch means no "
+                f"session-fresh JD, and the store is never a verification substitute. "
+                f"Save {source_dir / jd_file} live this session before drafting.",
                 file=sys.stderr,
             )
+        else:
+            ok, jd_msg = save_jd(str(row.get("url") or ""), source_dir / jd_file)
+            if not ok:
+                jd_ok = False
+                print(
+                    f"handoff: REFUSING to treat this as ready — no session-fresh JD "
+                    f"({jd_msg}), and the store is never a verification substitute; you "
+                    f"must act on the live JD text, not stored facts. The folder is "
+                    f"scaffolded but NOT draftable until you save "
+                    f"{source_dir / jd_file} live this session. If the page is "
+                    "JS-rendered, recover the verbatim JD via `company_roles.py --jd`; "
+                    "if no fetch works at all (e.g. HTTP 403), save the scraper-extracted "
+                    "text with a non-verbatim provenance note (reference.md § "
+                    "\"Recovering a JD when the page fetch is unusable\").",
+                    file=sys.stderr,
+                )
+        # Stale-posting hint (local store lookup by the copied store_key; never blocks).
+        warn_if_stale(str(row.get("store_key") or "").strip())
 
-    # Stale-posting hint (local store lookup by the copied store_key; never blocks).
-    warn_if_stale(str(row.get("store_key") or "").strip())
-
-    # --- meta.yaml (schema v5, facts carried from the row) ---------------- #
+    # --- meta.yaml (schema v5, facts carried from every row) -------------- #
     meta_bytes, editor_errors = build_meta_bytes(
-        row, jd_file=jd_file, research_date=research_date)
+        rows, jd_files=jd_files, research_date=research_date)
     (folder / "meta.yaml").write_bytes(meta_bytes)
     for message in editor_errors:
         print(f"handoff: metadata not carried: {message}", file=sys.stderr)
@@ -568,6 +731,12 @@ def _run_row(row: dict, args: argparse.Namespace) -> tuple[int, Path]:
 
     print(folder)
     print(f"meta.yaml: {'valid' if not errors else 'INVALID'}")
+    if len(rows) > 1:
+        print(
+            f"handoff: grouped {len(rows)} {company} postings into one folder "
+            "(one resume, a multi-role jobs: list, one cover letter per posting).",
+            file=sys.stderr,
+        )
     if errors:
         print("handoff: meta.yaml is not yet complete:", file=sys.stderr)
         for error in errors:
@@ -582,6 +751,8 @@ def _run_row(row: dict, args: argparse.Namespace) -> tuple[int, Path]:
     # Location policy gate. A definite mismatch is the highest-priority failure
     # ("do not draft this posting at all"), so it wins over an incomplete-metadata
     # / missing-JD exit; ``--allow-location-mismatch`` downgrades it to a warning.
+    # For a multi-role folder the pre-filter above already removed mismatches, so
+    # this only fires for a single-role folder or under --allow-location-mismatch.
     location_blocked = report_location(
         loc_verdict, loc_cat, loc_locs, loc_offending, folder,
         allow_mismatch=args.allow_location_mismatch,
@@ -591,13 +762,30 @@ def _run_row(row: dict, args: argparse.Namespace) -> tuple[int, Path]:
     return (0 if (errors == [] and jd_ok) else 1), folder
 
 
-# Exit codes _run_row returns, mapped to a bulk-report row status. A location
+# Exit codes _run_group returns, mapped to a bulk-report status. A location
 # mismatch is auditable as its own status/count (distinct from an incomplete
-# scaffold) so a bulk run's report shows exactly why each folder is not clean.
+# scaffold) so a run's report shows exactly why each folder is not clean.
 _BULK_STATUS_BY_CODE = {0: "created", 3: "location_mismatch"}
 
 
-def _run_bulk(rows: list[dict], args: argparse.Namespace) -> int:
+def _register_row(row: dict, urls: set[str], pairs: set[tuple[str, str]]) -> None:
+    """Mark a row's URL + (company, role) live so a later group can't duplicate it."""
+    url = _norm(row.get("url")).rstrip("/")
+    pair = (_norm(row.get("company")), _norm(row.get("title")))
+    if url:
+        urls.add(url)
+    if all(pair):
+        pairs.add(pair)
+
+
+def _run_groups(groups: list[list[dict]], args: argparse.Namespace) -> int:
+    """Scaffold one folder per group (one folder per company by default).
+
+    Duplicate preflight runs per POSTING within each group (a posting already in a
+    log/live folder is skipped, never re-drafted); a group whose postings are all
+    duplicates creates nothing. Each created folder's postings are then registered
+    so a later group can't re-draft them.
+    """
     root = _applications_root(args.applications_root)
     urls, pairs = _posting_keys(root)
     report: list[dict] = []
@@ -609,59 +797,57 @@ def _run_bulk(rows: list[dict], args: argparse.Namespace) -> int:
         "failed": 0,
     }
 
-    for index, row in enumerate(rows, 1):
-        reason = _duplicate_reason(row, urls, pairs)
-        if reason:
-            counts["duplicate"] += 1
-            report.append({
-                "rank": index,
-                "company": row.get("company"),
-                "title": row.get("title"),
-                "url": row.get("url"),
-                "status": "duplicate",
-                "detail": reason,
-            })
-            print(
-                f"handoff: skipped duplicate rank {index}: "
-                f"{row.get('company')} / {row.get('title')} ({reason})",
-                file=sys.stderr,
-            )
+    for group in groups:
+        company = group[0].get("company")
+        # Per-posting duplicate filter within the group.
+        fresh: list[dict] = []
+        for row in group:
+            reason = _duplicate_reason(row, urls, pairs)
+            if reason:
+                counts["duplicate"] += 1
+                report.append({
+                    "company": row.get("company"),
+                    "title": row.get("title"),
+                    "url": row.get("url"),
+                    "status": "duplicate",
+                    "detail": reason,
+                })
+                print(
+                    f"handoff: skipped duplicate: "
+                    f"{row.get('company')} / {row.get('title')} ({reason})",
+                    file=sys.stderr,
+                )
+            else:
+                fresh.append(row)
+        if not fresh:
             continue
 
         try:
-            code, folder = _run_row(row, args)
+            code, folder = _run_group(fresh, args)
         except ValueError as exc:
             counts["failed"] += 1
             report.append({
-                "rank": index,
-                "company": row.get("company"),
-                "title": row.get("title"),
-                "url": row.get("url"),
+                "company": company,
+                "titles": [row.get("title") for row in fresh],
                 "status": "failed",
                 "detail": str(exc),
             })
-            print(f"handoff: rank {index} failed: {exc}", file=sys.stderr)
+            print(f"handoff: {company} group failed: {exc}", file=sys.stderr)
             continue
 
         status = _BULK_STATUS_BY_CODE.get(code, "incomplete")
         counts[status] += 1
         report.append({
-            "rank": index,
-            "company": row.get("company"),
-            "title": row.get("title"),
-            "url": row.get("url"),
+            "company": company,
+            "titles": [row.get("title") for row in fresh],
             "status": status,
             "folder": str(folder),
             "exit_code": code,
         })
         # A partial scaffold (or a mismatch folder left for review) is still a live
-        # folder and must block a second row.
-        url = _norm(row.get("url")).rstrip("/")
-        pair = (_norm(row.get("company")), _norm(row.get("title")))
-        if url:
-            urls.add(url)
-        if all(pair):
-            pairs.add(pair)
+        # folder; register its postings so a later group cannot duplicate them.
+        for row in fresh:
+            _register_row(row, urls, pairs)
 
     if args.report:
         report_path = Path(args.report).expanduser()
@@ -675,7 +861,7 @@ def _run_bulk(rows: list[dict], args: argparse.Namespace) -> int:
         + " | ".join(f"{key}={value}" for key, value in counts.items())
     )
     # Any non-clean outcome (incomplete scaffold, location mismatch, or a hard
-    # failure) makes the bulk run exit non-zero.
+    # failure) makes the run exit non-zero.
     return 1 if (
         counts["incomplete"] or counts["location_mismatch"] or counts["failed"]
     ) else 0
@@ -683,11 +869,14 @@ def _run_bulk(rows: list[dict], args: argparse.Namespace) -> int:
 
 def run(args: argparse.Namespace) -> int:
     rows = load_rows(Path(args.json).expanduser())
-    if args.select_all:
-        return _run_bulk(rows, args)
-    row = select_row(rows, args.select)
-    code, _folder = _run_row(row, args)
-    return code
+    selected = rows if args.select_all else select_rows(rows, args.select)
+    groups = group_by_company(selected, split=args.split)
+    # A single explicitly-selected posting keeps the simple two-line stdout path
+    # (folder + validation) and the loud single-role location block.
+    if not args.select_all and len(selected) == 1 and len(groups) == 1:
+        code, _folder = _run_group(groups[0], args)
+        return code
+    return _run_groups(groups, args)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -697,9 +886,18 @@ def main(argv: list[str] | None = None) -> int:
                     help="search_jobs.py --json-out file (list of posting records).")
     selection = ap.add_mutually_exclusive_group(required=True)
     selection.add_argument("--select",
-                           help='Which posting: "rank N" (1-based) or "Company/Title".')
+                           help='Which posting(s): "rank N" (1-based), a rank list '
+                                '"rank N,M,P", a bare "Company" (all of that '
+                                'company\'s postings → one folder), or an exact '
+                                '"Company/Title" (one posting).')
     selection.add_argument("--all", dest="select_all", action="store_true",
-                           help="Scaffold every row after duplicate preflight.")
+                           help="Scaffold every row after duplicate preflight, "
+                                "grouped one folder per company (see --split).")
+    ap.add_argument("--split", action="store_true",
+                    help="Force one folder per posting instead of the default "
+                         "one-folder-per-company grouping. Use for a company whose "
+                         "selected roles are too divergent for a single honest "
+                         "resume (the resume-writer Path B split).")
     ap.add_argument("--applications-root", default=None,
                     help="Applications root (default: the vendored config value).")
     ap.add_argument("--status-dir", default=DEFAULT_STATUS_DIR,

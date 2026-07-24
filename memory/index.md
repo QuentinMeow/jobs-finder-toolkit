@@ -16,6 +16,7 @@
 
 ## known-issues
 
+- `memory/known-issues/check-py-never-skill-hyphen-substring-false-positive.md` — `check_never_skills()` flags a blocklisted word inside a hyphenated compound as a false positive
 - `memory/known-issues/claude-code-skill-tool-serves-stale-skill-md.md` — Claude Code `Skill` tool can serve a stale `SKILL.md` from outside the eval worktree
 - `memory/known-issues/location-title-only-foreign-leak.md` — Foreign role with generic location field classifies as us_remote when the city is only in the title
 - `memory/known-issues/metadata-editor-block-mapping-field-insertion.md` — metadata_editor mis-plans a field insertion after a block-style mapping in a non-final jobs entry

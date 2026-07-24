@@ -144,6 +144,34 @@ canaries:
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
+  - id: rw-multi-role-one-folder
+    requires_overlay: false
+    prompt: >
+      Tailor my resume for these two openings at Example Corp — Senior Software Engineer,
+      Platform and Backend Infrastructure Engineer. Both JDs are saved. Produce the applications.
+    setup: >
+      ISOLATED fresh scaffold (like rw-tailor-single-posting): copy config.example.yaml to a temp
+      config, rewrite paths.applications_root / discoveries_dir to an isolated empty tree, and set
+      paths.profile_md / baseline_yaml / reference_docx to ABSOLUTE paths into the shipped
+      examples/**; point JOBHUNT_CONFIG at it. Seed TWO same-company JDs into a single clean
+      applications/6_drafted/ area: reuse the shipped
+      examples/.../source/JD-senior-software-engineer-platform.md as the Platform JD, and author a
+      second fictional 'Backend Infrastructure Engineer' JD for the SAME fictional Example Corp
+      (coherent platform/infra theme, so the two roles share one honest resume). Do NOT pre-create
+      any folder — the run must decide the folder layout. No private overlay/identity.
+    expected_behavior:
+      - "Runs Preflight, then creates ONE application folder for Example Corp (the one-folder-per-company default) — NOT one folder per role — because the two roles share a coherent platform/infra theme."
+      - "meta.yaml is a schema-v5 jobs: list with TWO entries (one per posting), each with its own jd_file (one source/JD-<title>.md per posting); JDs are never paired by index/sorted filename."
+      - "Produces exactly ONE tailored resume (DOCX in source/ + PDF at root) covering the folder, tailored to the shared theme across both JDs."
+      - "Produces one bundled '..._Application_<job title>.txt' AND one '..._Cover_Letter_<job title>.pdf' PER role (two of each), each individually researched for its own role — never one shared/boilerplate letter."
+      - "Categorizes any new JD skills across the union of BOTH JDs in one batched Step 7 interaction."
+    failure_modes:
+      - "Creates a separate application folder per role for the same company when the roles are not divergent."
+      - "Writes one shared cover letter for both roles, or only one role's cover letter."
+      - "Emits multiple resumes for one folder, or pairs JDs to roles by index instead of the exact jd_file."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
   - id: rw-duplicate-preflight
     requires_overlay: false
     prompt: "Tailor a resume for the Example Corp Senior Software Engineer, Platform role."
