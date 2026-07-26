@@ -73,6 +73,18 @@ US_REMOTE_REGIONS = (
 # Non-US-only regions -> foreign.
 FOREIGN_REGIONS = ("emea", "apac", "latam", "europe")
 
+# Ambiguous source-defined region buckets that carry no usable geography by
+# themselves. Detection is deliberately token-exact and is only consulted after
+# all geographic and workplace signals have failed. Some words here are normally
+# decisive signals (for example EMEA/APAC are foreign and "global" is remote);
+# those existing classifications win before this list can relabel anything.
+# "namer" and "americas" are intentionally absent because they are established
+# US-remote regions.
+_AMBIGUOUS_REGION_BUCKET_WORDS = frozenset({
+    "central", "east", "west", "amer", "emea", "apac", "international",
+    "usca", "global", "region", "field",
+})
+
 _US_STATE_NAMES = {
     "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
     "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
@@ -333,6 +345,13 @@ def _has_state_abbr(original: str) -> bool:
                for ab in re.findall(r"\b[A-Z]{2}\b", original or ""))
 
 
+def _is_ambiguous_region_bucket(nloc: str) -> bool:
+    """Whether every normalized word is an unresolvable region-bucket word."""
+    words = re.findall(r"[a-z0-9]+", nloc)
+    return bool(words) and all(
+        word in _AMBIGUOUS_REGION_BUCKET_WORDS for word in words)
+
+
 def _rule_hits(text: str, rules) -> list[str]:
     return [rule_id for rule_id, pattern in rules if pattern.search(text or "")]
 
@@ -467,6 +486,18 @@ def assess_location(
     preferred = _has(metro, nloc)
     has_specific_us_office = (_has(_US_HUBS, nloc) or _has_us_state(nloc)
                               or _has_state_abbr(original))
+    # At this point evidence contains workplace evidence only; geographic
+    # evidence is appended below. A non-empty location otherwise defaults to an
+    # inferred onsite workplace, which is not itself an explicit signal and must
+    # not prevent a bare bucket such as "West" from escalating.
+    has_workplace_signal = bool(evidence)
+    weird_location_format = (
+        _is_ambiguous_region_bucket(nloc)
+        and not preferred
+        and not foreign
+        and not us
+        and not has_workplace_signal
+    )
 
     if preferred:
         category = "metro"
@@ -490,6 +521,10 @@ def assess_location(
         evidence.append("broad_us_scope")
     else:
         category = "unknown"
+        if weird_location_format:
+            # This was already an unknown/review result. Give it a distinct
+            # investigation reason without changing any match/no_match decision.
+            review.append("weird_location_format")
 
     # Definitively foreign-only geography dominates any internal workplace
     # remote/hybrid/onsite tension: the role is out of a US-only search either
