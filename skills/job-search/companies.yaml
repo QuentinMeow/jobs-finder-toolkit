@@ -139,7 +139,7 @@ companies:
   - {name: Asana, ats: greenhouse, token: asana, tags: [bigtech, dev-tools]}
   - {name: Amplitude, ats: greenhouse, token: amplitude, tags: [dev-tools]}
   - {name: Mixpanel, ats: greenhouse, token: mixpanel, tags: [dev-tools]}
-  - {name: Benchling, ats: ashby, token: benchling, tags: [dev-tools]}
+  - {name: Benchling, ats: ashby, token: benchling, tags: [dev-tools, healthcare]}
   - {name: Contentful, ats: greenhouse, token: contentful, tags: [dev-tools]}
   - {name: Webflow, ats: greenhouse, token: webflow, tags: [dev-tools]}
   - {name: Prisma, ats: greenhouse, token: prisma, tags: [dev-tools]}
@@ -217,7 +217,7 @@ companies:
   - {name: Activision Blizzard, ats: workday, token: xboxgaming, host: xboxgaming.wd1.myworkdayjobs.com, site: CentralTech, tags: [bigtech, gaming]}
   - {name: Smartsheet, ats: greenhouse, token: smartsheet, tags: [bigtech, saas]}
 
-  # ---- Screenshot-sourced target expansion (opt-in batch) ----
+  # ---- AI-native target expansion (opt-in batch) ----
   # Only reachable, non-empty boards with unambiguous employer identity.
   - {name: HeyGen, ats: greenhouse, token: heygen, tags: [ai-native], poll_batch: image-leads-01}
   - {name: Factory, ats: ashby, token: factory, aliases: [Factory AI], tags: [ai-lab, dev-tools], poll_batch: image-leads-01}
@@ -262,6 +262,25 @@ companies:
   - {name: Momentic, ats: ashby, token: momentic, tags: [ai-native, dev-tools], poll_batch: image-leads-01}
   - {name: Method Security, ats: ashby, token: method.security, tags: [ai-native, enterprise-infra], poll_batch: image-leads-01}
   - {name: Pulse AI, ats: ashby, token: pulse, tags: [ai-native, data-platform], poll_batch: image-leads-01}
+
+  # ---- AI + Healthcare expansion (opt-in batch) ----
+  # Opt-in poll_batch keeps ordinary profile runs bounded. Only boards with a
+  # verified public read API + non-empty listings are polled here; companies whose
+  # careers site exposes no supported ATS are tracked privately for manual review.
+  # Dated evidence and unsupported-board results live only in the private catalog.
+  - {name: Komodo Health, ats: greenhouse, token: komodohealth, tags: [ai-adopter, healthcare, data-platform], poll_batch: image-leads-02}
+  - {name: Flatiron Health, ats: greenhouse, token: flatironhealth, tags: [ai-adopter, healthcare, data-platform], poll_batch: image-leads-02}
+  - {name: Truveta, ats: greenhouse, token: truveta, tags: [ai-native, healthcare, data-platform], poll_batch: image-leads-02}
+  - {name: Verana Health, ats: greenhouse, token: veranahealth, tags: [ai-adopter, healthcare, data-platform], poll_batch: image-leads-02}
+  - {name: PointClickCare, ats: lever, token: pointclickcare, tags: [ai-adopter, healthcare], poll_batch: image-leads-02}
+  - {name: Relay Therapeutics, ats: greenhouse, token: relaytherapeutics, tags: [ai-adopter, healthcare], poll_batch: image-leads-02}
+  - {name: Ginkgo Bioworks, ats: greenhouse, token: ginkgobioworks, tags: [ai-adopter, healthcare], poll_batch: image-leads-02}
+  - {name: Ro, ats: lever, token: ro, aliases: [Ro Health, ro.co], tags: [ai-adopter, healthcare], poll_batch: image-leads-02}
+  - {name: Included Health, ats: lever, token: includedhealth, aliases: [Grand Rounds], tags: [ai-adopter, healthcare], poll_batch: image-leads-02}
+  - {name: Oscar Health, ats: greenhouse, token: oscar, aliases: [Oscar, OSCR], tags: [ai-native, healthcare], poll_batch: image-leads-02}
+  - {name: Clover Health, ats: greenhouse, token: cloverhealth, aliases: [CLOV], tags: [ai-native, healthcare], poll_batch: image-leads-02}
+  - {name: NextGen Healthcare, ats: workday, token: nextgen, aliases: [NextGen], host: nextgen.wd5.myworkdayjobs.com, site: NextGen_Careers, tags: [ai-adopter, healthcare], poll_batch: image-leads-02}
+  - {name: Noom, ats: greenhouse, token: noomgrowth, aliases: [Noom Inc], tags: [ai-adopter, healthcare], poll_batch: image-leads-02}
 
   # ---- Verified AI company expansion (opt-in batches) ----
   # Dated evidence and unsupported-board results live only in the private catalog.

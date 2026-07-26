@@ -96,6 +96,74 @@ def _core_row(r):
     return (r["title"], r["url"], r["location"], r["posted_at"])
 
 
+class LocationFidelityTests(unittest.TestCase):
+    def test_ashby_appends_foreign_country_to_bare_city(self):
+        payload = {"jobs": [{
+            "id": "ax-foreign", "title": "Backend Engineer", "location": "Belgrade",
+            "address": {"postalAddress": {
+                "addressLocality": "Belgrade", "addressCountry": "Serbia",
+            }},
+        }]}
+        rows = pp.parse_ashby(json.dumps(payload).encode())
+        self.assertEqual(rows[0]["location"], "Belgrade, Serbia")
+
+    def test_ashby_keeps_us_secondary_locations_unchanged(self):
+        payload = {"jobs": [{
+            "id": "ax-us", "title": "Platform Engineer", "location": "San Francisco, CA",
+            "address": {"postalAddress": {
+                "addressLocality": "San Francisco", "addressRegion": "CA",
+                "addressCountry": "United States",
+            }},
+            "secondaryLocations": [
+                {"location": "New York, NY"}, {"location": "Austin, TX"},
+            ],
+        }]}
+        rows = pp.parse_ashby(json.dumps(payload).encode())
+        self.assertEqual(
+            rows[0]["location"],
+            "San Francisco, CA / New York, NY, Austin, TX",
+        )
+
+    def test_lever_prefers_multiple_all_locations(self):
+        payload = [{
+            "id": "lv-us", "text": "Site Reliability Engineer", "country": "US",
+            "categories": {
+                "location": "United States",
+                "allLocations": [
+                    "United States", "San Diego, California", "Dallas, Texas",
+                ],
+            },
+        }]
+        rows = pp.parse_lever(json.dumps(payload).encode())
+        self.assertEqual(
+            rows[0]["location"],
+            "United States / San Diego, California / Dallas, Texas",
+        )
+
+    def test_lever_appends_iso_country_name(self):
+        payload = [{
+            "id": "lv-gr", "text": "Software Engineer", "country": "GR",
+            "categories": {"location": "Athens"},
+        }]
+        rows = pp.parse_lever(json.dumps(payload).encode())
+        self.assertEqual(rows[0]["location"], "Athens, Greece")
+
+    def test_apple_pairs_each_location_with_its_country(self):
+        payload = {"res": {"searchResults": [{
+            "positionId": "200599999", "postingTitle": "Software Engineer",
+            "locations": [
+                {"name": "San Francisco", "countryName": "United States of America"},
+                {"name": "New York", "countryName": "United States of America"},
+            ],
+        }]}}
+        rows = pp.parse_apple(json.dumps(payload).encode())
+        self.assertEqual(
+            rows[0]["location"],
+            "San Francisco, United States of America / "
+            "New York, United States of America",
+        )
+
+
 class _IsolatedCapture(unittest.TestCase):
     def setUp(self):
         self._prior = os.environ.get("JOBHUNT_DATA_ROOT")

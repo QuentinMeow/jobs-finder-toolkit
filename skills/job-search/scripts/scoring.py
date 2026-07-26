@@ -45,6 +45,22 @@ _BROAD_DOMAIN_TOKENS = frozenset({
 # ambiguity is sent to review (conservative) rather than silently accepted; an
 # explicit manager/director/VP/"head of" title is still a hard exclude above.
 _AMBIGUOUS_LEADERSHIP_RE = re.compile(r"\b(lead|leader|leadership)\b")
+# A trailing "… Manager" that follows a comma or a spaced dash is frequently a
+# PRODUCT name (Palantir "Mission Manager", OpenAI "Ads Manager"), not a
+# people-management scope. Captured as a narrow, delimited FINAL segment so an
+# otherwise-IC engineering title is not silently hard-dropped by the `manager`
+# exclude — it is routed to `review` (never an outright match; see assess_title).
+_MANAGER_PRODUCT_SUFFIX_RE = re.compile(
+    r"(?:,\s*|\s[-\u2013\u2014]\s+)"
+    r"(?P<suffix>[^,;/|]+?\bmanager(?:\s*\([^)]*\))?)\s*$",
+    re.I,
+)
+# Suffixes that ARE a definite management occupation keep the hard drop.
+_DEFINITE_MANAGER_ROLE_SUFFIX_RE = re.compile(
+    r"\b(?:engineering|software\s+development|product|project|program|people|"
+    r"team|technical|lead|senior|delivery|operations?|hiring|line)\s+manager\b",
+    re.I,
+)
 _EARLY_CAREER_RE = re.compile(
     r"\b(?:new\s+(?:college\s+)?grad(?:uate)?|"
     r"graduate\s+(?:software\s+)?engineer)\b",
@@ -109,13 +125,37 @@ def _title_has_role(ntitle: str) -> bool:
         fam in ntitle for fam in _STANDALONE_ROLE_FAMILIES)
 
 
+def _is_ambiguous_manager_product_suffix(title: str | None,
+                                         include: list[str]) -> bool:
+    """True when a delimited trailing ``… Manager`` is likely a PRODUCT name.
+
+    Narrowly guards the recall gap where an IC engineering title — whose PREFIX
+    matches a role-bearing profile include term (e.g. "Software Engineer") — ends
+    in a comma/dash-delimited ``… Manager`` segment that is NOT a definite
+    management occupation (Engineering/Project/Program/Product/Tech-Lead/… Manager).
+    Such a title (Palantir "… Mission Manager", OpenAI "… Ads Manager") is routed
+    to ``review`` instead of the hard ``manager`` exclude. Returns ``review``
+    eligibility only — never an outright match.
+    """
+    raw = title or ""
+    m = _MANAGER_PRODUCT_SUFFIX_RE.search(raw)
+    if not m:
+        return False
+    if _DEFINITE_MANAGER_ROLE_SUFFIX_RE.search(normalize(m.group("suffix"))):
+        return False
+    prefix = normalize(raw[:m.start()])
+    return any(_is_role_bearing(t) and term_matches(t, prefix) for t in include)
+
+
 def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
     """Canonical tri-state title/role assessment shared by production + corpus.
 
-    Precedence: explicit exclude family (manager/director/…) -> generic
-    non-technical-occupation lexicon -> not-included/broad-domain-without-role
+    Precedence: explicit exclude family (manager/director/…) — except a narrow
+    `manager`-only product-name suffix ambiguity, which is downgraded to review —
+    -> generic non-technical-occupation lexicon -> not-included/broad-domain-without-role
     residual (-> review, `title.occupation_ambiguous`) -> leadership ambiguity
-    (review) -> match. Only (i) an explicit profile exclude and (ii) a definite
+    (review) -> match. Only (i) an explicit profile exclude (outside that narrow
+    ambiguity) and (ii) a definite
     non-technical-occupation lexicon hit are hard `no_match` (Decision 3a); every
     other title that is neither a clean include match nor one of those two stays
     a `review` row so JD semantics are never lost to a silent hard drop. The
@@ -142,6 +182,16 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
             and "new grad" not in [normalize(term) for term in excluded]):
         excluded.append("new grad")
     if excluded:
+        # Narrow exception: when `manager` is the SOLE exclusion reason and the
+        # title is an IC-role prefix + a delimited product-name "… Manager"
+        # suffix, route to conservative `review` rather than a hard drop (a real
+        # recall gap for roles like "Software Engineer - Mission Manager").
+        if ({normalize(t) for t in excluded} == {"manager"}
+                and _is_ambiguous_manager_product_suffix(title, include)):
+            return _title_result(
+                "review", level, level_signal,
+                rule_ids=["title.manager_product_suffix_ambiguous"],
+                review_reasons=["title_manager_product_suffix_ambiguous"])
         return _title_result(
             "no_match", level, level_signal,
             rule_ids=[f"title.excluded.{normalize(t)}" for t in excluded])

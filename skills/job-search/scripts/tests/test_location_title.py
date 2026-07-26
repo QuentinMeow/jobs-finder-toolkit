@@ -11,7 +11,7 @@ for _path in (_SCRIPTS, _SCRIPTS / "_vendor"):
         sys.path.insert(0, str(_path))
 
 from common import JobPosting  # noqa: E402
-from location import classify_location  # noqa: E402
+from location import assess_location, classify_location  # noqa: E402
 from scoring import assess_title, location_ok, title_ok  # noqa: E402
 
 
@@ -36,6 +36,54 @@ PROFILE_REMOTE_PREFERRED = {
         "require_match": True,
     }
 }
+
+
+class WeirdLocationFormatTests(unittest.TestCase):
+    POLICY = {
+        "metro": ["seattle"],
+        "allow_us_remote": True,
+        "us_only": True,
+        "require_match": True,
+    }
+
+    def test_region_bucket_only_location_gets_distinct_review_reason(self):
+        assessment = assess_location("West", self.POLICY)
+        self.assertEqual(assessment.decision, "review")
+        self.assertIn("weird_location_format", assessment.review_reasons)
+        self.assertNotIn("unclassified_location", assessment.review_reasons)
+
+    def test_known_geographies_keep_their_existing_decisions(self):
+        cases = (
+            ("Seattle, WA", "metro", "match"),
+            ("United States (Remote)", "us_remote", "match"),
+            ("London, United Kingdom", "foreign", "no_match"),
+        )
+        for raw, category, decision in cases:
+            with self.subTest(raw=raw):
+                assessment = assess_location(raw, self.POLICY)
+                self.assertEqual(assessment.category, category)
+                self.assertEqual(assessment.decision, decision)
+                self.assertNotIn(
+                    "weird_location_format", assessment.review_reasons)
+
+    def test_established_region_and_workplace_signals_are_not_relabelled(self):
+        for raw, decision in (
+            ("EMEA", "no_match"),
+            ("APAC", "no_match"),
+            ("NAMER", "match"),
+            ("Americas", "match"),
+            ("Global Region", "match"),
+        ):
+            with self.subTest(raw=raw):
+                assessment = assess_location(raw, self.POLICY)
+                self.assertEqual(assessment.decision, decision)
+                self.assertNotIn(
+                    "weird_location_format", assessment.review_reasons)
+
+        assessment = assess_location(
+            "West", self.POLICY, workplace_hint="remote")
+        self.assertEqual(assessment.decision, "match")
+        self.assertNotIn("weird_location_format", assessment.review_reasons)
 
 
 def _posting(location, *, title="Senior Software Engineer", remote="", source="board"):
@@ -232,6 +280,86 @@ class TitleRoleGuardTests(unittest.TestCase):
             title="Capital Markets Infrastructure Financing Associate",
             url="https://example.test/jobs/fin")
         self.assertFalse(title_ok(finance, {"titles": self.TITLES}))
+
+
+class ManagerProductSuffixTests(unittest.TestCase):
+    """A delimited trailing PRODUCT-name "… Manager" on an IC-role title is
+    routed to `review` (not hard-dropped by the `manager` exclude); genuine
+    management titles and any co-occurring exclude (staff/principal/…) still
+    hard-drop. Regression for the 2026-07-25 title-gate false-negative audit
+    (Palantir "… Mission Manager", OpenAI "… Ads Manager")."""
+
+    TITLES = {
+        "include": [
+            "software engineer", "infrastructure engineer", "platform engineer",
+            "infrastructure", "platform", "compute",
+        ],
+        "exclude": ["staff", "principal", "manager", "director", "head of", "vp"],
+        "exclude_neutralize": ["member of technical staff"],
+    }
+
+    def _assess(self, title):
+        return assess_title(title, self.TITLES)
+
+    def test_product_manager_suffix_comma_is_reviewed(self):
+        a = self._assess("Software Engineer, Ads Manager")
+        self.assertEqual(a["decision"], "review")
+        self.assertIn("title.manager_product_suffix_ambiguous", a["rule_ids"])
+        self.assertIn(
+            "title_manager_product_suffix_ambiguous", a["review_reasons"])
+
+    def test_product_manager_suffix_dash_variants_are_reviewed(self):
+        for dash in ("-", "\u2013", "\u2014"):
+            with self.subTest(dash=dash):
+                self.assertEqual(
+                    self._assess(f"Software Engineer {dash} Mission Manager")[
+                        "decision"], "review")
+
+    def test_infra_engineer_product_manager_suffix_is_reviewed(self):
+        self.assertEqual(
+            self._assess("Infrastructure Engineer, Secrets Manager")["decision"],
+            "review")
+
+    def test_plain_manager_title_stays_no_match(self):
+        self.assertEqual(self._assess("Engineering Manager")["decision"], "no_match")
+
+    def test_definite_manager_suffix_stays_no_match(self):
+        for title in (
+            "Software Engineer - Product Manager",
+            "Software Engineer - Program Manager",
+            "Software Engineer, Engineering Manager",
+            "Software Engineer - Technical Project Manager",
+        ):
+            with self.subTest(title=title):
+                self.assertEqual(self._assess(title)["decision"], "no_match")
+
+    def test_staff_dominates_manager_product_suffix(self):
+        # `staff` is an independent exclude, so the manager-only exception cannot fire.
+        self.assertEqual(
+            self._assess("Staff Software Engineer, Lakebase Manager")["decision"],
+            "no_match")
+
+    def test_engineer_manager_without_delimiter_stays_no_match(self):
+        # "Engineer Manager" (no comma/dash before Manager, not the final segment)
+        # is a real engineering-manager shape, not a product suffix.
+        self.assertEqual(
+            self._assess("Software Engineer Manager, Developer Foundation")[
+                "decision"], "no_match")
+
+    def test_project_manager_prefix_stays_no_match(self):
+        self.assertEqual(
+            self._assess(
+                "Technical Project Manager / IT Infrastructure Engineer")[
+                "decision"], "no_match")
+
+    def test_title_ok_keeps_the_reviewed_product_manager_role(self):
+        posting = JobPosting(
+            source="board", company="Example",
+            title="Software Engineer - Mission Manager",
+            url="https://example.test/jobs/mm")
+        self.assertTrue(title_ok(posting, {"titles": self.TITLES}))
+        self.assertIn(
+            "title_manager_product_suffix_ambiguous", posting.review_reasons)
 
 
 if __name__ == "__main__":

@@ -143,6 +143,14 @@ def parse_ashby(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
         if j.get("isListed") is False:
             continue
         loc = j.get("location", "") or ""
+        postal = ((j.get("address") or {}).get("postalAddress") or {})
+        country = (postal.get("addressCountry") or "").strip()
+        region = (postal.get("addressRegion") or "").strip()
+        if (country and country.casefold() != "united states"
+                and country.casefold() not in loc.casefold()):
+            suffix = [x for x in (region, country)
+                      if x.casefold() not in loc.casefold()]
+            loc = ", ".join(x for x in (loc, *suffix) if x)
         sec = j.get("secondaryLocations") or []
         if sec:
             extra = ", ".join(s.get("location", "") for s in sec if s.get("location"))
@@ -166,6 +174,80 @@ def parse_ashby(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
     return out
 
 
+_LEVER_COUNTRY_NAMES = {
+    "GB": "United Kingdom",
+    "DE": "Germany",
+    "FR": "France",
+    "CA": "Canada",
+    "IN": "India",
+    "SG": "Singapore",
+    "AU": "Australia",
+    "IE": "Ireland",
+    "NL": "Netherlands",
+    "ES": "Spain",
+    "PT": "Portugal",
+    "PL": "Poland",
+    "IT": "Italy",
+    "BR": "Brazil",
+    "MX": "Mexico",
+    "JP": "Japan",
+    "KR": "South Korea",
+    "CN": "China",
+    "IL": "Israel",
+    "CH": "Switzerland",
+    "SE": "Sweden",
+    "DK": "Denmark",
+    "RO": "Romania",
+    "PH": "Philippines",
+    "AR": "Argentina",
+    "CO": "Colombia",
+    "NG": "Nigeria",
+    "KE": "Kenya",
+    "NZ": "New Zealand",
+    "VN": "Vietnam",
+    "ID": "Indonesia",
+    "MY": "Malaysia",
+    "AE": "United Arab Emirates",
+    "GR": "Greece",
+    "UA": "Ukraine",
+    "TR": "Turkey",
+    "EG": "Egypt",
+    "ZA": "South Africa",
+    "CZ": "Czech Republic",
+    "RS": "Serbia",
+    "FI": "Finland",
+    "AT": "Austria",
+    "EE": "Estonia",
+    "LV": "Latvia",
+    "LT": "Lithuania",
+    "QA": "Qatar",
+    "SA": "Saudi Arabia",
+    "IS": "Iceland",
+    "NO": "Norway",
+    "HU": "Hungary",
+    "HK": "Hong Kong",
+    "CL": "Chile",
+    "CR": "Costa Rica",
+    "TW": "Taiwan",
+    "TH": "Thailand",
+    "LU": "Luxembourg",
+    "SK": "Slovakia",
+    "SI": "Slovenia",
+    "HR": "Croatia",
+    "BG": "Bulgaria",
+    "BE": "Belgium",
+    "PK": "Pakistan",
+    "BD": "Bangladesh",
+    "LK": "Sri Lanka",
+    "UY": "Uruguay",
+    "EC": "Ecuador",
+    "GT": "Guatemala",
+    "PA": "Panama",
+    "KW": "Kuwait",
+    "BH": "Bahrain",
+}
+
+
 def parse_lever(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
     data = _loads(payload_bytes)
     if not isinstance(data, list):
@@ -175,6 +257,15 @@ def parse_lever(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
         if not isinstance(j, dict):
             continue
         cats = j.get("categories") or {}
+        loc = cats.get("location", "") or ""
+        all_locs = [x.strip() for x in (cats.get("allLocations") or [])
+                    if isinstance(x, str) and x.strip()]
+        if len(all_locs) > 1:
+            loc = " / ".join(dict.fromkeys(all_locs))
+        country = _LEVER_COUNTRY_NAMES.get(
+            str(j.get("country") or "").strip().upper())
+        if country and country.casefold() not in loc.casefold():
+            loc = f"{loc}, {country}" if loc else country
         rng = j.get("salaryRange") or {}
         salary = None
         salary_range = None
@@ -193,7 +284,7 @@ def parse_lever(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
             native_id=j.get("id"),
             title=j.get("text", ""),
             url=j.get("hostedUrl") or j.get("applyUrl", ""),
-            location=cats.get("location", "") or "",
+            location=loc,
             posted_at=j.get("createdAt"),
             description="\n\n".join(part for part in (
                 j.get("descriptionPlain") or strip_html(j.get("description")),
@@ -380,10 +471,14 @@ def parse_apple(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
     for j in results:
         pid = str(j.get("positionId") or "")
         locs = j.get("locations") or []
-        loc = " / ".join(x.get("name", "") for x in locs
-                         if isinstance(x, dict) and x.get("name"))
-        country = " / ".join(x.get("countryName", "") for x in locs
-                             if isinstance(x, dict) and x.get("countryName"))
+        loc_parts = []
+        for x in locs:
+            if not isinstance(x, dict) or not x.get("name"):
+                continue
+            name = x["name"]
+            country = x.get("countryName")
+            loc_parts.append(f"{name}, {country}" if country else name)
+        loc = " / ".join(loc_parts)
         slug = j.get("transformedPostingTitle") or ""
         team = (j.get("team") or {}).get("teamCode", "")
         url = f"https://jobs.apple.com/en-us/details/{pid}/{slug}"
@@ -394,7 +489,7 @@ def parse_apple(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
             native_id=pid or None,
             title=j.get("postingTitle", ""),
             url=url if pid else "",
-            location=f"{loc} {country}".strip(),
+            location=loc,
             posted_at=_flex_date(j.get("postingDate")),
             description=strip_html(j.get("jobSummary")),
             workplace_raw=("remote" if j.get("homeOffice") else None),
