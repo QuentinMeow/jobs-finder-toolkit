@@ -124,6 +124,7 @@ Claude Code plugin marketplace via
 - `company-research` — deep company + role research and an interview question bank
 - `email-assistant` — read personal Outlook mail and create job-context reply drafts; never sends
 - `gardener` — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
+- `search-recall-audit` — spot-check whether job-search silently missed or over-kept matching roles
 
 ## Repo layout
 

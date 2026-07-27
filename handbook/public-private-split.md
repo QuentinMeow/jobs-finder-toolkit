@@ -21,9 +21,11 @@ frontmatter:
 
 - **PUBLIC skills** (SKILL.md + scripts are published; their generated PRODUCTS stay private):
   `ask-me-anything`, `job-search`, `resume-writer`, `application-tracker`,
-  `behavioral-interview-prep`, `company-research`, `email-assistant`, `gardener`.
-- **PRIVATE skill**: `coding-interview` — the ENTIRE skill (SKILL.md + product) lives only in
-  the private overlay and never ships in the public repo.
+  `behavioral-interview-prep`, `company-research`, `email-assistant`, `gardener`,
+  `search-recall-audit`.
+- **PRIVATE skills**: `coding-interview` and `coding-interview-cleanup` — both ENTIRE skills
+  (SKILL.md + scripts/assets/evals and products) live only in the private overlay and never ship
+  in the public repo.
 
 **PRODUCTS are always private** and mount under `private/`: anything tied to real jobs, the
 candidate's background, or dated/time-sensitive info — the real applications
@@ -51,6 +53,6 @@ exporter (`export_public.py`) always runs it against the copied tree as the fina
 
 **Routing**: skills are discovered by listing `skills/` — the skills table in
 `handbook/repo-map.md` names only the PUBLIC ones that ship in the repo. The private
-`coding-interview` skill appears in `skills/` via a git-ignored symlink that
-`automation/bootstrap_overlay.py` creates, so it stays discoverable whenever the overlay is
+coding-interview skills appear in `skills/` via git-ignored symlinks that
+`automation/bootstrap_overlay.py` creates, so they stay discoverable whenever the overlay is
 mounted.
