@@ -60,6 +60,7 @@ def prepare_context(data: dict) -> dict:
             ("contact_line", ""),
             ("summary_bullets", []),
             ("education_line", ""),
+            ("education_dates", ""),
             ("skills", []),
             ("employers", []),
         )
@@ -194,27 +195,55 @@ def _build_emp_header(template_elem, left, right, tab_pos):
     return new_p
 
 
-def _rebuild_edu(edu_para, edu_line):
-    """Rebuild education paragraph: bold 'Education:' + normal content."""
+def _rebuild_edu(edu_para, edu_line, edu_dates="", tab_pos=None):
+    """Rebuild education paragraph: bold 'Education:' + content.
+
+    Content honors '**bold**' markers (e.g. to bold the school). When
+    ``edu_dates`` is given, it is right-aligned at the right margin via a
+    right-tab stop (mirrors the employer header), so a date range sits flush
+    right on the same line. With no ``edu_dates`` the layout is unchanged.
+    """
     runs = edu_para.findall(qn("w:r"))
     bold_rpr = deepcopy(runs[0].find(qn("w:rPr"))) if runs else None
     normal_rpr = deepcopy(runs[1].find(qn("w:rPr"))) if len(runs) > 1 else None
     for r in runs:
         edu_para.remove(r)
 
-    r1 = etree.SubElement(edu_para, qn("w:r"))
-    if bold_rpr is not None:
-        r1.insert(0, bold_rpr)
-    t1 = etree.SubElement(r1, qn("w:t"))
-    t1.text = "Education:"
-    t1.set(XML_SPACE, "preserve")
+    right_aligned = bool(edu_dates) and tab_pos is not None
+    if right_aligned:
+        ppr = edu_para.find(qn("w:pPr"))
+        if ppr is None:
+            ppr = etree.Element(qn("w:pPr"))
+            edu_para.insert(0, ppr)
+        for old_tabs in ppr.findall(qn("w:tabs")):
+            ppr.remove(old_tabs)
+        tabs = etree.Element(qn("w:tabs"))
+        tab = etree.SubElement(tabs, qn("w:tab"))
+        tab.set(qn("w:val"), "right")
+        tab.set(qn("w:pos"), str(tab_pos))
+        ppr.insert(0, tabs)  # w:tabs must precede w:spacing/w:rPr in CT_PPr order
 
-    r2 = etree.SubElement(edu_para, qn("w:r"))
-    if normal_rpr is not None:
-        r2.insert(0, normal_rpr)
-    t2 = etree.SubElement(r2, qn("w:t"))
-    t2.text = f" {edu_line}"
-    t2.set(XML_SPACE, "preserve")
+    def _run(text, rpr, is_tab=False):
+        r = etree.SubElement(edu_para, qn("w:r"))
+        if rpr is not None:
+            r.insert(0, deepcopy(rpr))
+        if is_tab:
+            etree.SubElement(r, qn("w:tab"))
+        else:
+            t = etree.SubElement(r, qn("w:t"))
+            t.text = text
+            t.set(XML_SPACE, "preserve")
+
+    _run("Education:", bold_rpr)
+    for seg, is_bold in _split_bold(f" {edu_line}"):
+        rpr = deepcopy(normal_rpr) if normal_rpr is not None else etree.Element(qn("w:rPr"))
+        if is_bold and rpr.find(qn("w:b")) is None:
+            rpr.insert(0, etree.Element(qn("w:b")))
+        _run(seg, rpr)
+
+    if right_aligned:
+        _run("", normal_rpr, is_tab=True)
+        _run(edu_dates, normal_rpr)
 
 
 def _rebuild_skills(skills_para, skills_data):
@@ -297,7 +326,8 @@ def render_from_reference(ref_path: Path, data: dict, output_path: Path):
     # ── Education & Skills ──
     edu_content = [i for i in range(edu_i + 1, exp_i) if texts[i].strip()]
     if edu_content:
-        _rebuild_edu(all_p[edu_content[0]], ctx["education_line"])
+        _rebuild_edu(all_p[edu_content[0]], ctx["education_line"],
+                     ctx.get("education_dates", ""), _right_tab_pos(body))
     if len(edu_content) > 1:
         _rebuild_skills(all_p[edu_content[1]], ctx["skills"])
 
