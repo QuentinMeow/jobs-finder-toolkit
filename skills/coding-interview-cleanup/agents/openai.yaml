@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coding Interview Cleanup"
+  short_description: "Organize screenshots and coach the full problem"
+  default_prompt: "Use $coding-interview-cleanup to organize this coding-interview problem and produce a coaching README."

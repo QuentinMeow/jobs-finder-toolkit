@@ -1,0 +1,68 @@
+# Canary set — coding-interview-cleanup skill
+# Grounded in skills/coding-interview-cleanup/SKILL.md: preserve originals first, resume
+# half-cleaned folders, retain exact screenshot text, remove redundant working images,
+# use stable problem names, and produce an interviewer-ready coaching README.
+# Run per evals/README.md; judge per evals/rubrics/judging.md.
+skill: coding-interview-cleanup
+default_setup: >
+  Use a disposable coding-problem fixture containing raster screenshots. The fixture may live
+  under tmp/ and must contain no personal data. No network or private overlay is required.
+
+canaries:
+  - id: cic-fresh-messy-screenshots
+    requires_overlay: false
+    prompt: "Clean up this coding-interview screenshot folder. Back up everything first, remove duplicates from the study set, crop the prompt and starter code, use meaningful names, and explain the problem in a README."
+    setup: >
+      Provide a disposable folder named level_1 with at least three loose screenshots: a full
+      prompt capture, a starter-code capture, and one exact or near-duplicate capture.
+    expected_behavior:
+      - "Creates and checksum-verifies a lossless originals backup before renaming, cropping, or removing any source from the working set."
+      - "Uses exact crops of source pixels, separates question_description/ from code_setup/, and rejects regenerated or retyped prompt text."
+      - "Removes exact and semantic duplicates from the active study set while retaining every unique original in the archival backup."
+      - "Renames the problem folder, solution files, and curated images by stable purpose rather than leaving level_1 as the problem identity."
+      - "Produces a coaching README with the reconstructed contract, required functions, solution, examples, pseudocode, complexity, pitfalls, follow-ups, and recovery map."
+      - "Runs the cleanup audit and reports backup counts, curated-image counts, and any ambiguity rather than claiming success without inspection."
+    failure_modes:
+      - "Moves, edits, or deletes an original before a verified backup exists."
+      - "Uses image generation, OCR re-rendering, or retyped text as a substitute for an exact crop."
+      - "Treats stage or level numbering as the permanent name of the completed problem."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: cic-resume-half-cleaned-folder
+    requires_overlay: false
+    prompt: "Continue cleaning this interview problem from where the previous pass stopped. Some originals are already backed up and some crops and names are already good. Do not redo or lose correct work."
+    setup: >
+      Provide a disposable stable-slug problem folder with a valid originals_backup manifest,
+      two curated prompt crops, one loose redundant screenshot, and an incomplete README.
+    expected_behavior:
+      - "Audits existing backup, checksums, curated images, names, and README before changing anything."
+      - "Preserves valid backups and purpose-specific crops, adds only missing unique originals, and does not create backup-of-backup recursion."
+      - "Finishes only the incomplete work, removes redundant loose working images after verification, and updates the existing README rather than discarding useful content."
+      - "A second invocation is a safe no-op except for deterministic manifest refreshes or genuinely new inputs."
+      - "Runs the final audit and leaves one intentional archival copy plus one purpose per active image."
+    failure_modes:
+      - "Starts over, overwrites a good crop, or replaces an intact archival backup."
+      - "Creates numbered duplicate backups or treats archived originals as active-study duplicates."
+      - "Claims idempotence without actually running the helper or comparing hashes."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: cic-coaching-guide-from-progressive-prompt
+    requires_overlay: false
+    prompt: "Turn these progressive coding-question screenshots and the completed solution into a study guide. The folder still uses the first stage's name even though the problem is complete."
+    setup: >
+      Provide a disposable folder with prompt crops for several progressive stages, a completed
+      runnable solution, a valid originals backup, and a short image-manifest README.
+    expected_behavior:
+      - "Reconstructs one complete problem while preserving stage labels only where they describe genuine requirement progression."
+      - "Derives the README from both the prompt images and implementation, clearly separating visible requirements from inferred coaching follow-ups."
+      - "Explains the required functions, invariants, high-level data structures, representative boundary examples, pseudocode, and time/space complexity accurately."
+      - "Includes likely interviewer follow-ups with concise answers and retains the image manifest and recovery instructions."
+      - "Renames the problem and solution to a stable descriptive slug without changing working solution logic, then reruns its available tests."
+    failure_modes:
+      - "Leaves the full problem identified only as level_1 or another temporary progression label."
+      - "Invents prompt requirements or presents speculative follow-ups as source-grounded requirements."
+      - "Rewrites the user's algorithm unnecessarily while performing an organization task."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]

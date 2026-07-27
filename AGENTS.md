@@ -36,7 +36,7 @@ data in the public tree** — it ships only the fake "Jordan Rivers" example.
 **Skill visibility** is a `visibility: public|private` key in each `SKILL.md`. **PUBLIC skills**
 (SKILL.md + scripts published; PRODUCTS stay private): `ask-me-anything`, `job-search`,
 `resume-writer`, `application-tracker`, `behavioral-interview-prep`, `company-research`,
-`email-assistant`, `gardener`, `search-recall-audit`. **PRIVATE skill**: `coding-interview` — the entire skill
+`coding-interview-cleanup`, `email-assistant`, `gardener`, `search-recall-audit`. **PRIVATE skill**: `coding-interview` — the entire skill
 lives only in the overlay.
 
 **PRODUCTS are always private** and mount under `private/` (real applications, discoveries,
@@ -94,6 +94,7 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
    it points you there. Route by need: `ask-me-anything` (new user / how it works / where to start),
    `job-search` (find/filter postings), `resume-writer` (tailoring), `application-tracker` (status),
    `behavioral-interview-prep`, `company-research` (company/role research + question bank),
+   `coding-interview-cleanup` (organize coding screenshots and build a coaching guide),
    `email-assistant` (read personal Outlook mail, create repository-grounded reply drafts),
    `search-recall-audit` (spot-check whether job-search is missing/over-keeping roles).
    Private `coding-interview` is at `skills/coding-interview/` when the overlay is mounted.
