@@ -31,13 +31,13 @@ data in the public tree** — it ships only the fake "Jordan Rivers" example.
   `config.example.yaml` is the tracked placeholder.
 - **Private overlay repo** — its own git repo, mounted at the git-ignored `private/` dir;
   `config.yaml` points `paths.*` into it (real identity, profile, baseline, reference DOCX,
-  applications, interviews, private `coding-interview` skill). See `handbook/private-overlay.md`.
+  applications, interviews, private coding-interview skills). See `handbook/private-overlay.md`.
 
 **Skill visibility** is a `visibility: public|private` key in each `SKILL.md`. **PUBLIC skills**
 (SKILL.md + scripts published; PRODUCTS stay private): `ask-me-anything`, `job-search`,
 `resume-writer`, `application-tracker`, `behavioral-interview-prep`, `company-research`,
-`coding-interview-cleanup`, `email-assistant`, `gardener`, `search-recall-audit`. **PRIVATE skill**: `coding-interview` — the entire skill
-lives only in the overlay.
+`email-assistant`, `gardener`, `search-recall-audit`. **PRIVATE skills**: `coding-interview`
+and `coding-interview-cleanup` — both entire skills live only in the overlay.
 
 **PRODUCTS are always private** and mount under `private/` (real applications, discoveries,
 company-level cache, interviews, profile/baseline/reference DOCX); only the fake `examples/**`
@@ -47,7 +47,7 @@ to `config.yaml`/the profile; residual personal skill guidance goes in a git-ign
 guard** (`automation/publish/check_public.py`) hardcodes NO identity — it derives personal tokens from
 `config.yaml`/overlay/`JOBHUNT_PERSONAL_TOKENS` and scans text + `.docx`/`.pdf`; `export_public.py`
 runs it as the final publish gate. Routing: skills are discovered by listing `skills/`;
-private `coding-interview` appears via a git-ignored symlink `automation/bootstrap_overlay.py` creates.
+private coding-interview skills appear via git-ignored symlinks `automation/bootstrap_overlay.py` creates.
 Full detail: `handbook/public-private-split.md`.
 
 ## Configuration
@@ -74,7 +74,7 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
 | `config.profile_md_path()` / `config.baseline_path()` | Candidate profile (source of truth for tailoring) / canonical transcription of the approved resume (start point for every `tailored.yaml`) |
 | `skills/job-search/companies.yaml` | Canonical **public** registry (company identity, ATS config, tags); candidate blacklist rows live in git-ignored `private/job-search/blacklist.yaml` |
 | `config.applications_root()` / `config.discoveries_dir()` | All applications in numbered status folders `0_profile`…`6_drafted` (the folder is the derived overall status) / ad-hoc job-search research |
-| `skills/` | Canonical skills dir (PUBLIC skills — see Public vs Private; private `coding-interview` via symlink) |
+| `skills/` | Canonical skills dir (PUBLIC skills — see Public vs Private; private coding-interview skills via symlinks) |
 | `automation/` (shared, vendoring, maintenance, metrics, publish, store, reconcile, hooks) | Everything that runs: canonical toolkit modules, vendoring, gardener, metrics, leak guard, store tools, the reconciler, tracked git hooks |
 | `templates/` | **Single source of truth for every process-file schema** — copy one to create any queue/task/memory item (`templates/README.md`) |
 | `roadmap/` | `desired-state.md` vs `current-state.md` — the gap between them is the backlog's source |
@@ -89,7 +89,7 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
 
 1. Read this file first for repo orientation. Open the `handbook/` doc a section points to on
    demand — command cookbook, full directory table, detailed policies (index: `handbook/README.md`).
-2. Read the relevant PUBLIC skill before working. Skills are **quickstart-first**: the SKILL.md
+2. Read the relevant skill before working. Skills are **quickstart-first**: the SKILL.md
    routine path handles the common case; open a skill's `reference.md` (and the handbook) only when
    it points you there. Route by need: `ask-me-anything` (new user / how it works / where to start),
    `job-search` (find/filter postings), `resume-writer` (tailoring), `application-tracker` (status),
@@ -97,7 +97,8 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
    `coding-interview-cleanup` (organize coding screenshots and build a coaching guide),
    `email-assistant` (read personal Outlook mail, create repository-grounded reply drafts),
    `search-recall-audit` (spot-check whether job-search is missing/over-keeping roles).
-   Private `coding-interview` is at `skills/coding-interview/` when the overlay is mounted.
+   Private `coding-interview` and `coding-interview-cleanup` are available under `skills/` when
+   the overlay is mounted.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context, and skim `memory/index.md`
    (generated) — open only the entries relevant to your task.
 4. If your work changes overall architecture, read `roadmap/current-state.md` and

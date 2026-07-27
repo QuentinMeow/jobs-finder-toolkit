@@ -8,7 +8,7 @@ instead). This is the one-shot "make my checkout work" step referenced by
 
 What it does:
   (a) If the private overlay is mounted at ``private/``: symlink the private
-      ``coding-interview`` skill, each ``private/job-search-profiles/*.yaml``, and
+      coding-interview skills, each ``private/job-search-profiles/*.yaml``, and
       each public skill's ``private/skills/references_private/<skill>/`` directory
       into their canonical toolkit paths.
   (b) Always: install the tracked git hooks (``automation/hooks/pre-commit`` /
@@ -103,6 +103,8 @@ def _overlay_links(private: Path) -> list[tuple[Path, Path]]:
     links = [
         (REPO_ROOT / "skills/coding-interview",
          private / "skills/coding-interview"),
+        (REPO_ROOT / "skills/coding-interview-cleanup",
+         private / "skills/coding-interview-cleanup"),
     ]
     profiles = private / "job-search-profiles"
     if profiles.is_dir():

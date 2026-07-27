@@ -20,7 +20,7 @@ message:
      ``references_private/`` folder — candidate-specific skill content.
   4. Path/filename denylist (defense in depth). Any tracked path under a private
      product tree (``applications/``, ``interviews/``, ``.agents/inputs/``, the
-     private ``coding-interview`` skill), any non-markdown, non-example file under
+     private coding-interview skills), any non-markdown, non-example file under
      ``templates/`` (root templates/ = tracked process schemas), any
      ``meta.yaml`` outside ``examples/``, or any ``.docx`` /
      ``.pdf`` outside ``examples/``. This catches private trees even when zero
@@ -124,6 +124,7 @@ _DENY_TREES = [
     (re.compile(r"^interviews/"), "interviews/"),
     (re.compile(r"^\.agents/inputs/"), ".agents/inputs/"),
     (re.compile(r"^skills/coding-interview/"), "skills/coding-interview/"),
+    (re.compile(r"^skills/coding-interview-cleanup/"), "skills/coding-interview-cleanup/"),
 ]
 
 

@@ -3,13 +3,13 @@
 This toolkit is designed to be published **publicly** while everything tied to a
 real person or a real job hunt stays **private**. It ships as two layers:
 
-1. **PUBLIC toolkit repo** — timeless, general tooling only: the scripts, the eight
-   public skills, the company registry (identity only), a fake example candidate
+1. **PUBLIC toolkit repo** — timeless, general tooling only: the scripts, the public
+   skills, the company registry (identity only), a fake example candidate
    ("Jordan Rivers") under `examples/`, and `config.example.yaml`. Nothing here is
    tied to a real person or a dated posting.
 2. **PRIVATE overlay repo** — its **own git repo**, synced to a private GitHub
    remote, holding your real data: profile, resume baseline, reference DOCX,
-   applications, interviews, the private `coding-interview` skill, `config.yaml`,
+   applications, interviews, the private coding-interview skills, `config.yaml`,
    and your real job-search profile YAML(s).
 
 The overlay **mounts into a git-ignored `private/` directory** inside a public
@@ -23,7 +23,7 @@ git-ignored in the public repo, your real data is never committed to the public 
   every per-skill
   `skills/*/references_private/` folder, and the private product folders
   (`applications/`, `interviews/`, `templates/`, `.agents/inputs/`,
-  `skills/coding-interview/`). So you can work **in place** in a public
+  `skills/coding-interview/`, `skills/coding-interview-cleanup/`). So you can work **in place** in a public
   checkout: drop your private files at those paths (or under `private/` and point
   `config.yaml` at them) and git will refuse to track them. This layered source
   checkout may carry private products on a private branch; the public exporter
@@ -40,8 +40,8 @@ git-ignored in the public repo, your real data is never committed to the public 
   `private/leak_tokens.txt`, and the `JOBHUNT_PERSONAL_TOKENS` env var, and scans both
   text and `.docx`/`.pdf` content.
 - Skills are discovered by listing `skills/` (see `AGENTS.md`). The private
-  `coding-interview` skill appears there via a git-ignored symlink that
-  `automation/bootstrap_overlay.py` creates when the overlay is mounted — so it is
+  coding-interview skills appear there via git-ignored symlinks that
+  `automation/bootstrap_overlay.py` creates when the overlay is mounted — so they are
   discoverable **only** when the overlay is mounted.
 - `config.yaml`'s `paths.*` are resolved **relative to the config file's
   directory**, so you can point them at `private/…` (or anywhere) and swap the
@@ -72,7 +72,8 @@ my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 │       └── archive/
 ├── interviews/                # your real interview prep
 ├── skills/
-│   ├── coding-interview/      # the PRIVATE skill (SKILL.md + products)
+│   ├── coding-interview/      # private practice-generation skill
+│   ├── coding-interview-cleanup/ # private screenshot-cleanup/coaching skill
 │   └── references_private/    # candidate-specific references grouped by public skill
 │       └── resume-writer/     # symlinked to that skill's references_private/ folder
 └── job-search-profiles/
@@ -184,7 +185,9 @@ empty until you have content (e.g. your own private interview-prep skill).
 
    With `private/` mounted it symlinks (skipping any that already point correctly):
 
-   - `skills/coding-interview` → `private/skills/coding-interview` — the private skill;
+   - `skills/coding-interview` → `private/skills/coding-interview` — private practice generation;
+   - `skills/coding-interview-cleanup` → `private/skills/coding-interview-cleanup` — private
+     screenshot cleanup and coaching;
    - one link per `private/job-search-profiles/*.yaml` into
      `skills/job-search/profiles/` — then point `config.job_search.default_profile` at one;
    - one link per `private/skills/references_private/<skill>/` into

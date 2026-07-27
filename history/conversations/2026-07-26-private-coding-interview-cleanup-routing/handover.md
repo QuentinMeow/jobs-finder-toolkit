@@ -1,12 +1,14 @@
-# Handover — coding-interview cleanup publication
+# Handover — private coding-interview cleanup routing
 
 - **Date**: 2026-07-26
 - **Task(s)**: none
 
 ## What happened
 
-- Audited the public working tree and kept candidate-specific interview products out of it.
-- Added the reusable coding-interview cleanup skill, deterministic screenshot backup/audit helper, public canaries, and the recorded 3/3 passing canary result.
+- Relocated the complete coding-interview cleanup skill, helper, assets, canaries, and recorded
+  3/3 result to the private overlay; no cleanup implementation or eval evidence remains public.
+- Added public overlay discovery, ignore rules, leak-guard deny rules, and exporter assertions for
+  both private coding-interview skills.
 - Moved company-research acquisition commands and its output tree into a required reference file so the unchanged workflow fits the strict instruction budget.
 
 ## Where things stand

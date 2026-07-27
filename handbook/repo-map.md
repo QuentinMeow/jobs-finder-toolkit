@@ -57,7 +57,6 @@ support folders, not applications.
 | `skills/application-tracker/` | PUBLIC skill for application status and pipeline management |
 | `skills/behavioral-interview-prep/` | PUBLIC skill for behavioral interview story banks and STAR answers |
 | `skills/company-research/` | PUBLIC skill for researching a company + role for interviews (product, size, teams, values, stage, comp, WLB, ratings, visa) and drafting a hiring-manager/engineer question bank under `interviews/company-specific/<company>/company-info/` |
-| `skills/coding-interview-cleanup/` | PUBLIC skill for checksum-backed screenshot cleanup, stable problem naming, prompt/setup crops, and interview-coaching READMEs; generated interview products remain private |
 | `skills/email-assistant/` | PUBLIC draft-only personal email workflow (Outlook via Microsoft Graph today): reads mailbox messages, grounds suggested replies in the private job-hunt data, and creates Outlook drafts. OAuth tokens stay in the OS keyring; the skill has no send capability and consumes the mail layer only through its vendored copy. |
 | `skills/gardener/` | PUBLIC skill for dry-run-first memory hygiene, stale discovery expiry, log pruning, and pipeline health checks |
 | `skills/search-recall-audit/` | PUBLIC skill for sampling raw postings and tracing false-positive or false-negative search decisions to exact pipeline gates |

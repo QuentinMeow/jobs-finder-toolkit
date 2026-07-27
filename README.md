@@ -122,7 +122,6 @@ Claude Code plugin marketplace via
 - `application-tracker` — pipeline status, structured `meta.yaml` facts, notes, skip-logs
 - `behavioral-interview-prep` — project-based STAR story banks and reusable answers
 - `company-research` — deep company + role research and an interview question bank
-- `coding-interview-cleanup` — organize interview screenshots and build a coaching guide
 - `email-assistant` — read personal Outlook mail and create job-context reply drafts; never sends
 - `gardener` — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
 - `search-recall-audit` — spot-check whether job-search silently missed or over-kept matching roles

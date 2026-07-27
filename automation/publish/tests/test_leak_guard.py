@@ -277,13 +277,15 @@ class ExporterEndToEndTests(unittest.TestCase):
 
             # No private product trees leaked into the manifest.
             for bad in ("applications/", "interviews/",
-                        ".agents/inputs/", "skills/coding-interview/"):
+                        ".agents/inputs/", "skills/coding-interview/",
+                        "skills/coding-interview-cleanup/"):
                 offenders = [c for c in copied if c.startswith(bad)]
                 self.assertEqual(offenders, [], f"{bad} leaked: {offenders}")
 
             # references_private is pruned; the private skill is never copied.
             self.assertFalse([c for c in copied if "references_private" in c])
             self.assertFalse((dest / "skills/coding-interview").exists())
+            self.assertFalse((dest / "skills/coding-interview-cleanup").exists())
 
             # meta.yaml only under examples/; no stray docx/pdf outside examples/.
             for c in copied:
@@ -295,7 +297,8 @@ class ExporterEndToEndTests(unittest.TestCase):
             # The public .gitignore anchors the overlay mount + private trees.
             gitignore = (dest / ".gitignore").read_text()
             for needle in ("private/", "/applications/",
-                           "/interviews/", "/skills/coding-interview/"):
+                           "/interviews/", "/skills/coding-interview/",
+                           "/skills/coding-interview-cleanup/"):
                 self.assertIn(needle, gitignore)
 
             # And a fresh directory-tree scan of the export is clean, too.

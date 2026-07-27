@@ -16,10 +16,12 @@ logs/
 private/
 # Agent scratch memory (personal cross-session notes; see AGENTS.md "Memory Map")
 .agents/MEMORY.md
-# coding-interview skill symlink into the mounted overlay (private/skills/…). The
-# anchored trailing-slash rule at the bottom matches an in-place directory; this
-# unslashed rule matches the overlay symlink (git treats a symlink as a file).
+# Private coding-interview skill symlinks into the mounted overlay
+# (private/skills/…). The anchored trailing-slash rules at the bottom match
+# in-place directories; these unslashed rules match overlay symlinks (git treats
+# a symlink as a file).
 skills/coding-interview
+skills/coding-interview-cleanup
 # Personal job-search profiles synced from the overlay; only the generic template
 # and example profiles are tracked (negations keep them addable).
 skills/job-search/profiles/*.yaml
@@ -41,6 +43,7 @@ private/leak_tokens.txt
 /interviews/
 /.agents/inputs/
 /skills/coding-interview/
+/skills/coding-interview-cleanup/
 # Generated dated discovery reports under the EXAMPLE config (test/canary runs
 # write real dated files here because config.example.yaml points discoveries_dir
 # at this tracked dir). Only .gitkeep is meant to be tracked.
