@@ -5,13 +5,15 @@
 #   1. any path under the private overlay (private/) is STAGED, or
 #   2. the leak guard finds a violation in the STAGED INDEX content
 #      (automation/publish/check_public.py --staged), or
-#   3. a vendored copy has drifted from its canonical source
+#   3. the published tree changed without a review row in
+#      automation/publish/review_ledger.yaml (automation/publish/review_gate.py), or
+#   4. a vendored copy has drifted from its canonical source
 #      (see automation/vendoring/sync_vendored.py + .../job-search/scripts/_vendor/), or
-#   4. any mail provider folder or the email-assistant CLI exposes email-sending
+#   5. any mail provider folder or the email-assistant CLI exposes email-sending
 #      capability (folder-walking check: automation/shared/mail/check_mail_safety.py), or
-#   5. any toolkit/skill Python file fails to byte-compile.
+#   6. any toolkit/skill Python file fails to byte-compile.
 #
-# Checks 1-2 run FIRST because a leak is the only failure here that is not
+# Checks 1-3 run FIRST because a leak is the only failure here that is not
 # reversible by fixing the working tree: once the blob is in a commit it is in the
 # history. They have NO env-var escape hatch by design (see AGENTS.md).
 #
@@ -82,6 +84,18 @@ fi
 # pre-push), where publication actually happens.
 echo "pre-commit: leak guard over the staged index..."
 "$PY" automation/publish/check_public.py --staged --allow-unarmed
+
+# ── 3. Public review gate ────────────────────────────────────────────────────
+# Fails when the published tree changed without a row in
+# automation/publish/review_ledger.yaml. It reads HEAD (the PREVIOUS commit) and
+# the WORKING-TREE ledger, so the way to satisfy it is to stage the row for HEAD
+# alongside the change you are making now — one row per commit, always one
+# behind. The gate prints the exact row when it fails. It is SILENT on a pass and
+# a no-op in a checkout whose history the ledger does not describe (an exported
+# mirror), so a public clone's own pre-commit stays green.
+# Default run: bounded ledger-integrity tail (~tens of ms). CI runs --verify-all.
+echo "pre-commit: public review gate..."
+"$PY" automation/publish/review_gate.py
 
 echo "pre-commit: checking vendored copies are in sync..."
 "$PY" automation/vendoring/sync_vendored.py --check
