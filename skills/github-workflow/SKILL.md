@@ -146,7 +146,9 @@ scanning `gh pr list`; nothing reads it.
 
 **Merge order is bottom-up.** Merge the PR that targets `main` first, deleting its
 head branch on merge; GitHub then re-targets the next PR's base to `main`
-automatically. Merging out of order strands the content of the PRs below.
+automatically. Merging out of order strands the content of the PRs below. Every
+update this causes rewrites SHAs, which orphans the review-ledger rows written on
+those branches — see "A stacked PR's row does not survive the merge" below.
 
 **Rebasing the whole stack when the bottom changes.** The trap: a plain
 `git rebase <new-base>` replays every commit not already in the new base *by
@@ -208,6 +210,29 @@ before it — one row per commit, always one behind. Concretely:
 The ledger is **append-only**: every row's `digest` is recomputed from the range
 it claims, so rewriting a row is itself detected. A row is written after reading
 the diff — the digest forecloses guessing, it does not prove reading.
+
+### A stacked PR's row does not survive the merge
+
+A row names a **branch tip**, and updating a stacked PR onto its newly merged base
+**rebases it — every commit gets a new SHA**. So a row acknowledged before the
+merge names a commit that never lands on `main`. The review was real; the commit
+is not in the trunk's history.
+
+The gate handles this rather than jamming: it builds the chain from the rows whose
+commit **is** an ancestor of HEAD, skips the orphans, and reports them by name
+(`EXISTS here but is NOT an ancestor` when the commit is still in your object
+store, `UNKNOWN OBJECT` when it is not — a fresh CI clone carries only reachable
+objects, so a deleted branch's commits are simply gone there).
+
+**After merging a stack, on the trunk:**
+
+1. `git checkout main && git pull` — then run the gate. It prints the orphaned rows
+   and computes the range from the **closest surviving ancestor row**.
+2. **Never edit or delete the orphaned rows.** Append a reconciliation row for the
+   trunk tip using the range the gate prints, whose `finding:` says the content was
+   already reviewed on the branches and names the twins that landed.
+3. Commit it (ledger-only), push, and CI goes green — the recovery uses no orphaned
+   commit as a base, so it works in a clone that does not have them.
 
 ### The PR body and commit messages are public text
 

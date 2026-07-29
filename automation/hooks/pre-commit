@@ -90,9 +90,10 @@ echo "pre-commit: leak guard over the staged index..."
 # automation/publish/review_ledger.yaml. It reads HEAD (the PREVIOUS commit) and
 # the WORKING-TREE ledger, so the way to satisfy it is to stage the row for HEAD
 # alongside the change you are making now — one row per commit, always one
-# behind. The gate prints the exact row when it fails. It is SILENT on a pass and
-# a no-op in a checkout whose history the ledger does not describe (an exported
-# mirror), so a public clone's own pre-commit stays green.
+# behind. The gate prints the exact row when it fails. It is SILENT on a pass —
+# except for listing any ledger row that a rebase moved out of this history, which
+# it skips rather than fails on — and a no-op in a checkout whose history the ledger
+# does not describe (an exported mirror), so a public clone's own pre-commit stays green.
 # Default run: bounded ledger-integrity tail (~tens of ms). CI runs --verify-all.
 echo "pre-commit: public review gate..."
 "$PY" automation/publish/review_gate.py

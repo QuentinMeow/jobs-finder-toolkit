@@ -22,7 +22,8 @@ public repo is also the working root, the gate runs in-place — no cross-repo g
 
 ## How it decides
 
-1. Read the last acknowledged commit from `review_ledger.yaml`.
+1. Read the last acknowledged commit from `review_ledger.yaml` — the last row whose commit
+   is an **ancestor of HEAD** (see "The rebase case" below).
 2. `git log <last-ack>..HEAD` over the tracked public tree, **excluding `review_ledger.yaml`
    itself** — otherwise acknowledging a change is itself a change and the gate never
    converges.
@@ -35,6 +36,58 @@ all work.
 ```console
 $ git diff <last-ack>..HEAD -- . ':!automation/publish/review_ledger.yaml' | shasum -a 256
 3283d8cfff9c461f…     # identical on re-run
+```
+
+## The rebase case: a row can name a commit that never lands
+
+A row is acknowledged against a **branch tip**, and a branch tip is not a stable name. This
+is a design fact, not an implementation detail: **acknowledging a tip before the merge means
+the row names a SHA that a stack update will rewrite.** Merging a stack bottom-up updates each
+PR above onto its newly merged base, and that rebase gives every commit a new SHA. The row is
+honest — the review happened — but the commit it names is not in the trunk's history.
+
+Observed on this repo, 2026-07-29: PRs #90, #91 and #92 were a stack, and after the bottom-up
+merge four ledger rows named commits that are real, were genuinely reviewed, and are not
+ancestors of `main`. Each had a patch-equivalent twin that did land.
+
+The rule that follows: **a row whose commit is not an ancestor of HEAD describes a change that
+is not in this history, so it cannot contribute to the chain.** A diff from it would cover a
+change nobody made. Concretely:
+
+- The chain is built from the **ancestor rows alone**. A row's range runs from the most recent
+  *preceding ancestor row*'s commit to its own; a row with no preceding ancestor row opens the
+  chain with a zero-width range, which is what the seed row already is.
+- Off-chain rows are **skipped for digest verification, counted, and reported by name**. They
+  are never dropped — an append-only ledger whose orphaned rows vanished from the report would
+  be hiding exactly the reviews that were hardest to place.
+- The base for an unreviewed diff is the **closest surviving ancestor row**, so the `git diff`
+  command and the digest the gate prints are copy-pasteable in the checkout the reader is in.
+- The hard `the ledger is out of sync with this branch` error now fires only when **no row at
+  all** is an ancestor — the genuine "this ledger describes another repository" case.
+
+Two ways a row falls off the chain, and the report distinguishes them because they mean
+different things to whoever is reading:
+
+| Status | What it means | What the reader can still do |
+|---|---|---|
+| `EXISTS here but is NOT an ancestor of HEAD` | The commit is in this object store, on another line of history | `git show` it; the row's diff can still be inspected locally |
+| `UNKNOWN OBJECT — not in this checkout at all` | Not a known object here | Nothing local. A clone carries only **reachable** objects, so once the branch is deleted the commit is gone in CI while the author's repo still has it |
+
+That second row is why a recovery may never require diffing *from* an orphaned commit: on CI
+the object does not exist. The reconciliation row is written on the trunk, from the closest
+surviving ancestor row, and its `finding:` records the rewrite.
+
+```yaml
+# The four rows above name commits rebased away by the stack merge. Left in place
+# (append-only); this row acknowledges the surviving range from the last ancestor row.
+- commit: 22a11443
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 33
+  digest: sha256:1923f962537b1404
+  finding: >-
+    No new content. This range is 1db7622f..HEAD — exactly what PRs #90-#92 carried,
+    each already reviewed on its own branch before the rebase renamed it. …
 ```
 
 ## The failure message
