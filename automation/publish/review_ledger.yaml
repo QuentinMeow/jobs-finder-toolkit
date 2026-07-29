@@ -90,3 +90,14 @@
     guard refused. Redacted to <repo-root>. Otherwise clean — the added files are
     worklogs, verification transcripts and a handover; the only proper nouns are
     tool and branch names.
+
+- commit: 1db7622f
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 11
+  digest: sha256:769ccb28a0a1abf6
+  finding: >-
+    Clean. 826 added lines, zero personal-token hits. The single "/Users/" match is
+    the skill documenting that pasting an absolute home path is one of the three
+    ways a PR body has leaked, written with a placeholder. All examples are
+    fictional; no company, person, or date from the private tree appears.

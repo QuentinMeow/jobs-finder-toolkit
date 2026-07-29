@@ -62,6 +62,7 @@ support folders, not applications.
 | `skills/interview-calendar/` | PUBLIC orchestration skill that reconciles exact email evidence, application-tracker progress and private notes, the local `calendar.md`, and duplicate-free Outlook Calendar events without adding another mail or tracker writer. |
 | `skills/gardener/` | PUBLIC skill for dry-run-first memory hygiene, stale discovery expiry, log pruning, and pipeline health checks |
 | `skills/search-recall-audit/` | PUBLIC skill for sampling raw postings and tracing false-positive or false-negative search decisions to exact pipeline gates |
+| `skills/github-workflow/` | PUBLIC skill for getting work onto GitHub: the human-facing PR-description format (+ `scripts/check_pr_body.py`), stacked PRs and stack rebases, the push gates in the order they fire, and the `gh` recipes |
 | `automation/shared/mail/` | The send-less mail layer: `contract/` (MailProvider interface, audited raw-HTTP transport with per-provider route allowlists, provider conformance suite incl. the read-only `--live` mode), `providers/outlook_graph/` (the isolated Outlook implementation), and the folder-walking `check_mail_safety.py` run by pre-commit |
 | `.claude/skills/`, `.cursor/skills/` | Tool-compatibility symlinks to `skills` (for agents that look in their own skill directories) |
 | `.agents/MEMORY.md` | Cross-session hypotheses and learnings (gitignored) |
