@@ -22,7 +22,7 @@ frontmatter:
 - **PUBLIC skills** (SKILL.md + scripts are published; their generated PRODUCTS stay private):
   `ask-me-anything`, `job-search`, `resume-writer`, `application-tracker`,
   `behavioral-interview-prep`, `company-research`, `email-assistant`, `interview-calendar`, `gardener`,
-  `search-recall-audit`.
+  `search-recall-audit`, `github-workflow`.
 - **PRIVATE skills**: `coding-interview` and `coding-interview-cleanup` — both ENTIRE skills
   (SKILL.md + scripts/assets/evals and products) live only in the private overlay and never ship
   in the public repo.

@@ -126,6 +126,7 @@ Claude Code plugin marketplace via
 - `interview-calendar` — reconcile interview email, application progress, and duplicate-free Outlook events
 - `gardener` — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
 - `search-recall-audit` — spot-check whether job-search silently missed or over-kept matching roles
+- `github-workflow` — write the PR description, stack PRs, clear the push gates, drive CI and merges
 
 ## Repo layout
 
