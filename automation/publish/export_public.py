@@ -49,6 +49,7 @@ PUBLIC_SKILLS = [
     "behavioral-interview-prep",
     "company-research",
     "email-assistant",
+    "interview-calendar",
     "gardener",
 ]
 

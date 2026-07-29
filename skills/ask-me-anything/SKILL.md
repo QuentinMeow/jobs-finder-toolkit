@@ -20,9 +20,9 @@ Read and follow this skill when the user:
 - Wants a plain-English tour before diving into search, tailoring, or prep.
 
 For the *actual* work, hand off to the specialized skill (each is a separate `SKILL.md`):
-`job-search`, `resume-writer`, `application-tracker`, `company-research`,
-`behavioral-interview-prep`. This skill just routes the user to the right one at the right
-time and explains the dependencies.
+`job-search`, `resume-writer`, `application-tracker`, `email-assistant`,
+`interview-calendar`, `company-research`, and `behavioral-interview-prep`. This skill just
+routes the user to the right one at the right time and explains the dependencies.
 
 ## The Big Picture
 
@@ -176,6 +176,10 @@ YOE, salary, sponsorship), records interview notes in `notes.md`, and keeps the 
 skip-logs in sync (`status.py --sync-log`). **The agent never changes application status
 unless you ask** — per-job statuses and the matching folder move are your decision, made
 through `status.py --update` / `--update-job`.
+
+Use `email-assistant` to reconcile recruiter mail with application notes and status evidence.
+Use `interview-calendar` when that evidence also needs duplicate-safe Outlook Calendar events;
+it composes the email assistant, tracker, and Outlook Calendar without adding another data writer.
 
 **Dependencies:** pyyaml only (no network, no LibreOffice).
 

@@ -5,7 +5,7 @@ import unittest
 from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -14,6 +14,10 @@ import outlook_email as cli
 from outlook_email import (
     CLI_COMMANDS,
     _compact_messages,
+    _coverage_query_families,
+    _job_field_identifiers,
+    _job_url_identifiers,
+    _store_coverage,
     _store_review,
     _store_review_summary,
     build_parser,
@@ -26,7 +30,8 @@ class CliPolicyTests(unittest.TestCase):
             set(CLI_COMMANDS),
             {
                 "doctor", "login", "logout", "inbox", "sent", "drafts", "review-window",
-                "read", "sync-store", "store-staleness", "store-review", "match-application", "create-draft",
+                "deleted", "read", "sync-store", "store-staleness", "store-review", "store-search",
+                "store-coverage", "match-application", "create-draft",
                 "create-reply-draft",
             },
         )
@@ -39,6 +44,27 @@ class CliPolicyTests(unittest.TestCase):
         self.assertEqual(args.days, 30)
         self.assertFalse(args.all)
         self.assertFalse(args.full)
+
+    def test_live_client_wires_the_same_auth_manager_as_token_refresher(self):
+        settings = Mock(account="owner@example.invalid")
+        auth = Mock()
+        auth.access_token.return_value = "initial-token"
+        graph_client = Mock()
+        graph_client.me.return_value = {"mail": settings.account}
+
+        with (
+            patch.object(cli, "_settings", return_value=settings),
+            patch.object(cli, "AuthManager", return_value=auth),
+            patch.object(cli, "DraftOnlyGraphClient", return_value=graph_client) as client_type,
+        ):
+            actual_settings, actual_client = cli._client()
+
+        self.assertIs(actual_settings, settings)
+        self.assertIs(actual_client, graph_client)
+        client_type.assert_called_once_with(
+            "initial-token",
+            token_refresher=auth.access_token,
+        )
 
     def test_live_lists_accept_since_and_compact_without_body_preview(self):
         args = build_parser().parse_args(
@@ -63,6 +89,114 @@ class CliPolicyTests(unittest.TestCase):
                 "receivedDateTime": "2026-07-23T19:18:40Z",
             }],
         )
+
+        deleted = build_parser().parse_args(
+            ["deleted", "--since", "2026-04-24T07:00:00Z", "--compact"]
+        )
+        self.assertEqual(deleted.since, "2026-04-24T07:00:00Z")
+        self.assertTrue(deleted.compact)
+
+    def test_store_search_requires_queries_and_content_is_explicit(self):
+        args = build_parser().parse_args(
+            ["store-search", "--query", "Example Corp", "--query", "Platform Engineer"]
+        )
+        self.assertEqual(args.query, ["Example Corp", "Platform Engineer"])
+        self.assertFalse(args.include_content)
+        self.assertEqual(args.threshold_seconds, 60)
+        self.assertTrue(
+            build_parser().parse_args(
+                ["store-search", "--query", "Example Corp", "--include-content"]
+            ).include_content
+        )
+
+    def test_store_coverage_accepts_independent_manual_and_application_families(self):
+        args = build_parser().parse_args([
+            "store-coverage",
+            "--query", "recruiter.example",
+            "--query", "thread-alias",
+            "--in-progress-applications",
+        ])
+        self.assertEqual(args.query, ["recruiter.example", "thread-alias"])
+        self.assertTrue(args.in_progress_applications)
+        self.assertEqual(args.threshold_seconds, 60)
+
+        applications = [{
+            "company": "Example Corp",
+            "jobs": [
+                {
+                    "role": "Platform Engineer",
+                    "status": "in_progress",
+                    "url": "https://jobs.example.test/example/7654321?gh_jid=7654321",
+                    "requisition_id": "7654321",
+                },
+                {
+                    "role": "AI Engineer",
+                    "status": "in_progress",
+                    "url": "https://jobs.example.test/Example-Role_R1234",
+                },
+                {
+                    "role": "Data Engineer",
+                    "status": "in_progress",
+                    "url": "",
+                    "req_id": "REQ-8800",
+                    "store_key": "gh-8800",
+                },
+                {
+                    "role": "Product Manager",
+                    "status": "rejected",
+                    "url": "https://jobs.example.test/example/9999999",
+                },
+            ],
+        }]
+        families = _coverage_query_families(
+            manual_queries=args.query,
+            applications=applications,
+        )
+        by_query = {family["query"]: family["sources"] for family in families}
+        self.assertEqual(by_query["recruiter.example"], ["manual"])
+        self.assertEqual(by_query["thread-alias"], ["manual"])
+        self.assertEqual(by_query["Example Corp"], ["in_progress_company"])
+        self.assertEqual(by_query["Platform Engineer"], ["in_progress_role"])
+        self.assertEqual(by_query["AI Engineer"], ["in_progress_role"])
+        self.assertEqual(by_query["Data Engineer"], ["in_progress_role"])
+        self.assertEqual(
+            by_query["7654321"],
+            ["job_field_identifier", "job_url_identifier"],
+        )
+        self.assertEqual(by_query["R1234"], ["job_url_identifier"])
+        self.assertEqual(by_query["REQ-8800"], ["job_field_identifier"])
+        self.assertEqual(by_query["gh-8800"], ["job_field_identifier"])
+        self.assertNotIn("Product Manager", by_query)
+        self.assertNotIn("9999999", by_query)
+        self.assertEqual(
+            _job_url_identifiers("https://jobs.example.test/role/7654321?gh_jid=7654321"),
+            ("7654321",),
+        )
+        self.assertEqual(
+            _job_field_identifiers({
+                "requisition_id": "REQ-1234",
+                "posting_id": 5678,
+                "store_key": "gh-1234",
+                "external_id": "not a stable identifier",
+            }),
+            ("5678", "gh-1234", "REQ-1234"),
+        )
+
+    def test_store_coverage_stops_at_staleness_before_local_scan(self):
+        class StaleStore:
+            def staleness_probe(self, *, threshold_seconds):
+                self.threshold_seconds = threshold_seconds
+                return {"store_stale": True, "banner": "STORE STALE"}
+
+        store = StaleStore()
+        report, code = _store_coverage(
+            store,
+            families=[{"query": "Example Corp", "sources": ["manual"]}],
+            threshold_seconds=19,
+        )
+        self.assertEqual(code, 2)
+        self.assertTrue(report["store_stale"])
+        self.assertEqual(store.threshold_seconds, 19)
 
     def test_store_review_uses_the_same_freshness_tolerance(self):
         args = build_parser().parse_args(["store-review"])

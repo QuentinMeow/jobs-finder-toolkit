@@ -1,0 +1,4 @@
+interface:
+  display_name: "Interview Calendar"
+  short_description: "Reconcile interview mail and calendar events"
+  default_prompt: "Use $interview-calendar to reconcile interview emails, application progress, and duplicate-free Outlook Calendar events."

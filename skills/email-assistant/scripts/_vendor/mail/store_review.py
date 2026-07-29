@@ -12,12 +12,13 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
 from ..store.blobs import BlobCorrupt, BlobStore
 from ..store.identifiers import IdentifierRegistry
 from ..store.serialization import loads_yaml
 from . import reconciliation
+from .store_sync import FOLDERS
 
 ATTACHMENT_METADATA_FIELDS = frozenset(
     {"attachment_id", "name", "size", "content_type", "is_inline"}
@@ -40,7 +41,11 @@ def _contains_attachment_bytes(value: Any) -> bool:
 
 def _content_free(value: Any) -> bool:
     """Assert the return value has no message content-bearing field names."""
-    banned = {"subject", "sender", "from", "body", "body_text", "content", "bodypreview"}
+    banned = {
+        "subject", "sender", "from", "body", "body_text", "content", "bodypreview",
+        "participants", "recipients", "torecipients", "ccrecipients", "emailaddress",
+        "address",
+    }
     if isinstance(value, Mapping):
         return all(
             str(key).casefold() not in banned and _content_free(child)
@@ -49,6 +54,62 @@ def _content_free(value: Any) -> bool:
     if isinstance(value, (tuple, list)):
         return all(_content_free(item) for item in value)
     return True
+
+
+def _participant_records(message: Mapping[str, Any]) -> list[dict[str, str]]:
+    """Normalize sender and To/Cc mailboxes from one raw provider message."""
+    found: dict[tuple[str, str, str], dict[str, str]] = {}
+    fields = (
+        ("from", "sender"),
+        ("sender", "sender"),
+        ("toRecipients", "to"),
+        ("ccRecipients", "cc"),
+    )
+
+    def add(value: Any, kind: str) -> None:
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for item in value:
+                add(item, kind)
+            return
+        if not isinstance(value, Mapping):
+            return
+        mailbox = value.get("emailAddress")
+        mailbox = mailbox if isinstance(mailbox, Mapping) else value
+        name = str(mailbox.get("name") or "").strip()
+        address = str(mailbox.get("address") or "").strip()
+        if not name and not address:
+            return
+        key = (kind, name.casefold(), address.casefold())
+        found[key] = {"kind": kind, "name": name, "address": address}
+
+    for field, kind in fields:
+        add(message.get(field), kind)
+    order = {"sender": 0, "to": 1, "cc": 2}
+    return sorted(
+        found.values(),
+        key=lambda item: (
+            order[item["kind"]],
+            item["address"].casefold(),
+            item["name"].casefold(),
+        ),
+    )
+
+
+def _normalize_queries(queries: Iterable[str]) -> list[tuple[str, str]]:
+    """Return stable display/normalized literal pairs, removing duplicates."""
+    normalized_queries: list[tuple[str, str]] = []
+    seen_queries: set[str] = set()
+    for value in queries:
+        if not isinstance(value, str) or not value.strip():
+            raise StoreReviewError("mail-store queries must be non-empty strings")
+        display = " ".join(value.split())
+        normalized = display.casefold()
+        if normalized not in seen_queries:
+            normalized_queries.append((display, normalized))
+            seen_queries.add(normalized)
+    if not normalized_queries:
+        raise StoreReviewError("at least one mail-store query is required")
+    return normalized_queries
 
 
 @dataclass(frozen=True)
@@ -279,7 +340,7 @@ class EmailStoreReader:
             if key not in index_rows:
                 errors.append({"kind": "index_missing", "ref": key})
             elif any(index_rows[key].get(field) != envelope.get(field) for field in
-                     ("folder", "in_scope", "tombstoned", "received_at", "sent_at", "modified_at")):
+                     ("folder", "direction", "in_scope", "tombstoned", "received_at", "sent_at", "modified_at")):
                 errors.append({"kind": "index_state_mismatch", "ref": key})
             try:
                 self._raw_payload(envelope)
@@ -300,6 +361,208 @@ class EmailStoreReader:
             attachments_checked=attachments_checked,
             errors=tuple(errors),
         )
+
+    def _scan_search_documents(self) -> dict[str, Any]:
+        """Hydrate and normalize each current four-folder message exactly once."""
+        integrity = self.integrity()
+        state = self.state()
+        folder_state = state.get("folders") if isinstance(state.get("folders"), dict) else {}
+        unsynced_folders = [
+            folder
+            for folder in FOLDERS
+            if not isinstance(folder_state.get(folder), dict)
+            or not folder_state[folder].get("last_successful_sync")
+        ]
+        envelopes = self.envelopes()
+        current = {
+            key: envelope
+            for key, envelope in envelopes.items()
+            if envelope.get("in_scope") is True
+            and envelope.get("tombstoned") is not True
+            and envelope.get("folder") in FOLDERS
+        }
+        scanned_by_folder = {folder: 0 for folder in FOLDERS}
+        unavailable: list[str] = []
+        documents: list[dict[str, Any]] = []
+        for key, envelope in sorted(current.items()):
+            try:
+                message = self.hydrate(key)
+                raw_message = self._raw_payload(envelope)["message"]
+            except StoreReviewError:
+                unavailable.append(key)
+                continue
+            folder = str(message.get("folder") or "")
+            scanned_by_folder[folder] += 1
+            subject = str(message.get("subject") or "")
+            body = str(message.get("body_text") or "")
+            participants = _participant_records(raw_message)
+            fields = {
+                "subject": " ".join(subject.split()).casefold(),
+                "body": " ".join(body.split()).casefold(),
+                "participants": " ".join(
+                    " ".join(part.split())
+                    for participant in participants
+                    for part in (participant["name"], participant["address"])
+                    if part
+                ).casefold(),
+            }
+            documents.append({
+                "message_key": key,
+                "folder": folder,
+                "direction": message.get("direction"),
+                "timestamp": message.get("timestamp"),
+                "subject": subject,
+                "body_text": body,
+                "participants": participants,
+                "fields": fields,
+                "combined": "\n".join(fields.values()),
+            })
+
+        messages_scanned = sum(scanned_by_folder.values())
+        return {
+            "integrity": integrity,
+            "stored_messages": len(envelopes),
+            "current_in_scope_messages": len(current),
+            "documents": documents,
+            "messages_scanned": messages_scanned,
+            "scanned_by_folder": scanned_by_folder,
+            "unavailable_message_keys": unavailable,
+            "unsynced_folders": unsynced_folders,
+            "complete": (
+                integrity.ok
+                and not unavailable
+                and not unsynced_folders
+                and messages_scanned == len(current)
+            ),
+        }
+
+    def search_raw(
+        self,
+        *,
+        queries: Iterable[str],
+        include_content: bool = False,
+    ) -> dict[str, Any]:
+        """Search every current subject/body/participant set deterministically.
+
+        Query terms are case-insensitive literals and are ANDed across the
+        subject, full raw body, and normalized sender/To/Cc participant names
+        and addresses. Results default to neutral keys and folder provenance;
+        callers must explicitly opt in before mailbox content is returned. The
+        method is local and read-only: it performs no provider or filesystem
+        writes.
+        """
+        normalized_queries = _normalize_queries(queries)
+        scan = self._scan_search_documents()
+        matches: list[dict[str, Any]] = []
+        for document in scan["documents"]:
+            if not all(term in document["combined"] for _display, term in normalized_queries):
+                continue
+            match: dict[str, Any] = {
+                "message_key": document["message_key"],
+                "folder": document["folder"],
+                "direction": document["direction"],
+                "timestamp": document["timestamp"],
+                "matched_fields": [
+                    name
+                    for name, text in document["fields"].items()
+                    if any(term in text for _display, term in normalized_queries)
+                ],
+            }
+            if include_content:
+                match["subject"] = document["subject"]
+                match["body_text"] = document["body_text"]
+                match["participants"] = document["participants"]
+            matches.append(match)
+
+        output = {
+            "account": self.account,
+            "read_only": True,
+            "audit_complete": scan["complete"],
+            "queries": [display for display, _normalized in normalized_queries],
+            "query_mode": (
+                "all case-insensitive literals across full subject, body, and "
+                "sender/To/Cc participants"
+            ),
+            "folders": list(FOLDERS),
+            "unsynced_folders": scan["unsynced_folders"],
+            "integrity": scan["integrity"].as_dict(),
+            "counts": {
+                "stored_messages": scan["stored_messages"],
+                "current_in_scope_messages": scan["current_in_scope_messages"],
+                "messages_scanned": scan["messages_scanned"],
+                "matches": len(matches),
+                "scanned_by_folder": scan["scanned_by_folder"],
+                "unavailable_messages": len(scan["unavailable_message_keys"]),
+            },
+            "unavailable_message_keys": scan["unavailable_message_keys"],
+            "matches": matches,
+            "content_included": include_content,
+        }
+        if not include_content and not _content_free(output):
+            raise StoreReviewError("store search attempted to expose mailbox content")
+        return output
+
+    def coverage_raw(self, *, queries: Iterable[str]) -> dict[str, Any]:
+        """Evaluate independent literal families in one complete raw-store scan."""
+        normalized_queries = _normalize_queries(queries)
+        scan = self._scan_search_documents()
+        matches_by_query = {
+            normalized: {folder: [] for folder in FOLDERS}
+            for _display, normalized in normalized_queries
+        }
+        for document in scan["documents"]:
+            for _display, normalized in normalized_queries:
+                if normalized in document["combined"]:
+                    matches_by_query[normalized][document["folder"]].append(
+                        document["message_key"]
+                    )
+        query_families = [
+            {
+                "query": display,
+                "match_count": sum(
+                    len(keys) for keys in matches_by_query[normalized].values()
+                ),
+                "matches_by_folder": {
+                    folder: {
+                        "match_count": len(matches_by_query[normalized][folder]),
+                        "message_keys": matches_by_query[normalized][folder],
+                    }
+                    for folder in FOLDERS
+                },
+            }
+            for display, normalized in normalized_queries
+        ]
+        zero_matches = [
+            family["query"] for family in query_families if family["match_count"] == 0
+        ]
+        output = {
+            "account": self.account,
+            "read_only": True,
+            "coverage_complete": scan["complete"],
+            "query_mode": (
+                "independent case-insensitive literals across full subject, body, and "
+                "sender/To/Cc participants"
+            ),
+            "folders": list(FOLDERS),
+            "unsynced_folders": scan["unsynced_folders"],
+            "integrity": scan["integrity"].as_dict(),
+            "counts": {
+                "stored_messages": scan["stored_messages"],
+                "current_in_scope_messages": scan["current_in_scope_messages"],
+                "messages_scanned": scan["messages_scanned"],
+                "query_families": len(query_families),
+                "zero_match_queries": len(zero_matches),
+                "scanned_by_folder": scan["scanned_by_folder"],
+                "unavailable_messages": len(scan["unavailable_message_keys"]),
+            },
+            "unavailable_message_keys": scan["unavailable_message_keys"],
+            "query_families": query_families,
+            "zero_match_queries": zero_matches,
+            "content_included": False,
+        }
+        if not _content_free(output):
+            raise StoreReviewError("store coverage attempted to expose mailbox content")
+        return output
 
     def review(
         self,

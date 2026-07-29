@@ -107,6 +107,10 @@ class MailProvider(abc.ABC):
         """List existing drafts; every item must carry draft evidence."""
 
     @abc.abstractmethod
+    def list_deleted(self, limit: int = 10) -> list[dict[str, Any]]:
+        """List Deleted Items without restoring or permanently deleting them."""
+
+    @abc.abstractmethod
     def read_message(self, message_id: str) -> dict[str, Any]:
         """Read one message by provider message ID."""
 
@@ -121,7 +125,8 @@ class MailProvider(abc.ABC):
 
         ``None`` requests the provider's complete folder walk.  The default
         adapter preserves compatibility with existing providers while keeping
-        the allowed email-store scope explicit (Inbox, Sent Items, Drafts).
+        the allowed email-store scope explicit (Inbox, Sent Items, Drafts,
+        Deleted Items).
         """
         if limit is None:
             # A silent 2,000-message cap would turn a purported full inventory
@@ -141,6 +146,8 @@ class MailProvider(abc.ABC):
             return self.list_sent(bounded)
         if folder == "drafts":
             return self.list_drafts(bounded)
+        if folder == "deleteditems":
+            return self.list_deleted(bounded)
         raise MailProviderError(f"{self.name}: unsupported mail folder {folder!r}")
 
     def probe_folder(self, folder: str) -> dict[str, Any]:

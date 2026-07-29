@@ -68,6 +68,28 @@ POSTING_METADATA_FIELDS = (
 )
 APPLICATION_SCHEMA_VERSION = 5
 
+# Canonical schema-v5 keys for one ``jobs:`` record. Unknown scalar keys remain
+# tolerated for older local annotations, but unknown mappings/lists are rejected:
+# structured extensions are otherwise easy to mistake for supported schema.
+JOB_SCHEMA_FIELDS = frozenset({
+    "role",
+    "jd_file",
+    "status",
+    "status_date",
+    "progress",
+    "location",
+    "workplace",
+    "url",
+    "store_key",
+    "posted_date",
+    "sponsorship",
+    "fit",
+    "job_level",
+    "required_yoe",
+    "salary_range",
+})
+UNSUPPORTED_COMPENSATION_FIELD = "total_compensation_range"
+
 WORKPLACE_VALUES = {"onsite", "hybrid", "remote", "unknown"}
 SPONSORSHIP_VALUES = {"likely", "unlikely", "unknown"}
 
@@ -1716,6 +1738,23 @@ def validate_job_metadata(record: dict, *, prefix: str = "") -> list[str]:
     """Validate the per-posting metadata of one ``jobs`` entry."""
     lead = f"{prefix}." if prefix else ""
     errors: list[str] = []
+    if UNSUPPORTED_COMPENSATION_FIELD in record:
+        errors.append(
+            f"{lead}{UNSUPPORTED_COMPENSATION_FIELD} is not supported in "
+            "schema v5; use salary_range for posted base salary and "
+            "company-scope comp_notes for other compensation details"
+        )
+    unknown_structured = sorted(
+        key for key, value in record.items()
+        if key not in JOB_SCHEMA_FIELDS
+        and key != UNSUPPORTED_COMPENSATION_FIELD
+        and isinstance(value, (dict, list))
+    )
+    if unknown_structured:
+        errors.append(
+            f"{lead}has unsupported structured field(s): "
+            f"{', '.join(unknown_structured)}"
+        )
     for field in METADATA_FIELDS:
         if field not in record:
             errors.append(f"{lead}{field} is missing")
@@ -1826,6 +1865,12 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
         errors.append(
             "top-level status is not allowed in schema v5 (status is per-job, "
             "under jobs:)")
+    if UNSUPPORTED_COMPENSATION_FIELD in meta:
+        errors.append(
+            f"top-level {UNSUPPORTED_COMPENSATION_FIELD} is not supported in "
+            "schema v5; use jobs[].salary_range for posted base salary and "
+            "comp_notes for other compensation details"
+        )
 
     jobs = meta.get("jobs")
     if not isinstance(jobs, list) or not jobs:

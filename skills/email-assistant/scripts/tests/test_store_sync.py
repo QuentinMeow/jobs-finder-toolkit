@@ -8,6 +8,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -31,7 +32,7 @@ class SyntheticMailbox(MailProvider):
 
     def __init__(self) -> None:
         self.folders: dict[str, list[dict[str, Any]]] = {
-            "inbox": [], "sentitems": [], "drafts": [], "archive": []
+            "inbox": [], "sentitems": [], "drafts": [], "deleteditems": [], "archive": []
         }
         self.by_id: dict[str, dict[str, Any]] = {}
         self.attachments: dict[str, list[dict[str, Any]]] = {}
@@ -60,6 +61,9 @@ class SyntheticMailbox(MailProvider):
 
     def list_drafts(self, limit: int = 10) -> list[dict[str, Any]]:
         return self.list_folder("drafts", limit)
+
+    def list_deleted(self, limit: int = 10) -> list[dict[str, Any]]:
+        return self.list_folder("deleteditems", limit)
 
     def list_folder(
         self, folder: str, limit: int | None = None, since: str | None = None
@@ -115,6 +119,10 @@ class SyntheticMailbox(MailProvider):
         at: datetime | None = None,
         body: str = "Synthetic full body.",
         attachments: list[dict[str, Any]] | None = None,
+        sender: str = "recruiter@example.com",
+        sender_name: str = "Recruiter",
+        to_recipients: list[tuple[str, str]] | None = None,
+        cc_recipients: list[tuple[str, str]] | None = None,
     ) -> str:
         when = at or datetime.now(timezone.utc) - timedelta(minutes=2)
         message_id = message_id or f"message-{len(self.by_id) + 1}"
@@ -123,7 +131,15 @@ class SyntheticMailbox(MailProvider):
             "conversationId": f"thread-{message_id}",
             "internetMessageId": f"<{message_id}@example.com>",
             "subject": "Synthetic workflow notice",
-            "from": {"emailAddress": {"address": "recruiter@example.com"}},
+            "from": {"emailAddress": {"name": sender_name, "address": sender}},
+            "toRecipients": [
+                {"emailAddress": {"name": name, "address": address}}
+                for name, address in (to_recipients or [("Owner", "owner@example.com")])
+            ],
+            "ccRecipients": [
+                {"emailAddress": {"name": name, "address": address}}
+                for name, address in (cc_recipients or [])
+            ],
             "bodyPreview": body[:40],
             "body": {"contentType": "Text", "content": body},
             "isDraft": folder == "drafts",
@@ -191,7 +207,7 @@ class EmailStoreSyncTests(unittest.TestCase):
         self.mailbox.seed(at=self.recent - timedelta(days=31), body="Old body outside window.")
         result = self._syncer().sync(days=30, force_full=True)
         self.assertEqual(result.mode, "full")
-        self.assertEqual(self.mailbox.list_limits[:3], [None, None, None])
+        self.assertEqual(self.mailbox.list_limits[:4], [None, None, None, None])
         self.assertEqual(self.mailbox.delta_tokens, [])
         state = json.loads((self.root / "email/state/acct-01/sync.json").read_text())
         self.assertEqual(len(state["messages"]), 1)
@@ -229,9 +245,19 @@ class EmailStoreSyncTests(unittest.TestCase):
         moved = next(record for record in state["messages"].values()
                      if record["provider_message_id"] == first)
         self.assertEqual(moved["folder"], "sentitems")
+        self.assertEqual(moved["direction"], "outbound")
         self.assertTrue(moved["in_scope"])
 
-        self.mailbox.hard_delete(first, source="sentitems")
+        self.mailbox.move(first, source="sentitems", destination="deleteditems")
+        syncer.sync(days=None)
+        state = json.loads((self.root / "email/state/acct-01/sync.json").read_text())
+        moved = next(record for record in state["messages"].values()
+                     if record["provider_message_id"] == first)
+        self.assertEqual(moved["folder"], "deleteditems")
+        self.assertEqual(moved["direction"], "outbound")
+        self.assertEqual(moved["folder_history"], ["inbox", "sentitems", "deleteditems"])
+
+        self.mailbox.hard_delete(first, source="deleteditems")
         syncer.sync(days=None)
         state = json.loads((self.root / "email/state/acct-01/sync.json").read_text())
         deleted = next(record for record in state["messages"].values()
@@ -327,6 +353,180 @@ class EmailStoreSyncTests(unittest.TestCase):
         self.assertNotIn("Synthetic workflow notice", rendered)
         self.assertNotIn("recruiter@example.com", rendered)
         self.assertNotIn("<message-1@example.com>", rendered)
+
+    def test_full_body_search_covers_all_four_folders_and_preserves_direction(self):
+        for folder, sender in (
+            ("inbox", "recruiter@example.com"),
+            ("sentitems", "owner@example.com"),
+            ("drafts", "owner@example.com"),
+            ("deleteditems", "owner@example.com"),
+            ("deleteditems", "recruiter@example.com"),
+        ):
+            self.mailbox.seed(
+                folder=folder,
+                at=self.recent,
+                sender=sender,
+                body=f"Example Corp {folder} update for Platform Engineer.",
+            )
+        self._syncer().sync(days=30, force_full=True)
+        reader = EmailStoreReader.for_account_label(
+            data_root=self.root, account_label="owner@example.com"
+        )
+        report = reader.search_raw(queries=["Example Corp", "Platform Engineer"])
+        self.assertTrue(report["audit_complete"], report)
+        self.assertEqual(report["counts"]["messages_scanned"], 5)
+        self.assertEqual(report["counts"]["matches"], 5)
+        self.assertEqual(report["counts"]["scanned_by_folder"], {
+            "inbox": 1, "sentitems": 1, "drafts": 1, "deleteditems": 2,
+        })
+        self.assertEqual(
+            {(item["folder"], item["direction"]) for item in report["matches"]},
+            {
+                ("inbox", "inbound"),
+                ("sentitems", "outbound"),
+                ("drafts", "draft"),
+                ("deleteditems", "outbound"),
+                ("deleteditems", "inbound"),
+            },
+        )
+        self.assertTrue(_content_free(report))
+        self.assertNotIn("body_text", json.dumps(report))
+
+        content = reader.search_raw(
+            queries=["Example Corp", "Platform Engineer"], include_content=True
+        )
+        self.assertTrue(all("body_text" in item for item in content["matches"]))
+
+        state_path = self.root / "email/state/acct-01/sync.json"
+        state = json.loads(state_path.read_text())
+        del state["folders"]["deleteditems"]
+        state_path.write_text(json.dumps(state))
+        incomplete = EmailStoreReader.for_account_label(
+            data_root=self.root, account_label="owner@example.com"
+        ).search_raw(queries=["Example Corp"])
+        self.assertFalse(incomplete["audit_complete"])
+        self.assertEqual(incomplete["unsynced_folders"], ["deleteditems"])
+
+    def test_full_body_search_matches_sender_to_and_cc_participant_aliases(self):
+        self.mailbox.seed(
+            folder="inbox",
+            at=self.recent,
+            sender="morgan@talent-only.example",
+            sender_name="Morgan Lee",
+            body="Generic mailbox update with no participant alias in its content.",
+        )
+        self.mailbox.seed(
+            folder="sentitems",
+            at=self.recent,
+            sender="owner@example.com",
+            to_recipients=[("Avery Chen", "avery@to-only.example")],
+            body="Another generic mailbox update.",
+        )
+        self.mailbox.seed(
+            folder="drafts",
+            at=self.recent,
+            sender="owner@example.com",
+            cc_recipients=[("Unique Recruiter Alias", "alias@cc-only.example")],
+            body="A third generic mailbox update.",
+        )
+        self._syncer().sync(days=30, force_full=True)
+        reader = EmailStoreReader.for_account_label(
+            data_root=self.root, account_label="owner@example.com"
+        )
+
+        cases = (
+            ("talent-only.example", "inbox"),
+            ("Avery Chen", "sentitems"),
+            ("cc-only.example", "drafts"),
+        )
+        for query, folder in cases:
+            with self.subTest(query=query):
+                report = reader.search_raw(queries=[query])
+                self.assertTrue(report["audit_complete"], report)
+                self.assertEqual(report["counts"]["matches"], 1)
+                self.assertEqual(report["matches"][0]["folder"], folder)
+                self.assertEqual(report["matches"][0]["matched_fields"], ["participants"])
+                self.assertNotIn("participants", report["matches"][0])
+
+        rendered = json.dumps(reader.search_raw(queries=["talent-only.example"]))
+        self.assertNotIn("morgan@talent-only.example", rendered)
+        self.assertNotIn("Morgan Lee", rendered)
+        content = reader.search_raw(
+            queries=["talent-only.example"], include_content=True
+        )
+        self.assertEqual(content["matches"][0]["participants"][0], {
+            "kind": "sender",
+            "name": "Morgan Lee",
+            "address": "morgan@talent-only.example",
+        })
+
+    def test_store_coverage_scans_once_and_reports_independent_folder_evidence(self):
+        self.mailbox.seed(
+            folder="inbox",
+            at=self.recent,
+            body="Example Corp interview scheduling update.",
+        )
+        self.mailbox.seed(
+            folder="deleteditems",
+            at=self.recent,
+            body="Example Corp archived recruiting thread.",
+        )
+        self.mailbox.seed(
+            folder="sentitems",
+            at=self.recent,
+            sender="owner@example.com",
+            to_recipients=[("Recruiter", "recruiter@talent-only.example")],
+            body="Generic follow-up.",
+        )
+        self._syncer().sync(days=30, force_full=True)
+        reader = EmailStoreReader.for_account_label(
+            data_root=self.root, account_label="owner@example.com"
+        )
+
+        with patch.object(reader, "hydrate", wraps=reader.hydrate) as hydrate:
+            report = reader.coverage_raw(
+                queries=["Example Corp", "talent-only.example", "Missing Corp"]
+            )
+
+        self.assertEqual(hydrate.call_count, 3)
+        self.assertTrue(report["coverage_complete"], report)
+        self.assertEqual(report["counts"]["messages_scanned"], 3)
+        families = {family["query"]: family for family in report["query_families"]}
+        self.assertEqual(families["Example Corp"]["match_count"], 2)
+        self.assertEqual(
+            families["Example Corp"]["matches_by_folder"]["deleteditems"]["match_count"],
+            1,
+        )
+        self.assertEqual(
+            len(families["Example Corp"]["matches_by_folder"]["deleteditems"]["message_keys"]),
+            1,
+        )
+        self.assertEqual(families["talent-only.example"]["match_count"], 1)
+        self.assertEqual(
+            families["talent-only.example"]["matches_by_folder"]["sentitems"]["match_count"],
+            1,
+        )
+        self.assertEqual(families["Missing Corp"]["match_count"], 0)
+        self.assertTrue(all(
+            folder_evidence["match_count"] == 0
+            and folder_evidence["message_keys"] == []
+            for folder_evidence in families["Missing Corp"]["matches_by_folder"].values()
+        ))
+        self.assertEqual(report["zero_match_queries"], ["Missing Corp"])
+        self.assertTrue(_content_free(report))
+        rendered = json.dumps(report, sort_keys=True)
+        self.assertNotIn("Synthetic workflow notice", rendered)
+        self.assertNotIn("recruiter@talent-only.example", rendered)
+
+        state_path = self.root / "email/state/acct-01/sync.json"
+        state = json.loads(state_path.read_text())
+        del state["folders"]["deleteditems"]
+        state_path.write_text(json.dumps(state))
+        incomplete = EmailStoreReader.for_account_label(
+            data_root=self.root, account_label="owner@example.com"
+        ).coverage_raw(queries=["Example Corp"])
+        self.assertFalse(incomplete["coverage_complete"])
+        self.assertEqual(incomplete["unsynced_folders"], ["deleteditems"])
 
     def test_local_reader_reports_missing_raw_without_outputting_mail_content(self):
         self.mailbox.seed(at=self.recent)

@@ -37,7 +37,8 @@ The runtime, static policy checker, unit tests, and pre-commit hook all enforce 
 
 ## Local Bounded Store
 
-For a complete bounded review, sync Inbox, Sent Items, and Drafts into the private local store,
+For a complete bounded review, sync Inbox, Sent Items, Drafts, and Deleted Items into the private
+local store,
 then verify freshness before reading its content-free reconciliation projection:
 
 ```bash
@@ -47,8 +48,11 @@ then verify freshness before reading its content-free reconciliation projection:
 ```
 
 Set `--days` to the user-requested window (for example, `--days 90`) rather than silently applying
-the 30-day example. Include Inbox and Sent Items for the complete communication timeline; use Drafts
-only to reconcile unsent work, and never present a draft as a sent communication.
+the 30-day example. Use `sync-store --all --full` only when the user asks to recheck all existing
+mail. Include Inbox, Sent Items, and messages retained in Deleted Items for the complete
+communication timeline; use Drafts only to reconcile unsent work, and never present a draft as a
+sent communication. Deleted Items does not include mail that has been permanently purged and is no
+longer exposed by Microsoft.
 
 If a transient Graph failure prevents a complete store refresh, keep the review read-only and use
 the bounded live fallback with the same exact start timestamp. `--compact` retains message IDs,
@@ -60,6 +64,8 @@ relevant messages with `read`:
   inbox --limit 2000 --since '2026-04-24T07:00:00Z' --compact
 .venv/bin/python skills/email-assistant/scripts/outlook_email.py \
   sent --limit 2000 --since '2026-04-24T07:00:00Z' --compact
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py \
+  deleted --limit 2000 --since '2026-04-24T07:00:00Z' --compact
 ```
 
 The store keeps full message bodies only under the git-ignored private email data root and stores
@@ -68,6 +74,23 @@ incomplete sync state, and emits neutral keys rather than subjects, addresses, o
 company/role links remain unresolved until exact evidence or an approved private company-domain
 mapping exists. Until the store-first cutover gate is satisfied, retain the live review-window and
 exact-message preflight before any draft or application change.
+
+`store-coverage` scans the fresh four-folder store once while evaluating repeated `--query` values
+as independent families. For an in-progress audit, use `--in-progress-applications` to include every
+company, active role, and conservative job-URL identifier, then add recruiter domains and established
+thread aliases with `--query`. Its content-free result groups stable message keys and counts by
+folder, including explicit zero matches and Deleted Items matches. After coverage, use `store-search`
+to narrow and read exact private matches. Repeating `--query` with `store-search` means AND; putting
+every alias in one `store-search` command can create a false zero-match. Add `--include-content` only
+for the exact evidence needed for reconciliation:
+
+```bash
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py store-coverage \
+  --in-progress-applications --query '<recruiter-domain>' --query '<thread-alias>'
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py store-search \
+  --query '<company-or-domain>' --query '<role-or-job-id>' --include-content
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py store-search --query '<job-id>'
+```
 
 ## One-Time Setup
 
@@ -104,9 +127,14 @@ the OS keyring and is tied to the configured mailbox.
 During a requested job-related mailbox review, automatically reconcile clear application outcomes
 with the repository. Treat this as a separate local workflow from drafting:
 
-1. Run `review-window --limit 50`, then widen the read-only scan with `inbox --limit 500` when the
+1. Run `review-window --limit 50`, then widen the read-only scan with Inbox and Deleted Items when the
    user asks for a mailbox-wide status review. Expand up to `--limit 2000` only when a named older
    thread or outcome is still missing.
+   For a complete pipeline reconciliation, inventory all four stored folders and perform a full raw-
+   body audit for every application currently rolled up to `in_progress` with `store-coverage
+   --in-progress-applications`, plus recruiter-domain and established-thread-alias query families.
+   Require one coverage result per company, active role, and extracted job ID, including zero-match
+   results and folder provenance; a subject-only or body-preview search does not satisfy this gate.
 2. Consider only explicit hiring signals, and classify each by **scope**. *Per-role evidence* — an
    interview/screen request, a confirmed next round, or a rejection naming one specific posting in a
    multi-role app — transitions just that posting. *Whole-application evidence* — an application
@@ -147,9 +175,12 @@ public repository.
 For every requested mailbox review, maintain one private `notes.md` communication record per
 unambiguously matched application. Associate mail by exact company plus role, job ID, recruiter
 domain, or established conversation evidence; a company name alone is insufficient when multiple
-applications could match. Include every matched Inbox and Sent message in the bounded review
-window—one entry per message, not one blended thread summary. Skip alerts, newsletters, and other
-mail that is not actually part of the application process.
+applications could match. Include every matched Inbox, Sent, and non-draft Deleted Items message in
+the bounded review. Keep one entry per distinct communication, but consolidate automated
+confirmation, organizer-invitation, reminder, and RSVP copies that describe the same company, role,
+start time, and meeting link into one occurrence entry that names the evidence types. This prevents
+semantic duplicates without blending different conversations or rounds. Skip alerts, newsletters,
+and other mail that is not actually part of the application process.
 
 Preserve existing interview preparation, technical exercises, and other hand-written content. Add
 or refresh these sections immediately after the note title, in this order:
@@ -186,10 +217,11 @@ Apply these rules:
 - In `People`, deduplicate people across the thread. Record the person's explicit name, recruiting
   or interview role, team/company, and email address when present. Do not guess a name or role from
   an opaque address; label uncertain facts as unknown rather than inferring them.
-- Keep `Email Timeline` reverse chronological. Each Inbox or Sent message gets its own dated,
+- Keep `Email Timeline` reverse chronological. Each distinct communication gets a dated,
   direction-labeled entry with subject, relevant people, a one-to-three-sentence paraphrase, and
-  the resulting outcome or next action. Never paste full bodies, long quotations, signatures,
-  opaque provider message IDs, or irrelevant personal details.
+  the resulting outcome or next action. Multiple automated copies of one interview occurrence may
+  share one entry under the semantic-dedup rule above. Never paste full bodies, long quotations,
+  signatures, opaque provider message IDs, or irrelevant personal details.
 - Deduplicate by stable message evidence before editing. A later review updates an existing entry
   instead of appending the same email again. A Draft may inform the current to-do dashboard, but
   label it as unsent and never put it in the sent communication timeline.

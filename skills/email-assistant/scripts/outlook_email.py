@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 import yaml
 
@@ -40,17 +42,39 @@ CLI_COMMANDS = (
     "inbox",
     "sent",
     "drafts",
+    "deleted",
     "review-window",
     "read",
     "sync-store",
     "store-staleness",
     "store-review",
+    "store-search",
+    "store-coverage",
     "match-application",
     "create-draft",
     "create-reply-draft",
 )
 
 STORE_REVIEW_SUMMARY_KEY_LIMIT = 20
+_JOB_ID_QUERY_KEYS = frozenset({
+    "gh_jid", "jid", "job", "job_id", "jobid", "req", "req_id", "reqid",
+    "requisition", "requisition_id", "requisitionid",
+})
+_EXPLICIT_JOB_ID_FIELDS = (
+    "requisition_id",
+    "req_id",
+    "job_id",
+    "posting_id",
+    "ats_id",
+    "external_id",
+    "store_key",
+)
+_EXPLICIT_JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{2,127}$")
+_UUID_RE = re.compile(
+    r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+_PATH_JOB_ID_RE = re.compile(r"(?i)^(?:\d{4,}|r\d{3,}|[a-z]{1,8}-\d{4,})$")
+_EMBEDDED_REQ_RE = re.compile(r"(?i)(?:^|[_-])(r\d{3,})(?:$|[_-])")
 
 
 def _json(value: Any) -> None:
@@ -74,6 +98,98 @@ def _compact_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             for message in messages]
 
 
+def _job_url_identifiers(value: Any) -> tuple[str, ...]:
+    """Extract conservative stable job identifiers from one posting URL."""
+    if not isinstance(value, str) or not value.strip():
+        return ()
+    try:
+        parsed = urlsplit(value.strip())
+    except ValueError:
+        return ()
+    found: set[str] = set()
+    for key, raw in parse_qsl(parsed.query, keep_blank_values=False):
+        candidate = unquote(raw).strip()
+        if (
+            key.casefold() in _JOB_ID_QUERY_KEYS
+            and 3 <= len(candidate) <= 128
+            and any(character.isdigit() for character in candidate)
+            and not any(character.isspace() for character in candidate)
+        ):
+            found.add(candidate)
+    for raw_segment in parsed.path.split("/"):
+        segment = unquote(raw_segment).strip()
+        if not segment or len(segment) > 128:
+            continue
+        if _UUID_RE.fullmatch(segment) or _PATH_JOB_ID_RE.fullmatch(segment):
+            found.add(segment)
+        match = _EMBEDDED_REQ_RE.search(segment)
+        if match:
+            found.add(match.group(1))
+    return tuple(sorted(found, key=lambda item: (item.casefold(), item)))
+
+
+def _job_field_identifiers(job: Mapping[str, Any]) -> tuple[str, ...]:
+    """Extract conservative identifiers from explicit per-job metadata fields."""
+    found: set[str] = set()
+    for field in _EXPLICIT_JOB_ID_FIELDS:
+        value = job.get(field)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            candidate = str(value)
+        elif isinstance(value, str):
+            candidate = value.strip()
+        else:
+            continue
+        if (
+            any(character.isdigit() for character in candidate)
+            and _EXPLICIT_JOB_ID_RE.fullmatch(candidate)
+        ):
+            found.add(candidate)
+    return tuple(sorted(found, key=lambda item: (item.casefold(), item)))
+
+
+def _coverage_query_families(
+    *,
+    manual_queries: list[str],
+    applications: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build deduplicated manual and active-application literal families."""
+    families: dict[str, dict[str, Any]] = {}
+
+    def add(value: Any, source: str) -> None:
+        if not isinstance(value, str) or not value.strip():
+            return
+        display = " ".join(value.split())
+        normalized = display.casefold()
+        family = families.setdefault(normalized, {"query": display, "sources": []})
+        if source not in family["sources"]:
+            family["sources"].append(source)
+
+    for query in manual_queries:
+        add(query, "manual")
+    for application in applications:
+        if not isinstance(application, Mapping):
+            continue
+        raw_jobs = application.get("jobs")
+        jobs = [job for job in raw_jobs if isinstance(job, Mapping)] if isinstance(raw_jobs, list) else []
+        active_jobs = [job for job in jobs if job.get("status") == "in_progress"]
+        if not active_jobs:
+            continue
+        add(application.get("company"), "in_progress_company")
+        for job in active_jobs:
+            add(job.get("role"), "in_progress_role")
+            for identifier in _job_field_identifiers(job):
+                add(identifier, "job_field_identifier")
+            for identifier in _job_url_identifiers(job.get("url")):
+                add(identifier, "job_url_identifier")
+    if not families:
+        raise StoreReviewError(
+            "store-coverage requires --query or at least one in-progress application family"
+        )
+    return list(families.values())
+
+
 def _settings(validate: bool = True) -> OutlookSettings:
     raw = config.outlook_email_config()
     settings = OutlookSettings(
@@ -88,8 +204,9 @@ def _settings(validate: bool = True) -> OutlookSettings:
 
 def _client() -> tuple[OutlookSettings, DraftOnlyGraphClient]:
     settings = _settings()
-    token = AuthManager(settings).access_token()
-    client = DraftOnlyGraphClient(token)
+    auth = AuthManager(settings)
+    token = auth.access_token()
+    client = DraftOnlyGraphClient(token, token_refresher=auth.access_token)
     me = client.me()
     actual = str(me.get("mail") or me.get("userPrincipalName") or "").strip()
     if not actual or actual.casefold() != settings.account.casefold():
@@ -122,11 +239,12 @@ def build_parser() -> argparse.ArgumentParser:
         ("inbox", "list recent inbox messages"),
         ("sent", "list recent Sent Items messages"),
         ("drafts", "list existing Outlook drafts"),
+        ("deleted", "list recent Deleted Items messages without restoring them"),
         ("review-window", "reconcile recent Inbox messages against Sent Items and Drafts"),
     ):
         command = subparsers.add_parser(name, help=help_text)
         command.add_argument("--limit", type=int, default=10)
-        if name in {"inbox", "sent"}:
+        if name in {"inbox", "sent", "deleted"}:
             command.add_argument(
                 "--since",
                 help="server-filter messages at or after this ISO-8601 timestamp",
@@ -142,7 +260,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync = subparsers.add_parser(
         "sync-store",
-        help="sync a private local Inbox/Sent/Drafts evidence window (read-only)",
+        help="sync a private local Inbox/Sent/Drafts/Deleted evidence window (read-only)",
     )
     sync.add_argument(
         "--days", type=int, default=30,
@@ -177,6 +295,46 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument(
         "--details", action="store_true",
         help="emit every content-free record and projection instead of the bounded summary",
+    )
+
+    search = subparsers.add_parser(
+        "store-search",
+        help="freshness-gated search across stored subjects, full bodies, and participants",
+    )
+    search.add_argument(
+        "--query",
+        action="append",
+        required=True,
+        help="literal required in the subject, full body, or sender/To/Cc participants (repeatable)",
+    )
+    search.add_argument(
+        "--include-content",
+        action="store_true",
+        help="include matching private subjects, full bodies, and participants in output",
+    )
+    search.add_argument(
+        "--threshold-seconds", type=int, default=60,
+        help="newer-provider watermark tolerance before hard stale banner (default: 60)",
+    )
+
+    coverage = subparsers.add_parser(
+        "store-coverage",
+        help="read-only, single-scan coverage for independent literal query families",
+    )
+    coverage.add_argument(
+        "--query",
+        action="append",
+        default=[],
+        help="independent literal family such as a recruiter domain or thread alias (repeatable)",
+    )
+    coverage.add_argument(
+        "--in-progress-applications",
+        action="store_true",
+        help="add each active company, role, explicit job ID, and stable URL job ID",
+    )
+    coverage.add_argument(
+        "--threshold-seconds", type=int, default=60,
+        help="newer-provider watermark tolerance before hard stale banner (default: 60)",
     )
 
     match = subparsers.add_parser(
@@ -308,6 +466,56 @@ def _store_review(store: EmailStoreSync, *, threshold_seconds: int) -> tuple[dic
     return report, 0 if report["review_complete"] else 2
 
 
+def _store_search(
+    store: EmailStoreSync,
+    *,
+    queries: list[str],
+    include_content: bool,
+    threshold_seconds: int,
+) -> tuple[dict[str, Any], int]:
+    """Fail closed on freshness before a full-body and participant search."""
+    freshness = store.staleness_probe(threshold_seconds=threshold_seconds)
+    if freshness["store_stale"]:
+        return freshness, 2
+    data_root = config.data_root()
+    if data_root is None:
+        raise EmailStoreError("private email data root is not configured")
+    reader = EmailStoreReader.for_account_label(
+        data_root=data_root, account_label=_settings().account
+    )
+    report = reader.search_raw(queries=queries, include_content=include_content)
+    report["freshness"] = freshness
+    return report, 0 if report["audit_complete"] else 2
+
+
+def _store_coverage(
+    store: EmailStoreSync,
+    *,
+    families: list[dict[str, Any]],
+    threshold_seconds: int,
+) -> tuple[dict[str, Any], int]:
+    """Fail closed, then evaluate all independent families in one local scan."""
+    freshness = store.staleness_probe(threshold_seconds=threshold_seconds)
+    if freshness["store_stale"]:
+        return freshness, 2
+    data_root = config.data_root()
+    if data_root is None:
+        raise EmailStoreError("private email data root is not configured")
+    reader = EmailStoreReader.for_account_label(
+        data_root=data_root, account_label=_settings().account
+    )
+    report = reader.coverage_raw(queries=[family["query"] for family in families])
+    sources_by_query = {
+        " ".join(str(family["query"]).split()).casefold(): list(family["sources"])
+        for family in families
+    }
+    for family in report["query_families"]:
+        normalized = " ".join(str(family["query"]).split()).casefold()
+        family["sources"] = sources_by_query[normalized]
+    report["freshness"] = freshness
+    return report, 0 if report["coverage_complete"] else 2
+
+
 def _store_review_summary(
     report: Mapping[str, Any], *, key_limit: int = STORE_REVIEW_SUMMARY_KEY_LIMIT
 ) -> dict[str, Any]:
@@ -405,6 +613,30 @@ def main(argv: list[str] | None = None) -> int:
         )
         _json(report if args.details else _store_review_summary(report))
         return code
+    if args.command == "store-search":
+        report, code = _store_search(
+            _email_store(client, settings, read_only=True),
+            queries=args.query,
+            include_content=args.include_content,
+            threshold_seconds=args.threshold_seconds,
+        )
+        _json(report)
+        return code
+    if args.command == "store-coverage":
+        applications = []
+        if args.in_progress_applications:
+            applications, _domains = store_review_applications(config.applications_root())
+        families = _coverage_query_families(
+            manual_queries=args.query,
+            applications=applications,
+        )
+        report, code = _store_coverage(
+            _email_store(client, settings, read_only=True),
+            families=families,
+            threshold_seconds=args.threshold_seconds,
+        )
+        _json(report)
+        return code
     if args.command == "inbox":
         messages = client.list_folder("inbox", args.limit, args.since)
         _json(_compact_messages(messages) if args.compact else messages)
@@ -413,6 +645,9 @@ def main(argv: list[str] | None = None) -> int:
         _json(_compact_messages(messages) if args.compact else messages)
     elif args.command == "drafts":
         _json(client.list_drafts(args.limit))
+    elif args.command == "deleted":
+        messages = client.list_folder("deleteditems", args.limit, args.since)
+        _json(_compact_messages(messages) if args.compact else messages)
     elif args.command == "review-window":
         _json(client.review_window(args.limit))
     elif args.command == "read":

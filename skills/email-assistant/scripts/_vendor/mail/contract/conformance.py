@@ -150,6 +150,11 @@ def run_synthetic(fixture_factory: Callable[[], Any]) -> ConformanceResult:
     result.check("list-inbox", isinstance(inbox, list) and len(inbox) >= 1,
                  "empty/invalid inbox listing from the synthetic mailbox")
     result.check("list-sent", isinstance(provider.list_sent(10), list))
+    result.check(
+        "list-deleted-items",
+        isinstance(provider.list_deleted(10), list),
+        "invalid Deleted Items listing from the synthetic mailbox",
+    )
     drafts = provider.list_drafts(10)
     result.check(
         "drafts-carry-evidence",
@@ -267,6 +272,10 @@ def run_live(provider: MailProvider) -> ConformanceResult:
     result.check("live-verify-account", bool(account), "verify_account returned nothing")
     result.check("live-list-inbox", isinstance(provider.list_inbox(5), list))
     result.check("live-list-sent", isinstance(provider.list_sent(5), list))
+    result.check(
+        "live-list-deleted-items",
+        isinstance(provider.list_deleted(5), list),
+    )
     drafts = provider.list_drafts(5)
     result.check(
         "live-drafts-carry-evidence",

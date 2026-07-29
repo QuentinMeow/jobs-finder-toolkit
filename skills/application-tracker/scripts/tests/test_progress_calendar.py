@@ -30,6 +30,8 @@ for _p in (SCRIPTS, SCRIPTS / "_vendor"):
         sys.path.insert(0, str(_p))
 
 from calendar_todos import (  # noqa: E402
+    COMPANY_VIEW_END,
+    COMPANY_VIEW_START,
     SECTION_SCHEDULED,
     SECTION_WAITING,
     render_entry,
@@ -83,7 +85,8 @@ class ProgressCalendarTests(unittest.TestCase):
 
     # -- harness ----------------------------------------------------------- #
     def _place(self, status_label: str, slug: str, jobs: list[dict],
-               *, version: int = 5) -> Path:
+               *, version: int = 5, company: str = "Example Corp",
+               next_action: str | None = None) -> Path:
         app = self.apps / STATUS_DIRS[status_label] / slug
         (app / "source").mkdir(parents=True)
         for job in jobs:
@@ -92,10 +95,12 @@ class ProgressCalendarTests(unittest.TestCase):
                 (app / "source" / jd).write_text("Fictional JD.", encoding="utf-8")
         meta = {
             "job_metadata_schema_version": version,
-            "company": "Example Corp",
+            "company": company,
             "research_date": "2026-07-20",
             "jobs": jobs,
         }
+        if next_action is not None:
+            meta["next_action"] = next_action
         (app / "meta.yaml").write_text(
             yaml.safe_dump(meta, sort_keys=False), encoding="utf-8")
         return app
@@ -290,6 +295,156 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertIn("**Mon, Aug 3 · 10:00 AM PDT**", text)
         self.assertNotIn("acct-01/", text)
         self.assertEqual(text.count("<!-- jobhunt-calendar"), 1)
+
+    def test_refresh_generates_idempotent_company_view_with_all_roles_and_email_update(self):
+        slug = "example-corp-multi-20260720"
+        app = self._place("in_progress", slug, [
+            _job(
+                "Backend Engineer", "in_progress", "JD-backend.md",
+                {
+                    "phase": "technical_interview",
+                    "state": "awaiting_schedule",
+                    "updated_at": "2026-07-28T23:00:00Z",
+                    "source": {"kind": "email", "ref": "acct-01/" + "a" * 64},
+                },
+            ),
+            _job(
+                "Platform Engineer", "applied", "JD-platform.md",
+                {
+                    "phase": "application_review",
+                    "state": "waiting_employer",
+                    "updated_at": "2026-07-27T18:00:00Z",
+                    "source": {"kind": "manual", "ref": ""},
+                },
+            ),
+        ])
+        (app / "notes.md").write_text(textwrap.dedent("""\
+            # Example Corp — Notes
+
+            ## Upcoming Events & To-Dos
+
+            - [ ] Waiting for a confirmed interview time
+
+            ## Email Timeline
+
+            ### 2026-07-28 4:00 PM PT — Outbound — Interview availability
+
+            - **Summary:** Sent several Pacific-time interview windows.
+            - **Outcome / next step:** Availability submitted; awaiting a confirmed time.
+
+            ### 2026-07-27 9:00 AM PT — Inbound — Scheduling request
+
+            - **Summary:** Recruiter asked for availability.
+            - **Outcome / next step:** Send availability.
+            """), encoding="utf-8")
+        self._place("applied", "other-corp-role-20260720", [
+            _job(
+                "Excluded Role", "applied", "JD-excluded.md",
+                {"phase": "application_review", "state": "waiting_employer"},
+            ),
+        ], company="Other Corp")
+        self._write_calendar(CALENDAR_SKELETON)
+        before = self.calendar.read_bytes()
+
+        preview = self._run(STATUS, "--refresh-calendar")
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertEqual(self.calendar.read_bytes(), before)
+        write = self._run(STATUS, "--refresh-calendar", "--write")
+        self.assertEqual(write.returncode, 0, write.stderr)
+        first = self.calendar.read_bytes()
+        text = first.decode("utf-8")
+        self.assertEqual(text.count(COMPANY_VIEW_START), 1)
+        self.assertEqual(text.count(COMPANY_VIEW_END), 1)
+        self.assertEqual(text.count("### Example Corp"), 1)
+        self.assertIn("Backend Engineer", text)
+        self.assertIn("Platform Engineer", text)
+        self.assertNotIn("Excluded Role", text)
+        self.assertEqual(
+            text.count("Availability submitted; awaiting a confirmed time."), 1)
+        self.assertIn("Source: [Email timeline]", text)
+        self.assertIn("Source: [Email evidence]", text)
+        self.assertIn("Source: [Manual tracker update]", text)
+        self.assertNotIn("acct-01/", text)
+        self.assertIn("my own note — tooling must never touch this line", text)
+
+        again = self._run(STATUS, "--refresh-calendar", "--write")
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.calendar.read_bytes(), first)
+        self.assertEqual(self._run(STATUS, "--check-calendar").returncode, 0)
+
+    def test_company_update_falls_back_to_human_next_action_then_role_metadata(self):
+        self._place(
+            "in_progress",
+            "alpha-corp-role-20260720",
+            [_job(
+                "Backend Engineer", "in_progress", "JD-backend.md",
+                {
+                    "phase": "recruiter_screen",
+                    "state": "awaiting_schedule",
+                    "updated_at": "2026-07-28T20:00:00Z",
+                    "source": {"kind": "email", "ref": "acct-01/" + "b" * 64},
+                },
+            )],
+            company="Alpha Corp",
+            next_action="Availability submitted; wait for the recruiter to confirm.",
+        )
+        self._place(
+            "in_progress",
+            "beta-corp-role-20260720",
+            [_job(
+                "Infrastructure Engineer", "in_progress", "JD-infra.md",
+                {
+                    "phase": "technical_interview",
+                    "state": "scheduled",
+                    "updated_at": "2026-07-29T18:00:00Z",
+                    "source": {"kind": "manual", "ref": ""},
+                },
+            )],
+            company="Beta Corp",
+        )
+        self._write_calendar(CALENDAR_SKELETON)
+        write = self._run(STATUS, "--refresh-calendar", "--write")
+        self.assertEqual(write.returncode, 0, write.stderr)
+        text = self.calendar.read_text()
+        self.assertIn(
+            "**Latest company update:** Availability submitted; wait for the "
+            "recruiter to confirm. — Date not recorded · Source: [Human]",
+            text,
+        )
+        self.assertIn(
+            "**Latest company update:** Infrastructure Engineer: Technical "
+            "Interview — Scheduled. — 2026-07-29T18:00:00Z · Source: "
+            "[Application metadata]",
+            text,
+        )
+
+    def test_status_transition_adds_and_removes_company_view_without_role_entry(self):
+        slug = "example-corp-solo-20260720"
+        self._place("applied", slug, [_job(
+            "Backend Engineer", "applied", "JD-backend.md",
+            {"phase": "application_review", "state": "waiting_employer"},
+        )])
+        advance = self._run(
+            STATUS, "--update-job", slug, "backend", "in_progress")
+        self.assertEqual(advance.returncode, 0, advance.stderr)
+        self.assertEqual(self._find(slug)[0], "in_progress")
+        text = self.calendar.read_text()
+        self.assertEqual(text.count(COMPANY_VIEW_START), 1)
+        self.assertIn("### Example Corp", text)
+        self.assertIn("Backend Engineer", text)
+        self.assertIn(
+            "../4_in_progress/example-corp-solo-20260720/meta.yaml", text)
+        self.assertNotIn("<!-- jobhunt-calendar {", text)
+        self.assertEqual(self._run(STATUS, "--check-calendar").returncode, 0)
+
+        close = self._run(
+            STATUS, "--update-job", slug, "backend", "rejected")
+        self.assertEqual(close.returncode, 0, close.stderr)
+        self.assertEqual(self._find(slug)[0], "rejected")
+        text = self.calendar.read_text()
+        self.assertEqual(text.count(COMPANY_VIEW_START), 1)
+        self.assertIn("_None currently._", text)
+        self.assertNotIn("### Example Corp", text)
 
     def test_update_progress_closed_state_is_rejected_with_hint(self):
         slug = "example-corp-solo-20260720"
@@ -525,6 +680,29 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertIn("booking_required", proc.stdout)
         self.assertIn("Overdue waiting", proc.stdout)
         self.assertIn("follow-up was 2026-01-01", proc.stdout)
+
+    # -- metadata validation ------------------------------------------------ #
+    def test_check_metadata_rejects_total_compensation_range(self):
+        slug = "example-corp-unsupported-comp-20260720"
+        app = self._place("drafted", slug, [_job(
+            "Backend Engineer", "drafted", "JD-backend.md",
+            {"phase": "application_prep", "state": "action_required"})])
+        meta = self._meta(app)
+        meta["jobs"][0]["total_compensation_range"] = {
+            "min": 200000,
+            "max": 300000,
+        }
+        (app / "meta.yaml").write_text(
+            yaml.safe_dump(meta, sort_keys=False), encoding="utf-8")
+
+        proc = self._run(
+            STATUS, "--check-metadata", "--statuses", "drafted")
+
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn(
+            "jobs[0].total_compensation_range is not supported",
+            proc.stdout,
+        )
 
     # -- migration CLI ------------------------------------------------------- #
     def test_fleet_migration_is_preview_first_then_writes(self):

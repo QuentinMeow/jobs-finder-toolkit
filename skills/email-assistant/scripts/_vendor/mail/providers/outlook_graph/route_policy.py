@@ -20,18 +20,19 @@ class DraftOnlyRoutePolicy(RoutePolicy):
     _REPLY = re.compile(r"^/v1\.0/me/messages/[^/]+/createReply$")
     _ATTACHMENTS = re.compile(r"^/v1\.0/me/messages/[^/]+/attachments$")
     _FOLDER_MESSAGES = re.compile(
-        r"^/v1\.0/me/mailFolders(?:/(?:inbox|drafts|sentitems)"
-        r"|\('(?:inbox|drafts|sentitems)'\))/messages$"
+        r"^/v1\.0/me/mailFolders(?:/(?:inbox|drafts|sentitems|deleteditems)"
+        r"|\('(?:inbox|drafts|sentitems|deleteditems)'\))/messages$"
     )
     _DELTA = re.compile(
-        r"^/v1\.0/me/mailFolders(?:/(?:inbox|drafts|sentitems)"
-        r"|\('(?:inbox|drafts|sentitems)'\))/messages/delta$"
+        r"^/v1\.0/me/mailFolders(?:/(?:inbox|drafts|sentitems|deleteditems)"
+        r"|\('(?:inbox|drafts|sentitems|deleteditems)'\))/messages/delta$"
     )
     _EXACT = {
         ("GET", "/v1.0/me"),
         ("GET", "/v1.0/me/mailFolders/inbox/messages"),
         ("GET", "/v1.0/me/mailFolders/drafts/messages"),
         ("GET", "/v1.0/me/mailFolders/sentitems/messages"),
+        ("GET", "/v1.0/me/mailFolders/deleteditems/messages"),
         ("POST", "/v1.0/me/messages"),
     }
 

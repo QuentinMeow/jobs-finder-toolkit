@@ -43,6 +43,11 @@
       "description": "Read personal Outlook mail, connect recruiter messages to local job applications, and create repository-grounded reply drafts without ever sending email."
     },
     {
+      "name": "interview-calendar",
+      "source": "./skills/interview-calendar",
+      "description": "Reconcile interview email, application progress, private notes, and duplicate-free Outlook Calendar events."
+    },
+    {
       "name": "gardener",
       "source": "./skills/gardener",
       "description": "Periodic memory hygiene for the toolkit's agent-memory zones: expire stale discovery scans, prune old search-log rows, flag stale/duplicate LESSONS, verify links, and recompute the pipeline funnel. Dry-run by default; moves rather than deletes."

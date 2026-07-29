@@ -23,9 +23,9 @@ recruiter_email: recruiter@example.com
 jobs:
   - role: Platform Engineer
     status: applied
-    url: https://jobs.example.com/platform
-    store_key: job-123
-    requisition_id: REQ-123
+    url: ""
+    store_key: gh-123
+    req_id: REQ-123
     progress:
       phase: application_review
       state: waiting_employer
@@ -39,7 +39,7 @@ jobs:
                 "company": "Example Corp",
                 "jobs": [{
                     "role": "Platform Engineer", "status": "applied",
-                    "url": "https://jobs.example.com/platform", "store_key": "job-123",
+                    "url": None, "store_key": "gh-123",
                     "requisition_id": "REQ-123",
                     "progress": {"phase": "application_review", "state": "waiting_employer"},
                 }],

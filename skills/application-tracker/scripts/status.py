@@ -79,6 +79,7 @@ from calendar_todos import (
     generate_entry_id,
     record_cancellation,
     record_reschedule,
+    render_company_view,
 )
 from job_metadata import (
     APPLICATION_SCHEMA_VERSION,
@@ -568,12 +569,183 @@ def _calendar_path() -> Path:
     return config.calendar_path()
 
 
-def _details_reference(meta_path: Path) -> str:
+def _details_reference(meta_path: Path, *, source_meta_path: Path | None = None) -> str:
     """Relative role-context link for the human calendar row."""
     target = meta_path.parent / "notes.md"
-    if not target.is_file():
+    source_notes = source_meta_path.parent / "notes.md" if source_meta_path else None
+    if not target.is_file() and not (source_notes and source_notes.is_file()):
         target = meta_path
     return Path(os.path.relpath(target, start=_calendar_path().parent)).as_posix()
+
+
+_EMAIL_TIMELINE_HEADING_RE = re.compile(r"^## Email Timeline\s*$", re.MULTILINE)
+_EMAIL_ENTRY_HEADING_RE = re.compile(r"^###\s+(.+?)\s*$", re.MULTILINE)
+
+
+def _latest_standardized_note(notes_path: Path, *, details: str) -> dict | None:
+    """Read the latest standardized Email Timeline item, never arbitrary prose.
+
+    The email-assistant contract keeps this section reverse chronological and
+    gives each item a ``Summary`` plus ``Outcome / next step``. Prefer the
+    outcome because it expresses the current company-level workflow; fall back
+    to the concise summary when the outcome is absent.
+    """
+    try:
+        text = notes_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    timeline = _EMAIL_TIMELINE_HEADING_RE.search(text)
+    if timeline is None:
+        return None
+    section = text[timeline.end():]
+    next_section = re.search(r"^##\s+", section, re.MULTILINE)
+    if next_section:
+        section = section[:next_section.start()]
+    entry = _EMAIL_ENTRY_HEADING_RE.search(section)
+    if entry is None:
+        return None
+    entry_body = section[entry.end():]
+    next_entry = _EMAIL_ENTRY_HEADING_RE.search(entry_body)
+    if next_entry:
+        entry_body = entry_body[:next_entry.start()]
+    value = None
+    for field in ("Outcome / next step", "Summary"):
+        match = re.search(
+            rf"^- \*\*{re.escape(field)}:\*\*\s*(.+?)\s*$",
+            entry_body,
+            re.MULTILINE,
+        )
+        if match:
+            value = " ".join(match.group(1).split())
+            break
+    if not value:
+        return None
+    return {
+        "heading": " ".join(entry.group(1).split()),
+        "summary": value,
+        "details": details,
+        "source_kind": "email_timeline",
+    }
+
+
+def _company_view_data(
+    meta_overrides: dict[Path, tuple[bytes, Path]] | None = None,
+) -> tuple[list[dict], list[str]]:
+    """Build a deterministic read-only projection of all in-progress companies.
+
+    Overrides map a current ``meta.yaml`` path to prospective bytes and the
+    path it will have after a status-folder move. This lets a calendar write and
+    its metadata transition agree before either reaches disk.
+    """
+    overrides = meta_overrides or {}
+    grouped: dict[str, dict] = {}
+    errors: list[str] = []
+    seen: set[Path] = set()
+    for status in STATUS_FOLDERS:
+        status_dir = _status_dir(status)
+        if not status_dir.is_dir():
+            continue
+        for app_dir in sorted(status_dir.iterdir()):
+            meta_path = app_dir / "meta.yaml"
+            if not app_dir.is_dir() or not meta_path.is_file() or meta_path in seen:
+                continue
+            seen.add(meta_path)
+            override = overrides.get(meta_path)
+            raw = override[0] if override else None
+            display_meta_path = override[1] if override else meta_path
+            try:
+                meta = yaml.safe_load(
+                    raw.decode("utf-8") if raw is not None
+                    else meta_path.read_text(encoding="utf-8")
+                ) or {}
+                jobs = meta.get("jobs") if isinstance(meta, dict) else None
+                overall = derive_status(jobs)
+            except (OSError, UnicodeDecodeError, yaml.YAMLError, ValueError) as exc:
+                if status == "in_progress" or override is not None:
+                    errors.append(f"{meta_path}: cannot build company view: {exc}")
+                continue
+            if overall != "in_progress":
+                continue
+
+            company = str(meta.get("company") or app_dir.name).strip() or app_dir.name
+            key = company.casefold()
+            company_row = grouped.setdefault(key, {
+                "company": company,
+                "applications": [],
+            })
+            details = _details_reference(
+                display_meta_path, source_meta_path=meta_path)
+            latest_note = _latest_standardized_note(
+                meta_path.parent / "notes.md", details=details)
+            roles = []
+            for job in jobs:
+                if not isinstance(job, dict):
+                    continue
+                progress = job.get("progress") \
+                    if isinstance(job.get("progress"), dict) else {}
+                source = progress.get("source") \
+                    if isinstance(progress.get("source"), dict) else {}
+                roles.append({
+                    "role": str(job.get("role") or "Tracked role"),
+                    "status": str(job.get("status") or ""),
+                    "phase": str(progress.get("phase") or ""),
+                    "state": str(progress.get("state") or "unknown"),
+                    "label": str(progress.get("label") or ""),
+                    "updated_at": (
+                        progress.get("updated_at")
+                        or job.get("status_date")
+                        or meta.get("research_date")
+                    ),
+                    "source_kind": str(source.get("kind") or "metadata"),
+                    "details": details,
+                })
+            if latest_note is None:
+                next_action = str(meta.get("next_action") or "").strip()
+                if next_action:
+                    latest_note = {
+                        "heading": "Date not recorded",
+                        "summary": " ".join(next_action.split()),
+                        "details": details,
+                        "source_kind": "human",
+                    }
+                elif roles:
+                    latest_role = max(
+                        roles,
+                        key=lambda item: str(item.get("updated_at") or ""),
+                    )
+                    stage = str(
+                        latest_role.get("label")
+                        or latest_role.get("phase")
+                        or "progress unknown"
+                    ).replace("_", " ").strip().title()
+                    state = str(
+                        latest_role.get("state") or "unknown"
+                    ).replace("_", " ").strip().title()
+                    latest_note = {
+                        "heading": str(
+                            latest_role.get("updated_at") or "Date not recorded"),
+                        "summary": (
+                            f"{latest_role.get('role')}: {stage} — {state}."),
+                        "details": details,
+                        "source_kind": "metadata",
+                    }
+            company_row["applications"].append({
+                "application": app_dir.name,
+                "latest_note": latest_note,
+                "roles": roles,
+            })
+
+    for row in grouped.values():
+        row["applications"].sort(key=lambda item: item["application"])
+    companies = sorted(grouped.values(), key=lambda item: item["company"].casefold())
+    return companies, errors
+
+
+def _company_view_markdown(
+    meta_overrides: dict[Path, tuple[bytes, Path]] | None = None,
+) -> tuple[str, int, list[str]]:
+    companies, errors = _company_view_data(meta_overrides)
+    return render_company_view(companies), len(companies), errors
 
 
 def _read_calendar_raw(*, create: bool = False) -> bytes | None:
@@ -706,27 +878,32 @@ def _sync_log_hint(changed: bool, moved: bool) -> None:
 
 def _transition_calendar_plan(
     slug: str, company: str, jobs_progress: list[tuple[dict, dict]],
-    *, target_meta_path: Path,
+    *, source_meta_path: Path, prospective_meta: bytes, target_meta_path: Path,
 ):
-    """Plan the calendar updates for jobs whose progress references an entry.
+    """Plan entry changes plus the generated company view transactionally.
 
     ``jobs_progress`` pairs each affected job dict with its NEW progress
-    summary. Jobs without a ``calendar_item`` need no calendar change. Returns
-    ``None`` when nothing references the calendar; exits non-zero on a missing
-    file/entry or a plan error (the caller writes nothing in that case).
+    summary. The company view is also rendered from the prospective metadata,
+    so entering/leaving ``in_progress`` cannot leave it stale. Returns ``None``
+    only when no calendar exists, no entry is referenced, and the generated
+    view is empty.
     """
     referencing = [
         (job, progress) for job, progress in jobs_progress
         if str((progress or {}).get("calendar_item") or "").strip()
     ]
-    if not referencing:
-        return None
-    raw = _read_calendar_raw()
-    if raw is None:
-        print(f"Error: calendar file {_calendar_path()} not found but "
-              f"{slug} references calendar entries; run --check-calendar",
-              file=sys.stderr)
+    overrides = {source_meta_path: (prospective_meta, target_meta_path)}
+    company_view, company_count, view_errors = _company_view_markdown(overrides)
+    if view_errors:
+        print("Error: could not build the generated company view:", file=sys.stderr)
+        for error in view_errors:
+            print(f"  - {error}", file=sys.stderr)
         sys.exit(1)
+    raw = _read_calendar_raw()
+    if raw is None and not referencing and not company_count:
+        return None
+    if raw is None:
+        raw = _read_calendar_raw(create=True)
     doc = parse_calendar(raw.decode("utf-8"))
     if doc.errors:
         print(f"Error: calendar file {_calendar_path()} failed validation:",
@@ -745,7 +922,7 @@ def _transition_calendar_plan(
         upserts[item] = _entry_fields_for_progress(
             entry, slug=slug, job=job, progress=progress, company=company,
             meta_path=target_meta_path)
-    plan = plan_calendar_update(raw, upserts)
+    plan = plan_calendar_update(raw, upserts, company_view=company_view)
     if plan.errors:
         print("Error: could not plan the calendar update (nothing written):",
               file=sys.stderr)
@@ -795,6 +972,7 @@ def update_status(slug: str, new_status: str):
         sys.exit(1)
     calendar_plan = _transition_calendar_plan(
         slug, str(meta.get("company") or ""), jobs_progress,
+        source_meta_path=meta_path, prospective_meta=plan.output_bytes,
         target_meta_path=_status_dir(new_status) / slug / "meta.yaml")
     changed = _commit_meta_and_calendar([(meta_path, raw, plan)], calendar_plan)
     if plan.changed:
@@ -852,6 +1030,7 @@ def update_job_status(slug: str, role_match: str, status: str):
     derived = derive_status(edited_preview["jobs"])
     calendar_plan = _transition_calendar_plan(
         slug, str(meta.get("company") or ""), [(job, progress)],
+        source_meta_path=meta_path, prospective_meta=plan.output_bytes,
         target_meta_path=_status_dir(derived) / slug / "meta.yaml")
     changed = _commit_meta_and_calendar([(meta_path, raw, plan)], calendar_plan)
 
@@ -934,6 +1113,9 @@ def update_progress(
 
     company = str(meta.get("company") or "")
     calendar_plan = None
+    raw_calendar = None
+    fields = None
+    entry = None
     needs_entry = state in PROGRESS_CALENDAR_STATES or calendar_item
     if needs_entry:
         raw_calendar = _read_calendar_raw(create=True)
@@ -962,21 +1144,6 @@ def update_progress(
         ):
             if value is not None:
                 fields[key] = value or None
-        calendar_plan = plan_calendar_update(
-            raw_calendar, {calendar_item: fields}, create_missing=entry is None)
-        if calendar_plan.errors:
-            print("Error: could not plan the calendar update (nothing written):",
-                  file=sys.stderr)
-            for error in calendar_plan.errors:
-                print(f"  - {error}", file=sys.stderr)
-            if state == "scheduled":
-                print("Hint: pass --starts-at <ISO timestamp> and --timezone "
-                      "<IANA zone> (plus optional --ends-at) with the progress "
-                      "update.",
-                      file=sys.stderr)
-            sys.exit(1)
-    elif str(current.get("calendar_item") or "").strip():
-        progress["calendar_item"] = current["calendar_item"]
 
     progress["updated_at"] = _utc_now_stamp()
 
@@ -988,6 +1155,38 @@ def update_progress(
                   "rejected|ignored — that sets state 'closed' with it.",
                   file=sys.stderr)
         sys.exit(1)
+
+    company_view, company_count, view_errors = _company_view_markdown({
+        meta_path: (plan.output_bytes, meta_path),
+    })
+    if view_errors:
+        print("Error: could not build the generated company view:", file=sys.stderr)
+        for error in view_errors:
+            print(f"  - {error}", file=sys.stderr)
+        sys.exit(1)
+    if raw_calendar is None:
+        raw_calendar = _read_calendar_raw()
+        if raw_calendar is None and company_count:
+            raw_calendar = _read_calendar_raw(create=True)
+    if raw_calendar is not None:
+        upserts = {calendar_item: fields} if fields is not None else {}
+        calendar_plan = plan_calendar_update(
+            raw_calendar,
+            upserts,
+            create_missing=entry is None and fields is not None,
+            company_view=company_view,
+        )
+        if calendar_plan.errors:
+            print("Error: could not plan the calendar update (nothing written):",
+                  file=sys.stderr)
+            for error in calendar_plan.errors:
+                print(f"  - {error}", file=sys.stderr)
+            if state == "scheduled":
+                print("Hint: pass --starts-at <ISO timestamp> and --timezone "
+                      "<IANA zone> (plus optional --ends-at) with the progress "
+                      "update.",
+                      file=sys.stderr)
+            sys.exit(1)
     _commit_meta_and_calendar([(meta_path, raw, plan)], calendar_plan)
     bits = [f"phase -> {phase}", f"state -> {state}"]
     if label is not None:
@@ -1034,6 +1233,8 @@ def check_calendar(as_json: bool = False) -> bool:
     path = _calendar_path()
     findings: list[str] = []
     refs = _fleet_calendar_refs()
+    company_view, company_count, view_errors = _company_view_markdown()
+    findings.extend(view_errors)
     raw = _read_calendar_raw()
     doc = None
     if raw is None:
@@ -1045,6 +1246,19 @@ def check_calendar(as_json: bool = False) -> bool:
     else:
         doc = parse_calendar(raw.decode("utf-8"))
         findings.extend(doc.errors)
+        if not doc.errors and not view_errors:
+            view_plan = plan_calendar_update(
+                raw, {}, company_view=company_view)
+            if view_plan.errors:
+                findings.extend(view_plan.errors)
+            elif view_plan.changed:
+                findings.append(
+                    "generated company view is stale "
+                    "(run --refresh-calendar --write)")
+    if raw is None and company_count:
+        findings.append(
+            f"calendar file {path} is missing but {company_count} in-progress "
+            f"compan{'y' if company_count == 1 else 'ies'} require the generated view")
 
     entries = doc.entries if doc is not None else {}
     for item, holders in sorted(refs.items()):
@@ -1112,18 +1326,28 @@ def check_calendar(as_json: bool = False) -> bool:
 
 
 def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
-    """Preview or re-render every managed row with the current compact UX.
+    """Preview or re-render managed rows plus the generated company view.
 
     Metadata remains canonical for phase/state. This command only refreshes
-    visible dates/actions, role links, and the hidden one-line markers; it does
-    not infer a transition or touch any application metadata.
+    visible dates/actions, role links, the hidden one-line markers, and the
+    read-only company projection; it does not infer a transition or touch any
+    application metadata.
     """
     path = _calendar_path()
     raw = _read_calendar_raw()
     refs = _fleet_calendar_refs()
+    company_view, company_count, view_errors = _company_view_markdown()
+    if view_errors:
+        print("Error: cannot refresh generated company view:", file=sys.stderr)
+        for error in view_errors:
+            print(f"  - {error}", file=sys.stderr)
+        return False
     if raw is None:
-        print(f"No calendar file at {path}; nothing to refresh.")
-        return not refs
+        if not refs and not company_count:
+            print(f"No calendar file at {path}; nothing to refresh.")
+            return True
+        raw = (_read_calendar_raw(create=True)
+               if write else CALENDAR_TEMPLATE.encode("utf-8"))
     doc = parse_calendar(raw.decode("utf-8"))
     if doc.errors:
         print(f"Error: calendar file {path} failed validation:", file=sys.stderr)
@@ -1155,7 +1379,7 @@ def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
             print(f"  - {error}", file=sys.stderr)
         return False
 
-    plan = plan_calendar_update(raw, upserts)
+    plan = plan_calendar_update(raw, upserts, company_view=company_view)
     if plan.errors:
         print("Error: could not refresh calendar:", file=sys.stderr)
         for error in plan.errors:
@@ -1164,6 +1388,7 @@ def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
     summary = {
         "calendar": str(path),
         "entries": len(upserts),
+        "companies": company_count,
         "changed": plan.changed,
         "mode": "write" if write else "dry_run",
     }
@@ -1171,7 +1396,8 @@ def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
         print(json.dumps(summary, indent=2))
     elif plan.changed:
         print(f"Calendar refresh ({'WRITE' if write else 'DRY RUN'}): "
-              f"{len(upserts)} managed row(s) will be re-rendered.")
+              f"{len(upserts)} managed row(s) and {company_count} company "
+              f"view row(s) will be re-rendered.")
     else:
         print(f"Calendar {path}: already uses the current layout.")
     if not plan.changed or not write:
@@ -1184,7 +1410,8 @@ def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
     except (MetadataChecksumMismatchError, OSError) as exc:
         print(f"Error: calendar refresh failed: {exc}", file=sys.stderr)
         return False
-    print(f"Refreshed {len(upserts)} managed calendar row(s) -> {path}")
+    print(f"Refreshed {len(upserts)} managed calendar row(s) and "
+          f"{company_count} company view row(s) -> {path}")
     return True
 
 
@@ -1324,6 +1551,7 @@ def sync_calendar(write: bool = False, as_json: bool = False) -> bool:
             by_meta.setdefault(meta_path, {})[("jobs", index)] = {
                 "progress": new_progress}
     meta_writes = []
+    meta_overrides: dict[Path, tuple[bytes, Path]] = {}
     for meta_path, updates in sorted(by_meta.items()):
         pre_image = meta_path.read_bytes()
         plan = plan_field_updates(pre_image, updates)
@@ -1331,7 +1559,16 @@ def sync_calendar(write: bool = False, as_json: bool = False) -> bool:
             _print_plan_errors(meta_path, plan)
             return False
         meta_writes.append((meta_path, pre_image, plan))
-    calendar_plan = plan_calendar_update(raw, upserts)
+        meta_overrides[meta_path] = (plan.output_bytes, meta_path)
+    company_view, _company_count, view_errors = _company_view_markdown(
+        meta_overrides)
+    if view_errors:
+        print("Error: could not build the generated company view:", file=sys.stderr)
+        for error in view_errors:
+            print(f"  - {error}", file=sys.stderr)
+        return False
+    calendar_plan = plan_calendar_update(
+        raw, upserts, company_view=company_view)
     if calendar_plan.errors:
         print("Error: could not plan the calendar update (nothing written):",
               file=sys.stderr)
@@ -1789,8 +2026,9 @@ def main():
                              "Add --write to apply transactionally.")
     parser.add_argument("--refresh-calendar", action="store_true",
                         help="Preview re-rendering every managed row with visible "
-                             "dates/actions, role links, and compact markers. "
-                             "Add --write to apply; metadata is untouched.")
+                             "dates/actions, role links, compact markers, and the "
+                             "generated in-progress company view. Add --write "
+                             "to apply; metadata is untouched.")
     parser.add_argument("--write", action="store_true",
                         help="With --sync-calendar: apply the previewed proposals.")
     parser.add_argument("--sync-log", action="store_true",

@@ -234,7 +234,15 @@ the machine contract is one hidden JSON-comment line. Optional calendar fields i
 `action`, `due_at`, `starts_at`, `ends_at`, timezone, and `follow_up_at`.
 Sections project entry state: **Action needed** (owner work), **Waiting and follow-up**
 (employer/result/paused waits), **Interview schedule** (confirmed times, chronological), and
-**My notes and personal todos** (owner-only).
+**My notes and personal todos** (owner-only). A separate generated **In-progress companies and
+roles** view contains every application rolled up to `in_progress`, every role in each folder, the
+canonical per-role stage, and the latest concise company update with a `human` or `email` source.
+It is a projection only: `meta.yaml` progress plus standardized `notes.md` evidence remain canonical.
+Company-scope evidence may appear there when an exact posting is unresolved, but it must not be
+copied into multiple roles or used to create an Outlook event.
+Update precedence is deterministic: newest standardized `Email Timeline` outcome/summary (email)
+→ non-empty company-scope `next_action` (human, date not recorded) → newest canonical per-role
+progress summary (metadata). A second refresh after a write must report no change.
 Tools own ONLY the `<!-- jobhunt-calendar ... -->` marked entries; unmarked lines are preserved
 byte-for-byte. A confirmed reschedule marks the old occurrence `superseded` and appends the
 replacement — old times are never overwritten; a time merely passing never completes an
@@ -444,8 +452,9 @@ job has none and records its stable id as `progress.calendar_item`. `--state sch
 status.py --check-calendar            # read-only: markers, duplicate ids, meta<->calendar drift
 status.py --sync-calendar             # preview how owner edits map back to progress
 status.py --sync-calendar --write     # apply the previewed proposals transactionally
-status.py --refresh-calendar          # preview current compact rows + role links
-status.py --refresh-calendar --write  # re-render rows only; never changes progress
+status.py --refresh-calendar          # preview compact rows plus the in-progress company/role view
+status.py --refresh-calendar --write  # re-render projections only; never changes progress
+status.py --refresh-calendar          # repeat after writing; must report no change
 ```
 
 Owner-edit surfaces the sync understands: a **checked box** (booking done -> `awaiting_schedule`;
@@ -498,6 +507,9 @@ When the user asks "how's my pipeline?" or "what's my status?":
    stuck scheduling"
 4. Note stale applications (applied > 2 weeks ago with no status change)
 5. Show conversion rates if enough data exists
+6. Refresh or inspect the generated company view so every in-progress company and role has a
+   current stage and a latest-update source; surface unresolved company-scope evidence explicitly
+   rather than guessing which sibling role owns it
 
 ## Job Discovery
 

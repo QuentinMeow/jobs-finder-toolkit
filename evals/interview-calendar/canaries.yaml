@@ -1,0 +1,73 @@
+# Canary set — interview-calendar orchestration skill. Uses fictional applications and messages.
+# Run per evals/README.md; judge per evals/rubrics/judging.md.
+skill: interview-calendar
+default_setup: >
+  config.yaml unset -> config.example.yaml and examples/** fallback. Mail and Outlook Calendar
+  connector results are supplied as fictional fixtures; no private overlay or live writes.
+
+canaries:
+  - id: ic-proposed-availability-is-not-confirmed
+    requires_overlay: false
+    prompt: >
+      A recruiter asked Jordan to choose one of three interview times next week and included a
+      booking link. Update the application and calendar.
+    setup: "No Sent confirmation, booking receipt, calendar invitation, or exact selected time exists."
+    expected_behavior:
+      - "Reads the exact message and requires one exact application/posting match."
+      - "Records booking_required plus an application-note/local-calendar todo, deduplicated by message evidence."
+      - "Does not create an Outlook event or claim that any proposed time is booked."
+    failure_modes:
+      - "Chooses a proposed time, guesses duration/timezone, or creates an Outlook event."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: ic-existing-invitation-wins
+    requires_overlay: false
+    prompt: >
+      Email confirms Jordan's Example Corp technical screen at 10 AM Pacific for 60 minutes.
+      Outlook already has an organizer-created invitation at that time. Reconcile everything
+      without duplicates.
+    setup: "The invitation has the same meeting link and role but a recruiter-authored title."
+    expected_behavior:
+      - "Fetches the plausible event and recognizes it from exact time plus meeting-link/role evidence rather than title alone."
+      - "Leaves the organizer-owned invitation unchanged and creates no personal mirror event."
+      - "Updates matched application progress/notes/local calendar and marks calendar confirmed."
+    failure_modes:
+      - "Creates a second event, rewrites the invitation, or adds external attendees."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: ic-confirmed-reschedule-converges
+    requires_overlay: false
+    prompt: >
+      A confirmed email moves Jordan's Example Corp coding interview from Tuesday at 1 PM Pacific
+      to Thursday at 2 PM Pacific with the same 60-minute duration. Update calendars.
+    setup: "One unambiguous personal interview event exists at the old time; no invitation exists."
+    expected_behavior:
+      - "Updates the existing personal Outlook event instead of creating a second event and verifies one canonical event at the new time."
+      - "Uses application-tracker progress/calendar tooling so the old local occurrence remains superseded history."
+      - "Updates the existing email timeline entry or appends exactly one new evidence entry without duplicating people."
+    failure_modes:
+      - "Creates a new event while leaving the old event active, overwrites local history, or edits an organizer-owned invitation."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: ic-all-mail-company-view-with-ambiguous-role
+    requires_overlay: false
+    prompt: >
+      Recheck all of my email, including deleted mail, refresh the interview calendar, and show the
+      current stage and latest update for every in-progress company and role.
+    setup: >
+      The fictional mailbox has Inbox, Sent, Drafts, and Deleted Items fixtures. Example Corp has
+      two in-progress roles. A full-body scheduling receipt says only "Software Engineer,
+      Infrastructure," confirms submitted availability, and contains no confirmed interview time
+      or exact posting ID.
+    expected_behavior:
+      - "Runs a full all-time four-folder inventory and one content-free `store-coverage --in-progress-applications` pass plus domain/alias families across complete raw bodies and participants, including folder provenance and a zero-match coverage row."
+      - "Keeps the per-role match unresolved but adds one deduplicated company-level latest update: availability submitted and awaiting schedule, sourced to email."
+      - "Refreshes one generated company-view row containing both roles and their canonical stages, while preserving hand-written calendar content."
+      - "Creates no Outlook event or availability holds because no exact confirmed occurrence exists."
+    failure_modes:
+      - "Skips Deleted Items, uses only subjects/previews, silently assigns the receipt to both roles, or creates proposed-time Outlook events."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
