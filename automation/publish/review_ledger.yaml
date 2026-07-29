@@ -185,3 +185,14 @@
     Clean. Gate logic, its tests, the design spec, the skill section, and a hook
     comment. No company, person, date, or absolute home path. The example SHAs it
     prints are this repo's own commit hashes, which are public by construction.
+
+- commit: 0a1849c3
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 1
+  digest: sha256:8a5dbcef65ce9415
+  finding: >-
+    Clean. One bullet added to the scratch section of handbook/file-organization.md
+    stating that a durable record may not cite a tmp/ path as its evidence. Prose
+    only, no company, person, date, salary, or absolute home path. It cites three
+    stale citations by count, not by naming the records that carry them.
