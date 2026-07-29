@@ -169,27 +169,39 @@ that records why.
 `private/`, what you write there is published.** There are no exceptions left — no glob, no
 negation, no symlink. `find skills -maxdepth 2 -type l` returns nothing.
 
----
+## Merged: phase 1 — orphans
 
-## Phase 1 — orphans
+Both orphaned items are refiled inside the overlay and `private/todo/` and
+`private/email-assistant/` no longer exist. The retired-`todo/` task went to
+`private/tasks/4_done/2026-07-22-yoe-adjacent-context-cross-contamination/`, and the stray review
+went to the overlay's review queue reformatted to `templates/queue/review.md`.
 
-**Blocking preconditions:** none — phase 0 is merged. Ready to start.
+**This plan told the phase to file that task into `0_backlog`, and that was wrong.** The file's
+own front matter said `Status: done` and it carried a resolution with a confirmed root cause and
+shipped fix; filing it as backlog would have resurrected finished work. Every claim in it was
+re-checked against the tree before it was recorded as done — the fix regex, three named
+regressions, two corpus cases, and a vendored copy matching its canonical module line for line.
+One definition-of-done bullet was never run and is recorded as not run rather than quietly
+ticked. The lesson for the phases that follow: **a plan written before reading the file can be
+wrong about the file, so read it before executing the instruction.**
 
-- `private/todo/tasks/yoe-adjacent-context-cross-contamination.md` → refile as
-  `private/tasks/0_backlog/<YYYY-MM-DD>-yoe-adjacent-context-cross-contamination/task.md`
-  using `templates/task/task.md`; then remove the empty `todo/` tree. (Retired by the
-  2026-07-22 process-folders decision.)
-- `private/email-assistant/reviews/2026-07-20-recent-job-email-review.md` →
-  `private/message-queue/needs-human/reviews/<kebab-slug>.md`, reformatted to
-  `templates/queue/review.md`. Remove the now-empty `email-assistant/` tree.
-- Sweep `tmp/` (102 untracked files across 20 purpose folders). **Do not delete** — this is
-  scratch, but confirm with the owner before removing anything that looks like a captured
-  artifact, per the never-delete guardrail.
+`tmp/` was classified, not emptied. Nothing was deleted. Most of it is owner data — one folder
+holds complete application folders with real employers and the owner's name in the filenames, and
+another holds interview screenshots — so the sweep's output is a decision item in the overlay's
+review queue listing what is safe to remove, what is regenerable, and what only the owner may
+touch. The never-delete guardrail makes classification, not deletion, the deliverable here.
 
-Both orphans live in the private repo, so this phase's public half is empty and the review gate
-has nothing to acknowledge. Do not create a public commit just to have one.
+**This phase's public half was not empty after all**, contrary to what this plan asserted. The
+sweep found that three durable records — two `evals/results/` rows and one private task — cite
+snapshot files under `tmp/` that no longer exist. A record that cites scratch is evidence with an
+expiry date and no expiry signal. That is now a rule in
+[the scratch section of the file-organization handbook](../../handbook/file-organization.md#scratch--temporary-files),
+and it binds phases 5 through 8, whose verification steps are exactly the kind of record that
+tends to reach for a path under `tmp/`.
 
-**Green gate:** reconciler + tests.
+**What phase 2 inherits:** the `tmp/` → `local/` rename moves a tree that still contains the
+owner's application data, so it is a move, never a clean. The inventory is in the overlay review
+item.
 
 ---
 

@@ -59,3 +59,11 @@ for every agent and skill; the old flat `tmp_*.py`-in-root habit is retired.
   (quick sanity checks). Descriptive lowercase file names inside each; never a bare `tmp_*.py` in the
   root. Machine scratch (`--json-out`) may target the OS `/tmp`, but keep anything worth revisiting
   in a named `tmp/` bucket.
+- **A durable record never cites scratch as its evidence.** A task's `verification.md`, an
+  `evals/results/` row, a `memory/` entry, a design doc — none of them may point at a path under
+  `tmp/` as the proof of a claim. Scratch gets swept; the citation then names nothing and the claim
+  becomes unverifiable, with no signal that it ever went stale. Measured on 2026-07-29: three such
+  records cited snapshot files that were already gone. If an artifact is the evidence for something
+  durable, get it out of `tmp/` — paste the relevant lines into the record itself, add a tracked
+  fixture under `examples/fixtures/`, or park it in the private overlay when it carries personal
+  data. A command and its real output, quoted in the record, survive the sweep; a path does not.

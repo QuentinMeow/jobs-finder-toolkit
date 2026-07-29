@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: repo
 - **Source**: [workspace-restructure execution plan](../../../design/workspace-restructure/execution-plan.md) · [design](../../../design/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
-- **Claimed-by**:
+- **Claimed-by**: agent — session 2026-07-29 (closed)
 
 ## Goal
 
@@ -41,8 +41,26 @@ phase is ready to start.
 
 ## Definition of done
 
-- [ ] `private/todo/` refiled into `private/tasks/0_backlog/` and the empty tree removed
-- [ ] The stray email review reformatted to `templates/queue/review.md` and moved into
+- [x] `private/todo/` refiled and the empty tree removed. **Not into `0_backlog`** — the file's
+      own front matter said `Status: done` and it carried a resolution with a confirmed root
+      cause and a shipped fix, so it went to `private/tasks/4_done/` with a `verification.md`.
+      See `verification.md` here for how that was checked.
+- [x] The stray email review reformatted to `templates/queue/review.md` and moved into
       `private/message-queue/needs-human/reviews/`
-- [ ] `tmp/` swept; anything ambiguous surfaced to the owner rather than deleted
-- [ ] Gate command clean
+- [x] `tmp/` swept; nothing deleted. It is classified instead, and the classification is an
+      owner decision item in the overlay's review queue — most of `tmp/` turned out to be owner
+      data, which the never-delete guardrail puts out of an agent's reach entirely.
+- [x] Gate command clean
+
+## What this phase found that the plan did not predict
+
+Two corrections worth carrying into the later phases:
+
+- **The plan's instruction was wrong about the file it named.** It said to file the orphaned task
+  into `0_backlog`; the file said it was already done. Read the file before executing an
+  instruction written about it.
+- **"This phase's public half is empty" was also wrong.** Sweeping `tmp/` turned up three durable
+  records — two `evals/results/` rows and the private task above — citing snapshot files under
+  `tmp/` that no longer exist. That produced a real public change: a rule in the scratch section
+  of `handbook/file-organization.md` forbidding a durable record from citing scratch as its
+  evidence.
