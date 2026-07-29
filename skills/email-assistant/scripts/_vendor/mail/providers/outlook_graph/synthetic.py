@@ -27,6 +27,7 @@ class SyntheticGraphTransport:
         self.inbox: list[dict[str, Any]] = []
         self.sent: list[dict[str, Any]] = []
         self.drafts: list[dict[str, Any]] = []
+        self.deleted: list[dict[str, Any]] = []
         self.by_id: dict[str, dict[str, Any]] = {}
         self.calls: list[tuple[str, str]] = []
         self.lie_about_drafts = False
@@ -97,6 +98,27 @@ class SyntheticGraphTransport:
             "webLink": "https://mail.example.com/synthetic",
         })
 
+    def seed_deleted(
+        self,
+        *,
+        conversation_id: str,
+        modified_at: str = "2026-01-05T12:30:00Z",
+        subject: str = "Deleted synthetic message",
+        body: str = "Synthetic deleted message body.",
+    ) -> dict[str, Any]:
+        return self._register(self.deleted, {
+            "id": self._next_id("deleted"),
+            "subject": subject,
+            "from": {"emailAddress": {"address": _RECRUITER}},
+            "toRecipients": [{"emailAddress": {"address": SYNTHETIC_ACCOUNT}}],
+            "lastModifiedDateTime": modified_at,
+            "isDraft": False,
+            "conversationId": conversation_id,
+            "bodyPreview": body[:80],
+            "body": {"contentType": "Text", "content": body},
+            "webLink": "https://mail.example.com/synthetic",
+        })
+
     # ── transport surface (same shape as AuditedHttpTransport.request) ──
     def request(
         self,
@@ -119,7 +141,12 @@ class SyntheticGraphTransport:
             }
         if method.upper() == "GET" and path.startswith("/v1.0/me/mailFolders/"):
             folder = path.split("/")[4]
-            items = {"inbox": self.inbox, "drafts": self.drafts, "sentitems": self.sent}[folder]
+            items = {
+                "inbox": self.inbox,
+                "drafts": self.drafts,
+                "sentitems": self.sent,
+                "deleteditems": self.deleted,
+            }[folder]
             if path.endswith("/messages/delta"):
                 return {
                     "value": [dict(item) for item in items],
@@ -200,6 +227,9 @@ class OutlookSyntheticFixture:
         )
         self.transport.seed_draft(
             conversation_id="conversation-unrelated", modified_at="2026-01-03T10:00:00Z"
+        )
+        self.transport.seed_deleted(
+            conversation_id="conversation-deleted", modified_at="2026-01-02T10:00:00Z"
         )
 
     def seed_inbox_message(self, *, subject: str, conversation_id: str,

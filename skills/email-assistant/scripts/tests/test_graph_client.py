@@ -3,10 +3,12 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from _vendor.mail.contract.transport import TransportError
 from _vendor.mail.providers.outlook_graph.provider import (
     DraftOnlyGraphClient,
     DraftOnlyRoutePolicy,
@@ -21,7 +23,10 @@ class FakeTransport:
 
     def request(self, method, url, access_token, payload=None, headers=None):
         self.calls.append((method, url, access_token, payload, headers))
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 class DraftOnlyGraphClientTests(unittest.TestCase):
@@ -43,6 +48,10 @@ class DraftOnlyGraphClientTests(unittest.TestCase):
         DraftOnlyRoutePolicy.assert_allowed(
             "GET",
             "https://graph.microsoft.com/v1.0/me/mailFolders('sentitems')/messages/delta?$deltatoken=opaque",
+        )
+        DraftOnlyRoutePolicy.assert_allowed(
+            "GET",
+            "https://graph.microsoft.com/v1.0/me/mailFolders('deleteditems')/messages?$skiptoken=opaque",
         )
         with self.assertRaises(DraftPolicyError):
             DraftOnlyRoutePolicy.assert_allowed(
@@ -112,6 +121,14 @@ class DraftOnlyGraphClientTests(unittest.TestCase):
         self.assertIn("/mailFolders/sentitems/messages?", transport.calls[0][1])
         self.assertIn("sentDateTime+desc", transport.calls[0][1])
 
+    def test_deleted_items_are_allowlisted_read_only_and_ordered_by_modified_time(self):
+        transport = FakeTransport([{"value": [{"id": "deleted-1", "isDraft": False}]}])
+        client = DraftOnlyGraphClient("token", transport=transport)
+        self.assertEqual(client.list_deleted(), [{"id": "deleted-1", "isDraft": False}])
+        self.assertIn("/mailFolders/deleteditems/messages?", transport.calls[0][1])
+        self.assertIn("lastModifiedDateTime+desc", transport.calls[0][1])
+        self.assertEqual(transport.calls[0][0], "GET")
+
     def test_folder_listing_paginates_beyond_graph_page_size(self):
         first_page = [{"id": f"message-{index}"} for index in range(50)]
         second_page = [{"id": f"message-{index}"} for index in range(50, 70)]
@@ -159,6 +176,81 @@ class DraftOnlyGraphClientTests(unittest.TestCase):
         self.assertEqual(delta["messages"], [{"id": "immutable-1"}])
         self.assertIn("token=opaque", delta["sync_token"])
         self.assertEqual(delta["field_set_version"], 1)
+
+    def test_mid_delta_401_refreshes_and_retries_the_read_once(self):
+        next_link = (
+            "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta"
+            "?$skiptoken=page-2"
+        )
+        delta_link = (
+            "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta"
+            "?$deltatoken=complete"
+        )
+        transport = FakeTransport([
+            {"value": [{"id": "message-1"}], "@odata.nextLink": next_link},
+            TransportError("Graph returned HTTP 401", status_code=401),
+            {"value": [{"id": "message-2"}], "@odata.deltaLink": delta_link},
+        ])
+        refresh = Mock(return_value="replacement-token")
+        client = DraftOnlyGraphClient(
+            "initial-token",
+            transport=transport,
+            token_refresher=refresh,
+        )
+
+        result = client.delta_sync("inbox")
+
+        self.assertEqual(result["messages"], [{"id": "message-1"}, {"id": "message-2"}])
+        refresh.assert_called_once_with()
+        self.assertEqual(
+            [call[2] for call in transport.calls],
+            ["initial-token", "initial-token", "replacement-token"],
+        )
+        self.assertEqual(transport.calls[1][1], transport.calls[2][1])
+
+    def test_second_read_401_fails_without_another_refresh_or_retry(self):
+        transport = FakeTransport([
+            TransportError("first HTTP 401", status_code=401),
+            TransportError("second HTTP 401", status_code=401),
+        ])
+        refresh = Mock(return_value="replacement-token")
+        client = DraftOnlyGraphClient(
+            "initial-token",
+            transport=transport,
+            token_refresher=refresh,
+        )
+
+        with self.assertRaisesRegex(TransportError, "second HTTP 401"):
+            client.read_message("message-1")
+
+        refresh.assert_called_once_with()
+        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(
+            [call[2] for call in transport.calls],
+            ["initial-token", "replacement-token"],
+        )
+
+    def test_draft_post_401_is_not_refreshed_or_replayed(self):
+        transport = FakeTransport([
+            TransportError("draft HTTP 401", status_code=401),
+        ])
+        refresh = Mock(return_value="replacement-token")
+        client = DraftOnlyGraphClient(
+            "initial-token",
+            transport=transport,
+            token_refresher=refresh,
+        )
+
+        with self.assertRaisesRegex(TransportError, "draft HTTP 401"):
+            client.create_draft(
+                subject="Interview availability",
+                body_text="Thank you.",
+                to=["recruiter@example.invalid"],
+            )
+
+        refresh.assert_not_called()
+        self.assertEqual(len(transport.calls), 1)
+        self.assertEqual(transport.calls[0][0], "POST")
 
     def test_later_sent_reply_blocks_duplicate_draft_before_write(self):
         transport = FakeTransport(

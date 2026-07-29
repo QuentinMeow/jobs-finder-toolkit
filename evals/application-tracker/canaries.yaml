@@ -93,3 +93,20 @@ canaries:
       - "Hand-edits meta.yaml or hand-moves the folder instead of using the script (leaving folder and per-job statuses out of sync)."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: at-refresh-in-progress-company-view
+    requires_overlay: false
+    prompt: "Refresh my calendar's company view so every in-progress company and role shows its current stage and latest update."
+    setup: >
+      Add two fictional in-progress application folders. One has two roles and a newest matched
+      email update whose exact role is unresolved; the other has a human-provided update. The
+      calendar contains hand-written text outside generated markers.
+    expected_behavior:
+      - "Uses `status.py --refresh-calendar --write` and renders exactly one company row per in-progress application with every role's canonical status/phase/state/label."
+      - "Shows the newest company update with its human or email source and keeps ambiguous email evidence at company scope rather than copying it into both roles."
+      - "Preserves hand-written calendar content, is byte-stable on a second refresh, and creates no duplicate company or role rows."
+      - "Does not change metadata progress, move application folders, or create Outlook events."
+    failure_modes:
+      - "Omits an in-progress role, invents a role stage, duplicates rows, or turns the company view into status authority."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]

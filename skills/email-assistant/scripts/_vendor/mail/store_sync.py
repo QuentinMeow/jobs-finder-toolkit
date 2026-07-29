@@ -2,9 +2,10 @@
 
 This is deliberately below the email-assistant CLI and above providers: it has
 no application-tracker imports and no drafting operations.  It records Inbox,
-Sent Items, and Drafts as private local raw evidence, with a normal full
-inventory path before delta is treated as an optimisation.  The only provider
-identity used as a key is its immutable item ID; RFC Message-ID remains an alias.
+Sent Items, Drafts, and Deleted Items as private local raw evidence, with a
+normal full inventory path before delta is treated as an optimisation.  The
+only provider identity used as a key is its immutable item ID; RFC Message-ID
+remains an alias.
 
 The store lives under ``<data_root>/email``.  ``data_root`` is deliberately
 configured outside tracked source trees (``config.data_root()``); the private
@@ -35,7 +36,7 @@ from .contract.interface import (
 STORE_SCHEMA_VERSION = 1
 MESSAGE_SCHEMA_VERSION = 1
 FIELD_SET_VERSION = 1
-FOLDERS = ("inbox", "sentitems", "drafts")
+FOLDERS = ("inbox", "sentitems", "drafts", "deleteditems")
 PROVIDER_SOURCE = {"outlook_graph": "outlook"}
 STALE_BANNER = "STORE STALE — sync broken"
 
@@ -102,6 +103,42 @@ def _message_time(message: dict[str, Any]) -> str | None:
     return None
 
 
+def _sender_address(message: dict[str, Any]) -> str:
+    sender = message.get("from")
+    if not isinstance(sender, dict):
+        return ""
+    address = sender.get("emailAddress")
+    if not isinstance(address, dict):
+        return ""
+    return str(address.get("address") or "").strip().casefold()
+
+
+def _message_direction(
+    *,
+    folder: str,
+    message: dict[str, Any],
+    account_label: str,
+    previous: dict[str, Any] | None,
+) -> str:
+    """Preserve message direction when an item moves into Deleted Items.
+
+    A previously synced immutable ID carries its known direction across the
+    move.  On the first full sync, draft evidence and the configured mailbox's
+    sender identity distinguish deleted drafts/outbound mail from inbound mail
+    without persisting the mailbox address in the store.
+    """
+    if folder == "drafts" or message.get("isDraft") is True:
+        return "draft"
+    if folder == "sentitems":
+        return "outbound"
+    if folder == "inbox":
+        return "inbound"
+    prior = str((previous or {}).get("direction") or "")
+    if prior in {"inbound", "outbound", "draft"}:
+        return prior
+    return "outbound" if _sender_address(message) == account_label else "inbound"
+
+
 def _is_within_window(message: dict[str, Any], cutoff: datetime | None) -> bool:
     if cutoff is None:
         return True
@@ -163,6 +200,7 @@ def normalized_message(
     attachments: Iterable[dict[str, Any]],
     raw_fetch_id: str,
     observed_at: str,
+    direction: str,
 ) -> dict[str, Any]:
     """The Stage-3 derived-message shape (no body; raw is authoritative).
 
@@ -182,6 +220,7 @@ def normalized_message(
         "provider_thread_id": str(message.get("conversationId") or "") or None,
         "rfc_message_id": str(message.get("internetMessageId") or "") or None,
         "folder": folder,
+        "direction": direction,
         "in_scope": True,
         "tombstoned": False,
         "received_at": message.get("receivedDateTime") or None,
@@ -215,6 +254,7 @@ class EmailStoreSync:
         if not account_label.strip():
             raise EmailStoreError("configured mailbox label is required")
         self.provider = provider
+        self._account_label = account_label.strip().casefold()
         self.source = _provider_source(provider)
         self.root = Path(data_root).expanduser().resolve() / "email"
         self.tool_version = tool_version
@@ -364,7 +404,7 @@ class EmailStoreSync:
             "provider": self.source,
             "content_free": True,
             "message_row_fields": [
-                "message_key", "folder", "in_scope", "tombstoned",
+                "message_key", "folder", "direction", "in_scope", "tombstoned",
                 "received_at", "sent_at", "modified_at", "has_attachments",
             ],
         }
@@ -375,6 +415,7 @@ class EmailStoreSync:
                 {
                     "message_key": key,
                     "folder": record.get("folder"),
+                    "direction": record.get("direction"),
                     "in_scope": bool(record.get("in_scope")),
                     "tombstoned": bool(record.get("tombstoned")),
                     "received_at": record.get("received_at"),
@@ -409,6 +450,9 @@ class EmailStoreSync:
         raw_fetch_id = self._capture_raw(
             folder=folder, message=full, attachments=attachments, observed_at=observed_at
         )
+        key = message_key(self.account, immutable_id)
+        previous = state["messages"].get(key)
+        previous = previous if isinstance(previous, dict) else None
         record = normalized_message(
             account=self.account,
             provider=self.source,
@@ -417,9 +461,25 @@ class EmailStoreSync:
             attachments=attachments,
             raw_fetch_id=raw_fetch_id,
             observed_at=observed_at,
+            direction=_message_direction(
+                folder=folder,
+                message=full,
+                account_label=self._account_label,
+                previous=previous,
+            ),
         )
         key = str(record["message_key"])
-        previous = state["messages"].get(key)
+        history = [
+            str(value)
+            for value in (previous or {}).get("folder_history", [])
+            if value in FOLDERS
+        ]
+        previous_folder = _record_folder(previous or {})
+        if previous_folder and (not history or history[-1] != previous_folder):
+            history.append(previous_folder)
+        if not history or history[-1] != folder:
+            history.append(folder)
+        record["folder_history"] = history
         if previous:
             # Preserve the original raw provenance chain.  The current fetch is
             # authoritative for fields that can change (folder, draft/read state).
@@ -542,7 +602,7 @@ class EmailStoreSync:
 
         # A full snapshot's absence is meaningful only for records that remain
         # within this exact rolling window.  For each absence read its immutable
-        # ID: 404 = hard deletion/tombstone; present outside the three folders =
+        # ID: 404 = hard deletion/tombstone; present outside the four folders =
         # out of scope.  Any other error aborts rather than manufacturing loss.
         pending_absences: set[str] = set()
         if mode == "full":

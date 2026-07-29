@@ -8,6 +8,15 @@ and adds personal notes; tools own ONLY the marked job-hunt entries.
 
 File contract:
 
+- One optional generated company-view block near the top of the file. It is a
+  read-only projection of canonical application progress and standardized
+  notes; tools replace only the bytes between its dedicated markers::
+
+      <!-- jobhunt-company-view:start -->
+      ## Companies in progress
+      ...
+      <!-- jobhunt-company-view:end -->
+
 - Four exact section headings, each appearing once::
 
       ## Action needed              owner action / booking / decision / follow-up
@@ -84,6 +93,8 @@ MANAGED_SECTIONS = (SECTION_ACTION, SECTION_WAITING, SECTION_SCHEDULED)
 
 MARKER_OPEN = "<!-- jobhunt-calendar"
 MARKER_CLOSE = "-->"
+COMPANY_VIEW_START = "<!-- jobhunt-company-view:start -->"
+COMPANY_VIEW_END = "<!-- jobhunt-company-view:end -->"
 
 # State -> the section a live entry belongs in. Unknown/closed entries keep
 # their last section so history stays auditable; nothing is deleted.
@@ -127,6 +138,14 @@ CALENDAR_TEMPLATE = """\
 # Interview calendar
 
 Scan the bold date or action first. Open the linked role for full context.
+
+<!-- jobhunt-company-view:start -->
+## Companies in progress
+
+_Generated from canonical application progress and standardized notes. Edit those sources, not this block._
+
+_None currently._
+<!-- jobhunt-company-view:end -->
 
 ## Action needed
 
@@ -212,6 +231,34 @@ class CalendarEditPlan:
     changed_entry_ids: tuple[str, ...]
     errors: tuple[str, ...]
     changed: bool
+
+
+def _company_view_span(lines: list[str]) -> tuple[tuple[int, int] | None, list[str]]:
+    """Return the inclusive generated-block span and structural errors.
+
+    The block is optional for backward compatibility. Once present it must be
+    unique and balanced so an update can never guess which copy to replace.
+    """
+    starts = [
+        index for index, line in enumerate(lines)
+        if _line_text(line).strip() == COMPANY_VIEW_START
+    ]
+    ends = [
+        index for index, line in enumerate(lines)
+        if _line_text(line).strip() == COMPANY_VIEW_END
+    ]
+    errors: list[str] = []
+    if len(starts) > 1:
+        errors.append("duplicate generated company-view start marker")
+    if len(ends) > 1:
+        errors.append("duplicate generated company-view end marker")
+    if bool(starts) != bool(ends):
+        errors.append("generated company-view markers must be a balanced pair")
+    if errors or not starts:
+        return None, errors
+    if ends[0] <= starts[0]:
+        return None, ["generated company-view end marker appears before its start marker"]
+    return (starts[0], ends[0]), []
 
 
 def _validate_timezone(value: str) -> bool:
@@ -322,6 +369,9 @@ def parse_calendar(text: str) -> CalendarDocument:
     doc = CalendarDocument(lines=text.splitlines(keepends=True))
     if doc.lines and doc.lines[0].endswith("\r\n"):
         doc.newline = "\r\n"
+
+    _company_span, company_errors = _company_view_span(doc.lines)
+    doc.errors.extend(company_errors)
 
     for index, line in enumerate(doc.lines):
         stripped = _line_text(line)
@@ -582,6 +632,118 @@ def default_entry_text(
     return " · ".join(bits)
 
 
+def _display_progress_update(value: str | None) -> str:
+    """Human-readable but deterministic timestamp for the generated view."""
+    if not value:
+        return "Not recorded"
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return str(value)
+    if "T" not in str(value):
+        return parsed.strftime("%b %d, %Y").replace(" 0", " ")
+    zone = parsed.tzname() or ""
+    rendered = parsed.strftime("%b %d, %Y · %I:%M %p").replace(" 0", " ")
+    return f"{rendered}{f' {zone}' if zone else ''}"
+
+
+def _source_label(kind: str) -> str:
+    return {
+        "email": "Email evidence",
+        "email_timeline": "Email timeline",
+        "human": "Human",
+        "manual": "Manual tracker update",
+        "metadata": "Application metadata",
+    }.get(str(kind or "").strip(), "Application metadata")
+
+
+def render_company_view(companies: list[dict]) -> str:
+    """Render the read-only company projection placed between view markers.
+
+    ``companies`` is already filtered to derived ``in_progress`` applications.
+    Each company contains applications; each application may provide one latest
+    standardized-notes update plus all of its role progress rows. Provider IDs
+    are deliberately absent: callers pass only the source kind and a link back
+    to the canonical notes/meta file.
+    """
+    lines = [
+        "## Companies in progress",
+        "",
+        "_Generated from canonical application progress and standardized notes. "
+        "Edit those sources, not this block._",
+        "",
+    ]
+    if not companies:
+        lines.append("_None currently._")
+        return "\n".join(lines) + "\n"
+
+    for company_index, company in enumerate(companies):
+        if company_index:
+            lines.append("")
+        lines.append(f"### {_markdown_text(str(company.get('company') or 'Company'))}")
+        lines.append("")
+        for application in company.get("applications") or []:
+            latest_note = application.get("latest_note")
+            if isinstance(latest_note, dict):
+                summary = _markdown_text(str(latest_note.get("summary") or "Update recorded"))
+                heading = _markdown_text(str(latest_note.get("heading") or "Latest update"))
+                details = str(latest_note.get("details") or "")
+                source_label = _source_label(
+                    str(latest_note.get("source_kind") or "metadata"))
+                source = f"[{source_label}](<{details}>)" if details else source_label
+                lines.append(
+                    f"- **Latest company update:** {summary} — {heading} · Source: {source}")
+            for role in application.get("roles") or []:
+                role_name = _markdown_text(str(role.get("role") or "Tracked role"))
+                details = str(role.get("details") or "")
+                subject = f"[{role_name}](<{details}>)" if details else role_name
+                phase = str(role.get("label") or "").strip() or _PHASE_LABELS.get(
+                    str(role.get("phase") or ""), "Next step")
+                state = _STATE_LABELS.get(
+                    str(role.get("state") or ""),
+                    str(role.get("state") or "unknown").replace("_", " ").title(),
+                )
+                posting_status = str(role.get("status") or "").replace("_", " ").title()
+                status_suffix = f" · Posting: {posting_status}" if posting_status else ""
+                lines.append(
+                    f"- {subject} — {_markdown_text(phase)} · {_markdown_text(state)}{status_suffix}")
+                updated = _display_progress_update(role.get("updated_at"))
+                source_label = _source_label(str(role.get("source_kind") or ""))
+                source = f"[{source_label}](<{details}>)" if details else source_label
+                lines.append(f"  - Latest: {updated} · Source: {source}")
+    return "\n".join(lines) + "\n"
+
+
+def _splice_company_view(
+    lines: list[str], *, body: str, newline: str,
+) -> tuple[list[str], list[str]]:
+    """Replace or insert exactly one generated view without touching outside bytes."""
+    span, errors = _company_view_span(lines)
+    if errors:
+        return lines, errors
+    body_lines = body.rstrip("\r\n").splitlines()
+    rendered = [COMPANY_VIEW_START + newline]
+    rendered.extend(line + newline for line in body_lines)
+    rendered.append(COMPANY_VIEW_END + newline)
+    if span is not None:
+        start, end = span
+        return lines[:start] + rendered + lines[end + 1:], []
+
+    insert_at = next(
+        (index for index, line in enumerate(lines)
+         if _line_text(line) == SECTION_ACTION),
+        None,
+    )
+    if insert_at is None:
+        return lines, [f"cannot insert company view: missing '{SECTION_ACTION}'"]
+    block = list(rendered)
+    if insert_at and _line_text(lines[insert_at - 1]).strip():
+        block.insert(0, newline)
+    if block[-1] != newline:
+        block.append(newline)
+    return lines[:insert_at] + block + lines[insert_at:], []
+
+
 def generate_entry_id(existing_ids, application_slug: str) -> str:
     """A stable new id: cal-<slug-minus-date>-NN (lowest unused NN)."""
     base = re.sub(r"-\d{8}$", "", str(application_slug or "").strip().lower())
@@ -676,6 +838,7 @@ def plan_calendar_update(
     upserts: dict[str, dict],
     *,
     create_missing: bool = False,
+    company_view: str | None = None,
 ) -> CalendarEditPlan:
     """Plan a formatting-preserving calendar edit for the given entries.
 
@@ -683,8 +846,10 @@ def plan_calendar_update(
     Existing entries are rewritten in place and MOVED to the section their new
     state projects to; new entries (``create_missing=True``) are appended to
     their section (chronologically for Scheduled). Unmarked lines are spliced
-    around, never rewritten. Fails closed — a parse error, duplicate id,
-    validation error, or verification failure returns the original bytes.
+    around, never rewritten. When ``company_view`` is provided, only the
+    dedicated generated-view block is replaced (or inserted once for a legacy
+    file). Fails closed — a parse error, duplicate id/view marker, validation
+    error, or verification failure returns the original bytes.
     """
     before_sha256 = hashlib.sha256(raw).hexdigest()
     try:
@@ -812,6 +977,13 @@ def plan_calendar_update(
         if canonical:
             ending = line[len(stripped):]
             lines[index] = canonical + ending
+
+    if company_view is not None:
+        lines, company_errors = _splice_company_view(
+            lines, body=company_view, newline=doc.newline)
+        if company_errors:
+            return CalendarEditPlan(
+                before_sha256, raw, (), tuple(company_errors), False)
 
     output_text = "".join(lines)
     output_doc = parse_calendar(output_text)

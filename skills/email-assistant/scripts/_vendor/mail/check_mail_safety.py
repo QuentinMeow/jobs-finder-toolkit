@@ -80,8 +80,9 @@ _SCOPES_NAME_RE = re.compile(r"(?i)(?:^|_)scopes?$")
 # Known consumer CLIs: filename -> exact allowed command surface.
 CONSUMER_CLI_PINS: dict[str, set[str]] = {
     "outlook_email.py": {
-        "doctor", "login", "logout", "inbox", "sent", "drafts", "review-window",
-        "read", "sync-store", "store-staleness", "store-review", "match-application", "create-draft",
+        "doctor", "login", "logout", "inbox", "sent", "drafts", "deleted", "review-window",
+        "read", "sync-store", "store-staleness", "store-review", "store-search", "store-coverage",
+        "match-application", "create-draft",
         "create-reply-draft",
     },
 }

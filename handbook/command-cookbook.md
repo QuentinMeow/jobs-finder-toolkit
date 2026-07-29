@@ -58,6 +58,11 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 # Personal Outlook (draft-only; user sends manually; see the email-assistant skill
 # for login/inbox/draft commands)
 .venv/bin/python skills/email-assistant/scripts/outlook_email.py doctor
+# Capture all four folders; repeat --query for company, role, or recruiter-domain participant terms
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py sync-store --all --full
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py store-search --query '<company>' --query '<role>'
+# Single-scan, content-free coverage: each query is independent; include active application families
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py store-coverage --in-progress-applications --query '<recruiter-domain>' --query '<thread-alias>'
 
 # Mail send-less safety check (folder-walks every provider; also run by pre-commit)
 .venv/bin/python automation/shared/mail/check_mail_safety.py --consumer skills/email-assistant/scripts

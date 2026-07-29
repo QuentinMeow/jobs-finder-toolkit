@@ -23,8 +23,23 @@ Interactive review streams mailbox content to the active agent. The separate
 for evidence/rebuild purposes; raw bodies, derived messages, state, message rows, and quoted
 evidence remain outside Git. `store-review` first live-probes freshness, then prints a bounded,
 content-free summary by default; `store-review --details` is the explicit opt-in for the complete
-content-free record/projection view. Disposable draft-body files belong under `tmp/email-assistant/`
-and are removed after draft creation.
+content-free record/projection view. `store-search` deterministically searches full locally stored
+subjects, bodies, and sender/To/Cc participant names and addresses across Inbox, Sent Items,
+Drafts, and Deleted Items; it returns neutral-key matches unless `--include-content` explicitly
+requests matching private content. `store-coverage` runs the same complete four-folder scan once,
+but treats every repeated `--query` as an independent family and returns only per-family counts,
+stable message keys grouped by folder, and explicit zero-match queries. Add
+`--in-progress-applications` to generate families for every in-progress company, active role, and
+conservative stable identifier found in explicit per-job ID fields (`requisition_id`, legacy
+`req_id`, or canonical `store_key`) or its job URL; use manual queries for recruiter domains or
+thread aliases.
+Disposable draft-body files belong under
+`tmp/email-assistant/` and are removed after draft creation.
+
+Long paginated reads may outlive one Graph access token. If Graph rejects a `GET` with HTTP 401,
+the client uses the cached OAuth refresh grant and retries that exact read once with the replacement
+token. A second 401 fails immediately, as do refresh failures. Draft `POST` and `PATCH` operations
+are never replayed automatically, preventing duplicate or ambiguous mailbox writes.
 
 ## Authentication contract
 
@@ -52,7 +67,8 @@ The client permits only these operations beneath `https://graph.microsoft.com/v1
 | `GET` | `/me/mailFolders/inbox/messages` | List recent inbox messages |
 | `GET` | `/me/mailFolders/sentitems/messages` | Reconcile whether an inbound message was answered |
 | `GET` | `/me/mailFolders/drafts/messages` | List existing drafts |
-| `GET` | `/me/mailFolders/{inbox,sentitems,drafts}/messages/delta` | Incremental local-store sync |
+| `GET` | `/me/mailFolders/deleteditems/messages` | Read Deleted Items without restoring or deleting messages |
+| `GET` | `/me/mailFolders/{inbox,sentitems,drafts,deleteditems}/messages/delta` | Incremental local-store sync |
 | `GET` | `/me/messages/{id}` | Read one message or verify one draft |
 | `GET` | `/me/messages/{id}/attachments` | Attachment metadata only |
 | `POST` | `/me/messages` | Create a new draft |

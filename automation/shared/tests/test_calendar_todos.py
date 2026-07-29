@@ -9,6 +9,8 @@ if str(SHARED_DIR) not in sys.path:
 
 from calendar_todos import (  # noqa: E402
     CALENDAR_TEMPLATE,
+    COMPANY_VIEW_END,
+    COMPANY_VIEW_START,
     SECTION_ACTION,
     SECTION_SCHEDULED,
     SECTION_WAITING,
@@ -17,6 +19,7 @@ from calendar_todos import (  # noqa: E402
     plan_calendar_update,
     record_cancellation,
     record_reschedule,
+    render_company_view,
     render_entry,
 )
 
@@ -263,6 +266,68 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(plan.errors, ())
         out = plan.output_bytes.decode()
         self.assertLess(out.index("cal-b-01"), out.index("cal-a-01"))
+
+    def test_company_view_is_idempotent_and_preserves_everything_outside_markers(self):
+        legacy = CALENDAR_TEMPLATE.replace(
+            f"{COMPANY_VIEW_START}\n## Companies in progress\n\n"
+            "_Generated from canonical application progress and standardized notes. "
+            "Edit those sources, not this block._\n\n_None currently._\n"
+            f"{COMPANY_VIEW_END}\n\n",
+            "",
+        ).replace(
+            "## My notes and personal todos\n",
+            "## My notes and personal todos\n\n"
+            "Owner prose stays byte-for-byte.   \n",
+        )
+        companies = [{
+            "company": "Example Corp",
+            "applications": [{
+                "application": "example-corp-20260720",
+                "latest_note": {
+                    "heading": "2026-07-28 4:00 PM PT — Outbound — Availability",
+                    "summary": "Availability submitted; awaiting a confirmed time.",
+                    "details": "../4_in_progress/example-corp/notes.md",
+                },
+                "roles": [{
+                    "role": "Backend Engineer",
+                    "status": "in_progress",
+                    "phase": "technical_interview",
+                    "state": "awaiting_schedule",
+                    "updated_at": "2026-07-28T23:00:00Z",
+                    "source_kind": "email",
+                    "details": "../4_in_progress/example-corp/notes.md",
+                }],
+            }],
+        }]
+        body = render_company_view(companies)
+        first = plan_calendar_update(
+            legacy.encode("utf-8"), {}, company_view=body)
+        self.assertEqual(first.errors, ())
+        output = first.output_bytes.decode("utf-8")
+        self.assertEqual(output.count(COMPANY_VIEW_START), 1)
+        self.assertEqual(output.count(COMPANY_VIEW_END), 1)
+        self.assertIn("Owner prose stays byte-for-byte.   \n", output)
+        self.assertIn("Availability submitted; awaiting a confirmed time.", output)
+        self.assertIn("Technical interview · Waiting for confirmed time", output)
+        self.assertIn("Source: [Email evidence]", output)
+        second = plan_calendar_update(first.output_bytes, {}, company_view=body)
+        self.assertEqual(second.errors, ())
+        self.assertFalse(second.changed)
+        self.assertEqual(second.output_bytes, first.output_bytes)
+
+    def test_duplicate_company_view_markers_fail_closed(self):
+        duplicate = CALENDAR_TEMPLATE.replace(
+            COMPANY_VIEW_START,
+            f"{COMPANY_VIEW_START}\n{COMPANY_VIEW_START}",
+            1,
+        )
+        doc = parse_calendar(duplicate)
+        self.assertTrue(any("duplicate generated company-view start" in error
+                            for error in doc.errors))
+        plan = plan_calendar_update(
+            duplicate.encode("utf-8"), {}, company_view=render_company_view([]))
+        self.assertTrue(plan.errors)
+        self.assertEqual(plan.output_bytes, duplicate.encode("utf-8"))
 
 
 class RescheduleTests(unittest.TestCase):

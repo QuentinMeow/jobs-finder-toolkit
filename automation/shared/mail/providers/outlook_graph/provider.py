@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import html
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar
 from urllib.parse import quote, urlencode
 
 from ...contract.interface import (
@@ -59,6 +59,7 @@ class DraftOnlyGraphClient(MailProvider):
     access_token: str
     transport: Any = None
     base_url: str = GRAPH_BASE_URL
+    token_refresher: Callable[[], str] | None = None
 
     name: ClassVar[str] = "outlook_graph"
     route_policy: ClassVar[type[DraftOnlyRoutePolicy]] = DraftOnlyRoutePolicy
@@ -107,13 +108,36 @@ class DraftOnlyGraphClient(MailProvider):
         # Belt: assert the allowlist here too, so even a replaced/fake
         # transport (as in the unit tests) never sees a blocked route.
         DraftOnlyRoutePolicy.assert_allowed(method, url)
-        return self.transport.request(
-            method,
-            url,
-            self.access_token,
-            payload,
-            headers=IMMUTABLE_ID_HEADERS,
-        )
+        try:
+            return self.transport.request(
+                method,
+                url,
+                self.access_token,
+                payload,
+                headers=IMMUTABLE_ID_HEADERS,
+            )
+        except TransportError as exc:
+            # Long all-time syncs can outlive Graph's access token. A rejected
+            # GET is safe to replay once after refreshing; call the transport
+            # directly for the retry so a second 401 cannot form a loop. Draft
+            # POST/PATCH requests are never replayed automatically.
+            if (
+                exc.status_code != 401
+                or method.upper() != "GET"
+                or self.token_refresher is None
+            ):
+                raise
+            refreshed = self.token_refresher()
+            if not isinstance(refreshed, str) or not refreshed:
+                raise GraphError("Microsoft authentication refresh returned no access token")
+            self.access_token = refreshed
+            return self.transport.request(
+                method,
+                url,
+                self.access_token,
+                payload,
+                headers=IMMUTABLE_ID_HEADERS,
+            )
 
     @staticmethod
     def _message_path(message_id: str) -> str:
@@ -135,18 +159,20 @@ class DraftOnlyGraphClient(MailProvider):
     def _list_folder(
         self, folder: str, limit: int | None, since: str | None = None
     ) -> list[dict[str, Any]]:
-        if folder not in {"inbox", "drafts", "sentitems"}:
+        if folder not in {"inbox", "drafts", "sentitems", "deleteditems"}:
             raise DraftPolicyError(f"mail folder blocked by policy: {folder}")
         bounded = None if limit is None else max(1, min(int(limit), MAX_LIST_LIMIT))
         order_by = {
             "inbox": "receivedDateTime desc",
             "drafts": "lastModifiedDateTime desc",
             "sentitems": "sentDateTime desc",
+            "deleteditems": "lastModifiedDateTime desc",
         }[folder]
         filter_field = {
             "inbox": "receivedDateTime",
             "drafts": "lastModifiedDateTime",
             "sentitems": "sentDateTime",
+            "deleteditems": "lastModifiedDateTime",
         }[folder]
         messages: list[dict[str, Any]] = []
         next_url: str | None = None
@@ -193,6 +219,10 @@ class DraftOnlyGraphClient(MailProvider):
 
     def list_sent(self, limit: int = 10) -> list[dict[str, Any]]:
         return self._list_folder("sentitems", limit)
+
+    def list_deleted(self, limit: int = 10) -> list[dict[str, Any]]:
+        """List Deleted Items without mutating or restoring messages."""
+        return self._list_folder("deleteditems", limit)
 
     def list_folder(
         self, folder: str, limit: int | None = None, since: str | None = None
@@ -279,7 +309,7 @@ class DraftOnlyGraphClient(MailProvider):
         calls replay changes in arbitrary order; the store engine is therefore
         idempotent and resolves removals only after all folders complete.
         """
-        if folder not in {"inbox", "drafts", "sentitems"}:
+        if folder not in {"inbox", "drafts", "sentitems", "deleteditems"}:
             raise DraftPolicyError(f"mail folder blocked by policy: {folder}")
         url = sync_token or self._url(
             f"/me/mailFolders/{folder}/messages/delta",
@@ -407,8 +437,9 @@ def live_provider() -> DraftOnlyGraphClient:
         account=raw["account"], client_id=raw["client_id"], tenant=raw["tenant"]
     )
     settings.validate()
-    token = AuthManager(settings).access_token()
-    client = DraftOnlyGraphClient(token)
+    auth = AuthManager(settings)
+    token = auth.access_token()
+    client = DraftOnlyGraphClient(token, token_refresher=auth.access_token)
     me = client.me()
     actual = str(me.get("mail") or me.get("userPrincipalName") or "").strip()
     if not actual or actual.casefold() != settings.account.casefold():

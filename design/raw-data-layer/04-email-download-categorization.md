@@ -110,8 +110,9 @@ type, and the provider's attachment ID as a retrieval pointer), so the
 store can say "this message carried `offer_letter.pdf`, 210 KB" and a
 human fetches it manually in the mail client when needed.
 - **Scope is job-relevant capture, not mailbox archival:** Inbox + Sent +
-Drafts per account (Sent is required to compute reply-state), folder list
-configurable (decided: Inbox + Sent + Drafts — see
+Drafts + Deleted Items per account (Sent is required to compute reply-state;
+Deleted Items prevents recruiter evidence from disappearing from audits),
+folder list configurable (decided: Inbox + Sent + Drafts + Deleted Items — see
 [Decisions](#10-decisions--five-resolved-one-open)). Within that scope,
 **everything synced keeps its raw regardless of category** — mail
 classified `unrelated` is retained like the rest (owner decision,
@@ -423,7 +424,7 @@ and [the email git-policy follow-up](../../../memory/decisions/email-git-policy.
 
 | Decision | Owner's answer | Where it landed in this doc |
 | --- | --- | --- |
-| Which folders does sync cover? | Inbox + Sent + Drafts | [Sync design](#1-sync-design) |
+| Which folders does sync cover? | Inbox + Sent + Drafts + Deleted Items | [Sync design](#1-sync-design) |
 | Cutover criterion for store-first reviews | **Both** required: 5 consecutive zero-mismatch comparison runs AND ≥300 job-related messages processed through both paths | [Cutover](#7-cutover-proving-the-store-before-trusting-it) |
 | Keep raw payloads of messages classified "unrelated"? | Keep | The category-never-drives-retention rule in [Sync design](#1-sync-design) |
 | At-rest encryption posture | Private-machines assumption; user is responsible for protecting raw data; no encryption tooling (owner's "what's the point?" question answered inline) | [Privacy](#6-privacy) |

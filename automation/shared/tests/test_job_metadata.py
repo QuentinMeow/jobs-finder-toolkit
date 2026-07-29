@@ -737,6 +737,38 @@ class SchemaV5JobFieldTests(unittest.TestCase):
         self.assertTrue(any(
             "top-level status is not allowed" in error for error in errors))
 
+    def test_total_compensation_range_is_rejected_at_every_scope(self):
+        job = _valid_job(total_compensation_range={
+            "min": 200000,
+            "max": 300000,
+            "confidence": "high",
+            "source": "company_reference",
+        })
+        errors = validate_meta(_valid_meta(
+            total_compensation_range={"min": 200000, "max": 300000},
+            jobs=[job],
+        ))
+        self.assertTrue(any(
+            error.startswith("top-level total_compensation_range is not supported")
+            for error in errors))
+        self.assertTrue(any(
+            error.startswith("jobs[0].total_compensation_range is not supported")
+            for error in errors))
+
+    def test_unknown_structured_job_field_is_rejected(self):
+        errors = validate_meta(_valid_meta(jobs=[_valid_job(
+            compensation={"currency": "USD"},
+        )]))
+        self.assertIn(
+            "jobs[0].has unsupported structured field(s): compensation",
+            errors,
+        )
+
+    def test_unknown_scalar_job_field_remains_tolerated(self):
+        self.assertEqual(validate_meta(_valid_meta(jobs=[_valid_job(
+            legacy_requisition_id="REQ-123",
+        )])), [])
+
     def test_folder_consistency_mismatch_is_flagged(self):
         # A drafted posting sitting in the 5_applied folder must be flagged.
         with tempfile.TemporaryDirectory() as temporary:
