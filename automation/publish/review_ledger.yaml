@@ -66,3 +66,15 @@
     pairs, an interview platform, and a verbatim recruiter sentence, replacing each
     with a placeholder shape. Introduces no new company or personal reference; the
     only proper nouns added are fictional test fixtures.
+
+- commit: 1b837b7d
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 27
+  digest: sha256:1d178b4adaef5e26
+  finding: >-
+    Clean. 804 added lines, zero personal-token hits. The four personal profile
+    filenames this commit removes were never tracked, so they appear nowhere in the
+    diff; the .gitignore rules that used to hide them carried no tokens either. The
+    one occurrence of "Canonical" is the English word describing skills/, not the
+    company.
