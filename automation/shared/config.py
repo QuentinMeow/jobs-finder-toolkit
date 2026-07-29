@@ -22,6 +22,10 @@ Discovery order (first match wins):
            data is present, so the fictional persona is the wrong answer), or when
            ``$JOBHUNT_REQUIRE_REAL_CONFIG`` is set to a truthy value.
 
+``<repo_root>`` above is itself DISCOVERED, by the same upward ``.git`` walk — see
+``_repo_root``. This module is vendored byte-identically into skills that sit at a
+different depth, so counting parents would resolve inside the skill folder there.
+
 A malformed config (a YAML syntax error, or a top level that is not a mapping)
 raises ``ConfigError`` instead of degrading to every hardcoded default. A missing
 or unreadable file still yields an empty config, exactly as before.
@@ -91,11 +95,8 @@ if str(_HERE) not in sys.path:
 
 import layout  # noqa: E402  (import after sys.path bootstrap, by design)
 
-# config.py lives in automation/shared/, so the repo root is three parents up.
-REPO_ROOT = _HERE.parent.parent
-
 CONFIG_FILENAME = "config.yaml"
-EXAMPLE_CONFIG = REPO_ROOT / "config.example.yaml"
+EXAMPLE_CONFIG_FILENAME = "config.example.yaml"
 ENV_VAR = "JOBHUNT_CONFIG"
 
 # Set to a truthy value to refuse the example fallback everywhere (CI in a
@@ -111,6 +112,63 @@ OVERLAY_DIRNAME = "private"
 _GIT_MARKER = ".git"
 
 _FALSEY = {"", "0", "false", "no", "off"}
+
+
+def _git_boundary(start: Path) -> Path | None:
+    """First directory at or above ``start`` holding a ``.git`` entry, else ``None``.
+
+    The single upward ``.git`` walk in this module: both the config search
+    (``_search_up``) and the repo-root constant below stop at the SAME directory,
+    so a config found by discovery and the root used for the overlay check can
+    never come from different trees.
+    """
+    for parent in (start, *start.parents):
+        if (parent / _GIT_MARKER).exists():
+            return parent
+    return None
+
+
+def _repo_root(start: Path) -> Path:
+    """The project root ``start`` belongs to, found by walking UP (never by counting).
+
+    This file has TWO homes: the canonical ``automation/shared/config.py``, two
+    levels below the repo root, and a byte-identical vendored copy at
+    ``skills/<skill>/scripts/_vendor/config.py``, FOUR levels below it. A fixed
+    parent count is therefore wrong in one of them by construction — it used to
+    resolve to ``skills/<skill>/`` in every vendored copy, so ``EXAMPLE_CONFIG``
+    named a file that cannot exist and every "am I on the fictional example?"
+    comparison against it answered a constant "no". The upward walk answers
+    correctly from both homes, and it is also what
+    ``handbook/skills-and-vendoring.md`` requires: a skill folder dropped into
+    ANOTHER project has to find that host project's root.
+
+    Markers, in order of authority:
+      1. ``.git`` — the definitive project boundary (see ``_git_boundary``).
+      2. ``config.example.yaml`` — this toolkit's own tracked root marker, used
+         only when there is no ``.git`` at all (a source zip/tarball export).
+         Without it a ``.git``-less download would lose the example fallback.
+
+    Neither marker present — a skill folder unpacked outside any project — the
+    answer is the module's OWN directory. It is the only candidate guaranteed to
+    exist and guaranteed to stay INSIDE the unpacked artifact; walking further up
+    could reach an unrelated ``/private`` (a real directory on macOS) and refuse
+    the fallback, or adopt a stranger's ``config.example.yaml``. ``EXAMPLE_CONFIG``
+    then names a file that does not exist, which is the honest answer: with no
+    project tree there is no tracked example persona, so the fallback is inert.
+    """
+    boundary = _git_boundary(start)
+    if boundary is not None:
+        return boundary
+    for parent in (start, *start.parents):
+        if (parent / EXAMPLE_CONFIG_FILENAME).exists():
+            return parent
+    return start
+
+
+# Derived from THIS file's location by the upward walk above — NOT by counting
+# parents — so the canonical module and all four vendored copies agree on it.
+REPO_ROOT = _repo_root(_HERE)
+EXAMPLE_CONFIG = REPO_ROOT / EXAMPLE_CONFIG_FILENAME
 
 
 class ConfigError(RuntimeError):
@@ -138,13 +196,14 @@ def _search_up(start: Path) -> tuple[Path | None, Path | None]:
     the walk stops there, and it is reported only when no config was found (it is
     then the repo root used for the overlay check).
     """
+    boundary = _git_boundary(start)
     for parent in (start, *start.parents):
         candidate = parent / CONFIG_FILENAME
         if candidate.exists():
             return candidate, None
-        if (parent / _GIT_MARKER).exists():
-            return None, parent
-    return None, None
+        if parent == boundary:
+            break
+    return None, boundary
 
 
 def _refuse_example_fallback(boundaries: list[Path]) -> str | None:

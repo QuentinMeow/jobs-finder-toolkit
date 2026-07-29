@@ -15,6 +15,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -211,6 +212,41 @@ class DisabledStoreNoticeTests(unittest.TestCase):
     def test_config_layer_present_helper_guards_exceptions(self):
         search_jobs.config.config_path = lambda: (_ for _ in ()).throw(OSError("x"))
         self.assertFalse(search_jobs._config_layer_present())
+
+
+class VendoredExampleConfigTests(unittest.TestCase):
+    """The example test must hold through the VENDORED config import, unpatched.
+
+    The sibling tests above stub ``config.config_path``, so they compare
+    ``EXAMPLE_CONFIG`` with itself and pass no matter where that constant points.
+    This one runs the real thing: a fresh interpreter, ``$JOBHUNT_CONFIG`` aimed at
+    the tracked ``config.example.yaml``, ``search_jobs`` importing
+    ``scripts/_vendor/config.py``. Vendored four levels below the repo root, a
+    parent-count ``REPO_ROOT`` made ``EXAMPLE_CONFIG`` a path that can never match
+    anything, so ``_config_layer_present()`` answered True on an example-config run
+    and the "store: not configured" notice fired in a bare public checkout.
+    """
+
+    def _probe(self, expr: str) -> str:
+        env = dict(os.environ)
+        env.pop("JOBHUNT_REQUIRE_REAL_CONFIG", None)
+        env["JOBHUNT_CONFIG"] = str(_REPO_ROOT / "config.example.yaml")
+        proc = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; sys.path.insert(0, %r)\n"
+             "import search_jobs\n"
+             "print(%s)" % (str(_SCRIPTS), expr)],
+            cwd=_REPO_ROOT, capture_output=True, text=True, env=env,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout.strip()
+
+    def test_config_layer_absent_on_the_tracked_example_config(self):
+        self.assertEqual(self._probe("search_jobs._config_layer_present()"), "False")
+
+    def test_vendored_example_config_constant_points_at_a_real_file(self):
+        self.assertEqual(self._probe("search_jobs.config.EXAMPLE_CONFIG.is_file()"),
+                         "True")
 
 
 class JsonThreadingTests(unittest.TestCase):
