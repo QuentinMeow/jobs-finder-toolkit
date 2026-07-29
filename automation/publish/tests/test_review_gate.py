@@ -13,7 +13,8 @@ plus the operational cases the spec leaves implicit:
   * a commit touching a public file FAILS, with the spec's wording          (exit 1)
   * a valid row PASSES, silently                                           (exit 0)
   * a wrong digest still FAILS                                             (exit 2)
-  * a last-ack that is not an ancestor of HEAD fails with a DISTINCT message(exit 2)
+  * a row rebased out of this history is SKIPPED and reported by name      (exit 0)
+  * a ledger with NO ancestor row at all fails with a DISTINCT message     (exit 2)
   * a ledger-only commit does not re-trigger the gate                      (exit 0)
   * the gate is silent when nothing changed                                (exit 0)
   * the one-commit-lag loop converges (commit A blocked -> row for A staged
@@ -129,6 +130,21 @@ class Sandbox:
         files = review_gate.changed_files(self.root, base, commit)
         return {"commit": self.short(commit), "files": len(files),
                 "digest": digest[:16]}
+
+    # ── an honest rebase ─────────────────────────────────────────────────
+    def rebase_onto(self, branch: str, base: str) -> tuple[str, str]:
+        """Replay ``branch`` onto ``base`` — this is what updating a stacked PR does.
+
+        Every replayed commit gets a NEW sha; the old one survives in the object
+        store (unreachable) until it is garbage-collected or the branch is deleted
+        and the repo is re-cloned. Returns (old tip, new tip).
+        """
+        old = self.git("rev-parse", branch).stdout.strip()
+        self.git("checkout", "-q", branch)
+        self.git("rebase", "-q", base)
+        new = self.git("rev-parse", "HEAD").stdout.strip()
+        assert old != new, "the rebase did not rewrite anything; the test is not honest"
+        return old, new
 
     def seed(self, commit: str | None = None) -> str:
         """Seed the ledger with ``commit`` (default HEAD), like the real seed row."""
@@ -438,43 +454,39 @@ class LedgerValidationTests(GateTestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 class UnreachableAckTests(GateTestCase):
 
-    def test_non_ancestor_ack_fails_with_a_distinct_message(self):
-        """The recorded commit exists but lives on an abandoned branch."""
-        seeded_at = self.bootstrap()
+    def test_no_ancestor_row_at_all_fails_with_a_distinct_message(self):
+        """EVERY row lives on an abandoned branch: the ledger describes another history.
+
+        One off-chain row is survivable (the chain skips it). No ancestor row at all
+        is not: there is no base in this history to diff from.
+        """
+        self.bootstrap()
         self.repo.git("checkout", "-q", "-b", "side")
         self.repo.write("handbook/side.md", "side work\n")
-        side = self.repo.commit("side change")
+        side_one = self.repo.commit("side change")
+        self.repo.write("handbook/side2.md", "more side work\n")
+        side_two = self.repo.commit("more side work")
         self.repo.git("checkout", "-q", "main")
 
-        # The ledger (working tree) now names a commit that is NOT an ancestor of HEAD.
+        # The ledger (working tree) names ONLY commits that are not ancestors of HEAD.
         self.repo.write_ledger([
-            {"commit": self.repo.short(seeded_at), "files": 0, "digest": EMPTY_DIGEST16},
-            {"commit": self.repo.short(side), "files": 1, "digest": "0" * 16},
+            {"commit": self.repo.short(side_one), "files": 0, "digest": EMPTY_DIGEST16},
+            {"commit": self.repo.short(side_two), "files": 1, "digest": "0" * 16},
         ])
         proc = self.repo.gate()
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("the ledger is out of sync with this branch", proc.stderr)
+        self.assertIn("NONE of the 2 ledger rows", proc.stderr)
         self.assertIn("EXISTS here but is NOT", proc.stderr)
         self.assertIn("merge-base --is-ancestor", proc.stderr)
         self.assertIn("append-only", proc.stderr)
+        # Both rows are named, not just the last one.
+        self.assertIn(self.repo.short(side_one), proc.stderr)
+        self.assertIn(self.repo.short(side_two), proc.stderr)
         # Distinct from every other failure mode.
         self.assertNotIn("not a test failure", proc.stderr)
         self.assertNotIn("NOT APPLICABLE", proc.stderr)
         self.assertNotIn("shallow clone", proc.stderr)
-
-    def test_partially_rewritten_history_reports_the_missing_commit(self):
-        seeded_at = self.bootstrap()
-        self.repo.write("README.md", "changed\n")
-        head = self.repo.commit("public change")
-        self.repo.write_ledger([
-            {"commit": self.repo.short(seeded_at), "files": 0, "digest": EMPTY_DIGEST16},
-            {"commit": "dead" * 10, "files": 1,
-             "digest": review_gate.range_digest(self.repo.root, seeded_at, head)[:16]},
-        ])
-        proc = self.repo.gate()
-        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
-        self.assertIn("names a commit this checkout does not have", proc.stderr)
-        self.assertIn("Row 2 records commit dead", proc.stderr)
 
     def test_shallow_clone_says_so(self):
         self.bootstrap()
@@ -517,6 +529,185 @@ class UnreachableAckTests(GateTestCase):
                                   env=_git_env(Path(td)), capture_output=True, text=True)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertIn("NOT APPLICABLE", proc.stdout)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The rebase case: a row acknowledged before a stacked PR was updated names a sha
+# that never landed. The chain is built from the ANCESTOR rows alone; the orphan is
+# skipped for verification and REPORTED, never dropped.
+# ─────────────────────────────────────────────────────────────────────────────
+class RebasedRowTests(GateTestCase):
+
+    def stack_with_an_orphan(self) -> dict:
+        """A real rebase, not a simulation of one.
+
+        main:  README → ledger → A → C → B'          (B' is B replayed)
+        feat:                    A → B               (B is abandoned by the rebase)
+
+        The row written for B before the merge names a commit that exists here but
+        is not an ancestor of main — exactly what merging a stack bottom-up does to
+        every PR above the one that landed.
+        """
+        seeded_at = self.bootstrap()
+        self.repo.write("handbook/a.md", "change A\n")
+        commit_a = self.repo.commit("change A")
+
+        self.repo.git("checkout", "-q", "-b", "feat")
+        self.repo.write("handbook/b.md", "change B\n")
+        self.repo.commit("change B")
+
+        # The PR below this one lands on main first.
+        self.repo.git("checkout", "-q", "main")
+        self.repo.write("handbook/c.md", "change C\n")
+        self.repo.commit("change C")
+
+        # Updating the stacked branch replays B under a new sha, then it merges.
+        old_tip, new_tip = self.repo.rebase_onto("feat", "main")
+        self.repo.git("checkout", "-q", "main")
+        self.repo.git("merge", "-q", "--ff-only", "feat")
+        head = self.repo.git("rev-parse", "HEAD").stdout.strip()
+        self.assertEqual(head, new_tip)
+
+        return {"seed": seeded_at, "a": commit_a, "orphan": old_tip, "head": head}
+
+    def ledger_through_a(self, s: dict) -> list[dict]:
+        """Rows 1-3: the seed, a real row for A, and the orphaned row for B."""
+        return [
+            {"commit": self.repo.short(s["seed"]), "files": 0, "digest": EMPTY_DIGEST16},
+            self.repo.row_for(s["a"], base=s["seed"]),
+            {"commit": self.repo.short(s["orphan"]), "files": 1, "digest": "b" * 16,
+             "finding": "reviewed on the branch, before the rebase renamed it"},
+        ]
+
+    def test_orphaned_row_is_skipped_and_a_later_row_still_covers_the_range(self):
+        s = self.stack_with_an_orphan()
+        rows = self.ledger_through_a(s)
+        # The reconciliation row: written on the trunk, from the closest surviving
+        # ancestor row (A), NOT from the orphan.
+        rows.append(self.repo.row_for(s["head"], base=s["a"]))
+        self.repo.write_ledger(rows)
+
+        for args in ((), ("--verify-all",)):
+            with self.subTest(args=args):
+                proc = self.repo.gate(*args)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stderr, "")
+
+    def test_a_skipped_row_is_named_in_the_output(self):
+        s = self.stack_with_an_orphan()
+        self.repo.write_ledger(self.ledger_through_a(s))
+
+        proc = self.repo.gate()
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("1 of 3 ledger row(s) are not part of this history", proc.stdout)
+        self.assertIn(f"row 3  {self.repo.short(s['orphan'])}  "
+                      "EXISTS here but is NOT an ancestor of HEAD", proc.stdout)
+        self.assertIn("skipped for verification, not dropped", proc.stdout)
+        self.assertIn("the ledger is append-only", proc.stdout)
+        self.assertIn("rebased", proc.stdout)
+        # Skipping is not failing: the exit code comes from the unreviewed work only.
+        self.assertNotIn("out of sync", proc.stdout + proc.stderr)
+
+    def test_the_report_is_also_printed_when_the_gate_passes(self):
+        s = self.stack_with_an_orphan()
+        rows = self.ledger_through_a(s)
+        rows.append(self.repo.row_for(s["head"], base=s["a"]))
+        self.repo.write_ledger(rows)
+        self.repo.commit("acknowledge the range")     # ledger-only: still green
+
+        proc = self.repo.gate("--verify-all")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn(f"row 3  {self.repo.short(s['orphan'])}", proc.stdout)
+
+    def test_chain_uses_the_closest_surviving_ancestor_as_the_base(self):
+        """The printed range/digest must be copy-pasteable HERE — so base = row A."""
+        s = self.stack_with_an_orphan()
+        self.repo.write_ledger(self.ledger_through_a(s))
+
+        proc = self.repo.gate()
+        msg = proc.stderr
+        expected = review_gate.range_digest(self.repo.root, s["a"], s["head"])
+        self.assertIn(f"git diff {self.repo.short(s['a'])}..{self.repo.short(s['head'])} "
+                      f"-- . ':!{LEDGER_REL}'", msg)
+        self.assertIn(f"({self.repo.short(s['a'])} → {self.repo.short(s['head'])})", msg)
+        self.assertIn("touching 2 files:", msg)         # handbook/b.md + handbook/c.md
+        self.assertIn("    handbook/b.md", msg)
+        self.assertIn("    handbook/c.md", msg)
+        self.assertIn("      files: 2", msg)
+        self.assertIn(f"      digest: sha256:{expected[:16]}", msg)
+        # NOT from the orphan, which is what the old chain would have used.
+        self.assertNotIn(f"git diff {self.repo.short(s['orphan'])}..", msg)
+
+    def test_a_row_computed_from_the_orphan_fails_and_names_the_real_base(self):
+        s = self.stack_with_an_orphan()
+        rows = self.ledger_through_a(s)
+        rows.append(self.repo.row_for(s["head"], base=s["orphan"]))   # wrong base
+        self.repo.write_ledger(rows)
+
+        proc = self.repo.gate()
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("ledger row 4 does not match the repository", proc.stderr)
+        self.assertIn(f"git diff {self.repo.short(s['a'])}..", proc.stderr)
+        # The orphan is still reported rather than dropped, even on this failure.
+        self.assertIn(f"row 3  {self.repo.short(s['orphan'])}", proc.stdout)
+
+        rows[-1] = self.repo.row_for(s["head"], base=s["a"])          # right base
+        self.repo.write_ledger(rows)
+        self.assertEqual(self.repo.gate("--verify-all").returncode, 0)
+
+    def test_an_unknown_object_row_is_reported_not_a_traceback(self):
+        """A row naming a commit that is not an object here at all."""
+        seeded_at = self.bootstrap()
+        self.repo.write("README.md", "changed\n")
+        head = self.repo.commit("public change")
+        rows = [
+            {"commit": self.repo.short(seeded_at), "files": 0, "digest": EMPTY_DIGEST16},
+            {"commit": "dead" * 10, "files": 1, "digest": "c" * 16},
+        ]
+        self.repo.write_ledger(rows)
+
+        proc = self.repo.gate()
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("row 2  deaddeaddeaddeaddeaddeaddeaddeaddeaddead  "
+                      "UNKNOWN OBJECT — not in this checkout at all", proc.stdout)
+        self.assertNotIn("EXISTS here", proc.stdout)
+        self.assertNotIn("Traceback", proc.stdout + proc.stderr)
+        # The chain fell back to the seed, so the printed row is computable here.
+        self.assertIn(f"git diff {self.repo.short(seeded_at)}..", proc.stderr)
+
+        rows.append(self.repo.row_for(head, base=seeded_at))
+        self.repo.write_ledger(rows)
+        self.assertEqual(self.repo.gate("--verify-all").returncode, 0)
+
+    def test_a_deleted_branch_reads_as_unknown_in_a_fresh_clone(self):
+        """CI's actual situation: a clone carries only REACHABLE objects.
+
+        A worktree or a local-path clone shares the object store and would still
+        resolve the orphan, so this clones over ``file://`` — the transport that
+        transfers reachable history only, like actions/checkout.
+        """
+        s = self.stack_with_an_orphan()
+        rows = self.ledger_through_a(s)
+        rows.append(self.repo.row_for(s["head"], base=s["a"]))
+        self.repo.write_ledger(rows)
+        self.repo.commit("acknowledge the range")     # ledger-only: still green
+        self.repo.git("branch", "-D", "feat")         # the merge deleted the branch
+
+        clone = Path(self._tmp.name) / "fresh"
+        subprocess.run(["git", "clone", "-q", f"file://{self.repo.root}", str(clone)],
+                       env=_git_env(self.home), check=True, capture_output=True)
+        gone = subprocess.run(["git", "cat-file", "-e", s["orphan"]], cwd=str(clone),
+                              env=_git_env(self.home), capture_output=True)
+        self.assertNotEqual(gone.returncode, 0,
+                            "the clone still has the orphan; this is not CI's situation")
+
+        proc = subprocess.run([sys.executable, str(GATE), "--repo", str(clone),
+                               "--verify-all"],
+                              env=_git_env(self.home), capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn(f"row 3  {self.repo.short(s['orphan'])}  UNKNOWN OBJECT",
+                      proc.stdout)
+        self.assertEqual(proc.stderr, "")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

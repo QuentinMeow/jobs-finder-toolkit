@@ -28,8 +28,14 @@
 # of history that predates it. Its range is zero-width, hence files: 0 and the
 # sha256 of an empty diff.
 #
+# REBASED ROWS STAY: a row names a branch tip, and updating a stacked PR replays
+# every commit under a new sha, so a row acknowledged before the merge can name a
+# commit that never lands. The gate builds the chain from the ANCESTOR rows alone,
+# skips the orphans and reports them by name; you append a reconciliation row for
+# the tip from the closest surviving ancestor row. Never edit or delete an orphan.
+#
 # Schema (all six keys required, no others):
-#   commit       >= 7 hex chars, an ancestor of HEAD
+#   commit       >= 7 hex chars; not an ancestor of HEAD -> skipped + reported
 #   reviewed_by  agent | human
 #   date         YYYY-MM-DD
 #   files        number of watched files in the range
@@ -146,3 +152,36 @@
     Clean. One handover file. It names PR numbers, branch names and queue items —
     no company, person, date, or path from the private tree, and no absolute home
     path.
+
+# ── reconciliation row ───────────────────────────────────────────────────────
+# The four rows above this one name commits 51565987, eb7f07c9, 2f907743 and
+# c44c6904. Those commits are real and were reviewed, but they are NOT ancestors
+# of main: merging the stack (PRs #90-#92) rebased each branch onto its newly
+# merged base, which gives every commit a new SHA. Each orphaned row has a
+# patch-equivalent twin that did land — ee4ba83, 262809d, ccff2af, 40991c2.
+#
+# Per this ledger's own rule, the orphaned rows are LEFT IN PLACE (append-only;
+# rewriting one is itself a finding) and this row acknowledges the surviving
+# range from the last row that IS an ancestor.
+- commit: 22a11443
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 33
+  digest: sha256:1923f962537b1404
+  finding: >-
+    No new content. This range is 1db7622f..HEAD, i.e. exactly what PRs #90, #91
+    and #92 carried, each already reviewed on its own branch under rows 51565987,
+    eb7f07c9 and 2f907743 before the rebase renamed them. Verified by matching each
+    orphaned commit to its landed twin. The rewrite itself is the finding: updating
+    a stacked PR rebases it, so a ledger row written before the merge names a SHA
+    that will not survive it.
+
+- commit: 841c2336
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 5
+  digest: sha256:0afa4738521bdac9
+  finding: >-
+    Clean. Gate logic, its tests, the design spec, the skill section, and a hook
+    comment. No company, person, date, or absolute home path. The example SHAs it
+    prints are this repo's own commit hashes, which are public by construction.

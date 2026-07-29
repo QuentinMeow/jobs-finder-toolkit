@@ -10,9 +10,22 @@ reviewed what, in ``automation/publish/review_ledger.yaml``.
 
 HOW IT DECIDES
 --------------
-1. Read the last acknowledged commit from the ledger (the last row).
+1. Read the last acknowledged commit from the ledger — the last row whose commit
+   is an ANCESTOR of HEAD (see THE REBASE CASE below).
 2. ``git diff --name-only <last-ack>..HEAD -- . ':!<ledger>'``.
 3. Empty file list -> pass.  Non-empty -> fail with the instruction.
+
+THE REBASE CASE
+---------------
+A row is written against a branch tip, and updating a stacked PR REBASES that
+branch: every commit gets a new SHA, so a row acknowledged before the merge names
+a commit that never lands. Such a row describes a change that is not in this
+history, so it cannot contribute to the chain — a diff from it would describe a
+change nobody made. The gate therefore builds the chain from the ANCESTOR rows
+alone: a row's range runs from the most recent PRECEDING ANCESTOR row's commit to
+its own. Off-chain rows are skipped for digest verification and reported by name
+(``RowChain``); they are never dropped, because the ledger is append-only and an
+orphaned row records a review that did happen.
 
 The decision is on the FILE LIST, not the commit list. A commit that touches only
 the ledger still shows up in ``git log``, so gating on "is the commit range empty"
@@ -85,6 +98,8 @@ MAX_LISTED_FILES = 40
 # (35 ms was a 360 KB, 5-commit range), so a bounded tail keeps the pre-commit cost
 # in the tens of milliseconds while the ledger grows without bound. CI runs
 # --verify-all, which recomputes every row and is the real append-only check.
+# Counted in ROWS, not in verifiable rows: a tail made entirely of rows that are not
+# part of this history verifies nothing until --verify-all reaches back past them.
 DEFAULT_VERIFY_TAIL = 5
 
 EXIT_OK = 0
@@ -299,6 +314,95 @@ def load_ledger(repo: Path, ledger_rev: str | None = None) -> list[dict]:
     return parse_ledger(path.read_text(encoding="utf-8"))
 
 
+# ── the chain: which rows describe THIS history ──────────────────────────────
+
+ANCESTOR = "ancestor"
+NOT_ANCESTOR = "not-an-ancestor"
+UNKNOWN = "unknown-object"
+
+
+class RowChain:
+    """Maps the ledger onto this checkout's history: which rows count, and from where.
+
+    Only an ANCESTOR row can contribute to the chain. A row naming a commit that is
+    not an ancestor of HEAD describes a change that is not in this history, so its
+    digest cannot be recomputed here — the diff would cover a change nobody made.
+    Such a row is SKIPPED for verification and reported by name, never dropped: the
+    ledger is append-only, and an orphaned row records a review that did happen.
+
+    Two ways a row falls off the chain, and the difference matters to whoever reads
+    the report:
+
+      * ``NOT_ANCESTOR`` — the commit EXISTS here, on another line of history. It
+        can still be inspected (``git show``, ``git diff``), so the reviewer can see
+        exactly what that row acknowledged.
+      * ``UNKNOWN`` — the commit is not a known object in this checkout at all. A
+        fresh clone carries only REACHABLE objects, so once the branch is deleted
+        the commit is gone in CI even though the author's repo still has it. Nothing
+        local can inspect it.
+
+    Classification is lazy and memoised: a default run pays one ``rev-parse`` and one
+    ``merge-base`` per row it actually looks at (the verified tail plus the walk back
+    to each base), so the pre-commit cost does not grow with the ledger.
+    """
+
+    def __init__(self, repo: Path, rows: list[dict], head_rev: str):
+        self.repo = repo
+        self.rows = rows
+        self.head_rev = head_rev
+        self._by_index = {row["index"]: row for row in rows}
+        self._seen: dict[int, tuple[str, str | None]] = {}
+        self._skipped: dict[int, str] = {}
+
+    def classify(self, index: int) -> tuple[str, str | None]:
+        """(status, full sha or None) for row ``index``; memoised."""
+        if index not in self._seen:
+            row = self._by_index[index]
+            rev = resolve(self.repo, row["commit"])
+            if rev is None:
+                status = UNKNOWN
+            elif is_ancestor(self.repo, rev, self.head_rev):
+                status = ANCESTOR
+            else:
+                status = NOT_ANCESTOR
+            self._seen[index] = (status, rev)
+            if status != ANCESTOR:
+                self._skipped[index] = status
+        return self._seen[index]
+
+    def status(self, index: int) -> str:
+        return self.classify(index)[0]
+
+    def rev(self, index: int) -> str | None:
+        return self.classify(index)[1]
+
+    def base_index(self, index: int) -> int | None:
+        """The most recent PRECEDING ancestor row, or None when there is none.
+
+        None means "this row opens the chain", which is the seed row's zero-width
+        range: there is nothing in this history to diff from.
+        """
+        for candidate in range(index - 1, 0, -1):
+            if self.status(candidate) == ANCESTOR:
+                return candidate
+        return None
+
+    def last_ancestor(self) -> dict | None:
+        """The closest surviving ancestor row — the base every unreviewed diff uses."""
+        for row in reversed(self.rows):
+            if self.status(row["index"]) == ANCESTOR:
+                return row
+        return None
+
+    def any_resolved(self) -> bool:
+        """True when at least one row names a commit this checkout has at all."""
+        return any(self.rev(row["index"]) is not None for row in self.rows)
+
+    def skipped(self) -> list[tuple[dict, str]]:
+        """(row, status) for every row EXAMINED this run and found off-chain."""
+        return [(self._by_index[i], self._skipped[i]) for i in sorted(self._skipped)]
+
+
 # ── the advisory detector ────────────────────────────────────────────────────
 
 def company_display_names(repo: Path) -> list[str] | None:
@@ -439,21 +543,65 @@ def review_required_message(repo: Path, base: str, head: str, files: list[str],
     return "\n".join(lines)
 
 
-def _stale_ack_message(repo: Path, base: str, head: str) -> str:
-    base_s, head_s = short(repo, base), short(repo, head)
+def _off_chain_lines(skipped: list[tuple[dict, str]]) -> list[str]:
+    """One line per off-chain row, naming it and saying WHICH kind of off-chain.
+
+    The two statuses mean different things to a reader: a NOT_ANCESTOR commit is
+    still here to inspect, an UNKNOWN one is not in this checkout at all.
+    """
+    width = max((len(str(row["index"])) for row, _ in skipped), default=1)
+    lines = []
+    for row, status in skipped:
+        if status == UNKNOWN:
+            note = "UNKNOWN OBJECT — not in this checkout at all"
+        else:
+            note = "EXISTS here but is NOT an ancestor of HEAD"
+        lines.append(f"    row {str(row['index']).rjust(width)}  {row['commit']}  {note}")
+    return lines
+
+
+def _skipped_rows_note(chain: RowChain) -> str:
+    """Informational: the off-chain rows this run examined. Never changes the exit code."""
+    skipped = chain.skipped()
+    return "\n".join([
+        f"public review gate: {len(skipped)} of {len(chain.rows)} ledger row(s) are not "
+        f"part of this history",
+        "(skipped for verification, not dropped):",
+        "",
+        *_off_chain_lines(skipped),
+        "",
+        "A row naming a commit outside this history cannot be verified — the diff it",
+        "claims would cover a change nobody made here. The chain is built from the",
+        "ancestor rows alone, so the next ancestor row covers the range. The rows stay:",
+        "the ledger is append-only and an orphaned row records a review that did happen.",
+        "",
+        "Usual cause: the branch was rebased after its row was written — updating a",
+        "stacked PR replays every commit under a new SHA. UNKNOWN OBJECT additionally",
+        "means the commit is unreachable in this clone (a fresh CI clone carries only",
+        "reachable objects, so a deleted branch's commits are simply gone).",
+    ])
+
+
+def _stale_ack_message(repo: Path, chain: RowChain, head: str) -> str:
+    head_s = short(repo, head)
     return "\n".join([
         "PUBLIC REVIEW GATE — the ledger is out of sync with this branch.",
         "",
-        f"The last recorded review names commit {base_s}, which EXISTS here but is NOT",
-        f"an ancestor of {head_s}. That happens after a rebase, an amend, a force-push,",
-        "or when the row was written on a branch this one never merged.",
+        f"NONE of the {len(chain.rows)} ledger rows names a commit that is an ancestor of "
+        f"{head_s},",
+        "so no row describes this history and there is no base to diff from:",
+        "",
+        *_off_chain_lines(chain.skipped()),
+        "",
+        "That happens after a rebase, an amend, a force-push, or when every row was",
+        "written on a branch this one never merged.",
         "",
         "The gate refuses to guess: a diff from a commit that is not in this history",
         "would describe a change nobody made.",
         "",
         "Recover with ONE of:",
-        f"    git merge-base --is-ancestor {base_s} {head_s}   # confirm (exits 1)",
-        f"    git log --oneline -5 {base_s}                     # where did it go?",
+        f"    git merge-base --is-ancestor <row commit> {head_s}   # confirm (exits 1)",
+        "    git log --oneline -5 <row commit>                     # where did it go?",
         "",
         "  * If you rebased your own unpushed work, reset the branch back onto the",
         "    acknowledged commit, or",
@@ -462,22 +610,6 @@ def _stale_ack_message(repo: Path, base: str, head: str) -> str:
         "",
         "Never edit or delete an existing row — the ledger is append-only, and a",
         "rewritten row is itself a finding.",
-    ])
-
-
-def _missing_commit_message(row: dict, rev: str) -> str:
-    return "\n".join([
-        "PUBLIC REVIEW GATE — the ledger names a commit this checkout does not have.",
-        "",
-        f"Row {row['index']} records commit {rev}, which is not a known object in this",
-        "repository, while other rows resolve fine. The history the ledger describes has",
-        "been rewritten (force-push, filter-branch, or a dropped commit).",
-        "",
-        "The gate cannot recompute that row's digest, so it stops rather than pass.",
-        "",
-        "Recover by reviewing `git diff <closest surviving base>..HEAD` and APPENDING a",
-        "new row for HEAD whose `finding:` records the rewrite. Never edit or delete an",
-        "existing row.",
     ])
 
 
@@ -540,28 +672,24 @@ def _files_mismatch_message(repo: Path, row: dict, base: str, head: str,
 
 # ── the check ────────────────────────────────────────────────────────────────
 
-def verify_rows(repo: Path, rows: list[dict], to_verify: list[dict],
+def verify_rows(repo: Path, chain: RowChain, to_verify: list[dict],
                 check_files: set[int]) -> None:
     """Recompute each row's digest from the range it claims. Raises ``GateError``.
 
-    A row's range is ``<previous row's commit>..<this row's commit>``; the first row
-    is a zero-width range (the seed), so its digest is the sha256 of an empty diff.
+    A row's range is ``<most recent preceding ANCESTOR row's commit>..<this row's
+    commit>``; a row with no preceding ancestor row opens the chain and gets a
+    zero-width range (the seed), so its digest is the sha256 of an empty diff.
+    Off-chain rows are skipped here and reported by the caller (``RowChain``).
     ``check_files`` names the row indices whose ``files:`` count is also cross-checked
     — that costs a second git call per row, so a default run only pays it for the
     boundary row and ``--verify-all`` pays it for all of them.
     """
-    by_index = {row["index"]: row for row in rows}
     for row in to_verify:
-        this_rev = resolve(repo, row["commit"])
-        if this_rev is None:
-            raise GateError(_missing_commit_message(row, row["commit"]))
-        if row["index"] == 1:
-            base_rev = this_rev
-        else:
-            prev = by_index[row["index"] - 1]
-            base_rev = resolve(repo, prev["commit"])
-            if base_rev is None:
-                raise GateError(_missing_commit_message(prev, prev["commit"]))
+        status, this_rev = chain.classify(row["index"])
+        if status != ANCESTOR:
+            continue                      # not in this history; the caller reports it
+        base_index = chain.base_index(row["index"])
+        base_rev = this_rev if base_index is None else chain.rev(base_index)
 
         recomputed = range_digest(repo, base_rev, this_rev)
         if not recomputed.startswith(row["digest"]):
@@ -576,7 +704,11 @@ def verify_rows(repo: Path, rows: list[dict], to_verify: list[dict],
 def check(repo: Path = REPO_ROOT, head: str = "HEAD", ledger_rev: str | None = None,
           verify_tail: int = DEFAULT_VERIFY_TAIL, verify_all: bool = False,
           today: str | None = None, out=None, err=None) -> int:
-    """Run the gate. Returns an exit code; prints nothing on a clean pass."""
+    """Run the gate. Returns an exit code.
+
+    Prints nothing on a clean pass, except the off-chain row report when the ledger
+    carries rows that are not part of this history — those are never dropped silently.
+    """
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
     today = today or datetime.date.today().isoformat()
@@ -587,15 +719,6 @@ def check(repo: Path = REPO_ROOT, head: str = "HEAD", ledger_rev: str | None = N
             return EXIT_OK
 
         rows = load_ledger(repo, ledger_rev)
-        last = rows[-1]
-
-        base_rev = resolve(repo, last["commit"])
-        if base_rev is None:
-            if is_shallow(repo):
-                raise GateError(_shallow_message())
-            if not any(resolve(repo, row["commit"]) for row in rows):
-                raise NotApplicable(_not_applicable_message(len(rows)))
-            raise GateError(_missing_commit_message(last, last["commit"]))
 
         head_rev = resolve(repo, head)
         if head_rev is None:
@@ -603,15 +726,32 @@ def check(repo: Path = REPO_ROOT, head: str = "HEAD", ledger_rev: str | None = N
                 raise NotApplicable(_not_applicable_message(len(rows)))
             raise GateError(f"--head {head!r} does not resolve to a commit in this checkout.")
 
-        if not is_ancestor(repo, base_rev, head_rev):
-            raise GateError(_stale_ack_message(repo, base_rev, head_rev))
+        # The chain is the ANCESTOR rows only (see THE REBASE CASE in the module
+        # docstring). The base for everything below is the CLOSEST SURVIVING ancestor
+        # row, so the printed `git diff` and digest are copy-pasteable in the checkout
+        # the reader is actually in.
+        chain = RowChain(repo, rows, head_rev)
+        last = chain.last_ancestor()
+        if last is None:
+            if is_shallow(repo):
+                raise GateError(_shallow_message())
+            if not chain.any_resolved():
+                raise NotApplicable(_not_applicable_message(len(rows)))
+            raise GateError(_stale_ack_message(repo, chain, head_rev))
+        base_rev = chain.rev(last["index"])
 
         # Ledger integrity first: a gate that decides from a rewritten ledger is worse
         # than no gate. --verify-all (CI) recomputes every row; a default run recomputes
         # a bounded tail, so the pre-commit cost does not grow with the ledger.
         to_verify = rows if verify_all else rows[-max(verify_tail, 1):]
         check_files = {row["index"] for row in rows} if verify_all else {last["index"]}
-        verify_rows(repo, rows, to_verify, check_files)
+        try:
+            verify_rows(repo, chain, to_verify, check_files)
+        finally:
+            # Reported even when verification fails: an orphaned row is never dropped
+            # silently, and knowing one is there is what explains the base the gate used.
+            if chain.skipped():
+                print(_skipped_rows_note(chain), file=out)
 
         files = changed_files(repo, base_rev, head_rev)
         if not files:
