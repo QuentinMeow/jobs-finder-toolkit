@@ -148,6 +148,10 @@ decision's default path, re-check that decision file. Never name or summarize
 `history/conversations/<YYYY-MM-DD>-<slug>/handover.md` from `templates/handover.md` (one screen,
 for a human who was away), update the task's `worklog.md`, and file any pending questions into
 `message-queue/` — the reconciler's `handover-present` check backstops this.
+**A handover is a history record, never the system of record.** Anything still unresolved —
+a question, a blocked step, a decision needed — gets its own queue item, task, or design file
+carrying the full context needed to act on it, because the handover may be local-only and a
+later session must be able to continue from tracked files alone.
 
 **Doc dialogue:** human-read documents carry two-way fields — decision blocks with
 `**Your answer:**` lines, "Decisions (resolved)" tables (the owner may amend those too — check
@@ -204,6 +208,10 @@ Router:
   command/tool/endpoint, or send email on the user's behalf. The user sends manually in Outlook.
 - **Honesty over optimization**: if the user's experience is a poor match, say so clearly.
 - **Profile is user-owned**: ask before modifying the candidate profile (`config.profile_md_path()`).
+- **Agents never delete owner data**: application folders, interview prep, company dossiers,
+  and store payloads are removed by the **user only** — never by an agent, under any
+  condition, including cleanup, migration, or a rejected application. Propose a deletion in
+  `message-queue/needs-human/` and stop; never perform one.
 - **Doc ownership**: `README.md` is human-facing (no agent instructions); `AGENTS.md` is agent-facing
   (no human usage guides).
 - **The reconciler is a gate**: `automation/reconcile/reconcile.py --check` (process-layer

@@ -1,0 +1,159 @@
+# The public-change review gate
+
+The mechanical half of the defense. A test that fails whenever the public tree has changed
+without a recorded review, so the diff is put in front of a reviewer at the moment it matters.
+
+**What it is not.** It does not prove anyone read anything, and it does not detect personal
+data on its own. Its job is to make an unreviewed public change *impossible to miss*, and to
+leave a tracked trace of who reviewed what. An agent determined to rubber-stamp it can.
+
+## Files
+
+```text
+automation/publish/
+├── review_gate.py          # the check; importable and runnable
+├── review_ledger.yaml      # the tracked acknowledgment log
+└── tests/test_review_gate.py
+```
+
+All three live in the **public** repo, because the thing being reviewed is public content and
+the gate must run in the public repo's CI where `--no-verify` cannot reach it. Since the
+public repo is also the working root, the gate runs in-place — no cross-repo git calls.
+
+## How it decides
+
+1. Read the last acknowledged commit from `review_ledger.yaml`.
+2. `git log <last-ack>..HEAD` over the tracked public tree, **excluding `review_ledger.yaml`
+   itself** — otherwise acknowledging a change is itself a change and the gate never
+   converges.
+3. If that range is empty → pass.
+4. If not → **fail**, printing the commit list, the changed files, and the instruction.
+
+Verified against this repo: the range query, the file list, and a stable recomputable digest
+all work.
+
+```console
+$ git diff <last-ack>..HEAD -- . ':!automation/publish/review_ledger.yaml' | shasum -a 256
+3283d8cfff9c461f…     # identical on re-run
+```
+
+## The failure message
+
+The wording matters — this is an instruction, not a bug report, and it is read by an agent.
+
+```
+PUBLIC REVIEW GATE — not a test failure. Action required.
+
+7 commits have changed the published tree since the last recorded review
+(070324a0 → 9e3bec37), touching 14 files:
+
+    AGENTS.md
+    automation/publish/check_public.py
+    handbook/private-overlay.md
+    ...
+
+These files ship to a public repository. Read the diff and confirm none of it
+contains a real name, employer, school, date, salary, or anything about the
+owner's actual job hunt.
+
+    git diff 070324a0..9e3bec37 -- . ':!automation/publish/review_ledger.yaml'
+
+Hint — names newly introduced by this diff that match a company in the private
+tree (advisory only, see below):  (none)
+
+Then append to automation/publish/review_ledger.yaml:
+
+    - commit: 9e3bec37
+      reviewed_by: agent          # or: human
+      date: 2026-07-28
+      files: 14
+      digest: sha256:3283d8cfff9c461f
+      finding: none               # or a description of what you found and fixed
+```
+
+## The ledger
+
+```yaml
+# Every commit touching the published tree is reviewed for personal data before it
+# ships. Append-only. `digest` is recomputed by the gate, so a row cannot be written
+# without fetching the real diff.
+- commit: 9e3bec37
+  reviewed_by: agent
+  date: 2026-07-28
+  files: 14
+  digest: sha256:3283d8cfff9c461f
+  finding: none
+```
+
+The gate recomputes `digest` from the range the row claims and fails if it disagrees. That
+does not prove reading — it forecloses guessing, and it forces the diff into the reviewer's
+context, which is where the judgment actually happens.
+
+**Design choices worth stating:**
+
+- **Append-only.** History of who reviewed what is the point; rewriting a row is a finding.
+- **A row per commit range, not per file.** Per-file attestation was considered and rejected:
+  at 14 files a change it turns review into transcription, and volume is how a checklist
+  becomes a rubber stamp.
+- **`finding:` is required and free-text.** A row that says `none` on a diff that later turns
+  out to leak is evidence about the reviewer, which is the only accountability a gate like
+  this can offer.
+- **Seeded, not retroactive.** On introduction the ledger records the current HEAD; the gate
+  does not demand a review of history.
+
+## The advisory detector
+
+The `Hint —` line above comes from a narrowed cross-reference. I prototyped the obvious
+version and it is unusable as anything stronger:
+
+> Flagging any public file that names a company present in the private tree matched **51 of
+> 177** private company tokens across the current public tree — led by `canonical` (114
+> files), `writer` (103), `render` (85), `lambda` (59), `customer`, `iterable` — ordinary
+> English words — plus Google, Microsoft, Amazon and Anthropic, which appear legitimately as
+> ATS providers and model vendors.
+
+So it is narrowed on four axes and remains advisory:
+
+1. Runs on the **diff**, not the tree.
+2. Subtracts every token already present in the public tree *before* the change — a name
+   that was already there is not news.
+3. Matches **display names** from `companies/_index.yaml`, not slug fragments, so `canonical`
+   only fires as `Canonical Ltd.` and `lambda` only as `Lambda Labs`.
+4. Skips `examples/` and the ATS registry, which are supposed to name companies.
+
+It prints hints. It never fails the gate by itself. If it goes quiet for a month it is
+probably mistuned, and that is a task, not a crisis.
+
+## Where it runs
+
+| Surface | Behaviour |
+|---|---|
+| `pre-commit` | Runs alongside the leak guard. Fast — one `git log`, one `git diff` |
+| CI | Same check; this is the one `--no-verify` cannot skip |
+| On demand | `.venv/bin/python automation/publish/review_gate.py` |
+| A contributor without the overlay | Gate runs; the advisory detector reports "not inspected" rather than silently passing |
+
+## Open: what counts as "the public tree"
+
+Two scopings, with a real ergonomic difference at ~5–20 toolkit commits a day:
+
+- **Everything tracked except the ledger** (recommended). Simplest rule, no gaps. But every
+  toolkit commit needs a review row, including ones touching only `tasks/` or `memory/`.
+- **Only paths in the exporter allowlist.** Fewer rows — but it excludes `memory/`, `tasks/`,
+  `message-queue/`, and `history/`, which is exactly where an agent writes prose about real
+  work. The four live examples of employer names in the public tree are all in that excluded
+  set.
+
+Recommended: everything. If the row rate becomes painful, the right relief is batching
+(one row may cover a range of commits) rather than narrowing the scope.
+
+## What it does not do
+
+- It does not inspect the working tree, only commits. An uncommitted public edit is invisible
+  until it lands.
+- It does not read `git stash`, reflogs, or any other repo.
+- It cannot tell a reviewed row from a fabricated one beyond the digest.
+
+## Human questions / additional tasks
+
+<!-- Free space. -->
