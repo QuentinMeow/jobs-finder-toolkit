@@ -2,8 +2,8 @@
 
 Run with (from the repo root):
     .venv/bin/python -m unittest discover \
-        -s automation/maintenance/gardener/tests \
-        -t automation/maintenance/gardener/tests
+        -s automation/gardener/tests \
+        -t automation/gardener/tests
 
 Isolation is via a copy of the tracked fictional fixture store under a tempdir +
 ``JOBHUNT_DATA_ROOT`` — never the real store, and the routine never mutates.
@@ -25,7 +25,6 @@ if str(GARDENER_DIR) not in sys.path:
 
 import store_report  # noqa: E402
 from store.paths import DomainLayout  # noqa: E402
-
 
 
 def _find_repo_root(start: Path) -> Path:

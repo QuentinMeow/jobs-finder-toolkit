@@ -16,8 +16,8 @@ Routines:
     store-report         raw-data-layer store health (sizes/blobs/locks/validate; report-only)
 
 Usage:
-    .venv/bin/python automation/maintenance/gardener/gardener.py <routine> [--apply]
-    .venv/bin/python automation/maintenance/gardener/gardener.py --all      # every routine, dry-run
+    .venv/bin/python automation/gardener/gardener.py <routine> [--apply]
+    .venv/bin/python automation/gardener/gardener.py --all      # every routine, dry-run
 """
 
 from __future__ import annotations

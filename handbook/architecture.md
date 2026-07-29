@@ -170,7 +170,9 @@ the leak guard on push.
 | `skills/job-search/companies.yaml` | Canonical company registry: identity, ATS poll config, tags, blacklist — never dated postings |
 | `automation/shared/` | Canonical shared modules, vendored into skills |
 | `automation/vendoring/` | `sync_vendored.py` — regenerates `_vendor/` copies, checks drift |
-| `automation/maintenance/` | The `gardener/` memory-hygiene routines and file-only `import_company_levels.py` |
+| `automation/gardener/` | The gardener's memory-hygiene routines (dry-run by default; move, never delete) |
+| `automation/search-recall-audit/` | Recall/precision + field-fidelity audits of the job-search pipeline (`audit.py`, `field_fidelity.py`, `store_refilter.py`) |
+| `automation/company-levels/` | File-only `import_company_levels.py` — never fetches or scrapes |
 | `automation/metrics/` | Opt-in local metrics hooks + the instruction-file size budget (`instruction_budget.py --strict`) |
 | `automation/publish/` | Leak guard + exporter (the repo's privacy defenses) |
 | `evals/` | Per-skill canary evals gating skill-instruction changes (see `evals/README.md`) |

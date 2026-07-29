@@ -4,8 +4,8 @@ This maintenance tool is deliberately file-only: it accepts normalized YAML,
 JSON, or CSV rows and never fetches or scrapes data.
 
 Usage:
-    .venv/bin/python automation/maintenance/import_company_levels.py INPUT DESTINATION
-    .venv/bin/python automation/maintenance/import_company_levels.py INPUT DESTINATION --write
+    .venv/bin/python automation/company-levels/import_company_levels.py INPUT DESTINATION
+    .venv/bin/python automation/company-levels/import_company_levels.py INPUT DESTINATION --write
 
 The first form validates and merges in memory without changing DESTINATION.
 ``--write`` atomically replaces DESTINATION after a checksum guard confirms that

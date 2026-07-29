@@ -20,7 +20,7 @@ baseline or profile file absent (e.g. no overlay mounted), it reports "nothing t
 check" and still exits 0.
 
 Usage:
-    .venv/bin/python automation/maintenance/gardener/skill_drift.py
+    .venv/bin/python automation/gardener/skill_drift.py
 """
 
 from __future__ import annotations

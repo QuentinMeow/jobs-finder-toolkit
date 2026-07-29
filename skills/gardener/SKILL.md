@@ -50,23 +50,23 @@ Retention windows come from the optional `retention:` block in `config.yaml`
 
 ```bash
 # Run every routine in dry-run (safe weekly sweep)
-.venv/bin/python automation/maintenance/gardener/gardener.py --all
+.venv/bin/python automation/gardener/gardener.py --all
 
 # A single routine (dry-run)
-.venv/bin/python automation/maintenance/gardener/gardener.py expire-discoveries
-.venv/bin/python automation/maintenance/gardener/gardener.py compact-logs
-.venv/bin/python automation/maintenance/gardener/gardener.py lessons-report
-.venv/bin/python automation/maintenance/gardener/gardener.py card-staleness
-.venv/bin/python automation/maintenance/gardener/gardener.py verify-links
-.venv/bin/python automation/maintenance/gardener/gardener.py self-measure
+.venv/bin/python automation/gardener/gardener.py expire-discoveries
+.venv/bin/python automation/gardener/gardener.py compact-logs
+.venv/bin/python automation/gardener/gardener.py lessons-report
+.venv/bin/python automation/gardener/gardener.py card-staleness
+.venv/bin/python automation/gardener/gardener.py verify-links
+.venv/bin/python automation/gardener/gardener.py self-measure
 
 # Act on a plan (ONLY after the user reviews and approves the dry-run):
-.venv/bin/python automation/maintenance/gardener/gardener.py expire-discoveries --apply
-.venv/bin/python automation/maintenance/gardener/gardener.py compact-logs --apply
-.venv/bin/python automation/maintenance/gardener/gardener.py self-measure --apply
+.venv/bin/python automation/gardener/gardener.py expire-discoveries --apply
+.venv/bin/python automation/gardener/gardener.py compact-logs --apply
+.venv/bin/python automation/gardener/gardener.py self-measure --apply
 
 # Each routine also runs standalone, e.g.
-.venv/bin/python automation/maintenance/gardener/verify_links.py
+.venv/bin/python automation/gardener/verify_links.py
 ```
 
 Workflow: run dry-run → show the user the plan → get explicit approval → run the matching

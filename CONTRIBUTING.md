@@ -57,7 +57,7 @@ Run these before opening a PR (all must pass; CI runs them too):
 .venv/bin/python automation/publish/check_public.py
 
 # Link / symlink / vendor-drift check
-.venv/bin/python automation/maintenance/gardener/gardener.py verify-links
+.venv/bin/python automation/gardener/gardener.py verify-links
 ```
 
 Vendored copies must stay in sync; after editing a canonical `automation/shared/`

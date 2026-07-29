@@ -79,7 +79,7 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
 | `skills/job-search/companies.yaml` | Canonical **public** registry (company identity, ATS config, tags); candidate blacklist rows live in git-ignored `private/job-search/blacklist.yaml` |
 | `config.applications_root()` / `config.discoveries_dir()` | All applications in numbered status folders `0_profile`…`6_drafted` (the folder is the derived overall status) / ad-hoc job-search research |
 | `skills/` | Canonical skills dir — **entirely public** (see Public vs Private; private skills live at `private/skills/`) |
-| `automation/` (shared, vendoring, maintenance, metrics, publish, store, reconcile, hooks) | Everything that runs: canonical toolkit modules, vendoring, gardener, metrics, leak guard, store tools, the reconciler, tracked git hooks |
+| `automation/` (shared, vendoring, gardener, search-recall-audit, company-levels, metrics, publish, store, reconcile, hooks) | Everything that runs: canonical toolkit modules, vendoring, gardener, pipeline audits, metrics, leak guard, store tools, the reconciler, tracked git hooks |
 | `templates/` | **Single source of truth for every process-file schema** — copy one to create any queue/task/memory item (`templates/README.md`) |
 | `roadmap/` | `desired-state.md` vs `current-state.md` — the gap between them is the backlog's source |
 | `history/` | One folder per working session, each with a `handover.md` |

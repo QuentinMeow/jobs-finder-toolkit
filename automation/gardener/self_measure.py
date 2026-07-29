@@ -10,8 +10,8 @@ overlay via config paths, i.e. ``<applications_root>/0_profile/metrics.yaml``) â
 never into the toolkit tree.
 
 Usage:
-    .venv/bin/python automation/maintenance/gardener/self_measure.py
-    .venv/bin/python automation/maintenance/gardener/self_measure.py --apply
+    .venv/bin/python automation/gardener/self_measure.py
+    .venv/bin/python automation/gardener/self_measure.py --apply
 """
 
 from __future__ import annotations

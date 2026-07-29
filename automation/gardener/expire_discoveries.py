@@ -15,8 +15,8 @@ Age is taken from the filename ``YYYYMMDD`` (prefix or embedded), falling back t
 the file mtime. DRY-RUN by default: prints a per-file plan and moves nothing.
 
 Usage:
-    .venv/bin/python automation/maintenance/gardener/expire_discoveries.py
-    .venv/bin/python automation/maintenance/gardener/expire_discoveries.py --apply
+    .venv/bin/python automation/gardener/expire_discoveries.py
+    .venv/bin/python automation/gardener/expire_discoveries.py --apply
 """
 
 from __future__ import annotations

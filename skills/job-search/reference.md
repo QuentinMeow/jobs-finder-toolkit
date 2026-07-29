@@ -562,7 +562,7 @@ Import only user-supplied/licensed files; the importer never fetches the web:
 
 ```bash
 # Dry run by default; accepts normalized YAML, JSON, or CSV. DEST = config.company_levels_path().
-.venv/bin/python automation/maintenance/import_company_levels.py INPUT <DEST>
+.venv/bin/python automation/company-levels/import_company_levels.py INPUT <DEST>
 # Persist only after review:
 ... --write
 ```

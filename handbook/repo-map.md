@@ -6,7 +6,8 @@ applications root (`config.applications_root()`, `applications/` by default,
 real data under `private/applications/`); only shared tooling (`scripts/`,
 `skills/`) sits at the repo root. Files are grouped by purpose into
 meaningful subfolders (see `handbook/file-organization.md`): `scripts/` fans
-out into `automation/shared/`, `automation/vendoring/`, and `automation/maintenance/`
+out into `automation/shared/`, `automation/vendoring/`, and one folder per job
+(`automation/gardener/`, `automation/search-recall-audit/`, `automation/company-levels/`)
 (each skill bundles its own render/tracking scripts under
 `skills/<skill>/scripts/`). Application status is encoded per posting
 in each `jobs:` entry's `status`, and the sub-folder the application sits in
@@ -47,7 +48,7 @@ support folders, not applications.
 | `automation/shared/location.py` | **Canonical** shared location classifier — turns a posting `location` string into a match (e.g. `metro` / `us_remote`) or no-match (`other_us` / `foreign` / `unknown`) per the configured location policy (ships with NO built-in metros; callers inject `config.location_policy()`); also extracts `Location:` lines from JD files. Vendored into `job-search`, `resume-writer`, and `application-tracker` (see `handbook/skills-and-vendoring.md`) |
 | `automation/shared/job_metadata.py` | **Canonical** pure extractor/validator for the flat schema-v5 per-posting `status`, job level (normalized word + approximate Google-equivalent range), required YOE, salary, `workplace` (onsite/hybrid/remote), and heuristic `sponsorship` (likely/unlikely/unknown), plus the `derive_status` folder rollup and loading of the optional sourced company-levels reference cache. Vendored into all three job workflow skills |
 | `automation/shared/metadata_editor.py` | **Canonical** formatting-preserving schema-v5 `meta.yaml` editor (YAML node anchors, checksums, atomic writes, semantic verification, idempotence). Vendored into application-tracker |
-| `automation/maintenance/import_company_levels.py` | Dry-run-by-default YAML/JSON/CSV importer for user-supplied or licensed company-level facts; never fetches/scrapes Levels.fyi and keeps base/stock/bonus/total plus geographic bands distinct |
+| `automation/company-levels/import_company_levels.py` | Dry-run-by-default YAML/JSON/CSV importer for user-supplied or licensed company-level facts; never fetches/scrapes Levels.fyi and keeps base/stock/bonus/total plus geographic bands distinct |
 | `automation/vendoring/sync_vendored.py` | Vendoring tool: copies each canonical shared module into every consuming skill's `scripts/_vendor/` (registry in `TARGETS`); `--check` fails on drift (run by the pre-commit hook) |
 | `automation/hooks/pre-commit` | Tracked git pre-commit hook: rejects any staged `private/` path, runs the leak guard over the **staged index** (`check_public.py --staged`), then the vendored-copy drift check + `compileall` + instruction budget + reconciler (with `--require-roots` when `private/` is mounted). Install once: `python automation/bootstrap_overlay.py` (installs pre-commit AND pre-push) |
 | `automation/hooks/overlay-pre-commit`, `automation/hooks/overlay-pre-push` | The PRIVATE overlay's git hooks, tracked here and symlinked into `private/.git/hooks/` by `automation/bootstrap_overlay.py` — pre-commit rejects staged store payloads (`<data_root>/*/{raw,derived,state}`) and an over-size staged set (500 files / 128 MiB); pre-push refuses any destination that is not the repo's configured private remote, failing closed when it cannot determine one |

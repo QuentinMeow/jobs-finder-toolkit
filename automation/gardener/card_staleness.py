@@ -15,7 +15,7 @@ REPORT-ONLY (no ``--apply``): rebuilding the card is the skill's job, not the ga
 the ``--all`` gate).
 
 Usage:
-    .venv/bin/python automation/maintenance/gardener/card_staleness.py
+    .venv/bin/python automation/gardener/card_staleness.py
 """
 
 from __future__ import annotations
