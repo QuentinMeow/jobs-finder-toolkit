@@ -196,3 +196,17 @@
     stating that a durable record may not cite a tmp/ path as its evidence. Prose
     only, no company, person, date, salary, or absolute home path. It cites three
     stale citations by count, not by naming the records that carry them.
+
+- commit: 33f0cb13
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 5
+  digest: sha256:aef680985385590b
+  finding: >-
+    Clean, and read with extra care because the subject matter is the owner's
+    private tree. The phase record, task, verification and handover all describe
+    the swept scratch by shape and count — "complete application folders", "interview
+    screenshots" — and name no employer, no person, no posting and no filename from
+    that tree. The one pasted terminal transcript is a git grep over automation/ and
+    skills/ with no absolute home path in it. The overlay task slug it references was
+    already public in this plan before this change.
