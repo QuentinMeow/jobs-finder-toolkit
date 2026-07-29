@@ -46,3 +46,6 @@ what moved, what's next, what surprised you.>
   together — see `verification.md`. Did not check out the individual
   `phase-0*` branches since the bookkeeping branch already carries their
   work and the checks are not phase-specific.
+
+**2026-07-29 (later session)** — moved `3_in-review/` → `4_done/`: PRs #81–#84
+(commits `72d45e2`…`eb345e7`) are merged into `main`. No content change.

@@ -160,11 +160,20 @@ evals/
   ab-protocol.md                # step-by-step matched-pair A/B procedure (design doc §2)
   rubrics/
     judging.md                  # shared pass/fail discipline + blind pairwise A/B judging + κ note
+    artifact-quality.md         # rubric for the artifacts a skill produces (resume, letter, dossier)
   results/
     .gitkeep                    # results are per-machine; tracked for now, may be gitignored later
     TEMPLATE.md                 # one-page result-recording template
-  <skill>/canaries.yaml         # 3–6 canaries per public skill (6 skills; gardener excluded — its routines are deterministic scripts)
+  <skill>/canaries.yaml         # 4–8 canaries per skill, 9 skills (see below)
 ```
+
+The nine skills with a canary set are `application-tracker` (6), `ask-me-anything` (4),
+`behavioral-interview-prep` (5), `company-research` (6), `email-assistant` (8),
+`github-workflow` (4), `interview-calendar` (4), `job-search` (5) and `resume-writer` (8). Two
+public skills deliberately have none: `gardener` and `search-recall-audit`, whose routines are
+deterministic scripts covered by unit tests. An edit to either is therefore always a
+"skip with a recorded one-line rationale" under the risk-based gate above — there is no canary
+run to fall back on.
 
 All canaries are **fully public**: only the "Jordan Rivers" fixture identity + fictional or
 real-public companies with fictional postings. Zero personal data (the leak guard must be

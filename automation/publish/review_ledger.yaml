@@ -122,3 +122,27 @@
     fact names only config keys and derived path shapes — no company, person, or
     date from the private tree, and the paths it quotes are directory names the
     public tree already documents.
+
+- commit: 2f907743
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 20
+  digest: sha256:7d90cd4ba5ebf1f5
+  finding: >-
+    This range REMOVES personal data rather than adding any. Two sites carried the
+    owner's application history — a task file listing real employers and
+    subsidiaries, and the phase-5 move table naming four companies inside file
+    paths — both replaced by shapes and counts. Same class the gate caught in
+    ef2d0a3, and again invisible to the token scan, because company names are not
+    identity tokens. The added lines introduce no company, person, or date, and no
+    absolute home path.
+
+- commit: c44c6904
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 1
+  digest: sha256:671f3d65baa6a22c
+  finding: >-
+    Clean. One handover file. It names PR numbers, branch names and queue items —
+    no company, person, date, or path from the private tree, and no absolute home
+    path.
