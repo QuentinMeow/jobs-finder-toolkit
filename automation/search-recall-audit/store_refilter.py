@@ -11,7 +11,29 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+
+def _find_repo_root(start: Path) -> Path:
+    """The repo root above ``start``, found by walking UP — never by counting.
+
+    A fixed ``parents[N]`` encodes this file's depth and breaks the moment the
+    folder moves (this one already moved, from
+    ``automation/maintenance/search_recall_audit/`` to
+    ``automation/search-recall-audit/``). Markers, in order of authority:
+    ``.git`` — the project boundary, tested with ``exists()`` because a git
+    WORKTREE's ``.git`` is a FILE — then ``config.example.yaml``, the toolkit's
+    tracked root marker, so a ``.git``-less export still resolves. This mirrors
+    ``automation/shared/config.py``'s ``_git_boundary()``/``_repo_root()``; it
+    is reproduced rather than imported because the root is what puts ``config``
+    on ``sys.path`` in the first place.
+    """
+    for marker in (".git", "config.example.yaml"):
+        for parent in (start, *start.parents):
+            if (parent / marker).exists():
+                return parent
+    return start
+
+
+ROOT = _find_repo_root(Path(__file__).resolve().parent)
 for p in ("skills/job-search/scripts/_vendor", "skills/job-search/scripts",
           "automation/shared"):
     sys.path.insert(0, str(ROOT / p))

@@ -10,9 +10,9 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-MAINTENANCE_DIR = REPO_ROOT / "automation" / "maintenance"
-if str(MAINTENANCE_DIR) not in sys.path:
-    sys.path.insert(0, str(MAINTENANCE_DIR))
+COMPANY_LEVELS_DIR = REPO_ROOT / "automation" / "company-levels"
+if str(COMPANY_LEVELS_DIR) not in sys.path:
+    sys.path.insert(0, str(COMPANY_LEVELS_DIR))
 
 from import_company_levels import (  # noqa: E402
     ImportValidationError,

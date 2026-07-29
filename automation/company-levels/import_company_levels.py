@@ -31,7 +31,29 @@ from typing import Any, Iterable
 import yaml
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+def _find_repo_root(start: Path) -> Path:
+    """The repo root above ``start``, found by walking UP — never by counting.
+
+    The old ``parents[2]`` was right only by coincidence of depth: it survived
+    the move out of ``automation/maintenance/`` solely because
+    ``automation/company-levels/`` happens to sit at the same level. Counting
+    parents encodes a depth this file does not control, so it is replaced by the
+    walk. Markers, in order of authority: ``.git`` — the project boundary,
+    tested with ``exists()`` because a git WORKTREE's ``.git`` is a FILE — then
+    ``config.example.yaml``, the toolkit's tracked root marker, so a
+    ``.git``-less export still resolves. This mirrors
+    ``automation/shared/config.py``'s ``_git_boundary()``/``_repo_root()``; it
+    is reproduced rather than imported because the root is what puts
+    ``automation/shared`` on ``sys.path`` in the first place.
+    """
+    for marker in (".git", "config.example.yaml"):
+        for parent in (start, *start.parents):
+            if (parent / marker).exists():
+                return parent
+    return start
+
+
+REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
 SHARED_DIR = REPO_ROOT / "automation" / "shared"
 if str(SHARED_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_DIR))
