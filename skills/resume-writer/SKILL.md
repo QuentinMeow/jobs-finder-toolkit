@@ -51,8 +51,8 @@ or `scripts/`; **≤ 8 subagents total per request**); `.agents/MEMORY.md` if it
 the explicit inline triggers below (`LESSONS.md` = a render/layout failure, see Step 6). In
 particular, `handoff.py` already wrote a valid schema-v5 `meta.yaml`, so `status.py
 --enrich-metadata`/`--check-metadata` are the only tracker follow-ups on the routine path.
-**Private overrides:** if this skill folder has a `references_private/`
-directory, read every file in it — those candidate-specific instructions/examples/preferences
+**Private overrides:** if `config.skill_references_dir()` for this skill exists in the
+overlay, read every file in it — those candidate-specific instructions/examples/preferences
 OVERRIDE the generic examples here; when it is absent (public / example mode) use the generic
 examples as-is and take all candidate specifics from `config` + the tailoring card + the profile.
 
@@ -188,7 +188,7 @@ bullets under the same honesty/length rules as project bullets. Rules below appl
 - **Ordering**: Lead with the profile's designated strongest/lead project (the profile marks
   which project should lead every resume); it leads regardless of role. Order the remaining
   projects by relevance to the JD. Candidate-specific ordering rules, if any, live in
-  `references_private/`.
+  the overlay at `config.skill_references_dir()`.
 
 ### Step 5: Tailor from the baseline (`tailored.yaml`)
 

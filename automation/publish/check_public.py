@@ -46,9 +46,25 @@ it in a maintainer checkout (where ``config.yaml`` supplies the real tokens)
 before publishing, and the exporter (``export_public.py``) runs it against the
 freshly copied tree as the final gate.
 
+FAIL CLOSED WHEN UNARMED. Check 6 is only meaningful when the guard actually
+knows the owner's identity, so the identity-derived token set is tracked
+SEPARATELY from the supplementary one (``private/leak_tokens.txt``) and an empty
+identity set is a hard error (exit 2) BEFORE any scanning — otherwise a tree full
+of the owner's real name reports "Safe to publish". Only the two channels that
+carry a real identity arm the guard:
+  * a REAL (non-example) ``config.yaml`` discovered by ``automation/shared/config.py``;
+  * the ``JOBHUNT_PERSONAL_TOKENS`` env var (how the exporter/CI forward it).
+``private/leak_tokens.txt`` is supplementary: it adds tokens but can NEVER arm the
+guard on its own (it holds employers/schools, not the name/email/handles). Pass
+``--allow-unarmed`` to run the token-independent checks (1-5, 7) knowingly — the
+pre-commit hook does exactly that, while the pre-push hook does NOT.
+
+Exit codes: 0 clean · 1 violations found · 2 unarmed (no identity tokens).
+
 Usage:
     .venv/bin/python automation/publish/check_public.py
     .venv/bin/python automation/publish/check_public.py --json
+    .venv/bin/python automation/publish/check_public.py --staged [--allow-unarmed]
 """
 from __future__ import annotations
 
@@ -58,8 +74,18 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
+
+# The sibling manifest module owns the ONE SKILL.md frontmatter parser in the
+# repo (the exporter and the reconciler read the same one), so the guard's
+# ``visibility: private`` detection can never disagree with what actually ships.
+# Both files live in ``automation/publish/`` and are always exported together.
+_PUBLISH_DIR = str(Path(__file__).resolve().parent)
+if _PUBLISH_DIR not in sys.path:
+    sys.path.insert(0, _PUBLISH_DIR)
+import sync_skill_manifests  # noqa: E402
 
 # automation/publish/check_public.py -> repo root is two parents up.
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -118,13 +144,37 @@ EXAMPLES_PREFIX = "examples/"
 
 # ── path/filename denylist (defense in depth, token-independent) ──────────────
 # Root-anchored private product trees that must never appear in a public tree.
-# Anchored (``^``) so the tracked ``examples/applications/**`` dataset is NOT hit.
+# Anchored (``^``) so the tracked ``examples/applications/**`` dataset is NOT hit
+# (``examples/me/``, ``examples/companies/``, ``examples/store/`` likewise).
+#
+# APPEND-ONLY UNION — entries are NEVER removed, only added.
+# A rename does not retire the old name: a stale checkout, an old branch, a
+# restored backup, or a half-finished migration can still put the historical tree
+# at the public root, and a detector that forgot the old name is a detector that
+# fails open exactly when it matters. So this list carries the HISTORICAL names,
+# the CURRENT ones, and the names a planned rename will introduce
+# (design/workspace-restructure/): ``data/``->``store/``,
+# ``interviews/``->``me/interviews/`` + ``companies/``,
+# ``job-search-profiles/``->``market/searches/``.
+# Only add a root that must never be public: ``docs/``, ``memory/``, ``tasks/``,
+# ``message-queue/``, ``evals/``, ``skills/`` and ``examples/`` are legitimate
+# PUBLIC roots and must stay off this list.
+# ``private/`` is deliberately absent: it is reported by
+# ``find_personal_overlay_violations`` (check 2) so its findings stay one category.
 _DENY_TREES = [
+    # current / historical private product trees
     (re.compile(r"^applications/"), "applications/"),
     (re.compile(r"^interviews/"), "interviews/"),
     (re.compile(r"^\.agents/inputs/"), ".agents/inputs/"),
     (re.compile(r"^skills/coding-interview/"), "skills/coding-interview/"),
     (re.compile(r"^skills/coding-interview-cleanup/"), "skills/coding-interview-cleanup/"),
+    (re.compile(r"^data/"), "data/"),
+    (re.compile(r"^job-search-profiles/"), "job-search-profiles/"),
+    # names the planned private-tree renames introduce (denied before they exist)
+    (re.compile(r"^store/"), "store/"),
+    (re.compile(r"^me/"), "me/"),
+    (re.compile(r"^companies/"), "companies/"),
+    (re.compile(r"^market/"), "market/"),
 ]
 
 
@@ -309,6 +359,32 @@ def _load_shared_config():
         return None
 
 
+def config_identity_status() -> str:
+    """One line describing which config (if any) supplied identity tokens.
+
+    NEVER raises. The config layer refuses to resolve when no real ``config.yaml``
+    is reachable while a private overlay is mounted; a traceback out of this guard
+    (it runs in pre-push / pre-commit) would be a strictly worse failure than a
+    report that says the scan resolved no identity. The refusal is surfaced in the
+    report instead, so an unarmed run is never mistaken for a clean one.
+    """
+    config = _load_shared_config()
+    if config is None:
+        return "config loader unavailable — no identity resolved from config"
+    try:
+        active = Path(config.config_path())
+    except Exception as exc:  # noqa: BLE001 — report, never crash
+        return (f"config unresolved ({type(exc).__name__}: {exc}) — "
+                f"no identity resolved from config")
+    try:
+        is_example = active.resolve() == Path(config.EXAMPLE_CONFIG).resolve()
+    except Exception:  # noqa: BLE001
+        is_example = False
+    if is_example:
+        return f"fictional example config ({active}) — no identity resolved from config"
+    return f"real config ({active})"
+
+
 def _identity_tokens(config) -> set[str]:
     """Derive identity tokens from the ACTIVE config — only if it is a real one.
 
@@ -363,19 +439,15 @@ def _tokens_from_file(path: Path) -> set[str]:
     return toks
 
 
-def personal_tokens() -> list[str]:
-    """Resolve the active personal-identity token set (see the module comment).
+def _env_tokens() -> set[str]:
+    """Tokens forwarded through ``JOBHUNT_PERSONAL_TOKENS``.
 
-    Union of: the ``JOBHUNT_PERSONAL_TOKENS`` env var, the real config identity
-    (skipped for the fictional example), the git-ignored
-    ``private/leak_tokens.txt``, and the (empty) shipped ``PERSONAL_TOKENS`` base.
+    Same comment/blank handling as the leak-token files, so the env var can be
+    populated verbatim from private/leak_tokens.txt (e.g. as a CI secret).
+    Comment LINES are dropped before comma-splitting, so a comma inside a comment
+    can never shed token fragments.
     """
-    toks: set[str] = set(PERSONAL_TOKENS)
-
-    # Same comment/blank handling as the leak-token files, so the env var can be
-    # populated verbatim from private/leak_tokens.txt (e.g. as a CI secret).
-    # Comment LINES are dropped before comma-splitting, so a comma inside a
-    # comment can never shed token fragments.
+    toks: set[str] = set()
     for line in os.environ.get(TOKENS_ENV_VAR, "").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -384,14 +456,83 @@ def personal_tokens() -> list[str]:
             raw = raw.strip()
             if raw:
                 toks.add(raw)
+    return toks
 
+
+def identity_tokens() -> set[str]:
+    """The ARMING token set: tokens that prove the guard knows the real identity.
+
+    Exactly two channels qualify — a REAL (non-example) ``config.yaml`` and the
+    ``JOBHUNT_PERSONAL_TOKENS`` env var the exporter/CI use to forward that same
+    identity into a config-less tree. When this set is EMPTY the token scan
+    (check 6) is inert and the guard must refuse to run (see ``main``).
+    """
+    toks = _env_tokens()
     config = _load_shared_config()
     if config is not None:
         toks |= _identity_tokens(config)
+    return toks
 
+
+def supplementary_tokens() -> set[str]:
+    """Extra tokens that widen the scan but can NEVER arm it.
+
+    ``private/leak_tokens.txt`` holds identity ATTRIBUTES (employers, school,
+    product names) — never the name/email/handles — so a non-empty file says
+    nothing about whether the identity itself is known. Gating on the union of
+    this set and ``identity_tokens()`` is exactly the fail-open bug this split
+    exists to prevent.
+    """
+    toks: set[str] = set(PERSONAL_TOKENS)
     for leak_file in LEAK_TOKENS_FILES:
         toks |= _tokens_from_file(leak_file)
-    return sorted(toks)
+    return toks
+
+
+def personal_tokens() -> list[str]:
+    """The full active token set: ``identity_tokens() | supplementary_tokens()``."""
+    return sorted(identity_tokens() | supplementary_tokens())
+
+
+def unarmed_report() -> list[str]:
+    """Diagnostic lines naming WHICH config was looked for, WHERE, and what was found.
+
+    Printed when the guard refuses to run unarmed, so the operator can tell a
+    missing overlay from a wrong cwd from an unset CI secret.
+    """
+    lines: list[str] = []
+    config = _load_shared_config()
+    if config is None:
+        lines.append("  config loader:  FAILED to import automation/shared/config.py "
+                     "(no identity could be derived)")
+    else:
+        env_name = getattr(config, "ENV_VAR", "JOBHUNT_CONFIG")
+        env_val = os.environ.get(env_name) or "unset"
+        filename = getattr(config, "CONFIG_FILENAME", "config.yaml")
+        shared_dir = REPO_ROOT / "automation" / "shared"
+        lines.append(f"  looked for:     '{filename}' via ${env_name} ({env_val}), then "
+                     f"upward from {Path.cwd()}, then upward from {shared_dir}")
+        try:
+            active = Path(config.config_path()).resolve()
+            example = Path(config.EXAMPLE_CONFIG).resolve()
+        except Exception:
+            active = example = None
+        if active is None:
+            lines.append("  active config:  <could not be resolved>")
+        elif active == example:
+            lines.append(f"  active config:  {active}")
+            lines.append("                  ^ the TRACKED example fallback — the fictional "
+                         "persona contributes zero tokens by design")
+        else:
+            lines.append(f"  active config:  {active} (no identity fields resolved from it)")
+    lines.append(f"  ${TOKENS_ENV_VAR}: "
+                 f"{'set but empty' if TOKENS_ENV_VAR in os.environ else 'unset'}")
+    supplementary = supplementary_tokens()
+    for leak_file in LEAK_TOKENS_FILES:
+        state = "present" if leak_file.exists() else "absent"
+        lines.append(f"  {leak_file}: {state} "
+                     f"({len(supplementary)} supplementary token(s) — cannot arm the guard)")
+    return lines
 
 
 def _list_files(root: Path) -> list[str]:
@@ -430,21 +571,13 @@ def parse_frontmatter_visibility(skill_md: Path) -> str | None:
     Reads only the block between the leading ``---`` fences. Returns the lowercased
     value (e.g. ``"private"``/``"public"``) or ``None`` when the key is absent or
     there is no frontmatter.
+
+    Delegates to ``sync_skill_manifests`` so this guard, the exporter's public-skill
+    list, ``.claude-plugin/marketplace.json`` and the runtime symlink trees are all
+    derived by ONE parser — a second copy here could drift and let a skill declared
+    private ship anyway.
     """
-    try:
-        text = skill_md.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return None
-    for line in lines[1:]:
-        if line.strip() == "---":
-            break
-        key, sep, value = line.partition(":")
-        if sep and key.strip() == "visibility":
-            return value.strip().strip("'\"").lower() or None
-    return None
+    return sync_skill_manifests.frontmatter_visibility(skill_md)
 
 
 def find_private_skill_violations(root: Path, tracked: list[str]) -> list[dict]:
@@ -656,20 +789,36 @@ def find_token_and_pii_violations(
 
 
 def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
-         tokens: list[str] | None = None) -> dict:
+         tokens: list[str] | None = None,
+         visibility_root: Path | None = None) -> dict:
     """Run every check and return a structured result.
 
     ``root`` may be a git work tree (default: this repo) or any plain directory
     tree (used by the tests / an export scratch). ``tracked`` / ``tokens`` can be
     supplied to make a scan fully deterministic (the tests do this).
+    ``visibility_root`` is where ``skills/*/SKILL.md`` frontmatter is READ from; it
+    defaults to ``root`` and differs only in ``--staged`` mode, where the scanned
+    tree holds just the staged blobs while the visibility declarations live in the
+    work tree.
+
+    NOTE: this function never gates on the token set being armed — it is pure
+    detection, so a fixture scan can pass ``tokens=[]`` deliberately. The
+    fail-closed arming gate lives in ``main()``.
     """
     root = Path(root).resolve()
     if tracked is None:
         tracked = _list_files(root)
+    identity_count: int | None = None
+    supplementary_count: int | None = None
     if tokens is None:
-        tokens = personal_tokens()
+        identity = identity_tokens()
+        supplementary = supplementary_tokens()
+        identity_count = len(identity)
+        supplementary_count = len(supplementary - identity)
+        tokens = sorted(identity | supplementary)
 
-    private_skill = find_private_skill_violations(root, tracked)
+    private_skill = find_private_skill_violations(
+        Path(visibility_root).resolve() if visibility_root else root, tracked)
     overlay = find_personal_overlay_violations(tracked)
     references_private = find_references_private_violations(tracked)
     path_denylist = find_path_denylist_violations(tracked)
@@ -689,11 +838,91 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         "repo_root": str(root),
         "tracked_file_count": len(tracked),
         "personal_token_count": len(tokens),
+        # None when the caller injected an explicit token list (fixture scans);
+        # otherwise the identity/supplementary split, so an UNARMED run
+        # (identity 0) is visible at a glance instead of hiding inside the union.
+        "identity_token_count": identity_count,
+        "supplementary_token_count": supplementary_count,
+        # WHY the identity count is what it is: a real config, the fictional
+        # example, or a config layer that refused/failed. Never raises.
+        "config_status": config_identity_status(),
         "unscanned_binaries": unscanned,
         "ok": total == 0,
         "total_violations": total,
         "violations": violations,
     }
+
+
+# ── staged-index mode (pre-commit) ───────────────────────────────────────────
+# The empty tree, so the very first commit in a repo (no HEAD) still diffs.
+_EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def _git(args: list[str], repo_root: Path, binary: bool = False):
+    return subprocess.run(
+        ["git", *args], cwd=repo_root, check=True, capture_output=True,
+        text=not binary,
+    )
+
+
+def staged_paths(repo_root: Path = REPO_ROOT) -> list[str]:
+    """Paths staged for commit (added/copied/modified/renamed/type-changed).
+
+    Deletions are excluded: their blobs are leaving the tree, and REMOVING a file
+    that should never have been committed must stay possible.
+    """
+    try:
+        _git(["rev-parse", "--verify", "--quiet", "HEAD"], repo_root)
+        base = "HEAD"
+    except subprocess.CalledProcessError:
+        base = _EMPTY_TREE_SHA
+    out = _git(["diff", "--cached", "--name-only", "-z", "--diff-filter=ACMRT", base],
+               repo_root).stdout
+    return [p for p in out.split("\0") if p]
+
+
+def _materialize_index(repo_root: Path, paths: list[str], dest: Path) -> None:
+    """Write the INDEX content of ``paths`` under ``dest`` (never the worktree).
+
+    Reading blobs out of the index is the whole point of ``--staged``: an unstaged
+    edit must neither hide a leak that is being committed nor fail a commit that
+    does not contain it. ``git checkout-index`` does it in one process and creates
+    the leading directories itself.
+    """
+    subprocess.run(
+        ["git", "checkout-index", f"--prefix={dest.as_posix()}/", "-z", "--stdin", "--force"],
+        cwd=repo_root, check=True, capture_output=True,
+        input="\0".join(paths).encode(),
+    )
+    # A symlink entry checks out as a symlink whose target may not exist here; its
+    # blob content IS the target path, which is exactly what must be scanned (an
+    # overlay symlink's target names private paths). Replace it with that text.
+    for rel in paths:
+        p = dest / rel
+        if p.is_symlink():
+            target = os.readlink(p)
+            p.unlink()
+            p.write_text(target + "\n", encoding="utf-8")
+
+
+def scan_staged(repo_root: Path = REPO_ROOT, tokens: list[str] | None = None) -> dict:
+    """Run the full guard over the STAGED INDEX content of a commit."""
+    repo_root = Path(repo_root).resolve()
+    paths = staged_paths(repo_root)
+    if not paths:
+        result = scan(root=repo_root, tracked=[], tokens=tokens)
+        result["mode"] = "staged"
+        return result
+    with tempfile.TemporaryDirectory(prefix="leak-guard-staged-") as td:
+        dest = Path(td)
+        _materialize_index(repo_root, paths, dest)
+        # Visibility (``visibility: private`` frontmatter) is read from the WORK
+        # TREE: a commit that stages one file of a private skill without its
+        # SKILL.md must still be caught.
+        result = scan(root=dest, tracked=paths, tokens=tokens, visibility_root=repo_root)
+    result["repo_root"] = f"{repo_root} (staged index)"
+    result["mode"] = "staged"
+    return result
 
 
 def print_report(result: dict) -> None:
@@ -710,8 +939,23 @@ def print_report(result: dict) -> None:
 
     print("Public-repo leak guard")
     print(f"  repo root:      {result['repo_root']}")
-    print(f"  tracked files:  {result['tracked_file_count']}")
-    print(f"  active tokens:  {result.get('personal_token_count', 0)}")
+    label = "staged files: " if result.get("mode") == "staged" else "tracked files:"
+    print(f"  {label}  {result['tracked_file_count']}")
+    identity = result.get("identity_token_count")
+    supplementary = result.get("supplementary_token_count")
+    if identity is None:
+        print(f"  active tokens:  {result.get('personal_token_count', 0)} (caller-supplied)")
+    else:
+        armed = "" if identity else "   <-- UNARMED: the token scan cannot see the real identity"
+        print(f"  identity tokens:      {identity}"
+              f" (config.yaml / ${TOKENS_ENV_VAR}){armed}")
+        print(f"  supplementary tokens: {supplementary}"
+              f" ({'/'.join(f.name for f in LEAK_TOKENS_FILES)}; never arming)")
+        print(f"  active tokens:        {result.get('personal_token_count', 0)} (union, deduped)")
+    if result.get("config_status"):
+        # Says WHY the identity count is what it is — a refused or failed config
+        # layer reads identically to a clean unarmed run without this line.
+        print(f"  identity source:      {result['config_status']}")
     print()
 
     if result["ok"]:
@@ -787,6 +1031,11 @@ def print_report(result: dict) -> None:
         print()
 
 
+EXIT_OK = 0
+EXIT_VIOLATIONS = 1
+EXIT_UNARMED = 2
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -797,14 +1046,51 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print machine-readable JSON results instead of the text report",
     )
+    parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="scan the STAGED INDEX content of the pending commit instead of the "
+             "tracked work tree (used by the pre-commit hook)",
+    )
+    parser.add_argument(
+        "--allow-unarmed",
+        action="store_true",
+        help="run the token-independent checks even with ZERO identity tokens "
+             "(default: refuse with exit 2, because the token scan is inert)",
+    )
     args = parser.parse_args(argv)
 
-    result = scan()
+    # ── fail closed when unarmed ────────────────────────────────────────────
+    # Checked BEFORE scanning: a scan that cannot see the owner's identity must
+    # never be able to print "Safe to publish", and failing fast keeps the
+    # message the only thing on screen.
+    identity = identity_tokens()
+    if not identity:
+        if not args.allow_unarmed:
+            print("Public-repo leak guard")
+            print("FAIL: the guard is UNARMED — zero identity tokens resolved, so the "
+                  "personal-token\n      scan (check 6) would inspect nothing and report "
+                  "'Safe to publish'.")
+            for line in unarmed_report():
+                print(line)
+            print("\nArm it (any one of):")
+            print("  * run in a maintainer checkout whose config.yaml carries the real "
+                  "candidate identity;")
+            print(f"  * export {TOKENS_ENV_VAR}='<token>[,<token>...]' (how the exporter "
+                  "and CI forward it);")
+            print("  * point $JOBHUNT_CONFIG at that config.yaml.")
+            print("Or run the token-independent checks knowingly with --allow-unarmed.")
+            return EXIT_UNARMED
+        print("WARNING: leak guard is UNARMED (--allow-unarmed): zero identity tokens, "
+              "so checks 1-5 and 7\n         run but the personal-token scan (check 6) "
+              "inspects nothing.", file=sys.stderr)
+
+    result = scan_staged() if args.staged else scan()
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
         print_report(result)
-    return 0 if result["ok"] else 1
+    return EXIT_OK if result["ok"] else EXIT_VIOLATIONS
 
 
 if __name__ == "__main__":

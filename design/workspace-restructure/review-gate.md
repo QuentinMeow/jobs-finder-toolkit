@@ -118,7 +118,7 @@ So it is narrowed on four axes and remains advisory:
 2. Subtracts every token already present in the public tree *before* the change — a name
    that was already there is not news.
 3. Matches **display names** from `companies/_index.yaml`, not slug fragments, so `canonical`
-   only fires as `Canonical Ltd.` and `lambda` only as `Lambda Labs`.
+   only fires as `<Name> Ltd.` and `lambda` only as `<Name> Labs`.
 4. Skips `examples/` and the ATS registry, which are supposed to name companies.
 
 It prints hints. It never fails the gate by itself. If it goes quiet for a month it is
@@ -133,7 +133,25 @@ probably mistuned, and that is a task, not a crisis.
 | On demand | `.venv/bin/python automation/publish/review_gate.py` |
 | A contributor without the overlay | Gate runs; the advisory detector reports "not inspected" rather than silently passing |
 
-## Open: what counts as "the public tree"
+## Decided (2026-07-29): what counts as "the public tree"
+
+**Everything tracked except the ledger**, per the recommendation below. Also decided: one row
+may cover a range of commits, and an agent may sign its own review (`reviewed_by: agent`) — a
+human row is required only when the advisory detector fires. Implemented in
+`automation/publish/review_gate.py`; the reasoning below is kept as the record.
+
+Two implementation facts the scoping made necessary:
+
+- **The decision is on the FILE LIST, not the commit list.** A commit that touches only the
+  ledger still appears in `git log`, so "is the commit range empty" would never converge. The
+  gate decides on `git diff --name-only <last-ack>..HEAD -- . ':!<ledger>'` being empty, and
+  the digest uses the same exclusion.
+- **The workflow has a one-commit lag.** At `pre-commit` time HEAD is the *previous* commit, so
+  the ledger is read from the **working tree**: you stage the row for HEAD alongside your next
+  change and commit once (one row per commit, always one behind). A ledger-only commit changes
+  no watched file, which is how a branch is closed green before a push — CI evaluates the tip.
+
+## Open (resolved above): what counts as "the public tree"
 
 Two scopings, with a real ergonomic difference at ~5–20 toolkit commits a day:
 

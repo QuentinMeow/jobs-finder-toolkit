@@ -80,8 +80,35 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 .venv/bin/python automation/vendoring/sync_vendored.py
 .venv/bin/python automation/vendoring/sync_vendored.py --check
 
-# Install the git hooks once (pre-commit drift check + compileall, and pre-push)
+# Install the git hooks once (pre-commit: staged-index leak guard + staged-private/
+# reject + public review gate + drift check + compileall; pre-push: the armed leak
+# guard). When the
+# overlay is mounted this also installs ITS hooks into private/.git/hooks/ —
+# automation/hooks/overlay-pre-commit (store-payload + staged-set-size guard) and
+# overlay-pre-push (destination must be the configured private remote).
 python automation/bootstrap_overlay.py
+
+# Reconciler by hand. Plain --check no-ops on a process folder that is absent (the
+# published export ships none of message-queue/, tasks/, memory/, roadmap/,
+# history/). --require-roots is the maintainer-checkout assertion that they all
+# exist; the pre-commit hook adds it automatically when private/ is mounted.
+.venv/bin/python automation/reconcile/reconcile.py --check
+.venv/bin/python automation/reconcile/reconcile.py --check --require-roots
+
+# Leak guard by hand. It refuses to run unarmed (exit 2) — a checkout with no real
+# config.yaml identity adds --allow-unarmed to run the token-independent checks.
+.venv/bin/python automation/publish/check_public.py
+.venv/bin/python automation/publish/check_public.py --staged   # what a commit would add
+
+# Public review gate by hand. Fails (exit 1) when the published tree changed since
+# the last row in automation/publish/review_ledger.yaml, and prints the row to add.
+# It reads HEAD (the PREVIOUS commit) and the WORKING-TREE ledger, so you satisfy it
+# by staging that row alongside your next change — one row per commit, always one
+# behind. Close a branch with a ledger-only commit before pushing: it changes no
+# watched file, so it acknowledges the tip without creating new work. Exit 2 means
+# the ledger itself is wrong (bad digest, malformed row, ack not an ancestor of HEAD).
+.venv/bin/python automation/publish/review_gate.py
+.venv/bin/python automation/publish/review_gate.py --verify-all  # recompute EVERY row (CI)
 
 # Install dependencies
 pip install -r requirements.txt

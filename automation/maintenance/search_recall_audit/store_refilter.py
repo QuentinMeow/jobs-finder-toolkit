@@ -22,14 +22,15 @@ import config  # noqa: E402
 import scoring  # noqa: E402
 from common import JobPosting  # noqa: E402
 from registry import load_registry  # noqa: E402
+from search_jobs import resolve_profile  # noqa: E402
 
 OUT = ROOT / "tmp" / "field_fidelity_audit"
 OUT.mkdir(parents=True, exist_ok=True)
 
-profile_path = Path(str(config.__dict__.get("_", "")))  # placeholder
-# Load the default profile YAML.
-prof_label = config.default_profile()
-prof_file = ROOT / "skills/job-search/profiles" / f"{prof_label}.yaml"
+# Load the default profile YAML. ``resolve_profile`` searches the overlay's
+# private profiles first and the tracked public ones second — the same order the
+# live pipeline uses, so this audit re-evaluates against the SAME gates.
+prof_file = resolve_profile(config.default_profile())
 profile = yaml.safe_load(prof_file.read_text())
 
 registry = load_registry()
@@ -93,7 +94,7 @@ def canon(u: str) -> str:
 covered_urls: set[str] = set()
 covered_pairs: set[tuple[str, str]] = set()   # (company_lower, title_lower)
 apps_root = Path(config.applications_root())
-log_path = apps_root / "0_profile" / "applications-log.yaml"
+log_path = Path(config.applications_log_path())
 if log_path.exists():
     log = yaml.safe_load(log_path.read_text()) or {}
     entries = log.get("applications") or log.get("entries") or []

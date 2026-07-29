@@ -7,7 +7,7 @@ Gmail read-only (revisit only if Gmail drafting becomes a real daily need).
 Record:
 [memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md);
 summary in [Decisions (resolved)](#5-decisions-resolved). The focused task
-is `tasks/0_backlog/2026-07-22-email-provider-contract/task.md`. Writing follows
+is `tasks/3_in-review/2026-07-22-email-provider-contract/task.md`. Writing follows
 [handbook/doc-style.md](../STYLE.md).
 
 Part of the [raw-data-layer family](README.md); the

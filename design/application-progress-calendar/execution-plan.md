@@ -19,7 +19,7 @@ provider conformance passes; a planted send-capable provider fixture fails
 the checker; one explicitly requested read-only live run passes. This stage
 does not download a mailbox or change application metadata.
 
-Task: `tasks/0_backlog/2026-07-22-email-provider-contract/task.md`.
+Task: `tasks/3_in-review/2026-07-22-email-provider-contract/task.md`.
 
 ## Stage 2 — tracker schema v5 and the single calendar file
 
@@ -42,7 +42,7 @@ updates never move status folders; malformed/duplicate calendar markers and
 checksum races fail without partial writes; manual unmarked content is
 preserved byte-for-byte; reschedule tests retain superseded times.
 
-Task: `tasks/0_backlog/2026-07-22-application-progress-calendar/task.md`.
+Task: `tasks/1_in-progress/2026-07-22-application-progress-calendar/task.md`.
 
 ## Stage 3 — email download sync
 
@@ -57,7 +57,7 @@ mailbox; induced staleness produces the hard stale banner; moves and
 deletions have the documented semantics; attachment bytes never land in
 the store; no tracked fixture contains third-party content.
 
-Task: `tasks/0_backlog/2026-07-22-email-store-sync/task.md`.
+Task: `tasks/3_in-review/2026-07-22-email-store-sync/task.md`.
 
 ## Stage 4 — categorization, progress proposals, and reconciliation
 
@@ -78,7 +78,7 @@ Sent availability produces `awaiting_schedule`; confirmed replacement
 times preserve the old occurrence; metadata and calendar either both
 commit or neither does.
 
-Task: `tasks/0_backlog/2026-07-22-email-progress-reconciliation/task.md`.
+Task: `tasks/1_in-progress/2026-07-22-email-progress-reconciliation/task.md`.
 
 ## Stage 5 — store-first review cutover
 

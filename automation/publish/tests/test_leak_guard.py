@@ -12,10 +12,12 @@ stays guard-clean while the runtime fixture files it writes still trip the guard
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # Make the sibling modules importable (automation/publish/).
 _PUBLISH_DIR = Path(__file__).resolve().parents[1]
@@ -257,13 +259,355 @@ class ReferencesPrivateTests(unittest.TestCase):
         self.assertFalse([t for t in toks if t.startswith("#")])
 
 
+class _ExampleConfigStub:
+    """Stands in for automation/shared/config.py resolving to the EXAMPLE config.
+
+    That is the state a fresh clone / a wrong cwd / a missing overlay lands in, and
+    the one where ``_identity_tokens`` deliberately returns nothing.
+    """
+
+    EXAMPLE_CONFIG = Path("/nonexistent-checkout/config.example.yaml")
+    CONFIG_FILENAME = "config.yaml"
+    ENV_VAR = "JOBHUNT_CONFIG"
+
+    @staticmethod
+    def config_path() -> Path:
+        return Path("/nonexistent-checkout/config.example.yaml")
+
+    @staticmethod
+    def candidate_name() -> str:
+        return "Jordan Rivers"
+
+    @staticmethod
+    def contact_line() -> str:
+        return "jordan.rivers@example.com"
+
+
+class ArmingTests(unittest.TestCase):
+    """The guard must refuse to run when it cannot see the real identity.
+
+    Gating on the UNION of token sources is the bug: private/leak_tokens.txt keeps
+    the union non-empty (employers, school) while the name/email/handles — the
+    things a leak actually looks like — are absent.
+    """
+
+    def setUp(self):
+        self._saved_env = os.environ.pop(check_public.TOKENS_ENV_VAR, None)
+
+    def tearDown(self):
+        os.environ.pop(check_public.TOKENS_ENV_VAR, None)
+        if self._saved_env is not None:
+            os.environ[check_public.TOKENS_ENV_VAR] = self._saved_env
+
+    def test_example_config_yields_zero_identity_tokens(self):
+        with mock.patch.object(check_public, "_load_shared_config",
+                               return_value=_ExampleConfigStub):
+            self.assertEqual(check_public.identity_tokens(), set())
+
+    def test_supplementary_tokens_alone_never_arm_the_guard(self):
+        # The exact fail-open shape: a non-empty leak-token file, zero identity.
+        with tempfile.TemporaryDirectory() as td:
+            leak_file = Path(td) / "leak_tokens.txt"
+            leak_file.write_text("# comment\nAcmeRobotics\nStateUniversity\n",
+                                 encoding="utf-8")
+            with mock.patch.object(check_public, "LEAK_TOKENS_FILES", [leak_file]), \
+                 mock.patch.object(check_public, "_load_shared_config",
+                                   return_value=_ExampleConfigStub):
+                self.assertEqual(check_public.identity_tokens(), set())
+                self.assertEqual(check_public.supplementary_tokens(),
+                                 {"AcmeRobotics", "StateUniversity"})
+                # The union is non-empty — which is why the union cannot be the gate.
+                self.assertTrue(check_public.personal_tokens())
+
+    def test_env_var_arms_the_guard(self):
+        os.environ[check_public.TOKENS_ENV_VAR] = "RealName,realname@corp.example"
+        with mock.patch.object(check_public, "_load_shared_config",
+                               return_value=_ExampleConfigStub):
+            self.assertIn("RealName", check_public.identity_tokens())
+
+    def test_unarmed_report_names_the_config_it_looked_for(self):
+        with mock.patch.object(check_public, "_load_shared_config",
+                               return_value=_ExampleConfigStub):
+            text = "\n".join(check_public.unarmed_report())
+        self.assertIn("config.yaml", text)
+        self.assertIn("JOBHUNT_CONFIG", text)
+        self.assertIn("config.example.yaml", text)
+        self.assertIn(check_public.TOKENS_ENV_VAR, text)
+
+
+class ArmingCLITests(unittest.TestCase):
+    """End-to-end: the CLI exits non-zero when config discovery finds no identity."""
+
+    def _run(self, extra_args: list[str]) -> subprocess.CompletedProcess:
+        env = dict(os.environ)
+        env.pop(check_public.TOKENS_ENV_VAR, None)
+        # Force discovery onto the tracked example config: that is the "found
+        # nothing real" state, reached in a fresh clone or a fork CI run.
+        env["JOBHUNT_CONFIG"] = str(REPO_ROOT / "config.example.yaml")
+        return subprocess.run(
+            [sys.executable, str(REPO_ROOT / "automation/publish/check_public.py"),
+             *extra_args],
+            cwd=REPO_ROOT, capture_output=True, text=True, env=env,
+        )
+
+    def test_unarmed_run_exits_nonzero(self):
+        proc = self._run([])
+        self.assertEqual(proc.returncode, check_public.EXIT_UNARMED, proc.stdout)
+        self.assertIn("UNARMED", proc.stdout)
+        self.assertNotIn("OK: no public-repo leaks detected", proc.stdout)
+
+    def test_allow_unarmed_still_passes_on_the_clean_tree(self):
+        proc = self._run(["--allow-unarmed"])
+        self.assertEqual(proc.returncode, check_public.EXIT_OK,
+                         proc.stdout + proc.stderr)
+        self.assertIn("UNARMED", proc.stderr)
+        self.assertIn("Safe to publish", proc.stdout)
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-c", "user.email=t@example.com", "-c", "user.name=T",
+         "-c", "commit.gpgsign=false", *args],
+        cwd=repo, check=True, capture_output=True, text=True,
+    )
+
+
+class StagedIndexTests(unittest.TestCase):
+    """``--staged`` scans the INDEX, so unstaged edits neither hide nor cause a fail."""
+
+    def _repo(self, td: str) -> Path:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _git(repo, "init", "-q")
+        return repo
+
+    def test_staged_token_is_caught(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            (repo / "notes.md").write_text("hello SuperSecretSlug\n", encoding="utf-8")
+            _git(repo, "add", "notes.md")
+            result = check_public.scan_staged(repo, tokens=["SuperSecretSlug"])
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["violations"]["personal_token"])
+
+    def test_unstaged_edit_is_not_scanned(self):
+        # The worktree carries the token; the INDEX does not. Committing what is
+        # staged is safe, so the guard must pass.
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            (repo / "notes.md").write_text("clean\n", encoding="utf-8")
+            _git(repo, "add", "notes.md")
+            (repo / "notes.md").write_text("hello SuperSecretSlug\n", encoding="utf-8")
+            result = check_public.scan_staged(repo, tokens=["SuperSecretSlug"])
+        self.assertTrue(result["ok"], result["violations"])
+
+    def test_committed_file_edited_only_in_worktree_is_not_scanned(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            (repo / "notes.md").write_text("clean\n", encoding="utf-8")
+            _git(repo, "add", "notes.md")
+            _git(repo, "commit", "-qm", "init")
+            (repo / "notes.md").write_text("hello SuperSecretSlug\n", encoding="utf-8")
+            (repo / "other.md").write_text("also clean\n", encoding="utf-8")
+            _git(repo, "add", "other.md")
+            result = check_public.scan_staged(repo, tokens=["SuperSecretSlug"])
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(result["tracked_file_count"], 1)
+
+    def test_staged_private_overlay_path_is_caught(self):
+        # ``git add -f private/`` (trailing slash) stages with exit 0 and no output.
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            (repo / ".gitignore").write_text("private/\n", encoding="utf-8")
+            (repo / "private").mkdir()
+            (repo / "private" / "profile.md").write_text("real data\n", encoding="utf-8")
+            _git(repo, "add", ".gitignore")
+            _git(repo, "add", "-f", "private/")
+            result = check_public.scan_staged(repo, tokens=[])
+        self.assertFalse(result["ok"])
+        self.assertEqual([v["path"] for v in result["violations"]["personal_overlay"]],
+                         ["private/profile.md"])
+
+    def test_staged_private_product_tree_is_caught_on_path_alone(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            (repo / "applications").mkdir()
+            (repo / "applications" / "notes.md").write_text("x\n", encoding="utf-8")
+            _git(repo, "add", "applications/notes.md")
+            result = check_public.scan_staged(repo, tokens=[])
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["violations"]["path_denylist"])
+
+    def test_staged_deletion_is_not_a_finding(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            (repo / "notes.md").write_text("clean\n", encoding="utf-8")
+            _git(repo, "add", "notes.md")
+            _git(repo, "commit", "-qm", "init")
+            _git(repo, "rm", "-q", "notes.md")
+            result = check_public.scan_staged(repo, tokens=["SuperSecretSlug"])
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(result["tracked_file_count"], 0)
+
+    def test_empty_index_scan_is_clean(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            result = check_public.scan_staged(repo, tokens=["SuperSecretSlug"])
+        self.assertTrue(result["ok"], result["violations"])
+
+    def test_staged_symlink_target_is_scanned_as_text(self):
+        # An overlay symlink's blob IS its target path; that path names private data.
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            os.symlink("../private/skills/coding-interview", repo / "link")
+            _git(repo, "add", "link")
+            result = check_public.scan_staged(repo, tokens=["coding-interview"])
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["violations"]["personal_token"])
+
+
+class RealTreeStructuralTests(unittest.TestCase):
+    """Scan the REAL tracked tree, not a synthetic fixture built from the same literals.
+
+    The synthetic fixtures in the classes above pass whether or not the detector
+    still matches the tree that actually ships, so a rename of a private root can
+    leave them green with the detector dead. These assert against ``git ls-files``.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if not (REPO_ROOT / ".git").exists():
+            raise unittest.SkipTest("not a git checkout")
+        cls.tracked = check_public.git_tracked_files()
+
+    def test_tracked_tree_has_no_structural_violations(self):
+        self.assertEqual(check_public.find_personal_overlay_violations(self.tracked), [])
+        self.assertEqual(check_public.find_references_private_violations(self.tracked), [])
+        self.assertEqual(check_public.find_path_denylist_violations(self.tracked), [])
+        self.assertEqual(
+            check_public.find_private_skill_violations(REPO_ROOT, self.tracked), [])
+
+    def test_every_root_anchored_gitignore_product_rule_is_denied(self):
+        """A private root that is git-ignored must ALSO be path-denied.
+
+        ``.gitignore`` is the other place a private root at the public root is
+        named. If a rename adds ``/store/`` there but not to ``_DENY_TREES``, the
+        only thing standing between that tree and a publish is a glob that
+        ``git add -f`` overrides — this test fails instead.
+        """
+        # Root-anchored ignore rules that are scratch/build output rather than a
+        # private PRODUCT tree. Add here (with a reason) only after checking the
+        # tree is genuinely not personal data.
+        NON_PRODUCT_ROOTS: set[str] = set()
+        text = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+        rules = [ln.strip() for ln in text.splitlines()
+                 if ln.strip().startswith("/") and ln.strip().endswith("/")]
+        self.assertTrue(rules, "expected root-anchored private-product rules in .gitignore")
+        for rule in rules:
+            rel = rule.lstrip("/")
+            if rel in NON_PRODUCT_ROOTS:
+                continue
+            probe = rel + "probe.md"
+            denied = bool(check_public.find_path_denylist_violations([probe])
+                          or check_public.find_personal_overlay_violations([probe]))
+            self.assertTrue(denied, f".gitignore rule '{rule}' is not covered by "
+                                    "_DENY_TREES / PERSONAL_OVERLAY_PREFIXES")
+
+    def test_deny_trees_are_append_only(self):
+        """Historical private-root names are never retired, only added to.
+
+        A rename (``data/``->``store/``, ``interviews/``->``me/``+``companies/``,
+        ``job-search-profiles/``->``market/searches/``) must ADD the new name and
+        KEEP the old one: a stale checkout or an old branch can still put the
+        historical tree at the public root.
+        """
+        required = {
+            "applications/", "interviews/", ".agents/inputs/",
+            "skills/coding-interview/", "skills/coding-interview-cleanup/",
+            "data/", "job-search-profiles/",
+            "store/", "me/", "companies/", "market/",
+        }
+        labels = {label for _, label in check_public._DENY_TREES}
+        self.assertEqual(required - labels, set(),
+                         "a private root name was REMOVED from _DENY_TREES")
+        for label in sorted(required):
+            probe = label + "probe.md"
+            self.assertTrue(check_public.find_path_denylist_violations([probe]),
+                            f"{label} is listed but does not match {probe}")
+
+    def test_public_roots_are_not_denied(self):
+        """The denylist must not shadow a legitimate public root."""
+        for rel in sorted({p.split("/")[0] for p in self.tracked if "/" in p}):
+            probe = f"{rel}/probe.md"
+            self.assertEqual(check_public.find_path_denylist_violations([probe]), [],
+                             f"public root '{rel}/' is path-denied")
+class ConfigRefusalReportingTests(unittest.TestCase):
+    """A config layer that REFUSES to resolve must not take the guard down.
+
+    Config discovery raises when no real ``config.yaml`` is reachable while a
+    private overlay is mounted. This guard runs in pre-push; a traceback there is
+    strictly worse than a report saying no identity was resolved, so the refusal is
+    reported and the scan still runs (with zero config-derived tokens).
+    """
+
+    class _RaisingConfig:
+        EXAMPLE_CONFIG = Path("/nonexistent/config.example.yaml")
+
+        @staticmethod
+        def config_path():
+            raise RuntimeError("no config.yaml found and the example was refused")
+
+        @staticmethod
+        def candidate_name():                       # pragma: no cover — never reached
+            raise AssertionError("identity must not be read from a refused config")
+
+    def _patch(self):
+        original = check_public._load_shared_config
+        check_public._load_shared_config = lambda: self._RaisingConfig
+        self.addCleanup(setattr, check_public, "_load_shared_config", original)
+
+    def test_status_reports_no_identity_instead_of_raising(self):
+        self._patch()
+        status = check_public.config_identity_status()
+        self.assertIn("no identity resolved", status)
+        self.assertIn("RuntimeError", status)
+
+    def test_identity_tokens_degrade_to_empty(self):
+        self._patch()
+        self.assertEqual(check_public._identity_tokens(self._RaisingConfig), set())
+        # personal_tokens() still resolves (env + overlay file), it just gains
+        # nothing from the config.
+        self.assertIsInstance(check_public.personal_tokens(), list)
+
+    def test_scan_still_runs_and_reports_the_refusal(self):
+        self._patch()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tracked = _write_tree(root, {"README.md": "clean\n"})
+            result = check_public.scan(root, tracked=tracked, tokens=[])
+        self.assertTrue(result["ok"])
+        self.assertIn("no identity resolved", result["config_status"])
+
+
 class ExporterEndToEndTests(unittest.TestCase):
     """Run the real exporter, then assert the export is clean end-to-end."""
 
+    # A token that ARMS the exporter's own gate without naming anybody: it
+    # matches no path and no file content, so the guard still leans on structural
+    # / path checks — the same "clean example tree stays green" path this test
+    # always exercised.
+    PROBE_TOKEN = "zz-exporter-e2e-probe-token"
+
     def setUp(self):
-        # Deterministic: no forwarded tokens, so the guard leans on structural /
-        # path checks — exactly the "clean example tree stays green" path.
-        os.environ.pop(check_public.TOKENS_ENV_VAR, None)
+        # Deterministic AND armed. ``export()`` now refuses to run with zero
+        # identity tokens (an unarmed final guard would call any tree safe to
+        # publish), so simply popping the env var passes only in a maintainer
+        # checkout that has a real config.yaml. CI has neither a config.yaml nor
+        # the token secret, so popping it turned this repo's own CI red.
+        # Forwarding a token that names nobody keeps the assertion identical in
+        # every checkout.
+        os.environ[check_public.TOKENS_ENV_VAR] = self.PROBE_TOKEN
+        self.addCleanup(lambda: os.environ.pop(check_public.TOKENS_ENV_VAR, None))
 
     def test_export_passes_guard_and_excludes_private_trees(self):
         with tempfile.TemporaryDirectory() as td:
@@ -295,11 +639,38 @@ class ExporterEndToEndTests(unittest.TestCase):
                     self.assertTrue(c.startswith("examples/"), c)
 
             # The public .gitignore anchors the overlay mount + private trees.
-            gitignore = (dest / ".gitignore").read_text()
-            for needle in ("private/", "/applications/",
-                           "/interviews/", "/skills/coding-interview/",
-                           "/skills/coding-interview-cleanup/"):
-                self.assertIn(needle, gitignore)
+            # workspace-restructure phase 4 dropped the "/skills/coding-interview/"
+            # and "/skills/coding-interview-cleanup/" needles: nothing private is
+            # placed under skills/ any more, so those rules hid nothing and only
+            # kept alive the idea that a private tree may wear a public name. The
+            # names are NOT retired as a guard — check_public._DENY_TREES still
+            # carries both (test_deny_trees_are_append_only pins that), which is
+            # the layer a `git add -f` cannot override.
+            # Compared against the ACTIVE RULES, not the raw text: the file's own
+            # comments name the retired rules on purpose.
+            rules = {ln.strip() for ln in (dest / ".gitignore").read_text().splitlines()
+                     if ln.strip() and not ln.strip().startswith("#")}
+            for needle in ("private/", "/applications/", "/interviews/"):
+                self.assertIn(needle, rules)
+            for gone in ("/skills/coding-interview/",
+                         "/skills/coding-interview-cleanup/",
+                         "skills/coding-interview",
+                         "skills/coding-interview-cleanup",
+                         "skills/job-search/profiles/*.yaml",
+                         "skills/*/references_private",
+                         "skills/*/references_private/"):
+                self.assertNotIn(gone, rules)
+            self.assertFalse([r for r in rules if r.startswith("!")],
+                             "a negation is back: an ignore glob with negations is "
+                             "what let a personal filename sit under skills/")
+
+            # PHASE 4 INVARIANT: no exported path — file OR symlink — reaches into
+            # the overlay. The private skills' runtime entries under .claude/skills
+            # and .cursor/skills are git-ignored, so `git ls-files` never sees them
+            # and _regenerate_symlinks only writes ../../skills/<public>.
+            inbound = [p.relative_to(dest).as_posix() for p in dest.rglob("*")
+                       if p.is_symlink() and "private/" in os.readlink(p)]
+            self.assertEqual(inbound, [], f"symlinks into the overlay: {inbound}")
 
             # And a fresh directory-tree scan of the export is clean, too.
             scan_result = check_public.scan(root=dest, tokens=[])

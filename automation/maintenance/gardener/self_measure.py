@@ -40,8 +40,7 @@ def _count_apps(status_dir: Path) -> int:
     return sum(1 for c in status_dir.iterdir() if c.is_dir() and not c.name.startswith("."))
 
 
-def _discovered_count(profile_dir: Path) -> int | None:
-    log = profile_dir / "applications-log.yaml"
+def _discovered_count(log: Path) -> int | None:
     if not log.is_file():
         return None
     try:
@@ -92,7 +91,6 @@ def _budget_metrics() -> dict:
 
 def collect() -> dict:
     apps_root = config.applications_root()
-    profile_dir = apps_root / "0_profile"
     funnel = {label: _count_apps(apps_root / folder)
               for label, folder in STATUS_DIRS.items()}
     total = sum(funnel.values())
@@ -100,7 +98,7 @@ def collect() -> dict:
         "generated": C.today().isoformat(),
         "applications_root": C.rel(apps_root),
         "funnel": {
-            "discovered": _discovered_count(profile_dir),
+            "discovered": _discovered_count(config.applications_log_path()),
             **funnel,
             "total_tracked": total,
         },
@@ -126,7 +124,7 @@ def run(apply: bool = False) -> int:
     print()
     print(text, end="" if text.endswith("\n") else "\n")
     if apply:
-        out = config.applications_root() / "0_profile" / "metrics.yaml"
+        out = config.candidate_dir() / "metrics.yaml"
         out.parent.mkdir(parents=True, exist_ok=True)
         header = (f"# gardener self-measure snapshot ({metrics['generated']}). "
                   f"Regenerable; do not hand-edit.\n"

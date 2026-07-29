@@ -16,6 +16,11 @@
 # path / private-skill checks only) — safe by design, because a clean public tree
 # passes without any identity tokens.
 #
+# Step 2d is the public REVIEW gate (automation/publish/review_gate.py) — the other
+# blocking gate, and the one `git commit --no-verify` cannot dodge. It fails when
+# the published tree changed without a row in automation/publish/review_ledger.yaml.
+# It needs the full history (fetch-depth: 0 on checkout).
+#
 # The `secret-scan` job (gitleaks) is an independent gate that catches credential
 # shapes the identity guard does not target.
 
@@ -29,8 +34,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      # fetch-depth: 0 is required by the public review gate (step 2d): it resolves
+      # the last acknowledged commit out of automation/publish/review_ledger.yaml and
+      # diffs from there, which a depth-1 clone cannot do. The gate detects a shallow
+      # checkout and FAILS rather than pass silently, so removing this line turns CI
+      # red instead of disarming the gate.
+      - name: Check out repository (full history — the review gate needs it)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # The toolkit requires Python 3.11+; the requirements (pyyaml, python-docx,
       # pypdf) are tested on 3.12 here.
@@ -63,8 +75,46 @@ jobs:
 
       # 2b. Process-layer invariants: queue/task/memory schemas, memory index,
       #     handovers, roadmap freshness (single source of truth: templates/).
+      #     NOTE: deliberately WITHOUT --require-roots. Every check no-ops when its
+      #     folder is absent so the published export (which ships none of
+      #     message-queue/, tasks/, memory/, roadmap/, history/) stays green;
+      #     --require-roots is a maintainer-checkout assertion and lives in the
+      #     pre-commit hook only.
       - name: Reconciler (process-layer schemas)
         run: python automation/reconcile/reconcile.py --check
+
+      # 2c. Maintenance-tooling unit tests: the reconciler's root handling and
+      #     retry filing, the gardener routines (link/reference verification,
+      #     skill drift, store report), and the private-overlay git hooks.
+      - name: Reconciler + gardener + overlay-hook unit tests
+        run: |
+          python -m unittest discover automation/reconcile/tests
+          python -m unittest discover automation/maintenance/gardener/tests
+          python -m unittest discover automation/hooks/tests
+
+      # 2d. Public review gate — every commit that changed the published tree must
+      #     carry a row in automation/publish/review_ledger.yaml. This is the copy
+      #     `git commit --no-verify` cannot dodge, and it evaluates the TIP: close a
+      #     branch with a ledger-only commit acknowledging your last commit (a
+      #     ledger-only commit changes no watched file, so it does not re-trigger).
+      #     --verify-all recomputes EVERY historical row's digest and file count —
+      #     the full append-only check. The pre-commit hook only recomputes a bounded
+      #     tail, so integrity of older rows is verified here, where the seconds are
+      #     affordable.
+      #     On a pull_request the checkout is a MERGE commit whose ledger is a merge
+      #     of both sides; --head pins the gate to the PR's own branch tip instead.
+      #     No-ops (exit 0, loudly) in a checkout whose history the ledger does not
+      #     describe, which is what keeps the exported public mirror's CI green.
+      - name: Public review gate (unreviewed public changes)
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            python automation/publish/review_gate.py --verify-all --head "$PR_HEAD"
+          else
+            python automation/publish/review_gate.py --verify-all
+          fi
 
       # 3. Render + validate the worked example using the fake "Jordan Rivers"
       #    config.example.yaml. render.py auto-runs check.py (locked fields, real
@@ -116,14 +166,23 @@ jobs:
 
       # 8. Public leak guard — BLOCKING. This is the public toolkit repo, so the
       #    guard must be completely clean (exit 0, zero findings); ANY finding is a
-      #    regression. Armed with the JOBHUNT_PERSONAL_TOKENS repo secret when
-      #    present. Fork PRs receive no secrets, so those runs are tokenless
-      #    (structural + path/private-skill checks only) by design — a clean public
-      #    tree passes without identity tokens.
+      #    regression. The guard now FAILS CLOSED when it has no identity tokens
+      #    (exit 2), so the secret's presence decides how it is invoked:
+      #      * secret present (this repo)  -> armed; a bare run, no escape hatch.
+      #        A run that would have been silently tokenless now turns CI RED.
+      #      * secret absent (fork PRs get no secrets) -> tokenless by design, so
+      #        --allow-unarmed runs the token-INDEPENDENT checks (structural PII,
+      #        path denylist, private-skill/overlay trees, fail-closed binaries).
       - name: Public leak guard (blocking; must be clean on this public repo)
         env:
           JOBHUNT_PERSONAL_TOKENS: ${{ secrets.JOBHUNT_PERSONAL_TOKENS }}
-        run: python automation/publish/check_public.py
+        run: |
+          if [ -n "$JOBHUNT_PERSONAL_TOKENS" ]; then
+            python automation/publish/check_public.py
+          else
+            echo "::warning::JOBHUNT_PERSONAL_TOKENS absent — leak guard runs UNARMED (token-independent checks only)."
+            python automation/publish/check_public.py --allow-unarmed
+          fi
 
   # Independent secret-scanning gate: catches API-key / token / credential shapes
   # across the full history that the identity-token guard does not target.

@@ -218,12 +218,11 @@ def group_by_company(rows: list[dict], *, split: bool = False) -> list[list[dict
     return [buckets[key] for key in order]
 
 
-def _posting_keys(root: Path) -> tuple[set[str], set[tuple[str, str]]]:
+def _posting_keys(root: Path, log_path: Path) -> tuple[set[str], set[tuple[str, str]]]:
     """Collect URL and company/role duplicate keys from logs and live folders."""
     urls: set[str] = set()
     pairs: set[tuple[str, str]] = set()
 
-    log_path = root / "0_profile" / "applications-log.yaml"
     if log_path.exists():
         data = yaml.safe_load(log_path.read_text(encoding="utf-8")) or {}
         for posting in data.get("postings") or []:
@@ -322,6 +321,20 @@ def _applications_root(override: str | None) -> Path:
         return Path(override).expanduser().resolve()
     import config  # vendored; imported lazily so --applications-root needs no config
     return config.applications_root()
+
+
+def _applications_log(root: Path, override: str | None) -> Path:
+    """The applications skip-log to read for the duplicate preflight.
+
+    With ``--applications-root`` the log is composed inside that tree from the
+    config module's layout CONSTANTS (reading them triggers no config load, so the
+    override keeps working with no config at all); otherwise it is the configured
+    ``config.applications_log_path()``.
+    """
+    import config  # vendored; same lazy import as _applications_root
+    if override:
+        return root / config.CANDIDATE_DIRNAME / config.APPLICATIONS_LOG_FILENAME
+    return config.applications_log_path()
 
 
 # --------------------------------------------------------------------------- #
@@ -787,7 +800,8 @@ def _run_groups(groups: list[list[dict]], args: argparse.Namespace) -> int:
     so a later group can't re-draft them.
     """
     root = _applications_root(args.applications_root)
-    urls, pairs = _posting_keys(root)
+    urls, pairs = _posting_keys(
+        root, _applications_log(root, args.applications_root))
     report: list[dict] = []
     counts = {
         "created": 0,

@@ -1,6 +1,6 @@
 # Config discovery escapes nested git worktrees and resolves the parent checkout's real config.yaml
 
-- **Status**: open
+- **Status**: resolved (2026-07-29, phase 0b)
 - **Severity**: medium (silent wrong-config runs in worktrees; no data loss)
 - **Area**: repo
 - **Source**: worktree-based agent run, 2026-07-21 (branch `fix/search-hardening`
@@ -47,3 +47,21 @@ dir* (worktrees have a `.git` file). Inside a worktree the nearest such
 boundary is the worktree root, so discovery lands on the tracked
 `config.example.yaml` fallback — hermetic by default, real config only via
 explicit `JOBHUNT_CONFIG`. Add a shared-suite test with a temp worktree.
+
+## Resolution — 2026-07-29 (phase 0b)
+
+Implemented as suggested. `automation/shared/config.py` gained `_search_up()`,
+which searches each directory on the way up and stops at the first one holding
+a `.git` file or directory; the boundary directory itself is searched before
+the walk ends. A worktree therefore resolves to its own root and no longer
+reaches the parent checkout's `config.yaml`.
+
+One behavioural note the original writeup did not anticipate: a worktree
+contains no `private/` mount (it is git-ignored and never checked out), so the
+new fail-closed refusal added in the same change does **not** fire there.
+A worktree run falls back to the example config and prints a one-line stderr
+notice — hermetic, and no longer silent.
+
+Pinned by `automation/shared/tests/test_config_accessors.py`, which builds a
+real worktree layout (`.git` as a *file*, a parent `config.yaml` one level up)
+and asserts discovery stops at the boundary.

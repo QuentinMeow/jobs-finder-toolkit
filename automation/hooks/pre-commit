@@ -2,17 +2,42 @@
 # Pre-commit guard for the jobs-finder toolkit.
 #
 # Blocks a commit when:
-#   1. a vendored copy has drifted from its canonical source
+#   1. any path under the private overlay (private/) is STAGED, or
+#   2. the leak guard finds a violation in the STAGED INDEX content
+#      (automation/publish/check_public.py --staged), or
+#   3. the published tree changed without a review row in
+#      automation/publish/review_ledger.yaml (automation/publish/review_gate.py), or
+#   4. a vendored copy has drifted from its canonical source
 #      (see automation/vendoring/sync_vendored.py + .../job-search/scripts/_vendor/), or
-#   2. any mail provider folder or the email-assistant CLI exposes email-sending
+#   5. any mail provider folder or the email-assistant CLI exposes email-sending
 #      capability (folder-walking check: automation/shared/mail/check_mail_safety.py), or
-#   3. any toolkit/skill Python file fails to byte-compile.
+#   6. any toolkit/skill Python file fails to byte-compile.
+#
+# Checks 1-3 run FIRST because a leak is the only failure here that is not
+# reversible by fixing the working tree: once the blob is in a commit it is in the
+# history. They have NO env-var escape hatch by design (see AGENTS.md).
 #
 # Install once (tracked, no git-config change):
 #   ln -sf ../../automation/hooks/pre-commit .git/hooks/pre-commit
 #
 # Bypass in an emergency with:  git commit --no-verify
 set -e
+
+# ── 1. Staged private/ overlay paths (no interpreter needed) ─────────────────
+# `git add -f private/` — WITH the trailing slash — stages the overlay with exit 0
+# and NO output (the slash-less form at least warns), which makes the most
+# damaging mistake in this repo also the quietest one. Deletions are excluded
+# (--diff-filter) so REMOVING an already-committed private path stays possible.
+staged_private="$(git diff --cached --name-only --diff-filter=ACMRT | grep '^private/' || true)"
+if [ -n "$staged_private" ]; then
+    echo "pre-commit: REFUSING commit — private overlay path(s) are STAGED:" >&2
+    printf '%s\n' "$staged_private" | while IFS= read -r p; do echo "    $p" >&2; done
+    echo "pre-commit: private/ is the git-ignored mount of the PRIVATE overlay repo;" >&2
+    echo "pre-commit: its contents must never enter this public repo's history." >&2
+    echo "pre-commit: unstage them with:  git restore --staged private/" >&2
+    echo "pre-commit: (commit them inside the overlay: cd private && git add ...)" >&2
+    exit 1
+fi
 
 # Resolve a Python interpreter, worktree-aware:
 #   1. the repo venv at CWD (primary checkout — behavior unchanged);
@@ -50,6 +75,28 @@ if [ -z "$PY" ]; then
     exit 1
 fi
 
+# ── 2. Leak guard over the STAGED INDEX ──────────────────────────────────────
+# Scans blob content read out of the index, not the worktree: an unstaged edit
+# must neither hide a leak that is being committed nor fail a commit that does
+# not contain it. --allow-unarmed keeps a contributor clone (no config.yaml, so no
+# identity tokens) able to commit while still running the token-INDEPENDENT
+# checks; the hard stop for an unarmed guard is at PUSH time (automation/hooks/
+# pre-push), where publication actually happens.
+echo "pre-commit: leak guard over the staged index..."
+"$PY" automation/publish/check_public.py --staged --allow-unarmed
+
+# ── 3. Public review gate ────────────────────────────────────────────────────
+# Fails when the published tree changed without a row in
+# automation/publish/review_ledger.yaml. It reads HEAD (the PREVIOUS commit) and
+# the WORKING-TREE ledger, so the way to satisfy it is to stage the row for HEAD
+# alongside the change you are making now — one row per commit, always one
+# behind. The gate prints the exact row when it fails. It is SILENT on a pass and
+# a no-op in a checkout whose history the ledger does not describe (an exported
+# mirror), so a public clone's own pre-commit stays green.
+# Default run: bounded ledger-integrity tail (~tens of ms). CI runs --verify-all.
+echo "pre-commit: public review gate..."
+"$PY" automation/publish/review_gate.py
+
 echo "pre-commit: checking vendored copies are in sync..."
 "$PY" automation/vendoring/sync_vendored.py --check
 
@@ -69,7 +116,19 @@ echo "pre-commit: byte-compiling automation + self-contained skills..."
 echo "pre-commit: instruction-file budget (strict)..."
 "$PY" automation/metrics/instruction_budget.py --strict
 
-echo "pre-commit: reconciler (process-layer schemas)..."
-"$PY" automation/reconcile/reconcile.py --check
+# Reconciler. Every check inside it NO-OPS when its folder is absent — deliberate,
+# because the published export ships none of message-queue/, tasks/, memory/,
+# roadmap/, history/, and closing that would turn the exported repo's CI red.
+# --require-roots is the maintainer-checkout opposite: assert the roots are all
+# here, so a botched move cannot quietly disarm a check. A mounted private/
+# overlay is the maintainer signal — an exported clone has none, and gets the
+# plain (still-correct) run. Never wire --require-roots into CI.
+if [ -d private ]; then
+    echo "pre-commit: reconciler (process-layer schemas; roots required)..."
+    "$PY" automation/reconcile/reconcile.py --check --require-roots
+else
+    echo "pre-commit: reconciler (process-layer schemas)..."
+    "$PY" automation/reconcile/reconcile.py --check
+fi
 
 echo "pre-commit: OK"

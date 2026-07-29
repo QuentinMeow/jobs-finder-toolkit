@@ -1,6 +1,6 @@
 # Design-doc writing style
 
-Rules for every document under `docs/design/`. Purpose: the owner (or any
+Rules for every document under `design/`. Purpose: the owner (or any
 cold reader) must be able to open any single section and understand it
 without having read the rest of the family, without decoding reference
 codes, and without following links just to parse a sentence.

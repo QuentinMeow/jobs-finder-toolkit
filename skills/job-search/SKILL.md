@@ -52,9 +52,9 @@ This is the complete routine path — an ordinary search needs nothing below it.
 1. Read `AGENTS.md` (traceability, no fabrication) and this skill's `LESSONS.md` (hard-won
    operational edge cases — visa phrasing, title/location false-matches, source noise). The
    lessons bind at the steps below. Don't re-read files already in your context.
-2. **Private overrides:** if this skill folder has a `references_private/` directory, read every
-   file in it — those candidate-specific notes OVERRIDE the generic examples here. When it is
-   absent (public / example mode), take all candidate specifics from `config` and the profile.
+2. **Private overrides:** if `config.skill_references_dir()` for this skill exists in the overlay,
+   read every file in it — those candidate-specific notes OVERRIDE the generic examples here. When
+   it is absent (public / example mode), take all candidate specifics from `config` and the profile.
 3. **Never invent a posting.** Every surfaced row must trace to a fetched listing with a real
    `source` + `url`; use `?` for any fact the posting did not provide, never a guess.
 4. **Scratch stays in `tmp/`** — probe scripts in `tmp/ats_scripts/`, fetched HTML/JSON in

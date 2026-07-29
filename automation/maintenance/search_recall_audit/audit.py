@@ -123,7 +123,7 @@ def build_coverage() -> dict:
     urls: set[str] = set()
     companies: set[str] = set()
 
-    log_path = root / "0_profile" / "applications-log.yaml"
+    log_path = Path(config.applications_log_path())
     if log_path.exists():
         data = yaml.safe_load(log_path.read_text()) or {}
         for e in data.get("postings") or []:

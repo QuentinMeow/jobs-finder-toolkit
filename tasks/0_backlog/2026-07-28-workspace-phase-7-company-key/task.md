@@ -13,10 +13,11 @@ Replace four competing alias registries with one index, and key every applicatio
 
 Detail in [the execution plan](../../../design/workspace-restructure/execution-plan.md) under "Phase 7". 242 application folders carry 213
 distinct free-text company strings; `registry.canonical()` resolves only 119 — 44%
-unresolvable. Live splits already in the data: `Canonical`/`Canonical Ltd.`,
-`Cursor`/`Cursor (Anysphere)`, `Arize`/`Arize AI`, `Palantir`/`Palantir Technologies`.
+unresolvable. Live split shapes already in the data (real instances are in the private tree;
+naming them here would publish the owner's application list): `<Name>`/`<Name> Ltd.`,
+`<Name>`/`<Name> (<LegalEntity>)`, `<Name>`/`<Name> AI`.
 
-`kind` distinguishes an employer from an interview-running company like Karat; `parent`
+`kind` distinguishes an employer from an interview-running firm; `parent`
 handles subsidiaries and JVs.
 
 Also here: `skills/email-assistant` emits `durable: true|false` per `timeline.md` entry plus a

@@ -1,0 +1,92 @@
+# Public-change review ledger.
+#
+# Every commit that changes the published tree is reviewed for personal data
+# before it ships. Enforced by automation/publish/review_gate.py in `pre-commit`
+# and in CI — spec: design/workspace-restructure/review-gate.md.
+#
+# APPEND-ONLY. The history of who reviewed what is the point; rewriting a row is
+# itself a finding, and the gate detects it because every row's `digest` is
+# recomputed from the range it claims:
+#
+#     git diff <previous row's commit>..<this row's commit> \
+#         -- . ':!automation/publish/review_ledger.yaml' | shasum -a 256
+#
+# WHAT IS WATCHED: every tracked file except this ledger. Not the exporter
+# allowlist — that excludes memory/, tasks/, message-queue/ and history/, which
+# is exactly where an agent writes prose about real work.
+#
+# HOW TO ADD A ROW: run the gate. When it fails it prints the exact row, already
+# filled in. Read the diff first — the digest forecloses guessing, it does not
+# prove reading. Then stage the row ALONGSIDE your next change and commit once:
+# the gate reads this file from the working tree, so the row acknowledges HEAD
+# (one row per commit, always one behind). One row may cover a range of commits.
+# An agent may sign its own review; `reviewed_by: human` is required only when
+# the advisory company detector fires.
+#
+# SEEDED, NOT RETROACTIVE: the first row records the HEAD at which the gate was
+# introduced (eb345e71, the phase-0d commit), so the gate never demands a review
+# of history that predates it. Its range is zero-width, hence files: 0 and the
+# sha256 of an empty diff.
+#
+# Schema (all six keys required, no others):
+#   commit       >= 7 hex chars, an ancestor of HEAD
+#   reviewed_by  agent | human
+#   date         YYYY-MM-DD
+#   files        number of watched files in the range
+#   digest       sha256:<>= 16 hex chars>, a prefix of the recomputed hash
+#   finding      free text; `none` when the diff was clean
+
+- commit: eb345e71
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 0
+  digest: sha256:e3b0c44298fc1c14
+  finding: seed row — gate introduced at this commit; history before it is not reviewed
+
+- commit: 92abe363
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 6
+  digest: sha256:814a377eebabf1c1
+  finding: >-
+    This range is clean, but reviewing it is what surfaced a real leak already in
+    the tree from commit 5244af1 (PR #80, merged): the workspace-restructure design
+    named companies from the owner's application history, and quoted a recruiter
+    email verbatim including a real first name and interview date. The leak guard
+    could not see it — company names are not identity tokens. Redacted in the
+    commit that carries this row; see it for the full list of sites.
+
+- commit: ef2d0a33
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 11
+  digest: sha256:79064789a6bf60b0
+  finding: >-
+    The redaction itself. Diff read in full: it removes employer names, five alias
+    pairs, an interview platform, and a verbatim recruiter sentence, replacing each
+    with a placeholder shape. Introduces no new company or personal reference; the
+    only proper nouns added are fictional test fixtures.
+
+- commit: 1b837b7d
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 27
+  digest: sha256:1d178b4adaef5e26
+  finding: >-
+    Clean. 804 added lines, zero personal-token hits. The four personal profile
+    filenames this commit removes were never tracked, so they appear nowhere in the
+    diff; the .gitignore rules that used to hide them carried no tokens either. The
+    one occurrence of "Canonical" is the English word describing skills/, not the
+    company.
+
+- commit: 8b9d5063
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 11
+  digest: sha256:5dbb12b268e24379
+  finding: >-
+    One caught and fixed before the commit landed: a verification file pasted
+    command output containing an absolute home path, which the staged-index leak
+    guard refused. Redacted to <repo-root>. Otherwise clean — the added files are
+    worklogs, verification transcripts and a handover; the only proper nouns are
+    tool and branch names.

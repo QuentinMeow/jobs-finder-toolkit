@@ -55,7 +55,7 @@ What the config supplies:
 | `paths.company_levels_yaml` | Optional reusable company level/YOE/compensation cache (its own schema-v2 file format, separate from application `meta.yaml`) |
 | `paths.applications_root` | Where the application pipeline folders live |
 | `paths.discoveries_dir` | Where job-search shortlists land |
-| `job_search.default_profile` | Which `skills/job-search/profiles/<label>.yaml` search profile to use |
+| `job_search.default_profile` | Which `<label>.yaml` search profile to use — resolved from `config.search_profiles_dir()` (your overlay) first, then the public `skills/job-search/profiles/` |
 | `outlook_email.*` | Private personal-mailbox address, Microsoft public-client application ID, and `consumers` tenant selection; OAuth refresh state lives only in the OS keyring |
 | `location_policy` | Allowed metros + US-remote/us-only rules that gate application creation |
 
@@ -106,7 +106,7 @@ The canonical sources live in `automation/shared/`; `automation/vendoring/sync_v
 regenerates the byte-identical `_vendor/` copies, and its `--check` mode (run by the
 pre-commit hook and CI) fails on any drift. Edit the canonical source, never a copy.
 (This is "Approach 2" of the historical design exploration in
-`docs/design/skill-script-sharing/`.)
+`design/skill-script-sharing/`.)
 
 Skills are discovered by listing `skills/` — any AI agent that reads
 `AGENTS.md` finds them there. `.claude/skills/` and `.cursor/skills/` are
@@ -123,7 +123,8 @@ repo) and is pointed at by the git-ignored `config.yaml`. Three defenses keep th
 public tree clean:
 
 1. **`.gitignore`** anchors every private path (`private/`, `config.yaml`,
-   `/applications/`, `/interviews/`, per-skill `references_private/`, …).
+   `/applications/`, `/interviews/`, …). Since 2026-07-28 nothing under `skills/` is
+   private, so no glob-with-negations stands between personal data and a `git add -f`.
 2. **The leak guard** (`automation/publish/check_public.py`) scans tracked files — paths,
    text, and `.docx`/`.pdf` content — for private trees, structural PII, and
    personal-identity tokens derived at runtime from your config and
@@ -173,6 +174,7 @@ the leak guard on push.
 | `automation/metrics/` | Opt-in local metrics hooks + the instruction-file size budget (`instruction_budget.py --strict`) |
 | `automation/publish/` | Leak guard + exporter (the repo's privacy defenses) |
 | `evals/` | Per-skill canary evals gating skill-instruction changes (see `evals/README.md`) |
-| `hooks/` | Tracked git hooks: pre-commit (drift + compile + budget), pre-push (leak guard) |
+| `automation/hooks/` | Tracked git hooks: pre-commit (staged-index leak guard + staged-`private/` reject, drift, compile, budget, reconciler), pre-push (leak guard, armed) |
 | `AGENTS.md` | The agent-facing contract: guardrails, conventions, memory map |
-| `docs/` | Human-facing design docs (this file, `PRIVATE_OVERLAY.md`, `METRICS.md`, historical `design/`) |
+| `handbook/` | Human-facing operating docs (this file, `handbook/private-overlay.md`, `handbook/metrics.md`) |
+| `design/` | Design programs — one folder per family (`design/skill-script-sharing/`, `design/raw-data-layer/`, …) |

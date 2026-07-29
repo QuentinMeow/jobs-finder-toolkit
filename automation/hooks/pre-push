@@ -8,10 +8,10 @@
 #
 #   1. Remote-visibility gate. Look at the push destination:
 #        * GitHub remote + gh confirms PUBLIC   -> run the content leak guard
-#          (automation/publish/check_public.py). In a maintainer checkout the guard
-#          is armed with real identity tokens (config.yaml / private/
-#          leak_tokens.txt); in a contributor clone it still runs its
-#          token-independent structural checks. Guard fails -> REFUSE the push.
+#          (automation/publish/check_public.py), which must be ARMED with real
+#          identity tokens (a real config.yaml or $JOBHUNT_PERSONAL_TOKENS). Guard
+#          fails, OR is unarmed (exit 2) -> REFUSE the push: a guard that cannot
+#          see the owner's identity cannot certify a tree as publishable.
 #        * GitHub remote + gh confirms PRIVATE  -> allow without the guard (a
 #          private destination can hold anything; this also covers the private
 #          overlay repo).
@@ -36,7 +36,11 @@ remote_name="$1"
 remote_url="$2"
 
 if [ "${JOBHUNT_ALLOW_PUSH:-}" = "1" ]; then
-    echo "pre-push: JOBHUNT_ALLOW_PUSH=1 set — SKIPPING all leak checks (manual override)." >&2
+    echo "pre-push: JOBHUNT_ALLOW_PUSH=1 set — manual override. SKIPPING, specifically:" >&2
+    echo "pre-push:   * the content leak guard (paths, tokens, structural PII," >&2
+    echo "pre-push:     private-skill/overlay trees, unscannable binaries), AND" >&2
+    echo "pre-push:   * the refusal to push while the guard is UNARMED — i.e. nothing" >&2
+    echo "pre-push:     verified that this tree carries no real identity." >&2
     echo "pre-push: you are pushing WITHOUT the leak guard. Be certain this is intended." >&2
     exit 0
 fi
@@ -123,16 +127,26 @@ if [ -z "$PY" ]; then
     echo "pre-push: create a .venv (python3.11 -m venv .venv) or point the hook at a 3.11+ interpreter." >&2
     exit 1
 fi
-if [ -f "config.yaml" ] || [ -f "private/leak_tokens.txt" ]; then
-    echo "pre-push: leak guard is ARMED with real identity tokens."
+# The guard decides for itself whether it is ARMED (a real config.yaml identity or
+# $JOBHUNT_PERSONAL_TOKENS) and exits 2 if it is not — private/leak_tokens.txt
+# alone does NOT arm it, which is why this hook no longer probes for those files.
+# An unarmed guard cannot see the owner's name/email/handles, so pushing to a
+# destination we could not prove private is a HARD STOP here: --allow-unarmed is
+# deliberately NOT passed at push time.
+if "$PY" automation/publish/check_public.py; then
+    echo "pre-push: leak guard PASSED."
+    echo "pre-push: OK"
 else
-    echo "pre-push: leak guard is NOT armed (no config.yaml / leak_tokens.txt);"
-    echo "pre-push: running its token-independent structural checks only."
-fi
-if ! "$PY" automation/publish/check_public.py; then
-    echo "pre-push: REFUSING push — leak guard found violations in the tracked tree." >&2
-    echo "pre-push: fix them, or override knowingly with JOBHUNT_ALLOW_PUSH=1." >&2
+    rc=$?
+    if [ "$rc" = "2" ]; then
+        echo "pre-push: REFUSING push — the leak guard is UNARMED (zero identity tokens)," >&2
+        echo "pre-push: so its personal-token scan inspected nothing. See the report above" >&2
+        echo "pre-push: for which config it looked for and where." >&2
+        echo "pre-push: arm it (config.yaml / JOBHUNT_PERSONAL_TOKENS) and push again." >&2
+    else
+        echo "pre-push: REFUSING push — leak guard found violations in the tracked tree." >&2
+        echo "pre-push: fix them before pushing." >&2
+    fi
+    echo "pre-push: override knowingly with JOBHUNT_ALLOW_PUSH=1 (it skips BOTH checks)." >&2
     exit 1
 fi
-echo "pre-push: leak guard PASSED."
-echo "pre-push: OK"

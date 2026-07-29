@@ -1,0 +1,206 @@
+#!/bin/sh
+# Pre-commit guard for the PRIVATE OVERLAY repo (the one mounted at ./private/).
+#
+# It is tracked HERE, in the public toolkit, and installed into the overlay's
+# .git/hooks/ as a symlink by automation/bootstrap_overlay.py — so the overlay
+# needs no tracked files of its own to be guarded, and the guard stays reviewable
+# and versioned in the repo that gets code review.
+#
+# Blocks a commit when:
+#   1. a private-scope reconciler applies and reports findings;
+#   2. a staged path lands in a raw-data-layer STORE payload zone
+#      (<data_root>/*/{raw,derived,state}). raw/ and derived/ are never trackable —
+#      raw syncs between machines by hand and derived is rebuildable (225 MB / 44k
+#      files on the real store). state/ is trackable for some zones (data/jobs/*)
+#      and forbidden for others (data/email/*), and .gitignore is where the owner
+#      wrote that down — so for state/ the hook blocks exactly the IGNORED paths,
+#      which only `git add -f` can put in the index. A path already tracked in HEAD
+#      is always exempt, so the guard can never block a repeat of a past commit;
+#   3. the staged set exceeds the size thresholds below.
+#
+# Thresholds, measured against this overlay's own 84-commit history (2026-07-29):
+#
+#     staged files   p50=6   p75=30   p90=105   p95=175   max=291
+#     staged bytes   p50=117 KiB  p75=837 KiB  p90=4.6 MiB  p95=11.2 MiB  max=73.3 MiB
+#
+# The biggest legitimate commit ever made here is 291 files / 73.3 MiB (a coding-
+# interview screenshot batch). The accident being guarded against is an
+# `git add -f data/`: the derived zone alone measured 225 MB across 44k files.
+# So the limits sit above every real commit and far below the accident:
+#
+#     500 files       — 1.7x the historical max, 1.1% of the derived zone's file count
+#     128 MiB total   — 1.7x the historical max, 0.57x the derived zone's size
+#
+# Raise them for one commit (loudly reported) with:
+#     JOBHUNT_OVERLAY_MAX_FILES=... JOBHUNT_OVERLAY_MAX_BYTES=... git commit ...
+# Bypass everything in an emergency with:  git commit --no-verify
+set -e
+
+MAX_FILES="${JOBHUNT_OVERLAY_MAX_FILES:-500}"
+MAX_BYTES="${JOBHUNT_OVERLAY_MAX_BYTES:-134217728}"   # 128 MiB
+
+say() { echo "overlay pre-commit: $*"; }
+die() { echo "overlay pre-commit: $*" >&2; }
+
+# ── 0. Locate the toolkit (this hook is a symlink INTO it) ───────────────────
+# Resolve the symlink chain by hand: `readlink -f` is not POSIX and BSD readlink
+# (macOS) lacks -f. Fail CLOSED if the toolkit cannot be found — every check
+# below needs its interpreter and its config loader, and a hook that cannot run
+# its checks must not wave a commit through.
+hook_path="$0"
+case "$hook_path" in /*) ;; *) hook_path="$PWD/$hook_path" ;; esac
+while [ -L "$hook_path" ]; do
+    link="$(readlink "$hook_path")"
+    case "$link" in
+        /*) hook_path="$link" ;;
+        *)  hook_path="$(dirname "$hook_path")/$link" ;;
+    esac
+done
+HOOK_DIR="$(cd "$(dirname "$hook_path")" && pwd -P)"
+TOOLKIT_ROOT="$(cd "$HOOK_DIR/../.." && pwd -P)"
+if [ ! -f "$TOOLKIT_ROOT/automation/shared/config.py" ]; then
+    # Fallback: the overlay is mounted inside the toolkit checkout.
+    parent="$(cd .. 2>/dev/null && pwd -P || true)"
+    if [ -n "$parent" ] && [ -f "$parent/automation/shared/config.py" ]; then
+        TOOLKIT_ROOT="$parent"
+    else
+        die "REFUSING commit — cannot locate the toolkit checkout from $hook_path."
+        die "this hook must be a symlink into <toolkit>/automation/hooks/; re-install it with"
+        die "  <toolkit>/.venv/bin/python <toolkit>/automation/bootstrap_overlay.py"
+        exit 1
+    fi
+fi
+
+# Interpreter: the toolkit's venv first, then any system python >= 3.11.
+PY="$TOOLKIT_ROOT/.venv/bin/python"
+if [ ! -x "$PY" ]; then
+    PY=""
+    for cand in python3 python; do
+        p="$(command -v "$cand" 2>/dev/null)" || continue
+        if "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+            PY="$p"
+            break
+        fi
+    done
+fi
+if [ -z "$PY" ]; then
+    die "REFUSING commit — Python 3.11+ not found (looked for $TOOLKIT_ROOT/.venv/bin/python)."
+    exit 1
+fi
+
+# ── 1. Private-scope reconciler, if one applies ──────────────────────────────
+# The toolkit reconciler validates the PUBLIC tree only (its own docstring says
+# so: "the private overlay mirror is its own repo with its own lifecycle"), and it
+# hardcodes its repo root. So today NOTHING applies and this is a reported skip,
+# not a silent one. Two futures are picked up automatically, no hook edit needed:
+# an overlay-local reconciler, or a `--root` flag on the toolkit's.
+overlay_recon="automation/reconcile/reconcile.py"
+toolkit_recon="$TOOLKIT_ROOT/automation/reconcile/reconcile.py"
+if [ -f "$overlay_recon" ]; then
+    say "private-scope reconciler ($overlay_recon)..."
+    "$PY" "$overlay_recon" --check
+elif [ -f "$toolkit_recon" ] && "$PY" "$toolkit_recon" --help 2>/dev/null | grep -q -- '--root'; then
+    say "toolkit reconciler scoped to this overlay..."
+    "$PY" "$toolkit_recon" --check --require-roots --root "$(pwd -P)"
+else
+    say "no private-scope reconciler applies — skipped (the toolkit reconciler"
+    say "  validates the PUBLIC tree only; see automation/reconcile/reconcile.py)."
+fi
+
+# ── 2. Store payload zones ───────────────────────────────────────────────────
+# The store root is CONFIGURED (config.data_root(): $JOBHUNT_DATA_ROOT, else
+# paths.data_root), never assumed. Three outcomes: a path relative to this repo,
+# DISABLED (no store configured), or OUTSIDE (the store lives elsewhere, so no
+# staged path can be in it).
+store_rel="$("$PY" - "$TOOLKIT_ROOT" "$(pwd -P)" <<'PYEOF'
+import sys
+from pathlib import Path
+
+toolkit, repo = Path(sys.argv[1]), Path(sys.argv[2])
+sys.path.insert(0, str(toolkit / "automation" / "shared"))
+import config  # noqa: E402
+
+root = config.data_root()
+if root is None:
+    print("DISABLED")
+else:
+    try:
+        print(root.resolve().relative_to(repo.resolve()).as_posix() or ".")
+    except ValueError:
+        print("OUTSIDE")
+PYEOF
+)"
+
+staged="$(git diff --cached --name-only --diff-filter=ACMRT)"
+
+case "$store_rel" in
+    DISABLED) say "store not configured — store-zone check vacuous." ;;
+    OUTSIDE)  say "store root is outside this repo — store-zone check vacuous." ;;
+    "")       die "REFUSING commit — could not determine the store root."; exit 1 ;;
+    *)
+        say "store payload zones ($store_rel/*/{raw,derived,state})..."
+        store_re="$(printf '%s' "$store_rel" | sed 's/[.[\*^$\/]/\\&/g')"
+        zone_hits="$(printf '%s\n' "$staged" \
+            | grep -E "^${store_re}/[^/]+/(raw|derived|state)/" || true)"
+        tracked="$(git ls-tree -r --name-only HEAD 2>/dev/null || true)"
+        offenders=""
+        for p in $zone_hits; do
+            [ -n "$p" ] || continue
+            # Already in HEAD: the owner committed it before, so this can never be
+            # the accident — and the guard can never block a repeat of a past commit.
+            printf '%s\n' "$tracked" | grep -qxF "$p" && continue
+            case "$p" in
+                */raw/*|*/derived/*)
+                    # Never trackable by design: raw payloads sync between machines
+                    # by hand, derived is rebuildable from raw (measured 225 MB /
+                    # 44k files on the real store).
+                    offenders="$offenders$p
+" ;;
+                *)
+                    # state/: trackable by owner decision for some zones (jobs) and
+                    # forbidden for others (email). .gitignore is where that decision
+                    # is written down, so it decides: an IGNORED path in the index got
+                    # there through `git add -f`, which is the accident being caught.
+                    # --no-index is REQUIRED: without it check-ignore consults the
+                    # index first and reports a force-added path as "not ignored",
+                    # i.e. it answers "yes" for exactly the case we must catch.
+                    if git check-ignore --no-index -q "$p" 2>/dev/null; then
+                        offenders="$offenders$p
+"
+                    fi ;;
+            esac
+        done
+        if [ -n "$offenders" ]; then
+            die "REFUSING commit — staged raw-data-layer STORE payload path(s):"
+            printf '%s' "$offenders" | while IFS= read -r p; do [ -n "$p" ] && die "    $p"; done
+            die "these zones are machine-regenerable and .gitignore'd; only 'git add -f'"
+            die "(or an edited .gitignore) can stage them. Unstage with:"
+            die "    git restore --staged $store_rel"
+            exit 1
+        fi
+        ;;
+esac
+
+# ── 3. Staged-set size ───────────────────────────────────────────────────────
+n_files="$(printf '%s\n' "$staged" | grep -c . || true)"
+n_bytes="$(git diff --cached --raw --abbrev=40 --diff-filter=ACMRT \
+    | awk '{print $4}' | grep -Ev '^0+$' \
+    | git cat-file --batch-check='%(objectsize)' 2>/dev/null \
+    | awk '/^[0-9]+$/ {s += $1} END {print s + 0}')"
+say "staged set: $n_files file(s), $n_bytes byte(s) (limits: $MAX_FILES / $MAX_BYTES)."
+if [ "${JOBHUNT_OVERLAY_MAX_FILES:-}" != "" ] || [ "${JOBHUNT_OVERLAY_MAX_BYTES:-}" != "" ]; then
+    die "WARNING — size limits raised by env override for this commit."
+fi
+if [ "$n_files" -gt "$MAX_FILES" ] || [ "$n_bytes" -gt "$MAX_BYTES" ]; then
+    die "REFUSING commit — staged set is larger than any legitimate commit in this"
+    die "repo's history (max ever: 291 files / 76877876 bytes)."
+    die "    staged: $n_files file(s), $n_bytes byte(s)"
+    die "    limits: $MAX_FILES file(s), $MAX_BYTES byte(s)"
+    die "this usually means a data/store/cache tree was added by accident. Check with"
+    die "    git diff --cached --stat | tail -1"
+    die "and if the commit really is this big, re-run it with"
+    die "    JOBHUNT_OVERLAY_MAX_FILES=$n_files JOBHUNT_OVERLAY_MAX_BYTES=$n_bytes git commit ..."
+    exit 1
+fi
+
+say "OK"

@@ -51,7 +51,9 @@ Run these before opening a PR (all must pass; CI runs them too):
 # Instruction-file size budget (strict)
 .venv/bin/python automation/metrics/instruction_budget.py --strict
 
-# Public leak guard — must be COMPLETELY CLEAN (exit 0, zero findings)
+# Public leak guard — must be COMPLETELY CLEAN (exit 0, zero findings).
+# Without a real config.yaml it has no identity tokens and refuses to run
+# (exit 2); add --allow-unarmed to run its token-independent checks.
 .venv/bin/python automation/publish/check_public.py
 
 # Link / symlink / vendor-drift check
@@ -108,8 +110,12 @@ comments, tests, or example data. Use the fictional Jordan Rivers fixture.
 
 The CI **leak guard (`automation/publish/check_public.py`) is blocking**: it scans
 tracked files (text and `.docx`/`.pdf` content) for structural PII and private
-paths, and any finding fails the build. Fork PRs run it tokenless (structural +
-path checks only), which a clean tree passes by design.
+paths, and any finding fails the build. It also **fails closed when it is unarmed**
+— with no identity tokens its token scan inspects nothing, so it exits 2 rather
+than reporting "safe to publish". Fork PRs (which receive no secrets) and
+contributor clones run it with `--allow-unarmed`: structural + path checks only,
+which a clean tree passes by design. The `pre-commit` hook scans the **staged
+index** the same way and rejects any staged `private/` path.
 
 ## Contributing while running your own job hunt
 
@@ -131,7 +137,7 @@ your own overlay from scratch):
 
 ## Extra-careful review areas
 
-Changes under **`automation/publish/`**, **`.github/`**, and **`hooks/`** are the
+Changes under **`automation/publish/`**, **`.github/`**, and **`automation/hooks/`** are the
 repo's leak defenses (the guard, the exporter, CI, and the pre-push gate). PRs
 touching them get extra-careful review — keep those changes small, well-explained,
 and covered by the tests in `automation/publish/tests/`.

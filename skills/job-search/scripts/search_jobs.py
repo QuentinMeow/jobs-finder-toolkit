@@ -85,6 +85,16 @@ except Exception:  # noqa: BLE001 — standalone use without a config layer
 SKILL_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = SKILL_DIR.parents[1]  # skills/job-search -> repo root
 
+# Skip-log layout names, taken from the config module's CONSTANTS (reading them
+# triggers no config load, so they are safe at import time). The literals here are
+# reached only when the vendored config layer is entirely unavailable — standalone
+# use — and must stay equal to the config module's values.
+CANDIDATE_DIRNAME = getattr(config, "CANDIDATE_DIRNAME", "0_profile")
+APPLICATIONS_LOG_NAME = getattr(config, "APPLICATIONS_LOG_FILENAME",
+                                "applications-log.yaml")
+COMPANY_SEARCH_LOG_NAME = getattr(config, "COMPANY_SEARCH_LOG_FILENAME",
+                                  "company-search-log.yaml")
+
 
 def default_profile() -> str:
     """Profile label to use when --profile is omitted (config-driven)."""
@@ -149,22 +159,24 @@ def profile_dir() -> Path:
     """Directory holding the skip-logs (applications-log / company-search-log).
 
     Config-derived and rename-robust: the logs live next to the candidate profile,
-    so we prefer the parent of the configured profile markdown (e.g.
-    ``applications/0_profile``). We then probe common layout names and pick whichever
-    actually holds a log file, so a folder rename (``profile`` -> ``0_profile``)
-    doesn't silently disable the already-considered / recently-searched skips.
+    so we prefer the parent of the configured profile markdown, then the configured
+    candidate dir (``config.candidate_dir()``). We then probe common layout names
+    and pick whichever actually holds a log file, so a folder rename
+    (``profile`` -> ``0_profile``) doesn't silently disable the already-considered /
+    recently-searched skips.
     """
     candidates: list[Path] = []
+    root = applications_root()
     if config is not None:
         try:
             candidates.append(config.profile_md_path().parent)
+            candidates.append(config.candidate_dir())
         except Exception:  # noqa: BLE001
             pass
-    root = applications_root()
-    candidates += [root / "0_profile", root / "profile"]
+    candidates += [root / CANDIDATE_DIRNAME, root / "profile"]
     for cand in candidates:
-        if (cand / "applications-log.yaml").exists() or \
-           (cand / "company-search-log.yaml").exists():
+        if (cand / APPLICATIONS_LOG_NAME).exists() or \
+           (cand / COMPANY_SEARCH_LOG_NAME).exists():
             return cand
     return candidates[0] if candidates else root / "profile"
 
@@ -174,22 +186,64 @@ def load_yaml(path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
+def _under_public_skills(path: Path) -> bool:
+    """True when ``path`` is the public ``skills/`` tree or lives inside it."""
+    try:
+        skills_root = (REPO_ROOT / "skills").resolve()
+    except OSError:
+        return False
+    return path == skills_root or skills_root in path.parents
+
+
+def profile_search_dirs() -> list[Path]:
+    """Directories a bare ``--profile`` label is resolved against, in order.
+
+    The candidate's OWN profiles live in the private overlay
+    (``config.search_profiles_dir()``) and are searched FIRST, so a personal label
+    wins over a same-named public file. They used to be symlinked into
+    ``skills/job-search/profiles/`` — which put a personal filename at a public
+    path — and that link family was deleted; the accessor is now the only route.
+    The tracked ``profiles/`` folder (``example.yaml``, ``_TEMPLATE.yaml``) is the
+    fallback, so a fresh public clone with no overlay still resolves a label.
+
+    A configured profiles dir that resolves INSIDE the public ``skills/`` tree is
+    dropped: with no config at all the accessor's derivation collapses onto the
+    loader's own directory, and honouring that would re-create the very thing this
+    phase deleted — a personal profile addressable at a public path.
+    """
+    dirs: list[Path] = []
+    if config is not None:
+        try:
+            configured = config.search_profiles_dir().resolve()
+        except Exception:  # noqa: BLE001 — no config layer / unreadable config
+            configured = None
+        if configured is not None and not _under_public_skills(configured):
+            dirs.append(configured)
+    dirs.append(SKILL_DIR / "profiles")
+    return dirs
+
+
 def resolve_profile(name: str) -> Path:
     p = Path(name)
     if p.exists():
         return p
-    cand = SKILL_DIR / "profiles" / (name if name.endswith(".yaml") else f"{name}.yaml")
-    if not cand.exists():
-        sys.exit(f"Profile not found: {name} (looked in {cand})")
-    return cand
+    filename = name if name.endswith(".yaml") else f"{name}.yaml"
+    searched = profile_search_dirs()
+    for base in searched:
+        cand = base / filename
+        if cand.exists():
+            return cand
+    sys.exit(f"Profile not found: {name} (looked in "
+             f"{', '.join(str(d) for d in searched)})")
 
 
 def profile_slug(profile_arg: str) -> str:
     """Filesystem-safe token for the discoveries filename from a --profile value.
 
     ``--profile`` is usually a bare label ("example") but may be a path to a
-    profile file ("/abs/path/to/example.yaml") when the profiles/ symlinks are not
-    available (e.g. a worktree checkout). Interpolating the raw value into the
+    profile file ("/abs/path/to/example.yaml") when the label is not resolvable
+    from ``profile_search_dirs()`` (e.g. a profile kept outside the overlay's
+    profiles folder). Interpolating the raw value into the
     output filename lets embedded ``/`` characters spawn a junk directory tree
     under the discoveries dir. Use only the stem, sanitized to ``[a-z0-9._-]``.
     """
@@ -306,7 +360,7 @@ def load_considered(
     the `reference.md` § Skip logic contract that identity resolves through the
     registry. New roles at the same company are NOT in the pair set, so they surface.
     """
-    path = profile_dir() / "applications-log.yaml"
+    path = profile_dir() / APPLICATIONS_LOG_NAME
     urls: set[str] = set()
     pairs: set[tuple[str, str]] = set()
     if path.exists():
@@ -351,7 +405,7 @@ def load_company_search_log(
     written under an aggregator variant, e.g. "Arize" vs "Arize AI"), plus the
     row's own name/aliases so companies absent from the registry still work.
     """
-    path = profile_dir() / "company-search-log.yaml"
+    path = profile_dir() / COMPANY_SEARCH_LOG_NAME
     skip_days = 7
     if profile:
         prof_skip = (profile.get("company_search_log") or {}).get("skip_within_days")
