@@ -119,7 +119,7 @@ echo "pre-commit: instruction-file budget (strict)..."
 
 # Reconciler. Every check inside it NO-OPS when its folder is absent — deliberate,
 # because the published export ships none of message-queue/, tasks/, memory/,
-# roadmap/, history/, and closing that would turn the exported repo's CI red.
+# docs/roadmap/, history/, and closing that would turn the exported repo's CI red.
 # --require-roots is the maintainer-checkout opposite: assert the roots are all
 # here, so a botched move cannot quietly disarm a check. A mounted private/
 # overlay is the maintainer signal — an exported clone has none, and gets the
