@@ -55,3 +55,14 @@
     email verbatim including a real first name and interview date. The leak guard
     could not see it — company names are not identity tokens. Redacted in the
     commit that carries this row; see it for the full list of sites.
+
+- commit: ef2d0a33
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 11
+  digest: sha256:79064789a6bf60b0
+  finding: >-
+    The redaction itself. Diff read in full: it removes employer names, five alias
+    pairs, an interview platform, and a verbatim recruiter sentence, replacing each
+    with a placeholder shape. Introduces no new company or personal reference; the
+    only proper nouns added are fictional test fixtures.
