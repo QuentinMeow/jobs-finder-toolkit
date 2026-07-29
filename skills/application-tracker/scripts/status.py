@@ -149,8 +149,8 @@ def _resolve_statuses(args) -> list[str]:
 
 
 # The application log job-search reads to skip postings already generated/considered.
-APPLICATIONS_LOG = APPLICATIONS_DIR / "0_profile" / "applications-log.yaml"
-COMPANY_SEARCH_LOG = APPLICATIONS_DIR / "0_profile" / "company-search-log.yaml"
+APPLICATIONS_LOG = config.applications_log_path()
+COMPANY_SEARCH_LOG = config.company_search_log_path()
 
 COMPANY_SEARCH_LOG_HEADER = (
     "# Auto-maintained log of the last SUCCESSFUL job search per company.\n"

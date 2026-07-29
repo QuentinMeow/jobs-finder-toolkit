@@ -85,6 +85,16 @@ except Exception:  # noqa: BLE001 — standalone use without a config layer
 SKILL_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = SKILL_DIR.parents[1]  # skills/job-search -> repo root
 
+# Skip-log layout names, taken from the config module's CONSTANTS (reading them
+# triggers no config load, so they are safe at import time). The literals here are
+# reached only when the vendored config layer is entirely unavailable — standalone
+# use — and must stay equal to the config module's values.
+CANDIDATE_DIRNAME = getattr(config, "CANDIDATE_DIRNAME", "0_profile")
+APPLICATIONS_LOG_NAME = getattr(config, "APPLICATIONS_LOG_FILENAME",
+                                "applications-log.yaml")
+COMPANY_SEARCH_LOG_NAME = getattr(config, "COMPANY_SEARCH_LOG_FILENAME",
+                                  "company-search-log.yaml")
+
 
 def default_profile() -> str:
     """Profile label to use when --profile is omitted (config-driven)."""
@@ -149,22 +159,24 @@ def profile_dir() -> Path:
     """Directory holding the skip-logs (applications-log / company-search-log).
 
     Config-derived and rename-robust: the logs live next to the candidate profile,
-    so we prefer the parent of the configured profile markdown (e.g.
-    ``applications/0_profile``). We then probe common layout names and pick whichever
-    actually holds a log file, so a folder rename (``profile`` -> ``0_profile``)
-    doesn't silently disable the already-considered / recently-searched skips.
+    so we prefer the parent of the configured profile markdown, then the configured
+    candidate dir (``config.candidate_dir()``). We then probe common layout names
+    and pick whichever actually holds a log file, so a folder rename
+    (``profile`` -> ``0_profile``) doesn't silently disable the already-considered /
+    recently-searched skips.
     """
     candidates: list[Path] = []
+    root = applications_root()
     if config is not None:
         try:
             candidates.append(config.profile_md_path().parent)
+            candidates.append(config.candidate_dir())
         except Exception:  # noqa: BLE001
             pass
-    root = applications_root()
-    candidates += [root / "0_profile", root / "profile"]
+    candidates += [root / CANDIDATE_DIRNAME, root / "profile"]
     for cand in candidates:
-        if (cand / "applications-log.yaml").exists() or \
-           (cand / "company-search-log.yaml").exists():
+        if (cand / APPLICATIONS_LOG_NAME).exists() or \
+           (cand / COMPANY_SEARCH_LOG_NAME).exists():
             return cand
     return candidates[0] if candidates else root / "profile"
 
@@ -306,7 +318,7 @@ def load_considered(
     the `reference.md` § Skip logic contract that identity resolves through the
     registry. New roles at the same company are NOT in the pair set, so they surface.
     """
-    path = profile_dir() / "applications-log.yaml"
+    path = profile_dir() / APPLICATIONS_LOG_NAME
     urls: set[str] = set()
     pairs: set[tuple[str, str]] = set()
     if path.exists():
@@ -351,7 +363,7 @@ def load_company_search_log(
     written under an aggregator variant, e.g. "Arize" vs "Arize AI"), plus the
     row's own name/aliases so companies absent from the registry still work.
     """
-    path = profile_dir() / "company-search-log.yaml"
+    path = profile_dir() / COMPANY_SEARCH_LOG_NAME
     skip_days = 7
     if profile:
         prof_skip = (profile.get("company_search_log") or {}).get("skip_within_days")

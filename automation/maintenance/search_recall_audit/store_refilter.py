@@ -93,7 +93,7 @@ def canon(u: str) -> str:
 covered_urls: set[str] = set()
 covered_pairs: set[tuple[str, str]] = set()   # (company_lower, title_lower)
 apps_root = Path(config.applications_root())
-log_path = apps_root / "0_profile" / "applications-log.yaml"
+log_path = Path(config.applications_log_path())
 if log_path.exists():
     log = yaml.safe_load(log_path.read_text()) or {}
     entries = log.get("applications") or log.get("entries") or []

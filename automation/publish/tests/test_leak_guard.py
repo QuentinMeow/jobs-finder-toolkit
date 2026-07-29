@@ -541,6 +541,52 @@ class RealTreeStructuralTests(unittest.TestCase):
             probe = f"{rel}/probe.md"
             self.assertEqual(check_public.find_path_denylist_violations([probe]), [],
                              f"public root '{rel}/' is path-denied")
+class ConfigRefusalReportingTests(unittest.TestCase):
+    """A config layer that REFUSES to resolve must not take the guard down.
+
+    Config discovery raises when no real ``config.yaml`` is reachable while a
+    private overlay is mounted. This guard runs in pre-push; a traceback there is
+    strictly worse than a report saying no identity was resolved, so the refusal is
+    reported and the scan still runs (with zero config-derived tokens).
+    """
+
+    class _RaisingConfig:
+        EXAMPLE_CONFIG = Path("/nonexistent/config.example.yaml")
+
+        @staticmethod
+        def config_path():
+            raise RuntimeError("no config.yaml found and the example was refused")
+
+        @staticmethod
+        def candidate_name():                       # pragma: no cover — never reached
+            raise AssertionError("identity must not be read from a refused config")
+
+    def _patch(self):
+        original = check_public._load_shared_config
+        check_public._load_shared_config = lambda: self._RaisingConfig
+        self.addCleanup(setattr, check_public, "_load_shared_config", original)
+
+    def test_status_reports_no_identity_instead_of_raising(self):
+        self._patch()
+        status = check_public.config_identity_status()
+        self.assertIn("no identity resolved", status)
+        self.assertIn("RuntimeError", status)
+
+    def test_identity_tokens_degrade_to_empty(self):
+        self._patch()
+        self.assertEqual(check_public._identity_tokens(self._RaisingConfig), set())
+        # personal_tokens() still resolves (env + overlay file), it just gains
+        # nothing from the config.
+        self.assertIsInstance(check_public.personal_tokens(), list)
+
+    def test_scan_still_runs_and_reports_the_refusal(self):
+        self._patch()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tracked = _write_tree(root, {"README.md": "clean\n"})
+            result = check_public.scan(root, tracked=tracked, tokens=[])
+        self.assertTrue(result["ok"])
+        self.assertIn("no identity resolved", result["config_status"])
 
 
 class ExporterEndToEndTests(unittest.TestCase):

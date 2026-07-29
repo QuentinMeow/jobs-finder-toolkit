@@ -383,49 +383,51 @@ class Registry:
         return pollable
 
 
-def _overlay_blacklist_paths() -> list[Path]:
-    """Candidate locations of the optional git-ignored overlay blacklist.
+def _overlay_blacklist_entries() -> list[dict]:
+    """Rows from the optional git-ignored overlay blacklist (may be empty).
 
-    Personal data mounts at the git-ignored ``private/`` overlay at the repo root.
-    We anchor on the active config file's directory when the vendored config loader
-    is importable, and also try the repo root relative to this skill. The overlay is
-    never required — it simply keeps personal skip rules (e.g. the candidate's own
-    employer, or companies that don't sponsor) OUT of the public registry.
+    The location is ``config.blacklist_path()`` — ONE knob, so this never drifts
+    from the config layer's answer. The overlay is not required (a fresh public
+    clone has no blacklist by design), but a MISSING file where an overlay IS
+    mounted is reported to stderr: silently loading "no blacklist" is
+    indistinguishable from loading an empty one, and the difference is whether the
+    candidate's own skip rules are being applied at all.
+
+    A blacklist that cannot be resolved or parsed is never swallowed: an
+    unimportable config loader prints a notice and yields no rows, and a config
+    error / malformed YAML propagates.
     """
-    bases: list[Path] = []
     try:
         from _vendor import config as _cfg  # type: ignore
-        bases.append(_cfg.config_path().parent)
-    except Exception:
-        pass
-    bases.append(SKILL_DIR.parents[1])  # skills/job-search -> repo root
+    except Exception as exc:  # noqa: BLE001 — never silent
+        print(f"registry: the vendored config loader is unavailable ({exc}); "
+              f"the overlay blacklist was NOT applied.", file=sys.stderr)
+        return []
 
-    out: list[Path] = []
-    seen: set[Path] = set()
-    for base in bases:
-        p = (base / "private" / "job-search" / "blacklist.yaml").resolve()
-        if p not in seen:
-            seen.add(p)
-            out.append(p)
-    return out
+    path = _cfg.blacklist_path()
+    if not path.exists():
+        if _cfg.overlay_mounted():
+            print(f"registry: no overlay blacklist at {path} — no personal skip "
+                  f"rules are being applied (set paths.blacklist_yaml if it lives "
+                  f"elsewhere).", file=sys.stderr)
+        return []
+    data = yaml.safe_load(path.read_text()) or {}
+    return list(data.get("companies") or [])
 
 
 def load_registry(path: str | Path | None = None) -> Registry:
     """Load the canonical company registry from companies.yaml.
 
-    When loading the DEFAULT registry (``path is None``), also merges an optional
-    git-ignored overlay blacklist (``private/job-search/blacklist.yaml``) if
-    present. Overlay rows use the same entry shape as identity-only blacklist rows
-    (``name`` + optional ``aliases`` + ``blacklist`` reason), so personal skip
-    rules never live in the public ``companies.yaml``.
+    When loading the DEFAULT registry (``path is None``), also merges the optional
+    git-ignored overlay blacklist (``config.blacklist_path()``, i.e.
+    ``private/job-search/blacklist.yaml`` by default) if present. Overlay rows use
+    the same entry shape as identity-only blacklist rows (``name`` + optional
+    ``aliases`` + ``blacklist`` reason), so personal skip rules never live in the
+    public ``companies.yaml``.
     """
     p = Path(path) if path else REGISTRY_PATH
     data = yaml.safe_load(p.read_text()) if p.exists() else {}
     entries = list((data or {}).get("companies") or [])
     if path is None:
-        for overlay in _overlay_blacklist_paths():
-            if overlay.exists():
-                odata = yaml.safe_load(overlay.read_text()) or {}
-                entries.extend(odata.get("companies") or [])
-                break
+        entries.extend(_overlay_blacklist_entries())
     return Registry(entries)

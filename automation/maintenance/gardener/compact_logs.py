@@ -39,12 +39,8 @@ STATUS_SCRIPT = (
 )
 
 
-def _profile_dir() -> Path:
-    return config.applications_root() / "0_profile"
-
-
 def search_log_path() -> Path:
-    return _profile_dir() / "company-search-log.yaml"
+    return config.company_search_log_path()
 
 
 def plan(policy: dict) -> dict:
@@ -88,7 +84,7 @@ def run(apply: bool = False) -> int:
         for r in p["prune"]:
             print(f"    prune  {r['name']}  (last search {r['date']}, {r['age']}d)")
 
-    print(f"\n  applications-log: {C.rel(_profile_dir() / 'applications-log.yaml')}")
+    print(f"\n  applications-log: {C.rel(config.applications_log_path())}")
     print("    DERIVED / regenerable — not pruned; rebuilt by "
           "status.py --sync-log (idempotent).")
 

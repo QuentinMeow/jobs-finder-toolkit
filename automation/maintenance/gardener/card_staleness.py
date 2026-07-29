@@ -34,8 +34,11 @@ try:
 except ImportError:  # pragma: no cover
     config = C.config
 
+# DISPLAY key only — the literal string a card's header records for the story-bank
+# hash line. It is part of the stored card FORMAT, so it must stay byte-identical to
+# skills/resume-writer/scripts/build_tailoring_card.py's copy or every existing card
+# reads as stale. The story bank's on-disk LOCATION comes from config.story_bank_path().
 STORY_BANK_REL = "interviews/behavioral/story-bank"
-CARD_REL = "0_profile/tailoring-card.md"
 BUILD_CMD = "skills/resume-writer/scripts/build_tailoring_card.py"
 SOURCE_LINE_RE = re.compile(r"- `([^`]+)` sha256:([0-9a-f]{64})")
 
@@ -69,12 +72,11 @@ def analyze() -> dict:
     config_dir = config.config_path().parent
     profile = config.profile_md_path()
     baseline = config.baseline_path()
-    # Resolve the story bank from the overlay root (applications_root().parent), NOT the
-    # config file's directory — config.yaml sits at the repo root in the real deployment
-    # while the overlay is mounted at private/. This mirrors build_tailoring_card.py so
-    # the two never disagree on which story bank the card was built from.
-    story_dir = config.applications_root().parent / STORY_BANK_REL
-    card = config.applications_root() / CARD_REL
+    # Both paths come from the config layer, which is what keeps this routine and
+    # build_tailoring_card.py from ever disagreeing about which story bank / card the
+    # hashes describe (a disagreement yields a card with zero stories and a valid sha).
+    story_dir = config.story_bank_path()
+    card = config.tailoring_card_path()
 
     current = {
         _display(profile, config_dir): _file_sha(profile),

@@ -350,6 +350,32 @@ def _load_shared_config():
         return None
 
 
+def config_identity_status() -> str:
+    """One line describing which config (if any) supplied identity tokens.
+
+    NEVER raises. The config layer refuses to resolve when no real ``config.yaml``
+    is reachable while a private overlay is mounted; a traceback out of this guard
+    (it runs in pre-push / pre-commit) would be a strictly worse failure than a
+    report that says the scan resolved no identity. The refusal is surfaced in the
+    report instead, so an unarmed run is never mistaken for a clean one.
+    """
+    config = _load_shared_config()
+    if config is None:
+        return "config loader unavailable — no identity resolved from config"
+    try:
+        active = Path(config.config_path())
+    except Exception as exc:  # noqa: BLE001 — report, never crash
+        return (f"config unresolved ({type(exc).__name__}: {exc}) — "
+                f"no identity resolved from config")
+    try:
+        is_example = active.resolve() == Path(config.EXAMPLE_CONFIG).resolve()
+    except Exception:  # noqa: BLE001
+        is_example = False
+    if is_example:
+        return f"fictional example config ({active}) — no identity resolved from config"
+    return f"real config ({active})"
+
+
 def _identity_tokens(config) -> set[str]:
     """Derive identity tokens from the ACTIVE config — only if it is a real one.
 
@@ -816,6 +842,9 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         # (identity 0) is visible at a glance instead of hiding inside the union.
         "identity_token_count": identity_count,
         "supplementary_token_count": supplementary_count,
+        # WHY the identity count is what it is: a real config, the fictional
+        # example, or a config layer that refused/failed. Never raises.
+        "config_status": config_identity_status(),
         "unscanned_binaries": unscanned,
         "ok": total == 0,
         "total_violations": total,
@@ -922,6 +951,10 @@ def print_report(result: dict) -> None:
         print(f"  supplementary tokens: {supplementary}"
               f" ({'/'.join(f.name for f in LEAK_TOKENS_FILES)}; never arming)")
         print(f"  active tokens:        {result.get('personal_token_count', 0)} (union, deduped)")
+    if result.get("config_status"):
+        # Says WHY the identity count is what it is — a refused or failed config
+        # layer reads identically to a clean unarmed run without this line.
+        print(f"  identity source:      {result['config_status']}")
     print()
 
     if result["ok"]:

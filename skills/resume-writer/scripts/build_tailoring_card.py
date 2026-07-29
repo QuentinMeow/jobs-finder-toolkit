@@ -9,21 +9,22 @@ the JD demands a deep dive (see the resume-writer SKILL.md workflow).
 Inputs (via the vendored config accessors — self-contained skill, no repo-root imports):
   * profile markdown  — ``config.profile_md_path()``
   * baseline yaml      — ``config.baseline_path()``
-  * story bank         — ``interviews/behavioral/story-bank/`` under the OVERLAY ROOT,
-                         derived as ``config.applications_root().parent`` — NOT the config
-                         file's directory. In the real deployment ``config.yaml`` sits at the
-                         repo root while the private overlay is mounted at ``private/``; the
-                         applications root (``private/applications``) is what locates the
-                         overlay, so its parent (``private/``) is the overlay root and the
-                         story bank lives at ``private/interviews/behavioral/story-bank/``.
-                         (An overlay-resident ``config.yaml`` resolves to the same place.)
+  * story bank         — ``config.story_bank_path()``: ``interviews/behavioral/story-bank/``
+                         under the OVERLAY ROOT — NOT the config file's directory. In the
+                         real deployment ``config.yaml`` sits at the repo root while the
+                         private overlay is mounted at ``private/``, so the bank resolves to
+                         ``private/interviews/behavioral/story-bank/``. (An overlay-resident
+                         ``config.yaml`` resolves to the same place.) The gardener's
+                         card_staleness routine reads the SAME accessor — if the two ever
+                         disagreed, the card would carry zero stories and a valid sha256.
                          With no ``config.yaml`` present the config falls back to the tracked
                          example config, whose applications root is ``examples/applications``
                          → the Jordan Rivers ``examples/`` fixture ships no story bank, and
                          the digest then says so gracefully.
 
-Output: ``<applications_root>/0_profile/tailoring-card.md`` (applications root from
-config). The card carries, in order: a generated-from header (config-relative source
+Output: ``config.tailoring_card_path()`` (``<candidate_dir>/tailoring-card.md``, i.e.
+``<applications_root>/0_profile/`` by default).
+The card carries, in order: a generated-from header (config-relative source
 paths, each source's SHA-256, and a UTC-ISO generation timestamp); identity/locked
 fields, target roles, and key numbers; the three skills lists (Approved/Weak may be
 compact, but the **Never blocklist is included verbatim and complete** — a blocklist is
@@ -69,8 +70,12 @@ from resume_schema import ResumeSchemaError, normalize_resume  # noqa: E402
 
 CEILING_BYTES = 8192          # ~2k tokens target ceiling for the card
 BYTES_PER_TOKEN = 4           # est. tokens = bytes / 4 (repo-wide convention)
+# DISPLAY key only — the literal string the card header records for the story-bank
+# hash line (and the "no story bank found at ..." hint). It is part of the stored card
+# FORMAT, so it must stay byte-identical to automation/maintenance/gardener/
+# card_staleness.py's copy or every existing card reads as stale. The story bank's
+# on-disk LOCATION comes from config.story_bank_path().
 STORY_BANK_REL = "interviews/behavioral/story-bank"
-CARD_REL = "0_profile/tailoring-card.md"
 BUILD_CMD = "skills/resume-writer/scripts/build_tailoring_card.py"
 
 # Parses one header "source" line: ``- `<display path>` sha256:<64 hex>`` (any trailing
@@ -376,19 +381,18 @@ def build_card(profile_path: Path, baseline_path: Path, story_dir: Path,
 # ── CLI ──────────────────────────────────────────────────────
 def _resolve_paths() -> tuple[Path, Path, Path, Path, Path]:
     config_dir = config.config_path().parent
-    # The story bank lives beside the applications tree in the private overlay, NOT
-    # under the config file's directory: in the real deployment config.yaml sits at the
-    # repo root while the overlay is mounted at private/. Derive the overlay root from
-    # the applications root (private/applications → private/) so the bank resolves the
-    # same whether config.yaml is at the repo root or inside the overlay. config_dir is
-    # kept only for absolute-free, config-relative display of the profile/baseline/card.
-    overlay_root = config.applications_root().parent
+    # Every product path comes from the config layer: the story bank lives under the
+    # OVERLAY root (private/interviews/... — not the config file's directory, which in
+    # the real deployment is the repo root), and the card lives in the candidate dir.
+    # The gardener's card_staleness routine reads the same two accessors, which is what
+    # keeps the recorded hashes describing the same files this script hashed. config_dir
+    # is kept only for absolute-free, config-relative display of profile/baseline/card.
     return (
         config.profile_md_path(),
         config.baseline_path(),
-        overlay_root / STORY_BANK_REL,
+        config.story_bank_path(),
         config_dir,
-        config.applications_root() / CARD_REL,
+        config.tailoring_card_path(),
     )
 
 

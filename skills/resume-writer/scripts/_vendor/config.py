@@ -8,8 +8,23 @@ hardcodes a name, contact line, filename stem, or profile path.
 Discovery order (first match wins):
     1. ``$JOBHUNT_CONFIG``   — explicit path from the environment (if it exists)
     2. nearest ``config.yaml`` walking UP from ``Path.cwd()``, then UP from this
-       file's directory
-    3. ``<repo_root>/config.example.yaml`` — the tracked, neutral placeholder
+       file's directory, stopping at the first directory that contains a ``.git``
+       entry (that repository-boundary directory is itself searched). The boundary
+       keeps a git worktree from resolving its parent checkout's config.
+    3. ``<repo_root>/config.example.yaml`` — the tracked, neutral placeholder —
+       but ONLY when falling back cannot silently point the toolkit at the
+       fictional persona while real data is on disk. The fallback:
+         * is silent when ``$JOBHUNT_CONFIG`` named an existing file (step 1);
+         * prints a ONE-LINE stderr notice (once per process) when no private
+           overlay is mounted at the repository boundary — a fresh public clone
+           must keep running out of the box against the example data;
+         * raises ``ConfigNotFound`` when a ``private/`` overlay IS mounted (real
+           data is present, so the fictional persona is the wrong answer), or when
+           ``$JOBHUNT_REQUIRE_REAL_CONFIG`` is set to a truthy value.
+
+A malformed config (a YAML syntax error, or a top level that is not a mapping)
+raises ``ConfigError`` instead of degrading to every hardcoded default. A missing
+or unreadable file still yields an empty config, exactly as before.
 
 Paths in the config are interpreted RELATIVE TO THE CONFIG FILE'S directory and
 resolved to absolute ``Path`` objects.
@@ -28,7 +43,16 @@ Config schema::
       company_levels_yaml: "relative/path.yaml"
       applications_root: "applications"
       discoveries_dir: "applications/1_discoveries"
-      calendar_md: "applications/0_profile/calendar.md"   # OPTIONAL
+      # Every key below is OPTIONAL; each derives from the two roots above when
+      # omitted (see the accessor's docstring for the exact derivation).
+      overlay_root: "private"                            # OPTIONAL
+      candidate_dir: "applications/0_profile"            # OPTIONAL
+      calendar_md: "applications/0_profile/calendar.md"  # OPTIONAL
+      blacklist_yaml: "private/job-search/blacklist.yaml"          # OPTIONAL
+      story_bank_dir: "private/interviews/behavioral/story-bank"   # OPTIONAL
+      search_profiles_dir: "private/job-search-profiles"           # OPTIONAL
+      skill_references_root: "private/skills/references_private"   # OPTIONAL
+      companies_root: "private/companies"                          # OPTIONAL
     job_search:
       default_profile: "default"
     generation:
@@ -74,33 +98,139 @@ CONFIG_FILENAME = "config.yaml"
 EXAMPLE_CONFIG = REPO_ROOT / "config.example.yaml"
 ENV_VAR = "JOBHUNT_CONFIG"
 
+# Set to a truthy value to refuse the example fallback everywhere (CI in a
+# maintainer checkout, cron jobs, anything that must never run on the persona).
+REQUIRE_REAL_CONFIG_ENV_VAR = "JOBHUNT_REQUIRE_REAL_CONFIG"
 
-def _find_config_path() -> Path:
-    """Locate the active config file per the documented discovery order."""
+# The git-ignored private overlay directory, mounted at the repository boundary.
+# Its presence means real candidate data is on disk (see the module docstring).
+OVERLAY_DIRNAME = "private"
+
+# Marks a repository boundary. A git WORKTREE's ``.git`` is a FILE, not a
+# directory, so the walk tests for existence rather than ``is_dir()``.
+_GIT_MARKER = ".git"
+
+_FALSEY = {"", "0", "false", "no", "off"}
+
+
+class ConfigError(RuntimeError):
+    """The active config file exists but cannot be used (e.g. malformed YAML)."""
+
+
+class ConfigNotFound(ConfigError):
+    """No real ``config.yaml`` is reachable and the example fallback is refused.
+
+    Raised when discovery would silently point the toolkit at the fictional
+    "Jordan Rivers" example while real data is present (a ``private/`` overlay is
+    mounted), or when ``$JOBHUNT_REQUIRE_REAL_CONFIG`` forbids the fallback.
+    """
+
+
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() not in _FALSEY
+
+
+def _search_up(start: Path) -> tuple[Path | None, Path | None]:
+    """Walk up from ``start`` for ``config.yaml``, stopping at the git boundary.
+
+    Returns ``(config_path_or_None, boundary_dir_or_None)``. The boundary is the
+    first directory holding a ``.git`` entry; it IS searched for a config before
+    the walk stops there, and it is reported only when no config was found (it is
+    then the repo root used for the overlay check).
+    """
+    for parent in (start, *start.parents):
+        candidate = parent / CONFIG_FILENAME
+        if candidate.exists():
+            return candidate, None
+        if (parent / _GIT_MARKER).exists():
+            return None, parent
+    return None, None
+
+
+def _refuse_example_fallback(boundaries: list[Path]) -> str | None:
+    """Return the reason the example fallback is refused, or None if it is allowed."""
+    if _truthy_env(REQUIRE_REAL_CONFIG_ENV_VAR):
+        return f"${REQUIRE_REAL_CONFIG_ENV_VAR} is set"
+    for root in boundaries or [REPO_ROOT]:
+        overlay = root / OVERLAY_DIRNAME
+        if overlay.is_dir():
+            return f"a private overlay is mounted at {overlay}"
+    return None
+
+
+def _searched_description() -> str:
+    return (f"{CONFIG_FILENAME} searched upward from {Path.cwd()} and from {_HERE} "
+            f"(stopping at the nearest {_GIT_MARKER} boundary); "
+            f"${ENV_VAR} is unset or names a missing file")
+
+
+def _discover_config() -> tuple[Path, bool]:
+    """Locate the active config file. Returns ``(path, used_example_fallback)``."""
     # 1. Explicit path from the environment.
     env = os.environ.get(ENV_VAR)
     if env:
         p = Path(env).expanduser()
         if p.exists():
-            return p
-    # 2. Nearest config.yaml walking up from cwd, then from this file's directory.
+            return p, False
+    # 2. Nearest config.yaml walking up from cwd, then from this file's directory,
+    #    each walk stopping at its repository boundary.
+    boundaries: list[Path] = []
     for start in (Path.cwd(), _HERE):
-        for parent in (start, *start.parents):
-            candidate = parent / CONFIG_FILENAME
-            if candidate.exists():
-                return candidate
-    # 3. Fallback to the tracked example config.
-    return EXAMPLE_CONFIG
+        found, boundary = _search_up(start)
+        if found is not None:
+            return found, False
+        if boundary is not None and boundary not in boundaries:
+            boundaries.append(boundary)
+    # 3. Fallback to the tracked example config — unless that would silently run
+    #    the toolkit on the fictional persona while real data is on disk.
+    reason = _refuse_example_fallback(boundaries)
+    if reason is not None:
+        raise ConfigNotFound(
+            f"No {CONFIG_FILENAME} found and the fictional example config "
+            f"({EXAMPLE_CONFIG}) was refused because {reason}. "
+            f"{_searched_description()}. "
+            f"Set ${ENV_VAR}=/path/to/{CONFIG_FILENAME}, or run from a directory "
+            f"inside the checkout that holds it.")
+    return EXAMPLE_CONFIG, True
+
+
+def _find_config_path() -> Path:
+    """Locate the active config file per the documented discovery order."""
+    return _discover_config()[0]
 
 
 @lru_cache(maxsize=1)
 def _load() -> tuple[Path, dict]:
-    """Return (config_path, config_dict), cached for the process lifetime."""
-    path = _find_config_path()
+    """Return (config_path, config_dict), cached for the process lifetime.
+
+    The example-fallback notice is printed HERE (not in discovery) so it fires
+    once per process rather than once per accessor call.
+    """
+    path, used_example = _discover_config()
+    if used_example:
+        print(f"config: no {CONFIG_FILENAME} found — using the fictional example "
+              f"persona at {path}. {_searched_description()}.", file=sys.stderr)
     try:
-        data = yaml.safe_load(path.read_text()) or {}
-    except (OSError, yaml.YAMLError):
+        text = path.read_text()
+    except OSError as exc:
+        # A missing/unreadable file keeps the historical empty-config behaviour —
+        # discovery above already decided whether that is acceptable — but it says
+        # so, because "every value silently fell back to its default" is exactly
+        # the state that must never look like a successful load.
+        print(f"config: {path} could not be read ({exc}); continuing with an EMPTY "
+              f"configuration — every value falls back to its default.",
+              file=sys.stderr)
+        return path, {}
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{path} is not valid YAML: {exc}") from exc
+    if data is None:
         data = {}
+    if not isinstance(data, dict):
+        raise ConfigError(
+            f"{path} must contain a YAML mapping at the top level, "
+            f"got {type(data).__name__}")
     return path, data
 
 
@@ -167,6 +297,20 @@ def _resolve(value: str | None, default: str) -> Path:
     return (_config_dir() / p).resolve()
 
 
+def _resolve_configured(key: str, derived: Path) -> Path:
+    """``paths.<key>`` resolved like every other path, else the ``derived`` default.
+
+    Keeps each "where does X live" answer a single knob: an explicit config key
+    when the layout is non-standard, otherwise a derivation from the two roots
+    (``applications_root`` / ``overlay_root``) that never appears as a literal in
+    a consumer script.
+    """
+    configured = _paths().get(key)
+    if configured:
+        return _resolve(str(configured), "")
+    return derived
+
+
 def profile_md_path() -> Path:
     return _resolve(_paths().get("profile_md"),
                     "examples/profile/profile.example.md")
@@ -203,18 +347,125 @@ def discoveries_dir() -> Path:
     return _resolve(_paths().get("discoveries_dir"), "applications/1_discoveries")
 
 
+# The candidate/profile support folder inside the applications root. It is NOT a
+# status folder (see layout.STATUS_DIRS); it holds the profile, the baseline, the
+# tailoring card, and the skip-logs. These names are module CONSTANTS (no config
+# load) so a caller driving an explicit tree — e.g. handoff.py's
+# ``--applications-root`` override, which must work with no config at all — can
+# compose the same layout without re-hardcoding a literal.
+CANDIDATE_DIRNAME = "0_profile"
+TAILORING_CARD_FILENAME = "tailoring-card.md"
+APPLICATIONS_LOG_FILENAME = "applications-log.yaml"
+COMPANY_SEARCH_LOG_FILENAME = "company-search-log.yaml"
+CALENDAR_FILENAME = "calendar.md"
+
+
+def overlay_root() -> Path:
+    """Root of the private overlay tree (``private/`` in a real deployment).
+
+    Everything candidate-specific that is NOT an application lives under it:
+    the blacklist, the story bank, search profiles, per-skill private references,
+    the company cache. Defaults to the parent of ``applications_root`` — the
+    fragile idiom this accessor exists to replace — so a config that points
+    ``applications_root`` at ``private/applications`` derives ``private/``.
+    Override with ``paths.overlay_root`` when the two are not nested.
+    """
+    return _resolve_configured("overlay_root", applications_root().parent)
+
+
+def candidate_dir() -> Path:
+    """The candidate support folder: ``<applications_root>/0_profile``.
+
+    Holds the tailoring card, the skip-logs, the calendar, and (by convention)
+    the profile + baseline. Override with ``paths.candidate_dir``.
+    """
+    return _resolve_configured("candidate_dir", applications_root() / CANDIDATE_DIRNAME)
+
+
+def tailoring_card_path() -> Path:
+    """The distilled tailoring card (derived artifact; see the resume-writer skill)."""
+    return candidate_dir() / TAILORING_CARD_FILENAME
+
+
+def applications_log_path() -> Path:
+    """Skip-log of postings already generated/considered (derived, regenerable)."""
+    return candidate_dir() / APPLICATIONS_LOG_FILENAME
+
+
+def company_search_log_path() -> Path:
+    """Skip-log of each employer's last SUCCESSFUL search."""
+    return candidate_dir() / COMPANY_SEARCH_LOG_FILENAME
+
+
+def blacklist_path() -> Path:
+    """Candidate blacklist overlay merged into the public company registry.
+
+    Defaults to ``<overlay_root>/job-search/blacklist.yaml``; override with
+    ``paths.blacklist_yaml``. Personal skip rules never live in the public
+    ``skills/job-search/companies.yaml``.
+    """
+    return _resolve_configured(
+        "blacklist_yaml", overlay_root() / "job-search" / "blacklist.yaml")
+
+
+def story_bank_path() -> Path:
+    """Behavioral story bank directory (may not exist; callers degrade gracefully).
+
+    Defaults to ``<overlay_root>/interviews/behavioral/story-bank``; override with
+    ``paths.story_bank_dir``. Both the tailoring-card builder and the gardener's
+    staleness check hash this directory, so they MUST agree on it byte for byte.
+    """
+    return _resolve_configured(
+        "story_bank_dir", overlay_root() / "interviews" / "behavioral" / "story-bank")
+
+
+def search_profiles_dir() -> Path:
+    """Candidate job-search profiles. Override with ``paths.search_profiles_dir``."""
+    return _resolve_configured(
+        "search_profiles_dir", overlay_root() / "job-search-profiles")
+
+
+def skill_references_dir(skill: str) -> Path:
+    """Per-skill private reference folder for candidate-specific skill guidance.
+
+    Defaults to ``<overlay_root>/skills/references_private/<skill>``; override the
+    root with ``paths.skill_references_root``. Never tracked in the public tree —
+    the leak guard fails on any tracked file under a ``references_private/`` folder.
+    """
+    root = _resolve_configured(
+        "skill_references_root", overlay_root() / "skills" / "references_private")
+    return root / skill
+
+
+def companies_root() -> Path:
+    """Company-level research/cache tree. Override with ``paths.companies_root``."""
+    return _resolve_configured("companies_root", overlay_root() / "companies")
+
+
+def overlay_mounted() -> bool:
+    """True when a private overlay tree is actually mounted.
+
+    An overlay is "mounted" when ``overlay_root()`` is an existing directory that
+    is distinct from the config file's own directory. In a fresh public clone the
+    derivation collapses onto the repo root (which is also the config dir), which
+    is exactly the "no overlay" case: callers use this to stay silent about
+    missing personal files that a public checkout is never expected to have.
+    """
+    root = overlay_root()
+    # overlay_root() is fully resolved; _config_dir() is not (it is the config path
+    # as discovered), so compare resolved forms or a symlinked prefix — /var vs
+    # /private/var on macOS — reads as "distinct" and reports a phantom overlay.
+    return root.is_dir() and root != _config_dir().resolve()
+
+
 def calendar_path() -> Path:
     """The single private calendar/todo file (``calendar.md``).
 
-    Defaults to ``<applications_root>/0_profile/calendar.md`` so a real
-    configuration resolves into the private overlay while the tracked example
-    config resolves into the fictional ``examples/`` tree. Override with
-    ``paths.calendar_md``.
+    Defaults to ``<candidate_dir>/calendar.md`` so a real configuration resolves
+    into the private overlay while the tracked example config resolves into the
+    fictional ``examples/`` tree. Override with ``paths.calendar_md``.
     """
-    configured = _paths().get("calendar_md")
-    if configured:
-        return _resolve(configured, "applications/0_profile/calendar.md")
-    return applications_root() / "0_profile" / "calendar.md"
+    return _resolve_configured("calendar_md", candidate_dir() / CALENDAR_FILENAME)
 
 
 # ── raw-data-layer store root ─────────────────────────────────
