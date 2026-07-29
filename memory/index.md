@@ -26,3 +26,7 @@
 - `memory/known-issues/skills-diff-provenance-noise.md` — skills_diff.py queues non-skills from provenance notes and degree phrases
 - `memory/known-issues/visa-sponsorship-negation-phrase-gap.md` — `classify_sponsorship()`'s negative-phrase list misses some real denial wordings
 - `memory/known-issues/worktree-config-discovery-escape.md` — Config discovery escapes nested git worktrees and resolves the parent checkout's real config.yaml
+
+## facts
+
+- `memory/facts/overlay-root-follows-the-active-config.md` — `overlay_root()` follows whichever config is active, so an isolated config gets an isolated overlay
