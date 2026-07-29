@@ -13,6 +13,16 @@ ships this repo's tracked ``.gitignore``, regenerates the ``.claude/skills`` /
 Design rules:
   * The ALLOWLIST wins: nothing is ever copied unless it lives under an
     allowlisted path. When in doubt, exclude.
+  * The tree is enumerated through ``git ls-files``, never ``os.walk``: only
+    TRACKED files can ship. A scratch file, a scraped JD, or a personal profile
+    symlink dropped into an allowlisted directory is git-ignored/untracked and
+    therefore invisible to the export by construction.
+  * An allowlisted path that resolves to nothing is REPORTED, never silently
+    skipped — a renamed or typo'd entry used to ship zero files and say nothing.
+    ``--strict`` turns those warnings into a refusal, before ``--force`` touches
+    the destination.
+  * Which ``skills/<name>`` trees ship is DERIVED from each SKILL.md's
+    ``visibility:`` frontmatter (``sync_skill_manifests``), never restated here.
   * The DENYLIST is applied AFTER the allowlist, per file: ``__pycache__``,
     ``*.pyc``, ``.DS_Store``, the owner's personal job-search profiles, and any
     file whose PATH or (text) CONTENT trips the personal-identity token screen
@@ -21,7 +31,7 @@ Design rules:
     is NOT committed and the exporter exits nonzero.
 
 Usage:
-    .venv/bin/python automation/publish/export_public.py --dest <dir> [--git-init] [--force]
+    .venv/bin/python automation/publish/export_public.py --dest <dir> [--git-init] [--force] [--strict]
 """
 from __future__ import annotations
 
@@ -33,37 +43,36 @@ import sys
 from pathlib import Path
 
 # Make the sibling leak guard importable so we reuse ONE source of truth for the
-# personal-identity token list and the binary/text helpers.
+# personal-identity token list and the binary/text helpers, and the sibling
+# manifest module so the PUBLIC skill list is derived from SKILL.md frontmatter
+# instead of restated here (they disagreed for months; search-recall-audit
+# existed but had never shipped).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_public  # noqa: E402
+import sync_skill_manifests  # noqa: E402
 
 # automation/publish/export_public.py -> repo root is two parents up.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# The PUBLIC skills that ship in the toolkit (coding-interview is PRIVATE).
-PUBLIC_SKILLS = [
-    "ask-me-anything",
-    "job-search",
-    "resume-writer",
-    "application-tracker",
-    "behavioral-interview-prep",
-    "company-research",
-    "email-assistant",
-    "interview-calendar",
-    "gardener",
-]
-
-# Allowlisted individual files (repo-root-relative). Copied only if present.
+# Allowlisted individual files (repo-root-relative). Must be TRACKED.
 ALLOWLIST_FILES = [
     "AGENTS.md",
+    # The root shim that makes Claude Code load AGENTS.md (a one-line @-import).
+    # Without it a fresh public clone silently boots with no agent contract.
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
     "README.md",
     "LICENSE",
     "requirements.txt",
     "config.example.yaml",
+    # The one-shot "make my checkout work" step README.md / CONTRIBUTING.md /
+    # handbook/private-overlay.md all tell a new user to run.
+    "automation/bootstrap_overlay.py",
 ]
 
-# Allowlisted directory trees (copied recursively, then denylist-filtered).
-# Copied only if present.
+# Allowlisted directory trees (every TRACKED file under them, denylist-filtered).
+# The public skills are appended at call time by ``allowlist_dirs()`` — see
+# ``public_skills()``.
 ALLOWLIST_DIRS = [
     "examples",
     "automation/shared",
@@ -71,6 +80,7 @@ ALLOWLIST_DIRS = [
     "automation/maintenance",
     "automation/metrics",
     "automation/publish",
+    "automation/store",
     "evals",
     "automation/hooks",
     "automation/reconcile",
@@ -79,7 +89,17 @@ ALLOWLIST_DIRS = [
     ".claude-plugin",
     "handbook",
     "design",
-] + [f"skills/{skill}" for skill in PUBLIC_SKILLS]
+]
+
+
+def public_skills() -> list[str]:
+    """The PUBLIC skills that ship, from ``skills/*/SKILL.md`` frontmatter."""
+    return sync_skill_manifests.public_skills(REPO_ROOT)
+
+
+def allowlist_dirs() -> list[str]:
+    """Allowlisted trees + one ``skills/<name>`` entry per PUBLIC skill."""
+    return ALLOWLIST_DIRS + [f"skills/{skill}" for skill in public_skills()]
 
 # The job-search profiles folder is allowlisted, but only these generic profile
 # files are PUBLIC. Any OTHER file directly under it is a personal profile and is
@@ -162,33 +182,89 @@ def _copy_one(rel: str, dest_root: Path, copied: list[str],
     copied.append(rel)
 
 
+def tracked_files() -> list[str]:
+    """Every TRACKED path in this checkout (repo-root-relative, posix, sorted).
+
+    ``git ls-files`` — not ``os.walk`` — is the enumerator, so an untracked file
+    sitting inside an allowlisted directory can never be exported. That closes
+    the hole that used to ship scratch files and the owner's personal job-search
+    profile symlinks (git-ignored, but on disk and inside an allowlisted tree).
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z", "--cached"],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"git ls-files failed in {REPO_ROOT} (exit {proc.returncode}): "
+            f"{proc.stderr.strip()}\nThe exporter enumerates TRACKED files, so it "
+            "must run inside a git checkout."
+        )
+    return sorted(p for p in proc.stdout.split("\0") if p)
+
+
+def _tracked_under(rel_dir: str, tracked: list[str]) -> list[str]:
+    prefix = rel_dir.rstrip("/") + "/"
+    return [p for p in tracked if p.startswith(prefix)]
+
+
+def preflight(tracked: list[str]) -> list[str]:
+    """Warn about every allowlisted path that would contribute nothing.
+
+    A renamed or misspelled allowlist entry used to export zero files in total
+    silence. Each of these is a warning by default and a refusal under
+    ``--strict``. Run BEFORE the destination is touched so a strict refusal
+    costs the caller nothing (same rule as the arming gate).
+    """
+    warnings: list[str] = []
+    tracked_set = set(tracked)
+    for rel in ALLOWLIST_FILES:
+        if rel not in tracked_set:
+            reason = "not tracked by git" if (REPO_ROOT / rel).exists() else "does not exist"
+            warnings.append(f"allowlisted file contributes nothing: {rel} ({reason})")
+    for rel_dir in allowlist_dirs():
+        if not (REPO_ROOT / rel_dir).is_dir():
+            warnings.append(f"allowlisted directory does not exist: {rel_dir}")
+        elif not _tracked_under(rel_dir, tracked):
+            warnings.append(f"allowlisted directory holds no tracked files: {rel_dir}")
+    return warnings
+
+
 def _copy_tree(rel_dir: str, dest_root: Path, copied: list[str],
-               skipped: list[tuple[str, str]], tokens: list[str]) -> None:
-    src_dir = REPO_ROOT / rel_dir
-    if not src_dir.is_dir():
-        return
-    for root, dirs, files in os.walk(src_dir):
-        # Prune junk + per-skill private references so we never descend into them.
-        dirs[:] = [d for d in dirs if d not in ("__pycache__", "references_private")]
-        for fname in files:
-            abs_path = Path(root) / fname
-            rel = abs_path.relative_to(REPO_ROOT).as_posix()
-            _copy_one(rel, dest_root, copied, skipped, tokens)
+               skipped: list[tuple[str, str]], tokens: list[str],
+               tracked: list[str]) -> None:
+    """Copy every TRACKED file under ``rel_dir`` (denylist applied per file).
+
+    Symlinks are followed (``shutil.copy2``), matching the previous behaviour:
+    git stores a symlink as a blob holding its target, but the export wants the
+    CONTENT (e.g. the tracked ``design/CLAUDE.md -> AGENTS.md`` shim must be a
+    real file in a checkout that may not support symlinks). A tracked path whose
+    worktree file is missing is skipped with a reason rather than crashing.
+    """
+    for rel in _tracked_under(rel_dir, tracked):
+        if not (REPO_ROOT / rel).exists():
+            skipped.append((rel, "tracked but missing from the worktree"))
+            continue
+        _copy_one(rel, dest_root, copied, skipped, tokens)
 
 
-def _regenerate_symlinks(dest_root: Path) -> list[str]:
+def _regenerate_symlinks(dest_root: Path, skills: list[str]) -> list[str]:
     """Recreate .claude/skills + .cursor/skills compat symlinks for PUBLIC skills.
 
-    Mirrors the source checkout: ``<host>/<skill> -> ../../skills/<skill>``.
-    coding-interview (PRIVATE) is intentionally skipped.
+    Mirrors the source checkout: ``<host>/<skill> -> ../../skills/<skill>``. The
+    trees are REGENERATED rather than copied, because git records a symlink as a
+    blob holding its target and the source trees may also hold links for skills
+    that are not part of this repo. ``skills`` comes from the SKILL.md
+    frontmatter, so the private coding-interview skills are excluded by
+    construction rather than by a hand-maintained exception.
     """
     created: list[str] = []
-    for host in (".claude/skills", ".cursor/skills"):
+    for host in sync_skill_manifests.SYMLINK_HOSTS:
         base = dest_root / host
         base.mkdir(parents=True, exist_ok=True)
-        for skill in PUBLIC_SKILLS:
+        for skill in skills:
             link = base / skill
-            target = f"../../skills/{skill}"
+            target = f"{sync_skill_manifests.SYMLINK_TARGET_PREFIX}{skill}"
             if link.is_symlink() or link.exists():
                 link.unlink()
             os.symlink(target, link)
@@ -211,6 +287,11 @@ def _run_guard(dest_root: Path, tokens: list[str]) -> int:
 
     env = dict(os.environ)
     env[check_public.TOKENS_ENV_VAR] = "\n".join(tokens)
+    # Keep the freshly copied tree byte-for-byte what the allowlist produced: the
+    # guard imports sibling/shared modules, and CPython would otherwise leave
+    # __pycache__/*.pyc behind INSIDE the export (git-ignored, so invisible to the
+    # guard's tracked-file scan, but still not something an export should carry).
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
 
     print("\n=== Leak guard (check_public.py) ===")
     guard = subprocess.run(
@@ -262,7 +343,7 @@ def _print_manifest(dest_root: Path, copied: list[str], skipped: list[tuple[str,
             print(f"    - {rel}  [{reason}]")
 
 
-def export(dest: Path, git_init: bool, force: bool) -> int:
+def export(dest: Path, git_init: bool, force: bool, strict: bool = False) -> int:
     # Refuse to export from an UNARMED checkout. FIRST — before --force deletes
     # the destination — so a refusal costs the caller nothing.
     #
@@ -282,6 +363,20 @@ def export(dest: Path, git_init: bool, force: bool) -> int:
             print(line, file=sys.stderr)
         print("       Export only from a maintainer checkout whose config.yaml carries the\n"
               f"       real candidate identity, or set ${check_public.TOKENS_ENV_VAR}.",
+              file=sys.stderr)
+        return 2
+
+    # Enumerate TRACKED files once, then report every allowlist entry that
+    # contributes nothing — also BEFORE --force deletes the destination, so a
+    # --strict refusal costs the caller nothing.
+    tracked = tracked_files()
+    warnings = preflight(tracked)
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    if warnings and strict:
+        print(f"error: refusing to export — {len(warnings)} allowlist warning(s) "
+              "under --strict.\n"
+              "       Fix or remove the allowlist entries above, or drop --strict.",
               file=sys.stderr)
         return 2
 
@@ -305,19 +400,22 @@ def export(dest: Path, git_init: bool, force: bool) -> int:
 
     copied: list[str] = []
     skipped: list[tuple[str, str]] = []
+    tracked_set = set(tracked)
 
     for rel in ALLOWLIST_FILES:
-        if (REPO_ROOT / rel).is_file():
+        if rel in tracked_set and (REPO_ROOT / rel).is_file():
             _copy_one(rel, dest, copied, skipped, tokens)
-    for rel_dir in ALLOWLIST_DIRS:
-        _copy_tree(rel_dir, dest, copied, skipped, tokens)
+    for rel_dir in allowlist_dirs():
+        _copy_tree(rel_dir, dest, copied, skipped, tokens, tracked)
 
     (dest / ".gitignore").write_text(
         (REPO_ROOT / GITIGNORE_REL).read_text(encoding="utf-8"), encoding="utf-8")
 
-    symlinks = _regenerate_symlinks(dest)
+    skills = public_skills()
+    symlinks = _regenerate_symlinks(dest, skills)
 
     _print_manifest(dest, copied, skipped, symlinks)
+    print(f"  public skills: {len(skills)} (skills/*/SKILL.md `visibility: public`)")
     print(f"  active tokens: {len(tokens)} (from config identity + overlay + env)")
 
     # The leak guard ALWAYS runs against the copied tree (it is the final gate) —
@@ -347,8 +445,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="git init + add -A, run the leak guard, and commit only if it passes")
     parser.add_argument("--force", action="store_true",
                         help="overwrite --dest if it already exists")
+    parser.add_argument("--strict", action="store_true",
+                        help="refuse to export when any allowlisted path contributes "
+                             "nothing (missing directory, untracked/absent file)")
     args = parser.parse_args(argv)
-    return export(Path(args.dest), args.git_init, args.force)
+    return export(Path(args.dest), args.git_init, args.force, args.strict)
 
 
 if __name__ == "__main__":

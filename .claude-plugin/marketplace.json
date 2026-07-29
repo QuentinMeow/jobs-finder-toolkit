@@ -10,47 +10,52 @@
     {
       "name": "ask-me-anything",
       "source": "./skills/ask-me-anything",
-      "description": "Orientation guide for the whole toolkit: the five-step job-hunting workflow, repo structure, and which skill and dependencies each step needs. Use when the user is new or asks how the repo works, where to start, or what to do next."
+      "description": "Orientation guide for the whole job-hunting toolkit — the five-step workflow (set up profile/filters → search jobs → generate applications → review & track → interview prep), the repo structure, and which skill + dependencies each step needs. Use when the user is new or asks \"how does this work\", \"how do I use this\", \"where do I start\", \"what do I do next\", \"what do I need installed\", or about the overall process, folder structure, or how the skills fit together."
     },
     {
       "name": "job-search",
       "source": "./skills/job-search",
-      "description": "Discover and rank fresh job postings that match a candidate profile, filtering by role, keywords, location, recency, and visa sponsorship (H-1B transfer / PERM / green card)."
+      "description": "Discover and rank fresh job postings that match a candidate profile, filtering by role, keywords, location, recency, and visa sponsorship (H-1B transfer / PERM / green card). Use when the user asks to find, search for, or discover matching jobs, check what's newly posted, or filter openings by sponsorship or posting date."
     },
     {
       "name": "resume-writer",
       "source": "./skills/resume-writer",
-      "description": "Tailor resumes for ATS optimization: analyze a job description for keyword fit, rewrite bullets, and render validated DOCX + PDF resumes and cover letters."
+      "description": "Tailor resumes for ATS optimization. Use when the user asks to tailor or optimize a resume, analyze a job description for keyword fit, rewrite resume bullets, or render validated DOCX + PDF resumes and cover letters."
     },
     {
       "name": "application-tracker",
       "source": "./skills/application-tracker",
-      "description": "Track job applications, manage statuses, review pipeline health, and record interview, company, recruiter, compensation, or next-action notes."
+      "description": "Track job applications, manage statuses, review pipeline health, and record interview, company, recruiter, compensation, or next-action notes. Use when the user asks about application status, pipeline health, or updating applications/<status>/<slug>/meta.yaml or notes.md."
     },
     {
       "name": "behavioral-interview-prep",
       "source": "./skills/behavioral-interview-prep",
-      "description": "Build project-based behavioral story banks, map stories to common software-engineer question categories, and rewrite them into reusable STAR answers."
+      "description": "Prepare grounded behavioral answers from real project stories, map projects to common software engineer questions, and generate validated multi-project answers with connected STAR paragraphs, prominent impact, timed quick answers, technical expansions, and reusable story references. Use when the user asks for behavioral interview prep, STAR answers, story bank creation, leadership/conflict/failure questions, or company-specific behavioral coaching."
     },
     {
       "name": "company-research",
       "source": "./skills/company-research",
-      "description": "Deeply research a company and the specific role for interviews — product, hard technical challenges, competitive moat and defensibility, culture, comp, and a question bank."
+      "description": "Deeply research a company and the specific role for an interview — product, company size, the hard technical challenges and why they're hard, competitive moat/defensibility/growth (evidence-based, 5-Whys — not company claims), a 1–100 competitor scorecard rating the company against each rival, how the company embraces AI publicly (customer-facing) and privately (internal adoption), eng culture, the role deep-dive, a prepared \"why this company / why not competitors\" pitch, plus offer-decision facts (funding/stage, comp, WLB, ratings, visa/H-1B) and a 1–100 \"how good is this place to work\" company rating and a hiring-manager/engineer question bank. Use when the user asks to research a company, prep for an interview, understand a company's product/challenges/moat/defensibility/growth/strategy, rate a company or its competitors, or build company-info for an application."
     },
     {
       "name": "email-assistant",
       "source": "./skills/email-assistant",
-      "description": "Read personal Outlook mail, connect recruiter messages to local job applications, and create repository-grounded reply drafts without ever sending email."
+      "description": "Read a personal Microsoft Outlook mailbox, connect recruiter or hiring-team messages to job applications in this repository, maintain action-first application notes and interview calendar events, reconcile evidence-backed application status changes, draft grounded replies, and save them as Outlook drafts through Microsoft Graph. Use when the user asks to review, summarize, prioritize, or reply to Outlook email, update application notes or calendar events from recruiter messages, or reconcile their job pipeline. This skill is permanently draft-only and must never send email."
     },
     {
       "name": "interview-calendar",
       "source": "./skills/interview-calendar",
-      "description": "Reconcile interview email, application progress, private notes, and duplicate-free Outlook Calendar events."
+      "description": "Reconcile interview and recruiting emails with application progress, private application notes, the toolkit's local interview calendar, and duplicate-free Outlook Calendar events. Use when the user asks to add, update, reschedule, audit, or deduplicate interview calendar entries; turn confirmed recruiter email into calendar events; keep interview details synchronized across email, applications, and Outlook; or review upcoming interview logistics."
     },
     {
       "name": "gardener",
       "source": "./skills/gardener",
-      "description": "Periodic memory hygiene for the toolkit's agent-memory zones: expire stale discovery scans, prune old search-log rows, flag stale/duplicate LESSONS, verify links, and recompute the pipeline funnel. Dry-run by default; moves rather than deletes."
+      "description": "Periodic memory hygiene for the toolkit's agent-memory zones — expire stale discovery scans, prune old search-log rows, flag stale/duplicate LESSONS, verify links, and recompute the pipeline funnel. Use for weekly upkeep or when the user says \"clean up memory\", \"expire stale discoveries\", \"garden the repo\", \"prune the logs\", \"run the gardener\", or asks to measure the pipeline/memory health. Every routine is DRY-RUN by default and MOVES rather than deletes."
+    },
+    {
+      "name": "search-recall-audit",
+      "source": "./skills/search-recall-audit",
+      "description": "Audit the job-search pipeline for silent misses — randomly sample raw job postings from a search snapshot (grepping the ENTIRE JD, never title-only), fan them out to AI subagents that judge each against the active profile's requirements and check whether an application was generated, then deterministically trace every apparent miss to the exact pipeline gate that dropped it. Use when the user asks to audit/spot-check job-search recall or precision, \"did we miss any jobs\", \"why didn't we surface <role>\", \"sample some raw JDs and verify them\", \"check the pipeline is catching what it should\", or wants to validate a filter change. Findings become tickets; the content gates are never changed on a hunch."
     }
   ]
 }

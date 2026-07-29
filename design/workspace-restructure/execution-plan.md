@@ -100,11 +100,11 @@ change.
 | `skills/*/SKILL.md` frontmatter `visibility:` (the declared SSOT) | 10 public | — |
 | `automation/publish/export_public.py:44` `PUBLIC_SKILLS` | 9 | missing `search-recall-audit` |
 | `.claude-plugin/marketplace.json` | 9 | missing `search-recall-audit` |
-| tracked `.claude/skills/*` | 9 | missing `interview-calendar` |
-| tracked `.cursor/skills/*` | 9 | missing `interview-calendar` |
+| tracked `.claude/skills/*` | 10 | — (re-verified 2026-07-29; an earlier draft of this table said 9, missing `interview-calendar` — that was already fixed in the tree) |
+| tracked `.cursor/skills/*` | 10 | — (same correction) |
 
 **Live consequence: `search-recall-audit` has never shipped in any export and is not
-installable; `interview-calendar` is unreachable in a fresh public clone.**
+installable.**
 
 **Fix:** derive `PUBLIC_SKILLS` from frontmatter at runtime (`check_public.py:427`
 `parse_frontmatter_visibility` already exists). Regenerate `marketplace.json` and both runtime

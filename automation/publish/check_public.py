@@ -78,6 +78,15 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+# The sibling manifest module owns the ONE SKILL.md frontmatter parser in the
+# repo (the exporter and the reconciler read the same one), so the guard's
+# ``visibility: private`` detection can never disagree with what actually ships.
+# Both files live in ``automation/publish/`` and are always exported together.
+_PUBLISH_DIR = str(Path(__file__).resolve().parent)
+if _PUBLISH_DIR not in sys.path:
+    sys.path.insert(0, _PUBLISH_DIR)
+import sync_skill_manifests  # noqa: E402
+
 # automation/publish/check_public.py -> repo root is two parents up.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -562,21 +571,13 @@ def parse_frontmatter_visibility(skill_md: Path) -> str | None:
     Reads only the block between the leading ``---`` fences. Returns the lowercased
     value (e.g. ``"private"``/``"public"``) or ``None`` when the key is absent or
     there is no frontmatter.
+
+    Delegates to ``sync_skill_manifests`` so this guard, the exporter's public-skill
+    list, ``.claude-plugin/marketplace.json`` and the runtime symlink trees are all
+    derived by ONE parser — a second copy here could drift and let a skill declared
+    private ship anyway.
     """
-    try:
-        text = skill_md.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return None
-    for line in lines[1:]:
-        if line.strip() == "---":
-            break
-        key, sep, value = line.partition(":")
-        if sep and key.strip() == "visibility":
-            return value.strip().strip("'\"").lower() or None
-    return None
+    return sync_skill_manifests.frontmatter_visibility(skill_md)
 
 
 def find_private_skill_violations(root: Path, tracked: list[str]) -> list[dict]:

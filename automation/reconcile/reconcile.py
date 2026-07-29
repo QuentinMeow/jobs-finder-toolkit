@@ -2,10 +2,11 @@
 """Reconciler — mechanical referee for the repo's process-layer invariants.
 
 Validates the message-queue/, tasks/, memory/, history/, and roadmap/
-structures against their schemas (single source of truth: ``templates/``).
-Instructions are wishes; this check is the guarantee — it runs from the
-pre-commit hook and CI, and violations can be filed as repair items the next
-session picks up.
+structures against their schemas (single source of truth: ``templates/``), and
+the derived skill manifests against ``skills/*/SKILL.md`` frontmatter (single
+source of truth for visibility). Instructions are wishes; this check is the
+guarantee — it runs from the pre-commit hook and CI, and violations can be filed
+as repair items the next session picks up.
 
 Usage:
     reconcile.py --check                 # exit 1 on findings, print them
@@ -217,6 +218,29 @@ def check_handover_present() -> list[Finding]:
     return findings
 
 
+def check_skill_manifests() -> list[Finding]:
+    """Every skill manifest agrees with its SKILL.md ``visibility:`` frontmatter.
+
+    ``.claude-plugin/marketplace.json`` and the ``.claude/skills`` /
+    ``.cursor/skills`` compat symlink trees are DERIVED surfaces; the exporter
+    derives its public-skill list from the same frontmatter at runtime. They
+    disagreed for months, so a skill that existed had never shipped. Regenerate
+    with ``automation/publish/sync_skill_manifests.py``.
+    """
+    findings: list[Finding] = []
+    skills = REPO_ROOT / "skills"
+    if not skills.is_dir():
+        return findings
+    publish = REPO_ROOT / "automation" / "publish"
+    if str(publish) not in sys.path:
+        sys.path.insert(0, str(publish))
+    import sync_skill_manifests  # noqa: E402  (stdlib-only sibling module)
+
+    for subject, message in sync_skill_manifests.findings(REPO_ROOT):
+        findings.append(Finding("skill-manifests", subject, message))
+    return findings
+
+
 def check_roadmap_fresh() -> list[Finding]:
     """roadmap/current-state.md exists alongside desired-state.md and is dated."""
     findings: list[Finding] = []
@@ -239,6 +263,7 @@ CHECKS = {
     "memory-index": check_memory_index,
     "handover-present": check_handover_present,
     "roadmap-fresh": check_roadmap_fresh,
+    "skill-manifests": check_skill_manifests,
 }
 
 
