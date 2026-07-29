@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: repo
 - **Source**: found during phase 0b (`design/workspace-restructure/execution-plan.md`, item 0.12)
-- **Claimed-by**:
+- **Claimed-by**: agent (session 2026-07-29, branch `fix/vendored-config-repo-root`)
 
 ## Goal
 

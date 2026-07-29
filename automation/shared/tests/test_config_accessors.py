@@ -22,6 +22,7 @@ Run with (from the repo root):
 """
 from __future__ import annotations
 
+import importlib.util
 import io
 import os
 import sys
@@ -325,6 +326,90 @@ class OverlayMountedTests(unittest.TestCase):
         with _active_config('paths:\n  applications_root: "private/applications"\n') as cfg:
             (cfg.parent / "private").mkdir()
             self.assertTrue(config.overlay_mounted())
+
+
+class RepoRootResolutionTests(unittest.TestCase):
+    """``REPO_ROOT`` must name the REPO root in every copy of this module.
+
+    ``sync_vendored.py`` mirrors this file byte-identically into four skills at
+    ``skills/<skill>/scripts/_vendor/config.py`` — FOUR levels below the repo root
+    where the canonical copy is two. Counting parents therefore resolved to
+    ``skills/<skill>/`` in each vendored copy, making ``EXAMPLE_CONFIG`` a path that
+    cannot exist: the example fallback loaded nothing, and every "am I on the
+    fictional persona?" comparison against that constant answered a constant.
+    """
+
+    REPO_ROOT = SHARED_DIR.parents[1]
+    COPIES = (
+        "automation/shared/config.py",
+        "skills/resume-writer/scripts/_vendor/config.py",
+        "skills/application-tracker/scripts/_vendor/config.py",
+        "skills/job-search/scripts/_vendor/config.py",
+        "skills/email-assistant/scripts/_vendor/config.py",
+    )
+
+    def _load_copy(self, rel: str):
+        """Import one copy of config.py under its own module name."""
+        path = self.REPO_ROOT / rel
+        self.assertTrue(path.is_file(), f"{rel} is missing")
+        name = "_probe_" + rel.replace("/", "_")[:-3]
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        self.addCleanup(sys.modules.pop, name, None)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_every_copy_resolves_the_same_repo_root(self):
+        for rel in self.COPIES:
+            with self.subTest(copy=rel):
+                self.assertEqual(self._load_copy(rel).REPO_ROOT, self.REPO_ROOT)
+
+    def test_every_copy_points_example_config_at_a_real_file(self):
+        for rel in self.COPIES:
+            with self.subTest(copy=rel):
+                example = self._load_copy(rel).EXAMPLE_CONFIG
+                self.assertTrue(example.is_file(), f"{rel}: {example} does not exist")
+
+
+class RepoRootMarkerTests(unittest.TestCase):
+    """The marker precedence in ``_repo_root``: ``.git``, then the example, then here.
+
+    The last case is a skill folder unpacked outside any project. Answering with the
+    module's own directory keeps the search inside the unpacked artifact — walking
+    on up could hit an unrelated ``/private`` (a real directory on macOS) and refuse
+    the fallback, or adopt a stranger's ``config.example.yaml``.
+    """
+
+    def _tree(self) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name).resolve() / "proj"
+        (root / "skills" / "s" / "scripts" / "_vendor").mkdir(parents=True)
+        return root
+
+    def test_git_marker_wins(self):
+        root = self._tree()
+        (root / ".git").mkdir()
+        # A nearer example config must NOT outrank the repository boundary.
+        (root / "skills" / "s" / config.EXAMPLE_CONFIG_FILENAME).touch()
+        here = root / "skills" / "s" / "scripts" / "_vendor"
+        self.assertEqual(config._repo_root(here), root)
+
+    def test_git_file_marker_of_a_worktree_is_honoured(self):
+        root = self._tree()
+        (root / ".git").write_text("gitdir: /elsewhere\n", encoding="utf-8")
+        self.assertEqual(config._repo_root(root / "skills" / "s"), root)
+
+    def test_example_config_marks_the_root_of_a_git_less_export(self):
+        root = self._tree()
+        (root / config.EXAMPLE_CONFIG_FILENAME).touch()
+        here = root / "skills" / "s" / "scripts" / "_vendor"
+        self.assertEqual(config._repo_root(here), root)
+
+    def test_falls_back_to_the_modules_own_directory_with_no_marker(self):
+        here = self._tree() / "skills" / "s" / "scripts" / "_vendor"
+        self.assertEqual(config._repo_root(here), here)
 
 
 if __name__ == "__main__":
