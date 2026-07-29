@@ -198,7 +198,16 @@ empty until you have content (e.g. your own private interview-prep skill).
 
    It **always** installs `automation/hooks/pre-commit` and `automation/hooks/pre-push` into `.git/hooks`
    (never clobbering a foreign hook — it warns instead), and re-running is a safe
-   no-op. The private skill, linked `references_private/` directories, and personal `*.yaml`
+   no-op. When `private/` is mounted it also installs the OVERLAY's own hooks into
+   `private/.git/hooks/`, as symlinks to `automation/hooks/overlay-pre-commit` and
+   `automation/hooks/overlay-pre-push`. Both scripts are tracked **here**, in the public
+   repo, so they stay reviewed and versioned and the overlay needs no tracked code of its
+   own. `overlay-pre-commit` rejects a staged raw-data-layer store payload
+   (`<data_root>/*/{raw,derived,state}`, resolved from `config.data_root()`) and a staged
+   set larger than any commit in that repo's history (500 files / 128 MiB);
+   `overlay-pre-push` refuses any destination that is not the private remote the repo
+   configures (`jobhunt.privateRemote`, else `remote.origin.url`) and fails closed when it
+   cannot determine one. The private skill, linked `references_private/` directories, and personal `*.yaml`
    profiles are git-ignored in the public repo, so they stay out of public history while remaining
    discoverable whenever the overlay is mounted. (The
    `skills/job-search/profiles/` folder keeps only `example.yaml`, `_TEMPLATE.yaml`, and

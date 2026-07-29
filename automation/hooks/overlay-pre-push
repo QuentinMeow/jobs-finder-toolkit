@@ -1,0 +1,113 @@
+#!/bin/sh
+# Pre-push guard for the PRIVATE OVERLAY repo (the one mounted at ./private/).
+#
+# Tracked in the public toolkit, installed into the overlay's .git/hooks/ as a
+# symlink by automation/bootstrap_overlay.py.
+#
+# One job: this repo's contents (real name, employers, salaries, mailbox
+# evidence, interview material) may only ever reach the PRIVATE destination it
+# was cloned from. The public repo's pre-push asks "is this tree publishable?";
+# this one asks the opposite question — "is this destination the private one?" —
+# because nothing in this tree is publishable.
+#
+# The expected destination is DERIVED from this repo's own configuration, never
+# hardcoded:
+#     git config jobhunt.privateRemote   (explicit pin; wins when set)
+#     remote.origin.url                  (the URL this clone came from)
+# If neither yields a URL the hook FAILS CLOSED: an undeterminable expectation
+# cannot certify a destination.
+#
+# Then, in order:
+#   1. destination URL != expected URL            -> REFUSE
+#   2. gh says the destination repo is PUBLIC     -> REFUSE
+#   3. gh unavailable / cannot verify             -> WARN, allow (the URL identity
+#                                                    check above already held)
+#
+# Pin a second legitimate destination (a mirror) with:
+#     git config jobhunt.privateRemote <url>
+# Bypass in an emergency with:  git push --no-verify
+set -e
+
+remote_name="$1"
+remote_url="$2"
+
+say() { echo "overlay pre-push: $*"; }
+die() { echo "overlay pre-push: $*" >&2; }
+
+# ── normalise a git URL to <host>/<owner>/<repo> for comparison ──────────────
+# git@github.com:o/r.git, https://github.com/o/r, ssh://git@github.com/o/r.git
+# and /abs/path/to/repo.git all reduce to a stable key.
+normalise() {
+    printf '%s\n' "$1" \
+        | sed -E 's#^[a-z+]+://##; s#^[^/@]*@##; s#:([^0-9/][^/]*)#/\1#; s#\.git/?$##; s#/+$##' \
+        | tr 'A-Z' 'a-z'
+}
+
+# ── 1. Derive the expected destination from the repo's own configuration ─────
+expected_url="$(git config --get jobhunt.privateRemote 2>/dev/null || true)"
+expected_src="git config jobhunt.privateRemote"
+if [ -z "$expected_url" ]; then
+    expected_url="$(git config --get remote.origin.url 2>/dev/null || true)"
+    expected_src="remote.origin.url"
+fi
+if [ -z "$expected_url" ]; then
+    die "REFUSING push — cannot determine this repo's private remote."
+    die "neither 'jobhunt.privateRemote' nor 'remote.origin.url' is set, so there is"
+    die "nothing to check the destination against. This repo holds real identity data;"
+    die "an unverifiable destination is treated as a hostile one."
+    die "set the expected destination with:  git config jobhunt.privateRemote <url>"
+    exit 1
+fi
+
+if [ -z "$remote_url" ]; then
+    die "REFUSING push — git supplied no destination URL to verify (remote '$remote_name')."
+    exit 1
+fi
+
+if [ "$(normalise "$remote_url")" != "$(normalise "$expected_url")" ]; then
+    die "REFUSING push — destination is NOT this overlay's private remote."
+    die "    pushing to : $remote_url"
+    die "    expected   : $expected_url  (from $expected_src)"
+    die "this repo's contents are never publishable. If the new destination is a"
+    die "legitimate private mirror, pin it first:"
+    die "    git config jobhunt.privateRemote $remote_url"
+    exit 1
+fi
+say "destination matches this repo's private remote (from $expected_src)."
+
+# ── 2. Confirm the destination really is private, when we can ────────────────
+owner_repo=""
+case "$remote_url" in
+    *github.com[:/]*)
+        owner_repo=$(printf '%s\n' "$remote_url" \
+            | sed -E 's#^.*github\.com[:/]+##; s#\.git$##; s#/$##')
+        ;;
+esac
+
+if [ -z "$owner_repo" ]; then
+    say "WARNING — non-GitHub destination; visibility cannot be verified. Allowing on"
+    say "  the URL match alone. Make sure '$remote_url' is private."
+elif ! command -v gh >/dev/null 2>&1; then
+    say "WARNING — 'gh' not found; cannot verify that '$owner_repo' is private."
+    say "  Allowing on the URL match alone. Install gh for the stronger check."
+else
+    is_private=$(gh repo view "$owner_repo" --json isPrivate --jq '.isPrivate' 2>/dev/null || echo "")
+    case "$is_private" in
+        true)
+            say "destination '$owner_repo' is PRIVATE (verified via gh)."
+            ;;
+        false)
+            die "REFUSING push — destination '$owner_repo' is a PUBLIC repository."
+            die "this overlay holds real identity data and must never be pushed to a"
+            die "public remote, even one it was cloned from. Make the repo private, or"
+            die "re-point the remote, before pushing."
+            exit 1
+            ;;
+        *)
+            say "WARNING — could not verify visibility of '$owner_repo' via gh (no auth /"
+            say "  network?). Allowing on the URL match alone."
+            ;;
+    esac
+fi
+
+say "OK"

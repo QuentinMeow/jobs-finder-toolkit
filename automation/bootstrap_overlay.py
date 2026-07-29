@@ -13,7 +13,10 @@ What it does:
       into their canonical toolkit paths.
   (b) Always: install the tracked git hooks (``automation/hooks/pre-commit`` /
       ``automation/hooks/pre-push``) into ``.git/hooks`` — only when missing or already
-      pointing there; a foreign hook is left alone with a warning.
+      pointing there; a foreign hook is left alone with a warning. When the overlay
+      is mounted, its OWN ``.git/hooks`` gets ``automation/hooks/overlay-pre-commit``
+      / ``overlay-pre-push`` the same way, so the overlay is guarded without having
+      to track a single file of its own.
   (c) If ``config.yaml`` is missing while the overlay is mounted: print a reminder
       to create it (never auto-written).
 
@@ -80,9 +83,10 @@ def _apply_symlink(link: Path, target: str, status: str) -> None:
     os.symlink(target, link)
 
 
-def _git_hooks_dir() -> Path | None:
+def _git_hooks_dir(repo: Path | None = None) -> Path | None:
     """Resolve ``.git/hooks`` for a normal repo, a worktree, or a submodule."""
-    git = REPO_ROOT / ".git"
+    repo = REPO_ROOT if repo is None else repo
+    git = repo / ".git"
     if git.is_dir():
         return git / "hooks"
     if git.is_file():  # worktree/submodule: ".git" is "gitdir: <path>"
@@ -93,9 +97,30 @@ def _git_hooks_dir() -> Path | None:
         if line.startswith("gitdir:"):
             gitdir = Path(line[len("gitdir:"):].strip())
             if not gitdir.is_absolute():
-                gitdir = (REPO_ROOT / gitdir).resolve()
+                gitdir = (repo / gitdir).resolve()
             return gitdir / "hooks"
     return None
+
+
+# hook filename in .git/hooks -> tracked source under automation/hooks/.
+TOOLKIT_HOOKS = {"pre-commit": "pre-commit", "pre-push": "pre-push"}
+OVERLAY_HOOKS = {"pre-commit": "overlay-pre-commit", "pre-push": "overlay-pre-push"}
+
+
+def _install_hooks(hooks_dir: Path, sources: dict[str, str], label: str,
+                   check: bool, results: list[tuple[str, str]]) -> None:
+    """Symlink each tracked hook into ``hooks_dir``; never clobber a foreign one."""
+    for name, source in sources.items():
+        src = REPO_ROOT / "automation/hooks" / source
+        if not src.is_file():
+            results.append((SKIP, f"automation/hooks/{source} not present — skipping"))
+            continue
+        link = hooks_dir / name
+        # Foreign hooks are never overwritten: only create-if-missing or no-op.
+        status, msg, target = _plan_symlink(link, src, allow_replace_symlink=False)
+        results.append((status, f"[{label}] {msg}"))
+        if status == CREATE and not check:
+            _apply_symlink(link, target, status)
 
 
 def _overlay_links(private: Path) -> list[tuple[Path, Path]]:
@@ -137,22 +162,24 @@ def bootstrap(check: bool) -> int:
     else:
         results.append((SKIP, "private/ overlay not mounted — no overlay symlinks to wire"))
 
-    # (b) Git hooks — always.
+    # (b) Git hooks — always for this repo, plus the overlay's own when mounted.
     hooks_dir = _git_hooks_dir()
     if hooks_dir is None:
         results.append((WARN, ".git not found — skipping git-hook install"))
     else:
-        for name in ("pre-commit", "pre-push"):
-            src = REPO_ROOT / "automation/hooks" / name
-            if not src.is_file():
-                results.append((SKIP, f"automation/hooks/{name} not present — skipping"))
-                continue
-            link = hooks_dir / name
-            # Foreign hooks are never overwritten: only create-if-missing or no-op.
-            status, msg, target = _plan_symlink(link, src, allow_replace_symlink=False)
-            results.append((status, msg))
-            if status == CREATE and not check:
-                _apply_symlink(link, target, status)
+        _install_hooks(hooks_dir, TOOLKIT_HOOKS, "toolkit", check, results)
+
+    # The overlay is a separate git repo about to hold most of the owner's
+    # commits, and it tracks no code of its own — so its hooks are these tracked
+    # scripts, symlinked in. Installing a symlink into private/.git/hooks/ is hook
+    # installation, not a write to owner data: nothing tracked in the overlay is
+    # created, changed, or removed.
+    if private.is_dir():
+        overlay_hooks_dir = _git_hooks_dir(private)
+        if overlay_hooks_dir is None:
+            results.append((WARN, "private/.git not found — skipping overlay git-hook install"))
+        else:
+            _install_hooks(overlay_hooks_dir, OVERLAY_HOOKS, "overlay", check, results)
 
     # (c) config.yaml reminder (never auto-written).
     if private.is_dir() and not (REPO_ROOT / "config.yaml").exists():

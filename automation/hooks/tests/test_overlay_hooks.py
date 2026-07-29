@@ -1,0 +1,270 @@
+"""Tests for the PRIVATE-OVERLAY git hooks (automation/hooks/overlay-*).
+
+Run with (from the repo root):
+    .venv/bin/python -m unittest discover \
+        -s automation/hooks/tests -t automation/hooks/tests
+
+The hooks are tracked here and symlinked into the overlay's ``.git/hooks/`` by
+``automation/bootstrap_overlay.py``. Every test builds a throwaway git repo that
+stands in for the overlay — the real ``private/`` repo is never staged, committed
+or otherwise written to. ``gh`` is stubbed on PATH so the remote-visibility
+branches run offline and deterministically.
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PRE_COMMIT = REPO_ROOT / "automation/hooks/overlay-pre-commit"
+PRE_PUSH = REPO_ROOT / "automation/hooks/overlay-pre-push"
+
+PRIVATE_URL = "git@github.com:owner/overlay-private.git"
+OTHER_URL = "git@github.com:someone/else.git"
+
+
+class HookTestCase(unittest.TestCase):
+    """A throwaway git repo standing in for the overlay."""
+
+    def setUp(self) -> None:
+        self.repo = Path(tempfile.mkdtemp(prefix="overlay-hook-")).resolve()
+        self.addCleanup(shutil.rmtree, self.repo, ignore_errors=True)
+        self.bin = self.repo / ".stub-bin"
+        self.bin.mkdir()
+        # The hook resolves an interpreter as <toolkit>/.venv/bin/python, else the
+        # first python3/python on PATH meeting the 3.11 floor. A checkout without
+        # a .venv therefore depends on whatever PATH happens to offer — CI's
+        # setup-python gives 3.12, but a bare worktree on a machine whose system
+        # python3 is older resolves nothing and every test below fails on the
+        # interpreter instead of on what it means to assert. Pin PATH's python3 to
+        # the interpreter running these tests: the hook's own resolution logic is
+        # still what runs, it just gets a deterministic answer.
+        #
+        # An exec WRAPPER, not a symlink: a venv interpreter reached through a
+        # symlink outside the venv computes sys.prefix from the resolved path and
+        # loses its own site-packages (observed: `import yaml` fails). exec'ing it
+        # by its real path keeps the venv intact.
+        shim = self.bin / "python3"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        shim.chmod(0o755)
+        self.env = dict(os.environ)
+        self.env.update({
+            "PATH": f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}",
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+            "HOME": str(self.repo),
+        })
+        self.env.pop("JOBHUNT_OVERLAY_MAX_FILES", None)
+        self.env.pop("JOBHUNT_OVERLAY_MAX_BYTES", None)
+        self.git("init", "-q", ".")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "Test")
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+    def git(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(("git", *args), cwd=self.repo, env=self.env,
+                              capture_output=True, text=True, check=True)
+
+    def write(self, rel: str, text: str = "x\n") -> Path:
+        p = self.repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    def install(self, source: Path, name: str) -> Path:
+        """Symlink a hook in exactly as bootstrap_overlay.py would."""
+        link = self.repo / ".git/hooks" / name
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(source)
+        return link
+
+    def stub_gh(self, is_private: str) -> None:
+        """A fake ``gh`` so the visibility branches run offline."""
+        gh = self.bin / "gh"
+        gh.write_text(f"#!/bin/sh\necho {is_private}\n", encoding="utf-8")
+        gh.chmod(0o755)
+
+    def run_hook(self, link: Path, *args: str, **env) -> subprocess.CompletedProcess:
+        e = dict(self.env)
+        e.update({k: str(v) for k, v in env.items()})
+        return subprocess.run([str(link), *args], cwd=self.repo, env=e,
+                              capture_output=True, text=True)
+
+
+class TestOverlayPreCommit(HookTestCase):
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.write(".gitignore", "data/*/raw/\ndata/*/derived/\ndata/email/state/\n")
+        self.write("README.md", "seed\n")
+        self.write("data/jobs/state/cursors.yaml", "cursor: 1\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "seed")
+        self.hook = self.install(PRE_COMMIT, "pre-commit")
+        self.env["JOBHUNT_DATA_ROOT"] = str(self.repo / "data")
+
+    def test_ordinary_staged_set_passes(self) -> None:
+        self.write("applications/notes.md")
+        self.git("add", "applications/notes.md")
+        r = self.run_hook(self.hook)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("OK", r.stdout)
+
+    def test_raw_and_derived_payloads_are_refused(self) -> None:
+        self.write("data/jobs/raw/page-0001.json", "{}\n")
+        self.write("data/jobs/derived/postings.jsonl", "{}\n")
+        self.git("add", "-f", "data/jobs/raw/page-0001.json",
+                 "data/jobs/derived/postings.jsonl")
+        r = self.run_hook(self.hook)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("STORE payload path(s)", r.stderr)
+        self.assertIn("data/jobs/raw/page-0001.json", r.stderr)
+        self.assertIn("data/jobs/derived/postings.jsonl", r.stderr)
+
+    def test_ignored_state_zone_force_added_is_refused(self) -> None:
+        """data/email/state is .gitignore'd: only `git add -f` puts it in the index."""
+        self.write("data/email/state/delta.json", "{}\n")
+        self.git("add", "-f", "data/email/state/delta.json")
+        r = self.run_hook(self.hook)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("data/email/state/delta.json", r.stderr)
+
+    def test_permitted_state_zone_passes(self) -> None:
+        """data/jobs/state is tracked by owner decision — never blocked."""
+        self.write("data/jobs/state/build-ledger.jsonl", "{}\n")
+        self.git("add", "data/jobs/state/build-ledger.jsonl")
+        self.assertEqual(self.run_hook(self.hook).returncode, 0)
+
+    def test_already_tracked_payload_update_passes(self) -> None:
+        """The guard can never block a repeat of a commit already in history."""
+        self.write("data/jobs/state/cursors.yaml", "cursor: 2\n")
+        self.git("add", "data/jobs/state/cursors.yaml")
+        self.assertEqual(self.run_hook(self.hook).returncode, 0)
+
+    def test_file_count_threshold(self) -> None:
+        for i in range(4):
+            self.write(f"applications/bulk/f{i}.md")
+        self.git("add", "applications/bulk")
+        ok = self.run_hook(self.hook, JOBHUNT_OVERLAY_MAX_FILES=4)
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+        bad = self.run_hook(self.hook, JOBHUNT_OVERLAY_MAX_FILES=3)
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn("larger than any legitimate commit", bad.stderr)
+
+    def test_byte_threshold(self) -> None:
+        self.write("applications/blob.bin", "0" * 5000)
+        self.git("add", "applications/blob.bin")
+        ok = self.run_hook(self.hook, JOBHUNT_OVERLAY_MAX_BYTES=5000)
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+        bad = self.run_hook(self.hook, JOBHUNT_OVERLAY_MAX_BYTES=4999)
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn("larger than any legitimate commit", bad.stderr)
+
+    def test_default_thresholds_clear_the_repos_biggest_real_commit(self) -> None:
+        """The documented limits sit above the measured historical maximum."""
+        text = PRE_COMMIT.read_text(encoding="utf-8")
+        self.assertIn("JOBHUNT_OVERLAY_MAX_FILES:-500", text)
+        self.assertIn("JOBHUNT_OVERLAY_MAX_BYTES:-134217728", text)
+        self.assertGreater(500, 291)                 # max files ever committed
+        self.assertGreater(134217728, 76877876)      # max bytes ever committed
+
+    def test_unreachable_toolkit_fails_closed(self) -> None:
+        """A copied (not symlinked) hook cannot find the toolkit — it must refuse."""
+        copied = self.repo / ".git/hooks/pre-commit-copy"
+        shutil.copy2(PRE_COMMIT, copied)
+        self.write("applications/notes.md")
+        self.git("add", "applications/notes.md")
+        r = self.run_hook(copied)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("cannot locate the toolkit", r.stderr)
+
+    def test_reports_the_reconciler_skip_rather_than_staying_silent(self) -> None:
+        self.write("applications/notes.md")
+        self.git("add", "applications/notes.md")
+        r = self.run_hook(self.hook)
+        self.assertIn("no private-scope reconciler applies", r.stdout)
+
+
+class TestOverlayPrePush(HookTestCase):
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.hook = self.install(PRE_PUSH, "pre-push")
+        self.stub_gh("true")
+
+    def test_no_configured_remote_fails_closed(self) -> None:
+        r = self.run_hook(self.hook, "origin", PRIVATE_URL)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("cannot determine this repo's private remote", r.stderr)
+
+    def test_matching_origin_passes(self) -> None:
+        self.git("remote", "add", "origin", PRIVATE_URL)
+        r = self.run_hook(self.hook, "origin", PRIVATE_URL)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("is PRIVATE (verified via gh)", r.stdout)
+
+    def test_url_shapes_normalise(self) -> None:
+        self.git("remote", "add", "origin", PRIVATE_URL)
+        r = self.run_hook(self.hook, "origin",
+                          "https://github.com/Owner/overlay-private")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_other_destination_is_refused(self) -> None:
+        self.git("remote", "add", "origin", PRIVATE_URL)
+        r = self.run_hook(self.hook, "upstream", OTHER_URL)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("NOT this overlay's private remote", r.stderr)
+
+    def test_public_destination_is_refused_even_when_it_is_origin(self) -> None:
+        self.git("remote", "add", "origin", PRIVATE_URL)
+        self.stub_gh("false")
+        r = self.run_hook(self.hook, "origin", PRIVATE_URL)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("is a PUBLIC repository", r.stderr)
+
+    def test_explicit_pin_wins_over_origin(self) -> None:
+        self.git("remote", "add", "origin", OTHER_URL)
+        self.git("config", "jobhunt.privateRemote", PRIVATE_URL)
+        refused = self.run_hook(self.hook, "origin", OTHER_URL)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("jobhunt.privateRemote", refused.stderr)
+        allowed = self.run_hook(self.hook, "origin", PRIVATE_URL)
+        self.assertEqual(allowed.returncode, 0, allowed.stdout + allowed.stderr)
+
+    def test_empty_destination_url_is_refused(self) -> None:
+        self.git("remote", "add", "origin", PRIVATE_URL)
+        r = self.run_hook(self.hook, "origin", "")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no destination URL", r.stderr)
+
+    def test_non_github_destination_warns_but_allows_on_url_match(self) -> None:
+        url = "git@git.example.com:owner/overlay.git"
+        self.git("remote", "add", "origin", url)
+        r = self.run_hook(self.hook, "origin", url)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("visibility cannot be verified", r.stdout)
+
+
+class TestBootstrapWiring(unittest.TestCase):
+    """bootstrap_overlay.py is what puts these hooks in private/.git/hooks/."""
+
+    def test_overlay_hooks_are_declared_and_executable(self) -> None:
+        import sys
+        sys.path.insert(0, str(REPO_ROOT / "automation"))
+        import bootstrap_overlay  # noqa: E402
+        self.assertEqual(bootstrap_overlay.OVERLAY_HOOKS,
+                         {"pre-commit": "overlay-pre-commit",
+                          "pre-push": "overlay-pre-push"})
+        for name in bootstrap_overlay.OVERLAY_HOOKS.values():
+            path = REPO_ROOT / "automation/hooks" / name
+            self.assertTrue(path.is_file(), f"{name} missing")
+            self.assertTrue(os.access(path, os.X_OK), f"{name} is not executable")
+
+
+if __name__ == "__main__":
+    unittest.main()

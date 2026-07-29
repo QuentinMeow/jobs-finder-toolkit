@@ -106,7 +106,7 @@ The canonical sources live in `automation/shared/`; `automation/vendoring/sync_v
 regenerates the byte-identical `_vendor/` copies, and its `--check` mode (run by the
 pre-commit hook and CI) fails on any drift. Edit the canonical source, never a copy.
 (This is "Approach 2" of the historical design exploration in
-`docs/design/skill-script-sharing/`.)
+`design/skill-script-sharing/`.)
 
 Skills are discovered by listing `skills/` — any AI agent that reads
 `AGENTS.md` finds them there. `.claude/skills/` and `.cursor/skills/` are
@@ -173,6 +173,7 @@ the leak guard on push.
 | `automation/metrics/` | Opt-in local metrics hooks + the instruction-file size budget (`instruction_budget.py --strict`) |
 | `automation/publish/` | Leak guard + exporter (the repo's privacy defenses) |
 | `evals/` | Per-skill canary evals gating skill-instruction changes (see `evals/README.md`) |
-| `hooks/` | Tracked git hooks: pre-commit (staged-index leak guard + staged-`private/` reject, drift, compile, budget, reconciler), pre-push (leak guard, armed) |
+| `automation/hooks/` | Tracked git hooks: pre-commit (staged-index leak guard + staged-`private/` reject, drift, compile, budget, reconciler), pre-push (leak guard, armed) |
 | `AGENTS.md` | The agent-facing contract: guardrails, conventions, memory map |
-| `docs/` | Human-facing design docs (this file, `PRIVATE_OVERLAY.md`, `METRICS.md`, historical `design/`) |
+| `handbook/` | Human-facing operating docs (this file, `handbook/private-overlay.md`, `handbook/metrics.md`) |
+| `design/` | Design programs — one folder per family (`design/skill-script-sharing/`, `design/raw-data-layer/`, …) |

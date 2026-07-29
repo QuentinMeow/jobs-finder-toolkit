@@ -81,8 +81,18 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 .venv/bin/python automation/vendoring/sync_vendored.py --check
 
 # Install the git hooks once (pre-commit: staged-index leak guard + staged-private/
-# reject + drift check + compileall; pre-push: the armed leak guard)
+# reject + drift check + compileall; pre-push: the armed leak guard). When the
+# overlay is mounted this also installs ITS hooks into private/.git/hooks/ —
+# automation/hooks/overlay-pre-commit (store-payload + staged-set-size guard) and
+# overlay-pre-push (destination must be the configured private remote).
 python automation/bootstrap_overlay.py
+
+# Reconciler by hand. Plain --check no-ops on a process folder that is absent (the
+# published export ships none of message-queue/, tasks/, memory/, roadmap/,
+# history/). --require-roots is the maintainer-checkout assertion that they all
+# exist; the pre-commit hook adds it automatically when private/ is mounted.
+.venv/bin/python automation/reconcile/reconcile.py --check
+.venv/bin/python automation/reconcile/reconcile.py --check --require-roots
 
 # Leak guard by hand. It refuses to run unarmed (exit 2) — a checkout with no real
 # config.yaml identity adds --allow-unarmed to run the token-independent checks.

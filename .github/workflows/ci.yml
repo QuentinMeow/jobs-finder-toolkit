@@ -63,8 +63,22 @@ jobs:
 
       # 2b. Process-layer invariants: queue/task/memory schemas, memory index,
       #     handovers, roadmap freshness (single source of truth: templates/).
+      #     NOTE: deliberately WITHOUT --require-roots. Every check no-ops when its
+      #     folder is absent so the published export (which ships none of
+      #     message-queue/, tasks/, memory/, roadmap/, history/) stays green;
+      #     --require-roots is a maintainer-checkout assertion and lives in the
+      #     pre-commit hook only.
       - name: Reconciler (process-layer schemas)
         run: python automation/reconcile/reconcile.py --check
+
+      # 2c. Maintenance-tooling unit tests: the reconciler's root handling and
+      #     retry filing, the gardener routines (link/reference verification,
+      #     skill drift, store report), and the private-overlay git hooks.
+      - name: Reconciler + gardener + overlay-hook unit tests
+        run: |
+          python -m unittest discover automation/reconcile/tests
+          python -m unittest discover automation/maintenance/gardener/tests
+          python -m unittest discover automation/hooks/tests
 
       # 3. Render + validate the worked example using the fake "Jordan Rivers"
       #    config.example.yaml. render.py auto-runs check.py (locked fields, real

@@ -9,16 +9,22 @@ guarantee — it runs from the pre-commit hook and CI, and violations can be fil
 as repair items the next session picks up.
 
 Usage:
-    reconcile.py --check                 # exit 1 on findings, print them
-    reconcile.py --check --file-retries  # also (re)file findings into
-                                         #   message-queue/needs-agent/retries/
-                                         #   and GC cleared reconciler items
-    reconcile.py --fix-index             # regenerate memory/index.md
+    reconcile.py --check                  # exit 1 on findings, print them
+    reconcile.py --check --file-retries   # also (re)file findings into
+                                          #   message-queue/needs-agent/retries/
+                                          #   and GC cleared reconciler items
+    reconcile.py --check --require-roots  # maintainer checkout: ALSO fail when a
+                                          #   process root is missing (see below)
+    reconcile.py --fix-index              # regenerate memory/index.md
 
 Design rules:
   * stdlib only — must run on a bare clone;
   * every check NO-OPS if its folder is absent, so any subset of the
-    process folders can be adopted or deleted;
+    process folders can be adopted or deleted — and because the PUBLIC export
+    ships none of message-queue/, tasks/, memory/, roadmap/, history/, closing
+    that no-op would turn the exported repo's CI red. ``--require-roots`` is the
+    opt-in maintainer-checkout assertion that they are all present; it is wired
+    into the pre-commit hook, never into CI;
   * checks validate the PUBLIC tree only (the private overlay mirror is its
     own repo with its own lifecycle);
   * to change a file format, change ``templates/`` AND the matching check
@@ -266,6 +272,36 @@ CHECKS = {
     "skill-manifests": check_skill_manifests,
 }
 
+# The folder whose absence makes each check no-op (see the module docstring: that
+# no-op is DELIBERATE — the published tree ships none of message-queue/, tasks/,
+# memory/, roadmap/ or history/, so closing it would turn the exported repo's CI
+# red). --require-roots is the maintainer-checkout opposite: assert they are all
+# here, so a botched move cannot quietly disarm a check. Plain --check is
+# unchanged and still no-ops.
+CHECK_ROOTS = {
+    "queue-schema": "message-queue",
+    "task-structure": "tasks",
+    "memory-schema": "memory",
+    "memory-index": "memory",
+    "handover-present": "history/conversations",
+    "roadmap-fresh": "roadmap",
+    "skill-manifests": "skills",
+}
+
+
+def check_required_roots() -> list[Finding]:
+    """--require-roots only: every root a check silently no-ops without exists."""
+    findings: list[Finding] = []
+    for root in sorted(set(CHECK_ROOTS.values())):
+        if (REPO_ROOT / root).is_dir():
+            continue
+        checks = ", ".join(sorted(c for c, r in CHECK_ROOTS.items() if r == root))
+        findings.append(Finding(
+            "require-roots", root,
+            f"missing — {checks} would silently no-op (plain --check tolerates this "
+            f"by design; --require-roots does not)"))
+    return findings
+
 
 # ── retry filing ─────────────────────────────────────────────────────────────
 
@@ -275,8 +311,17 @@ def _retry_name(f: Finding) -> str:
 
 
 def file_retries(findings: list[Finding], today: str) -> None:
-    """(Re)file one retry item per finding; GC cleared reconciler-authored items."""
-    RETRIES_DIR.mkdir(parents=True, exist_ok=True)
+    """(Re)file one retry item per finding; GC cleared reconciler-authored items.
+
+    The queue folder is created only when there is something to file. It used to
+    be mkdir'd unconditionally, so a clean run in a repo that had deliberately
+    deleted ``message-queue/`` silently re-created the queue it had dropped —
+    which then also re-armed ``queue-schema`` on a tree that opted out of it.
+    """
+    if not findings and not RETRIES_DIR.is_dir():
+        return  # nothing to file, and no queue to GC — do not conjure one
+    if findings:
+        RETRIES_DIR.mkdir(parents=True, exist_ok=True)
     wanted = {_retry_name(f): f for f in findings}
     for f in findings:
         path = RETRIES_DIR / _retry_name(f)
@@ -304,6 +349,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="run all checks; exit 1 on findings")
     parser.add_argument("--file-retries", action="store_true",
                         help="with --check: file findings into needs-agent/retries/ and GC cleared items")
+    parser.add_argument("--require-roots", action="store_true",
+                        help="maintainer checkout only: also assert every process root exists "
+                             "(plain --check no-ops on a missing root, by design)")
     parser.add_argument("--fix-index", action="store_true", help="regenerate memory/index.md")
     parser.add_argument("--today", default=None,
                         help="override the Filed date for retry items (YYYY-MM-DD)")
@@ -316,11 +364,15 @@ def main(argv: list[str] | None = None) -> int:
         if not args.check:
             return 0
 
-    if not args.check and not args.fix_index:
+    if not args.check and not args.fix_index and not args.require_roots:
         parser.print_help()
         return 2
 
     findings: list[Finding] = []
+    n_checks = len(CHECKS)
+    if args.require_roots:
+        findings.extend(check_required_roots())
+        n_checks += 1
     for name, fn in CHECKS.items():
         findings.extend(fn())
 
@@ -334,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
         for f in findings:
             print(f"  {f}")
         return 1
-    print(f"reconcile: OK ({len(CHECKS)} checks clean)")
+    print(f"reconcile: OK ({n_checks} checks clean)")
     return 0
 
 

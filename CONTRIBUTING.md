@@ -137,7 +137,7 @@ your own overlay from scratch):
 
 ## Extra-careful review areas
 
-Changes under **`automation/publish/`**, **`.github/`**, and **`hooks/`** are the
+Changes under **`automation/publish/`**, **`.github/`**, and **`automation/hooks/`** are the
 repo's leak defenses (the guard, the exporter, CI, and the pre-push gate). PRs
 touching them get extra-careful review — keep those changes small, well-explained,
 and covered by the tests in `automation/publish/tests/`.
