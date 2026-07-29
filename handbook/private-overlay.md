@@ -38,7 +38,10 @@ git-ignored in the public repo, your real data is never committed to the public 
 - **Guard tokens are config-derived.** `automation/publish/check_public.py` hardcodes no
   identity; it derives its personal-token set from `config.yaml`, an optional
   `private/leak_tokens.txt`, and the `JOBHUNT_PERSONAL_TOKENS` env var, and scans both
-  text and `.docx`/`.pdf` content.
+  text and `.docx`/`.pdf` content. Only a real `config.yaml` identity or
+  `JOBHUNT_PERSONAL_TOKENS` **arms** it; `leak_tokens.txt` adds tokens but cannot arm it,
+  and an unarmed guard exits 2 instead of reporting "safe to publish" (`--allow-unarmed`
+  runs the token-independent checks knowingly).
 - Skills are discovered by listing `skills/` (see `AGENTS.md`). The private
   coding-interview skills appear there via git-ignored symlinks that
   `automation/bootstrap_overlay.py` creates when the overlay is mounted — so they are
@@ -218,9 +221,13 @@ private skill, `private/` path, tracked `references_private/` file, or
 personal-identity token (in a path, text content, or extracted `.docx`/`.pdf`
 content) is tracked. Its tokens are derived at runtime from `config.yaml` +
 `private/leak_tokens.txt` + `JOBHUNT_PERSONAL_TOKENS` (nothing hardcoded), so
-with your overlay mounted it screens for **your** identity. It runs three times
-over: blocking in CI, in the pre-push hook before anything reaches a public
-remote, and by hand any time:
+with your overlay mounted it screens for **your** identity — and it refuses to
+run (exit 2) when no identity token resolved at all, because a guard that cannot
+see your name cannot certify a tree. It runs four times over: in the pre-commit
+hook over the **staged index** (with `--allow-unarmed`, alongside a hard reject of
+any staged `private/` path), blocking in CI, in the pre-push hook before anything
+reaches a public remote (armed — no escape hatch but `JOBHUNT_ALLOW_PUSH=1`), and
+by hand any time:
 
 ```bash
 .venv/bin/python automation/publish/check_public.py

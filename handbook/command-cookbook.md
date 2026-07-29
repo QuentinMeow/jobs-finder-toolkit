@@ -80,8 +80,14 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 .venv/bin/python automation/vendoring/sync_vendored.py
 .venv/bin/python automation/vendoring/sync_vendored.py --check
 
-# Install the git hooks once (pre-commit drift check + compileall, and pre-push)
+# Install the git hooks once (pre-commit: staged-index leak guard + staged-private/
+# reject + drift check + compileall; pre-push: the armed leak guard)
 python automation/bootstrap_overlay.py
+
+# Leak guard by hand. It refuses to run unarmed (exit 2) — a checkout with no real
+# config.yaml identity adds --allow-unarmed to run the token-independent checks.
+.venv/bin/python automation/publish/check_public.py
+.venv/bin/python automation/publish/check_public.py --staged   # what a commit would add
 
 # Install dependencies
 pip install -r requirements.txt

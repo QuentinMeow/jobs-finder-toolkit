@@ -263,6 +263,28 @@ def _print_manifest(dest_root: Path, copied: list[str], skipped: list[tuple[str,
 
 
 def export(dest: Path, git_init: bool, force: bool) -> int:
+    # Refuse to export from an UNARMED checkout. FIRST — before --force deletes
+    # the destination — so a refusal costs the caller nothing.
+    #
+    # The guard we run against the copied tree is armed through
+    # ``JOBHUNT_PERSONAL_TOKENS``, which we set from the UNION below. A checkout
+    # holding private/leak_tokens.txt but no real config.yaml therefore forwards a
+    # NON-EMPTY set, so that guard run would look armed while knowing none of the
+    # owner's name, email, or handles — the export's final gate would pass without
+    # ever screening for the identity. Gate on the identity set, exactly as
+    # ``check_public.main`` does.
+    if not check_public.identity_tokens():
+        print("error: refusing to export — the leak guard is UNARMED in this checkout.\n"
+              "       Zero identity tokens resolved, so the export's final guard run would\n"
+              "       screen against no real identity and report the tree safe to publish.",
+              file=sys.stderr)
+        for line in check_public.unarmed_report():
+            print(line, file=sys.stderr)
+        print("       Export only from a maintainer checkout whose config.yaml carries the\n"
+              f"       real candidate identity, or set ${check_public.TOKENS_ENV_VAR}.",
+              file=sys.stderr)
+        return 2
+
     dest = dest.resolve()
     if dest == REPO_ROOT or dest in REPO_ROOT.parents:
         print(f"error: refusing to export into the repo root or an ancestor: {dest}",

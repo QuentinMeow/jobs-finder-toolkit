@@ -173,6 +173,6 @@ the leak guard on push.
 | `automation/metrics/` | Opt-in local metrics hooks + the instruction-file size budget (`instruction_budget.py --strict`) |
 | `automation/publish/` | Leak guard + exporter (the repo's privacy defenses) |
 | `evals/` | Per-skill canary evals gating skill-instruction changes (see `evals/README.md`) |
-| `hooks/` | Tracked git hooks: pre-commit (drift + compile + budget), pre-push (leak guard) |
+| `hooks/` | Tracked git hooks: pre-commit (staged-index leak guard + staged-`private/` reject, drift, compile, budget, reconciler), pre-push (leak guard, armed) |
 | `AGENTS.md` | The agent-facing contract: guardrails, conventions, memory map |
 | `docs/` | Human-facing design docs (this file, `PRIVATE_OVERLAY.md`, `METRICS.md`, historical `design/`) |

@@ -49,7 +49,11 @@ the generic examples otherwise.
 `personal_tokens()`) from the git-ignored `config.yaml` identity, an optional git-ignored
 `private/leak_tokens.txt`, and the `JOBHUNT_PERSONAL_TOKENS` env var — it hardcodes NO
 real identity and scans both text and document-binary (`.docx`/`.pdf`) content. The
-exporter (`export_public.py`) always runs it against the copied tree as the final gate.
+identity-derived half (`identity_tokens()` — a real config plus the env var) is tracked
+separately and **arms** the guard: with zero identity tokens it exits 2 rather than
+passing, since `leak_tokens.txt` alone keeps the union non-empty while the name, email
+and handles are absent. The exporter (`export_public.py`) always runs it against the
+copied tree as the final gate.
 
 **Routing**: skills are discovered by listing `skills/` — the skills table in
 `handbook/repo-map.md` names only the PUBLIC ones that ship in the repo. The private

@@ -116,14 +116,23 @@ jobs:
 
       # 8. Public leak guard — BLOCKING. This is the public toolkit repo, so the
       #    guard must be completely clean (exit 0, zero findings); ANY finding is a
-      #    regression. Armed with the JOBHUNT_PERSONAL_TOKENS repo secret when
-      #    present. Fork PRs receive no secrets, so those runs are tokenless
-      #    (structural + path/private-skill checks only) by design — a clean public
-      #    tree passes without identity tokens.
+      #    regression. The guard now FAILS CLOSED when it has no identity tokens
+      #    (exit 2), so the secret's presence decides how it is invoked:
+      #      * secret present (this repo)  -> armed; a bare run, no escape hatch.
+      #        A run that would have been silently tokenless now turns CI RED.
+      #      * secret absent (fork PRs get no secrets) -> tokenless by design, so
+      #        --allow-unarmed runs the token-INDEPENDENT checks (structural PII,
+      #        path denylist, private-skill/overlay trees, fail-closed binaries).
       - name: Public leak guard (blocking; must be clean on this public repo)
         env:
           JOBHUNT_PERSONAL_TOKENS: ${{ secrets.JOBHUNT_PERSONAL_TOKENS }}
-        run: python automation/publish/check_public.py
+        run: |
+          if [ -n "$JOBHUNT_PERSONAL_TOKENS" ]; then
+            python automation/publish/check_public.py
+          else
+            echo "::warning::JOBHUNT_PERSONAL_TOKENS absent — leak guard runs UNARMED (token-independent checks only)."
+            python automation/publish/check_public.py --allow-unarmed
+          fi
 
   # Independent secret-scanning gate: catches API-key / token / credential shapes
   # across the full history that the identity-token guard does not target.
