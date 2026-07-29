@@ -78,3 +78,15 @@
     diff; the .gitignore rules that used to hide them carried no tokens either. The
     one occurrence of "Canonical" is the English word describing skills/, not the
     company.
+
+- commit: 8b9d5063
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 11
+  digest: sha256:5dbb12b268e24379
+  finding: >-
+    One caught and fixed before the commit landed: a verification file pasted
+    command output containing an absolute home path, which the staged-index leak
+    guard refused. Redacted to <repo-root>. Otherwise clean — the added files are
+    worklogs, verification transcripts and a handover; the only proper nouns are
+    tool and branch names.
