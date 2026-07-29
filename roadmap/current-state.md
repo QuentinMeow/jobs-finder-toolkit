@@ -30,16 +30,20 @@
   migration cutover. Calendar rows lead with the time or action, link to role
   context, and keep machine metadata to one hidden compact line.
 - **Quality gates**: CI runs vendor drift, compileall, example render +
-  validate, four unit suites, store fixture validation, leak guard, and
-  gitleaks; pre-commit mirrors the fast checks + instruction budgets + the
-  reconciler.
+  validate, four unit suites, store fixture validation, the public-change
+  review gate (`review_gate.py --verify-all`), leak guard, and gitleaks;
+  pre-commit mirrors the fast checks + the staged-index leak guard + the
+  review gate + instruction budgets + the reconciler with `--require-roots`.
+  Every public commit now needs a row in
+  `automation/publish/review_ledger.yaml`.
 - **Workspace restructure**: phases 0 (leak guard/config-discovery/pre-push
   fail closed instead of open, `sync_skill_manifests.py` makes `SKILL.md`
-  frontmatter the sole visibility SSOT, widened link checker +
-  `--require-roots`), 3 (public-change review gate,
+  frontmatter the sole visibility SSOT, eleven config accessors, widened link
+  checker + `--require-roots`), 3 (public-change review gate,
   `automation/publish/review_gate.py` + `review_ledger.yaml`), and 4 (the
   eight inbound public→private symlinks deleted; profiles/private-skill
   access now goes through config accessors and git-ignored `.claude/skills`
-  /`.cursor/skills` links) are implemented, open as a stacked PR train
-  (#81–#86), not yet merged. Phases 1, 2, 5–8 not started. See
+  /`.cursor/skills` links) are **merged** (PRs #81–#86, commits
+  `72d45e2`…`7809b4b`). Phases 1, 2, 5–8 not started; their task files carry
+  the re-measured preconditions. See
   `design/workspace-restructure/execution-plan.md`.

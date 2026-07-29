@@ -35,3 +35,6 @@ what moved, what's next, what surprised you.>
   not a symlink, not part of this repo's manifest-generated set).
 - Verified on `chore/workspace-phase-bookkeeping` (based directly on
   `phase-4/remove-inbound-symlinks`) — see `verification.md`.
+
+**2026-07-29 (later session)** — moved `3_in-review/` → `4_done/`: PR #86
+(commits `1b837b7`…`7809b4b`) is merged into `main`. No content change.

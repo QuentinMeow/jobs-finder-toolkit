@@ -41,3 +41,6 @@ what moved, what's next, what surprised you.>
 - Verified on `chore/workspace-phase-bookkeeping` (based on
   `phase-4/remove-inbound-symlinks`, which carries this branch) — see
   `verification.md`.
+
+**2026-07-29 (later session)** — moved `3_in-review/` → `4_done/`: PR #85
+(commits `92abe36`…`97a7303`) is merged into `main`. No content change.
