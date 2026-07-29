@@ -639,11 +639,38 @@ class ExporterEndToEndTests(unittest.TestCase):
                     self.assertTrue(c.startswith("examples/"), c)
 
             # The public .gitignore anchors the overlay mount + private trees.
-            gitignore = (dest / ".gitignore").read_text()
-            for needle in ("private/", "/applications/",
-                           "/interviews/", "/skills/coding-interview/",
-                           "/skills/coding-interview-cleanup/"):
-                self.assertIn(needle, gitignore)
+            # workspace-restructure phase 4 dropped the "/skills/coding-interview/"
+            # and "/skills/coding-interview-cleanup/" needles: nothing private is
+            # placed under skills/ any more, so those rules hid nothing and only
+            # kept alive the idea that a private tree may wear a public name. The
+            # names are NOT retired as a guard — check_public._DENY_TREES still
+            # carries both (test_deny_trees_are_append_only pins that), which is
+            # the layer a `git add -f` cannot override.
+            # Compared against the ACTIVE RULES, not the raw text: the file's own
+            # comments name the retired rules on purpose.
+            rules = {ln.strip() for ln in (dest / ".gitignore").read_text().splitlines()
+                     if ln.strip() and not ln.strip().startswith("#")}
+            for needle in ("private/", "/applications/", "/interviews/"):
+                self.assertIn(needle, rules)
+            for gone in ("/skills/coding-interview/",
+                         "/skills/coding-interview-cleanup/",
+                         "skills/coding-interview",
+                         "skills/coding-interview-cleanup",
+                         "skills/job-search/profiles/*.yaml",
+                         "skills/*/references_private",
+                         "skills/*/references_private/"):
+                self.assertNotIn(gone, rules)
+            self.assertFalse([r for r in rules if r.startswith("!")],
+                             "a negation is back: an ignore glob with negations is "
+                             "what let a personal filename sit under skills/")
+
+            # PHASE 4 INVARIANT: no exported path — file OR symlink — reaches into
+            # the overlay. The private skills' runtime entries under .claude/skills
+            # and .cursor/skills are git-ignored, so `git ls-files` never sees them
+            # and _regenerate_symlinks only writes ../../skills/<public>.
+            inbound = [p.relative_to(dest).as_posix() for p in dest.rglob("*")
+                       if p.is_symlink() and "private/" in os.readlink(p)]
+            self.assertEqual(inbound, [], f"symlinks into the overlay: {inbound}")
 
             # And a fresh directory-tree scan of the export is clean, too.
             scan_result = check_public.scan(root=dest, tokens=[])

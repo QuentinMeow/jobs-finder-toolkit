@@ -24,8 +24,8 @@ Use this skill when the user asks to:
 2. Read your candidate profile (`config.profile_md_path()`) unless the user already provided complete story material.
 3. If the prep is company-specific, read the relevant JD file(s) — `config.applications_root()/<status>/<slug>/source/JD-<job title>.md` (one per posting) — and that folder's `notes.md` if present (the app usually lives in the `4_in_progress/<slug>/` folder by interview time).
 4. Read relevant company-prefixed files in `private/interviews/behavioral/question-bank/`.
-5. **Personalization / private overrides:** if this skill folder has a
-   `references_private/` directory, read every file in it — those candidate-specific
+5. **Personalization / private overrides:** if `config.skill_references_dir()` for this
+   skill exists in the overlay, read every file in it — those candidate-specific
    notes and examples OVERRIDE the generic examples in this SKILL.md. When it is absent
    (public / example mode), use the generic examples here and take all candidate
    specifics from `config` and the profile.

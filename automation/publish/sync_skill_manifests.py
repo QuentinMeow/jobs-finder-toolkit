@@ -26,10 +26,19 @@ order (the file is human-curated and a wholesale reorder makes the diff
 unreviewable); newly-public skills are appended in alphabetical order. Entries
 for skills that are no longer public are dropped.
 
-The symlink trees are managed PER SKILL: a link is created for every public
-skill and removed when it points at a skill that is no longer public, but an
-unrelated entry under ``.claude/skills`` / ``.cursor/skills`` (a third-party
-skill that is not part of this repo) is left alone.
+The symlink trees are managed PER SKILL, and ownership is decided by WHERE A LINK
+POINTS, never by its name. This tool owns exactly the links into
+``../../skills/`` — the tracked, PUBLIC ones. Two other kinds of entry share the
+same directories and are neither reported nor touched:
+
+  * a PRIVATE skill's runtime link, ``-> ../../private/skills/<name>``, created by
+    ``automation/bootstrap_overlay.py`` and git-ignored. Since workspace-restructure
+    phase 4 this is how a private skill reaches the runtime: nothing private is
+    placed under ``skills/`` any more, so ``read_skills()`` sees only public
+    skills and this generator must not treat the overlay entry as drift and
+    delete it (that would silently uninstall the owner's private skills on every
+    reconciler-driven sync);
+  * a third-party skill installed into the same host directory by some other tool.
 
 Usage:
     # Regenerate marketplace.json + both symlink trees from the frontmatter
@@ -59,6 +68,15 @@ MARKETPLACE_REL = ".claude-plugin/marketplace.json"
 # top-level directory is absent, so an agent-specific tree can simply not exist.
 SYMLINK_HOSTS = (".claude/skills", ".cursor/skills")
 SYMLINK_TARGET_PREFIX = "../../skills/"
+
+# A PRIVATE skill's runtime link in the same host dirs, written by
+# ``automation/bootstrap_overlay.py``. Named here only so the ownership boundary
+# is documented in the one module that enumerates those directories; the code
+# needs no special case, because a target under this prefix does not start with
+# ``SYMLINK_TARGET_PREFIX`` and is therefore already unmanaged (see
+# ``_managed_links``). It is asserted by
+# ``automation/publish/tests/test_skill_manifests.py``.
+PRIVATE_SKILL_TARGET_PREFIX = "../../private/skills/"
 
 PUBLIC = "public"
 PRIVATE = "private"
@@ -214,8 +232,11 @@ def _managed_links(host_dir: Path) -> dict[str, str]:
     """Entries under ``host_dir`` this tool owns: symlinks into ``../../skills/``.
 
     An entry that is not a symlink, or a symlink pointing somewhere else, belongs
-    to someone else (a third-party skill installed into the same host directory)
-    and is never touched or reported.
+    to someone else and is never touched or reported — a third-party skill
+    installed into the same host directory, or a PRIVATE skill's git-ignored
+    runtime link into ``PRIVATE_SKILL_TARGET_PREFIX``. Ownership is decided by the
+    TARGET, so a private skill and a public one can even share a name without
+    either tool fighting the other.
     """
     managed: dict[str, str] = {}
     if not host_dir.is_dir():

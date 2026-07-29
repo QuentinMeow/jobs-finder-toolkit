@@ -186,22 +186,64 @@ def load_yaml(path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
+def _under_public_skills(path: Path) -> bool:
+    """True when ``path`` is the public ``skills/`` tree or lives inside it."""
+    try:
+        skills_root = (REPO_ROOT / "skills").resolve()
+    except OSError:
+        return False
+    return path == skills_root or skills_root in path.parents
+
+
+def profile_search_dirs() -> list[Path]:
+    """Directories a bare ``--profile`` label is resolved against, in order.
+
+    The candidate's OWN profiles live in the private overlay
+    (``config.search_profiles_dir()``) and are searched FIRST, so a personal label
+    wins over a same-named public file. They used to be symlinked into
+    ``skills/job-search/profiles/`` — which put a personal filename at a public
+    path — and that link family was deleted; the accessor is now the only route.
+    The tracked ``profiles/`` folder (``example.yaml``, ``_TEMPLATE.yaml``) is the
+    fallback, so a fresh public clone with no overlay still resolves a label.
+
+    A configured profiles dir that resolves INSIDE the public ``skills/`` tree is
+    dropped: with no config at all the accessor's derivation collapses onto the
+    loader's own directory, and honouring that would re-create the very thing this
+    phase deleted — a personal profile addressable at a public path.
+    """
+    dirs: list[Path] = []
+    if config is not None:
+        try:
+            configured = config.search_profiles_dir().resolve()
+        except Exception:  # noqa: BLE001 — no config layer / unreadable config
+            configured = None
+        if configured is not None and not _under_public_skills(configured):
+            dirs.append(configured)
+    dirs.append(SKILL_DIR / "profiles")
+    return dirs
+
+
 def resolve_profile(name: str) -> Path:
     p = Path(name)
     if p.exists():
         return p
-    cand = SKILL_DIR / "profiles" / (name if name.endswith(".yaml") else f"{name}.yaml")
-    if not cand.exists():
-        sys.exit(f"Profile not found: {name} (looked in {cand})")
-    return cand
+    filename = name if name.endswith(".yaml") else f"{name}.yaml"
+    searched = profile_search_dirs()
+    for base in searched:
+        cand = base / filename
+        if cand.exists():
+            return cand
+    sys.exit(f"Profile not found: {name} (looked in "
+             f"{', '.join(str(d) for d in searched)})")
 
 
 def profile_slug(profile_arg: str) -> str:
     """Filesystem-safe token for the discoveries filename from a --profile value.
 
     ``--profile`` is usually a bare label ("example") but may be a path to a
-    profile file ("/abs/path/to/example.yaml") when the profiles/ symlinks are not
-    available (e.g. a worktree checkout). Interpolating the raw value into the
+    profile file ("/abs/path/to/example.yaml") when the label is not resolvable
+    from ``profile_search_dirs()`` (e.g. a profile kept outside the overlay's
+    profiles folder). Interpolating the raw value into the
     output filename lets embedded ``/`` characters spawn a junk directory tree
     under the discoveries dir. Use only the stem, sanitized to ``[a-z0-9._-]``.
     """

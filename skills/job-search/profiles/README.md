@@ -14,17 +14,23 @@ omitted comes from `config.job_search.default_profile`.
 | `example.yaml` | A generic, ready-to-copy general software-engineer profile |
 | `_TEMPLATE.yaml` | Starting point for a new profile |
 
-Add your own `<label>.yaml` here (kept out of the public toolkit) and point
-`config.job_search.default_profile` at it.
+This folder is **entirely public** — those two files plus this README are all it may
+ever hold. Your own profiles are candidate data and live in the private overlay, at
+`config.search_profiles_dir()` (default `private/job-search-profiles/`). A bare
+`--profile <label>` resolves there FIRST and falls back to this folder, so a public
+checkout with no overlay still runs on `example`.
 
 ## Create a new profile
 
 ```bash
 cp skills/job-search/profiles/_TEMPLATE.yaml \
-   skills/job-search/profiles/my-profile.yaml
+   private/job-search-profiles/my-profile.yaml
 # edit it, then:
 .venv/bin/python skills/job-search/scripts/search_jobs.py --profile my-profile
 ```
+
+Then point `config.job_search.default_profile` at the label to make it the default.
+`--profile` also accepts a path, so a profile kept anywhere else works too.
 
 ## Field reference
 

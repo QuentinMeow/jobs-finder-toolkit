@@ -100,7 +100,7 @@ Your real identity never enters this repo. Copy the example config and point its
 
 ```bash
 cp config.example.yaml config.yaml     # edit: your name, your file paths
-python automation/bootstrap_overlay.py    # wires git hooks (+ overlay symlinks if mounted)
+python automation/bootstrap_overlay.py    # wires git hooks (+ your private skills if mounted)
 ```
 
 Keep your real profile, applications, and interview prep in a **private overlay** —

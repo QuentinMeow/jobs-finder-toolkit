@@ -19,8 +19,8 @@ Use this skill when the user asks to:
 
 1. Read `AGENTS.md` for the application folder convention.
 2. Read this skill's `LESSONS.md` for operational knowledge.
-   - **Personalization / private overrides:** if this skill folder has a
-     `references_private/` directory, read every file in it — those candidate-specific
+   - **Personalization / private overrides:** if `config.skill_references_dir()` for this
+     skill exists in the overlay, read every file in it — those candidate-specific
      notes and examples OVERRIDE the generic examples in this SKILL.md. When it is
      absent (public / example mode), use the generic examples here and take all
      candidate specifics from `config` and the profile.

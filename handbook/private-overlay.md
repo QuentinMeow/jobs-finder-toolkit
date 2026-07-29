@@ -19,22 +19,24 @@ git-ignored in the public repo, your real data is never committed to the public 
 
 ## How the layering works
 
-- The exported public repo's `.gitignore` ignores `private/`, `config.yaml`,
-  every per-skill
-  `skills/*/references_private/` folder, and the private product folders
-  (`applications/`, `interviews/`, `templates/`, `.agents/inputs/`,
-  `skills/coding-interview/`, `skills/coding-interview-cleanup/`). So you can work **in place** in a public
-  checkout: drop your private files at those paths (or under `private/` and point
-  `config.yaml` at them) and git will refuse to track them. This layered source
-  checkout may carry private products on a private branch; the public exporter
-  excludes those paths before publishing.
+- **Every private path says `private/`.** Nothing under `skills/` is private: as of
+  2026-07-28 the toolkit no longer creates any symlink from the public tree into the
+  overlay, so the rule has no exceptions — *if a path does not start with `private/`,
+  what you write there is published.* The overlay is reached only through
+  `config.*()` accessors and the git-ignored runtime entries described in step 4 below.
+- The exported public repo's `.gitignore` ignores `private/`, `config.yaml`, the
+  private-skill runtime entries under `.claude/skills/` + `.cursor/skills/`, and the
+  legacy in-place product folders (`applications/`, `interviews/`, `.agents/inputs/`).
+  So you can still work **in place** for those product trees; everything else belongs
+  under `private/`. This layered source checkout may carry private products on a
+  private branch; the public exporter excludes those paths before publishing.
 - **Per-skill private notes.** Any candidate-specific skill guidance that used to be
   baked into a `SKILL.md` (real lead-project ordering, real metrics, personal
-  anecdotes) lives in a git-ignored `references_private/` folder inside that skill
-  (e.g. `skills/resume-writer/references_private/`). Each `SKILL.md` reads it
+  anecdotes) lives in the overlay at `config.skill_references_dir("<skill>")` —
+  by default `private/skills/references_private/<skill>/`. Each `SKILL.md` reads it
   when present (its "Before You Start" **Personalization** stanza) and otherwise falls
-  back to the generic examples. The exporter prunes these folders and the leak guard
-  fails on any tracked file under one.
+  back to the generic examples. The leak guard fails on any tracked file under a
+  `references_private/` folder anywhere in the tree, and the exporter prunes them.
 - **Guard tokens are config-derived.** `automation/publish/check_public.py` hardcodes no
   identity; it derives its personal-token set from `config.yaml`, an optional
   `private/leak_tokens.txt`, and the `JOBHUNT_PERSONAL_TOKENS` env var, and scans both
@@ -42,10 +44,11 @@ git-ignored in the public repo, your real data is never committed to the public 
   `JOBHUNT_PERSONAL_TOKENS` **arms** it; `leak_tokens.txt` adds tokens but cannot arm it,
   and an unarmed guard exits 2 instead of reporting "safe to publish" (`--allow-unarmed`
   runs the token-independent checks knowingly).
-- Skills are discovered by listing `skills/` (see `AGENTS.md`). The private
-  coding-interview skills appear there via git-ignored symlinks that
-  `automation/bootstrap_overlay.py` creates when the overlay is mounted — so they are
-  discoverable **only** when the overlay is mounted.
+- Skills are discovered by listing `skills/` (public) plus the agent host trees
+  `.claude/skills/` and `.cursor/skills/` (see `AGENTS.md`). A private skill lives
+  only in the overlay; `automation/bootstrap_overlay.py` gives it a git-ignored entry
+  in those host trees pointing straight at `private/skills/<name>`, so it is
+  discoverable **only** when the overlay is mounted, and never sits under `skills/`.
 - `config.yaml`'s `paths.*` are resolved **relative to the config file's
   directory**, so you can point them at `private/…` (or anywhere) and swap the
   fake example candidate for your real one without editing any tooling.
@@ -78,8 +81,8 @@ my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 │   ├── coding-interview/      # private practice-generation skill
 │   ├── coding-interview-cleanup/ # private screenshot-cleanup/coaching skill
 │   └── references_private/    # candidate-specific references grouped by public skill
-│       └── resume-writer/     # symlinked to that skill's references_private/ folder
-└── job-search-profiles/
+│       └── resume-writer/     # -> config.skill_references_dir("resume-writer")
+└── job-search-profiles/       # -> config.search_profiles_dir()
     ├── my-default.yaml        # your real search profile(s)
     └── my-smb.yaml
 ```
@@ -179,22 +182,24 @@ empty until you have content (e.g. your own private interview-prep skill).
    gets committed. (If you prefer, point `paths.*` at in-place folders like
    `applications/` — those are git-ignored too.)
 
-4. **Wire the overlay + git hooks.** One idempotent, stdlib-only step creates every
-   overlay symlink and installs the tracked git hooks:
+4. **Wire the private skills + git hooks.** One idempotent, stdlib-only step:
 
    ```bash
    python automation/bootstrap_overlay.py          # add --check to preview, make no changes
    ```
 
-   With `private/` mounted it symlinks (skipping any that already point correctly):
+   It writes **nothing** into the public tree. With `private/` mounted it links each
+   private skill — any `private/skills/<name>/` holding a `SKILL.md` — into the agent
+   host trees as `.claude/skills/<name>` and `.cursor/skills/<name>`, pointing straight
+   at `private/skills/<name>`. Those entries are git-ignored, so the runtime lists the
+   private skills next to the public ones while the public index can never carry them.
+   Adding a private skill? Add its two `.gitignore` lines; bootstrap warns if you forget.
 
-   - `skills/coding-interview` → `private/skills/coding-interview` — private practice generation;
-   - `skills/coding-interview-cleanup` → `private/skills/coding-interview-cleanup` — private
-     screenshot cleanup and coaching;
-   - one link per `private/job-search-profiles/*.yaml` into
-     `skills/job-search/profiles/` — then point `config.job_search.default_profile` at one;
-   - one link per `private/skills/references_private/<skill>/` into
-     `skills/<skill>/references_private/` when that public skill exists.
+   Your other overlay content needs no wiring at all — the toolkit reaches it through
+   config accessors: personal search profiles via `config.search_profiles_dir()`
+   (`search_jobs.py --profile <label>` resolves there first, then the public
+   `skills/job-search/profiles/`; point `config.job_search.default_profile` at one), and
+   per-skill private notes via `config.skill_references_dir("<skill>")`.
 
    It **always** installs `automation/hooks/pre-commit` and `automation/hooks/pre-push` into `.git/hooks`
    (never clobbering a foreign hook — it warns instead), and re-running is a safe
@@ -207,11 +212,11 @@ empty until you have content (e.g. your own private interview-prep skill).
    set larger than any commit in that repo's history (500 files / 128 MiB);
    `overlay-pre-push` refuses any destination that is not the private remote the repo
    configures (`jobhunt.privateRemote`, else `remote.origin.url`) and fails closed when it
-   cannot determine one. The private skill, linked `references_private/` directories, and personal `*.yaml`
-   profiles are git-ignored in the public repo, so they stay out of public history while remaining
-   discoverable whenever the overlay is mounted. (The
-   `skills/job-search/profiles/` folder keeps only `example.yaml`, `_TEMPLATE.yaml`, and
-   `README.md` public.)
+   cannot determine one. Private skills, per-skill private notes, and personal search
+   profiles now live **only** under `private/` (plus the git-ignored host entries above),
+   so they stay out of public history while remaining reachable whenever the overlay is
+   mounted. The `skills/job-search/profiles/` folder holds nothing but the public
+   `example.yaml`, `_TEMPLATE.yaml`, and `README.md`.
 
 **Maintainer note.** The maintainer keeps the canonical overlay as its own private
 GitHub repo, mounted at `private/` exactly as above. Strangers do not need

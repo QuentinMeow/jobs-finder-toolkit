@@ -156,7 +156,8 @@ class SyntheticVisibilityTests(unittest.TestCase):
             self.assertIn(".claude/skills/beta", found)
             self.assertNotIn(".cursor/skills/beta", found)
 
-    def test_private_skill_symlink_is_a_finding(self):
+    def test_symlink_into_the_public_tree_for_a_private_skill_is_a_finding(self):
+        """``-> ../../skills/<name>`` is OURS, so a non-public name there is drift."""
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             _fixture(root)
@@ -164,6 +165,38 @@ class SyntheticVisibilityTests(unittest.TestCase):
             found = dict(ssm.findings(root))
             self.assertIn(".claude/skills/secret", found)
             self.assertIn("not public", found[".claude/skills/secret"])
+
+    def test_private_skill_runtime_link_is_tolerated_and_preserved(self):
+        """A private skill's ``-> ../../private/skills/<name>`` entry is NOT ours.
+
+        Since workspace-restructure phase 4 the private skills live only in
+        ``private/skills/`` and reach the runtime through a git-ignored entry in
+        these same host directories, written by ``bootstrap_overlay.py``. This
+        generator sees no ``skills/<name>/SKILL.md`` for them, so if it claimed
+        every entry by NAME it would report each one as drift and then delete it
+        — silently uninstalling the owner's private skills on every sync. It
+        claims by TARGET instead, so the entry is neither reported nor touched.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _fixture(root)
+            (root / "private/skills/hidden").mkdir(parents=True)
+            for host in ssm.SYMLINK_HOSTS:
+                os.symlink(f"{ssm.PRIVATE_SKILL_TARGET_PREFIX}hidden",
+                           root / host / "hidden")
+
+            # No SKILL.md under skills/ for it: invisible to the frontmatter scan.
+            self.assertNotIn("hidden", ssm.public_skills(root))
+            self.assertNotIn("hidden", ssm.private_skills(root))
+            # Tolerated...
+            self.assertEqual(ssm.findings(root), [])
+            # ...and preserved, still pointing into the overlay.
+            self.assertEqual(ssm.sync(root), [])
+            for host in ssm.SYMLINK_HOSTS:
+                link = root / host / "hidden"
+                self.assertTrue(link.is_symlink())
+                self.assertEqual(os.readlink(link),
+                                 f"{ssm.PRIVATE_SKILL_TARGET_PREFIX}hidden")
 
     def test_foreign_symlink_and_directory_are_left_alone(self):
         """A third-party skill installed into the same host dir is not ours."""
@@ -282,11 +315,43 @@ class LiveTreeTests(unittest.TestCase):
         doc = json.loads((REPO_ROOT / ssm.MARKETPLACE_REL).read_text(encoding="utf-8"))
         self.assertIn("search-recall-audit", [p["name"] for p in doc["plugins"]])
 
-    def test_coding_interview_skills_are_private(self):
-        private = ssm.private_skills(REPO_ROOT)
-        if not private:
-            self.skipTest("private overlay not mounted; no private skills visible")
-        self.assertNotIn("coding-interview", ssm.public_skills(REPO_ROOT))
+    def test_no_skill_under_skills_is_private(self):
+        """Phase 4 invariant: nothing under ``skills/`` is private any more.
+
+        This replaces an assertion that read the private skills THROUGH the
+        deleted ``skills/coding-interview*`` overlay symlinks and skipped itself
+        when the overlay was absent. Those symlinks put overlay content at a
+        public-looking path, which is exactly what phase 4 removed, so the
+        strictly stronger statement now holds in every checkout: ``skills/`` is
+        entirely public. ``check_public.find_private_skill_violations`` stays
+        armed for the case a private skill is ever put back there.
+        """
+        self.assertEqual(ssm.private_skills(REPO_ROOT), [])
+
+    def test_private_skills_reach_the_runtime_from_the_overlay(self):
+        """With the overlay mounted, each private skill is linked from the hosts.
+
+        The link points STRAIGHT at ``private/skills/<name>`` — no public-tree hop
+        — and is git-ignored, so the runtime lists it while the public index
+        never can. Written by ``automation/bootstrap_overlay.py``.
+        """
+        overlay_skills = REPO_ROOT / "private" / "skills"
+        if not overlay_skills.is_dir():
+            self.skipTest("private overlay not mounted")
+        names = sorted(p.name for p in overlay_skills.iterdir()
+                       if p.is_dir() and (p / "SKILL.md").is_file())
+        self.assertTrue(names, "overlay holds no private skills to check")
+        for host in ssm.SYMLINK_HOSTS:
+            if not (REPO_ROOT / host).parent.is_dir():
+                continue
+            for name in names:
+                link = REPO_ROOT / host / name
+                self.assertTrue(link.is_symlink(),
+                                f"{host}/{name} missing — run bootstrap_overlay.py")
+                self.assertEqual(os.readlink(link),
+                                 f"{ssm.PRIVATE_SKILL_TARGET_PREFIX}{name}")
+                self.assertTrue(link.resolve().is_dir())
+                self.assertNotIn(f"skills/{name}", ssm.public_skills(REPO_ROOT))
 
     def test_exporter_public_list_matches_frontmatter(self):
         self.assertEqual(export_public.public_skills(), ssm.public_skills(REPO_ROOT))

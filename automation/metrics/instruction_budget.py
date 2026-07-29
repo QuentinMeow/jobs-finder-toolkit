@@ -67,23 +67,53 @@ def _store_readme_target():
         yield ("STORE_README", readme)
 
 
+def _private_skills_dir():
+    """The overlay's ``skills/`` dir, or None when no overlay is mounted.
+
+    The PRIVATE skills used to be measured through ``skills/coding-interview*``
+    overlay symlinks. Workspace-restructure phase 4 deleted those (a private tree
+    may not wear a public name), which would silently have dropped them from the
+    budget — so they are read from the overlay directly instead. Conditional by
+    design, exactly like ``_store_readme_target``: CI has no overlay and measures
+    only the public files.
+    """
+    try:
+        import config  # automation/shared/config.py
+        if not config.overlay_mounted():
+            return None
+        skills = config.overlay_root() / "skills"
+    except Exception:  # noqa: BLE001
+        return None
+    return skills if skills.is_dir() else None
+
+
+def _skill_targets(skills: Path):
+    """Yield (kind, path) for the instruction files under a ``skills/`` root."""
+    for path in sorted(skills.glob("*/AGENTS.md")):
+        yield ("AGENTS.md", path)
+    for name in ("SKILL.md", "LESSONS.md", "reference.md"):
+        for path in sorted(skills.glob(f"*/{name}")):
+            yield (name, path)
+
+
 def _iter_targets(root: Path):
-    """Yield (kind, path) for each tracked instruction file we budget.
+    """Yield (kind, path) for each instruction file we budget.
 
     Targets live at known locations (repo-root AGENTS.md + per-skill files under
-    ``skills/*/``), so we glob those explicitly rather than walking the
-    tree — that keeps ``.venv``/``tmp``/gitignored ``references_private`` out.
+    ``skills/*/``, plus the overlay's private skills), so we glob those explicitly
+    rather than walking the tree — that keeps ``.venv``/``tmp``/the overlay's
+    ``references_private`` out.
     """
     for path in sorted(root.glob("AGENTS.md")):
         yield ("AGENTS.md", path)
 
     skills = root / "skills"
     if skills.is_dir():
-        for path in sorted(skills.glob("*/AGENTS.md")):
-            yield ("AGENTS.md", path)
-        for name in ("SKILL.md", "LESSONS.md", "reference.md"):
-            for path in sorted(skills.glob(f"*/{name}")):
-                yield (name, path)
+        yield from _skill_targets(skills)
+
+    private_skills = _private_skills_dir()
+    if private_skills is not None:
+        yield from _skill_targets(private_skills)
 
     yield from _store_readme_target()
 

@@ -103,9 +103,10 @@ def _is_checkable(token: str) -> bool:
         return False
     if "config." in token or "layout." in token or "check." in token:
         return False
-    # ``references_private/`` is git-ignored, per-user and optional by contract
-    # (the leak guard FAILS on any tracked file under it), so a doc naming one —
-    # always as an example of the pattern — is not asserting that it exists.
+    # ``references_private/`` lives in the private overlay, is per-user and
+    # optional by contract (the leak guard FAILS on any tracked file under it),
+    # so a doc naming one — always as an example of the pattern — is not
+    # asserting that it exists.
     if "references_private" in token:
         return False
     if not re.fullmatch(r"[A-Za-z0-9._/\-]+", token.rstrip("/")):
@@ -182,9 +183,13 @@ def _git_ignored(tokens: list[str]) -> set[str]:
     """Which tokens git ignores. Empty when this is not a git checkout.
 
     A git-ignored path is environment-dependent by construction — the private
-    coding-interview skill symlinks, each ``skills/*/references_private/``, the
-    personal job-search profiles. A doc naming one describes a path that exists
-    only when the overlay is mounted, so it is never a claim that it exists here.
+    skills' runtime entries under ``.claude/skills``/``.cursor/skills``,
+    ``config.yaml``, the legacy in-place product roots. A doc naming one describes
+    a path that exists only in a configured checkout, so it is never a claim that
+    it exists here. (The overlay-only families this list used to name —
+    ``skills/coding-interview*``, ``skills/*/references_private/``, the personal
+    job-search profiles — no longer exist under ``skills/`` at all; they are
+    reached through ``config.*()`` accessors, which ``_is_checkable`` skips.)
     """
     if not tokens:
         return set()

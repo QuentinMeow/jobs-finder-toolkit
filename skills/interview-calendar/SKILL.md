@@ -12,8 +12,8 @@ second mail client, tracker, or calendar store.
 
 ## Before You Start
 
-1. Read `../email-assistant/SKILL.md`, its Outlook provider contract, and every file in its
-   `references_private/` directory when present. The email assistant is the only mailbox reader;
+1. Read `../email-assistant/SKILL.md`, its Outlook provider contract, and every file in that
+   skill's `config.skill_references_dir()` folder when present. The email assistant is the only mailbox reader;
    its permanent draft-only and send-less boundary still applies.
 2. Read `../application-tracker/SKILL.md` and `../application-tracker/LESSONS.md`. The tracker is
    the only writer for `meta.yaml` and `config.calendar_path()`; use its commands for status and

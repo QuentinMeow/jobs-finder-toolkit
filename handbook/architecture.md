@@ -55,7 +55,7 @@ What the config supplies:
 | `paths.company_levels_yaml` | Optional reusable company level/YOE/compensation cache (its own schema-v2 file format, separate from application `meta.yaml`) |
 | `paths.applications_root` | Where the application pipeline folders live |
 | `paths.discoveries_dir` | Where job-search shortlists land |
-| `job_search.default_profile` | Which `skills/job-search/profiles/<label>.yaml` search profile to use |
+| `job_search.default_profile` | Which `<label>.yaml` search profile to use — resolved from `config.search_profiles_dir()` (your overlay) first, then the public `skills/job-search/profiles/` |
 | `outlook_email.*` | Private personal-mailbox address, Microsoft public-client application ID, and `consumers` tenant selection; OAuth refresh state lives only in the OS keyring |
 | `location_policy` | Allowed metros + US-remote/us-only rules that gate application creation |
 
@@ -123,7 +123,8 @@ repo) and is pointed at by the git-ignored `config.yaml`. Three defenses keep th
 public tree clean:
 
 1. **`.gitignore`** anchors every private path (`private/`, `config.yaml`,
-   `/applications/`, `/interviews/`, per-skill `references_private/`, …).
+   `/applications/`, `/interviews/`, …). Since 2026-07-28 nothing under `skills/` is
+   private, so no glob-with-negations stands between personal data and a `git add -f`.
 2. **The leak guard** (`automation/publish/check_public.py`) scans tracked files — paths,
    text, and `.docx`/`.pdf` content — for private trees, structural PII, and
    personal-identity tokens derived at runtime from your config and

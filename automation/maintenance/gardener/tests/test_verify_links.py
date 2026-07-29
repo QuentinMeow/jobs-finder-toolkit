@@ -230,7 +230,13 @@ class TestSymlinkRootsFailClosed(VerifyLinksTestCase):
 
 
 class TestReferencesPrivateIsOptional(VerifyLinksTestCase):
-    """``references_private/`` is git-ignored and per-user — never a claim."""
+    """``references_private/`` is overlay-only and per-user — never a claim.
+
+    Docs still name the pattern with a ``skills/<skill>/references_private/``
+    shape even though the folder itself now lives at
+    ``config.skill_references_dir("<skill>")``; either spelling must stay
+    unresolvable-but-not-broken.
+    """
 
     def test_not_checkable(self) -> None:
         self.assertFalse(V._is_checkable("skills/resume-writer/references_private/"))

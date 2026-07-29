@@ -38,12 +38,14 @@ exporter excludes it; only fake `examples/**` counterparts are published.
 **Personal skill content stays out of `SKILL.md`.** The tracked `SKILL.md` / `LESSONS.md`
 of a PUBLIC skill must be personal-free: they defer candidate DATA to `config.yaml` /
 the profile and use the generic "Jordan Rivers" examples. Any residual candidate-specific
-skill guidance (real lead-project ordering, real metrics, personal anecdotes) goes in a
-git-ignored, per-skill **`references_private/`** folder — the exporter prunes it, the leak
-guard fails on any tracked file under it, and `.gitignore` ignores it. Each `SKILL.md`
-"Before You Start" carries a **Personalization** stanza telling the agent to read
-`references_private/` (overrides the generic examples) when present, and to fall back to
-the generic examples otherwise.
+skill guidance (real lead-project ordering, real metrics, personal anecdotes) goes in the
+overlay's per-skill **`references_private/`** folder, reached by
+`config.skill_references_dir("<skill>")` (default
+`private/skills/references_private/<skill>/`) — the exporter prunes any such folder and
+the leak guard fails on any tracked file under one, anywhere in the tree. Each `SKILL.md`
+"Before You Start" carries a **Personalization** stanza telling the agent to read that
+folder (it overrides the generic examples) when present, and to fall back to the generic
+examples otherwise.
 
 **The publish leak guard derives its tokens** (`automation/publish/check_public.py` →
 `personal_tokens()`) from the git-ignored `config.yaml` identity, an optional git-ignored
@@ -55,8 +57,12 @@ passing, since `leak_tokens.txt` alone keeps the union non-empty while the name,
 and handles are absent. The exporter (`export_public.py`) always runs it against the
 copied tree as the final gate.
 
-**Routing**: skills are discovered by listing `skills/` — the skills table in
-`handbook/repo-map.md` names only the PUBLIC ones that ship in the repo. The private
-coding-interview skills appear in `skills/` via git-ignored symlinks that
-`automation/bootstrap_overlay.py` creates, so they stay discoverable whenever the overlay is
-mounted.
+**Routing**: skills are discovered by listing `skills/` — which is now ENTIRELY public;
+the skills table in `handbook/repo-map.md` names exactly what ships. A private skill lives
+only at `private/skills/<name>/` and reaches the runtime through a git-ignored entry in
+`.claude/skills/<name>` + `.cursor/skills/<name>` that `automation/bootstrap_overlay.py`
+creates, pointing straight at the overlay. So it stays discoverable whenever the overlay is
+mounted, without any private path ever wearing a public name (workspace-restructure phase 4,
+2026-07-28: all eight inbound symlinks deleted). `automation/publish/sync_skill_manifests.py`
+owns the public entries in those same host directories and tells the two apart by where a
+link points, never by its name.

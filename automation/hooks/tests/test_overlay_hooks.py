@@ -250,13 +250,17 @@ class TestOverlayPrePush(HookTestCase):
         self.assertIn("visibility cannot be verified", r.stdout)
 
 
+def _bootstrap():
+    sys.path.insert(0, str(REPO_ROOT / "automation"))
+    import bootstrap_overlay  # noqa: E402
+    return bootstrap_overlay
+
+
 class TestBootstrapWiring(unittest.TestCase):
     """bootstrap_overlay.py is what puts these hooks in private/.git/hooks/."""
 
     def test_overlay_hooks_are_declared_and_executable(self) -> None:
-        import sys
-        sys.path.insert(0, str(REPO_ROOT / "automation"))
-        import bootstrap_overlay  # noqa: E402
+        bootstrap_overlay = _bootstrap()
         self.assertEqual(bootstrap_overlay.OVERLAY_HOOKS,
                          {"pre-commit": "overlay-pre-commit",
                           "pre-push": "overlay-pre-push"})
@@ -264,6 +268,81 @@ class TestBootstrapWiring(unittest.TestCase):
             path = REPO_ROOT / "automation/hooks" / name
             self.assertTrue(path.is_file(), f"{name} missing")
             self.assertTrue(os.access(path, os.X_OK), f"{name} is not executable")
+
+
+class TestBootstrapWritesNothingIntoThePublicTree(unittest.TestCase):
+    """The phase-4 invariant, asserted on the PLAN rather than on a live run.
+
+    ``bootstrap_overlay`` used to create eight INBOUND symlinks — two private
+    skills at ``skills/coding-interview*``, one ``references_private/`` per public
+    skill, and one per personal job-search profile, whose FILENAME was itself a
+    personal token sitting under ``skills/``. Nothing it plans may land inside the
+    public tree any more; a private skill reaches the runtime through the
+    git-ignored agent host trees instead.
+    """
+
+    def _tree(self, td: str):
+        """A synthetic repo root with an overlay holding two private skills."""
+        root = Path(td)
+        bootstrap_overlay = _bootstrap()
+        self.addCleanup(setattr, bootstrap_overlay, "REPO_ROOT",
+                        bootstrap_overlay.REPO_ROOT)
+        bootstrap_overlay.REPO_ROOT = root
+        for host in bootstrap_overlay.SKILL_HOSTS:
+            (root / host).parent.mkdir(parents=True, exist_ok=True)
+        (root / "skills/job-search/profiles").mkdir(parents=True)
+        for name in ("hidden-a", "hidden-b"):
+            d = root / "private/skills" / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text("---\nvisibility: private\n---\n",
+                                        encoding="utf-8")
+        # Neighbours that must NOT be linked: the private notes folder and a
+        # personal search profile.
+        (root / "private/skills/references_private/job-search").mkdir(parents=True)
+        (root / "private/job-search-profiles").mkdir(parents=True)
+        (root / "private/job-search-profiles/personal.yaml").write_text(
+            "titles: {}\n", encoding="utf-8")
+        return root, bootstrap_overlay
+
+    def test_no_planned_link_lands_under_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            planned = bootstrap_overlay._private_skill_links(root / "private")
+            rels = sorted(link.relative_to(root).as_posix() for link, _ in planned)
+            self.assertEqual(rels, [
+                ".claude/skills/hidden-a", ".claude/skills/hidden-b",
+                ".cursor/skills/hidden-a", ".cursor/skills/hidden-b",
+            ])
+            for rel in rels:
+                self.assertFalse(rel.startswith("skills/"), rel)
+
+    def test_links_point_straight_at_the_overlay(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            for link, dest in bootstrap_overlay._private_skill_links(root / "private"):
+                self.assertEqual(dest.parent, root / "private/skills")
+                self.assertEqual(bootstrap_overlay._rel_target(link, dest),
+                                 f"../../private/skills/{dest.name}")
+
+    def test_notes_folder_and_profiles_are_never_linked(self) -> None:
+        """Only a dir holding a SKILL.md is a skill — accessors reach the rest."""
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            names = {dest.name
+                     for _, dest in bootstrap_overlay._private_skill_links(root / "private")}
+            self.assertNotIn("references_private", names)
+            self.assertEqual(names, {"hidden-a", "hidden-b"})
+            self.assertEqual(
+                sorted(p.name for p in (root / "skills/job-search/profiles").iterdir()),
+                [])
+
+    def test_an_absent_agent_root_is_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            shutil.rmtree(root / ".cursor")
+            hosts = {link.relative_to(root).parts[0]
+                     for link, _ in bootstrap_overlay._private_skill_links(root / "private")}
+            self.assertEqual(hosts, {".claude"})
 
 
 if __name__ == "__main__":

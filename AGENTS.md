@@ -42,12 +42,16 @@ and `coding-interview-cleanup` — both entire skills live only in the overlay.
 **PRODUCTS are always private** and mount under `private/` (real applications, discoveries,
 company-level cache, interviews, profile/baseline/reference DOCX); only the fake `examples/**`
 counterparts ship. **Personal content stays out of `SKILL.md`/`LESSONS.md`** — candidate DATA defers
-to `config.yaml`/the profile; residual personal skill guidance goes in a git-ignored per-skill
-`references_private/` (exporter prunes it; leak guard fails on any tracked file under it). **The leak
+to `config.yaml`/the profile; residual personal skill guidance goes in the overlay's per-skill
+`references_private/`, reached by `config.skill_references_dir()` (exporter prunes it; leak guard
+fails on any tracked file under it). **If a path does not start with `private/`, what you write
+there is published** — no exceptions since 2026-07-28, when the last eight inbound symlinks were
+deleted; the overlay is reached ONLY through `config.*()` accessors. **The leak
 guard** (`automation/publish/check_public.py`) hardcodes NO identity — it derives personal tokens from
 `config.yaml`/overlay/`JOBHUNT_PERSONAL_TOKENS` and scans text + `.docx`/`.pdf`; `export_public.py`
-runs it as the final publish gate. Routing: skills are discovered by listing `skills/`;
-private coding-interview skills appear via git-ignored symlinks `automation/bootstrap_overlay.py` creates.
+runs it as the final publish gate. Routing: `skills/` is entirely public and lists the public skills;
+each private skill is reached from `.claude/skills/`+`.cursor/skills/` entries pointing at
+`private/skills/<name>` (git-ignored; `automation/bootstrap_overlay.py` creates them).
 Full detail: `handbook/public-private-split.md`.
 
 ## Configuration
@@ -74,7 +78,7 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
 | `config.profile_md_path()` / `config.baseline_path()` | Candidate profile (source of truth for tailoring) / canonical transcription of the approved resume (start point for every `tailored.yaml`) |
 | `skills/job-search/companies.yaml` | Canonical **public** registry (company identity, ATS config, tags); candidate blacklist rows live in git-ignored `private/job-search/blacklist.yaml` |
 | `config.applications_root()` / `config.discoveries_dir()` | All applications in numbered status folders `0_profile`…`6_drafted` (the folder is the derived overall status) / ad-hoc job-search research |
-| `skills/` | Canonical skills dir (PUBLIC skills — see Public vs Private; private coding-interview skills via symlinks) |
+| `skills/` | Canonical skills dir — **entirely public** (see Public vs Private; private skills live at `private/skills/`) |
 | `automation/` (shared, vendoring, maintenance, metrics, publish, store, reconcile, hooks) | Everything that runs: canonical toolkit modules, vendoring, gardener, metrics, leak guard, store tools, the reconciler, tracked git hooks |
 | `templates/` | **Single source of truth for every process-file schema** — copy one to create any queue/task/memory item (`templates/README.md`) |
 | `roadmap/` | `desired-state.md` vs `current-state.md` — the gap between them is the backlog's source |
@@ -98,8 +102,8 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
    `email-assistant` (read personal Outlook mail, create repository-grounded reply drafts),
    `interview-calendar` (reconcile email evidence, tracker progress, and Outlook interview events),
    `search-recall-audit` (spot-check whether job-search is missing/over-keeping roles).
-   Private `coding-interview` and `coding-interview-cleanup` are available under `skills/` when
-   the overlay is mounted.
+   Private `coding-interview` and `coding-interview-cleanup` live at `private/skills/<name>/`
+   and are listed by the runtime when the overlay is mounted.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context, and skim `memory/index.md`
    (generated) — open only the entries relevant to your task.
 4. If your work changes overall architecture, read `roadmap/current-state.md` and

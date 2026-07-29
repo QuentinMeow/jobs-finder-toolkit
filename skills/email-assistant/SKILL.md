@@ -15,8 +15,9 @@ Graph is the only provider today; the provider layer lives in `automation/shared
 1. Read `AGENTS.md`, especially the public/private model and the email draft-only guardrail.
 2. Read `scripts/_vendor/mail/providers/outlook_graph/README.md` (the provider contract) before
    authentication, permissions, or Graph changes.
-3. If `references_private/` exists, read every file in it. Candidate-specific writing preferences
-   override the generic guidance here; otherwise use the profile and application evidence.
+3. If `config.skill_references_dir()` for this skill exists in the overlay, read every file in it.
+   Candidate-specific writing preferences override the generic guidance here; otherwise use the
+   profile and application evidence.
 4. Use `.venv/bin/python` for every script. Keep disposable draft-body files under
    `tmp/email-assistant/`; do not save mailbox content in tracked or product folders.
 

@@ -15,8 +15,9 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[2]
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+for _p in (str(HERE), str(HERE / "_vendor")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from filter_variants import (  # noqa: E402
     CORPUS_PATH,
@@ -27,16 +28,25 @@ from filter_variants import (  # noqa: E402
     load_corpus,
 )
 from common import parse_dt  # noqa: E402
+from search_jobs import profile_search_dirs  # noqa: E402
 
 
 def _profile_path(value: str) -> Path:
+    """Resolve a profile path or bare label the same way ``search_jobs`` does.
+
+    Shares ``search_jobs.profile_search_dirs()`` so the overlay's private profiles
+    (``config.search_profiles_dir()``) and the tracked public ones resolve here
+    identically — an audit must replay the production gates against the SAME file
+    the search run used.
+    """
     direct = Path(value)
     if direct.is_file():
         return direct
-    candidate = HERE.parent / "profiles" / (
-        value if value.endswith(".yaml") else f"{value}.yaml")
-    if candidate.is_file():
-        return candidate
+    filename = value if value.endswith(".yaml") else f"{value}.yaml"
+    for base in profile_search_dirs():
+        candidate = base / filename
+        if candidate.is_file():
+            return candidate
     raise FileNotFoundError(f"profile not found: {value}")
 
 
