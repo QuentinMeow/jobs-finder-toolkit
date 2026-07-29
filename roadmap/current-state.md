@@ -1,6 +1,6 @@
 # Current state
 
-- **Last-updated**: 2026-07-22
+- **Last-updated**: 2026-07-29
 
 - **Process layer**: AgentFold restructure in flight as a stacked PR train —
   `message-queue/` + `tasks/` + `memory/` merged (#56); `handbook/` +
@@ -33,3 +33,13 @@
   validate, four unit suites, store fixture validation, leak guard, and
   gitleaks; pre-commit mirrors the fast checks + instruction budgets + the
   reconciler.
+- **Workspace restructure**: phases 0 (leak guard/config-discovery/pre-push
+  fail closed instead of open, `sync_skill_manifests.py` makes `SKILL.md`
+  frontmatter the sole visibility SSOT, widened link checker +
+  `--require-roots`), 3 (public-change review gate,
+  `automation/publish/review_gate.py` + `review_ledger.yaml`), and 4 (the
+  eight inbound public→private symlinks deleted; profiles/private-skill
+  access now goes through config accessors and git-ignored `.claude/skills`
+  /`.cursor/skills` links) are implemented, open as a stacked PR train
+  (#81–#86), not yet merged. Phases 1, 2, 5–8 not started. See
+  `design/workspace-restructure/execution-plan.md`.
