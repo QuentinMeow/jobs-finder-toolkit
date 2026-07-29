@@ -210,3 +210,14 @@
     that tree. The one pasted terminal transcript is a git grep over automation/ and
     skills/ with no absolute home path in it. The overlay task slug it references was
     already public in this plan before this change.
+
+- commit: ee5d05ac
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 1
+  digest: sha256:9e8c5e8b42171e29
+  finding: >-
+    Clean. One deliberately neutral handover records a private drafting workflow
+    without naming the candidate, employer, school, posting, compensation, or any
+    private path. Its date is the required session-history field, not a posting or
+    interview date.
