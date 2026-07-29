@@ -138,9 +138,9 @@ private/
 │       ├── derived/behavioral.md          #   their-values answers; sources[] + build hash
 │       └── decision.md                    #   offer, comp, would-I-work-here
 │
-│                                          #   (Karat, HackerRank etc. are companies too —
-│                                          #    they run their own interviews and have their
-│                                          #    own question sets. No separate vendors/ root.)
+│                                          #   (a firm that RUNS interviews on a client's
+│                                          #    behalf is a company too — its own loop, its
+│                                          #    own question set. No separate vendors/ root.)
 │
 ├── applications/                          # ══ DISPOSABLE ══ status folders unchanged
 │   └── <2_ignored…6_drafted>/<company>-<role>-<date>/
@@ -199,16 +199,17 @@ An application folder is deletable **by the user only**. Agents never delete own
 any condition — the guardrail is in `AGENTS.md`. The taxonomy's job is to make the user's
 `rm -rf` safe, not to let an agent perform it.
 
-An interview vendor is a company. Karat runs its own interviews and has its own question set,
-so it gets `companies/karat/` like any employer; `companies/<key>/loop.md` names it where a
-loop is run by one.
+An interview vendor is a company. A firm that runs the loop on a client's behalf has its own
+format and its own question set, so it gets a `companies/<key>/` like any employer;
+`companies/<key>/loop.md` names it where a loop is run by one.
 
 Three requirements, each with the evidence that forced it:
 
 1. **The company key must be owner-owned.** 242 application folders carry **213 distinct
    free-text company strings**; the registry resolves only 119 — 44% unresolvable, including
-   Google, Microsoft, Netflix, Oracle, and both spellings of Canonical. `Cursor` /
-   `Cursor (Anysphere)` and `Arize` / `Arize AI` are already split. Hence one
+   several household-name employers it has no row for. Bare-name-versus-legal-suffix and
+   bare-name-versus-parenthesised-entity splits are already live in the data (not named
+   here — that list *is* the owner's application history). Hence one
    `companies/_index.yaml`, `company_key` in `meta.yaml`, and a reconciler check that every
    key resolves and no two share an alias.
 
@@ -219,9 +220,10 @@ Three requirements, each with the evidence that forced it:
    and key-independent, so sharding by key would turn every alias split into a re-drafted
    application.
 
-3. **Durable vs disposable splits at write time.** *"Ciara confirmed the 60-minute video
-   coding interview for August 7 … with Teams and HackerRank CodePair"* — format permanent,
-   date disposable, one sentence. The email assistant rewrites these files every run, so it
+3. **Durable vs disposable splits at write time.** A single real sentence in a recruiter
+   email routinely carries both: *"<recruiter> confirmed the 60-minute video coding
+   interview for <date> … with <video tool> and <coding platform>"* — the format is
+   permanent, the date dies with the application, and they arrive in one sentence. The email assistant rewrites these files every run, so it
    emits a `durable:` flag per entry and a `promote` command moves the flagged ones.
 
 `companies/` is not fed only by applications — four entries under today's

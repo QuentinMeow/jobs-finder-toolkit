@@ -24,7 +24,7 @@ Target tree in [the design](../../../design/workspace-restructure/README.md); th
   and the card rebuilds with no stories and a still-valid hash.
 
 **~47 of the 518 `interviews/` files are judgment calls, not mechanical moves.** Route each
-through the owner; do not guess. Karat is a company (`companies/karat/`), not a vendor —
+through the owner; do not guess. An interview-running firm is a company, not a vendor —
 there is no `vendors/` root.
 
 ~300 relative links inside `interviews/` are covered by no checker; fix them here and drop the

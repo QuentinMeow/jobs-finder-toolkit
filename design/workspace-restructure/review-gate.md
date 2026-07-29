@@ -118,7 +118,7 @@ So it is narrowed on four axes and remains advisory:
 2. Subtracts every token already present in the public tree *before* the change — a name
    that was already there is not news.
 3. Matches **display names** from `companies/_index.yaml`, not slug fragments, so `canonical`
-   only fires as `Canonical Ltd.` and `lambda` only as `Lambda Labs`.
+   only fires as `<Name> Ltd.` and `lambda` only as `<Name> Labs`.
 4. Skips `examples/` and the ATS registry, which are supposed to name companies.
 
 It prints hints. It never fails the gate by itself. If it goes quiet for a month it is

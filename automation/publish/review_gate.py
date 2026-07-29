@@ -342,7 +342,7 @@ def company_hints(repo: Path, a: str, b: str) -> tuple[bool, list[str]]:
     Narrowed on four axes, and advisory: it never fails the gate by itself.
       1. Runs on the DIFF, not the tree.
       2. Subtracts every name already present in the public tree at ``a``.
-      3. Matches DISPLAY NAMES, so ``lambda`` only fires as ``Lambda Labs``.
+      3. Matches DISPLAY NAMES, so ``lambda`` only fires as ``Lambda Systems Inc.``.
       4. Skips ``examples/`` and the ATS registry, which are supposed to name companies.
     """
     names = company_display_names(repo)

@@ -42,3 +42,16 @@
   files: 0
   digest: sha256:e3b0c44298fc1c14
   finding: seed row — gate introduced at this commit; history before it is not reviewed
+
+- commit: 92abe363
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 6
+  digest: sha256:814a377eebabf1c1
+  finding: >-
+    This range is clean, but reviewing it is what surfaced a real leak already in
+    the tree from commit 5244af1 (PR #80, merged): the workspace-restructure design
+    named companies from the owner's application history, and quoted a recruiter
+    email verbatim including a real first name and interview date. The leak guard
+    could not see it — company names are not identity tokens. Redacted in the
+    commit that carries this row; see it for the full list of sites.

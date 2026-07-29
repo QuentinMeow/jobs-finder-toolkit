@@ -44,8 +44,8 @@ for never-commit.
 
 Four supporting calls made the same day:
 
-- **No `vendors/` root.** An interview-running firm like Karat is a company — it has its own
-  loop and its own question set — so it gets `companies/karat/` like any employer.
+- **No `vendors/` root.** An interview-running firm is a company — it has its own loop and
+  its own question set — so it gets a `companies/<key>/` like any employer.
 - **Agents never delete owner data**, under any condition. The taxonomy's job is to make the
   *user's* `rm -rf` safe, not to authorise an agent's. Recorded as an `AGENTS.md` guardrail.
 - **The review gate watches every tracked public file except its own ledger**, and one row may

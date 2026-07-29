@@ -15,7 +15,8 @@
   tracked ledger).
 - Private data is reorganised by lifetime: `me/` permanent role-agnostic, `companies/<key>/`
   permanent per company, `applications/` disposable, plus `market/`, `store/`, `skills/`, the
-  private process folders, and `local/`. No `vendors/` root — Karat is a company.
+  private process folders, and `local/`. No `vendors/` root — an interview-running firm is a
+  company.
 - Two `AGENTS.md` guardrails added: agents never delete owner data under any condition, and a
   handover is a history record rather than the system of record.
 

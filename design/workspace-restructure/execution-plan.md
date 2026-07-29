@@ -354,7 +354,7 @@ Target tree: [README.md](README.md#the-private-overlay). Moves:
 | `interviews/behavioral/question-bank/{amazon,runpod}-*.md` | `companies/<key>/derived/behavioral.md` | **build outputs** — `skills/behavioral-interview-prep/scripts/answer_bank.py` must emit cross-tree targets; `test_answer_sources.py` hardcodes `parents[5]` |
 | `interviews/common-message-replies/` | `me/interviews/replies/` | |
 | `interviews/company-specific/<c>/company-info/` | `companies/<key>/research/` | 265 files, mechanical |
-| `interviews/company-specific/<c>/coding/` | `companies/<key>/coding/` | 151 files. Karat is a company — `companies/karat/` |
+| `interviews/company-specific/<c>/coding/` | `companies/<key>/coding/` | 151 files. An interview-running firm is a company too — it gets its own `companies/<key>/` |
 | `interviews/company-specific/TODO/` | keep as-is | an **untracked** screenshot inbox two private skills poll; moving it orphans them |
 | `data/` | `store/` | ships **in the same commit** as a sed of all 9 ignore patterns |
 | `benchmark/`, `config.benchmark.yaml`, `evals/` | `evals/{fixtures,runs,canaries}/` | |
@@ -416,15 +416,22 @@ posting does **not** resurface.
 non-blocking as its own task; default is one proposal PR).
 
 242 application folders carry **213 distinct free-text company strings**; `registry.canonical()`
-resolves only 119 — 44% unresolvable, including Google, Microsoft, Adobe, Netflix, Uber,
-Salesforce, Oracle, Snap, T-Mobile, and *both* spellings of Canonical. Live splits:
-`Canonical`/`Canonical Ltd.`, `Cursor`/`Cursor (Anysphere)`, `Arize`/`Arize AI`,
-`Palantir`/`Palantir Technologies`, `Temporal`/`Temporal Technologies`. Two folders both
-claiming `Komodo Health` carry different slug prefixes.
+resolves only 119 — **44% unresolvable**, including several household-name employers the
+registry has no row for. The unresolvable set breaks into four recurring shapes (the private
+tree has live instances of each; naming them here would put the owner's application list in
+the public tree, which is the leak this whole design exists to prevent):
+
+| Shape | Example form |
+|---|---|
+| bare name vs. name + legal suffix | `<Name>` / `<Name> Ltd.` |
+| bare name vs. name + parenthesised legal entity | `<Name>` / `<Name> (<LegalEntity>)` |
+| bare name vs. name + category word | `<Name>` / `<Name> AI` |
+| two folders, same employer, different slug prefix | `<name>-<role>-<date>` twice |
 
 - `companies/_index.yaml`: `key → {display, aliases[], parent, kind}`. `kind` distinguishes an
-  employer from an interview-running company like Karat; `parent` handles subsidiaries and JVs
-  (`aws→amazon`, `alibaba-cloud→alibaba`, `warpstream→confluent`, `tiktok-usds→tiktok`).
+  employer from an interview-running firm (one that runs the loop on a client's behalf and has
+  its own question set); `parent` handles subsidiaries and joint ventures — a cloud arm under
+  its parent, a regional JV under the global brand, an acquired product under the acquirer.
 - `meta.yaml` gains `company_key` alongside the human `company:` string — 242 edits.
 - Retire the other three alias registries (`companies.yaml` `aliases:`,
   `company-search-log.yaml` per-row `aliases:`, `company-levels.yaml` per-company `aliases:`)

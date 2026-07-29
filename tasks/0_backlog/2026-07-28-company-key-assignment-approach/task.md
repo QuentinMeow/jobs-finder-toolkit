@@ -17,7 +17,7 @@ Non-blocking. Filed from the workspace-layout review (Q3), deferred by the owner
 
 213 distinct company strings across 242 application folders; `registry.canonical()` resolves
 119. The remaining ~94 need a human call — Google, Microsoft, Adobe, Netflix, Uber,
-Salesforce, Oracle, Snap, T-Mobile, both spellings of Canonical, plus subsidiaries and joint
+several household-name employers with no registry row, name/legal-suffix pairs, plus subsidiaries and joint
 ventures (`aws`/`amazon`, `alibaba-cloud`, `tiktok-usds`, `warpstream`/`confluent`).
 
 Slugification is already lossy and inconsistent in live data: `Customer.io`→`customer-io` but

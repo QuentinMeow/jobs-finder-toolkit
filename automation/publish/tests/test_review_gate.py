@@ -639,11 +639,11 @@ class AdvisoryDetectorTests(GateTestCase):
 
     INDEX = textwrap.dedent("""\
         lambda-labs:
-          display: Lambda Labs
+          display: Lambda Systems Inc.
           aliases: [Lambda Cloud]
           kind: employer
         canonical:
-          display: Canonical Ltd.
+          display: Northwind Data Ltd.
           kind: employer
         """)
 
@@ -671,11 +671,11 @@ class AdvisoryDetectorTests(GateTestCase):
     def test_a_new_display_name_is_hinted_and_demands_a_human_row(self):
         self.bootstrap()
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("handbook/x.md", "worked with Lambda Labs on the cluster\n")
+        self.repo.write("handbook/x.md", "worked with Lambda Systems Inc. on the cluster\n")
         self.repo.commit("public change")
 
         msg = self.repo.gate().stderr
-        self.assertIn("    Lambda Labs", msg)
+        self.assertIn("    Lambda Systems Inc.", msg)
         self.assertIn("reviewed_by: human          # REQUIRED", msg)
         self.assertIn("must be signed", msg)
 
@@ -690,12 +690,12 @@ class AdvisoryDetectorTests(GateTestCase):
         self.assertIn("(advisory only):  (none)", msg)
 
     def test_a_name_already_in_the_baseline_is_not_news(self):
-        self.repo.write("README.md", "we already mention Lambda Labs here\n")
+        self.repo.write("README.md", "we already mention Lambda Systems Inc. here\n")
         self.repo.commit("initial")
         self.repo.seed()
         self.repo.commit("add review ledger")
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("handbook/x.md", "Lambda Labs again\n")
+        self.repo.write("handbook/x.md", "Lambda Systems Inc. again\n")
         self.repo.commit("public change")
 
         msg = self.repo.gate().stderr
@@ -704,8 +704,8 @@ class AdvisoryDetectorTests(GateTestCase):
     def test_examples_and_the_ats_registry_are_skipped(self):
         self.bootstrap()
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("examples/applications/x.md", "Lambda Labs\n")
-        self.repo.write("skills/job-search/companies.yaml", "- name: Lambda Labs\n")
+        self.repo.write("examples/applications/x.md", "Lambda Systems Inc.\n")
+        self.repo.write("skills/job-search/companies.yaml", "- name: Lambda Systems Inc.\n")
         self.repo.commit("public change")
 
         msg = self.repo.gate().stderr
@@ -715,7 +715,7 @@ class AdvisoryDetectorTests(GateTestCase):
         """Hints on an ACKNOWLEDGED range do not turn a pass into a failure."""
         seeded_at = self.bootstrap()
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("handbook/x.md", "Lambda Labs\n")
+        self.repo.write("handbook/x.md", "Lambda Systems Inc.\n")
         head = self.repo.commit("public change")
         self.repo.write_ledger([
             {"commit": self.repo.short(seeded_at), "files": 0, "digest": EMPTY_DIGEST16},

@@ -22,7 +22,8 @@ that loads automatically on first read there.
 Below the root, three lifetimes get three homes: `me/` (permanent, role-agnostic — profile,
 resumes, story bank, practice), `companies/<key>/` (permanent per company — research,
 `loop.md` for how they interview, people, coding problems, levels, decision), and
-`applications/` (disposable). Plus `vendors/` — Karat is a format, not an employer — and
+`applications/` (disposable). Plus `vendors/` — an interview-running firm is a format, not an
+employer — and
 `market/`, `store/`, `local/`. The name collisions disappear: your `memory/` is at the root,
 the toolkit's is at `public/memory/`.
 
@@ -85,8 +86,8 @@ was right; the automated detector can only narrow where to look.
 
 1. **The company key doesn't exist yet.** 242 application folders carry **213 distinct
    free-text company strings**, and the public registry resolves only 119 — 44% unresolvable,
-   including Google, Microsoft, Netflix, Oracle, and both spellings of Canonical. `Cursor` vs
-   `Cursor (Anysphere)` and `Arize` vs `Arize AI` are already split. Needs one owner-owned
+   including several household-name employers the registry has no row for. Bare-name-versus-
+   legal-suffix and bare-name-versus-parenthesised-entity splits are already live. Needs one owner-owned
    `companies/_index.yaml` (there are four competing alias registries today).
 
 2. **Deleting an application is unsafe until the skip-log stops being derived.**
@@ -96,9 +97,9 @@ was right; the automated detector can only narrow where to look.
    is URL-first and key-independent, so sharding by key would make every alias split a
    re-drafted application.
 
-3. **Durable vs disposable splits at write time.** From your notes: *"Ciara confirmed the
-   60-minute video coding interview for August 7 … with Teams and HackerRank CodePair"* —
-   format permanent, date disposable, one sentence. The email assistant rewrites these files
+3. **Durable vs disposable splits at write time.** A sentence in your notes typically reads
+   *"<recruiter> confirmed the 60-minute video coding interview for <date> … with <video
+   tool> and <coding platform>"* — format permanent, date disposable, one sentence. The email assistant rewrites these files
    every run, so it has to emit a `durable:` flag per entry rather than anyone sorting it out
    later.
 
