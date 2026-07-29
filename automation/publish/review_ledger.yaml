@@ -175,3 +175,13 @@
     orphaned commit to its landed twin. The rewrite itself is the finding: updating
     a stacked PR rebases it, so a ledger row written before the merge names a SHA
     that will not survive it.
+
+- commit: 841c2336
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 5
+  digest: sha256:0afa4738521bdac9
+  finding: >-
+    Clean. Gate logic, its tests, the design spec, the skill section, and a hook
+    comment. No company, person, date, or absolute home path. The example SHAs it
+    prints are this repo's own commit hashes, which are public by construction.
