@@ -13,6 +13,7 @@
 - `memory/decisions/process-folders-v2-todo-queue.md` — Process folders v2: the message-queue/ queue family
 - `memory/decisions/raw-data-layer-decisions.md` — Raw-data-layer design family: owner decisions
 - `memory/decisions/tree-instruction-growth-policy.md` — Grow folder-scoped instructions reactively
+- `memory/decisions/workspace-layout-public-root-plus-review-gate.md` — Workspace layout: keep the public repo as the working root; defend by naming + a review gate
 
 ## known-issues
 
