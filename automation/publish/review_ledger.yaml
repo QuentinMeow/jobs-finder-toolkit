@@ -570,3 +570,17 @@
     assertion checks. Both are corrections to this branch's own new gate rather
     than to anything published. No path, employer, person or filename from the
     overlay appears; no absolute home path.
+
+- commit: 054744ab
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:99aa402015e6a4d9
+  finding: >-
+    Clean. One eval-result record and three backlog tasks, all describing the
+    company-research skill's own instruction text and three canary runs against a
+    public company the canary set itself names. No employer from the private tree,
+    no person, no posting, no date or salary from the owner's history, no absolute
+    home path. The record deliberately states which canaries were NOT run rather
+    than implying a full pass, and reports an unexplained token outlier rather
+    than smoothing it over.
