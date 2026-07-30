@@ -225,7 +225,7 @@ Router:
   never bypass with `--no-verify`.
 - **Risk-based eval gate on harness edits**: for any change to a skill's
   `SKILL.md`/`LESSONS.md`/`reference.md`, the editing agent decides whether to run that skill's
-  canaries (`evals/<skill>/canaries.yaml`) by judging the edit's **intention and size** —
+  canaries (`evals/canaries/<skill>.yaml`) by judging the edit's **intention and size** —
   behavioral or large edits must pass canaries before merge (no large efficiency regression,
   model-pinned, runs recorded per `evals/README.md`); mechanical or small edits may skip **with a
   recorded one-line rationale**. See `evals/README.md` for the run/skip criteria. Harness

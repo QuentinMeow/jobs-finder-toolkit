@@ -175,7 +175,7 @@ the leak guard on push.
 | `automation/company-levels/` | File-only `import_company_levels.py` — never fetches or scrapes |
 | `automation/metrics/` | Opt-in local metrics hooks + the instruction-file size budget (`instruction_budget.py --strict`) |
 | `automation/publish/` | Leak guard + exporter (the repo's privacy defenses) |
-| `evals/` | Per-skill canary evals gating skill-instruction changes (see `evals/README.md`) |
+| `evals/` | All measurement: `canaries/<skill>.yaml` gating skill-instruction changes, `protocols/` (matched-pair A/B + stage benchmarks), `rubrics/`, dated `results/` (see `evals/README.md`) |
 | `automation/hooks/` | Tracked git hooks: pre-commit (staged-index leak guard + staged-`private/` reject, drift, compile, budget, reconciler), pre-push (leak guard, armed) |
 | `AGENTS.md` | The agent-facing contract: guardrails, conventions, memory map |
 | `docs/handbook/` | Human-facing operating docs (this file, `docs/handbook/private-overlay.md`, `docs/handbook/metrics.md`) |

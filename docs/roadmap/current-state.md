@@ -49,7 +49,9 @@
   `automation/search-recall-audit/` and `automation/company-levels/`, and the
   three human-doc roots now sit under one parent as `docs/handbook/`,
   `docs/designs/` and `docs/roadmap/` (superseding ADR:
-  `memory/decisions/docs-parent-for-the-human-read-trees.md`); the `evals/`
-  and `tmp/` halves of the phase are still open. Phases 1, 5–8 not started;
+  `memory/decisions/docs-parent-for-the-human-read-trees.md`), and `evals/`
+  absorbed all measurement into `protocols/` + `canaries/<skill>.yaml` beside
+  the existing `rubrics/` and `results/`; the `tmp/` half of the phase is still
+  open. Phases 1, 5–8 not started;
   their task files carry the re-measured preconditions. See
   `docs/designs/workspace-restructure/execution-plan.md`.

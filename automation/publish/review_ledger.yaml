@@ -294,3 +294,26 @@
     remains the fictional persona or a toolkit filename. The published file set
     is unchanged: an export before and after ships the same 566 files, and
     docs/roadmap/ still does not ship.
+
+- commit: 7968943f
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 16
+  digest: sha256:1002f117920e8173
+  finding: >-
+    Clean. Read the whole diff. Twelve of the sixteen files are pure git
+    renames: the nine per-skill canary sets move to evals/canaries/<skill>.yaml
+    at 100% similarity (byte-identical, zero content change), and three
+    procedure docs move under evals/protocols/ — ab-protocol.md from the evals
+    root, plus protocol.md and stage-map.md out of the now-empty
+    docs/designs/stage-benchmarks/ family. The only added lines are re-pointed
+    references: report.py's docstring, judging.md, the resume-writer
+    known-issue, one row of the github-workflow skill's file table, and the
+    moved docs' own cross-links (including the relative depth of the one
+    markdown link into private/docs/, which is a maintainer-only design doc
+    named by path in prose that was already public and whose CONTENT is not
+    reproduced). No real name, employer, school, recruiter, posting, salary,
+    email, phone or absolute home path appears; the canary sets continue to
+    carry only the fictional Jordan Rivers persona and fictional postings. No
+    private/ file is added or read into the tree. The published file set is
+    unchanged in count — the same files ship, under new names.

@@ -93,7 +93,7 @@ pre-commit hook and CI both fail on drift).
 
 The eval gate on a skill's instruction files — `skills/*/SKILL.md`,
 `LESSONS.md`, or `reference.md` — is **risk-based**: the editing agent decides
-whether to run that skill's canaries in `evals/<skill>/` by judging the edit's
+whether to run that skill's canaries in `evals/canaries/<skill>.yaml` by judging the edit's
 **intention** (does it change what an agent does?) and **size**. Behavioral or
 large edits must run the canaries and report results in the PR description;
 mechanical or small edits (typos, path/flag fixes, semantics-preserving

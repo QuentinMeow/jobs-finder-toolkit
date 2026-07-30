@@ -137,7 +137,7 @@ skills/<skill>/          # the skills: SKILL.md + self-contained scripts
 automation/              # everything that runs: shared modules, vendoring, gardener,
                          #   pipeline audits, metrics, leak guard, git hooks, the reconciler
 templates/               # single source of truth for process-file schemas
-evals/                   # per-skill canary evals (gate skill-instruction changes)
+evals/                   # measurement: canary sets per skill, A/B + stage protocols, rubrics, runs
 docs/handbook/           # extended reference: architecture, private overlay, metrics
 docs/designs/            # active design programs (one folder per topic)
 docs/roadmap/            # desired vs current state — the gap is the backlog's source

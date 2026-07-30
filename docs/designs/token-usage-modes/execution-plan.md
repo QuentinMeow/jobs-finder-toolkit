@@ -14,7 +14,7 @@ a specific vendor or model.
   `<type>/<short-slug>`, all four checks green (publish tests, instruction budget
   `--strict`, leak guard clean, gardener `verify-links`), vendored copies in sync.
 - **Eval gate**: any PR touching `skills/*/SKILL.md`, `LESSONS.md`, or
-  `reference.md` runs that skill's `evals/<skill>/canaries.yaml` and records results
+  `reference.md` runs that skill's `evals/canaries/<skill>.yaml` and records results
   per `evals/README.md`. Instruction edits are delta-only.
 - **Vendoring** (AGENTS.md §Sharing Code Across Skills): a script used by one skill
   lives in that skill's `scripts/`; shared pure modules live canonically in

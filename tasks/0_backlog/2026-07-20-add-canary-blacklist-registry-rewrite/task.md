@@ -22,12 +22,12 @@ map explicitly lists this change as `UNGATED (no canary drives a blacklisted
 company)` — `rw-duplicate-preflight` covers the adjacent already-drafted-folder
 stop, but no canary actually supplies a company that
 `registry.is_blacklisted()` would flag. Checked directly against
-`evals/resume-writer/canaries.yaml` as it stands today: no canary id or setup
+`evals/canaries/resume-writer.yaml` as it stands today: no canary id or setup
 references a blacklisted company or `companies.yaml`'s blacklist entries; this
 gap is still open.
 
 Relevant files:
-- `evals/resume-writer/canaries.yaml` (where the new canary belongs, alongside
+- `evals/canaries/resume-writer.yaml` (where the new canary belongs, alongside
   `rw-duplicate-preflight`)
 - `skills/job-search/scripts/registry.py` (`is_blacklisted()`, the
   behavior to exercise)
@@ -39,7 +39,7 @@ Relevant files:
 
 ## Definition of done
 
-- A new canary in `evals/resume-writer/canaries.yaml` (e.g.
+- A new canary in `evals/canaries/resume-writer.yaml` (e.g.
   `rw-blacklist-preflight`) prompts a tailoring request against a company that a
   fixture-level `companies.yaml`/registry entry marks blacklisted, and asserts the
   agent stops before creating anything, citing the blacklist.

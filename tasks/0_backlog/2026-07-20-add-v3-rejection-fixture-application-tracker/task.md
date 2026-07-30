@@ -13,7 +13,7 @@ path it claims to cover, not just the all-valid-v4 happy path.
 
 ## Context
 
-`at-validate-drafted-metadata` (`evals/application-tracker/canaries.yaml`)
+`at-validate-drafted-metadata` (`evals/canaries/application-tracker.yaml`)
 already lists rejecting "a legacy v3 file or a `total_compensation_range` key" as
 an expected behavior and a failure mode, but its `setup:` only points at the
 shipped, already-valid v4 example
@@ -28,7 +28,7 @@ canary-level coverage of an agent actually encountering and correctly reporting
 a rejected file.
 
 Relevant files:
-- `evals/application-tracker/canaries.yaml` (`at-validate-drafted-metadata`'s
+- `evals/canaries/application-tracker.yaml` (`at-validate-drafted-metadata`'s
   `setup:` field to extend, or a new canary id)
 - `skills/application-tracker/scripts/status.py` (`check_metadata()`,
   where the v3/legacy-key rejection logic lives)
