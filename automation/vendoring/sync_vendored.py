@@ -62,6 +62,10 @@ TARGETS: dict[str, list[str]] = {
     "automation/shared/calendar_todos.py": [
         "skills/application-tracker/scripts/_vendor/calendar_todos.py",
     ],
+    "automation/shared/skip_log.py": [
+        "skills/application-tracker/scripts/_vendor/skip_log.py",
+        "skills/job-search/scripts/_vendor/skip_log.py",
+    ],
 }
 
 # Canonical SOURCE DIRECTORY -> list of vendored COPY directory targets. Each copy

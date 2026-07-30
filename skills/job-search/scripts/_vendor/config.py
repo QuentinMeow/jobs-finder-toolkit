@@ -419,6 +419,7 @@ def discoveries_dir() -> Path:
 CANDIDATE_DIRNAME = "0_profile"
 TAILORING_CARD_FILENAME = "tailoring-card.md"
 APPLICATIONS_LOG_FILENAME = "applications-log.yaml"
+APPLICATIONS_JSONL_FILENAME = "applications-log.jsonl"
 COMPANY_SEARCH_LOG_FILENAME = "company-search-log.yaml"
 CALENDAR_FILENAME = "calendar.md"
 
@@ -466,6 +467,24 @@ def applications_log_path() -> Path:
     """Skip-log of postings already generated/considered (derived, regenerable)."""
     return _resolve_configured("applications_log",
                                candidate_dir() / APPLICATIONS_LOG_FILENAME)
+
+
+def applications_jsonl_path() -> Path:
+    """Append-only event log of postings already generated/considered.
+
+    The same skip-log as ``applications_log_path()`` in a format nothing
+    regenerates: one JSON object per line, folded last-wins, never rewritten. That
+    is what stops a deleted application folder from un-skipping its posting — and
+    it also removes the safety net the comment above describes. A benchmark run
+    that resolved the REAL skip-log used to be self-healing, because the next
+    ``--sync-log`` regenerated the whole file from the real folders and washed the
+    fixture rows out. Here there is no regeneration: a contaminated line is
+    permanent and silently suppresses a real posting forever. So the default rides
+    ``candidate_dir()`` — the one knob ``config.benchmark.yaml`` turns — rather
+    than ``applications_log_path().parent``, which would isolate only by accident.
+    """
+    return _resolve_configured("applications_jsonl",
+                               candidate_dir() / APPLICATIONS_JSONL_FILENAME)
 
 
 def company_search_log_path() -> Path:

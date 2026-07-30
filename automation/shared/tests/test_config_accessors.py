@@ -252,6 +252,7 @@ class AccessorDefaultTests(unittest.TestCase):
                 ("candidate_dir", config.candidate_dir()),
                 ("tailoring_card_path", config.tailoring_card_path()),
                 ("applications_log_path", config.applications_log_path()),
+                ("applications_jsonl_path", config.applications_jsonl_path()),
                 ("company_search_log_path", config.company_search_log_path()),
                 ("calendar_path", config.calendar_path()),
                 ("blacklist_path", config.blacklist_path()),
@@ -291,6 +292,8 @@ class AccessorOverrideTests(unittest.TestCase):
                              base / "apps" / "candidate" / "tailoring-card.md")
             self.assertEqual(config.applications_log_path(),
                              base / "apps" / "candidate" / "applications-log.yaml")
+            self.assertEqual(config.applications_jsonl_path(),
+                             base / "apps" / "candidate" / "applications-log.jsonl")
             self.assertEqual(config.calendar_path(),
                              base / "apps" / "candidate" / "cal.md")
             self.assertEqual(config.blacklist_path(), base / "elsewhere" / "skips.yaml")
@@ -306,6 +309,7 @@ class AccessorOverrideTests(unittest.TestCase):
           applications_root: "private/applications"
           tailoring_card: "private/me/tailoring-card.md"
           applications_log: "private/market/logs/applications-log.yaml"
+          applications_jsonl: "private/market/logs/applications-log.jsonl"
           company_search_log: "private/market/logs/company-search-log.yaml"
     """
 
@@ -321,6 +325,8 @@ class AccessorOverrideTests(unittest.TestCase):
                              base / "private" / "me" / "tailoring-card.md")
             self.assertEqual(config.applications_log_path(),
                              base / "private" / "market" / "logs" / "applications-log.yaml")
+            self.assertEqual(config.applications_jsonl_path(),
+                             base / "private" / "market" / "logs" / "applications-log.jsonl")
             self.assertEqual(config.company_search_log_path(),
                              base / "private" / "market" / "logs" / "company-search-log.yaml")
             # candidate_dir() itself is untouched — the three left it, it did not move.
@@ -337,6 +343,11 @@ class AccessorOverrideTests(unittest.TestCase):
         run would resolve — and write to — the real tailoring card and the real
         skip-log. Skip-log contamination is silent and durable: it suppresses real
         applications from then on.
+
+        The JSONL skip-log raises that stake. The YAML was self-healing — the next
+        ``--sync-log`` regenerated it wholesale and washed the fixture rows out.
+        Nothing regenerates the append-only file, so a contaminated line there is
+        permanent.
         """
         body = 'paths:\n  applications_root: "private/benchmark/applications"\n'
         with _active_config(body) as cfg:
@@ -344,6 +355,8 @@ class AccessorOverrideTests(unittest.TestCase):
             self.assertEqual(config.tailoring_card_path(), bench / "tailoring-card.md")
             self.assertEqual(config.applications_log_path(),
                              bench / "applications-log.yaml")
+            self.assertEqual(config.applications_jsonl_path(),
+                             bench / "applications-log.jsonl")
             self.assertEqual(config.company_search_log_path(),
                              bench / "company-search-log.yaml")
             self.assertEqual(config.company_levels_path(), bench / "company-levels.yaml")
