@@ -725,3 +725,21 @@
     this repo's established fictional vocabulary. The linter itself was also run
     against the owner's real index, where it found one over-strict rule of mine and
     that rule was narrowed until the real data passes clean.
+- commit: 130db75e
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 2
+  digest: sha256:e2cc5dfe27d1a2b5
+  finding: >-
+    Read the full diff. It adds one reconciler check plus its tests. The check
+    emits application paths and company keys as finding subjects, which is why
+    the same commit adds a PRIVATE_CHECKS filter to file_retries: that command
+    writes TRACKED files under message-queue/needs-agent/retries/ whose bodies
+    repeat a finding's subject and message verbatim, so without the filter one
+    run would have committed an application slug and a company key into the
+    public tree — and the staged-index leak guard would not have caught it,
+    because company names are not identity tokens. No company name, employer,
+    person, posting URL, application slug or absolute home path appears in the
+    diff itself; the test fixtures use invented keys. The advisory company
+    detector, armed for the first time by the overlay's index, reports (none)
+    for this range.

@@ -162,9 +162,15 @@ FIELDS = ("display", "aliases", "kind", "parent")
 # Subject used for a problem with the file as a whole rather than one entry.
 FILE_SUBJECT = "<file>"
 
-# Ordinary words that are NOT truncations of their display (rule 1 catches those)
-# but would still fire the advisory leak detector, which substring-matches every
-# alias against a whole diff.
+# Ordinary words that are NOT truncations of their display (rule 1 catches those).
+#
+# This rule is HYGIENE, NOT NOISE-SUPPRESSION, and the distinction is the whole
+# point of constraint 1 below: because every token here is required to be
+# vocabulary the public tree already contains, the detector would have subtracted
+# it anyway (review_gate.py:470-471) and it could never have fired. What the rule
+# actually buys is that an alias which is a bare programming term is a modelling
+# mistake — it says nothing about which employer is meant — and it is caught at
+# lint time rather than lived with.
 #
 # TWO CONSTRAINTS ON WHAT MAY GO IN HERE, both load-bearing:
 #

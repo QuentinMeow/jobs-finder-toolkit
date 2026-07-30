@@ -60,12 +60,32 @@ it: the folder count has drifted and the ratio was not re-derived with it.
 
 ## Definition of done
 
-- [ ] `companies/_index.yaml` exists and is the only alias registry
-- [ ] `company_key` added to 242 `meta.yaml` files
-- [ ] The other three alias registries generated from it or deleted
-- [ ] Reconciler: every key resolves, no two keys share an alias; the check is in `CHECK_ROOTS`
-      so it no-ops in the published tree
-- [ ] The email assistant emits `durable:` and `promote` moves flagged entries
-- [ ] Review-ledger rows for every commit; zero company names in public files, commit messages
-      or PR descriptions
-- [ ] Gate command clean
+Evidence for every box is in `verification.md` beside this file. Three boxes changed meaning once
+the code was read; each says why.
+
+- [x] `companies/_index.yaml` exists and is the only **owner-owned** alias registry — 223 keys,
+      265 distinct names, no two keys sharing one. It resolves **214/214** of the company strings
+      the applications carry, against the public resolver's 119/214.
+- [ ] ~~`company_key` added to 242 `meta.yaml` files~~ → **split out as 7b** (and the count was
+      243, not 242). Held until the owner answers seven judgement calls: settling the keys before
+      243 files point at them is cheaper than re-pointing 243 files afterwards.
+- [x] ~~The other three alias registries generated from it or deleted~~ → **not implementable, and
+      none were.** The public one cannot be generated from a private source (the exporter ships
+      tracked files, CI has no overlay, and a public file derived from private data is the exact
+      leak this design prevents); the second feeds a **skip** path and the third an **enrichment**
+      path, so retiring either changes behaviour for no privacy gain. Each is kept for a recorded
+      reason; the plan section carries the full argument.
+- [x] Reconciler: every `company_key` resolves, no two keys share an alias. **The check is NOT
+      made to no-op by its `CHECK_ROOTS` entry** — that map gates nothing at runtime, and because
+      pre-commit runs `--require-roots` whenever `private/` is mounted, declaring a private root
+      without an exemption would have made the overlay's shape a gate on public commits. The
+      no-op is a hand-written guard, and `check_required_roots()` skips private roots.
+- [ ] ~~The email assistant emits `durable:` and `promote`~~ → **split out as 7c.** No Python
+      writes `notes.md` at all today, so this is greenfield, and its first consumer *moves files* —
+      which should not run on 44%-hand-judged data in the same change that creates it.
+- [x] Review-ledger rows for every commit; zero company names in public files, commit messages or
+      PR descriptions. A leak vector not in the plan was found and closed on the way:
+      `--file-retries` writes **tracked** files whose bodies repeat a finding's subject, and this
+      check's subjects are application paths and company keys.
+- [x] Gate command clean — full CI-equivalent gate ALL GREEN, and the reconciler proved to no-op
+      in a detached worktree with neither `private/` nor `config.yaml`.
