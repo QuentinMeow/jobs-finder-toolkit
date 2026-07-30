@@ -743,3 +743,18 @@
     diff itself; the test fixtures use invented keys. The advisory company
     detector, armed for the first time by the overlay's index, reports (none)
     for this range.
+- commit: 0a7cd219
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 11
+  digest: sha256:d5db54b2a342c287
+  finding: >-
+    The phase-7 record, its ADR, the task moves and two follow-up tasks. Read
+    the full diff. An EARLIER draft of this same content DID leak: the
+    verification file pasted a linter run verbatim and named seven real
+    employers. The advisory detector — armed for the first time by this phase —
+    fired on exactly those seven names and required human review. The draft was
+    rewritten to shapes and the commit was reset rather than amended forward, so
+    the leaking blob never entered pushed history. The detector now reports
+    (none) for this range. Re-read after the fix: no employer, person, school,
+    posting URL, application slug, salary or absolute home path remains.
