@@ -703,3 +703,25 @@
     home path appears. The company cross-reference reported NOT INSPECTED because
     private/companies/_index.yaml does not exist yet, so this row rests on reading
     the diff rather than on that detector.
+- commit: b4946f97
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 5
+  digest: sha256:89b81231211e29da
+  finding: >-
+    Read the full diff. Five files: one new pure library plus its tests, one new
+    test over the shipped public company registry, and a comment-only edit to the
+    review gate with two tests pinning it. Every fixture is fictional (acme-* keys,
+    Acme * display names, Zzz Planted * registry rows); no employer, person,
+    school, salary, posting URL, application slug or absolute home path appears.
+    Two findings were fixed BEFORE this commit rather than merely noted. First, the
+    advisory detector fired on an earlier draft: that draft carried a ~620-word
+    English stop-list, 149 of whose tokens were absent from the public tree, and
+    publishing a word puts it in the tree where the detector subtracts it forever —
+    so the list would have blinded the detector to 149 names. The list is now
+    restricted to vocabulary this repo already uses, verified token by token and
+    pinned by a test, and the detector reports (none) on this range. Second, one
+    test fixture composed a real research institution's name; it was replaced with
+    this repo's established fictional vocabulary. The linter itself was also run
+    against the owner's real index, where it found one over-strict rule of mine and
+    that rule was narrowed until the real data passes clean.
