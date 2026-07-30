@@ -301,6 +301,71 @@ class AccessorOverrideTests(unittest.TestCase):
                              base / "elsewhere" / "refs" / "resume-writer")
             self.assertEqual(config.companies_root(), base / "elsewhere" / "co")
 
+    SPLIT = """\
+        paths:
+          applications_root: "private/applications"
+          tailoring_card: "private/me/tailoring-card.md"
+          applications_log: "private/market/logs/applications-log.yaml"
+          company_search_log: "private/market/logs/company-search-log.yaml"
+    """
+
+    def test_the_card_and_the_two_logs_can_leave_candidate_dir_separately(self):
+        """The lifetime taxonomy sends the card and the logs to different roots.
+
+        Before these three had keys they were hard-derived as
+        ``candidate_dir() / <FILENAME>``, so one directory had to hold all three.
+        """
+        with _active_config(self.SPLIT) as cfg:
+            base = cfg.parent
+            self.assertEqual(config.tailoring_card_path(),
+                             base / "private" / "me" / "tailoring-card.md")
+            self.assertEqual(config.applications_log_path(),
+                             base / "private" / "market" / "logs" / "applications-log.yaml")
+            self.assertEqual(config.company_search_log_path(),
+                             base / "private" / "market" / "logs" / "company-search-log.yaml")
+            # candidate_dir() itself is untouched — the three left it, it did not move.
+            self.assertEqual(config.candidate_dir(),
+                             base / "private" / "applications" / "0_profile")
+
+    def test_redirecting_applications_root_still_isolates_all_three(self):
+        """Benchmark write-isolation, which these keys must not break.
+
+        ``config.benchmark.yaml`` isolates every derived write SOLELY by pointing
+        ``applications_root`` at a fixture tree and letting ``candidate_dir()``
+        follow. If the three accessors were re-derived from a new ``me``/``market``
+        root instead of keeping the old derivation as their DEFAULT, a benchmark
+        run would resolve — and write to — the real tailoring card and the real
+        skip-log. Skip-log contamination is silent and durable: it suppresses real
+        applications from then on.
+        """
+        body = 'paths:\n  applications_root: "private/benchmark/applications"\n'
+        with _active_config(body) as cfg:
+            bench = cfg.parent / "private" / "benchmark" / "applications" / "0_profile"
+            self.assertEqual(config.tailoring_card_path(), bench / "tailoring-card.md")
+            self.assertEqual(config.applications_log_path(),
+                             bench / "applications-log.yaml")
+            self.assertEqual(config.company_search_log_path(),
+                             bench / "company-search-log.yaml")
+            self.assertEqual(config.company_levels_path(), bench / "company-levels.yaml")
+
+    def test_company_levels_does_not_follow_the_profile(self):
+        """Its default is candidate_dir()-derived, not profile_md_path().parent.
+
+        Both spell the same folder in a default layout. They diverge the moment
+        the profile moves to ``me/`` while this file stays with the market logs —
+        which is exactly what the lifetime taxonomy does.
+        """
+        body = ('paths:\n'
+                '  applications_root: "private/applications"\n'
+                '  profile_md: "private/me/profile.md"\n')
+        with _active_config(body) as cfg:
+            base = cfg.parent
+            self.assertEqual(
+                config.company_levels_path(),
+                base / "private" / "applications" / "0_profile" / "company-levels.yaml")
+            self.assertNotEqual(config.company_levels_path(),
+                                config.profile_md_path().parent / "company-levels.yaml")
+
     def test_absolute_configured_paths_are_used_verbatim(self):
         with tempfile.TemporaryDirectory() as tmp:
             resolved = Path(tmp).resolve()
