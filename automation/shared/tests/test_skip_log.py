@@ -226,6 +226,34 @@ class ForgetTests(unittest.TestCase):
                 source="update")
             self.assertEqual(skip_log.read_postings(path), [])
 
+    def test_forgotten_keys_reports_what_the_fold_can_no_longer_distinguish(self):
+        # `fold` drops a tombstoned key, so "deliberately forgotten" and "never seen"
+        # look identical in its output. Anything that re-adds rows in bulk needs the
+        # difference or it silently reverses the owner's un-skip.
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "log.jsonl"
+            skip_log.append_event(path, _row(), source="sync")
+            skip_log.append_event(path, _row(url="https://fakejobs.test/jobs/2"),
+                                  source="sync")
+            skip_log.append_event(path, skip_log.forget_row(url=_row()["url"]),
+                                  source="update")
+            self.assertEqual(skip_log.forgotten_keys(path),
+                             {("url", skip_log.norm_url(_row()["url"]))})
+            self.assertEqual(len(skip_log.fold(path)), 1)
+
+    def test_a_resurrected_key_is_no_longer_reported_as_forgotten(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "log.jsonl"
+            skip_log.append_event(path, _row(), source="sync")
+            skip_log.append_event(path, skip_log.forget_row(url=_row()["url"]),
+                                  source="update")
+            skip_log.append_event(path, _row(status="rejected"), source="sync")
+            self.assertEqual(skip_log.forgotten_keys(path), set())
+
+    def test_forgotten_keys_on_a_missing_file_is_empty(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(skip_log.forgotten_keys(Path(td) / "nope.jsonl"), set())
+
     def test_forget_row_refuses_an_unaddressable_tombstone(self):
         # Without this it would tombstone ("pair", "", ""), a key no real posting
         # holds — the un-skip would appear to work and change nothing.

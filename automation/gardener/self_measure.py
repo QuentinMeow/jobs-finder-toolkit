@@ -2,8 +2,8 @@
 
 Self-measurement: derive the application funnel
 from the status folders (matching status.py) plus the discovered count from the
-derived applications-log, LESSONS staleness counts, and the instruction-budget
-summary. Prints YAML to stdout.
+append-only applications skip-log (folded to distinct postings, not lines),
+LESSONS staleness counts, and the instruction-budget summary. Prints YAML to stdout.
 
 ``--apply`` writes ``metrics.yaml`` NEXT TO the applications-log (inside the
 overlay via config paths, i.e. ``config.candidate_dir()/metrics.yaml``) —
@@ -32,6 +32,7 @@ except ImportError:  # pragma: no cover
 # sys.path, so this imports the canonical mapping (the same one status.py uses)
 # instead of hand-maintaining a copy.
 from layout import STATUS_DIRS  # noqa: E402
+import skip_log  # noqa: E402  (automation/shared/skip_log.py, same bootstrap)
 
 
 def _count_apps(status_dir: Path) -> int:
@@ -41,14 +42,19 @@ def _count_apps(status_dir: Path) -> int:
 
 
 def _discovered_count(log: Path) -> int | None:
+    """How many DISTINCT postings the skip-log knows about, or None if unreadable.
+
+    The append-only log has no header and therefore no ``count`` field to trust; it
+    holds one line per EVENT, so a posting that moved drafted -> applied -> rejected
+    occupies three lines. Counting lines would inflate the funnel's "discovered"
+    number every time any posting merely changed status. ``read_postings`` folds the
+    stream to one row per posting first, which is the number this metric has always
+    meant.
+    """
     if not log.is_file():
         return None
     try:
-        import yaml
-        data = yaml.safe_load(log.read_text()) or {}
-        if isinstance(data.get("count"), int):
-            return data["count"]
-        return len(data.get("postings") or [])
+        return len(skip_log.read_postings(log))
     except Exception:
         return None
 
@@ -98,7 +104,7 @@ def collect() -> dict:
         "generated": C.today().isoformat(),
         "applications_root": C.rel(apps_root),
         "funnel": {
-            "discovered": _discovered_count(config.applications_log_path()),
+            "discovered": _discovered_count(config.applications_jsonl_path()),
             **funnel,
             "total_tracked": total,
         },

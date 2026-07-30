@@ -42,23 +42,12 @@ import yaml  # noqa: E402
 import json  # noqa: E402
 import config  # noqa: E402
 import scoring  # noqa: E402
+import skip_log  # noqa: E402  (automation/shared/skip_log.py — folds the skip-log)
 from common import JobPosting  # noqa: E402
 from registry import load_registry  # noqa: E402
 from search_jobs import resolve_profile  # noqa: E402
 
 OUT = ROOT / "local" / "field_fidelity_audit"
-OUT.mkdir(parents=True, exist_ok=True)
-
-# Load the default profile YAML. ``resolve_profile`` searches the overlay's
-# private profiles first and the tracked public ones second — the same order the
-# live pipeline uses, so this audit re-evaluates against the SAME gates.
-prof_file = resolve_profile(config.default_profile())
-profile = yaml.safe_load(prof_file.read_text())
-
-registry = load_registry()
-
-data_root = Path(config.data_root())
-derived = data_root / "jobs" / "derived" / "postings"
 
 
 def load_entity(posting_yaml: Path) -> JobPosting | None:
@@ -107,46 +96,59 @@ def gate_decisions(jp: JobPosting) -> dict:
     }
 
 
-# ---- covered set: applications-log + live folders + blacklist ------------- #
+# ---- covered set: applications skip-log + live folders + blacklist -------- #
 def canon(u: str) -> str:
     u = (u or "").split("#")[0].rstrip("/")
     return u.lower()
 
 
-covered_urls: set[str] = set()
-covered_pairs: set[tuple[str, str]] = set()   # (company_lower, title_lower)
-apps_root = Path(config.applications_root())
-log_path = Path(config.applications_log_path())
-if log_path.exists():
-    log = yaml.safe_load(log_path.read_text()) or {}
-    entries = log.get("applications") or log.get("entries") or []
-    if isinstance(log, list):
-        entries = log
-    for e in entries if isinstance(entries, list) else []:
-        if not isinstance(e, dict):
-            continue
-        for u in ([e.get("url")] + (e.get("urls") or [])):
-            if u:
-                covered_urls.add(canon(u))
-        if e.get("company"):
-            covered_pairs.add((str(e["company"]).lower(),
-                               str(e.get("role") or e.get("title") or "").lower()))
+def build_covered(log_path: Path,
+                  apps_root: Path) -> tuple[set[str], set[tuple[str, str]]]:
+    """(covered URLs, covered ``(company, title)`` pairs) — skip-log + live folders.
 
-for status in ("6_drafted", "5_applied", "4_in_progress", "3_rejected",
-               "2_ignored", "1_discoveries"):
-    for meta in (apps_root / status).glob("*/meta.yaml"):
-        try:
-            m = yaml.safe_load(meta.read_text()) or {}
-        except Exception:
-            continue
-        comp = str(m.get("company", "")).lower()
-        for j in (m.get("jobs") or []):
-            if isinstance(j, dict):
-                if j.get("url"):
-                    covered_urls.add(canon(j["url"]))
-                covered_pairs.add((comp, str(j.get("title") or j.get("role") or "").lower()))
-        if m.get("url"):
-            covered_urls.add(canon(m["url"]))
+    The log half of this used to read ``log["applications"]`` / ``log["entries"]``,
+    keys the applications log has never carried: its only writer emits
+    ``{generated, count, postings}``. Both lookups returned ``[]`` on every run, so
+    the log contributed NOTHING and "covered" meant "has a live folder" — which
+    reports every posting whose folder the owner had since deleted as an uncovered
+    new match. Reading the folded skip-log is what the surrounding code always
+    claimed to do.
+
+    Rows arrive from ``skip_log.read_postings`` in the ``{company, slug, date,
+    status, role, url}`` shape and are pushed through THIS module's ``canon`` at the
+    boundary — ``canon`` strips the fragment, which ``skip_log.norm_url``
+    deliberately does not, and the store URLs on the other side of the comparison
+    are canon'd the same way.
+    """
+    covered_urls: set[str] = set()
+    covered_pairs: set[tuple[str, str]] = set()   # (company_lower, title_lower)
+
+    if log_path.exists():
+        for e in skip_log.read_postings(log_path):
+            url = e.get("url")
+            if url:
+                covered_urls.add(canon(url))
+            if e.get("company"):
+                covered_pairs.add((str(e["company"]).lower(),
+                                   str(e.get("role") or "").lower()))
+
+    for status in ("6_drafted", "5_applied", "4_in_progress", "3_rejected",
+                   "2_ignored", "1_discoveries"):
+        for meta in (apps_root / status).glob("*/meta.yaml"):
+            try:
+                m = yaml.safe_load(meta.read_text()) or {}
+            except Exception:
+                continue
+            comp = str(m.get("company", "")).lower()
+            for j in (m.get("jobs") or []):
+                if isinstance(j, dict):
+                    if j.get("url"):
+                        covered_urls.add(canon(j["url"]))
+                    covered_pairs.add(
+                        (comp, str(j.get("title") or j.get("role") or "").lower()))
+            if m.get("url"):
+                covered_urls.add(canon(m["url"]))
+    return covered_urls, covered_pairs
 
 
 def is_blacklisted(company: str) -> bool:
@@ -156,48 +158,78 @@ def is_blacklisted(company: str) -> bool:
         return False
 
 
-# ---- scan --------------------------------------------------------------- #
-n = 0
-clean_matches: list[dict] = []
-review_matches: list[dict] = []
-for py in derived.glob("*/*/posting.yaml"):
-    n += 1
-    jp = load_entity(py)
-    if jp is None or not jp.title:
-        continue
-    # cheap title cut first (avoids full gate on obvious non-roles)
-    if not scoring.title_ok(jp, profile):
-        continue
-    d = gate_decisions(jp)
-    if not d["all_pass"]:
-        continue
-    rec = {
-        "company": jp.company, "title": jp.title, "location": jp.location,
-        "url": jp.url, "source": jp.source, "workplace": d["workplace"],
-        "visa_label": d["visa_label"], "decisions": {
-            "title": d["title"], "location": d["location"]},
-        "review_reasons": d["review_reasons"],
-        "blacklisted": is_blacklisted(jp.company),
-        "covered": canon(jp.url) in covered_urls
-        or (jp.company.lower(), jp.title.lower()) in covered_pairs,
-    }
-    (clean_matches if d["clean_match"] else review_matches).append(rec)
+# ---- scan ---------------------------------------------------------------- #
+# Everything below runs ONLY as a script. Importing this module must not resolve a
+# private path, load the registry, walk the store, or create ``local/`` output —
+# otherwise the helpers above (``build_covered`` in particular) could not be unit
+# tested without a real profile, a real store, and the owner's real applications.
+# These stay module-level assignments rather than moving into a ``main()`` because
+# ``gate_decisions`` and ``is_blacklisted`` read ``profile`` / ``registry`` as
+# globals, exactly as they did before.
+if __name__ == "__main__":
+    from collections import Counter
 
-(OUT / "refilter_matches.jsonl").write_text(
-    "\n".join(json.dumps(r, default=str) for r in clean_matches + review_matches))
+    OUT.mkdir(parents=True, exist_ok=True)
 
-new_clean = [r for r in clean_matches if not r["covered"] and not r["blacklisted"]]
-new_review = [r for r in review_matches if not r["covered"] and not r["blacklisted"]]
+    # Load the default profile YAML. ``resolve_profile`` searches the overlay's
+    # private profiles first and the tracked public ones second — the same order the
+    # live pipeline uses, so this audit re-evaluates against the SAME gates.
+    prof_label = config.default_profile()
+    prof_file = resolve_profile(prof_label)
+    profile = yaml.safe_load(prof_file.read_text())
 
-from collections import Counter  # noqa: E402
-print(f"scanned {n} stored entities | profile={prof_label}")
-print(f"clean MATCH: {len(clean_matches)}  (new/uncovered: {len(new_clean)})")
-print(f"review-pass: {len(review_matches)}  (new/uncovered: {len(new_review)})")
-print(f"covered already: {sum(1 for r in clean_matches+review_matches if r['covered'])}")
-print(f"blacklisted:     {sum(1 for r in clean_matches+review_matches if r['blacklisted'])}")
-print("\n=== NEW clean matches by company ===")
-for c, k in Counter(r["company"] for r in new_clean).most_common():
-    print(f"  {k:2}  {c}")
-(OUT / "refilter_new.json").write_text(json.dumps(
-    {"new_clean": new_clean, "new_review": new_review}, indent=1, default=str))
-print(f"\nwrote {OUT/'refilter_new.json'}")
+    registry = load_registry()
+
+    data_root = Path(config.data_root())
+    derived = data_root / "jobs" / "derived" / "postings"
+
+    covered_urls, covered_pairs = build_covered(
+        Path(config.applications_jsonl_path()),
+        Path(config.applications_root()),
+    )
+
+    n = 0
+    clean_matches: list[dict] = []
+    review_matches: list[dict] = []
+    for py in derived.glob("*/*/posting.yaml"):
+        n += 1
+        jp = load_entity(py)
+        if jp is None or not jp.title:
+            continue
+        # cheap title cut first (avoids full gate on obvious non-roles)
+        if not scoring.title_ok(jp, profile):
+            continue
+        d = gate_decisions(jp)
+        if not d["all_pass"]:
+            continue
+        rec = {
+            "company": jp.company, "title": jp.title, "location": jp.location,
+            "url": jp.url, "source": jp.source, "workplace": d["workplace"],
+            "visa_label": d["visa_label"], "decisions": {
+                "title": d["title"], "location": d["location"]},
+            "review_reasons": d["review_reasons"],
+            "blacklisted": is_blacklisted(jp.company),
+            "covered": canon(jp.url) in covered_urls
+            or (jp.company.lower(), jp.title.lower()) in covered_pairs,
+        }
+        (clean_matches if d["clean_match"] else review_matches).append(rec)
+
+    (OUT / "refilter_matches.jsonl").write_text(
+        "\n".join(json.dumps(r, default=str) for r in clean_matches + review_matches))
+
+    new_clean = [r for r in clean_matches if not r["covered"] and not r["blacklisted"]]
+    new_review = [r for r in review_matches if not r["covered"] and not r["blacklisted"]]
+
+    print(f"scanned {n} stored entities | profile={prof_label}")
+    print(f"clean MATCH: {len(clean_matches)}  (new/uncovered: {len(new_clean)})")
+    print(f"review-pass: {len(review_matches)}  (new/uncovered: {len(new_review)})")
+    print(f"covered already: "
+          f"{sum(1 for r in clean_matches+review_matches if r['covered'])}")
+    print(f"blacklisted:     "
+          f"{sum(1 for r in clean_matches+review_matches if r['blacklisted'])}")
+    print("\n=== NEW clean matches by company ===")
+    for c, k in Counter(r["company"] for r in new_clean).most_common():
+        print(f"  {k:2}  {c}")
+    (OUT / "refilter_new.json").write_text(json.dumps(
+        {"new_clean": new_clean, "new_review": new_review}, indent=1, default=str))
+    print(f"\nwrote {OUT/'refilter_new.json'}")

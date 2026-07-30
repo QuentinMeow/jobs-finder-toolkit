@@ -69,6 +69,7 @@ for p in (REPO_ROOT / "automation" / "shared", _JS, _JS / "_vendor"):
 
 import yaml  # noqa: E402
 import config  # noqa: E402  (automation/shared/config.py)
+import skip_log  # noqa: E402  (automation/shared/skip_log.py — folds the skip-log)
 
 DEFAULT_OUT = REPO_ROOT / "local" / "search_recall_audit"
 
@@ -144,12 +145,14 @@ def build_coverage() -> dict:
     urls: set[str] = set()
     companies: set[str] = set()
 
-    log_path = Path(config.applications_log_path())
+    # The skip-log is an append-only event stream; ``read_postings`` folds it to ONE
+    # row per posting (last event wins), so ``cov["log"]`` neither lists a posting
+    # once per status change nor reports a superseded status. Coverage matching still
+    # runs through this module's own ``canon`` — the pipeline's canonicalizer — and
+    # never through ``skip_log``'s wider in-file dedup normalizer.
+    log_path = Path(config.applications_jsonl_path())
     if log_path.exists():
-        data = yaml.safe_load(log_path.read_text()) or {}
-        for e in data.get("postings") or []:
-            if not isinstance(e, dict):
-                continue
+        for e in skip_log.read_postings(log_path):
             cu = canon(e.get("url"))
             cn = _norm_company(e.get("company"))
             cov["log"].append({"company": e.get("company"), "role": e.get("role"),

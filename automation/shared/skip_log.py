@@ -194,6 +194,26 @@ def fold(path) -> dict[tuple, dict]:
     return state
 
 
+def forgotten_keys(path) -> set:
+    """Keys whose LAST event is a tombstone — the owner's explicit un-skips.
+
+    :func:`fold` drops these, which makes "deliberately forgotten" and "never seen"
+    indistinguishable in its output. Anything that RE-ADDS rows in bulk needs to tell
+    the two apart, or it silently reverses a decision the owner made by hand. The
+    concrete case: ``--backfill-log --force`` re-seeds from the retired YAML, which
+    still contains every tombstoned row and is never updated, so a fresh generation
+    would resurrect every un-skip ever performed.
+    """
+    forgotten = set()
+    for event in read_events(path):
+        key = fold_key(event)
+        if event.get("forget"):
+            forgotten.add(key)
+        else:
+            forgotten.discard(key)
+    return forgotten
+
+
 def _blank_if_none(value):
     return "" if value is None else value
 

@@ -73,6 +73,7 @@ from scoring import (  # noqa: E402
     ai_company_ok, date_ok, experience_ok, location_ok, posting_quality_ok,
     score_posting, title_ok, visa_ok,
 )
+import skip_log  # noqa: E402  (vendored: folds the append-only applications skip-log)
 from sources import fetch_company  # noqa: E402
 import snapshot  # noqa: E402  (sibling: pre-filter fetch cache + --refilter helpers)
 import capture_hooks  # noqa: E402  (sibling: raw-store capture shim; lazy/no-op if unconfigured)
@@ -90,8 +91,8 @@ REPO_ROOT = SKILL_DIR.parents[1]  # skills/job-search -> repo root
 # reached only when the vendored config layer is entirely unavailable — standalone
 # use — and must stay equal to the config module's values.
 CANDIDATE_DIRNAME = getattr(config, "CANDIDATE_DIRNAME", "0_profile")
-APPLICATIONS_LOG_NAME = getattr(config, "APPLICATIONS_LOG_FILENAME",
-                                "applications-log.yaml")
+APPLICATIONS_JSONL_NAME = getattr(config, "APPLICATIONS_JSONL_FILENAME",
+                                  "applications-log.jsonl")
 COMPANY_SEARCH_LOG_NAME = getattr(config, "COMPANY_SEARCH_LOG_FILENAME",
                                   "company-search-log.yaml")
 
@@ -155,7 +156,7 @@ FETCH_AFFECTING_FLAGS = (
 )
 
 
-def _applications_log() -> Path:
+def _applications_jsonl() -> Path:
     """The already-considered skip-log, from the config layer.
 
     This replaces a ``profile_dir()`` helper that hunted for *a directory
@@ -169,17 +170,22 @@ def _applications_log() -> Path:
 
     Reading the accessor directly cannot fail that way: if the key is wrong the path
     does not exist and the skip is visibly empty, rather than silently correct-looking.
+    The append-only JSONL inherits that rule unchanged — ``applications_jsonl_path()``
+    is read straight, and the standalone fallback composes the SAME layout from the
+    config module's constant. A guess that "finds a log" is still the failure mode to
+    avoid: under an append-only log a wrong-but-plausible path is worse than a missing
+    one, because nothing regenerates the file to reveal the mistake.
     """
     if config is not None:
         try:
-            return config.applications_log_path()
+            return config.applications_jsonl_path()
         except Exception:  # noqa: BLE001
             pass
-    return applications_root() / CANDIDATE_DIRNAME / APPLICATIONS_LOG_NAME
+    return applications_root() / CANDIDATE_DIRNAME / APPLICATIONS_JSONL_NAME
 
 
 def _company_search_log() -> Path:
-    """The recently-searched skip-log, from the config layer. See ``_applications_log``."""
+    """The recently-searched skip-log, from the config layer. See ``_applications_jsonl``."""
     if config is not None:
         try:
             return config.company_search_log_path()
@@ -353,12 +359,46 @@ def _norm_url(url: str) -> str:
     return (url or "").strip().lower().rstrip("/")
 
 
+def _warn_missing_skip_log(path: Path) -> None:
+    """Say so on stderr when there are applications but no skip-log to check them against.
+
+    A search whose skip-log is absent skips NOTHING and looks completely normal — the
+    same silent fail-open that made ``profile_dir()`` unsafe. It is now also the exact
+    state a half-finished migration leaves behind: the append-only log has to be seeded
+    once with ``status.py --backfill-log``, and until it is, every posting the owner has
+    already applied to comes back as fresh.
+
+    Silent when the applications root holds no application folders, because that is a
+    fresh checkout with nothing to skip rather than a missing file.
+    """
+    try:
+        root = applications_root()
+        has_apps = any(status_dir.is_dir() and any(status_dir.iterdir())
+                       for status_dir in root.iterdir() if status_dir.is_dir())
+    except OSError:
+        return
+    if not has_apps:
+        return
+    print(f"WARNING: no applications skip-log at {path} — this search will not skip "
+          f"ANY posting you have already applied to. Seed it once with "
+          f"`status.py --backfill-log`.", file=sys.stderr)
+
+
 def load_considered(
     registry: Registry | None = None,
 ) -> tuple[set[str], set[tuple[str, str]]]:
-    """Postings already generated/considered (<applications_root>/0_profile/applications-log.yaml).
+    """Postings already generated/considered (<applications_root>/0_profile/applications-log.jsonl).
 
-    The path comes straight from ``config.applications_log_path()``, so it is not
+    The rows come from ``skip_log.read_postings``, which folds the append-only event
+    log down to one row per posting in exactly the ``{company, slug, date, status,
+    role, url}`` shape the old YAML ``postings`` list carried — so everything below
+    (``_norm_url``, the registry expansion, the two independent key adds) is
+    unchanged. ``skip_log``'s own normalizer is deliberately WIDER than ``_norm_url``
+    and is never used here: it dedupes lines inside the file, and applying it to the
+    stored side while ``already_considered`` normalizes the incoming posting the old
+    way would lose skips that fire today.
+
+    The path comes straight from ``config.applications_jsonl_path()``, so it is not
     tied to any candidate's directory and cannot silently resolve to a log-less one. Returns
     (urls, (company_key, role) pairs). Each log row's company is expanded through the
     registry's match keys (name/alias/token + suffix-variant comparable forms), so a
@@ -367,11 +407,13 @@ def load_considered(
     the `reference.md` § Skip logic contract that identity resolves through the
     registry. New roles at the same company are NOT in the pair set, so they surface.
     """
-    path = _applications_log()
+    path = _applications_jsonl()
     urls: set[str] = set()
     pairs: set[tuple[str, str]] = set()
-    if path.exists():
-        for post in (load_yaml(path).get("postings") or []):
+    if not path.exists():
+        _warn_missing_skip_log(path)
+    else:
+        for post in skip_log.read_postings(path):
             u = _norm_url(post.get("url", ""))
             if u:
                 urls.add(u)
@@ -1033,7 +1075,7 @@ def main() -> int:
     ap.add_argument("--no-companies", action="store_true",
                     help="Skip company ATS boards; use aggregators only.")
     ap.add_argument("--include-considered", action="store_true",
-                    help="Do NOT skip postings already in applications-log.yaml "
+                    help="Do NOT skip postings already in applications-log.jsonl "
                          "(re-surface roles you've already generated/considered). "
                          "The company blacklist is always applied.")
     ap.add_argument("--include-recent", "--ignore-search-log", action="store_true",
