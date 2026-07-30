@@ -677,3 +677,15 @@
     two filenames and one paths key, both generic. AGENTS.md and four SKILL/reference
     files re-point at config accessors rather than literals, which is the direction
     phase 5 established.
+- commit: ec1179af
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 1
+  digest: sha256:d2ffed617e29a3d2
+  finding: >-
+    Session handover. The leak guard caught the first draft of this file: it cited
+    the three PRs by full GitHub URL, and the repository owner's account name is an
+    identity token, so every link was a leak. Rewritten to bare PR numbers. Re-read
+    after the fix — no employer, person, posting, URL, slug or absolute home path
+    remains, and the overlay's PR is referred to without a number since that repo is
+    private.
