@@ -324,7 +324,7 @@ with `gh pr edit <n> --base main`.
 | `skills/github-workflow/SKILL.md` | This router — format, stacking, gates, `gh` recipes |
 | `skills/github-workflow/scripts/check_pr_body.py` | Validates a PR body against the human-facing format (file or stdin; exit 1 with findings) |
 | `skills/github-workflow/scripts/tests/` | `unittest` suite for the checker |
-| `evals/github-workflow/canaries.yaml` | Canary set for this skill (`evals/README.md`) |
+| `evals/canaries/github-workflow.yaml` | Canary set for this skill (`evals/README.md`) |
 | `.github/pull_request_template.md` | The checklist half of a PR body; the human-facing section goes above it |
 | `automation/publish/review_ledger.yaml` | The append-only review record the review gate reads |
 | `CONTRIBUTING.md` | Contributor-facing rules: branch naming, the check list, the eval gate |

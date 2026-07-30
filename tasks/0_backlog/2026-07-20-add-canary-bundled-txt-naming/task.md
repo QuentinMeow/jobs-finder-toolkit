@@ -18,7 +18,7 @@ clarification to `skills/application-tracker/SKILL.md` about the bundled
 `skills/application-tracker/SKILL.md:55`:
 `` `<APPLICATION_STEM>_<job title>.txt` ``). The gate record's diff-coverage map
 lists this as `(no canary asserts .txt naming) — UNGATED`. Checked directly
-against `evals/application-tracker/canaries.yaml` as it stands today (93 lines,
+against `evals/canaries/application-tracker.yaml` as it stands today (93 lines,
 5 canaries: `at-pipeline-health`, `at-validate-drafted-metadata`,
 `at-enrich-insert-only`, `at-status-move-on-request`,
 `at-update-one-role-multi-app`) — none references `.txt` or the bundled-file
@@ -29,7 +29,7 @@ application-tracker-side clarification this gap refers to — e.g. how
 `status.py`/the tracker recognizes or reports on the bundled file by name.)
 
 Relevant files:
-- `evals/application-tracker/canaries.yaml` (where the new canary belongs)
+- `evals/canaries/application-tracker.yaml` (where the new canary belongs)
 - `skills/application-tracker/SKILL.md` (the naming-convention table,
   around the `<APPLICATION_STEM>_<job title>.txt` row)
 - `examples/applications/6_drafted/example-corp-senior-software-engineer/` (the

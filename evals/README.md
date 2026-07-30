@@ -19,7 +19,7 @@ Two jobs, one frozen set of prompts:
    fixed task (design doc §2), so a harness edit that cuts tokens/latency shows clearly at
    **n = 5–10 paired runs**. We A/B **efficiency quantitatively, quality only directionally**
    (blind comparator; no significance claims — the ~300-sample quality math is unreachable at
-   this repo's volume). See [`ab-protocol.md`](ab-protocol.md).
+   this repo's volume). See [`protocols/ab-protocol.md`](protocols/ab-protocol.md).
 
 ## The eval-gated-merge rule (risk-based)
 
@@ -64,7 +64,7 @@ When a run is required, the mechanics are unchanged. For any PR that edits
 `skills/<skill>/{SKILL.md,LESSONS.md,reference.md}`:
 
 1. Identify the affected skill(s) from the diff.
-2. Run that skill's canaries (`evals/<skill>/canaries.yaml`) on the branch head.
+2. Run that skill's canaries (`evals/canaries/<skill>.yaml`) on the branch head.
 3. Every canary's `primary_metric` (`rubric_pass`) must pass, and no efficiency metric may blow
    up (a large `total_tokens` / `tool_calls` regression is a fail even if the rubric passes).
 4. Record the run in `evals/results/` from the [`results/TEMPLATE.md`](results/TEMPLATE.md).
@@ -86,7 +86,7 @@ The skill-creator harness is purpose-built for Claude Code skills (which are lit
 repo's product): evals as **test-prompt + plain-language rubric**, a **benchmark mode** that
 tracks eval pass rate + elapsed time + token usage, multi-agent parallel eval in clean contexts,
 and **blind comparator agents** for A/B ("two skill versions, or skill vs. no skill — judge
-without knowing which is which"). Map each `canaries.yaml` entry onto a skill-creator eval:
+without knowing which is which"). Map each `evals/canaries/<skill>.yaml` entry onto a skill-creator eval:
 `prompt` → the test prompt, `expected_behavior` → the rubric, `efficiency_metrics` → benchmark
 mode's time/token columns. Run in benchmark mode for pass-rate/time/tokens; use comparator mode
 for the directional quality half of an A/B.
@@ -113,9 +113,9 @@ for the directional quality half of an A/B.
    Read `total_tokens` and `wall_clock_s` for the run's SHA; note `tool_calls`. Copy the
    pass/fail + numbers into a `evals/results/` file from the template.
 
-## Matched-pair A/B protocol (summary — full steps in `ab-protocol.md`)
+## Matched-pair A/B protocol (summary — full steps in `evals/protocols/ab-protocol.md`)
 
-- **Frozen canary set.** Use the same `canaries.yaml` prompts for both variants; never edit a
+- **Frozen canary set.** Use the same `evals/canaries/<skill>.yaml` prompts for both variants; never edit a
   canary mid-comparison (job boards drift weekly — freeze the task set).
 - **Same prompts, both variants, paired.** Run variant A and variant B on each prompt; analyze
   per-prompt deltas (matched-pair buys 1–2 orders of magnitude variance reduction).
@@ -126,7 +126,19 @@ for the directional quality half of an A/B.
   the usual primary; quality is a secondary, directional read only.
 - **Pin the model version.** Every A/B result is valid within one model version only.
 - **Quality judged blind + directional.** Hide variant labels; use the blind pairwise comparator
-  in `rubrics/judging.md`; report a direction, not a p-value.
+  in `evals/rubrics/judging.md`; report a direction, not a p-value.
+
+## Stage benchmarks (measuring one pipeline stage instead of a whole leg)
+
+A full end-to-end run costs ~450k tokens and mixes every mechanism together, so a single lever's
+effect drowns in network and render noise. The stage protocol decomposes the search and draft legs
+into stages, pins an input fixture per stage, and measures the one stage a lever touches at n = 1–2
+pairs: [`protocols/stage-benchmarks.md`](protocols/stage-benchmarks.md) is the procedure (fixtures,
+subject-agent prompt rules, stage-specific A/B rules), and
+[`protocols/stage-map.md`](protocols/stage-map.md) is the stage decomposition it pins — per-stage
+cost shares plus each stage's isolating fixture and observable boundary. Stage rows are recorded in
+`evals/results/` from the template's stage section, and compare only against other rows of the
+**same** stage, fixture version and model id.
 
 ## Baseline capture
 
@@ -154,17 +166,25 @@ On a model upgrade (a new Claude Code default model, or a pinned-model bump):
 
 ## Layout
 
+Everything measurement-related lives under this one root: the procedures in `protocols/`, the
+frozen prompt sets in `canaries/`, the judging discipline in `rubrics/`, the dated runs in
+`results/`.
+
 ```
 evals/
   README.md                     # this file — the operating manual
-  ab-protocol.md                # step-by-step matched-pair A/B procedure (design doc §2)
+  protocols/
+    ab-protocol.md              # step-by-step matched-pair A/B procedure (design doc §2)
+    stage-benchmarks.md         # fine-grained, fixture-pinned per-stage measurement (v1)
+    stage-map.md                # the stage decomposition stage-benchmarks.md pins (fixtures + boundaries)
+  canaries/
+    <skill>.yaml                # 4–8 canaries per skill, 9 skills (see below)
   rubrics/
     judging.md                  # shared pass/fail discipline + blind pairwise A/B judging + κ note
     artifact-quality.md         # rubric for the artifacts a skill produces (resume, letter, dossier)
   results/
     .gitkeep                    # results are per-machine; tracked for now, may be gitignored later
     TEMPLATE.md                 # one-page result-recording template
-  <skill>/canaries.yaml         # 4–8 canaries per skill, 9 skills (see below)
 ```
 
 The nine skills with a canary set are `application-tracker` (6), `ask-me-anything` (4),

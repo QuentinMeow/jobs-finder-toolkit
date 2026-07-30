@@ -8,7 +8,7 @@ gitignored later. Pull tokens/wall-clock from: .venv/bin/python automation/metri
 | Field | Value |
 |-------|-------|
 | Skill | `<skill>` |
-| Canary set | `evals/<skill>/canaries.yaml` |
+| Canary set | `evals/canaries/<skill>.yaml` |
 | Run kind | regression baseline / regression pre-merge / A/B |
 | Git SHA | `<12-char sha>` |
 | Model version | `<claude model id>` |
@@ -45,14 +45,14 @@ Pass rate: `<n_pass>/<n_total>`.
   NO significance claim. Judge kappa on calibration set: `<>= 0.6>`.
 - **Ship decision:** ship winner as a normal single-purpose commit / no change.
 
-## Stage row (only for run kind = stage A/B — `docs/designs/stage-benchmarks/protocol.md`)
+## Stage row (only for run kind = stage A/B — `evals/protocols/stage-benchmarks.md`)
 
 Compact variant for a single-stage matched-pair row. Stage rows compare only against other rows of
 the SAME stage + fixture version + model id — state all three.
 
 | Field | Value |
 |-------|-------|
-| Stage id | `<S1–S9 / D1–D11>` (boundary + fixture per `docs/designs/stage-benchmarks/stage-map.md`) |
+| Stage id | `<S1–S9 / D1–D11>` (boundary + fixture per `evals/protocols/stage-map.md`) |
 | Fixture | `private/benchmark/fixtures/<version>/<fixture>/` (version pinned; an edit invalidates the row) |
 | Variants (SHA pair) | A = `<baseline sha>`, B = `<lever branch sha>` |
 | Model version | `<claude model id>` (pinned; a mid-test change voids the row) |

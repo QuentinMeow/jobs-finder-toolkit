@@ -1,7 +1,7 @@
 # Shared judging rubric
 
 How to score a canary run and how to judge an A/B comparison. Applies to every
-`evals/<skill>/canaries.yaml`. Keep the judge (model + this prompt) fixed for the whole test.
+`evals/canaries/<skill>.yaml`. Keep the judge (model + this prompt) fixed for the whole test.
 
 ## Pass/fail discipline (regression canaries)
 
@@ -28,7 +28,7 @@ false fail just prompts a re-run.
 
 ## Blind pairwise comparison (A/B quality judging)
 
-For the directional quality half of a matched-pair A/B (`evals/ab-protocol.md`), quality is judged
+For the directional quality half of a matched-pair A/B (`evals/protocols/ab-protocol.md`), quality is judged
 **blind and pairwise**, never as an absolute score:
 
 1. **Hide the variant labels.** For each canary prompt, collect variant A's and variant B's

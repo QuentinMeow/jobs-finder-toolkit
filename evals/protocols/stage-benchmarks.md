@@ -3,7 +3,7 @@
 **Status:** adopted 2026-07-20. Successor to end-to-end-only measurement under
 `docs/designs/token-usage-modes/benchmark-scenario.md` (which remains the
 definition of the *confirmation row*; this protocol adds the per-stage layer
-beneath it). Operating rules inherit from `evals/ab-protocol.md` — matched
+beneath it). Operating rules inherit from `evals/protocols/ab-protocol.md` — matched
 pairs, one pre-registered primary metric, model-pinned runs.
 
 ## Why stages
@@ -52,7 +52,7 @@ A stage row = one **pinned prompt** given to a fresh subject agent
 (model-pinned: `claude-sonnet-5`, same as all prior rows), with
 `JOBHUNT_CONFIG` pointed at the benchmark config, entry state restored from
 fixtures, and the stage's natural exit boundary (artifact written / script
-exit — see the boundary tables in `stage-map.md` §D,
+exit — see the boundary tables in `evals/protocols/stage-map.md` §D,
 which this section pins). The prompt tells the agent to do the stage's job
 per the normal skill instructions — it does NOT inline shortcuts; the point
 is to measure the skill surface as agents actually experience it.

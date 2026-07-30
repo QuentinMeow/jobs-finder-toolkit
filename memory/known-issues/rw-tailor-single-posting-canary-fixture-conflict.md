@@ -11,7 +11,7 @@
 
 ## Symptom
 
-The `rw-tailor-single-posting` canary (`evals/resume-writer/canaries.yaml`) expects
+The `rw-tailor-single-posting` canary (`evals/canaries/resume-writer.yaml`) expects
 a *fresh* tailoring run: it should start `tailored.yaml` from the baseline, produce
 all default deliverables, and end with the Step 7 skill-categorization queue. But
 the shipped fixture folder,
@@ -28,7 +28,7 @@ and the fresh-tailoring path stays unexercised.
 ## Reproduction
 
 ```bash
-cat evals/resume-writer/canaries.yaml   # see the rw-tailor-single-posting entry (id, prompt, setup, expected_behavior)
+cat evals/canaries/resume-writer.yaml   # see the rw-tailor-single-posting entry (id, prompt, setup, expected_behavior)
 ls examples/applications/6_drafted/example-corp-senior-software-engineer/
 # -> already has source/tailored.yaml (baseline-derived), rendered resume PDF,
 #    cover letter PDF, and the bundled Application_<job title>.txt
@@ -59,7 +59,7 @@ a fresh scaffold and was never given its own setup step to guarantee one.
 ## Suggested fix
 
 Give `rw-tailor-single-posting` an explicit setup step in
-`evals/resume-writer/canaries.yaml`: before each run, strip the fixture folder to
+`evals/canaries/resume-writer.yaml`: before each run, strip the fixture folder to
 just `meta.yaml` + `source/JD-*.md` (mirroring the `handoff.py` scaffold state), or
 point the canary at a second, JD-only fixture folder instead of the shipped
 complete example. Either way, keep `rw-duplicate-preflight` as the sole owner of

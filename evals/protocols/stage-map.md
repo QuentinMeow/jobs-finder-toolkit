@@ -1,10 +1,10 @@
 # Stage map — job-search → application-drafting
 
-The operative stage decomposition that `protocol.md` pins: the two subject legs (search, draft)
+The operative stage decomposition that `evals/protocols/stage-benchmarks.md` pins: the two subject legs (search, draft)
 broken into stages with per-stage token/wall-clock estimates (§A), and, for each stage, the pinned
 fixture that isolates it plus its observable boundary (§D). Stage rows are comparable only against
 other rows of the **same** stage (an isolated stage re-pays boot and loses cross-stage carryover —
-see `protocol.md`, "Why stages"). Absolute per-stage numbers are estimates; the boundary definitions
+see `evals/protocols/stage-benchmarks.md`, "Why stages"). Absolute per-stage numbers are estimates; the boundary definitions
 are exact.
 
 ## Sources & method
@@ -98,7 +98,7 @@ block at ~2.8 min because LibreOffice PDF conversion is slow and runs twice for 
 For each stage, the pinned fixture that makes it independently benchmarkable and the observable
 stage boundary (file written / script exit). This lets a lever be measured on the one stage it
 touches instead of a whole noisy leg. Fixtures live in the private overlay under
-`private/benchmark/fixtures/` (see `protocol.md`).
+`private/benchmark/fixtures/` (see `evals/protocols/stage-benchmarks.md`).
 
 **Search leg**
 
