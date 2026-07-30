@@ -83,6 +83,19 @@ jobs:
       - name: Reconciler (process-layer schemas)
         run: python automation/reconcile/reconcile.py --check
 
+      # 2b-ii. Reference + markdown-link check. Until now this routine ran nowhere
+      #     but its own unit tests, so a rename could break every link in the tree
+      #     while the gardener reported "references: all resolve". It reads both
+      #     backticked paths and [text](path) links, and decides a break's fate by
+      #     what its SOURCE document is for: a handbook page must resolve, a design
+      #     doc is advisory, a dated record is permitted.
+      #     NOTE: deliberately WITHOUT --require-roots, exactly like the reconciler
+      #     above. That flag asserts every root named in a constant exists, which is
+      #     a maintainer-checkout assertion; the published export ships fewer roots
+      #     and would go red. It lives in the pre-commit hook only.
+      - name: References + markdown links
+        run: python automation/gardener/verify_links.py
+
       # 2c. Maintenance-tooling unit tests: the reconciler's root handling and
       #     retry filing, the gardener routines (link/reference verification,
       #     skill drift, store report), and the private-overlay git hooks.

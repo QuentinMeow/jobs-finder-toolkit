@@ -119,7 +119,7 @@ output. Two boxes are deliberately left unticked with their reason.
       dated records of a tree that was spelled that way at the time, and rewriting them would
       falsify the record; the ADR is immutable. But their **markdown links are now broken**, and
       no gate can see that — see the filed task
-      [`2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md),
+      [`2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md),
       which is where the reference-vs-record split gets decided rather than guessed at here.
 - [x] `evals/{protocols,canaries,rubrics,results}/`; `evals/canaries/<skill>.yaml`
 - [x] `tmp/` → `local/`, root `.gitignore`, the handbook's scratch rule and `AGENTS.md`'s

@@ -40,7 +40,7 @@ and staleness/duplicate flagging.
 | `compact-logs` | `company-search-log.yaml` rows older than `search_log_prune_days` (90) → prune; `applications-log.yaml` regenerated via `status.py --sync-log` | dry-run; `--apply` writes a compacted copy + runs sync | never edits the live log in place |
 | `lessons-report` | Flag LESSONS sections whose `last_confirmed` > `lesson_confirm_days` (180) or that are untagged; flag near-duplicate bullets within a LESSONS.md and vs its SKILL.md | **report-only** | human ratifies any promotion/deletion |
 | `card-staleness` | Compare the source hashes recorded in the resume-writer tailoring card (`<applications_root>/0_profile/tailoring-card.md`) with current profile/baseline/story-bank hashes; flag the card when a source drifted | **report-only** | rebuild is the skill's job (`build_tailoring_card.py --force`), never the gardener's |
-| `verify-links` | Backticked toolkit paths exist; tool-compatibility skill symlinks resolve; `sync_vendored.py --check` | report-only; **exit 1 on break** | fails CI on a broken link / vendor drift |
+| `verify-links` | Backticked toolkit paths AND `[text](path)` markdown links resolve — in the overlay's tracked `.md` too when it is mounted; heading anchors match a real heading; skill symlinks resolve; `sync_vendored.py --check` | report-only; **exit 1 on break** | runs in CI and pre-commit; fails on a broken link / vendor drift |
 | `self-measure` | Recompute the funnel (discovered/drafted/applied/in_progress/rejected/ignored) + LESSONS staleness + instruction-budget summary | dry-run; `--apply` writes `metrics.yaml` | writes only into the overlay (`0_profile/metrics.yaml`), never the toolkit |
 
 Retention windows come from the optional `retention:` block in `config.yaml`
@@ -67,7 +67,18 @@ Retention windows come from the optional `retention:` block in `config.yaml`
 
 # Each routine also runs standalone, e.g.
 .venv/bin/python automation/gardener/verify_links.py
+.venv/bin/python automation/gardener/verify_links.py --no-overlay      # what CI sees
+.venv/bin/python automation/gardener/verify_links.py --list-unrecognised
+# Prove a move broke no link: snapshot before, compare after (renames are followed).
+.venv/bin/python automation/gardener/verify_links.py --baseline local/links-before.json
+.venv/bin/python automation/gardener/verify_links.py --compare  local/links-before.json
 ```
 
 Workflow: run dry-run → show the user the plan → get explicit approval → run the matching
 `--apply`. `verify-links` and `lessons-report` are safe to run anytime (they never mutate).
+
+**`verify-links` output can name `private/` paths** when the overlay is mounted — it reads the
+overlay's markdown, which is the only way links inside it are ever checked. That report is not a
+tracked file, so the leak guard never inspects it: never paste a run into a PR description, a
+commit message, or any other public text. `--baseline` refuses to write outside a git-ignored
+path for the same reason; keep snapshots in `local/`.

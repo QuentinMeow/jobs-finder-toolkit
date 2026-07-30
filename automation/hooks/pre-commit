@@ -132,4 +132,21 @@ else
     "$PY" automation/reconcile/reconcile.py --check
 fi
 
+# Reference + markdown-link check. Same maintainer/exported split as the reconciler
+# directly above, and for the same reason: --require-roots asserts that every root
+# this checker names in a constant still exists, because renaming one DISARMS the
+# check instead of breaking it. Phase 2 renamed handbook/ to docs/handbook/ and four
+# constants went quietly stale. Never wire --require-roots into CI.
+#
+# With the overlay mounted this reads the overlay's markdown too and can print
+# private/ paths. That output stays on this machine — never paste a run into a
+# commit message or a PR description.
+if [ -d private ]; then
+    echo "pre-commit: references + markdown links (roots required)..."
+    "$PY" automation/gardener/verify_links.py --require-roots
+else
+    echo "pre-commit: references + markdown links..."
+    "$PY" automation/gardener/verify_links.py
+fi
+
 echo "pre-commit: OK"

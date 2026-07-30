@@ -297,7 +297,7 @@ this stack's tip and there were **36** at its base — but the two sets do not o
 that is not stability, it is churn the gate cannot see. PR 02's move broke a fresh batch that was
 caught and repaired only because a throwaway checker was written for the purpose; the gate
 reported "references: all resolve" the entire time. Filed as
-[`tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md).
+[`tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md).
 
 **A backticked ref whose first path segment is in no strict root prefix is invisible** — not
 broken, not advisory, not counted in any skip tally. It falls out of `check_references()` at the
@@ -350,7 +350,7 @@ because the private tree grew — 3,186 tracked files, of which 2,411 are applic
 
 This phase used to be the next thing to start. It no longer is: the owner decided on
 2026-07-29 to fix the link checker first — the task
-[`tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
+[`tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
 merges before any phase-5 commit.
 
 The reason is that one of this phase's own steps is unverifiable without it. Phase 5 removes

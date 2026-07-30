@@ -9,7 +9,10 @@
   [the phase-5 task](../2026-07-28-workspace-phase-5-lifetime-taxonomy/task.md).
 - **Area**: harness
 - **Source**: workspace phase 2, 2026-07-29 — [the phase-2 record](../../../docs/designs/workspace-restructure/execution-plan.md#merged-phase-2--public-side-cleanup) and [its verification](../../3_in-review/2026-07-28-workspace-phase-2-public-cleanup/verification.md)
-- **Claimed-by**:
+- **Claimed-by**: agent, 2026-07-29 — see [verification.md](verification.md) and
+  [worklog.md](worklog.md). Three of this file's numbers were wrong and are corrected in
+  the Definition of done below; the reasoning is in the worklog rather than rewritten
+  over the original text.
 
 ## Goal
 
@@ -112,14 +115,23 @@ record and should not. Decide the rule, don't repair case by case.
 
 ## Definition of done
 
-- [ ] `verify_links.py` resolves relative `[text](path)` targets in every tracked `.md`, using
-      the same advisory/hard-fail split as backticked refs
-- [ ] A ref matching no strict prefix is **counted and reported** rather than dropped; the
-      "not strict, not absent" fall-through touches a tally
-- [ ] `automation/gardener/tests/test_verify_links.py` gains a regression for each: a planted
-      broken `[text](path)` link fails, and a planted broken ref at an unrecognised root is
-      visible in the output
-- [ ] The 21 remaining broken markdown links are triaged under a written record-vs-reference
-      rule, and the repairable ones repaired
-- [ ] `.venv/bin/python automation/gardener/verify_links.py` is clean on the resulting tree, and
-      a fresh run of a throwaway markdown-link checker agrees with it
+- [x] `verify_links.py` resolves relative `[text](path)` targets in every tracked `.md` —
+      plus images, reference-style links and HTML `href`/`src` — under a **three**-tier
+      split (reference fails, plan is advisory, dated record is permitted), not the
+      two-tier one this file assumed
+- [x] A ref matching no strict prefix is **counted and reported** rather than dropped; the
+      "not strict, not absent" fall-through now increments `skipped["unrecognised-root"]`
+      and records the ref for `--list-unrecognised`. **953, not the 76 estimated here**
+- [x] `automation/gardener/tests/test_verify_links.py` gains a regression for each, plus
+      the wrapped-code-span case that a per-line implementation fails and every other
+      test passes
+- [x] **23**, not 21, and **every one is in a dated record** — so the deliverable is not a
+      repair campaign but a written rule that says so. Two genuine breaks outside that
+      tier were repaired: a stale heading anchor in the handbook, and a retired
+      `automation/maintenance/` path inside the overlay
+- [x] `verify_links.py` is clean, in both the overlay-mounted and `--no-overlay` views,
+      and two independently written markdown-link checkers agree with it row for row
+- [x] **Added, not in the original scope:** the routine now runs in CI and pre-commit (it
+      ran in neither), it enumerates the overlay's tracked markdown (it never had), and
+      `--baseline`/`--compare` follow renames through both repositories' rename maps so a
+      move cannot report a regression that did not happen
