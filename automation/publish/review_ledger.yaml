@@ -558,3 +558,15 @@
     does not ignore, the gardener SKILL.md carries the never-paste-into-a-PR
     warning, and no overlay path, employer, person or filename appears in any
     tracked file or test fixture.
+
+- commit: 6bbbd629
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 2
+  digest: sha256:0d1c02c8bce1764b
+  finding: >-
+    Clean. The pre-commit hook stops reading the overlay when judging a public
+    branch, and overlay-only record prefixes move out of the tuple the root
+    assertion checks. Both are corrections to this branch's own new gate rather
+    than to anything published. No path, employer, person or filename from the
+    overlay appears; no absolute home path.
