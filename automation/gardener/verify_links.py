@@ -108,21 +108,20 @@ OVERLAY_PREFIX = "private/"
 # --- The three tiers ------------------------------------------------------------
 # Dated testimony. The text records what was true when it was written; rewriting it
 # would falsify the record. Counted, listed, NEVER fatal, never repaired.
-#
-# A versioned FIXTURE MANIFEST is testimony too: it records what a frozen fixture
-# set contained and why, on a date, and one live manifest names a benchmark
-# directory three times in the sentences explaining that it deliberately does not
-# exist.
-#
-# When workspace phase 5 moves ``benchmark/`` under ``evals/``, add the new spelling
-# HERE in the same commit. Listing it ahead of time does not work and should not be
-# attempted: ``--require-roots`` rejects a prefix naming a directory that does not
-# exist yet, which is the whole point of the flag and is how this comment came to
-# be written.
 RECORD_SOURCES = (
     "history/", "memory/decisions/", "evals/results/", "tasks/4_done/",
-    "benchmark/fixtures/",
 )
+# Record trees that exist ONLY inside the overlay. A versioned fixture manifest is
+# testimony too — it records what a frozen fixture set contained and why, on a date,
+# and one live manifest names a directory three times in the sentences explaining
+# that it deliberately does not exist.
+#
+# Separate from RECORD_SOURCES because ``--require-roots`` asserts that every prefix
+# it is given names a real directory, and an overlay-only prefix is absent by
+# construction whenever the overlay is not being read. Folding these into the main
+# tuple made the flag report a false MISSING ROOT on any branch run with
+# ``--no-overlay``, which is exactly how the pre-commit hook runs.
+OVERLAY_RECORD_SOURCES = ("benchmark/fixtures/", "evals/fixtures/")
 # Proposals. They name targets on purpose ("create `automation/publish/x.py`" is a
 # plan, and requiring it to exist inverts the doc's meaning). Advisory.
 #
@@ -428,7 +427,7 @@ def _tier(rel: str) -> str:
     """record | plan | reference, from what the SOURCE document is for."""
     if rel.startswith(OVERLAY_PREFIX):        # the overlay mirrors the same layout
         rel = rel[len(OVERLAY_PREFIX):]
-    if rel.startswith(RECORD_SOURCES):
+    if rel.startswith(RECORD_SOURCES) or rel.startswith(OVERLAY_RECORD_SOURCES):
         return "record"
     if rel.startswith(PLAN_SOURCES):
         return "plan"

@@ -541,3 +541,20 @@
     warning, and no overlay path, employer, person or filename appears in any
     tracked file, commit message or test fixture on this branch. Test fixtures
     build their own throwaway overlay. No absolute home path.
+
+- commit: fbe7a813
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 13
+  digest: sha256:532059033a8511b2
+  finding: >-
+    Reconciliation row after a rebase. The content was already reviewed on this
+    branch under commit d740b5a4, whose row is two above and is now orphaned:
+    restacking this branch onto its base's closing ledger commit replayed it under
+    a new SHA. Same 13 files, same digest, same finding — the link checker gains
+    markdown-link, anchor, unrecognised-root and overlay coverage, is wired into CI
+    and pre-commit, and repairs two stale references. Reviewed specifically for the
+    leak surface it creates: --baseline refuses to write a snapshot anywhere git
+    does not ignore, the gardener SKILL.md carries the never-paste-into-a-PR
+    warning, and no overlay path, employer, person or filename appears in any
+    tracked file or test fixture.

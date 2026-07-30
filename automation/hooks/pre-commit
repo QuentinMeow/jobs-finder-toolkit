@@ -138,12 +138,19 @@ fi
 # check instead of breaking it. Phase 2 renamed handbook/ to docs/handbook/ and four
 # constants went quietly stale. Never wire --require-roots into CI.
 #
-# With the overlay mounted this reads the overlay's markdown too and can print
-# private/ paths. That output stays on this machine — never paste a run into a
-# commit message or a PR description.
+# --no-overlay is deliberate and is NOT a weakening. The routine CAN read the
+# overlay's markdown, and that is the only way links inside it are ever checked —
+# but the overlay is a separate repository at its own commit, so judging THIS
+# branch's documents against whatever the overlay happens to be checked out at
+# compares two unrelated states. It bites immediately: with the overlay migrated
+# ahead of a branch that predates the migration, every doc on that branch reads as
+# broken and the branch becomes uncommittable on the maintainer's own machine.
+# Overlay coverage belongs to the gardener routine, run deliberately:
+#     .venv/bin/python automation/gardener/verify_links.py
+# whose output can name private/ paths and must never be pasted into public text.
 if [ -d private ]; then
     echo "pre-commit: references + markdown links (roots required)..."
-    "$PY" automation/gardener/verify_links.py --require-roots
+    "$PY" automation/gardener/verify_links.py --require-roots --no-overlay
 else
     echo "pre-commit: references + markdown links..."
     "$PY" automation/gardener/verify_links.py
