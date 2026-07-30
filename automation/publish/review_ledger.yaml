@@ -438,3 +438,16 @@
     is about this repo's own shape. No real name, employer, school, recruiter,
     posting, salary, email, phone or absolute home path appears. No file is
     added to or removed from the published set.
+
+- commit: 04488de8
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 2
+  digest: sha256:49d81c4d1fbd40fd
+  finding: >-
+    Clean. Two process docs gain a qualification: the broken-markdown-link count
+    is given as a range because two independently written checkers disagree, and
+    the set-churn figure gains a warning that it overstates the damage because the
+    comparison keys on a source path that this phase moved. No name, employer,
+    school, posting, recruiter, date, salary, email, phone or absolute home path
+    appears in the diff, and no private/ path is added.
