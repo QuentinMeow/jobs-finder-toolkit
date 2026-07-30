@@ -5,6 +5,7 @@
 
 - `memory/decisions/agentfold-restructure.md` — Restructure the repo's process layer on the AgentFold pattern
 - `memory/decisions/derived-zone-git-tracking.md` — Keep the datastore's derived zone out of git
+- `memory/decisions/docs-parent-for-the-human-read-trees.md` — Give the human-read trees one docs/ parent
 - `memory/decisions/email-git-policy.md` — Track only safe email index headers and annotations
 - `memory/decisions/fine-grained-stage-benchmarks.md` — Benchmark at stage granularity with pinned fixtures, not only end-to-end
 - `memory/decisions/job-filter-triage-and-lineage.md` — Preserve ambiguous job roles and source metadata for review

@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (next email round)
 - **Area**: tracker
-- **Source**: `design/application-progress-calendar/execution-plan.md` Stage 2
+- **Source**: `docs/designs/application-progress-calendar/execution-plan.md` Stage 2
 - **Claimed-by**: codex (session 2026-07-22, owner UX review follow-up)
 
 ## Goal
@@ -14,7 +14,7 @@ pipeline.
 ## Context
 
 Implement schema v5 from
-`design/application-progress-calendar/README.md`: keep
+`docs/designs/application-progress-calendar/README.md`: keep
 `jobs[].status`, replace free-text-only `stage` with structured
 `jobs[].progress`, and add the single private `calendar.md` resolved by
 `config.calendar_path()`. The tracker is the only writer that updates

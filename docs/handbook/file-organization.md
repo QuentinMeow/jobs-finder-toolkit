@@ -22,9 +22,14 @@ where its purpose is obvious:
 - **Generic top-level folders must fan out into purpose subfolders.** `scripts/` splits
   into `shared/`, `vendoring/`, `gardener/`, and a folder per job — the interim
   `maintenance/` bucket was itself dissolved for breaking this rule; each skill keeps its code under
-  `skills/<skill>/scripts/`. The former generic `docs/` was dissolved into
-  `handbook/` (reference) + `design/` (design programs) for exactly this reason. Follow
-  the same pattern for anything new that would otherwise land in a generic root.
+  `skills/<skill>/scripts/`. `docs/` is the worked example: it once held files directly and was
+  dissolved for it, and it was reinstated in 2026-07 **only as a parent** whose every child is
+  purpose-named — `docs/handbook/` (reference prose), `docs/designs/` (design programs),
+  `docs/roadmap/` (desired vs current state). Nothing may sit directly in `docs/`, and the
+  category has a testable boundary: if an agent or a script reads a file to do its job, that file
+  is not documentation and belongs elsewhere. Full reasoning, including what the earlier call got
+  right, is in [`memory/decisions/docs-parent-for-the-human-read-trees.md`](../../memory/decisions/docs-parent-for-the-human-read-trees.md).
+  Follow the same pattern for anything new that would otherwise land in a generic root.
 - **Don't orphan single files at a generic root.** A lone reference PDF, asset, image, or
   note belongs in a named subfolder (e.g. an OA reference PDF goes in
   `.../coding/oa-references/`), not loose beside unrelated files.

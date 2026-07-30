@@ -1,6 +1,6 @@
 # Desired state (priority order)
 
-1. **Email-driven application progress** (`design/application-progress-calendar/execution-plan.md`):
+1. **Email-driven application progress** (`docs/designs/application-progress-calendar/execution-plan.md`):
    a provider-bounded, draft-only email layer that downloads mail into the
    local store, categorizes job-related messages, and turns them into
    guarded progress + calendar proposals — replacing repeated live mailbox
@@ -10,7 +10,7 @@
    (meta.yaml schema v5, `calendar.md`, `status.py --update-progress` /
    `--sync-calendar`) without changing the coarse status-folder pipeline.
 3. **Raw-data-layer store as the single job-postings substrate**
-   (`design/raw-data-layer/execution-plan.md`): remaining work is the
+   (`docs/designs/raw-data-layer/execution-plan.md`): remaining work is the
    incremental O(new) build (`tasks/0_backlog/2026-07-21-store-incremental-build-o-new`)
    and the parked logs-as-projections question
    (`message-queue/needs-human/decisions/logs-as-store-projections.md`).

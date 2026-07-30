@@ -3,7 +3,7 @@
 ``config.calendar_path()`` resolves ONE human-first Markdown file that holds
 every interview schedule, scheduling todo, follow-up deadline, and reschedule
 history for the whole application fleet (design family:
-``design/application-progress-calendar/``). The owner scans it, checks boxes,
+``docs/designs/application-progress-calendar/``). The owner scans it, checks boxes,
 and adds personal notes; tools own ONLY the marked job-hunt entries.
 
 File contract:

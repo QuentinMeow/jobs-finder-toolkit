@@ -102,7 +102,7 @@ PUBLIC REVIEW GATE — not a test failure. Action required.
 
     AGENTS.md
     automation/publish/check_public.py
-    handbook/private-overlay.md
+    docs/handbook/private-overlay.md
     ...
 
 These files ship to a public repository. Read the diff and confirm none of it

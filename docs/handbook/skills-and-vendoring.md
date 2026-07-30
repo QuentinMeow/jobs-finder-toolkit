@@ -10,7 +10,7 @@ Expands `AGENTS.md` → "Sharing Code Across Skills".
 
 ## Vendoring (how self-contained skills share code)
 
-Skills are **self-contained** (Approach 2 of `design/skill-script-sharing/`).
+Skills are **self-contained** (Approach 2 of `docs/designs/skill-script-sharing/`).
 A skill's `scripts/` may import its own sibling modules, but it **must never
 import repo-root toolkit Python** and must never `sys.path`-inject a path
 outside its own skill folder. When a skill needs a pure toolkit module, that

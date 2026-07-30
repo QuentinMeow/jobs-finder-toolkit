@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (this round)
 - **Area**: repo
-- **Source**: [workspace-restructure execution plan](../../../design/workspace-restructure/execution-plan.md) · [design](../../../design/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
+- **Source**: [workspace-restructure execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) · [design](../../../docs/designs/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
 - **Claimed-by**:
 
 ## Goal
@@ -11,7 +11,7 @@ Replace four competing alias registries with one index, and key every applicatio
 
 ## Context
 
-Detail in [the execution plan](../../../design/workspace-restructure/execution-plan.md) under "Phase 7". 242 application folders carry 213
+Detail in [the execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) under "Phase 7". 242 application folders carry 213
 distinct free-text company strings; `registry.canonical()` resolves only 119, leaving 94
 unresolvable — 44% (re-measured 2026-07-29, unchanged). Live split shapes already in the data
 (real instances are in the private tree; naming them here would publish the owner's application

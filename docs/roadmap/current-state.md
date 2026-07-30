@@ -3,11 +3,11 @@
 - **Last-updated**: 2026-07-29
 
 - **Process layer**: AgentFold restructure in flight as a stacked PR train —
-  `message-queue/` + `tasks/` + `memory/` merged (#56); `handbook/` +
-  `design/` (#57) and `skills/` + `automation/` (#58) in review; this PR
-  adds `templates/`, `roadmap/`, `history/`, and the reconciler.
-- **Email program**: design merged (PR #54: `design/application-progress-calendar/`,
-  `design/raw-data-layer/03-provider-interfaces.md`, `04-email-download-categorization.md`).
+  `message-queue/` + `tasks/` + `memory/` merged (#56); `docs/handbook/` +
+  `docs/designs/` (#57) and `skills/` + `automation/` (#58) in review; this PR
+  adds `templates/`, `docs/roadmap/`, `history/`, and the reconciler.
+- **Email program**: design merged (PR #54: `docs/designs/application-progress-calendar/`,
+  `docs/designs/raw-data-layer/03-provider-interfaces.md`, `04-email-download-categorization.md`).
   Stage 1 built on `email/stage-1-provider-contract` (PR #60): send-less
   `MailProvider` contract + audited transport + route allowlists
   (`automation/shared/mail/`), Outlook relocated behind it unchanged,
@@ -44,6 +44,12 @@
   eight inbound public→private symlinks deleted; profiles/private-skill
   access now goes through config accessors and git-ignored `.claude/skills`
   /`.cursor/skills` links) are **merged** (PRs #81–#86, commits
-  `72d45e2`…`7809b4b`). Phases 1, 2, 5–8 not started; their task files carry
-  the re-measured preconditions. See
-  `design/workspace-restructure/execution-plan.md`.
+  `72d45e2`…`7809b4b`). Phase 2 is in flight as a stacked train: the former
+  generic maintenance bucket is split into `automation/gardener/`,
+  `automation/search-recall-audit/` and `automation/company-levels/`, and the
+  three human-doc roots now sit under one parent as `docs/handbook/`,
+  `docs/designs/` and `docs/roadmap/` (superseding ADR:
+  `memory/decisions/docs-parent-for-the-human-read-trees.md`); the `evals/`
+  and `tmp/` halves of the phase are still open. Phases 1, 5–8 not started;
+  their task files carry the re-measured preconditions. See
+  `docs/designs/workspace-restructure/execution-plan.md`.

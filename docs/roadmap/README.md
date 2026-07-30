@@ -1,4 +1,4 @@
-# roadmap/ — where this repo is going vs. where it is
+# docs/roadmap/ — where this repo is going vs. where it is
 
 Two documents, one discipline:
 

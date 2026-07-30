@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (this round)
 - **Area**: repo
-- **Source**: found during phase 0b (`design/workspace-restructure/execution-plan.md`, item 0.12)
+- **Source**: found during phase 0b (`docs/designs/workspace-restructure/execution-plan.md`, item 0.12)
 - **Claimed-by**: agent (session 2026-07-29, branch `fix/vendored-config-repo-root`)
 
 ## Goal
@@ -40,7 +40,7 @@ reasoned about together before the constant moves.
 Phase 0b already added `_search_up()`, which walks up to the first directory containing a `.git`
 file or directory. That is the obvious mechanism to reuse here.
 
-Note the constraint this interacts with: `handbook/skills-and-vendoring.md` says a skill folder
+Note the constraint this interacts with: `docs/handbook/skills-and-vendoring.md` says a skill folder
 must keep working when dropped into another project. A `.git`-boundary walk satisfies that (it
 finds the host project's root); a fixed parent count cannot.
 

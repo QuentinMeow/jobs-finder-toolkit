@@ -2,7 +2,7 @@
 
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-28
-- **Source**: [execution plan, item 0.3](../../../design/workspace-restructure/execution-plan.md)
+- **Source**: [execution plan, item 0.3](../../../docs/designs/workspace-restructure/execution-plan.md)
 - **Blocking**: nothing — implemented on the default path below.
 - **Default path**: raise **only** when a `private/` overlay is mounted and no real
   `config.yaml` was found; a fresh public clone keeps its silent example fallback (now with a
@@ -29,7 +29,7 @@ worktree and resolves the *parent* checkout's config.
 
 The execution plan's item 0.3 says to make this **raise** and keep the example reachable only
 through an explicit `JOBHUNT_CONFIG`. That is stricter than it first looks, because the
-example fallback is a **documented public feature**: `README.md` and `handbook/architecture.md`
+example fallback is a **documented public feature**: `README.md` and `docs/handbook/architecture.md`
 both promise that a fresh clone of the public toolkit runs out of the box against the example
 data. Removing it turns every first-run command in the quickstart into an error.
 
@@ -59,7 +59,7 @@ silently again — narrow, and the stderr notice still fires.
 
 What item 0.3 literally says. Simplest rule, no proxy signal, nothing to explain. Costs the
 out-of-box property: the public quickstart would need `JOBHUNT_CONFIG=config.example.yaml`
-exported first, and `README.md` plus `handbook/architecture.md` would need rewriting to match.
+exported first, and `README.md` plus `docs/handbook/architecture.md` would need rewriting to match.
 
 ### Option C — Never raise; only make the fallback loud
 

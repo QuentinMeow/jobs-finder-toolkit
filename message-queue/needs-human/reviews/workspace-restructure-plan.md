@@ -1,12 +1,12 @@
 # Workspace layout — sign off on the design and the two things I need from you
 
 - **Filed**: 2026-07-28
-- **Look at**: [`design/workspace-restructure/README.md`](../../../design/workspace-restructure/README.md) · [`review-gate.md`](../../../design/workspace-restructure/review-gate.md) · [`migration.md`](../../../design/workspace-restructure/migration.md)
+- **Look at**: [`docs/designs/workspace-restructure/README.md`](../../../docs/designs/workspace-restructure/README.md) · [`review-gate.md`](../../../docs/designs/workspace-restructure/review-gate.md) · [`migration.md`](../../../docs/designs/workspace-restructure/migration.md)
 - **Why you might care**: This sets the shape of both repos. Phase 0 is separately urgent — it fixes a reproduced case where the publish guard prints "Safe to publish" over a file containing your real name.
 - **If you do nothing**: Nothing moves. The phase-0 defects stay as they are.
 - **Resolution**: Answered 2026-07-28. Topology, Q1/Q2/Q4/Q5/Q6 all decided and folded into
-  [the design](../../../design/workspace-restructure/README.md), the
-  [execution plan](../../../design/workspace-restructure/execution-plan.md), the
+  [the design](../../../docs/designs/workspace-restructure/README.md), the
+  [execution plan](../../../docs/designs/workspace-restructure/execution-plan.md), the
   [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md), and 11
   backlog tasks. Q3 deferred to `tasks/0_backlog/2026-07-28-company-key-assignment-approach`.
   This item stays open only until the owner confirms nothing was mis-folded; it is safe to
@@ -32,7 +32,7 @@ the changed files and says *read these for personal data*. It stays red until so
 a row to a tracked ledger — commit, file count, a digest of the actual diff, and a finding.
 The digest is recomputed, so a row can't be guessed; it forces the diff into the reviewer's
 context, which is where the judgment happens. Full spec in
-[review-gate.md](../../../design/workspace-restructure/review-gate.md); I verified the
+[review-gate.md](../../../docs/designs/workspace-restructure/review-gate.md); I verified the
 primitives work from the nested working root and that the digest is stable.
 
 ## Two things I need from you
@@ -114,7 +114,7 @@ the index; the exported repo's CI is already red; and the private repo — about
 of your commits — has no git hooks at all.
 
 Full list and fixes in
-[migration.md](../../../design/workspace-restructure/migration.md#phase-0--repair-what-already-fails-open).
+[migration.md](../../../docs/designs/workspace-restructure/migration.md#phase-0--repair-what-already-fails-open).
 
 ---
 
@@ -150,8 +150,8 @@ and you correct as you encounter them.
 **Your answer:** ______
 
 **Q4 — `docs/` consolidation reverses a recorded decision.** *Blocks phase 2.*
-`handbook/file-organization.md` records that a generic `docs/` was deliberately dissolved into
-`handbook/` + `design/`. The rule it applied (generic roots must fan out into purpose
+`docs/handbook/file-organization.md` records that a generic `docs/` was deliberately dissolved into
+`docs/handbook/` + `docs/designs/`. The rule it applied (generic roots must fan out into purpose
 sub-folders) is satisfied by `docs/{handbook,designs,roadmap}`, but the reversal needs its own
 superseding ADR rather than a silent change. Confirm, and I write it.
 **Default: consolidate, with the ADR.**

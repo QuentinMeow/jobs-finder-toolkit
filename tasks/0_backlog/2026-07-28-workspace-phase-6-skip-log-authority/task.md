@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (this round)
 - **Area**: repo
-- **Source**: [workspace-restructure execution plan](../../../design/workspace-restructure/execution-plan.md) · [design](../../../design/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
+- **Source**: [workspace-restructure execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) · [design](../../../docs/designs/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
 - **Claimed-by**:
 
 ## Goal
@@ -12,7 +12,7 @@ cannot re-open the posting.
 
 ## Context
 
-Detail in [the execution plan](../../../design/workspace-restructure/execution-plan.md) under "Phase 6". `skills/application-tracker/scripts/status.py:1954`
+Detail in [the execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) under "Phase 6". `skills/application-tracker/scripts/status.py:1954`
 `sync_log()` still does a wholesale `write_text()` at line 1967 from a scan of the application
 folders, so deleting a rejected application and re-syncing drops its rows and job-search
 re-surfaces the posting as fresh.

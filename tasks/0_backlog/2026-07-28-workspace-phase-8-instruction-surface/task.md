@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (this round)
 - **Area**: repo
-- **Source**: [workspace-restructure execution plan](../../../design/workspace-restructure/execution-plan.md) · [design](../../../design/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
+- **Source**: [workspace-restructure execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) · [design](../../../docs/designs/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
 - **Claimed-by**:
 
 ## Goal
@@ -12,7 +12,7 @@ the new layout.
 
 ## Context
 
-Detail in [the execution plan](../../../design/workspace-restructure/execution-plan.md) under "Phase 8". `examples/` gets reshaped to mirror
+Detail in [the execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) under "Phase 8". `examples/` gets reshaped to mirror
 the private tree and to fix its own two violations (`examples/data/` is a generic bucket,
 `examples/templates/` collides with the root `templates/`). `examples/data` is one of
 `ci.yml`'s 16 executed path pins (`automation/store/validate_store.py examples/data
@@ -21,8 +21,8 @@ the private tree and to fix its own two violations (`examples/data/` is a generi
 **The "8 of 12 `SKILL.md` files" count is stale.** Re-measured 2026-07-29: **all 11 public
 `SKILL.md` files** name a path that phase 2 or phase 5 moves. The old count predates both the
 `github-workflow` skill and phase 4's removal of the two private skill trees from `skills/`.
-Split by which phase does the moving (phase-2 tokens: `automation/maintenance/`, `handbook/`,
-`design/`, `roadmap/`, `tmp/` · phase-5 tokens: `0_profile`, `interviews/`,
+Split by which phase does the moving (phase-2 tokens: `automation/maintenance/`, `docs/handbook/`,
+`docs/designs/`, `docs/roadmap/`, `tmp/` · phase-5 tokens: `0_profile`, `interviews/`,
 `job-search-profiles/`, `data/`):
 
 | Skill | phase 2 | phase 5 |

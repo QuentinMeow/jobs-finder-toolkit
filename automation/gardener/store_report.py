@@ -1,7 +1,7 @@
 """gardener routine: raw-data-layer store health report (report-only, ALWAYS).
 
 The store-core Retention contract gives the gardener a store routine
-(``design/raw-data-layer/01-store-core.md`` §9). Unlike the retention GC
+(``docs/designs/raw-data-layer/01-store-core.md`` §9). Unlike the retention GC
 (``automation/store/gc_store.py``), the gardener NEVER prunes — it only *reports*, so
 a human sees growth and integrity problems before deciding to run the GC. Every
 dimension the contract lists, per domain under the configured data root:

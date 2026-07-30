@@ -153,7 +153,7 @@ EXAMPLES_PREFIX = "examples/"
 # at the public root, and a detector that forgot the old name is a detector that
 # fails open exactly when it matters. So this list carries the HISTORICAL names,
 # the CURRENT ones, and the names a planned rename will introduce
-# (design/workspace-restructure/): ``data/``->``store/``,
+# (docs/designs/workspace-restructure/): ``data/``->``store/``,
 # ``interviews/``->``me/interviews/`` + ``companies/``,
 # ``job-search-profiles/``->``market/searches/``.
 # Only add a root that must never be public: ``docs/``, ``memory/``, ``tasks/``,

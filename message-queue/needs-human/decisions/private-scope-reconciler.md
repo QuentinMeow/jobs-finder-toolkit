@@ -2,7 +2,7 @@
 
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-29
-- **Source**: [workspace-restructure execution plan, item 0.10](../../../design/workspace-restructure/execution-plan.md)
+- **Source**: [workspace-restructure execution plan, item 0.10](../../../docs/designs/workspace-restructure/execution-plan.md)
 - **Blocking**: nothing. The overlay's new pre-commit hook already picks up an
   answer of "yes" with no further edit — it probes for the flag and uses it the
   moment it exists.

@@ -14,7 +14,7 @@ person or a real job hunt stays private:
   at a git-ignored **`private/`** directory inside the public checkout. `config.yaml`
   (git-ignored) points the toolkit's `paths.*` into it — real
   identity, profile, baseline, reference DOCX, applications, interviews, and the private
-  `coding-interview` skill all live under `private/`. See `handbook/private-overlay.md`.
+  `coding-interview` skill all live under `private/`. See `docs/handbook/private-overlay.md`.
 
 **Skill visibility** is declared by a `visibility: public|private` key in each `SKILL.md`
 frontmatter:
@@ -58,7 +58,7 @@ and handles are absent. The exporter (`export_public.py`) always runs it against
 copied tree as the final gate.
 
 **Routing**: skills are discovered by listing `skills/` — which is now ENTIRELY public;
-the skills table in `handbook/repo-map.md` names exactly what ships. A private skill lives
+the skills table in `docs/handbook/repo-map.md` names exactly what ships. A private skill lives
 only at `private/skills/<name>/` and reaches the runtime through a git-ignored entry in
 `.claude/skills/<name>` + `.cursor/skills/<name>` that `automation/bootstrap_overlay.py`
 creates, pointing straight at the overlay. So it stays discoverable whenever the overlay is

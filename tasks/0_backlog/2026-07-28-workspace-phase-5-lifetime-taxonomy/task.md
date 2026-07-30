@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (this round)
 - **Area**: repo
-- **Source**: [workspace-restructure execution plan](../../../design/workspace-restructure/execution-plan.md) · [design](../../../design/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
+- **Source**: [workspace-restructure execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) · [design](../../../docs/designs/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
 - **Claimed-by**:
 
 ## Goal
@@ -12,8 +12,8 @@ knowledge outlives any application.
 
 ## Context
 
-Target tree in [the design](../../../design/workspace-restructure/README.md); the full move table is in
-[the execution plan](../../../design/workspace-restructure/execution-plan.md) under "Phase 5".
+Target tree in [the design](../../../docs/designs/workspace-restructure/README.md); the full move table is in
+[the execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) under "Phase 5".
 805 tracked private files move; `applications/<status>/<slug>/` keeps its path.
 
 **Start by asking "is this a config edit?"** Phase 0 added eleven config accessors, eight of

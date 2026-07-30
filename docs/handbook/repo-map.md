@@ -5,7 +5,7 @@ profile materials, research findings, and every application) lives under the
 applications root (`config.applications_root()`, `applications/` by default,
 real data under `private/applications/`); only shared tooling (`scripts/`,
 `skills/`) sits at the repo root. Files are grouped by purpose into
-meaningful subfolders (see `handbook/file-organization.md`): `scripts/` fans
+meaningful subfolders (see `docs/handbook/file-organization.md`): `scripts/` fans
 out into `automation/shared/`, `automation/vendoring/`, and one folder per job
 (`automation/gardener/`, `automation/search-recall-audit/`, `automation/company-levels/`)
 (each skill bundles its own render/tracking scripts under
@@ -21,7 +21,7 @@ support folders, not applications.
 
 | Path | Purpose |
 |------|---------|
-| `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, and output-stem config; the tracked example is the neutral "Jordan Rivers" placeholder + fallback (see `handbook/configuration.md`) |
+| `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, and output-stem config; the tracked example is the neutral "Jordan Rivers" placeholder + fallback (see `docs/handbook/configuration.md`) |
 | `config.profile_md_path()` (example: `examples/profile/profile.example.md`) | Comprehensive candidate profile: all experience, skills, and resume writing preferences |
 | `config.baseline_path()` | Canonical transcription of the approved resume — starting point for every tailored.yaml and the reference for locked-field validation |
 | `skills/job-search/companies.yaml` | Canonical company registry — public, single source of truth for company **identity**, ATS poll config, and tags. Ships NO personal skip rules; candidate-specific blacklist rows (companies that don't sponsor, the candidate's own employer) live in a git-ignored overlay `private/job-search/blacklist.yaml` merged at load time by `registry.py` (each row: identity-only + `blacklist:` reason, no `ats`/`token`). Never carries specific or dated postings |
@@ -45,7 +45,7 @@ support folders, not applications.
 | `skills/resume-writer/scripts/check.py` | Validate tailored.yaml + PDF (locked fields, real project titles/skills, bullet lengths, one page, each JD's cover letter); re-exports the filename stems + `application_roles()`/layout helpers. Detail in the resume-writer skill |
 | `automation/shared/config.py` | **Canonical** config loader — candidate identity, paths (including the company-level cache), output-filename stems, and location policy. Vendored into `job-search`, `resume-writer`, and `application-tracker` |
 | `automation/shared/layout.py` | **Canonical** pure application-folder layout helpers (no identity/config): `source/` rules, `slugify_label` / `compose_stem`, `application_roles()`, and `find_jd_files`. Vendored into `resume-writer` and `application-tracker` |
-| `automation/shared/location.py` | **Canonical** shared location classifier — turns a posting `location` string into a match (e.g. `metro` / `us_remote`) or no-match (`other_us` / `foreign` / `unknown`) per the configured location policy (ships with NO built-in metros; callers inject `config.location_policy()`); also extracts `Location:` lines from JD files. Vendored into `job-search`, `resume-writer`, and `application-tracker` (see `handbook/skills-and-vendoring.md`) |
+| `automation/shared/location.py` | **Canonical** shared location classifier — turns a posting `location` string into a match (e.g. `metro` / `us_remote`) or no-match (`other_us` / `foreign` / `unknown`) per the configured location policy (ships with NO built-in metros; callers inject `config.location_policy()`); also extracts `Location:` lines from JD files. Vendored into `job-search`, `resume-writer`, and `application-tracker` (see `docs/handbook/skills-and-vendoring.md`) |
 | `automation/shared/job_metadata.py` | **Canonical** pure extractor/validator for the flat schema-v5 per-posting `status`, job level (normalized word + approximate Google-equivalent range), required YOE, salary, `workplace` (onsite/hybrid/remote), and heuristic `sponsorship` (likely/unlikely/unknown), plus the `derive_status` folder rollup and loading of the optional sourced company-levels reference cache. Vendored into all three job workflow skills |
 | `automation/shared/metadata_editor.py` | **Canonical** formatting-preserving schema-v5 `meta.yaml` editor (YAML node anchors, checksums, atomic writes, semantic verification, idempotence). Vendored into application-tracker |
 | `automation/company-levels/import_company_levels.py` | Dry-run-by-default YAML/JSON/CSV importer for user-supplied or licensed company-level facts; never fetches/scrapes Levels.fyi and keeps base/stock/bonus/total plus geographic bands distinct |
@@ -67,16 +67,16 @@ support folders, not applications.
 | `automation/shared/mail/` | The send-less mail layer: `contract/` (MailProvider interface, audited raw-HTTP transport with per-provider route allowlists, provider conformance suite incl. the read-only `--live` mode), `providers/outlook_graph/` (the isolated Outlook implementation), and the folder-walking `check_mail_safety.py` run by pre-commit |
 | `.claude/skills/`, `.cursor/skills/` | Tool-compatibility symlinks to `skills` (for agents that look in their own skill directories) |
 | `.agents/MEMORY.md` | Cross-session hypotheses and learnings (gitignored) |
-| `tmp/` | Gitignored scratch space for **all** disposable, ad-hoc work — one-off ATS/API probes, fetched web artifacts, sanity checks — organized into purpose-named subfolders (`tmp/ats_scripts/`, `tmp/web_artifacts/`, `tmp/scratch/`). Never committed; created on demand; nothing in the toolkit may depend on it. See `handbook/file-organization.md` |
+| `tmp/` | Gitignored scratch space for **all** disposable, ad-hoc work — one-off ATS/API probes, fetched web artifacts, sanity checks — organized into purpose-named subfolders (`tmp/ats_scripts/`, `tmp/web_artifacts/`, `tmp/scratch/`). Never committed; created on demand; nothing in the toolkit may depend on it. See `docs/handbook/file-organization.md` |
 | `message-queue/` | Async human↔agent messages, one file each, routed by who acts next (contract: `AGENTS.md` → Async Collaboration; map: `message-queue/README.md`): `needs-human/` `decisions/`, `clarifications/`, `reviews/`; `needs-agent/` `requests/`, `retries/`. Private mirror: `private/message-queue/` |
 | `tasks/` | Work items, one folder per task (`YYYY-MM-DD-<slug>`); the status folder it sits in IS its status (`0_backlog`…`4_done`). Map: `tasks/README.md` |
 | `memory/` | Long-term project memory: `decisions/` (append-only ADR log; open questions live in `message-queue/needs-human/decisions/` until decided), `known-issues/` (canonical detailed bug records — GitHub issues link here), `facts/`, `lessons/` |
 | `templates/` | Single source of truth for every process-file schema — queue items, tasks, memory entries, handovers (`templates/README.md`) |
-| `roadmap/` | `desired-state.md` vs `current-state.md`; the gap is the backlog's source (`roadmap/README.md`) |
+| `docs/roadmap/` | `desired-state.md` vs `current-state.md`; the gap is the backlog's source (`docs/roadmap/README.md`) |
 | `history/` | One folder per working session under `conversations/`, each with a `handover.md` (`history/README.md`) |
 | `automation/reconcile/reconcile.py` | The reconciler — mechanical referee for process-layer schemas, the memory index, handovers, and roadmap freshness; runs in pre-commit + CI; every check no-ops when its folder is absent (the export ships none of them), so `--require-roots` is the maintainer-checkout assertion that they all exist — pre-commit only, never CI; `--file-retries` queues findings, `--fix-index` regenerates `memory/index.md` |
-| `design/` | Active design programs (multi-approach explorations, execution plans), one folder per topic; folder-local contract in `design/AGENTS.md` |
-| `handbook/` | This folder — the extended reference behind `AGENTS.md` (`handbook/README.md` is the index) |
+| `docs/designs/` | Active design programs (multi-approach explorations, execution plans), one folder per topic; folder-local contract in `docs/designs/AGENTS.md` |
+| `docs/handbook/` | This folder — the extended reference behind `AGENTS.md` (`docs/handbook/README.md` is the index) |
 | `README.md` | Human-facing quickstart (capability-first: example output, then the workflow) |
-| `handbook/architecture.md` | Human-facing design doc: render pipeline, config system, vendoring, CI gates, repo reference |
+| `docs/handbook/architecture.md` | Human-facing design doc: render pipeline, config system, vendoring, CI gates, repo reference |
 | `AGENTS.md` | The agent-facing contract (core) |

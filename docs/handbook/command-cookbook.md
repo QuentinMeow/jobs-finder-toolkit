@@ -89,7 +89,7 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 python automation/bootstrap_overlay.py
 
 # Reconciler by hand. Plain --check no-ops on a process folder that is absent (the
-# published export ships none of message-queue/, tasks/, memory/, roadmap/,
+# published export ships none of message-queue/, tasks/, memory/, docs/roadmap/,
 # history/). --require-roots is the maintainer-checkout assertion that they all
 # exist; the pre-commit hook adds it automatically when private/ is mounted.
 .venv/bin/python automation/reconcile/reconcile.py --check

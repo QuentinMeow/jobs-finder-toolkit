@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (after the provider contract)
 - **Area**: email
-- **Source**: `design/application-progress-calendar/execution-plan.md` Stage 3
+- **Source**: `docs/designs/application-progress-calendar/execution-plan.md` Stage 3
 - **Claimed-by**: codex root session 2026-07-22
 
 ## Goal
@@ -13,7 +13,7 @@ substrate for local email review and progress reconciliation.
 ## Context
 
 Implement the sync contract in
-`design/raw-data-layer/04-email-download-categorization.md`: full
+`docs/designs/raw-data-layer/04-email-download-categorization.md`: full
 resync with inventory-diff tombstoning first, delta second, per-account and
 per-folder opaque state, provider-immutable message IDs, explicit move and
 delete semantics, and the live staleness tripwire. Capture attachment

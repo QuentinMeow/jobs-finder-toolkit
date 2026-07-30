@@ -12,11 +12,11 @@ renders into a validated DOCX + PDF resume plus each JD's bundled `..._Applicati
 (timeless tooling + the fake **"Jordan Rivers"** example) with a **private overlay** for real
 identity/products. This is the core contract every agent reads BEFORE acting; extended detail —
 full command cookbook, complete directory table, long rationale, edge-case policies, setup — lives
-in `handbook/` (index: `handbook/README.md`); read the named doc when a section points you there.
+in `docs/handbook/` (index: `docs/handbook/README.md`); read the named doc when a section points you there.
 
 **Collaboration mode:** `async` — decide everything reversible; file expensive-to-reverse choices
 in `message-queue/needs-human/decisions/` with a default path and continue; stop only on
-`Blocking: yes`. See `handbook/collaboration-modes.md`; a task file may override the mode for
+`Blocking: yes`. See `docs/handbook/collaboration-modes.md`; a task file may override the mode for
 that task only.
 
 ## Public vs Private (skills + products)
@@ -31,7 +31,7 @@ data in the public tree** — it ships only the fake "Jordan Rivers" example.
   `config.example.yaml` is the tracked placeholder.
 - **Private overlay repo** — its own git repo, mounted at the git-ignored `private/` dir;
   `config.yaml` points `paths.*` into it (real identity, profile, baseline, reference DOCX,
-  applications, interviews, private coding-interview skills). See `handbook/private-overlay.md`.
+  applications, interviews, private coding-interview skills). See `docs/handbook/private-overlay.md`.
 
 **Skill visibility** is a `visibility: public|private` key in each `SKILL.md`. **PUBLIC skills**
 (SKILL.md + scripts published; PRODUCTS stay private): `ask-me-anything`, `job-search`,
@@ -52,7 +52,7 @@ guard** (`automation/publish/check_public.py`) hardcodes NO identity — it deri
 runs it as the final publish gate. Routing: `skills/` is entirely public and lists the public skills;
 each private skill is reached from `.claude/skills/`+`.cursor/skills/` entries pointing at
 `private/skills/<name>` (git-ignored; `automation/bootstrap_overlay.py` creates them).
-Full detail: `handbook/public-private-split.md`.
+Full detail: `docs/handbook/public-private-split.md`.
 
 ## Configuration
 
@@ -66,11 +66,11 @@ under `private/`, the public example under `examples/`. **Output stems** come fr
 `config.resume_stem()`/`cover_stem()`/`application_stem()`; never hardcode a person's filename stem —
 use `<RESUME_STEM>`. **Generation mode**: `config.generation_mode()` returns `token_saving`
 (default) or `full` — a token-usage dial for search + drafting; hard gates run identically in both.
-Full function/path detail: `handbook/configuration.md`.
+Full function/path detail: `docs/handbook/configuration.md`.
 
 ## Repo Map (top level)
 
-Full directory table (every script + per-skill row): `handbook/repo-map.md`.
+Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`.
 
 | Path | Purpose |
 |------|---------|
@@ -81,18 +81,18 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
 | `skills/` | Canonical skills dir — **entirely public** (see Public vs Private; private skills live at `private/skills/`) |
 | `automation/` (shared, vendoring, gardener, search-recall-audit, company-levels, metrics, publish, store, reconcile, hooks) | Everything that runs: canonical toolkit modules, vendoring, gardener, pipeline audits, metrics, leak guard, store tools, the reconciler, tracked git hooks |
 | `templates/` | **Single source of truth for every process-file schema** — copy one to create any queue/task/memory item (`templates/README.md`) |
-| `roadmap/` | `desired-state.md` vs `current-state.md` — the gap between them is the backlog's source |
+| `docs/roadmap/` | `desired-state.md` vs `current-state.md` — the gap between them is the backlog's source |
 | `history/` | One folder per working session, each with a `handover.md` |
 | `tmp/` | Gitignored scratch (purpose-named subfolders); never committed |
 | `message-queue/` (`needs-human/`: `decisions/`, `clarifications/`, `reviews/`; `needs-agent/`: `requests/`, `retries/`) | Async human↔agent messages, one file each, routed by **who acts next** (see Async Collaboration) |
 | `tasks/` (status folders `0_backlog`…`4_done`) | Work items; the folder a task sits in IS its status (`tasks/README.md`) |
 | `memory/` (`decisions/` ADRs, `known-issues/`, `facts/`, `lessons/`) | Long-term project memory; ADRs are immutable — a reversal is a new file |
-| `README.md`, `handbook/architecture.md` (human) / `AGENTS.md`, `handbook/README.md` | Human quickstart + design doc / this agent contract (core) + its extended reference |
+| `README.md`, `docs/handbook/architecture.md` (human) / `AGENTS.md`, `docs/handbook/README.md` | Human quickstart + design doc / this agent contract (core) + its extended reference |
 
 ## Read Order (boot sequence)
 
-1. Read this file first for repo orientation. Open the `handbook/` doc a section points to on
-   demand — command cookbook, full directory table, detailed policies (index: `handbook/README.md`).
+1. Read this file first for repo orientation. Open the `docs/handbook/` doc a section points to on
+   demand — command cookbook, full directory table, detailed policies (index: `docs/handbook/README.md`).
 2. Read the relevant skill before working. Skills are **quickstart-first**: the SKILL.md
    routine path handles the common case; open a skill's `reference.md` (and the handbook) only when
    it points you there. Route by need: `ask-me-anything` (new user / how it works / where to start),
@@ -107,8 +107,8 @@ Full directory table (every script + per-skill row): `handbook/repo-map.md`.
    and are listed by the runtime when the overlay is mounted.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context, and skim `memory/index.md`
    (generated) — open only the entries relevant to your task.
-4. If your work changes overall architecture, read `roadmap/current-state.md` and
-   `roadmap/desired-state.md` — a new task should trace to a desired-state line.
+4. If your work changes overall architecture, read `docs/roadmap/current-state.md` and
+   `docs/roadmap/desired-state.md` — a new task should trace to a desired-state line.
 5. Before tailoring, read the tailoring card (`<applications_root>/0_profile/tailoring-card.md`) — the distilled default context; open the full profile (`config.profile_md_path()`, source of truth) only on the resume-writer skill's escalation triggers (card missing/stale/`--check` fail, or a JD domain the card doesn't cover).
 
 ## Async Collaboration (message-queue/ + tasks/ + doc dialogue)
@@ -161,7 +161,7 @@ later session must be able to continue from tracked files alone.
 **Doc dialogue:** human-read documents carry two-way fields — decision blocks with
 `**Your answer:**` lines, "Decisions (resolved)" tables (the owner may amend those too — check
 them on any visit), and a trailing `## Human questions / additional tasks` section (contract:
-`handbook/doc-style.md`, the decision-block and async-fields sections). On any visit to a doc: answer owner questions in place (dated,
+`docs/handbook/doc-style.md`, the decision-block and async-fields sections). On any visit to a doc: answer owner questions in place (dated,
 appended — never delete or overwrite owner text, and **re-read any two-way file immediately
 before writing it; if it changed since your last read, merge — never clobber**), file owner-added
 tasks into `tasks/0_backlog/`, and treat a filled answer line as a decision event (fold in →
@@ -181,10 +181,10 @@ folder's `agents-references/`, reached only via task-conditioned pointer lines (
 read <file>"). Hard invariants live only in this file + hooks, never in leaves. After a context
 compaction, re-read the `AGENTS.md` of any routed folder you're still working in. Leaf creation is
 reactive — second folder-local correction or explicit owner ask; propose via
-`message-queue/needs-human/decisions/` when unsure (design: `design/tree-instructions/README.md`).
+`message-queue/needs-human/decisions/` when unsure (design: `docs/designs/tree-instructions/README.md`).
 
 Router:
-- Working under `design/`? Read `design/AGENTS.md` first (skip if your tool already injected it).
+- Working under `docs/designs/`? Read `docs/designs/AGENTS.md` first (skip if your tool already injected it).
 - Creating any queue item, task file, memory entry, or handover? Copy its schema from
   `templates/` (`templates/README.md`) — never write a format from memory.
 
@@ -193,7 +193,7 @@ Router:
 - **Never fabricate** experience, metrics, titles, or technologies not in the profile. Reframe
   and emphasize existing experience; never invent new experience.
 - **Traceability & anchored, not frozen**: start every `tailored.yaml` as a copy of the baseline;
-  every bullet maps to real, documented content (profile or the supporting library — `handbook/tailoring-guardrails.md`).
+  every bullet maps to real, documented content (profile or the supporting library — `docs/handbook/tailoring-guardrails.md`).
   Rephrase and add real, traceable detail, but locked fields, titles, and skill-list gating always hold.
 - **Validation is mandatory / hard gates**: `render.py` auto-runs `check.py` (locked
   identity/employer fields, real titles/skills, bullet counts, one-page PDF). A FAILed render must
@@ -202,7 +202,7 @@ Router:
   understanding of the company AND that JD (concrete real specifics, never invented claims). **One
   cover letter per JD — no shared/boilerplate letter.**
 - **Skill lists**: honor the profile's Approved / Weak / Never lists; JD skills in none of them
-  must be surfaced to the user for categorization, never added silently (full rule: `handbook/tailoring-guardrails.md`).
+  must be surfaced to the user for categorization, never added silently (full rule: `docs/handbook/tailoring-guardrails.md`).
 - **Blacklist/log preflight**: before searching or drafting, honor the company blacklist
   (`private/job-search/blacklist.yaml`) and the skip-logs (`applications-log.yaml`,
   `company-search-log.yaml`) — never draft a blacklisted company or re-surface a logged posting.
@@ -236,7 +236,7 @@ Router:
 
 Always use the repo venv `.venv/bin/python` (Python 3.11+). PDF conversion needs LibreOffice
 (override with `JOBHUNT_SOFFICE`). Full cookbook (validate-only, metadata backfill/validate,
-company-level import, log sync/record, DOCX extract, vendoring, hook install, deps): `handbook/command-cookbook.md`.
+company-level import, log sync/record, DOCX extract, vendoring, hook install, deps): `docs/handbook/command-cookbook.md`.
 
 ```bash
 # Render a tailored resume (DOCX + PDF) + one cover letter per JD, then auto-validate.
@@ -251,21 +251,21 @@ company-level import, log sync/record, DOCX extract, vendoring, hook install, de
 
 ## Conventions (quick reference)
 
-Each expands in a named `handbook/` doc; the bolded name is the canonical section.
+Each expands in a named `docs/handbook/` doc; the bolded name is the canonical section.
 
 - **Memory Map** — agent-memory zones (read/append points), retention, writers; promotion plus
-  **forgetting** (TTL/prune/demotion) enforced by the `gardener` (dry-run). Full table: `handbook/memory-map.md`.
+  **forgetting** (TTL/prune/demotion) enforced by the `gardener` (dry-run). Full table: `docs/handbook/memory-map.md`.
 - **Sharing Code Across Skills** — skills are self-contained; a skill's `scripts/` **never** imports
   repo-root Python. Pure toolkit modules live once in `automation/shared/`, vendored (byte-identical)
-  into each skill's `scripts/_vendor/` via `automation/vendoring/sync_vendored.py`; never edit a copy. Detail: `handbook/skills-and-vendoring.md`.
+  into each skill's `scripts/_vendor/` via `automation/vendoring/sync_vendored.py`; never edit a copy. Detail: `docs/handbook/skills-and-vendoring.md`.
 - **File & Folder Organization** — group files by purpose in a meaningful subfolder (never a
   generic *scripts*/*docs*/*data* bucket); reason tree-first before creating any file. Detail (incl. the
-  coding-interview 150-char no-hard-wrap rule): `handbook/file-organization.md`.
+  coding-interview 150-char no-hard-wrap rule): `docs/handbook/file-organization.md`.
 - **Scratch & Temporary Files** — throwaway work (probes, scraped HTML/JSON, sanity checks) lives ONLY
   under the top-level gitignored **`tmp/`** in purpose-named subfolders (`tmp/ats_scripts/`,
-  `tmp/web_artifacts/`, `tmp/scratch/`) — never the repo root or a tracked/product folder. Detail: `handbook/file-organization.md`.
+  `tmp/web_artifacts/`, `tmp/scratch/`) — never the repo root or a tracked/product folder. Detail: `docs/handbook/file-organization.md`.
 - **Subagent Budget** — a request that fans out launches **at most 8 subagents total** across all
-  waves; reuse/resume or finish in the parent — never a ninth. Repo-wide cap (`handbook/subagent-budget.md`).
+  waves; reuse/resume or finish in the parent — never a ninth. Repo-wide cap (`docs/handbook/subagent-budget.md`).
 - **Process Folders** — `message-queue/` + `tasks/` (see **Async Collaboration** above) plus the
   memory zones `memory/decisions/` and `memory/known-issues/` (+ same-name `private/` mirrors for
   leak-guarded content): one self-contained item per file, schemas in `templates/` (copy, never
@@ -304,4 +304,4 @@ applications/6_drafted/<slug>/                     # multi-role: repeat cover/tx
 ```
 
 Full status-folder table, numeric-prefix rules, per-file (`meta.yaml`, `.txt` section format,
-`source/`) descriptions, and the divergent-role split: `handbook/application-folders.md`.
+`source/`) descriptions, and the divergent-role split: `docs/handbook/application-folders.md`.

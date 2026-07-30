@@ -2,7 +2,7 @@
 """The public-change review gate — fail whenever the published tree changed
 without a recorded review.
 
-Spec: ``design/workspace-restructure/review-gate.md``. This is the MECHANICAL half
+Spec: ``docs/designs/workspace-restructure/review-gate.md``. This is the MECHANICAL half
 of the defense: it does not prove anyone read anything and it does not detect
 personal data on its own (that is ``check_public.py``). Its job is to make an
 unreviewed public change *impossible to miss* and to leave a tracked trace of who

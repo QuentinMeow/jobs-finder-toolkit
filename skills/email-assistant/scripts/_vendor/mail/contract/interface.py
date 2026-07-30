@@ -1,7 +1,7 @@
 """The send-less ``MailProvider`` contract every mail provider implements.
 
 Two properties matter more than the method list
-(design/raw-data-layer/03-provider-interfaces.md §1):
+(docs/designs/raw-data-layer/03-provider-interfaces.md §1):
 
 * **There is no send operation.** Not blocked — *nonexistent*. Nothing a
   consumer skill can call, misuse, or be prompt-injected into calling.

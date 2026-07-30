@@ -26,7 +26,7 @@ for the marketing-word check, so pasted terminal output, example markdown, and a
 sentence that *names* a banned word (`` `seamless` ``) cannot trip a finding.
 
 Stdlib only, and it imports nothing from the repo root — a skill's ``scripts/``
-may never import repo-root Python (``handbook/skills-and-vendoring.md``).
+may never import repo-root Python (``docs/handbook/skills-and-vendoring.md``).
 
 Usage:
     .venv/bin/python skills/github-workflow/scripts/check_pr_body.py body.md

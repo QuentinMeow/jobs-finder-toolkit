@@ -26,7 +26,7 @@ together:
 | **Privacy is architectural**           | Real data can live in a separate private overlay. A blocking leak guard checks paths, text, structural PII, identity tokens, and extractable DOCX/PDF content before the public toolkit can ship.                                                                                            |
 
 See the [feature inventory, competitor matrix, implementation deep dives, limitations,
-and sources](handbook/comparisons/resume-writing-tools.md). The comparison was researched
+and sources](docs/handbook/comparisons/resume-writing-tools.md). The comparison was researched
 on 2026-07-20; “not publicly documented” is evidence of differentiation, not a claim
 that another product could never implement the capability.
 
@@ -107,7 +107,7 @@ Keep your real profile, applications, and interview prep in a **private overlay*
 your own git repo mounted at the git-ignored `private/` directory. A leak guard
 (run blocking in CI and in the pre-push hook) screens every tracked file for your
 identity so nothing personal can ship by accident. Full walkthrough, including
-creating an overlay from scratch: [handbook/private-overlay.md](handbook/private-overlay.md).
+creating an overlay from scratch: [docs/handbook/private-overlay.md](docs/handbook/private-overlay.md).
 
 ## The skills
 
@@ -138,21 +138,22 @@ automation/              # everything that runs: shared modules, vendoring, gard
                          #   pipeline audits, metrics, leak guard, git hooks, the reconciler
 templates/               # single source of truth for process-file schemas
 evals/                   # per-skill canary evals (gate skill-instruction changes)
-handbook/                # extended reference: architecture, private overlay, metrics
-design/                  # active design programs (one folder per topic)
+docs/handbook/           # extended reference: architecture, private overlay, metrics
+docs/designs/            # active design programs (one folder per topic)
+docs/roadmap/            # desired vs current state — the gap is the backlog's source
 message-queue/ tasks/    # async human<->agent messages / work items (status = folder)
-memory/ roadmap/ history/  # ADRs+facts+lessons / desired-vs-current state / session handovers
+memory/ history/         # ADRs+facts+lessons / session handovers
 AGENTS.md                # the agent-facing contract (guardrails + conventions)
 ```
 
 ## Learn more
 
-- [handbook/architecture.md](handbook/architecture.md) — how it works: the render pipeline,
+- [docs/handbook/architecture.md](docs/handbook/architecture.md) — how it works: the render pipeline,
   config system, application-folder model, vendoring, CI gates, and the full repo
   reference table
-- [handbook/private-overlay.md](handbook/private-overlay.md) — the public/private two-repo
+- [docs/handbook/private-overlay.md](docs/handbook/private-overlay.md) — the public/private two-repo
   model and overlay setup
-- [handbook/comparisons/resume-writing-tools.md](handbook/comparisons/resume-writing-tools.md)
+- [docs/handbook/comparisons/resume-writing-tools.md](docs/handbook/comparisons/resume-writing-tools.md)
   — detailed feature inventory, market comparison, implementation deep dives, and
   official sources
 - [AGENTS.md](AGENTS.md) — the contract AI agents follow (no fabrication,

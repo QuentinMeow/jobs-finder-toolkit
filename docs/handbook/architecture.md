@@ -1,8 +1,8 @@
 # Architecture
 
 How the toolkit works under the hood. For the quickstart, read
-[`README.md`](../README.md); for the agent-facing contract (guardrails, folder
-conventions, memory zones), read [`AGENTS.md`](../AGENTS.md).
+[`README.md`](../../README.md); for the agent-facing contract (guardrails, folder
+conventions, memory zones), read [`AGENTS.md`](../../AGENTS.md).
 
 ## The rendering pipeline: content and formatting are separate concerns
 
@@ -106,7 +106,7 @@ The canonical sources live in `automation/shared/`; `automation/vendoring/sync_v
 regenerates the byte-identical `_vendor/` copies, and its `--check` mode (run by the
 pre-commit hook and CI) fails on any drift. Edit the canonical source, never a copy.
 (This is "Approach 2" of the historical design exploration in
-`design/skill-script-sharing/`.)
+`docs/designs/skill-script-sharing/`.)
 
 Skills are discovered by listing `skills/` — any AI agent that reads
 `AGENTS.md` finds them there. `.claude/skills/` and `.cursor/skills/` are
@@ -133,11 +133,11 @@ public tree clean:
 3. **The exporter** (`automation/publish/export_public.py`) can produce a sanitized copy
    of any checkout; the leak-guard test suite drives it end-to-end.
 
-Full walkthrough: [`PRIVATE_OVERLAY.md`](PRIVATE_OVERLAY.md).
+Full walkthrough: [`docs/handbook/private-overlay.md`](private-overlay.md).
 
 ## Continuous integration
 
-CI ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) runs on every push and
+CI ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) runs on every push and
 pull request:
 
 1. **Vendored-copy drift check** — `sync_vendored.py --check`.
@@ -156,7 +156,7 @@ A separate `secret-scan` job runs gitleaks over the full history for credential
 shapes the identity guard does not target.
 
 Local equivalents of all gates are listed in
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) → "Running the checks"; the tracked git hooks
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md) → "Running the checks"; the tracked git hooks
 (installed by `python automation/bootstrap_overlay.py`) run the cheap ones on commit and
 the leak guard on push.
 
@@ -178,5 +178,5 @@ the leak guard on push.
 | `evals/` | Per-skill canary evals gating skill-instruction changes (see `evals/README.md`) |
 | `automation/hooks/` | Tracked git hooks: pre-commit (staged-index leak guard + staged-`private/` reject, drift, compile, budget, reconciler), pre-push (leak guard, armed) |
 | `AGENTS.md` | The agent-facing contract: guardrails, conventions, memory map |
-| `handbook/` | Human-facing operating docs (this file, `handbook/private-overlay.md`, `handbook/metrics.md`) |
-| `design/` | Design programs — one folder per family (`design/skill-script-sharing/`, `design/raw-data-layer/`, …) |
+| `docs/handbook/` | Human-facing operating docs (this file, `docs/handbook/private-overlay.md`, `docs/handbook/metrics.md`) |
+| `docs/designs/` | Design programs — one folder per family (`docs/designs/skill-script-sharing/`, `docs/designs/raw-data-layer/`, …) |

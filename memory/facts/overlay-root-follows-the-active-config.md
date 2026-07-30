@@ -26,6 +26,6 @@ free.
 **What would falsify it:** setting `paths.overlay_root` explicitly in a config, which pins the
 overlay root independently of `applications_root`. The derivation is a default, not a law. Also
 note the two are only coupled while the benchmark tree sits *inside* the overlay: phase 5 of
-[the workspace-restructure execution plan](../../design/workspace-restructure/execution-plan.md)
+[the workspace-restructure execution plan](../../docs/designs/workspace-restructure/execution-plan.md)
 moves the benchmark tree into the overlay's eval-fixtures folder, and the fixture profile has to
 move with it or gain an explicit `paths.search_profiles_dir`.
