@@ -52,24 +52,24 @@ unless it exceeds 150 characters (see the `coding-interview` skill).
 
 Ad-hoc, throwaway work — one-off API/ATS probes, scraper snippets, fetched raw HTML/JSON,
 sanity-check scripts, any disposable intermediate — MUST live under the single top-level
-**`tmp/`** folder in **purpose-named subfolders**, never in the repo root or a tracked/product
+**`local/`** folder in **purpose-named subfolders**, never in the repo root or a tracked/product
 folder (`applications/`, `scripts/`, `templates/`, `skills/`, `interviews/`). A hard rule
 for every agent and skill; the old flat `tmp_*.py`-in-root habit is retired.
 
-- **Location & lifecycle:** everything disposable lives under `tmp/<purpose>/`. The whole `tmp/`
+- **Location & lifecycle:** everything disposable lives under `local/<purpose>/`. The whole `local/`
   tree is gitignored — nothing in it is committed, and nothing in
-  the committed toolkit may import from or depend on `tmp/`. Temp files are disposable: delete them
+  the committed toolkit may import from or depend on `local/`. Temp files are disposable: delete them
   once done; if a probe proves worth keeping, promote it into the proper skill's `scripts/`.
-- **Purpose-named buckets** (the name must announce the contents' job): `tmp/ats_scripts/` (job-board/
-  ATS API probes), `tmp/web_artifacts/` (fetched raw HTML/JSON/career-page snapshots), `tmp/scratch/`
+- **Purpose-named buckets** (the name must announce the contents' job): `local/ats_scripts/` (job-board/
+  ATS API probes), `local/web_artifacts/` (fetched raw HTML/JSON/career-page snapshots), `local/scratch/`
   (quick sanity checks). Descriptive lowercase file names inside each; never a bare `tmp_*.py` in the
   root. Machine scratch (`--json-out`) may target the OS `/tmp`, but keep anything worth revisiting
-  in a named `tmp/` bucket.
+  in a named `local/` bucket.
 - **A durable record never cites scratch as its evidence.** A task's `verification.md`, an
   `evals/results/` row, a `memory/` entry, a design doc — none of them may point at a path under
-  `tmp/` as the proof of a claim. Scratch gets swept; the citation then names nothing and the claim
+  `local/` as the proof of a claim. Scratch gets swept; the citation then names nothing and the claim
   becomes unverifiable, with no signal that it ever went stale. Measured on 2026-07-29: three such
   records cited snapshot files that were already gone. If an artifact is the evidence for something
-  durable, get it out of `tmp/` — paste the relevant lines into the record itself, add a tracked
+  durable, get it out of `local/` — paste the relevant lines into the record itself, add a tracked
   fixture under `examples/fixtures/`, or park it in the private overlay when it carries personal
   data. A command and its real output, quoted in the record, survive the sweep; a path does not.

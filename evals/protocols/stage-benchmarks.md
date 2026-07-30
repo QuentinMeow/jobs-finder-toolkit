@@ -35,7 +35,7 @@ e.g. `fixtures/v1/`). Sources: the existing benchmark drafts under
 
 | Fixture | Contents | Isolates stage(s) |
 |---|---|---|
-| `search-snapshot/` | one frozen `tmp/search_cache/`-format pre-filter JSON (+ `-latest` pointer) | S3 fetch, S4 filter/rank (run `--refilter`, zero network) |
+| `search-snapshot/` | one frozen `local/search_cache/`-format pre-filter JSON (+ `-latest` pointer) | S3 fetch, S4 filter/rank (run `--refilter`, zero network) |
 | `jd-set/` | 6 frozen JD pages: 4 clean HTML, 2 JS-shell (to exercise the ATS-API fallback path), + expected workplace/visa verdicts in `expected.yaml` | S6 verification, S7 gates |
 | `search-row/` | one frozen search-JSON candidate row + empty target tree | S8 handoff, S9 metadata |
 | `handoff-folder/` | one complete handed-off folder (`meta.yaml` + `source/JD-*.md`), stretch-fit variant + like-fit variant | D3–D5 tailoring, D9 cover/bundle, D10 Step-7, D11 metadata |

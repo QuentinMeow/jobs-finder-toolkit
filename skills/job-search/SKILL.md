@@ -57,8 +57,8 @@ This is the complete routine path — an ordinary search needs nothing below it.
    it is absent (public / example mode), take all candidate specifics from `config` and the profile.
 3. **Never invent a posting.** Every surfaced row must trace to a fetched listing with a real
    `source` + `url`; use `?` for any fact the posting did not provide, never a guess.
-4. **Scratch stays in `tmp/`** — probe scripts in `tmp/ats_scripts/`, fetched HTML/JSON in
-   `tmp/web_artifacts/`; never the repo root or `scripts/`. See `AGENTS.md` → "Scratch & Temporary
+4. **Scratch stays in `local/`** — probe scripts in `local/ats_scripts/`, fetched HTML/JSON in
+   `local/web_artifacts/`; never the repo root or `scripts/`. See `AGENTS.md` → "Scratch & Temporary
    Files".
 5. **Subagent cap: at most 8 subagents total** per request — see `AGENTS.md` → "Subagent Budget".
 
@@ -104,14 +104,14 @@ summary. After every fresh fetch (and after a refilter used to make a final shor
 deterministic snapshot audit on the printed `Snapshot:` path:
 ```bash
 .venv/bin/python skills/job-search/scripts/validate_filter_variants.py \
-  --snapshot tmp/search_cache/<printed-snapshot>.json --profile example
+  --snapshot local/search_cache/<printed-snapshot>.json --profile example
 ```
 Known location/workplace, sponsorship, title/seniority, and YOE shapes pass without AI. Exit 1
-means the report under `tmp/filter_variant_reports/` contains a new or conflicting structural
+means the report under `local/filter_variant_reports/` contains a new or conflicting structural
 variant: verify it against the real JD, update the deterministic classifier, and add only a
 fictional minimal regression to `filter_variants/corpus.yaml` before relying on that filter.
 
-Every fetch also writes a pre-filter snapshot to `tmp/search_cache/` (gitignored). **To widen the
+Every fetch also writes a pre-filter snapshot to `local/search_cache/` (gitignored). **To widen the
 freshness window, change top-k, or re-emit JSON after a search, re-filter — never re-fetch:**
 ```bash
 # reuses the snapshot, anchors posting age to its fetch time; refuses snapshots >6h old (--allow-stale)
@@ -132,7 +132,7 @@ Common overrides (flags beat profile values):
 ... --profile example --json-out /tmp/matches.json       # machine-readable JSON (needed for handoff)
 # exhaustive opt-in registry cohort: board-only, no top-K/per-company truncation
 ... --profile example --company-batches ai-expansion-01 --no-aggregators --all-matches \
-    --json-out tmp/matches.json
+    --json-out local/matches.json
 ```
 More flags (`--company-tags`, `--aggregators`, `--no-companies`, `--max-per-company`,
 `--include-recent`, `--search-log-skip-days`): `reference.md` § Search flags.
@@ -173,7 +173,7 @@ verdict (contract: `reference.md` § JD digest). **`--digest` is a fetch-time ai
 already saved on disk (e.g. one `handoff.py` fetched), read the file directly — do not re-run
 `fetch_jd` or rebuild a digest for it.** E.g. a posting not yet scaffolded:
 ```bash
-.venv/bin/python skills/job-search/scripts/fetch_jd.py <URL> --out tmp/web_artifacts/jd.md --digest
+.venv/bin/python skills/job-search/scripts/fetch_jd.py <URL> --out local/web_artifacts/jd.md --digest
 ```
 If that page is JS-rendered (fetch_jd warns "JavaScript-rendered" / tiny output), recover the verbatim
 JD from the ATS API via `company_roles.py --jd` instead of accepting a partial scrape; if no fetch works
@@ -199,7 +199,7 @@ folder then. Scaffold with `handoff.py` (needs `--json-out` from Step 2):
     --json /tmp/matches.json --select "Acme Corp"          # or --select "rank 1,3,5"
 # whole shortlist -> one folder PER COMPANY (add --split only for divergent roles)
 .venv/bin/python skills/job-search/scripts/handoff.py \
-    --json /tmp/matches.json --all --report tmp/handoff-report.json
+    --json /tmp/matches.json --all --report local/handoff-report.json
 ```
 `--all` (and any multi-posting `--select`) groups **one folder per company** after a live-folder/log
 duplicate preflight, continuing with an auditable per-company result; `--split` forces the old

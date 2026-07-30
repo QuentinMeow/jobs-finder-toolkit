@@ -286,13 +286,13 @@ The public corpus is `filter_variants/corpus.yaml`. Check it without network:
 Audit a real pre-filter snapshot privately:
 ```bash
 .venv/bin/python skills/job-search/scripts/validate_filter_variants.py \
-  --snapshot tmp/search_cache/<printed-snapshot>.json --profile <label-or-path>
+  --snapshot local/search_cache/<printed-snapshot>.json --profile <label-or-path>
 ```
 
 The normal search exits successfully and writes uncertain postings to the printed `Review:` path.
 The explicit audit replays production gate order, so a title rejection cannot generate downstream
 location/visa/YOE noise. It exits 1 for profile-relevant review structures whose semantic family
-has no fictional corpus label and writes grouped YAML stubs under `tmp/filter_variant_reports/`.
+has no fictional corpus label and writes grouped YAML stubs under `local/filter_variant_reports/`.
 A labeled intentional-review family stays in routine review output but does not fail every later
 snapshot. Review the full JD privately; never copy a real posting into the tracked corpus. Promote
 only a fictional minimal reproduction, then rerun corpus tests and the public leak guard. Detection

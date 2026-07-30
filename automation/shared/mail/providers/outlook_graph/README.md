@@ -34,7 +34,7 @@ conservative stable identifier found in explicit per-job ID fields (`requisition
 `req_id`, or canonical `store_key`) or its job URL; use manual queries for recruiter domains or
 thread aliases.
 Disposable draft-body files belong under
-`tmp/email-assistant/` and are removed after draft creation.
+`local/email-assistant/` and are removed after draft creation.
 
 Long paginated reads may outlive one Graph access token. If Graph rejects a `GET` with HTTP 401,
 the client uses the cached OAuth refresh grant and retries that exact read once with the replacement

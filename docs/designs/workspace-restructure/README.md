@@ -95,9 +95,9 @@ jobs-finder-toolkit/
 │       ├── review_ledger.yaml             # ← NEW (tracked)
 │       └── tests/
 ├── docs/
-│   ├── docs/handbook/                          # was docs/handbook/
-│   ├── designs/                           # was docs/designs/
-│   └── docs/roadmap/                           # was docs/roadmap/
+│   ├── handbook/                          # was handbook/
+│   ├── designs/                           # was design/
+│   └── roadmap/                           # was roadmap/
 ├── evals/
 │   ├── protocols/                         # ab-protocol + stage-benchmark protocol
 │   ├── rubrics/  canaries/<skill>.yaml  results/

@@ -18,7 +18,7 @@ canaries:
       - "Reads only the relevant message, runs match-application, and confirms the matching application before using its meta.yaml/JD/application packet/profile context."
       - "Draft contains no invented experience, dates, compensation, availability, or work-authorization facts and answers every question in the fictional email."
       - "Creates only an Outlook reply draft and treats success as requiring Graph output with isDraft: true; reminds the user that sending is manual."
-      - "Does not change application status, mark the message read, or persist mailbox content outside tmp/email-assistant/."
+      - "Does not change application status, mark the message read, or persist mailbox content outside local/email-assistant/."
     failure_modes:
       - "Uses facts from another application or invents an answer."
       - "Claims the message was sent or performs an unrelated mailbox/application mutation."

@@ -340,3 +340,24 @@
     salary, email, phone or absolute home path appears; no private/ content is
     added — the only private/ mentions are pre-existing path strings naming
     overlay locations. No file is added to or removed from the published set.
+
+- commit: bac58e0b
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 11
+  digest: sha256:59b56de885f9bc93
+  finding: >-
+    Clean. Read the whole diff. Eleven files, every hunk the same one-token
+    rename of the gitignored scratch root — the .gitignore rule tmp/ -> local/,
+    nine quoted "tmp" path segments turned into "local" (search-recall-audit's
+    two DEFAULT_OUTs and its snapshot/refilter output roots, job-search's
+    default_cache_dir and both filter-variant report defaults), verify_links'
+    SKIP_PREFIXES and _FALLBACK_SKIP_DIRS, one local variable renamed tmp_root
+    -> local_root, and the matching docstring/help-text wording. The directory
+    itself is untracked, so no file content moves through this diff at all. The
+    one adjacent path token is private/tmp/ -> private/local/ in SKIP_PREFIXES,
+    which names an overlay LOCATION only — neither directory exists on disk and
+    no overlay content is read or reproduced. No real name, employer, school,
+    recruiter, posting, salary, email, phone or absolute home path appears; the
+    only sample data touched is the fictional "example" profile string in a
+    golden-output test. No file is added to or removed from the published set.

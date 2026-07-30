@@ -76,7 +76,7 @@ Consequences, by design:
   skill's preflight refusal and measure a refusal, not a draft). Stop at the
   first window with ≥2 eligible, or at 3 days.
 - **One fetch, then refilter.** Fetch once into the snapshot cache
-  (`tmp/search_cache/`); perform each widening step with `--refilter latest`
+  (`local/search_cache/`); perform each widening step with `--refilter latest`
   (zero network). A fresh fetch is permitted **at most once per widening step**
   and only when the snapshot is absent or stale (`--refilter` refuses a
   snapshot >6h old). Re-fetching when a refilter suffices is **forbidden**.

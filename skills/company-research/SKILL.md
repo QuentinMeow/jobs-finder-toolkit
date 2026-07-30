@@ -74,8 +74,8 @@ Use this skill when the user asks to:
    the candidate's real background and needs — take their domain/experience from the profile
    and their location + visa-sponsorship requirements from `config.location_policy()` and the
    profile's sponsorship flags (never assume a specific metro or visa status here).
-5. **Scratch stays in `tmp/`** (fetched HTML/JSON in `tmp/web_artifacts/`, probe scripts in
-   `tmp/scratch/`) — never the repo root or the `interviews/` tree (only finished notes belong
+5. **Scratch stays in `local/`** (fetched HTML/JSON in `local/web_artifacts/`, probe scripts in
+   `local/scratch/`) — never the repo root or the `interviews/` tree (only finished notes belong
    there). See `AGENTS.md` → "Scratch & Temporary Files".
 
 ## Research Method & Sourcing Rules

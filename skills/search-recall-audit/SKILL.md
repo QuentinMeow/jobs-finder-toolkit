@@ -41,7 +41,7 @@ change is a separate, human-reviewed edit to `job-search` — never made on a hu
   pre-check distinguish these.
 - **Read-only on the pipeline & the repo.** The tool imports `job-search`'s gates
   white-box and reads the applications log/folders; it MUTATES nothing tracked.
-  All artifacts land in the gitignored `tmp/search_recall_audit/`.
+  All artifacts land in the gitignored `local/search_recall_audit/`.
 - **Findings go to the PRIVATE mirror.** Tickets naming real employers / the
   candidate's applied-to companies violate the public leak rule — file them under
   `private/tasks/0_backlog/` and `private/memory/known-issues/` (copy the schema
@@ -59,9 +59,9 @@ change is a separate, human-reviewed edit to `job-search` — never made on a hu
 Turns the latest pre-filter snapshot into a greppable corpus + a coverage index.
 ```bash
 .venv/bin/python automation/search-recall-audit/audit.py corpus
-# defaults: --profile <config default> --snapshot latest (tmp/search_cache/<profile>-stage1-latest.json)
+# defaults: --profile <config default> --snapshot latest (local/search_cache/<profile>-stage1-latest.json)
 ```
-Writes (to `tmp/search_recall_audit/`): `postings.jsonl`, `search_lines.txt` (one
+Writes (to `local/search_recall_audit/`): `postings.jsonl`, `search_lines.txt` (one
 key-free line per posting = the whole JD, grep-friendly), and `coverage_index.json`
 (canonicalized-URL + company index of everything already considered/drafted/applied).
 If there is no snapshot, run a `job-search` first (or pass `--snapshot PATH`).
@@ -73,7 +73,7 @@ Randomly sample a few postings per keyword combo, **grepping the whole JD**:
 # custom combos (repeatable, comma = AND): --combo 'kubernetes,remote' --combo 'san francisco,platform engineer'
 # --uncovered-only skips picks whose exact URL is already considered
 ```
-Each pick becomes `tmp/search_recall_audit/jds/<idx>.md` (full JD + a coverage
+Each pick becomes `local/search_recall_audit/jds/<idx>.md` (full JD + a coverage
 pre-check). Then split the picks across **Sonnet-5 subagents** and give each the
 **canonical prompt below**, verbatim, with its batch of JD file paths. Collect the
 per-JD verdicts (match? covered? verdict).
@@ -161,7 +161,7 @@ a separate `address`/`allLocations` field), so the gate decides on a lossy strin
 
 ```bash
 # 1. Re-run the SAME parsers the builder uses over the raw zone; compare generated
-#    location vs every raw location field (dedup by blob sha). Writes tmp/ only.
+#    location vs every raw location field (dedup by blob sha). Writes local/ only.
 .venv/bin/python automation/search-recall-audit/field_fidelity.py corpus
 # 2. Curate/sample cases (weighted to flagged) for AI verification.
 .venv/bin/python automation/search-recall-audit/field_fidelity.py sample --n 30
@@ -179,7 +179,7 @@ parser fixes + tests. Key gotcha: **do NOT naively fold every raw location field
 — greenhouse `offices[]` is a company-wide office list that contradicts the role's
 `location.name` (NOISY_FIELD). Weird strings (region buckets "West"/"Central") get
 a `weird_location_format` review reason → `review`, never a silent guess. Same
-guardrails as above (QA harness, read-only pipeline, tmp/ artifacts, private
+guardrails as above (QA harness, read-only pipeline, local/ artifacts, private
 findings, ≤8 subagents). See LESSONS "Field-fidelity" + known-issue
 `location-field-fidelity-parser-drops.md`.
 
@@ -189,6 +189,6 @@ findings, ≤8 subagents). See LESSONS "Field-fidelity" + known-issue
 |------|---------|
 | `skills/search-recall-audit/SKILL.md` | This router + the canonical match prompt |
 | `skills/search-recall-audit/LESSONS.md` | Hard-won edge cases (hybrid-metro over-match, whole-JD grep, gh_jid URL dup, field-fidelity) |
-| `automation/search-recall-audit/audit.py` | Recall/precision: `corpus` / `sample` / `trace` (imports `job-search` gates white-box; writes only to `tmp/`) |
-| `automation/search-recall-audit/field_fidelity.py` | Field-fidelity: `corpus` / `sample` / `check` / `todo` (generated `location` vs raw source; writes only to `tmp/`) |
-| `tmp/search_recall_audit/`, `tmp/field_fidelity_audit/` | Gitignored run artifacts (corpus, cases, selection summary, `location_todo.jsonl`) |
+| `automation/search-recall-audit/audit.py` | Recall/precision: `corpus` / `sample` / `trace` (imports `job-search` gates white-box; writes only to `local/`) |
+| `automation/search-recall-audit/field_fidelity.py` | Field-fidelity: `corpus` / `sample` / `check` / `todo` (generated `location` vs raw source; writes only to `local/`) |
+| `local/search_recall_audit/`, `local/field_fidelity_audit/` | Gitignored run artifacts (corpus, cases, selection summary, `location_todo.jsonl`) |

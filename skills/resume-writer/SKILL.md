@@ -44,7 +44,7 @@ gets a distinct, individually researched letter per posting, never one shared le
 user which artifacts you produced and where.
 
 **Boot reads (once, at the start — skip anything already in context):** `AGENTS.md` (guardrails:
-no fabrication/consistency; scratch stays in `tmp/`, never the repo root, an application folder,
+no fabrication/consistency; scratch stays in `local/`, never the repo root, an application folder,
 or `scripts/`; **≤ 8 subagents total per request**); `.agents/MEMORY.md` if it exists
 (cross-session learnings). **The routine path does NOT read this skill's `LESSONS.md`,
 `reference.md`, the `check.py` source, or the application-tracker `SKILL.md`** — open them only on

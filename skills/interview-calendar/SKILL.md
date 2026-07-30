@@ -21,7 +21,7 @@ second mail client, tracker, or calendar store.
 3. Read the available Outlook Calendar skill before remote calendar work. Use the calendar
    connector, never add calendar routes or permissions to the email provider.
 4. Use `.venv/bin/python` for repository scripts. Keep disposable mailbox material only under
-   `tmp/email-assistant/`; never put message bodies or personal event data in this public skill.
+   `local/email-assistant/`; never put message bodies or personal event data in this public skill.
 
 ## Ownership and Ordering
 

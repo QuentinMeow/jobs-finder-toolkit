@@ -2,7 +2,7 @@
 
 The fixture authors inspected exactly the two pinned MIT references listed in
 `structural-references.yaml`. Inspection copies lived only under
-`tmp/web_artifacts/`; they are not part of this corpus.
+`local/web_artifacts/`; they are not part of this corpus.
 
 Only broad, non-expressive structure informed the synthetic recipes: a compact
 single-column chronology, standard section order, repeated employer headers, and

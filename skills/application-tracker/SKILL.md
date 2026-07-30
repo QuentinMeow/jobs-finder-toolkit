@@ -24,7 +24,7 @@ Use this skill when the user asks to:
      notes and examples OVERRIDE the generic examples in this SKILL.md. When it is
      absent (public / example mode), use the generic examples here and take all
      candidate specifics from `config` and the profile.
-3. **Scratch stays in `tmp/`** (never the repo root or an application folder) — see `AGENTS.md`
+3. **Scratch stays in `local/`** (never the repo root or an application folder) — see `AGENTS.md`
    → "Scratch & Temporary Files".
 
 ## Application Folder Convention

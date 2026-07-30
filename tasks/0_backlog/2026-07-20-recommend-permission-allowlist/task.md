@@ -2,7 +2,7 @@
 
 - **Priority**: P2
 - **Area**: repo
-- **Source**: transcript mining, 2026-07-20 (`tmp/transcript_mining/report.md`)
+- **Source**: transcript mining, 2026-07-20 (`local/transcript_mining/report.md`)
 
 ## Goal
 

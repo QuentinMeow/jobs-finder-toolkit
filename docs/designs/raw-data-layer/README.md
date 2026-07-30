@@ -14,7 +14,7 @@ Mermaid and plain-text form, every decision a self-contained block.
 ## Problem (why this family of designs exists)
 
 Every internet-facing skill treats fetched data as disposable. The only
-cache (`tmp/search_cache/` snapshots) is deliberately a within-session
+cache (`local/search_cache/` snapshots) is deliberately a within-session
 artifact with a 6-hour lifetime. Three costs follow:
 
 1. **No memory.** A posting rejected last week returns every run; a mailbox
