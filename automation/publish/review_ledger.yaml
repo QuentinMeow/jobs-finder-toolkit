@@ -271,3 +271,26 @@
     diff, and no private/ path is added. ALLOWLIST_DIRS gained docs/handbook
     and docs/designs individually rather than a bare docs, so the published
     file set is unchanged and docs/roadmap/ still does not ship.
+
+- commit: 8434650c
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 101
+  digest: sha256:3ef62ebf783289c9
+  finding: >-
+    Clean. Read in full. 101 files, and all but a handful of added lines are the
+    same mechanical rewrite — handbook/ -> docs/handbook/, design/ ->
+    docs/designs/, roadmap/ -> docs/roadmap/ — across AGENTS.md, README,
+    CONTRIBUTING, .gitignore, the CI comments, the handbook, the design docs,
+    the skills, the canonical shared modules and their byte-identical vendored
+    copies, and the live task and queue files. The genuinely new prose is one
+    superseding ADR (memory/decisions/docs-parent-for-the-human-read-trees.md),
+    a rewritten fan-out bullet in docs/handbook/file-organization.md, one
+    paragraph in docs/roadmap/current-state.md, and repaired relative-link
+    depths in docs/handbook/architecture.md and
+    docs/handbook/comparisons/resume-writing-tools.md. No real name, employer,
+    school, posting, recruiter, date, salary, email, phone or absolute home path
+    appears anywhere in the diff; no private/ path is added; every example name
+    remains the fictional persona or a toolkit filename. The published file set
+    is unchanged: an export before and after ships the same 566 files, and
+    docs/roadmap/ still does not ship.
