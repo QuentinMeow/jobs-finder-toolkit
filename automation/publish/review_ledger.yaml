@@ -317,3 +317,26 @@
     carry only the fictional Jordan Rivers persona and fictional postings. No
     private/ file is added or read into the tree. The published file set is
     unchanged in count — the same files ship, under new names.
+
+- commit: bc35b5b5
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 13
+  digest: sha256:e37b9d8f037571d5
+  finding: >-
+    Clean. Read the whole diff. Twelve of the thirteen files carry a single
+    mechanical path substitution each — evals/<skill>/canaries.yaml ->
+    evals/canaries/<skill>.yaml, and docs/designs/stage-benchmarks/{protocol,
+    stage-map}.md -> evals/protocols/{stage-benchmarks,stage-map}.md — in
+    AGENTS.md, CONTRIBUTING, the root README's tree comment, the PR-template
+    checklist, docs/handbook/architecture.md, one design execution plan, the
+    result template and four backlog task files. The one substantive addition
+    is in evals/README.md: a restructured Layout block and a new section
+    pointing at the two stage-benchmark protocols, both describing only the
+    repo's own directory shape. docs/roadmap/current-state.md gains one
+    rewritten sentence about which half of the workspace phase has landed. Every
+    number quoted (~450k tokens, n = 1-2 pairs) is a published benchmark figure
+    already in the tree. No real name, employer, school, recruiter, posting,
+    salary, email, phone or absolute home path appears; no private/ content is
+    added — the only private/ mentions are pre-existing path strings naming
+    overlay locations. No file is added to or removed from the published set.
