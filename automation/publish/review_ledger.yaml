@@ -800,3 +800,15 @@
     exists to prevent and which a source-level guard reads. No employer, person,
     posting URL, application slug, salary or absolute home path appears; every
     fixture key is invented. The advisory company detector reports (none).
+- commit: 89a3e631
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:ae8023b93bb19c9d
+  finding: >-
+    Two follow-up task files and the session handover. Read the full diff. The
+    handover names PR numbers, repo-relative paths and queue-item links only,
+    and refers to the overlay's PR without a number because that repo is
+    private; the seven owner judgements are described by shape, never by
+    company. No employer, person, school, posting URL, application slug, salary
+    or absolute home path appears. The advisory detector reports (none).
