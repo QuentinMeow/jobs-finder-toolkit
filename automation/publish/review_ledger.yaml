@@ -825,3 +825,13 @@
     shape and count only, never by name. No employer, person, posting URL,
     application slug, salary or absolute home path appears. The advisory
     detector reports (none).
+- commit: aebb58c2
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 1
+  digest: sha256:5abeb2bf68615d18
+  finding: >-
+    Handover correction only — it under-reported the filed defects as two when
+    there are four. Read the diff: it names counts, task slugs and mechanisms,
+    no employer, person, posting URL, application slug or absolute home path.
+    The advisory detector reports (none).
