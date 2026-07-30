@@ -524,3 +524,20 @@
     research method — scorecard rubrics, a 5-Whys example, question templates —
     and names no employer, person, posting, date, school or salary. No absolute
     home path; nothing under private/ touched or newly named.
+
+- commit: d740b5a4
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 13
+  digest: sha256:532059033a8511b2
+  finding: >-
+    Clean. The link checker gains markdown-link, anchor, unrecognised-root and
+    private-overlay coverage, a three-tier source rule, and rename-following;
+    it is wired into CI and pre-commit. Two stale references are repaired, one
+    in the handbook and one inside the overlay. Reviewed specifically for the
+    new leak surface this creates: the routine now READS overlay files and can
+    PRINT overlay paths, so --baseline refuses to write a snapshot anywhere git
+    does not ignore, the gardener SKILL.md carries the never-paste-into-a-PR
+    warning, and no overlay path, employer, person or filename appears in any
+    tracked file, commit message or test fixture on this branch. Test fixtures
+    build their own throwaway overlay. No absolute home path.
