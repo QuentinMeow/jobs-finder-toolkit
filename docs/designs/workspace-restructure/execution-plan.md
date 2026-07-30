@@ -11,6 +11,10 @@ not as instructions. The phase-0/3/4 figures were re-measured on 2026-07-29 agai
 commit `19d0829`, the phase-2 figures against the phase-2 stack's tip; re-measure anything you
 are about to depend on, because the tree moves under this plan faster than the plan does.
 
+**Phase 5 is not the next thing to start.** The owner decided on 2026-07-29 that the link-checker
+repair lands first, because phase 5's largest verification step is unverifiable until it does —
+[why, in one paragraph](#the-link-checker-lands-before-this-phase-not-after).
+
 Target layout: [README.md](README.md). Gate spec: [review-gate.md](review-gate.md).
 Topology decision: [`memory/decisions/workspace-layout-public-root-plus-review-gate.md`](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md).
 
@@ -79,8 +83,12 @@ inspecting nothing. They no longer do. What a later phase needs to know:
   (`--staged --allow-unarmed`) and hard-fails on any staged path under `private/`.
 - **Config discovery raises instead of falling back.** The upward walk stops at the first `.git`
   boundary; the example-persona fallback survives only for a fresh public clone with no overlay
-  mounted (`JOBHUNT_REQUIRE_REAL_CONFIG=1` forces the raise everywhere). Recorded in
-  [`message-queue/needs-human/decisions/config-discovery-example-fallback.md`](../../../message-queue/needs-human/decisions/config-discovery-example-fallback.md).
+  mounted (`JOBHUNT_REQUIRE_REAL_CONFIG=1` forces the raise everywhere). The owner confirmed this
+  shape on 2026-07-29 — it is now settled, not a default awaiting an answer — and the reasoning,
+  including the residual it accepts (a mounted `private/` is a proxy for intent, so temporarily
+  removing the overlay falls back silently again), is in
+  [`memory/decisions/config-discovery-example-fallback.md`](../../../memory/decisions/config-discovery-example-fallback.md).
+  The queue item that carried the question is closed and deleted.
 - **`SKILL.md` frontmatter is the only source of skill visibility.**
   `automation/publish/sync_skill_manifests.py` derives the public set at runtime;
   `export_public.py`, `.claude-plugin/marketplace.json`, `.claude/skills/*` and `.cursor/skills/*`
@@ -112,7 +120,9 @@ inspecting nothing. They no longer do. What a later phase needs to know:
   `overlay-pre-push`, installed by `automation/bootstrap_overlay.py`. Whether a private-scope
   reconciler also runs is open in
   [`message-queue/needs-human/decisions/private-scope-reconciler.md`](../../../message-queue/needs-human/decisions/private-scope-reconciler.md);
-  the default is no, and the hook reports the skip.
+  the default is no, and the hook reports the skip. The owner **deliberately left this
+  undecided** on 2026-07-29 — it is deferred, not overlooked, so do not re-ask it; the default
+  path stands until the owner returns to it.
 
 ### The eleven config accessors, and what they mean for the moves ahead
 
@@ -326,11 +336,33 @@ record may not cite scratch as its evidence, now with a renamed root: `local/`, 
 
 **Blocking preconditions:** phases 0 and 4 merged (both done). **Q5 and Q6 answered** —
 answered: rendered artifacts stay in the application folder and the *user* may delete a rejected
-application (an agent never does); handovers are local-only.
+application (an agent never does); handovers are local-only. **And, added 2026-07-29 by owner
+decision: the link-checker repair merges first** — see [the sequencing note](#the-link-checker-lands-before-this-phase-not-after)
+directly below.
 
-Target tree: [README.md](README.md#the-private-overlay). 805 tracked private files move
+Target tree: [README.md](README.md#the-private-overlay). 825 tracked private files move
 (everything outside `applications/`, plus `applications/0_profile` and
-`applications/1_discoveries`); `applications/<status>/<slug>/` keeps its path.
+`applications/1_discoveries`); `applications/<status>/<slug>/` keeps its path. (Re-measured
+2026-07-29 evening: the same formula that produced the plan's earlier 805 now produces 825,
+because the private tree grew — 3,186 tracked files, of which 2,411 are applications, against
+3,158 / 2,403 when the figure was last taken.)
+
+### The link checker lands before this phase, not after
+
+This phase used to be the next thing to start. It no longer is: the owner decided on
+2026-07-29 to fix the link checker first — the task
+[`tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
+merges before any phase-5 commit.
+
+The reason is that one of this phase's own steps is unverifiable without it. Phase 5 removes
+`interviews/` from `verify_links.py`'s `SKIP_PREFIXES` and repairs the 244 relative markdown
+links inside that tree — and `verify_links.py` does not check markdown links at all
+(`_is_checkable()` rejects any token containing parentheses, so every `[text](path)` link in the
+repo is unread). Run in today's order, that repair would report success whether or not a single
+link actually resolved, which is precisely the silent-disarm failure this whole design exists to
+remove. Fixing the checker first converts phase 5's largest verification step from unverifiable
+to verifiable. Running it second means doing the link work twice: once blind, once again after
+the checker can finally see it.
 
 ### Most of this is a `config.yaml` edit, not a code edit
 
@@ -346,16 +378,18 @@ Phase 0's accessors changed the shape of this phase. Work through the move table
 | `applications/0_profile/calendar.md` | `me/interviews/calendar.md` | `paths.calendar_md` (already first-class since phase 0) |
 | `applications/1_discoveries/` | `market/scans/{current,archive}/` | `paths.discoveries_dir` covers `current/`; **the `archive/` tier is new structure** — the gardener's discovery-expiry routine needs the second directory |
 | `job-search/blacklist.yaml` | `market/` | `paths.blacklist_yaml` |
-| `interviews/behavioral/story-bank/` | `me/interviews/stories/` | `paths.story_bank_dir` for the location — **but** see the display-key trap below |
+| `interviews/behavioral/story-bank/` | `me/interviews/stories/` | `paths.story_bank_dir` for the location, 17 files — **but** see the display-key trap below |
 | `job-search-profiles/` | `market/searches/` | `paths.search_profiles_dir` |
-| `interviews/company-specific/<c>/company-info/` | `companies/<key>/research/` | `paths.companies_root`; 282 files, mechanical |
+| `interviews/company-specific/<c>/company-info/` | `companies/<key>/research/` | `paths.companies_root`; **299** files across 18 company folders, mechanical (the plan's earlier 282 / "24 companies" is stale — re-measured 2026-07-29) |
 | `data/` | `store/` | `paths.data_root` / `$JOBHUNT_DATA_ROOT`, **plus** the nine ignore patterns in `private/.gitignore` in the same commit |
 | `applications/0_profile/tailoring-card.md` | `me/` | **code** — no config key; see below |
 | `applications/0_profile/{applications-log,company-search-log}.yaml` | `market/logs/` | **code** — no config key; see below |
-| `interviews/behavioral/question-bank/{README,_general_*,sources,tests}` | `me/interviews/questions/` | mechanical; 55 tracked files in the question bank total |
-| `interviews/behavioral/question-bank/<company>-*.md` | `companies/<key>/derived/behavioral.md` | **code** — these are build outputs; `skills/behavioral-interview-prep/scripts/answer_bank.py` must learn cross-tree targets |
+| `interviews/behavioral/question-bank/{README,_general_*,sources,tests}` | `me/interviews/questions/` | mechanical; **36** of the question bank's 55 tracked files (18 `_general_*`, 1 README, 16 under `sources/`, 1 under `tests/`) |
+| `interviews/behavioral/question-bank/<company>-*.md` | `companies/<key>/derived/behavioral.md` | **code** — these are build outputs; `skills/behavioral-interview-prep/scripts/answer_bank.py` must learn cross-tree targets. **19** files, and every one's pre-hyphen prefix matches an existing company folder name, so the routing is mechanical (re-measured 2026-07-29) |
 | `interviews/common-message-replies/` | `me/interviews/replies/` | mechanical, 2 files; no script names this path |
-| `interviews/company-specific/<c>/coding/` | `companies/<key>/coding/` | 163 files across 24 companies. An interview-running firm is a company too — it gets its own `companies/<key>/` |
+| `interviews/company-specific/<c>/coding/` | `companies/<key>/coding/` | 163 files across 9 company folders (not 24 — re-measured 2026-07-29). An interview-running firm is a company too — it gets its own `companies/<key>/`. **Moves as-is**: no per-problem folders, no split aggregates — see [what the owner ruled out](#what-the-owner-decided-and-what-that-forbids) |
+| `interviews/company-specific/<c>/product-sense/` | `companies/<key>/product-sense/` | 15 files in one company folder; mechanical. Previously flagged as a judgment call because "the schema does not model this round type" — it does not need to: the folder moves whole under its company |
+| `interviews/company-specific/<c>/<loose reply draft>` | `companies/<key>/` | 1 file sitting directly inside a company folder; company-specific by location, so it moves with the folder |
 | `interviews/company-specific/TODO/` | keep as-is | an **untracked** screenshot inbox two private skills poll; moving it orphans them |
 | `benchmark/`, `config.benchmark.yaml`, `evals/` | `evals/{fixtures,runs,canaries}/` | the benchmark config resolves its paths relative to its own directory, so moving it relocates the whole overlay-derived path family with it — see [`memory/facts/overlay-root-follows-the-active-config.md`](../../../memory/facts/overlay-root-follows-the-active-config.md) |
 | `docs/harness-engineering…` | `docs/` | **code** — `automation/gardener/_common.py` `DESIGN_DOC` is a literal (the module moved out of `automation/maintenance/` in phase 2; re-derive the line number) |
@@ -407,14 +441,63 @@ What is *not* done: renaming `data/` → `store/` without simultaneously rewriti
 patterns in `private/.gitignore` un-ignores 83,491 files / 450 MB, 37,614 of them under
 `data/email/`. Same commit, mechanical sed, verified with `git -C private check-ignore`.
 
-### Judgment calls and links
+### What the owner decided, and what that forbids
 
-**Roughly four dozen `interviews/` files are genuine judgment calls, not mechanical moves** —
-flat `coding/*.py` files needing a problem folder and a company-vs-`me/interviews/practice/`
-call, a `product-sense/` round type the schema does not model (15 files), cross-problem PDF
-aggregates, and one loose outreach draft. Route each through the owner rather than guessing.
-(This count was estimated when the plan was written and has not been re-derived; treat it as an
-order of magnitude, and recount before promising a completion date.)
+This plan used to say that "roughly four dozen `interviews/` files are genuine judgment calls,
+not mechanical moves", and to route each one through the owner. **That standing item is closed.**
+On 2026-07-29 the owner ruled on the whole tree at once: move company-specific material into
+company folders, and reorganise nothing else. The estimate is withdrawn rather than refined — it
+was never re-derived, and the ruling makes the underlying question moot. Full reasoning and the
+counts behind it:
+[`memory/decisions/interview-material-moves-by-company-only.md`](../../../memory/decisions/interview-material-moves-by-company-only.md).
+
+**What moves, and why it is mechanical.** Everything under `interviews/company-specific/<c>/` is
+company-specific *by construction* — the path says so — so all 478 tracked files there move to
+`companies/<key>/`, including the two the plan had flagged as open: the 15-file `product-sense/`
+folder and the one loose reply draft. The 19 company-prefixed question-bank files move to their
+company as well. The re-measured shape of the tree, taken 2026-07-29 against the overlay:
+
+| Subtree | Tracked files | Where the ruling sends it |
+|---|---:|---|
+| `interviews/` total | 552 | — |
+| `interviews/behavioral/question-bank/` | 55 | splits: 19 company-prefixed → `companies/<key>/`; the other 36 → `me/interviews/questions/` |
+| `interviews/behavioral/story-bank/` | 17 | `me/interviews/stories/` |
+| `interviews/common-message-replies/` | 2 | `me/interviews/replies/` |
+| `interviews/company-specific/` | 478 across 25 company folders | all of it → `companies/<key>/` |
+| ├ `company-info/` | 299 across 18 of them | `companies/<key>/research/` |
+| ├ `coding/` | 163 across 9 of them | `companies/<key>/coding/` |
+| ├ `product-sense/` | 15 in one of them | `companies/<key>/product-sense/` |
+| └ a loose reply draft | 1 | `companies/<key>/` |
+
+Takeaway: the only files whose destination the ruling does not settle outright are the 55
+non-company ones in the first three rows, and even there the destination column is an
+assumption — see the open question below.
+
+**What the ruling forbids.** The owner's standard is "don't touch anything else unless it's an
+obvious mistake", and that rules out every *content* reorganisation this plan previously
+proposed inside `interviews/`:
+
+- **No per-problem folders.** Flat `coding/*.py` files stay flat under their company.
+- **No round-type schema for `product-sense/`.** The folder moves whole; nothing models it.
+- **No breaking up cross-problem PDF aggregates.** A file that spans several problems stays one
+  file.
+- **No company-vs-`me/interviews/practice/` re-homing call**, because there is no such call left
+  to make: location under `company-specific/<c>/` is the answer.
+
+An agent may still fix something *plainly* broken in passing — a typo'd path, a file sitting in
+the wrong company's folder — but may not restructure. If a case needs argument to justify, it is
+not an obvious mistake, and the answer is to leave it and file it.
+
+**One thing this does not settle, and it is filed as an open question.** "Don't touch anything
+else" reads two ways for the 55 non-company files: (a) do not *reorganise* them, but still
+*relocate* them to their taxonomy home, or (b) leave `interviews/` where it is entirely. **This
+plan proceeds on reading (a)** — relocation is the taxonomy this phase exists to build, whereas
+reorganisation is what the owner declined — and the table above assumes it. Confirm before the
+first phase-5 commit:
+[`message-queue/needs-human/clarifications/phase-5-relocate-non-company-interview-material.md`](../../../message-queue/needs-human/clarifications/phase-5-relocate-non-company-interview-material.md).
+It is not blocking, because the link-checker task lands first either way.
+
+### Links inside `interviews/`
 
 **244 relative markdown links inside `interviews/` are covered by no checker** —
 `verify_links.py`'s `SKIP_PREFIXES` skips `interviews/` and `private/interviews/`. Fix them in
@@ -423,6 +506,11 @@ this PR and remove those two entries. Note what removing them exposes: the new p
 doc naming `private/me/…` falls through to `OVERLAY_PREFIX` and **is** verified whenever the
 overlay is mounted. That is the desired end state; it also means the docs have to be right the
 first time.
+
+This is the step the owner's sequencing decision protects. Today the checker reads no
+`[text](path)` link at all, so repairing these 244 and then running the gate proves nothing —
+which is why [the link checker lands before this phase](#the-link-checker-lands-before-this-phase-not-after)
+rather than after it.
 
 Then re-point every `paths.*` in `config.yaml`.
 
@@ -559,25 +647,33 @@ merged.
 ## Verified facts and hazards
 
 Re-measured 2026-07-29 — the private-tree rows against `main` at `19d0829`, the public-tree rows
-against the phase-2 stack's tip `fc0180b`. Rows marked **historical** describe a state that no
-longer exists and are kept only so a reader of an older branch or PR is not confused.
+against the phase-2 stack's tip `fc0180b`. The `interviews/` rows and the private-tree totals
+were re-measured **again** later the same day, when the owner's ruling on that subtree made the
+exact shape load-bearing; those rows carry their new value and keep the earlier one in the
+"Was" column. Rows marked **historical** describe a state that no longer exists and are kept only
+so a reader of an older branch or PR is not confused.
 
 | Fact | Value | Was |
 |---|---|---|
 | Public tracked files | 718 (566 of them published by `export_public.py`, unchanged across phase 2) | 712 before phase 2 · 649 before phase 0 |
-| Private tracked files | 3,158 (applications 2,403 · interviews 535 · benchmark 112) | 3,138 (2,401 · 518 · 112) |
-| Private files that actually move | 805 — `applications/<status>/` keeps its path | ~782 |
+| Private tracked files | 3,186 (applications 2,411 · interviews 552 · benchmark 112) | 3,158 (2,403 · 535 · 112) · 3,138 (2,401 · 518 · 112) |
+| Private files that actually move | 825 — `applications/<status>/` keeps its path; the 50 files under `applications/0_profile` (9) and `applications/1_discoveries` (41) still move | 805 · ~782 |
 | `notes.md` → `timeline.md` | 135 renames | 133 |
-| `interviews/company-specific/*/company-info/` | 282 files across 24 companies | 265 |
-| `interviews/company-specific/*/coding/` | 163 files | 151 |
-| Relative markdown links inside `interviews/` | 244 | ~300 |
+| `interviews/` total | 552 tracked files | 535 |
+| `interviews/company-specific/` | 478 files across 25 company folders | not previously measured as a whole |
+| `interviews/company-specific/*/company-info/` | 299 files across **18** of those 25 folders | 282 "across 24 companies" — **historical**, and the company count was wrong as well as the file count · 265 |
+| `interviews/company-specific/*/coding/` | 163 files across **9** of those 25 folders | 163, glossed elsewhere as "24 companies" — **historical** · 151 |
+| `interviews/company-specific/*/product-sense/` | 15 files, all in one company folder | not previously counted as a row |
+| `interviews/behavioral/question-bank/` | 55 files: 19 company-prefixed, 18 `_general_*`, 1 README, 16 under `sources/`, 1 under `tests/` | 55 total, unsplit |
+| `interviews/behavioral/story-bank/` | 17 files | not previously counted as a row |
+| Relative markdown links inside `interviews/` | 244 — **not re-derived** in the 2026-07-29 evening pass; the subtree grew by 17 files since, so treat this as a floor | ~300 |
 | Literal `private/` in public files | 471 lines across 120 files | 462 across 115 · 241 across 84 |
 | `0_profile` in tracked files | 41 files, but only 10 in executable code (5 `config.py` copies, `search_jobs.py:92`, 4 test fixtures); the rest is prose | 15 files — **historical**, measured before phase 0 replaced the idiom with accessors |
 | `parents[N]` under `automation/maintenance/` | 9 occurrences, 5 of which break on the move — **historical**; phase 2 dissolved the directory and converted 6 of the 9 to an upward `.git` walk, leaving 3 move-invariant `parents[1]` in the gardener tests | 8 |
 | `.venv/bin/python` in docs | 294 occurrences (unchanged by this plan) | 240 |
 | `private/data/` | 450 MB, 12 tracked files, 9 ignore patterns in `private/.gitignore` | 432 MB, 12, 9 |
 | Un-ignoring risk | renaming `data/`→`store/` without the sed exposes **83,491 files**, 37,614 of them under `data/email/` | 82,318 files, 36,465 raw email |
-| Application folders / distinct company strings / resolvable | 242 / 213 / 119 (94 unresolvable, 44%) | same |
+| Application folders / distinct company strings / resolvable | 242 / 213 / 119 (94 unresolvable, 44%) — the folder count has since drifted to **243** (2026-07-29 evening); the 213 / 119 pair was **not** re-derived with it, so do not quote the ratio as current | same |
 | `skills/company-research/SKILL.md` | 595 lines against a 600 budget | same |
 | Public skills | 11 (`github-workflow` added 2026-07-29); runtime lists 13 with the two private ones | 10 / 12 — **historical** |
 | Per-skill canary sets | 9 sets, 50 canaries, 4–8 each, now `evals/canaries/<skill>.yaml`; `gardener` and `search-recall-audit` have none | "8 folders holding one file each; one is empty" — **historical** |

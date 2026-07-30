@@ -8,6 +8,9 @@
   moment it exists.
 - **Default path**: no private-scope reconciler runs. The overlay hook reports the
   skip on every commit rather than staying silent about it.
+- **Deferred**: 2026-07-29 — the owner read this and chose to leave it undecided
+  for now (see the dated note at the bottom). Still open, still on the default
+  path; **do not re-ask it**.
 
 ## Background
 
@@ -64,3 +67,22 @@ real gate. Option C's ratchet buys convenience by making the gate conditional,
 which is the failure mode this whole phase exists to remove.
 
 **Your answer:** ______
+
+---
+
+## 2026-07-29 — explicitly deferred by the owner
+
+Asked alongside three other pending items, the owner answered the others and said to
+"leave the other one undecided". That is a deliberate deferral, not an oversight, and it
+is recorded here so the next session does not spend the owner's attention re-asking a
+question they have already chosen not to answer yet.
+
+Nothing changes as a result. This item stays `awaiting-owner-input`, the default path
+above still stands — no private-scope reconciler runs, and the overlay's pre-commit hook
+keeps reporting the skip on every commit rather than staying silent — and the queue file
+is **not** deleted. Recommendation is unchanged at Option B.
+
+Nothing is blocked by the deferral: the overlay hook already probes
+`reconcile.py --help` for `--root` and starts using it the moment it exists, so an answer
+of "yes" lands with no further edit whenever it comes.
+

@@ -67,3 +67,18 @@
   path counts are now obsolete. Phases 5–8 not started; their task files carry
   the re-measured preconditions. See
   `docs/designs/workspace-restructure/execution-plan.md`.
+- **Next work item: the link-checker repair, not phase 5** — owner decision,
+  2026-07-29. Phase 5 removes `interviews/` from `SKIP_PREFIXES` and repairs 244
+  relative markdown links there, which the current checker cannot verify, so the
+  repair would report success either way. It is a blocking precondition on the
+  phase-5 task. Two further owner decisions landed the same day: phase 5 moves
+  company-specific interview material into company folders and reorganises
+  nothing else (`memory/decisions/interview-material-moves-by-company-only.md`,
+  which withdraws the plan's "four dozen judgment calls" item and leaves one
+  non-blocking clarification covering 55 files), and config discovery keeps
+  Option A (`memory/decisions/config-discovery-example-fallback.md`, a
+  record-and-close — the behaviour was already live). The scratch-tree
+  classification is deferred by the owner; it blocks nothing, which was checked
+  rather than assumed. Still awaiting an answer:
+  `message-queue/needs-human/decisions/private-scope-reconciler.md`, deliberately
+  left open.
