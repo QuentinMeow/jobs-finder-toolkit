@@ -484,3 +484,28 @@
     under private/ is touched or newly named; the scratch inventory it refers to is
     cited by role, not by path content. The one deletion is a queue file whose
     answer is preserved in the ADR that replaces it.
+
+- commit: 36202922
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 1
+  digest: sha256:64fda73e6dc90108
+  finding: >-
+    Clean. One clarification queue item records the owner's chat answer verbatim
+    and flips its Status to folding. The quoted sentence is about directory
+    placement and names no employer, person, posting, date, school, salary or
+    filename from the interview tree; no absolute home path appears and nothing
+    under private/ is touched.
+
+- commit: a8d0c94e
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 5
+  digest: sha256:521cddf20b085940
+  finding: >-
+    Clean. The fold of an answered clarification into an ADR amendment, the
+    execution plan, the phase-5 task and the roadmap, plus the deletion of the
+    queue item. The interview tree is described by counts and folder shapes only —
+    552, 478, 25 folders, 299/163/15/1, 19/36/17/2 — with no employer, person,
+    posting, date, school, salary, recruiter or filename from it. No absolute home
+    path; nothing under private/ touched or newly named.
