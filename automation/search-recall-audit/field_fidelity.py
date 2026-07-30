@@ -11,7 +11,7 @@ whose secondary/office locations the parser never folds in.
 
 It is read-only on the store and the pipeline (imports the SAME per-source parsers
 the builder uses, plus the SAME location classifier the gate uses), and writes
-ONLY to a gitignored scratch dir (default ``tmp/field_fidelity_audit/``).
+ONLY to a gitignored scratch dir (default ``local/field_fidelity_audit/``).
 
 Subcommands
 -----------
@@ -77,7 +77,7 @@ from store import resolver, serialization  # noqa: E402
 from store.manifest import iter_manifests  # noqa: E402
 from store.paths import domain_layout  # noqa: E402
 
-DEFAULT_OUT = REPO_ROOT / "tmp" / "field_fidelity_audit"
+DEFAULT_OUT = REPO_ROOT / "local" / "field_fidelity_audit"
 DOMAIN = "jobs"
 
 # Where each source's job list lives in its raw payload + the id field the parser
@@ -286,9 +286,9 @@ def _iter_index(layout) -> list[dict]:
 def cmd_todo(args) -> None:
     """Write weird/unresolvable location reviews for later AI investigation."""
     out = Path(args.out).expanduser().resolve()
-    tmp_root = (REPO_ROOT / "tmp").resolve()
-    if not out.is_relative_to(tmp_root):
-        sys.exit(f"`todo` output must stay under {tmp_root}")
+    local_root = (REPO_ROOT / "local").resolve()
+    if not out.is_relative_to(local_root):
+        sys.exit(f"`todo` output must stay under {local_root}")
     out.mkdir(parents=True, exist_ok=True)
 
     layout = domain_layout(config.data_root(), DOMAIN)

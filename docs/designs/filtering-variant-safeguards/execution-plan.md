@@ -10,7 +10,7 @@ and privacy model.
 - Keep each change focused and preserve unrelated working-tree edits.
 - Never modify a user-owned private search profile or candidate profile.
 - Public corpus cases, tests, docs, URLs, employers, and posting text are wholly
-  fictional and timeless. Raw harvests stay under `private/` or `tmp/`.
+  fictional and timeless. Raw harvests stay under `private/` or `local/`.
 - Edit canonical modules under `automation/shared/`, then regenerate vendored copies;
   never hand-edit a `_vendor/` file.
 - Keep normal search recall-safe: `review` is retained and normal execution remains
@@ -212,9 +212,9 @@ Add `skills/job-search/scripts/validate_filter_variants.py` with two modes:
 # Local no-network audit of a pre-filter snapshot.
 .venv/bin/python \
   skills/job-search/scripts/validate_filter_variants.py \
-  --snapshot tmp/search_cache/example-stage1-latest.json \
+  --snapshot local/search_cache/example-stage1-latest.json \
   --profile example \
-  --out tmp/filtering-variant-harvest/review.yaml
+  --out local/filtering-variant-harvest/review.yaml
 ```
 
 The exact fixture path in tests is synthetic. A maintainer auditing a private
@@ -269,7 +269,7 @@ Required output behavior:
 
 - matches continue through scoring, dedupe, diversity, and ranking;
 - no-matches are counted by stable rule ID;
-- reviews remain in a separate report under `tmp/` or configured private
+- reviews remain in a separate report under `local/` or configured private
   discoveries storage;
 - compact and full summaries show review count and report path;
 - JSON output makes review status explicit instead of encoding it as a normal
@@ -391,7 +391,7 @@ The live audit is intentionally local and not a CI gate:
 1. Search normally; investigate only when the review report is nonempty.
 2. Audit the resulting snapshot with `validate_filter_variants.py --snapshot`.
 3. Keep the raw report under `private/` or
-   `tmp/filtering-variant-harvest/`.
+   `local/filtering-variant-harvest/`.
 4. Decide the expected policy result using the full private evidence.
 5. Reproduce the semantic structure with a fictional public case.
 6. Update production rules and stable IDs, then run the complete Stage 6 gate.

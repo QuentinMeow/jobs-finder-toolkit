@@ -247,7 +247,7 @@ The pipeline partitions normalized postings into three semantic outcomes:
 A normal search continues and exits zero when execution succeeds, even if review
 items exist. Its summary includes review count and report path. Review rows are not
 silently dropped and are not automatically handed off as approved applications.
-The report defaults to a path under `tmp/` or the configured private discoveries
+The report defaults to a path under `local/` or the configured private discoveries
 area.
 
 The dedicated snapshot audit is deliberately stricter. It replays the full
@@ -287,8 +287,8 @@ risk; they cannot eliminate it.
 ## Private harvest and public promotion
 
 Real snapshots, discovery reports, company research, and raw label stubs stay in
-the git-ignored private overlay or a purpose-named directory under `tmp/`, such as
-`tmp/filtering-variant-harvest/`. They are never copied into tracked tests.
+the git-ignored private overlay or a purpose-named directory under `local/`, such as
+`local/filtering-variant-harvest/`. They are never copied into tracked tests.
 
 The promotion workflow is:
 

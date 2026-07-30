@@ -101,7 +101,7 @@ def _iter_targets(root: Path):
 
     Targets live at known locations (repo-root AGENTS.md + per-skill files under
     ``skills/*/``, plus the overlay's private skills), so we glob those explicitly
-    rather than walking the tree — that keeps ``.venv``/``tmp``/the overlay's
+    rather than walking the tree — that keeps ``.venv``/``local``/the overlay's
     ``references_private`` out.
     """
     for path in sorted(root.glob("AGENTS.md")):

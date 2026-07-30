@@ -5,16 +5,16 @@ fields that can incorrectly remove a posting: location/workplace, sponsorship,
 title/seniority, and required years of experience.
 
 `corpus.yaml` contains fictional, timeless examples. Known examples run as ordinary
-unit tests and consume no AI. A live snapshot remains private under `tmp/`; audit it
+unit tests and consume no AI. A live snapshot remains private under `local/`; audit it
 with:
 
 ```bash
 .venv/bin/python skills/job-search/scripts/validate_filter_variants.py \
-  --snapshot tmp/search_cache/<snapshot>.json --profile example
+  --snapshot local/search_cache/<snapshot>.json --profile example
 ```
 
 The command exits nonzero when signal-bearing text is contradictory or cannot be
-classified. It writes grouped YAML stubs under `tmp/filter_variant_reports/`.
+classified. It writes grouped YAML stubs under `local/filter_variant_reports/`.
 Review the real posting privately, add or adjust a deterministic rule, then promote
 only a fictional minimal reproduction to `corpus.yaml`.
 

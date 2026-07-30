@@ -83,7 +83,7 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
 | `templates/` | **Single source of truth for every process-file schema** — copy one to create any queue/task/memory item (`templates/README.md`) |
 | `docs/roadmap/` | `desired-state.md` vs `current-state.md` — the gap between them is the backlog's source |
 | `history/` | One folder per working session, each with a `handover.md` |
-| `tmp/` | Gitignored scratch (purpose-named subfolders); never committed |
+| `local/` | Gitignored scratch (purpose-named subfolders); never committed |
 | `message-queue/` (`needs-human/`: `decisions/`, `clarifications/`, `reviews/`; `needs-agent/`: `requests/`, `retries/`) | Async human↔agent messages, one file each, routed by **who acts next** (see Async Collaboration) |
 | `tasks/` (status folders `0_backlog`…`4_done`) | Work items; the folder a task sits in IS its status (`tasks/README.md`) |
 | `memory/` (`decisions/` ADRs, `known-issues/`, `facts/`, `lessons/`) | Long-term project memory; ADRs are immutable — a reversal is a new file |
@@ -262,8 +262,8 @@ Each expands in a named `docs/handbook/` doc; the bolded name is the canonical s
   generic *scripts*/*docs*/*data* bucket); reason tree-first before creating any file. Detail (incl. the
   coding-interview 150-char no-hard-wrap rule): `docs/handbook/file-organization.md`.
 - **Scratch & Temporary Files** — throwaway work (probes, scraped HTML/JSON, sanity checks) lives ONLY
-  under the top-level gitignored **`tmp/`** in purpose-named subfolders (`tmp/ats_scripts/`,
-  `tmp/web_artifacts/`, `tmp/scratch/`) — never the repo root or a tracked/product folder. Detail: `docs/handbook/file-organization.md`.
+  under the top-level gitignored **`local/`** in purpose-named subfolders (`local/ats_scripts/`,
+  `local/web_artifacts/`, `local/scratch/`) — never the repo root or a tracked/product folder. Detail: `docs/handbook/file-organization.md`.
 - **Subagent Budget** — a request that fans out launches **at most 8 subagents total** across all
   waves; reuse/resume or finish in the parent — never a ninth. Repo-wide cap (`docs/handbook/subagent-budget.md`).
 - **Process Folders** — `message-queue/` + `tasks/` (see **Async Collaboration** above) plus the

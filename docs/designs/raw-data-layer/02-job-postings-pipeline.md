@@ -35,7 +35,7 @@ flow as memory, never in front of it as a gate:
 flowchart LR
     fetch["search_jobs.py fetch\n(company boards, aggregators)"]
     filter["filter → score → rank\n(unchanged)"]
-    snapshot["snapshot cache (tmp/)\nwithin-session refilter\n(unchanged — stays)"]
+    snapshot["snapshot cache (local/)\nwithin-session refilter\n(unchanged — stays)"]
     store[("job store\nprivate/data/jobs/\ncross-run memory")]
     query["query_postings.py\n'what's new since my last review?'\ncode-only filtering, no AI"]
     handoff["handoff.py\n(fresh JD fetch + verification\nstill mandatory)"]
@@ -54,7 +54,7 @@ Same picture, plain text:
 ```
 search_jobs.py fetch ──▶ filter → score → rank ──▶ shortlist        (all unchanged)
 (boards, aggregators)          │
-      │                        └──▶ snapshot cache (tmp/) — within-session
+      │                        └──▶ snapshot cache (local/) — within-session
       │                             refilter + variant audit          (unchanged)
       │ capture raw — NEVER blocks the search
       ▼

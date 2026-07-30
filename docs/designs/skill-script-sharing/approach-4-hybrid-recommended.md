@@ -96,7 +96,7 @@ one target — cheap, and it makes `job-search` genuinely portable.
 > 3. Needed by a skill **and** the toolkit? → put the logic in `jobsfinder/core/`,
 >    expose it as a `jf` subcommand, and have the skill call the CLI. If that skill
 >    must run standalone, additionally **vendor** the pure module into its `_vendor/`.
-> 4. Throwaway probe/experiment? → `tmp/<purpose>/` (never committed).
+> 4. Throwaway probe/experiment? → `local/<purpose>/` (never committed).
 >
 > **Skills never import repo-root Python.** Cross-boundary = CLI or vendored copy.
 

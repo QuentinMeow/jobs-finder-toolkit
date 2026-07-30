@@ -57,10 +57,10 @@ are exact.
 |---|---|---|---|---|---|---:|---:|---|
 | S1 | Boot / instruction reading | `AGENTS.md` 14 KB, job-search `SKILL.md` 19 KB, `LESSONS.md` 7 KB (+ `config` accessor) | — | — | — | **18k (15%)** | ~1.0 min | M |
 | S2 | Profile + config load | `profiles/<label>.yaml` ~1–2 KB; `config.location_policy()/generation_mode()` | — | — | — | 3k (2%) | ~0.2 min | H |
-| S3 | Fetch (network) | — | `search_jobs.py --profile` → ~5-line summary + top-K compact table (~1–2 KB stdout); writes snapshot | fetch ~11k postings, 100+ boards + aggregators (~20s) | `tmp/search_cache/<profile>-stage1-<ts>.json` (+ `-latest`); `1_discoveries/<date>-<profile>.md` | 9k (7%) | ~0.7 min | M |
+| S3 | Fetch (network) | — | `search_jobs.py --profile` → ~5-line summary + top-K compact table (~1–2 KB stdout); writes snapshot | fetch ~11k postings, 100+ boards + aggregators (~20s) | `local/search_cache/<profile>-stage1-<ts>.json` (+ `-latest`); `1_discoveries/<date>-<profile>.md` | 9k (7%) | ~0.7 min | M |
 | S4 | Filter / rank + widening refilters | compact table stdout re-read | `search_jobs.py --refilter latest --max-age-days …` ×2 (2h→1d→3d), zero network, summary+table each | none (cache) | discoveries file overwrite | 7k (6%) | ~0.4 min | M |
 | S5 | Duplicate + blacklist preflight | (scripted skip: registry + logs) | in-pipeline `already-considered/recently-searched/blacklist` skip; counts in summary. Folder-based dup scan | — | — | 4k (3%) | ~0.2 min | L-M |
-| S6 | **JD-text verification per candidate** | **each candidate's JD ~13 KB read in full** (×~4–6: 2 handed off + rejections) | `fetch_jd.py <URL> --out …` per candidate (stdout = path+bytes only); ATS-API fallback for JS-rendered pages | 1 fetch/candidate + ATS-API refetches for JS pages | `tmp/web_artifacts/*.md` verbatim JD text | **34k (28%)** | ~2.8 min | M |
+| S6 | **JD-text verification per candidate** | **each candidate's JD ~13 KB read in full** (×~4–6: 2 handed off + rejections) | `fetch_jd.py <URL> --out …` per candidate (stdout = path+bytes only); ATS-API fallback for JS-rendered pages | 1 fetch/candidate + ATS-API refetches for JS pages | `local/web_artifacts/*.md` verbatim JD text | **34k (28%)** | ~2.8 min | M |
 | S7 | Location / visa gates | reasoning over JD text (overlaps S6) | `status.py --check-locations` on handoff folders | — | — | 8k (7%) | ~0.4 min | L-M |
 | S8 | Handoff scaffolding | selected search-JSON row | `handoff.py --json … --select "rank N"` ×2 → folder + verbatim `source/JD-*.md` + schema-v4 `meta.yaml`; validates; stdout = folder path + status | 1 JD re-fetch/handoff (via `fetch_jd`) | `6_drafted/<slug>/` folder, `meta.yaml`, `source/JD-*.md` | 10k (8%) | ~0.9 min | M |
 | S9 | Metadata + present/finish | `--check-metadata` output | `status.py --check-metadata`; (`--sync-log` skipped in benchmark) | — | (log writes suppressed in benchmark) | 18k (15%) | ~0.5 min | L-M |
@@ -106,10 +106,10 @@ touches instead of a whole noisy leg. Fixtures live in the private overlay under
 |---|---|---|
 | S1 boot | none needed (deterministic reads) | first tool call after last instruction Read |
 | S2 profile/config | a frozen `profiles/bench.yaml` + pinned `JOBHUNT_CONFIG` | config accessor return |
-| S3 fetch | **a frozen pre-filter snapshot** in `tmp/search_cache/<profile>-stage1-<ts>.json` format (already the cache format) — run with `--refilter` so no network | snapshot loaded (stderr "Refilter: loaded N …") |
+| S3 fetch | **a frozen pre-filter snapshot** in `local/search_cache/<profile>-stage1-<ts>.json` format (already the cache format) — run with `--refilter` so no network | snapshot loaded (stderr "Refilter: loaded N …") |
 | S4 filter/rank | same frozen snapshot; assert byte-identical ranking (refilter-equivalence test already exists) | discoveries file mtime / `--json-out` write |
 | S5 dup/blacklist | a frozen applications tree + `blacklist.yaml` + logs under an isolated `JOBHUNT_CONFIG` | skip-count line in run summary |
-| S6 JD verification | **a frozen `tmp/web_artifacts/JD-*.md` set** (mix of clean + JS-shell pages) so `fetch_jd` reads local fixtures, no network | `fetch_jd` stdout `path (N bytes)` per candidate |
+| S6 JD verification | **a frozen `local/web_artifacts/JD-*.md` set** (mix of clean + JS-shell pages) so `fetch_jd` reads local fixtures, no network | `fetch_jd` stdout `path (N bytes)` per candidate |
 | S7 location/visa | frozen JD fixtures with known workplace/visa strings + expected verdicts | `status.py --check-locations` exit + `match`/`other_us` line |
 | S8 handoff | **a frozen search-JSON row** + empty target folder | `handoff.py` exit 0 + folder/`meta.yaml` written, validation status line |
 | S9 metadata/present | a frozen handoff folder | `--check-metadata` exit 0 |
@@ -131,5 +131,5 @@ touches instead of a whole noisy leg. Fixtures live in the private overlay under
 | D11 metadata/notes | a frozen handoff folder | `--check-metadata` exit 0; `notes.md` written |
 
 The two highest-value isolates are **(D8) a frozen `tailored.yaml` for render-only cycle/latency
-timing** and **(S6) a frozen `tmp/web_artifacts/JD-*.md` set for offline verification timing** —
+timing** and **(S6) a frozen `local/web_artifacts/JD-*.md` set for offline verification timing** —
 both remove the dominant network/LibreOffice noise so a lever's effect resolves at n=1–2.

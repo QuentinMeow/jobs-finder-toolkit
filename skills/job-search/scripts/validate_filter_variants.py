@@ -59,7 +59,7 @@ def _load_profile(value: str) -> dict:
 
 def _default_report(snapshot_path: Path) -> Path:
     return (
-        REPO_ROOT / "tmp" / "filter_variant_reports"
+        REPO_ROOT / "local" / "filter_variant_reports"
         / f"{snapshot_path.stem}-unknown.yaml"
     )
 
@@ -76,10 +76,10 @@ def main(argv=None) -> int:
     parser.add_argument("--profile",
                         help="profile label/path; defaults to snapshot.profile")
     parser.add_argument("--out", type=Path,
-                        help="pending YAML path (default: tmp/filter_variant_reports/)")
+                        help="pending YAML path (default: local/filter_variant_reports/)")
     parser.add_argument("--census-out", type=Path,
                         help="first-reject census YAML path (default: "
-                             "tmp/filter_variant_reports/<snapshot>-census.yaml)")
+                             "local/filter_variant_reports/<snapshot>-census.yaml)")
     parser.add_argument("--census-sample-size", type=int, default=5,
                         help="bounded deterministic sample size per reject family "
                              "(default: 5)")
@@ -128,7 +128,7 @@ def main(argv=None) -> int:
         postings, profile, sample_size=args.census_sample_size,
         max_age=max_age, now=snapshot_now)
     census_out = args.census_out or (
-        REPO_ROOT / "tmp" / "filter_variant_reports"
+        REPO_ROOT / "local" / "filter_variant_reports"
         / f"{args.snapshot.stem}-census.yaml")
     census_out.parent.mkdir(parents=True, exist_ok=True)
     census_out.write_text(yaml.safe_dump({

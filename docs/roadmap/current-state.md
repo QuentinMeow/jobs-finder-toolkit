@@ -51,7 +51,10 @@
   `docs/designs/` and `docs/roadmap/` (superseding ADR:
   `memory/decisions/docs-parent-for-the-human-read-trees.md`), and `evals/`
   absorbed all measurement into `protocols/` + `canaries/<skill>.yaml` beside
-  the existing `rubrics/` and `results/`; the `tmp/` half of the phase is still
-  open. Phases 1, 5–8 not started;
+  the existing `rubrics/` and `results/`, and the gitignored scratch root is
+  renamed `tmp/` → `local/` (one filesystem rename of an untracked tree; the
+  `.gitignore` rule, both link-checker skip lists, and every default write path
+  in `search-recall-audit` and `job-search` move with it). That closes the
+  code-carrying legs of phase 2. Phases 1, 5–8 not started;
   their task files carry the re-measured preconditions. See
   `docs/designs/workspace-restructure/execution-plan.md`.

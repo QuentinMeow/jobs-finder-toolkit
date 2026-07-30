@@ -32,7 +32,7 @@ Use this skill when the user asks to:
 6. Read `QUESTION_BANK.md` when selecting question families, follow-ups, or company overlays.
 7. Read `reference.md` before designing or changing timed answer modules or validation rules.
 8. Never fabricate facts, metrics, conflict, ownership, or technologies. Reframe only what is real.
-9. **Scratch stays in `tmp/`** (never the repo root or the `interviews/` tree — only finished
+9. **Scratch stays in `local/`** (never the repo root or the `interviews/` tree — only finished
    story/answer files belong there). See `AGENTS.md` → "Scratch & Temporary Files".
 
 ## Core Rules
@@ -166,7 +166,7 @@ Use this skill when the user asks to:
    - length fits spoken delivery
    - every quick answer's measured word count passes the 75-130 second gate
    - every proposed source passes `answer_bank.py validate`; for response-only work, validate
-     temporary sources under top-level `tmp/` and delete them afterward
+     temporary sources under top-level `local/` and delete them afterward
 7. If persisting to an answer bank:
    - create or update the neutral question-family YAML source
    - validate it before rendering

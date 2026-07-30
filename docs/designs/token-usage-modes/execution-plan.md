@@ -101,7 +101,7 @@ answer what were, after the first fetch, pure re-filter questions.
 **Spec — snapshot cache:**
 
 - After fetch + normalization, `search_jobs.py` always writes a snapshot of the
-  normalized postings (pre-filter) to `--cache-dir` (default `tmp/search_cache/`,
+  normalized postings (pre-filter) to `--cache-dir` (default `local/search_cache/`,
   gitignored): `<profile>-stage<N>-<UTC timestamp>.json`, plus a
   `<profile>-stage<N>-latest` pointer. The snapshot records its fetch timestamp and
   the fetch-relevant parameters (profile, stage, sources actually reached).

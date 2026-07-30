@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 # Scratch
-tmp/
+local/
 # Local machine config (copy config.example.yaml -> config.yaml and edit)
 config.yaml
 # Local Claude Code settings (personal permissions + opt-in metrics hooks; see docs/handbook/metrics.md)

@@ -22,7 +22,7 @@ switch; quality is unaffected by construction because only mechanical steps move
 
 ## How it works
 
-1. **Fetch cache + re-filter.** `search_jobs.py --cache-dir tmp/search_cache/` writes
+1. **Fetch cache + re-filter.** `search_jobs.py --cache-dir local/search_cache/` writes
    the normalized postings snapshot; `--refilter` re-runs *filter → score → rank* from
    the snapshot without refetching. Widening a window, changing `--top-k`, or adding
    `--json-out` after the fact becomes seconds and near-zero tokens (and stops

@@ -101,7 +101,7 @@ Follow-up task for pruning old exports; no queue items.
 
 ```bash
 # From a file
-.venv/bin/python skills/github-workflow/scripts/check_pr_body.py tmp/pr-body.md
+.venv/bin/python skills/github-workflow/scripts/check_pr_body.py local/pr-body.md
 # Or from an existing PR
 gh pr view <n> --json body --jq .body | \
     .venv/bin/python skills/github-workflow/scripts/check_pr_body.py
@@ -128,9 +128,9 @@ When it sees that pattern it offers to convert the chain into a stack. So the
 whole technique is one flag:
 
 ```bash
-gh pr create --base main            --head feat/01-parser   --title '...' --body-file tmp/pr-1.md
-gh pr create --base feat/01-parser  --head feat/02-renderer --title '...' --body-file tmp/pr-2.md
-gh pr create --base feat/02-renderer --head feat/03-cli     --title '...' --body-file tmp/pr-3.md
+gh pr create --base main            --head feat/01-parser   --title '...' --body-file local/pr-1.md
+gh pr create --base feat/01-parser  --head feat/02-renderer --title '...' --body-file local/pr-2.md
+gh pr create --base feat/02-renderer --head feat/03-cli     --title '...' --body-file local/pr-3.md
 ```
 
 **When to split at all.** A long task with several separable concerns, where each
@@ -307,9 +307,9 @@ with `gh pr edit <n> --base main`.
   real CI failures that passed locally:
 
   ```bash
-  git worktree add --detach tmp/ci_check HEAD
-  # Run the checks against tmp/ci_check with the primary checkout's venv, then:
-  git worktree remove tmp/ci_check
+  git worktree add --detach local/ci_check HEAD
+  # Run the checks against local/ci_check with the primary checkout's venv, then:
+  git worktree remove local/ci_check
   ```
 
 - **The PR body and commit messages are public.** No company from the private

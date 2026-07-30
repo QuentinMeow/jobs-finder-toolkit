@@ -19,7 +19,7 @@ Graph is the only provider today; the provider layer lives in `automation/shared
    Candidate-specific writing preferences override the generic guidance here; otherwise use the
    profile and application evidence.
 4. Use `.venv/bin/python` for every script. Keep disposable draft-body files under
-   `tmp/email-assistant/`; do not save mailbox content in tracked or product folders.
+   `local/email-assistant/`; do not save mailbox content in tracked or product folders.
 
 ## Non-Negotiable Safety Boundary
 
@@ -308,13 +308,13 @@ the profile/story-bank material needed for the reply. Never infer facts from a s
 
 ### 5. Save the Outlook draft
 
-Write the proposed body to `tmp/email-assistant/reply.txt`, show the exact text to the
+Write the proposed body to `local/email-assistant/reply.txt`, show the exact text to the
 user when review was requested, then run:
 
 ```bash
 .venv/bin/python skills/email-assistant/scripts/outlook_email.py \
   create-reply-draft --message-id '<graph-message-id>' \
-  --body-file tmp/email-assistant/reply.txt
+  --body-file local/email-assistant/reply.txt
 ```
 
 For a new thread, use `create-draft --to ... --subject ... --body-file ...`. Treat the operation

@@ -22,7 +22,7 @@ the private tree and to fix its own two violations (`examples/data/` is a generi
 `SKILL.md` files** name a path that phase 2 or phase 5 moves. The old count predates both the
 `github-workflow` skill and phase 4's removal of the two private skill trees from `skills/`.
 Split by which phase does the moving (phase-2 tokens: `automation/maintenance/`, `docs/handbook/`,
-`docs/designs/`, `docs/roadmap/`, `tmp/` · phase-5 tokens: `0_profile`, `interviews/`,
+`docs/designs/`, `docs/roadmap/`, `local/` · phase-5 tokens: `0_profile`, `interviews/`,
 `job-search-profiles/`, `data/`):
 
 | Skill | phase 2 | phase 5 |

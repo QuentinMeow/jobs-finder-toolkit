@@ -4,7 +4,7 @@
 Read-only over the store (derived entities). Applies the SAME deterministic gates
 the live pipeline uses (`scoring.py`: posting-quality, title, location, visa,
 experience), then dedupes matches against the applications log, live application
-folders, and the blacklist. Writes only to tmp/. This is the "re-evaluate all
+folders, and the blacklist. Writes only to local/. This is the "re-evaluate all
 jobs stored locally" step after the location-fidelity parser rebuild.
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ from common import JobPosting  # noqa: E402
 from registry import load_registry  # noqa: E402
 from search_jobs import resolve_profile  # noqa: E402
 
-OUT = ROOT / "tmp" / "field_fidelity_audit"
+OUT = ROOT / "local" / "field_fidelity_audit"
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Load the default profile YAML. ``resolve_profile`` searches the overlay's

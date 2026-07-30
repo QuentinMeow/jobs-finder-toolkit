@@ -16,7 +16,7 @@ Usage:
 Default stdout is a ~5-line run summary + a compact top-K table; the full Markdown
 report is always written to the discoveries file. Pass --print-full to dump the full
 report to stdout instead. Every fetch writes a pre-filter snapshot to --cache-dir
-(default tmp/search_cache/, gitignored); --refilter [PATH|latest] reuses it, anchoring
+(default local/search_cache/, gitignored); --refilter [PATH|latest] reuses it, anchoring
 posting-age math to the snapshot's fetch time and refusing snapshots older than 6h
 unless --allow-stale.
 
@@ -127,8 +127,8 @@ def discoveries_dir() -> Path:
 
 
 def default_cache_dir() -> Path:
-    """Where fetch snapshots land when --cache-dir is omitted (gitignored tmp/)."""
-    return REPO_ROOT / "tmp" / "search_cache"
+    """Where fetch snapshots land when --cache-dir is omitted (gitignored local/)."""
+    return REPO_ROOT / "local" / "search_cache"
 
 
 # CLI flags that change WHAT is fetched (the source set), not how results are
@@ -1040,7 +1040,7 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--cache-dir", default=None,
                     help="Where fetch snapshots are written / read "
-                         "(default: repo tmp/search_cache/, gitignored).")
+                         "(default: repo local/search_cache/, gitignored).")
     ap.add_argument("--refilter", nargs="?", const="latest", default=None,
                     metavar="PATH|latest",
                     help="Skip ALL fetching: load a pre-filter snapshot and re-run "
@@ -1232,7 +1232,7 @@ def main() -> int:
 
         now = datetime.now(timezone.utc)
         # Snapshot the normalized, PRE-filter postings so a later --refilter can
-        # re-answer filter/rank questions without re-fetching (gitignored tmp/).
+        # re-answer filter/rank questions without re-fetching (gitignored local/).
         source_selection = {
             "no_companies": bool(args.no_companies),
             "no_aggregators": bool(args.no_aggregators),
