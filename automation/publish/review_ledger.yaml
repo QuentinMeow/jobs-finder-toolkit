@@ -786,3 +786,17 @@
     company name, employer, person, school, posting URL, application slug, salary
     or absolute home path appears; every fixture value is invented. The advisory
     company detector reports (none) for this range.
+- commit: f734e0b7
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 11
+  digest: sha256:09db4e1bd105954e
+  finding: >-
+    Read the full diff. It adds the additive-invariant suite, surfaces
+    company_key to two readers, adds status.py --company-keys, and documents the
+    field. Two docstrings were reworded rather than any code changed: one in
+    search_jobs described its pair set as "(company_key, role) pairs" when it
+    means the registry MATCH key, which is precisely the confusion this phase
+    exists to prevent and which a source-level guard reads. No employer, person,
+    posting URL, application slug, salary or absolute home path appears; every
+    fixture key is invented. The advisory company detector reports (none).
