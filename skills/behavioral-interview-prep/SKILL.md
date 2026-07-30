@@ -15,15 +15,15 @@ Use this skill when the user asks to:
 - map one story to multiple common question families
 - turn notes into validated quick, combined, and technical behavioral answers
 - prepare for Amazon, Google, Meta, or other company-specific behavioral rounds
-- work in `private/interviews/behavioral/story-bank/` or
-  `private/interviews/behavioral/question-bank/`
+- work in `private/me/interviews/story-bank/` or
+  `private/me/interviews/question-bank/`
 
 ## Before You Start
 
 1. Read `AGENTS.md` for repo guardrails.
 2. Read your candidate profile (`config.profile_md_path()`) unless the user already provided complete story material.
 3. If the prep is company-specific, read the relevant JD file(s) — `config.applications_root()/<status>/<slug>/source/JD-<job title>.md` (one per posting) — and that folder's `notes.md` if present (the app usually lives in the `4_in_progress/<slug>/` folder by interview time).
-4. Read relevant company-prefixed files in `private/interviews/behavioral/question-bank/`.
+4. Read relevant company-prefixed files in `private/me/interviews/question-bank/`.
 5. **Personalization / private overrides:** if `config.skill_references_dir()` for this
    skill exists in the overlay, read every file in it — those candidate-specific
    notes and examples OVERRIDE the generic examples in this SKILL.md. When it is absent
@@ -32,7 +32,7 @@ Use this skill when the user asks to:
 6. Read `QUESTION_BANK.md` when selecting question families, follow-ups, or company overlays.
 7. Read `reference.md` before designing or changing timed answer modules or validation rules.
 8. Never fabricate facts, metrics, conflict, ownership, or technologies. Reframe only what is real.
-9. **Scratch stays in `local/`** (never the repo root or the `interviews/` tree — only finished
+9. **Scratch stays in `local/`** (never the repo root or the `me/interviews/` tree — only finished
    story/answer files belong there). See `AGENTS.md` → "Scratch & Temporary Files".
 
 ## Core Rules
@@ -58,7 +58,7 @@ Use this skill when the user asks to:
   alignment.
 - Treat project story-bank files as the canonical source of truth for behavioral stories. Question-based answer files should be shorter derived views that select and summarize only the relevant parts.
 - **Story-bank content is read-only by default.** Never create, expand, backfill, correct, or
-  rephrase a file under `behavioral/story-bank/` unless the user specifically asks to change the
+  rephrase a file under `story-bank/` unless the user specifically asks to change the
   story bank. Moving an unchanged file during an explicitly requested folder migration is allowed.
 - A story-bank file is one project or major workstream, not one interview question. Make it intentionally long and chronological, with details from all useful aspects: context, stakes, ownership, constraints, technical decisions, execution, collaboration, conflict, mistakes, trade-offs, results, metrics, and lessons.
 - In story-bank detail sections, every paragraph should begin with a short parenthesized tag that combines targeting area and content summary, such as `(Ambiguity - monolith-to-microservices split had unclear service boundaries)` or `(Influence - component owners needed reproducible evidence before engaging)`.
@@ -66,7 +66,7 @@ Use this skill when the user asks to:
   user's correction in the question source, flag the mismatch, and leave the story bank unchanged
   unless the user also asks to update it.
 - Similar or near-identical behavioral questions share one company-neutral YAML source under
-  `behavioral/question-bank/sources/`. Name the source after the question family, such as
+  `question-bank/sources/`. Name the source after the question family, such as
   `deliver-results.yaml`, never after one company's principle.
 - Every source declares an ordered `outputs` list. The first output slug must be
   `_general_03_<source-stem>` (for example, `_general_03_deliver-results`). Add one
@@ -171,20 +171,21 @@ Use this skill when the user asks to:
    - create or update the neutral question-family YAML source
    - validate it before rendering
    - render every declared output alias deterministically
-   - run the private content tests under `behavioral/question-bank/tests/`
+   - run the private content tests under `question-bank/tests/`
    - wrap each answer and nested module in collapsed `<details>` blocks (combined → quick → deep dives → references)
 
 ## File Location
 
-All real behavioral products live under `private/interviews/behavioral/`.
-Use `private/interviews/behavioral/question-bank/` for question-based answers. Specific behavioral
+All real behavioral products live under `private/me/interviews/` — permanent, role-agnostic
+material that outlives any one application.
+Use `private/me/interviews/question-bank/` for question-based answers. Specific behavioral
 answers are generated Markdown aliases backed by shared, company-neutral YAML under
 `question-bank/sources/`. Generated behavioral question files use `_general_03_<family>.md`;
 company overlays use `<company>-<principle>.md`. Hand-maintained files use `_general_01_` or
 `_general_02_story_` prefixes (see Core Rules). Content tests live under `question-bank/tests/`.
-Use `private/interviews/behavioral/story-bank/` for canonical project-based stories.
-Each file should be one project or major workstream, for example
-`private/interviews/behavioral/story-bank/payments-microservices-migration.md`.
+Use `private/me/interviews/story-bank/` (`config.story_bank_path()`) for canonical project-based
+stories. Each file should be one project or major workstream, for example
+`payments-microservices-migration.md`.
 
 Reusable company-principle answers belong in the answer bank and use a company-prefixed output
 name, such as `question-bank/amazon-deliver-results.md`, while the shared source remains
@@ -435,9 +436,9 @@ questions. Keep one principle per company-prefixed file, with at least two title
 ## Optional Persistence
 
 If the user wants prep saved for a specific application:
-- save reusable company-specific answers in `private/interviews/behavioral/question-bank/` with a
+- save reusable company-specific answers in `private/me/interviews/question-bank/` with a
   company-prefixed output alias backed by a neutral shared source
-- change `private/interviews/behavioral/story-bank/` only when the user explicitly asks
+- change `private/me/interviews/story-bank/` only when the user explicitly asks
 - update `config.applications_root()/<status>/<slug>/notes.md` only when the note is tied to one application record
 - add a `## Behavioral Prep` section rather than editing the base profile
 - do not edit your candidate profile (`config.profile_md_path()`) unless the user explicitly asks

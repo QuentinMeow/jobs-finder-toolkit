@@ -62,7 +62,7 @@ Do this before Step 1. If the user only wants to refresh an existing draft, edit
 never create a second one.
 
 - **Duplicate scan (hard block — zero writes on a hit).** Scan the applications log
-  (`<profile-dir>/applications-log.yaml`, `<profile-dir>` = `config.applications_root()/0_profile/`)
+  (`config.applications_log_path()`)
   **and** every live folder
   `applications/{6_drafted,5_applied,4_in_progress,3_rejected,2_ignored}/<slug>/` (read each
   `meta.yaml` — company, `role` or `jobs:` entries, URLs). If this exact posting (same company +
@@ -83,8 +83,9 @@ never create a second one.
   before creating folders for a multi-role company. Different companies always get their own folder.
 - **Blacklist (hard block).** Check the resolved company against the MERGED registry, not
   `companies.yaml` alone: `registry.load_registry()` merges
-  `skills/job-search/companies.yaml` with the git-ignored `private/job-search/blacklist.yaml`
-  overlay at load time (`skills/job-search/scripts/registry.py`). If
+  `skills/job-search/companies.yaml` with the git-ignored blacklist overlay at
+  `config.blacklist_path()` (`private/market/blacklist.yaml`) at load time
+  (`skills/job-search/scripts/registry.py`). If
   `Registry.is_blacklisted(company)` reports a `blacklist:` reason (it resolves on name, aliases, or
   ATS token), do NOT create an application; tell the user it's blacklisted.
 - **Location gate (hard requirement — respect the search criteria).** Confirm the posting
@@ -98,7 +99,7 @@ never create a second one.
 
 ### Read the tailoring card FIRST (MUST)
 
-**Read `<applications_root>/0_profile/tailoring-card.md` (path via config helpers) INSTEAD of the
+**Read the tailoring card at `config.tailoring_card_path()` INSTEAD of the
 full profile + story bank.** The card is the distilled, always-needed tailoring context:
 identity / locked fields, target roles, key numbers, the three skills lists (Never verbatim), and
 a story-bank digest. It is your default context — do not open the full profile or story bank on a
@@ -114,8 +115,8 @@ needs — the full files win on any conflict with the card):
 - **Gardener card-staleness warning** (or `build_tailoring_card.py --check` reports changed
   sources) → rebuild the card, then use it.
 - **The JD demands domains the card doesn't cover** → open the full profile
-  (`config.profile_md_path()`) and read **only the relevant `interviews/behavioral/story-bank/`
-  sections** for that domain. Supporting-library detail: [`reference.md`](reference.md) §
+  (`config.profile_md_path()`) and read **only the relevant story-bank
+  (`config.story_bank_path()`) sections** for that domain. Supporting-library detail: [`reference.md`](reference.md) §
   "Supporting library (real detail sources)".
 
 ### Step 1: Create the Application Folder
@@ -247,8 +248,8 @@ a legacy `employer:`/`experience:` layout, or a field the baseline doesn't show.
   counts, bullet/length limits)? Run `check.py --rules` (~1 KB) — never read the `check.py` source.
 - Every bullet must map to real content the user actually did — reword, never invent. The source
   of truth is the profile (`config.profile_md_path()`) **plus** the supporting library
-  (`interviews/behavioral/story-bank/`, `interviews/behavioral/question-bank/`, prior
-  applications, notes). A detail is
+  (the story bank at `config.story_bank_path()`, the question bank beside it under
+  `me/interviews/question-bank/`, prior applications, notes). A detail is
   allowed on the resume if it is documented in one of these real sources.
 - You MAY enrich a bullet with a concrete, real detail pulled from the story bank (a scale figure,
   a named artifact, a real tool) as long as it is traceable to that source and does not contradict

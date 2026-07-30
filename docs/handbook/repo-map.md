@@ -12,21 +12,23 @@ out into `automation/shared/`, `automation/vendoring/`, and one folder per job
 `skills/<skill>/scripts/`). Application status is encoded per posting
 in each `jobs:` entry's `status`, and the sub-folder the application sits in
 is the derived overall status (rollup); the profile-support directory
-(`<profile-dir>` = `config.applications_root()/0_profile/` — where the
-skip-logs and the tailoring card ALWAYS live, regardless of where
+(`<profile-dir>` = `config.candidate_dir()`, which defaults to
+`<applications_root>/0_profile/` — where the skip-logs live, regardless of where
 `config.profile_md_path()` points; in the shipped example the profile file
 lives under `examples/profile/`, but this logs dir is
-`examples/applications/0_profile/`) and `config.discoveries_dir()` are
-support folders, not applications.
+`examples/applications/0_profile/`, while a lifetime-organised private overlay
+points `candidate_dir` at its own market-logs folder) and `config.discoveries_dir()`
+are support folders, not applications. The tailoring card has its own key
+(`config.tailoring_card_path()`) and need not sit with the logs.
 
 | Path | Purpose |
 |------|---------|
 | `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, and output-stem config; the tracked example is the neutral "Jordan Rivers" placeholder + fallback (see `docs/handbook/configuration.md`) |
 | `config.profile_md_path()` (example: `examples/profile/profile.example.md`) | Comprehensive candidate profile: all experience, skills, and resume writing preferences |
 | `config.baseline_path()` | Canonical transcription of the approved resume — starting point for every tailored.yaml and the reference for locked-field validation |
-| `skills/job-search/companies.yaml` | Canonical company registry — public, single source of truth for company **identity**, ATS poll config, and tags. Ships NO personal skip rules; candidate-specific blacklist rows (companies that don't sponsor, the candidate's own employer) live in a git-ignored overlay `private/job-search/blacklist.yaml` merged at load time by `registry.py` (each row: identity-only + `blacklist:` reason, no `ats`/`token`). Never carries specific or dated postings |
-| `<applications_root>/0_profile/applications-log.yaml` | Auto-generated (via `status.py --sync-log`) list of postings already generated/considered — job-search skips them (new roles at the same company still surface) |
-| `<applications_root>/0_profile/company-search-log.yaml` | Last successful full-company search per employer — job-search skips within 7 days (`skip_within_days`); upserted by `--sync-log` (`created`) or `--log-search` (`no_suitable`) |
+| `skills/job-search/companies.yaml` | Canonical company registry — public, single source of truth for company **identity**, ATS poll config, and tags. Ships NO personal skip rules; candidate-specific blacklist rows (companies that don't sponsor, the candidate's own employer) live in a git-ignored overlay at `config.blacklist_path()` (`private/market/blacklist.yaml`) merged at load time by `registry.py` (each row: identity-only + `blacklist:` reason, no `ats`/`token`). Never carries specific or dated postings |
+| `config.applications_log_path()` | Auto-generated (via `status.py --sync-log`) list of postings already generated/considered — job-search skips them (new roles at the same company still surface) |
+| `config.company_search_log_path()` | Last successful full-company search per employer — job-search skips within 7 days (`skip_within_days`); upserted by `--sync-log` (`created`) or `--log-search` (`no_suitable`) |
 | `config.company_levels_path()` | Reusable, sourced company level/YOE/base-salary/total-compensation mappings used as a fallback when a live JD omits those facts; real dated research defaults beside the private profile, while the public toolkit ships only `examples/profile/company-levels.example.yaml` |
 | `<profile-dir>/resumes/` | The candidate's approved master resume file(s) |
 | `config.discoveries_dir()` | Ad-hoc research findings during the job search (job-search output, target-company lists) |
@@ -58,7 +60,7 @@ support folders, not applications.
 | `skills/resume-writer/` | PUBLIC skill for resume tailoring |
 | `skills/application-tracker/` | PUBLIC skill for application status and pipeline management |
 | `skills/behavioral-interview-prep/` | PUBLIC skill for behavioral interview story banks and STAR answers |
-| `skills/company-research/` | PUBLIC skill for researching a company + role for interviews (product, size, teams, values, stage, comp, WLB, ratings, visa) and drafting a hiring-manager/engineer question bank under `interviews/company-specific/<company>/company-info/` |
+| `skills/company-research/` | PUBLIC skill for researching a company + role for interviews (product, size, teams, values, stage, comp, WLB, ratings, visa) and drafting a hiring-manager/engineer question bank under `config.companies_root()/<company>/research/` |
 | `skills/email-assistant/` | PUBLIC draft-only personal email workflow (Outlook via Microsoft Graph today): reads mailbox messages, grounds suggested replies in the private job-hunt data, and creates Outlook drafts. OAuth tokens stay in the OS keyring; the skill has no send capability and consumes the mail layer only through its vendored copy. |
 | `skills/interview-calendar/` | PUBLIC orchestration skill that reconciles exact email evidence, application-tracker progress and private notes, the local `calendar.md`, and duplicate-free Outlook Calendar events without adding another mail or tracker writer. |
 | `skills/gardener/` | PUBLIC skill for dry-run-first memory hygiene, stale discovery expiry, log pruning, and pipeline health checks |

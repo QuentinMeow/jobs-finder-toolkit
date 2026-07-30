@@ -8,7 +8,7 @@ description: Periodic memory hygiene for the toolkit's agent-memory zones — ex
 
 The gardener keeps this repo's **agent-memory zones** from growing without bound
 (maintainer-only design doc — overlay-mounted, absent in contributor checkouts:
-`private/docs/harness-engineering-and-repo-evolution/03-folder-structure-and-memory.md`
+`private/docs/03-folder-structure-and-memory.md`
 §5, and the "Memory Map" in `AGENTS.md`). Memory has promotion (MEMORY→LESSONS→SKILL)
 but the gardener supplies the missing half: **forgetting** — TTL expiry, log pruning,
 and staleness/duplicate flagging.
@@ -39,9 +39,9 @@ and staleness/duplicate flagging.
 | `expire-discoveries` | Discovery scans older than `discovery_ttl_days` (30) → move to `archive/`; raw scans >`discovery_archive_days` (14) flagged for review | dry-run; `--apply` moves | move-not-delete; per-file plan; index entry appended |
 | `compact-logs` | `company-search-log.yaml` rows older than `search_log_prune_days` (90) → prune; `applications-log.yaml` regenerated via `status.py --sync-log` | dry-run; `--apply` writes a compacted copy + runs sync | never edits the live log in place |
 | `lessons-report` | Flag LESSONS sections whose `last_confirmed` > `lesson_confirm_days` (180) or that are untagged; flag near-duplicate bullets within a LESSONS.md and vs its SKILL.md | **report-only** | human ratifies any promotion/deletion |
-| `card-staleness` | Compare the source hashes recorded in the resume-writer tailoring card (`<applications_root>/0_profile/tailoring-card.md`) with current profile/baseline/story-bank hashes; flag the card when a source drifted | **report-only** | rebuild is the skill's job (`build_tailoring_card.py --force`), never the gardener's |
+| `card-staleness` | Compare the source hashes recorded in the resume-writer tailoring card (`config.tailoring_card_path()`) with current profile/baseline/story-bank hashes; flag the card when a source drifted | **report-only** | rebuild is the skill's job (`build_tailoring_card.py --force`), never the gardener's |
 | `verify-links` | Backticked toolkit paths AND `[text](path)` markdown links resolve — in the overlay's tracked `.md` too when it is mounted; heading anchors match a real heading; skill symlinks resolve; `sync_vendored.py --check` | report-only; **exit 1 on break** | runs in CI and pre-commit; fails on a broken link / vendor drift |
-| `self-measure` | Recompute the funnel (discovered/drafted/applied/in_progress/rejected/ignored) + LESSONS staleness + instruction-budget summary | dry-run; `--apply` writes `metrics.yaml` | writes only into the overlay (`0_profile/metrics.yaml`), never the toolkit |
+| `self-measure` | Recompute the funnel (discovered/drafted/applied/in_progress/rejected/ignored) + LESSONS staleness + instruction-budget summary | dry-run; `--apply` writes `metrics.yaml` | writes only into the overlay (`config.candidate_dir()/metrics.yaml`), never the toolkit |
 
 Retention windows come from the optional `retention:` block in `config.yaml`
 (`config.example.yaml` documents the defaults); unset keys fall back to the values above.

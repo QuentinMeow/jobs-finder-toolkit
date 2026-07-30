@@ -49,10 +49,7 @@ if str(_SHARED) not in sys.path:
     sys.path.insert(0, str(_SHARED))
 import config  # noqa: E402  (import after sys.path bootstrap, by design)
 
-DESIGN_DOC = (
-    "private/docs/harness-engineering-and-repo-evolution/"
-    "03-folder-structure-and-memory.md"
-)
+DESIGN_DOC = "private/docs/03-folder-structure-and-memory.md"
 
 # Retention defaults (see AGENTS.md "Memory Map"). Overridable via the
 # optional ``retention:`` block in the active config.yaml.

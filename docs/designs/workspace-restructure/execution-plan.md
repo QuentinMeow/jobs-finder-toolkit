@@ -333,6 +333,33 @@ record may not cite scratch as its evidence, now with a renamed root: `local/`, 
 
 ## Phase 5 — the lifetime taxonomy inside `private/`
 
+> **Done and in review, 2026-07-30.** 747 tracked private files relocated across 32
+> commits; the tracked total is unchanged at 3,186 and every relocation is recorded by
+> git as a rename. Record and evidence:
+> [the task folder](../../../tasks/3_in-review/2026-07-28-workspace-phase-5-lifetime-taxonomy/verification.md).
+>
+> **Four numbers below are wrong and are corrected there rather than rewritten here.**
+> The acceptance figure is **747**, not 825 — 825 counts `history/` (23 files, which this
+> phase did not move) plus 55 files whose paths do not change. The interview-link count
+> is **261**, not 244. `paths.reference_docx` never pointed at `templates/resume/`. And
+> the `archive/` tier is not new structure: `expire_discoveries._archive_dir()` already
+> derives the sibling directory, so pointing `discoveries_dir` at `market/scans/current`
+> gives it for free.
+>
+> **Three things the plan expected did not happen, each for a stated reason.**
+> `history/` is filed as its own decision instead of being untracked inside a migration.
+> The story bank keeps its leaf directory name, because the plan's spelling would have
+> forced a 33-line content edit inside files the owner's interview ruling put off limits.
+> And `examples/` is left alone — it is phase 8, and two `examples/data` literals are
+> pinned in `ci.yml` and an export test.
+>
+> **The precondition below was necessary but not sufficient, and that only became visible
+> once it was met.** The link checker could not read a single file inside the overlay —
+> it enumerates with `git ls-files` in the *public* repo — so removing `interviews/` from
+> `SKIP_PREFIXES` would have changed which public docs may name those paths and nothing
+> else. Overlay enumeration was added to the link-checker PR; with it, removing the skips
+> surfaced **126** stale references, all now repaired.
+
 **Blocking preconditions:** phases 0 and 4 merged (both done). **Q5 and Q6 answered** —
 answered: rendered artifacts stay in the application folder and the *user* may delete a rejected
 application (an agent never does); handovers are local-only. **And, added 2026-07-29 by owner

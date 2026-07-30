@@ -30,8 +30,9 @@ frontmatter:
 **PRODUCTS are always private** and mount under `private/`: anything tied to real jobs, the
 candidate's background, or dated/time-sensitive info — the real applications
 (`config.applications_root()`, e.g. `private/applications/**`, including the discoveries dir
-and the real company-level cache), the real interviews (`private/interviews/**` — every real
-interview product, from company-info to behavioral/coding prep, belongs here), and the real
+and the real company-level cache), the real interview material (`private/companies/**` for
+everything tied to one employer — research, their loop, the problems they ask — and
+`private/me/interviews/**` for the role-agnostic story/question banks), and the real
 profile / baseline / reference DOCX. The overlay is git-ignored in the public checkout and the
 exporter excludes it; only fake `examples/**` counterparts are published.
 
@@ -39,10 +40,11 @@ exporter excludes it; only fake `examples/**` counterparts are published.
 of a PUBLIC skill must be personal-free: they defer candidate DATA to `config.yaml` /
 the profile and use the generic "Jordan Rivers" examples. Any residual candidate-specific
 skill guidance (real lead-project ordering, real metrics, personal anecdotes) goes in the
-overlay's per-skill **`references_private/`** folder, reached by
-`config.skill_references_dir("<skill>")` (default
-`private/skills/references_private/<skill>/`) — the exporter prunes any such folder and
-the leak guard fails on any tracked file under one, anywhere in the tree. Each `SKILL.md`
+overlay's per-skill **skill-notes** folder, reached by
+`config.skill_references_dir("<skill>")` (`private/skills/skill-notes/<skill>/` under the
+current overlay layout; set `paths.skill_references_root`) — the exporter prunes any such
+folder and the leak guard fails on any tracked file under a `references_private/` folder
+anywhere in the public tree. Each `SKILL.md`
 "Before You Start" carries a **Personalization** stanza telling the agent to read that
 folder (it overrides the generic examples) when present, and to fall back to the generic
 examples otherwise.

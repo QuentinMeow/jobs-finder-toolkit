@@ -95,10 +95,15 @@ STRICT_ROOT_PREFIXES = (
 # ``private/`` forms are skipped exactly like the bare ones. ``private/`` is NOT
 # blanket-skipped: genuine overlay TOOLKIT paths fall through to OVERLAY_PREFIX and
 # are verified whenever the overlay is mounted (otherwise counted "overlay").
-SKIP_PREFIXES = ("applications/", "interviews/", "local/",
+# ``interviews/`` and ``job-search/`` are gone: workspace phase 5 dissolved both
+# into ``companies/``, ``me/interviews/`` and ``market/``, and none of those is
+# skipped. So every link inside what used to be the interview tree is now VERIFIED
+# whenever the overlay is mounted — which is the whole point of removing them, and
+# it means the overlay's docs have to be right the first time rather than the
+# second. ``applications/`` and ``local/`` stay: they are runtime data and scratch.
+SKIP_PREFIXES = ("applications/", "local/",
                  ".agents/inputs/", ".git/", ".venv/",
-                 "private/applications/", "private/interviews/",
-                 "private/job-search/", "private/local/")
+                 "private/applications/", "private/local/")
 SKILLS_ROOT = "skills"
 
 # Backticked refs into the private overlay (maintainer-only design docs, real

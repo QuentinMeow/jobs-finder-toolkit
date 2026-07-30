@@ -757,17 +757,21 @@ class TestOverlaySourcesAreEnumerated(VerifyLinksTestCase):
                           "private/tasks/4_done/x/task.md"])
         self.assertEqual({b["tier"] for b in broken}, {"reference"})
 
-    @unittest.expectedFailure
     def test_a_broken_link_inside_the_overlay_interview_tree_is_fatal(self) -> None:
-        """DESIGN §5b — NOT implemented; this is an expected failure.
+        """Design §5b, and the reason the whole overlay-enumeration work exists.
 
-        §5b: "``private/interviews/**`` matching no plan or record prefix is the
-        point: after phase 5, one unresolved link inside the interview tree turns the
-        maintainer's gate red. A repair that cannot turn the gate red is not
-        verifiable." The module keeps ``private/interviews/`` in ``SKIP_PREFIXES``,
-        so the finding is counted ``skip-tree`` and the repair phase's ~10 links stay
-        unverifiable. The companion test below pins what actually happens today;
-        this one flips to an UNEXPECTED SUCCESS when the prefix is dropped.
+        "A repair that cannot turn the gate red is not verifiable." When this test
+        was written it was an EXPECTED FAILURE: the module still carried
+        ``private/interviews/`` in ``SKIP_PREFIXES``, so a broken link inside that
+        tree was tallied ``skip-tree`` and the phase-5 repair could not be checked.
+
+        Workspace phase 5 dissolved that tree into ``companies/`` and
+        ``me/interviews/`` and dropped the prefix, and this flipped to an unexpected
+        success in the same run — which is exactly what an expected-failure marker is
+        for. It is now an ordinary assertion, and it stays here rather than being
+        deleted with the directory: it pins the RULE (an overlay path matching no
+        plan or record prefix is reference tier, therefore fatal), not the one
+        directory that motivated it.
         """
         self.overlay_init({"interviews/a/notes.md": "See [a](../b/gone.md).\n"})
         self.git_init()
@@ -775,19 +779,21 @@ class TestOverlaySourcesAreEnumerated(VerifyLinksTestCase):
         self.assertEqual([(b["file"], b["tier"]) for b in broken],
                          [("private/interviews/a/notes.md", "reference")])
 
-    def test_overlay_interview_links_are_currently_counted_as_a_data_tree(self) -> None:
-        """Companion to the expected failure above: today's actual behaviour.
+    def test_an_overlay_data_tree_is_still_skipped_not_reported(self) -> None:
+        """The other half of the rule: ``applications/`` and ``local/`` stay skipped.
 
-        ``private/interviews/`` is in ``SKIP_PREFIXES``, so the file IS enumerated and
-        read — the source-set half of the fix works — but its links resolve to nothing
-        and are tallied ``skip-tree`` instead of reported.
+        Replaces a companion test that pinned ``private/interviews/`` being tallied
+        ``skip-tree``. That behaviour was correct until phase 5 and is now wrong, so
+        the assertion moves to a tree that IS still runtime data. The file is still
+        enumerated and read either way — the source-set half of the fix is what makes
+        the tier decision meaningful at all.
         """
-        self.overlay_init({"interviews/a/notes.md": "See [a](../b/gone.md).\n"})
+        self.overlay_init({"applications/6_drafted/x/notes.md": "See [a](../b/gone.md).\n"})
         self.git_init()
         broken, advisory, permitted, skipped, _ = V.check_references()
         self.assertEqual((broken, advisory, permitted), ([], [], []))
         self.assertEqual(skipped["skip-tree"], 1)
-        self.assertIn("private/interviews/a/notes.md",
+        self.assertIn("private/applications/6_drafted/x/notes.md",
                       [V._rel(f) for f in V._instruction_files()])
 
     def test_removing_the_overlay_reproduces_the_public_result_exactly(self) -> None:

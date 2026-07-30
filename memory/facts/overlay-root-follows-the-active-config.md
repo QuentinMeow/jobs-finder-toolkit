@@ -8,15 +8,15 @@
 to that config file's own directory, pointing `$JOBHUNT_CONFIG` at an alternate config
 relocates the entire overlay-derived path family at once.
 
-Concretely, the benchmark config sets `applications_root: "benchmark/applications"` relative to
-its own directory. That makes:
+Concretely, the benchmark config (`private/evals/config.benchmark.yaml`) sets
+`applications_root: "runs/applications"` relative to its own directory. That makes:
 
 | Accessor | Under the real config | Under the benchmark config |
 |---|---|---|
-| `applications_root()` | `private/applications` | `private/benchmark/applications` |
-| `overlay_root()` | `private/` | `private/benchmark/` |
-| `search_profiles_dir()` | `private/job-search-profiles/` | `private/benchmark/job-search-profiles/` |
-| `blacklist_path()`, `story_bank_path()`, `companies_root()`, `candidate_dir()` | under `private/` | under `private/benchmark/` |
+| `applications_root()` | `private/applications` | `private/evals/runs/applications` |
+| `overlay_root()` | `private/` | `private/evals/runs/` |
+| `search_profiles_dir()` | `private/market/searches/` | `private/evals/runs/job-search-profiles/` |
+| `blacklist_path()`, `story_bank_path()`, `companies_root()`, `candidate_dir()` | under `private/` | under `private/evals/runs/` |
 
 This is why a pinned benchmark fixture placed beside the benchmark's applications root is found
 automatically by a bare `--profile <label>`, with no symlink and no extra config key: the
@@ -25,7 +25,8 @@ free.
 
 **What would falsify it:** setting `paths.overlay_root` explicitly in a config, which pins the
 overlay root independently of `applications_root`. The derivation is a default, not a law. Also
-note the two are only coupled while the benchmark tree sits *inside* the overlay: phase 5 of
+note the two are only coupled while the benchmark tree sits *inside* the overlay. Phase 5 of
 [the workspace-restructure execution plan](../../docs/designs/workspace-restructure/execution-plan.md)
-moves the benchmark tree into the overlay's eval-fixtures folder, and the fixture profile has to
-move with it or gain an explicit `paths.search_profiles_dir`.
+moved the benchmark tree to `private/evals/` and its run outputs to `private/evals/runs/`; the
+fixture profile moved with it (to `private/evals/runs/job-search-profiles/`) rather than gaining an
+explicit `paths.search_profiles_dir`, so the derivation still does the work.

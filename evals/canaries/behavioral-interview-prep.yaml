@@ -12,8 +12,9 @@ skill: behavioral-interview-prep
 default_setup: >
   config.yaml unset -> config.example.yaml + examples/** fallback; the profile is
   examples/profile/profile.example.md (projects tagged [draft]/[backup] are the real material).
-  Behavioral output lands under interviews/behavioral/{story-bank,question-bank}/
-  (scratch/git-ignored in a public checkout; the transcript is judged, not a commit). No network,
+  Behavioral output lands under config.story_bank_path() and the question bank beside it —
+  me/interviews/{story-bank,question-bank}/ in the overlay, the examples/ fallback in a public
+  checkout (scratch/git-ignored there; the transcript is judged, not a commit). No network,
   no private overlay needed.
 
 canaries:
@@ -60,7 +61,7 @@ canaries:
     setup: "Default setup, single-story input drawn from the profile."
     expected_behavior:
       - "Maps the story to 2-4 question families (prefers versatile stories), with a Best-fit Questions list and a Recommended Angle explaining why it fits."
-      - "Does not modify the source story bank; for a persisted answer, writes a neutral question-family YAML under behavioral/question-bank/sources/ and treats generated Markdown aliases as output."
+      - "Does not modify the source story bank; for a persisted answer, writes a neutral question-family YAML under question-bank/sources/ and treats generated Markdown aliases as output."
       - "Starts outputs with a natural `_general_...` question alias and adds company-prefixed aliases only when they use the same answer strategy."
       - "Uses an answers list with at least two distinct project_title options; each option has a self-contained quick answer, self-contained combined quick+short answer, and additive short/long technical expansions."
       - "The quick answer targets 90 seconds and is hard-bounded to 75-130 seconds at the configured speaking rate."
@@ -82,7 +83,7 @@ canaries:
     expected_behavior:
       - "Uses a present -> past -> future structure, NOT forced STAR."
       - "Keeps a concise high-level answer with optional technical follow-ups introduced as bridges ('If useful, I can go deeper...')."
-      - "If saved to behavioral/question-bank/, uses a general-* filename, keeps a visible '#' title, and does not create a YAML source or apply STAR/timing validation."
+      - "If saved to question-bank/, uses a general-* filename, keeps a visible '#' title, and does not create a YAML source or apply STAR/timing validation."
       - "Grounds every claim in the real profile; length fits spoken delivery."
     failure_modes:
       - "Forces STAR onto 'tell me about yourself'."

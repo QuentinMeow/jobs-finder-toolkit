@@ -73,10 +73,18 @@ commit.
 `templates/queue/decision.md` with options and a recommendation, and end the session. Several
 gates in this repo fail *open*, so a half-done phase is indistinguishable from a done one.
 
-Phases 2, 4 and 5 merged, and `2026-07-28-slim-company-research-skill` merged. **Partly met as
-of 2026-07-29**: phase 4 is merged (PR #86); phase 2 is **done and in review** as an open stacked
-PR train, so it is finished but not yet merged; phase 5 is not started; and the slimming task is
-still in `tasks/0_backlog/`. Two of four preconditions fully outstanding.
+Phases 2, 4 and 5 merged, and `2026-07-28-slim-company-research-skill` merged. **All four met
+as of 2026-07-30, pending merge**: phase 4 is merged (PR #86); phases 2 and 5 are done and in
+review; and the slimming landed — `skills/company-research/SKILL.md` is **469 lines against the
+600 budget**, 131 of headroom where it had five.
+
+**Phase 5 already absorbed most of the phase-5 column below.** Its rule 2 (the PR that moves a
+path updates every literal naming it) meant the migration had to repair every reference the
+link checker could see — 126 of them, across `AGENTS.md`, seven handbook docs, five skills, the
+eval protocols and both trees' notes — plus the prose and canary YAML the checker cannot see.
+**Re-measure before scoping this phase**: what remains is `examples/` and whatever the sweep
+missed, not the table's original estimate. The link checker is now the instrument for the part
+it can see, and it reports `references: all resolve` today.
 
 ## Definition of done
 

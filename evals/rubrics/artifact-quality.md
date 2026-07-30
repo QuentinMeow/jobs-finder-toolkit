@@ -11,10 +11,11 @@ paths. A fresh grader needs only:
 3. the ground-truth sources (paths via config, so this rubric is identity-free):
    - profile (source of truth): `config.profile_md_path()`
    - baseline resume: `config.baseline_path()`
-   - supporting library (traceability): the story bank and answer bank under the overlay's
-     `interviews/`, plus any role-description reference kept beside the profile
+   - supporting library (traceability): the story bank (`config.story_bank_path()`) and the
+     answer bank beside it under the overlay's `me/interviews/`, plus any role-description
+     reference kept beside the profile
      (see `docs/handbook/tailoring-guardrails.md` "supporting library")
-   - tailoring card: `<applications_root>/0_profile/tailoring-card.md`
+   - tailoring card: `config.tailoring_card_path()`
 
 Grounded in the repo's own gates: `evals/rubrics/judging.md` (strict pass/fail, judge the artifact
 not the prose), `AGENTS.md` "Guardrails", `skills/resume-writer/SKILL.md` (three-list skill

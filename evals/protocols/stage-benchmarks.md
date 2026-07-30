@@ -26,12 +26,12 @@ Two consequences, stated up front:
   wins ships, one full scenario run (benchmark-scenario.md, isolated config)
   confirms the cumulative effect against the last full row.
 
-## Fixtures — `private/benchmark/fixtures/` (never committed to public)
+## Fixtures — `private/evals/fixtures/` (never committed to public)
 
 All fixtures are snapshots of real intermediates, captured once, then frozen
 (a fixture edit invalidates every row that used it — version the folder name,
 e.g. `fixtures/v1/`). Sources: the existing benchmark drafts under
-`private/benchmark/applications/6_drafted/` and one fresh search capture.
+`private/evals/runs/applications/6_drafted/` and one fresh search capture.
 
 | Fixture | Contents | Isolates stage(s) |
 |---|---|---|
@@ -66,7 +66,7 @@ Per row, record (into `evals/results/` via the template):
   classification (from the transcript-mining script over the run's session
   transcript);
 - the stage artifact itself, kept under
-  `private/benchmark/artifacts/<row-id>/` for pairwise quality comparison.
+  `private/evals/runs/artifacts/<row-id>/` for pairwise quality comparison.
 
 ## A/B rules (inherited + stage-specific)
 
