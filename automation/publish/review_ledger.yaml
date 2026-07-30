@@ -469,3 +469,18 @@
     phase-2 record). Re-checked on the merged tree rather than assumed: no real
     name, employer, school, posting, recruiter, salary, email, phone or absolute
     home path appears, and nothing under private/ is named.
+
+- commit: bc5361c0
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 10
+  digest: sha256:7f44cbec3fbdfe30
+  finding: >-
+    Clean, and read with care because the subject matter is the owner's interview
+    history. The two ADRs, the clarification, the plan fold and the phase-5 task
+    describe that tree only by counts and folder shapes — 552 files, 25 company
+    folders, 299/163/15/1 — and name no employer, person, posting, date, school,
+    salary, recruiter or filename from it. No absolute home path appears. Nothing
+    under private/ is touched or newly named; the scratch inventory it refers to is
+    cited by role, not by path content. The one deletion is a queue file whose
+    answer is preserved in the ADR that replaces it.
