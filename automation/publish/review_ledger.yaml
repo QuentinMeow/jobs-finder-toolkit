@@ -606,3 +606,23 @@
     interview tree by counts only. No absolute home path. Covers one commit range
     (config keys, the phase-5 public side, the handover) whose per-commit rows were
     dropped when this branch was restacked onto its base's closing ledger commit.
+
+- commit: 490b17ec
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 71
+  digest: sha256:07d80a055eaecd0d
+  finding: >-
+    Reconciliation row for the trunk tip after merging a four-PR stack. Every one
+    of these 71 files was reviewed on its branch; merging the stack bottom-up
+    replayed the upper branches under new SHAs, so 18 rows now name commits that
+    are not ancestors of this history and the gate skips them. The rows stay — an
+    orphaned row records a review that did happen. Twins that landed: the
+    company-research retiering (#108), the link checker with markdown, anchor,
+    unrecognised-root and overlay coverage plus its CI/pre-commit wiring (#109),
+    the canary record and its follow-ups (#110), and the phase-5 public side —
+    three config keys, the skip-log accessors, STORY_BANK_REL in both homes, and
+    the instruction surface repointed at accessors (#111). Re-checked on the trunk
+    for the one thing a per-branch review can miss: no employer, person, posting,
+    date, school, salary, recruiter or filename from the overlay appears anywhere
+    in the merged tree, and no absolute home path.
