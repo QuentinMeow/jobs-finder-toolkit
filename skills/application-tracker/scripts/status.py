@@ -45,7 +45,10 @@ Usage:
     python skills/application-tracker/scripts/status.py --enrich-metadata <slug>
     python skills/application-tracker/scripts/status.py --check-metadata
     python skills/application-tracker/scripts/status.py --sync-log
-    python skills/application-tracker/scripts/status.py --log-search "Acme Corp" --outcome no_suitable [--date YYYY-MM-DD]
+    python skills/application-tracker/scripts/status.py --backfill-log [--force]
+    python skills/application-tracker/scripts/status.py --forget-log <posting-url>
+    python skills/application-tracker/scripts/status.py --forget-log <company> <role>
+    python skills/application-tracker/scripts/status.py --log-search "Example Corp" --outcome no_suitable [--date YYYY-MM-DD]
 """
 
 import argparse
@@ -69,6 +72,7 @@ for _p in (_HERE, _HERE / "_vendor"):
         sys.path.insert(0, str(_p))
 
 import config
+import skip_log
 from backfill_job_metadata import process_application
 from calendar_todos import (
     CALENDAR_TEMPLATE,
@@ -149,7 +153,19 @@ def _resolve_statuses(args) -> list[str]:
 
 
 # The application log job-search reads to skip postings already generated/considered.
+#
+# APPLICATIONS_JSONL is the live one: an APPEND-ONLY event log, folded last-wins.
+# Nothing rewrites it, so deleting an application folder no longer deletes its row
+# and job-search will not re-surface a posting the owner already dealt with. That
+# also makes it authoritative rather than derived — recovery from loss or
+# corruption is git history, never a rebuild.
+#
+# APPLICATIONS_LOG is the retired YAML projection. It is still resolved because
+# `--backfill-log` seeds from it once and names it in its output; nothing else in
+# this file reads it and NOTHING writes it any more. It is not deleted or renamed
+# — agents never delete owner data.
 APPLICATIONS_LOG = config.applications_log_path()
+APPLICATIONS_JSONL = config.applications_jsonl_path()
 COMPANY_SEARCH_LOG = config.company_search_log_path()
 
 COMPANY_SEARCH_LOG_HEADER = (
@@ -870,10 +886,29 @@ def _move_application(slug: str, src: Path, new_status: str) -> bool:
     return True
 
 
-def _sync_log_hint(changed: bool, moved: bool) -> None:
-    """Remind to re-sync the postings log after any status write or folder move."""
-    if changed or moved:
-        print("Re-run `status.py --sync-log` to refresh the postings log.")
+def _record_log_events(slug: str) -> None:
+    """Append this application's postings to the append-only skip-log.
+
+    This replaces the old "re-run --sync-log" reminder. A reminder left the log a
+    lagging projection of whatever the folders looked like the last time somebody
+    remembered to sync; appending at the moment of the status write makes it an
+    event log. The rows are built through ``build_log`` — the same call
+    ``--sync-log`` makes — so the two writers cannot drift apart in shape.
+
+    Called unconditionally rather than only when something changed: the upsert
+    appends nothing when the posting already matches the fold, and the FIRST
+    ``--update`` on a posting that predates the log is exactly the case a
+    "changed?" guard would skip.
+    """
+    app_dir = find_application(slug)
+    if app_dir is None:
+        return
+    info = load_application(app_dir, status_label_for_dir(app_dir.parent.name) or "")
+    if not info:
+        return
+    appended = _upsert_log_rows(build_log([info])["postings"], source="update")
+    if appended:
+        print(f"Recorded {appended} posting event(s) -> {APPLICATIONS_JSONL}")
 
 
 def _transition_calendar_plan(
@@ -982,7 +1017,7 @@ def update_status(slug: str, new_status: str):
     moved = _move_application(slug, src, new_status)
     if not changed and not moved:
         print(f"{slug} is already fully '{new_status}' — nothing to do")
-    _sync_log_hint(changed, moved)
+    _record_log_events(slug)
 
 
 def update_job_status(slug: str, role_match: str, status: str):
@@ -1040,8 +1075,8 @@ def update_job_status(slug: str, role_match: str, status: str):
         print(f"  (meta.yaml already matched — {detail})")
 
     # Recompute the rollup from the edited postings and move the folder to match.
-    moved = _move_application(slug, src, derived)
-    _sync_log_hint(changed, moved)
+    _move_application(slug, src, derived)
+    _record_log_events(slug)
 
 
 def _print_plan_errors(meta_path: Path, plan) -> None:
@@ -1951,23 +1986,244 @@ def log_company_search(
     return write_company_search_log(raw)
 
 
-def sync_log() -> tuple[Path, Path]:
-    """Regenerate applications-log.yaml and upsert company-search-log from folders."""
+def _log_row(row: dict) -> dict:
+    """Project a ``build_log`` posting onto exactly what ``skip_log`` stores for it.
+
+    Two coercions, both load-bearing rather than cosmetic:
+
+    * ``None`` becomes ``""`` because ``skip_log.append_event`` stores it that
+      way. Comparing an unnormalized ``None`` against a stored ``""`` reads as a
+      difference on EVERY run — one appended line per such posting per sync,
+      forever. A ``meta.yaml`` carrying ``url:`` with no value produces exactly
+      that.
+    * A non-string scalar becomes its string form because an unquoted
+      ``research_date:`` in ``meta.yaml`` loads as a ``datetime.date``, which
+      ``json.dumps`` refuses outright — the sync would crash instead of writing.
+      The old YAML writer never hit this, because ``yaml.safe_dump`` serializes
+      dates natively.
+    """
+    projected = {}
+    for key in skip_log.POSTING_KEYS:
+        value = row.get(key)
+        if value is None:
+            projected[key] = ""
+        else:
+            projected[key] = value if isinstance(value, str) else str(value)
+    return projected
+
+
+def _upsert_log_rows(rows: list[dict], *, source: str) -> int:
+    """Append the postings that differ from the folded skip-log; return how many.
+
+    The only write is an append, so **a key in the fold with no matching folder is
+    left alone** — that is the entire point of the format. Deleting an application
+    folder no longer un-skips its posting.
+
+    Two folder rows can share one identity key: a re-application carries the same
+    URL under a new slug and a new date, and a multi-role folder can list one URL
+    twice. The fold holds one event per key, so if both rows reached the loop at
+    least one of them would differ from whatever the fold currently says and
+    append — on every run, forever, with the fold's answer alternating between the
+    two. Refreshing ``fold[key]`` in the loop is not enough on its own (it makes
+    BOTH rows append instead of one), so colliding rows are collapsed first,
+    last-wins: ``build_log`` orders by (company, slug) and a re-application's slug
+    carries the later date, so the surviving row is the fresher one.
+
+    ``fold[key] = row`` still runs in the loop, and still matters: it keeps the
+    fold consistent with what has already been written during this call, so the
+    function stays correct for any caller that hands it rows it did not collapse.
+    """
+    by_key: dict[tuple, dict] = {}
+    for raw in rows:
+        row = _log_row(raw)
+        by_key[skip_log.fold_key(row)] = row
+
+    fold = skip_log.fold(APPLICATIONS_JSONL)
+    appended = 0
+    for key, row in by_key.items():
+        prev = fold.get(key)
+        if prev is None or any(prev.get(f) != row[f] for f in skip_log.POSTING_KEYS):
+            skip_log.append_event(APPLICATIONS_JSONL, row, source=source)
+            fold[key] = row
+            appended += 1
+    return appended
+
+
+def sync_log() -> tuple[Path, int, Path]:
+    """Append changed postings to the skip-log; upsert company-search-log from folders.
+
+    Union-only. The skip-log is never rewritten and never truncated, so an
+    application folder the owner deleted keeps its row and job-search keeps
+    skipping that posting. Returns the skip-log path, how many events were
+    appended, and the company-search-log path.
+
+    The retired ``applications-log.yaml`` is NOT written here any more — see
+    ``backfill_log`` for the one-time seed and for what happens to the old file.
+    """
     apps = collect_apps()
-    log = build_log(apps)
-    APPLICATIONS_LOG.parent.mkdir(parents=True, exist_ok=True)
-    header = (
-        "# Auto-generated by `skills/application-tracker/scripts/status.py --sync-log` from every application\n"
-        "# folder across all status folders. Do not edit by hand — re-run --sync-log\n"
-        "# after adding or moving applications.\n"
-        "#\n"
-        "# job-search skips a posting already listed here (matched by URL, else by\n"
-        "# company + role). New roles at the same company are still surfaced.\n\n"
-    )
-    APPLICATIONS_LOG.write_text(
-        header + yaml.safe_dump(log, sort_keys=False, allow_unicode=True, width=100))
+    appended = _upsert_log_rows(build_log(apps)["postings"], source="sync")
     search_path = sync_company_search_log(apps)
-    return APPLICATIONS_LOG, search_path
+    return APPLICATIONS_JSONL, appended, search_path
+
+
+def _yaml_log_postings() -> list[dict]:
+    """The retired YAML skip-log's ``postings`` rows; ``[]`` when it is absent.
+
+    The only place anything still reads that file: ``--backfill-log`` seeds from
+    it once.
+    """
+    if not APPLICATIONS_LOG.exists():
+        return []
+    with open(APPLICATIONS_LOG) as f:
+        data = yaml.safe_load(f) or {}
+    rows = data.get("postings")
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def backfill_log(force: bool = False) -> tuple[Path, int, int]:
+    """Seed the append-only skip-log from the YAML log UNION the folder rows.
+
+    Returns (path, events appended, resulting fold size).
+
+    A key present in both sources takes the FOLDER row: the YAML was only ever a
+    projection of the folders, refreshed on the last sync, so the folder is the
+    fresher of the two. A key present in only one source is kept — that union is
+    the point, since a row whose folder the owner already deleted is precisely
+    what this phase exists to preserve.
+
+    ``--force`` appends a fresh generation rather than refusing. Refuse-if-exists
+    as the ONLY mode would make a wrong seed permanent, because nothing in this
+    format may delete a line; re-seeding is just another append, and a later line
+    wins the fold.
+    """
+    if APPLICATIONS_JSONL.exists() and not force:
+        print(f"Error: {APPLICATIONS_JSONL} already exists — refusing to seed it "
+              "twice. Re-run with --force to append a fresh generation (a later "
+              "line wins the fold; nothing is ever deleted).", file=sys.stderr)
+        sys.exit(1)
+
+    merged: dict[tuple, dict] = {}
+    for source_rows in (_yaml_log_postings(), build_log(collect_apps())["postings"]):
+        for raw in source_rows:
+            row = _log_row(raw)
+            merged[skip_log.fold_key(row)] = row
+
+    # A re-seed must not reverse a decision the owner made by hand. The retired YAML
+    # still contains every row that has since been tombstoned and is never updated, so
+    # without this a --force generation resurrects every --forget-log ever run — and
+    # says nothing about it.
+    forgotten = skip_log.forgotten_keys(APPLICATIONS_JSONL)
+    honored = [key for key in merged if key in forgotten]
+    for key in honored:
+        del merged[key]
+
+    for row in merged.values():
+        skip_log.append_event(APPLICATIONS_JSONL, row, source="backfill")
+    if honored:
+        print(f"  kept {len(honored)} earlier --forget-log tombstone(s); those "
+              "postings were NOT re-seeded")
+    return APPLICATIONS_JSONL, len(merged), len(skip_log.fold(APPLICATIONS_JSONL))
+
+
+def _near_log_matches(fold: dict, values: list[str], limit: int = 10) -> list[dict]:
+    """Folded rows whose company/role/url overlaps one of the query strings.
+
+    Printed when ``--forget-log`` finds no exact key, so the owner sees the row
+    they probably meant — a URL that lost its query string, a company spelled a
+    second way — instead of a bare "not found". Matching runs in both directions
+    because the typo can be on either side: the query can be a fragment of the
+    stored row, or the stored row a fragment of an over-long pasted URL.
+    """
+    needles = [n for n in (skip_log.norm_text(v) for v in values) if n]
+    hits: list[dict] = []
+    for row in fold.values():
+        fields = [skip_log.norm_text(row.get(k)) for k in ("company", "role", "url")]
+        haystack = " ".join(fields)
+        if (any(needle in haystack for needle in needles)
+                or any(f and any(f in needle for needle in needles) for f in fields)):
+            hits.append(row)
+        if len(hits) >= limit:
+            break
+    return hits
+
+
+def forget_log(values: list[str]) -> None:
+    """Un-skip one posting by appending a tombstone the fold honours.
+
+    ``values`` is either ONE posting URL or TWO strings, COMPANY and ROLE — the
+    same two branches ``skip_log.fold_key`` uses.
+
+    Regeneration used to heal a wrong row for free: the next sync rewrote the
+    whole file. Append-only removes that, so without this command a typo'd company
+    string is immortal — it suppresses every future posting that normalizes to it,
+    and hand-editing an authoritative machine-owned file is the owner's only
+    remedy. Agents may not delete lines, so the repair is itself an append.
+
+    Refuses a key that is not currently folded. A silent no-op un-skip is worse
+    than an error: the owner walks away believing the posting will resurface, and
+    it will not.
+    """
+    try:
+        if len(values) == 1:
+            row = skip_log.forget_row(url=values[0])
+            target = f"url {values[0]!r}"
+        elif len(values) == 2:
+            row = skip_log.forget_row(company=values[0], role=values[1])
+            target = f"company {values[0]!r} + role {values[1]!r}"
+        else:
+            print(f"Error: --forget-log takes ONE value (the posting URL) or TWO "
+                  f"(COMPANY ROLE); got {len(values)}", file=sys.stderr)
+            sys.exit(1)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    fold = skip_log.fold(APPLICATIONS_JSONL)
+    key = skip_log.fold_key(row)
+
+    # A tombstone on a posting that still has an application folder is undone by the
+    # very next --sync-log, which rebuilds that row from the folder — and the tombstone
+    # would have printed a success line on its way to being reverted. Refuse instead:
+    # a live folder is live evidence that the posting WAS handled, so the thing to fix
+    # is the folder, not the log. Same principle as refusing an unfolded key — an
+    # un-skip that quietly does nothing is worse than an error.
+    backing = next(
+        (r for r in (_log_row(x) for x in build_log(collect_apps())["postings"])
+         if skip_log.fold_key(r) == key), None)
+    if backing is not None:
+        print(f"Error: {target} is still backed by a live application folder "
+              f"({backing['slug']!r}, status {backing['status']!r}). A tombstone would "
+              "be undone by the next --sync-log, which rebuilds that row from the "
+              "folder.\n  Move or delete the application folder first, then re-run "
+              "--forget-log. (--forget-log is for repairing a row whose folder is "
+              "already gone — a typo, or an application you removed.)", file=sys.stderr)
+        sys.exit(1)
+
+    current = fold.get(key)
+    if current is None:
+        print(f"Error: no folded posting in {APPLICATIONS_JSONL} matches {target}; "
+              "refusing to append a tombstone that would drop nothing.",
+              file=sys.stderr)
+        near = _near_log_matches(fold, values)
+        if near:
+            print("  Closest folded rows:", file=sys.stderr)
+            for hit in near:
+                print(f"    - {hit.get('company', '')} / {hit.get('role', '')} "
+                      f"[{hit.get('status', '')}]  {hit.get('url', '')}",
+                      file=sys.stderr)
+        print(f"  The fold holds {len(fold)} posting(s). A row that carries a URL "
+              "is addressed by that URL, never by company + role.", file=sys.stderr)
+        sys.exit(1)
+
+    print("Dropping from the skip-log: "
+          f"{current.get('company', '')} / {current.get('role', '')} "
+          f"[{current.get('status', '')}] slug={current.get('slug', '')} "
+          f"date={current.get('date', '')} url={current.get('url', '')}")
+    skip_log.append_event(APPLICATIONS_JSONL, row, source="update", forget=True)
+    print(f"Appended a tombstone -> {APPLICATIONS_JSONL} "
+          f"({len(skip_log.fold(APPLICATIONS_JSONL))} posting(s) still folded)")
 
 
 def main():
@@ -2032,9 +2288,26 @@ def main():
     parser.add_argument("--write", action="store_true",
                         help="With --sync-calendar: apply the previewed proposals.")
     parser.add_argument("--sync-log", action="store_true",
-                        help="Regenerate applications/0_profile/applications-log.yaml "
-                             "(the postings job-search skips) from all folders, and upsert "
-                             "company-search-log.yaml created entries.")
+                        help="Append every changed posting to the append-only "
+                             "skip-log applications-log.jsonl (the postings "
+                             "job-search skips) and upsert company-search-log.yaml "
+                             "created entries. Never rewrites the log, so a "
+                             "deleted folder does not un-skip its posting.")
+    parser.add_argument("--backfill-log", action="store_true",
+                        help="One-time seed of the append-only skip-log from the "
+                             "UNION of the retired applications-log.yaml and the "
+                             "application folders (the folder row wins a key in "
+                             "both). Refuses when the log already exists; --force "
+                             "appends a fresh generation instead.")
+    parser.add_argument("--force", action="store_true",
+                        help="With --backfill-log: append a fresh seed generation "
+                             "even though the skip-log already exists (a later "
+                             "line wins the fold; nothing is deleted).")
+    parser.add_argument("--forget-log", nargs="+", metavar="VALUE",
+                        help="Un-skip ONE posting by appending a tombstone: pass "
+                             "one value (the posting URL) or two (COMPANY ROLE). "
+                             "Refuses when that key is not currently folded — a "
+                             "row that carries a URL is addressed by its URL.")
     parser.add_argument("--enrich-metadata", metavar="SLUG_OR_PATH",
                         help="Safely insert missing schema-v5 per-posting metadata "
                              "(workplace, sponsorship, job level, YOE, salary).")
@@ -2143,9 +2416,30 @@ def main():
         print(f"Updated company search log -> {path}")
         return
 
+    if args.backfill_log:
+        path, appended, folded = backfill_log(force=args.force)
+        print(f"Seeded the append-only skip-log -> {path}")
+        print(f"  appended {appended} event(s); the fold now holds "
+              f"{folded} posting(s)")
+        print(f"  the old YAML log {APPLICATIONS_LOG} is no longer read or "
+              "written by any tool. Remove it yourself once you are satisfied "
+              "with the seed — agents never delete owner data.")
+        return
+
+    if args.forget_log:
+        forget_log(args.forget_log)
+        return
+
+    if args.force:
+        print("Error: --force requires --backfill-log", file=sys.stderr)
+        sys.exit(1)
+
     if args.sync_log:
-        app_path, search_path = sync_log()
-        print(f"Wrote application log -> {app_path}")
+        app_path, appended, search_path = sync_log()
+        if appended:
+            print(f"Appended {appended} posting event(s) -> {app_path}")
+        else:
+            print(f"No posting changes — {app_path} unchanged")
         print(f"Updated company search log -> {search_path}")
         return
 

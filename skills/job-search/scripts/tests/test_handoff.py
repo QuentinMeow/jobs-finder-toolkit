@@ -518,6 +518,96 @@ class HandoffTests(unittest.TestCase):
             else:
                 os.environ["JOBHUNT_DATA_ROOT"] = prior
 
+    # -- duplicate preflight: the applications skip-log branch ------------- #
+    #
+    # Nothing here existed before the log became an append-only JSONL: every other
+    # test in this file leaves the log absent, so ``_posting_keys`` was only ever
+    # exercised over live folders. That blind spot is exactly what would hide a
+    # broken ``_applications_jsonl`` — a path that does not exist reads as "no
+    # duplicates", with no error and no output to notice.
+
+    def _seed_log(self, *events) -> Path:
+        """Append skip-log events at the path --applications-root implies.
+
+        Deliberately composed from string literals rather than from
+        ``config.APPLICATIONS_JSONL_FILENAME``: the point is to pin the file the
+        override must name. Build it from the same constant the code under test
+        uses and the test agrees with any typo the code makes.
+        """
+        path = self.root / "0_profile" / "applications-log.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            for event in events:
+                row = {"company": "", "slug": "", "date": "2026-07-16",
+                       "status": "applied", "role": "", "url": "",
+                       "recorded": "2026-07-16T09:00:00Z", "source": "sync"}
+                row.update(event)
+                fh.write(json.dumps(row) + "\n")
+        return path
+
+    def test_applications_root_override_names_the_jsonl_log(self):
+        # The override composes the log path from the config module's layout
+        # CONSTANTS; naming the retired .yaml there would fail open silently.
+        path = handoff._applications_jsonl(self.root, str(self.root))
+        self.assertEqual(path, self.root / "0_profile" / "applications-log.jsonl")
+
+    def test_posting_keys_reads_url_and_pair_keys_from_the_log(self):
+        log = self._seed_log(
+            {"company": "Nimbus Robotics", "role": "Senior Platform Engineer",
+             "url": "https://boards.example.com/nimbus/jobs/2001/"},
+            {"company": "Alpha Systems", "role": "Staff Backend Engineer"},
+        )
+        urls, pairs = handoff._posting_keys(self.root, log)
+        # Trailing slash stripped by _posting_keys' own rstrip (not skip_log's).
+        self.assertIn("https://boards.example.com/nimbus/jobs/2001", urls)
+        # BOTH keys come off every row — the URL-bearing row still yields a pair.
+        self.assertIn(("nimbus robotics", "senior platform engineer"), pairs)
+        self.assertIn(("alpha systems", "staff backend engineer"), pairs)
+
+    def test_posting_keys_folds_repeated_events_for_one_posting(self):
+        log = self._seed_log(
+            {"company": "Nimbus Robotics", "role": "Senior Platform Engineer",
+             "url": "https://boards.example.com/nimbus/jobs/2001", "status": "drafted"},
+            {"company": "Nimbus Robotics", "role": "Senior Platform Engineer",
+             "url": "https://boards.example.com/nimbus/jobs/2001", "status": "applied"},
+        )
+        urls, _pairs = handoff._posting_keys(self.root, log)
+        self.assertEqual(urls, {"https://boards.example.com/nimbus/jobs/2001"})
+
+    def test_log_row_suppresses_a_posting_under_applications_root_override(self):
+        # End-to-end through --applications-root: the ONLY thing marking this row a
+        # duplicate is the seeded log (no live folder exists yet). If the override
+        # composed the wrong filename the log would be unreadable, the row would be
+        # created, and the count assertions below would flip.
+        self._seed_log({"company": "Nimbus Robotics",
+                        "role": "Senior Platform Engineer",
+                        "url": self.jd_url})
+        code, report, _stdout, err = self._run_all([_row(url=self.jd_url)])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report["counts"]["duplicate"], 1)
+        self.assertEqual(report["counts"]["created"], 0)
+        self.assertFalse(list((self.root / "6_drafted").glob("*/meta.yaml")))
+
+    def test_log_row_suppresses_a_re_listed_posting_by_company_and_role(self):
+        # Same role, NEW url (an ATS re-list). The URL key cannot match, so only the
+        # pair key derived from a URL-bearing log row can catch it.
+        self._seed_log({"company": "Nimbus Robotics",
+                        "role": "Senior Platform Engineer",
+                        "url": "https://boards.example.com/nimbus/jobs/2001"})
+        code, report, _stdout, err = self._run_all([_row(url=self.jd_url)])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report["counts"]["duplicate"], 1)
+        self.assertEqual(report["counts"]["created"], 0)
+
+    def test_unlogged_posting_is_still_created_with_a_seeded_log(self):
+        # The negative control: a populated log must not suppress everything.
+        self._seed_log({"company": "Alpha Systems", "role": "Staff Backend Engineer",
+                        "url": "https://boards.example.com/alpha/jobs/3001"})
+        code, report, _stdout, err = self._run_all([_row(url=self.jd_url)])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report["counts"]["created"], 1)
+        self.assertEqual(report["counts"]["duplicate"], 0)
+
     def test_rank_out_of_range_and_bad_selector(self):
         rows = [_row(url=self.jd_url)]
         code, _folder, _out, err = self._run(rows, "rank 5", "--skip-jd-fetch")

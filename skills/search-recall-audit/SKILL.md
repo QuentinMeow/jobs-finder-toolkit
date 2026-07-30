@@ -115,7 +115,7 @@ per-JD verdicts (match? covered? verdict).
 > `exact_url_already_considered: True` ⇒ COVERED. Otherwise compare the
 > same-company log/folder entries by role: same/near-identical role ⇒ COVERED
 > (name the slug+status); only a DIFFERENT role ⇒ this specific role is NOT covered.
-> You may read the applications log (`config.applications_log_path()`) and the
+> You may read the applications skip-log (`config.applications_jsonl_path()`) and the
 > `private/applications/<N>_*/` folders to confirm. Do NOT modify anything.
 >
 > **Output per JD:** `idx`, `company/title`, `requirements_match: yes|no|borderline`,

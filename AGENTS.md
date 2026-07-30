@@ -204,8 +204,11 @@ Router:
 - **Skill lists**: honor the profile's Approved / Weak / Never lists; JD skills in none of them
   must be surfaced to the user for categorization, never added silently (full rule: `docs/handbook/tailoring-guardrails.md`).
 - **Blacklist/log preflight**: before searching or drafting, honor the company blacklist
-  (`config.blacklist_path()`, `private/market/blacklist.yaml`) and the skip-logs (`applications-log.yaml`,
-  `company-search-log.yaml`) — never draft a blacklisted company or re-surface a logged posting.
+  (`config.blacklist_path()`, `private/market/blacklist.yaml`) and the skip-logs
+  (`applications-log.jsonl`, `company-search-log.yaml`) — never draft a blacklisted company or
+  re-surface a logged posting. The applications skip-log is **append-only and authoritative**:
+  nothing regenerates it, so deleting an application does not un-skip its posting, and a wrong
+  row is repaired by appending a tombstone (`status.py --forget-log`), never by editing.
 - **Location policy**: only draft a role whose `location` matches `config.location_policy()`
   (preferred metros + US-remote); verify with `status.py --check-locations`.
 - **Email is draft-only**: the email assistant may read mail and create/update messages only while

@@ -36,9 +36,21 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 # Import user-supplied/licensed company-level facts (YAML/JSON/CSV; dry-run by default)
 .venv/bin/python automation/company-levels/import_company_levels.py INPUT <company-levels.yaml>
 
-# Regenerate applications-log.yaml (the postings job-search skips) from all folders
-# and upsert company-search-log.yaml created entries
+# Append every changed posting to the append-only skip-log (the postings job-search
+# skips) and upsert company-search-log.yaml created entries. Never rewrites the log,
+# so deleting an application does not un-skip its posting. --update/--update-job
+# already append as they go; this is the reconciliation backstop.
 .venv/bin/python skills/application-tracker/scripts/status.py --sync-log
+
+# One-time seed of the append-only skip-log from the retired applications-log.yaml
+# UNION the application folders. Refuses if the log exists; --force appends a fresh
+# generation (a later line wins the fold; nothing is ever deleted).
+.venv/bin/python skills/application-tracker/scripts/status.py --backfill-log
+
+# Un-skip ONE posting by appending a tombstone — the only way to repair a wrong row,
+# since nothing rewrites the log. One value = the posting URL, two = COMPANY ROLE.
+# Refuses when that key is not currently folded.
+.venv/bin/python skills/application-tracker/scripts/status.py --forget-log '<posting-url>'
 
 # Record a successful company search with no application folder (no suitable role)
 .venv/bin/python skills/application-tracker/scripts/status.py --log-search "Example Corp" --outcome no_suitable

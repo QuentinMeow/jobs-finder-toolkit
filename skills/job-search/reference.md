@@ -438,7 +438,7 @@ with `--company-tags`. For an exhaustive target-company scan, combine
 ## Skip logic (blacklist + already-considered + recently-searched)
 
 `search_jobs.py` filters results against the canonical company registry
-(`companies.yaml`) plus two skip-logs, `config.applications_log_path()` and
+(`companies.yaml`) plus two skip-logs, `config.applications_jsonl_path()` and
 `config.company_search_log_path()` (both default to `<applications_root>/0_profile/`, and a
 lifetime-organised overlay points them at its own market-logs folder). Company identity for all
 three checks is resolved through the registry (`scripts/registry.py`), so a board's
@@ -450,11 +450,13 @@ their normalized name, so aggregator-only employers still match.
   `blacklist:` reason (matched on the company's name, aliases, or ATS token) is dropped.
   Always applied. Blacklisted companies we never poll are identity-only rows (no
   `ats`/`token`).
-- **`applications-log.yaml`** — postings already generated/considered are dropped, matched
-  by URL, else by `(company, role)`. This is auto-generated from every application folder
-  by `skills/application-tracker/scripts/status.py --sync-log`; keep it fresh so searches don't
-  re-surface work you've already done. A *new* role at an already-applied company still surfaces (only the exact
-  posting is skipped).
+- **`applications-log.jsonl`** (`config.applications_jsonl_path()`) — postings already
+  generated/considered are dropped, matched by URL, else by `(company, role)`. It is an
+  **append-only** event log, folded last-wins: `status.py --update`/`--update-job` append as
+  the status changes and `--sync-log` is the reconciliation backstop. Nothing rewrites it, so
+  deleting an application does **not** un-skip its posting — repair a wrong row by appending
+  a tombstone with `--forget-log`. A *new* role at an already-applied company still surfaces
+  (only the exact posting is skipped).
 - **`company-search-log.yaml`** — after the above, postings from companies whose **last
   successful search** is within `skip_within_days` (default **7**, read from the file) are
   dropped. A successful search means the company's full board was enumerated and you made an

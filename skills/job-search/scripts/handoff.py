@@ -97,6 +97,7 @@ from job_metadata import (  # noqa: E402
     validate_meta,
 )
 from metadata_editor import plan_metadata_edit  # noqa: E402
+import skip_log  # noqa: E402  (vendored: folds the append-only applications skip-log)
 from location import (  # noqa: E402  (vendored shared location policy)
     classify_location,
     classify_locations,
@@ -219,15 +220,19 @@ def group_by_company(rows: list[dict], *, split: bool = False) -> list[list[dict
 
 
 def _posting_keys(root: Path, log_path: Path) -> tuple[set[str], set[tuple[str, str]]]:
-    """Collect URL and company/role duplicate keys from logs and live folders."""
+    """Collect URL and company/role duplicate keys from the skip-log and live folders.
+
+    The log rows come from ``skip_log.read_postings`` — the append-only event log
+    folded to one row per posting, in the same ``{company, slug, date, status, role,
+    url}`` shape the old YAML ``postings`` list carried. This function's own ``_norm``
+    and ``.rstrip("/")`` are what decide identity here and are unchanged; ``skip_log``'s
+    wider normalizer dedupes lines inside the file and is never a match key.
+    """
     urls: set[str] = set()
     pairs: set[tuple[str, str]] = set()
 
     if log_path.exists():
-        data = yaml.safe_load(log_path.read_text(encoding="utf-8")) or {}
-        for posting in data.get("postings") or []:
-            if not isinstance(posting, dict):
-                continue
+        for posting in skip_log.read_postings(log_path):
             url = _norm(posting.get("url"))
             company = _norm(posting.get("company"))
             role = _norm(posting.get("role"))
@@ -323,18 +328,26 @@ def _applications_root(override: str | None) -> Path:
     return config.applications_root()
 
 
-def _applications_log(root: Path, override: str | None) -> Path:
+def _applications_jsonl(root: Path, override: str | None) -> Path:
     """The applications skip-log to read for the duplicate preflight.
 
     With ``--applications-root`` the log is composed inside that tree from the
     config module's layout CONSTANTS (reading them triggers no config load, so the
     override keeps working with no config at all); otherwise it is the configured
-    ``config.applications_log_path()``.
+    ``config.applications_jsonl_path()``.
+
+    Both branches must name the SAME file. Composing the override from the old
+    ``APPLICATIONS_LOG_FILENAME`` after the log moved to JSONL would point at a name
+    nothing writes: the path would simply not exist, the log half of the preflight
+    would contribute nothing, and duplicate detection would silently degrade to the
+    live folders alone — a fail-open with no error and no output to notice.
+    ``test_handoff.py``'s fixtures never write a log, so only the dedicated
+    override test below catches it.
     """
     import config  # vendored; same lazy import as _applications_root
     if override:
-        return root / config.CANDIDATE_DIRNAME / config.APPLICATIONS_LOG_FILENAME
-    return config.applications_log_path()
+        return root / config.CANDIDATE_DIRNAME / config.APPLICATIONS_JSONL_FILENAME
+    return config.applications_jsonl_path()
 
 
 # --------------------------------------------------------------------------- #
@@ -801,7 +814,7 @@ def _run_groups(groups: list[list[dict]], args: argparse.Namespace) -> int:
     """
     root = _applications_root(args.applications_root)
     urls, pairs = _posting_keys(
-        root, _applications_log(root, args.applications_root))
+        root, _applications_jsonl(root, args.applications_root))
     report: list[dict] = []
     counts = {
         "created": 0,

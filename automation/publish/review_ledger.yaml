@@ -606,3 +606,86 @@
     interview tree by counts only. No absolute home path. Covers one commit range
     (config keys, the phase-5 public side, the handover) whose per-commit rows were
     dropped when this branch was restacked onto its base's closing ledger commit.
+
+- commit: 490b17ec
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 71
+  digest: sha256:07d80a055eaecd0d
+  finding: >-
+    Reconciliation row for the trunk tip after merging a four-PR stack. Every one
+    of these 71 files was reviewed on its branch; merging the stack bottom-up
+    replayed the upper branches under new SHAs, so 18 rows now name commits that
+    are not ancestors of this history and the gate skips them. The rows stay — an
+    orphaned row records a review that did happen. Twins that landed: the
+    company-research retiering (#108), the link checker with markdown, anchor,
+    unrecognised-root and overlay coverage plus its CI/pre-commit wiring (#109),
+    the canary record and its follow-ups (#110), and the phase-5 public side —
+    three config keys, the skip-log accessors, STORY_BANK_REL in both homes, and
+    the instruction surface repointed at accessors (#111). Re-checked on the trunk
+    for the one thing a per-branch review can miss: no employer, person, posting,
+    date, school, salary, recruiter or filename from the overlay appears anywhere
+    in the merged tree, and no absolute home path.
+- commit: 7e4601c6
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 12
+  digest: sha256:89e3e12b7f7b0a44
+  finding: >-
+    Reviewed the diff line by line. The new automation/shared/skip_log.py is
+    stdlib-only and self-contained; its fixtures are fictional (examplecorp,
+    fakejobs.test) and no real employer, posting, URL, person or absolute home
+    path appears in the module, the 39-test suite, the config accessor, or the
+    config.example.yaml comment. The four re-vendored config.py copies differ
+    from their canonical source by nothing (sync_vendored --check clean), and the
+    two new _vendor/skip_log.py copies are declared in TARGETS in the same commit
+    — an undeclared copy would leave the vendor gate green while the copies drift,
+    which is why the suite also asserts the declaration and the byte-identity
+    directly. Nothing reads or writes the new file yet, so no behaviour changed.
+- commit: 065a728f
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 18
+  digest: sha256:37207644ce94f091
+  finding: >-
+    Read the full diff. No employer, person, posting, URL, date, salary or
+    recruiter from the overlay appears anywhere in it, and no absolute home path —
+    every fixture is fictional (Example Corp / Northwind Labs, jobs.example.test,
+    fakejobs.test) and every test drives a temp tree with JOBHUNT_CONFIG pinned,
+    asserted in-test rather than by inspection. Three findings, all fixed in this
+    commit rather than filed: store_refilter's log branch had been reading two keys
+    the log has never carried, so its covered set was empty on every run since the
+    file was written; the same file crashed on an undefined name after writing its
+    first output; and --forget-log could be silently reverted by the next --sync-log
+    (or by a --force re-seed reading the retired YAML), which now both refuse
+    instead. One check fired correctly during review and is worth recording: the new
+    CI step named a directory the exporter did not ship, which would have turned the
+    EXPORTED repo's CI red while this one stayed green.
+- commit: bda67bfd
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 22
+  digest: sha256:23eaa889069b5f21
+  finding: >-
+    Documentation, three new task files, one new queue item, and the phase-6 task
+    moved to review with its evidence. Read for the one risk this class of commit
+    carries: the verification record and the worklog describe a proof that ran
+    against a copy of the overlay, so they were written to counts and structural
+    facts only. No employer, role title, URL, person, slug or absolute home path
+    appears in any of them, and the appended note on the parked logs-as-projections
+    decision names no posting either. The private-overlay handbook tree diagram gains
+    two filenames and one paths key, both generic. AGENTS.md and four SKILL/reference
+    files re-point at config accessors rather than literals, which is the direction
+    phase 5 established.
+- commit: ec1179af
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 1
+  digest: sha256:d2ffed617e29a3d2
+  finding: >-
+    Session handover. The leak guard caught the first draft of this file: it cited
+    the three PRs by full GitHub URL, and the repository owner's account name is an
+    identity token, so every link was a leak. Rewritten to bare PR numbers. Re-read
+    after the fix — no employer, person, posting, URL, slug or absolute home path
+    remains, and the overlay's PR is referred to without a number since that repo is
+    private.

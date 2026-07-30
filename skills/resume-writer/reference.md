@@ -502,7 +502,7 @@ Use this only when a same-company cluster is too divergent to tailor honestly wi
 
 0. **Pre-flight (required before any folders):** complete the SKILL.md Quickstart → Preflight for
    **each** planned role — the `blacklist:` field in `skills/job-search/companies.yaml`,
-   `<profile-dir>/applications-log.yaml` (run `--sync-log` if stale), and live
+   the append-only skip-log at `config.applications_jsonl_path()` (run `--sync-log` if stale), and live
    status folders via `meta.yaml` (same role or URL). Do not `mkdir` until checks pass.
    Each planned slug must be unused under all status folders.
 1. **One application folder per role** (or per coherent group), each a normal
