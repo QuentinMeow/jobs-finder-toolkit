@@ -361,3 +361,29 @@
     recruiter, posting, salary, email, phone or absolute home path appears; the
     only sample data touched is the fictional "example" profile string in a
     golden-output test. No file is added to or removed from the published set.
+
+- commit: b045f995
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 33
+  digest: sha256:fddfc21fecef4540
+  finding: >-
+    Clean. Read the whole diff. Thirty-one of the thirty-three files carry only
+    the scratch-root rename tmp/ -> local/ in prose — AGENTS.md's Scratch &
+    Temporary Files bullet and repo-map row, the handbook's scratch section
+    (including the rule that a durable record may not cite scratch as evidence),
+    nine SKILL.md files, the job-search reference and filter-variants README,
+    the two stage protocols, five design docs, the email canary's negative
+    assertion, the mail-provider README and its byte-identical vendored copy,
+    and two backlog task files. The OS temp path /tmp/matches.json in
+    job-search/SKILL.md is deliberately untouched, as is private/tmp/ (renamed
+    in phase 5) and every dated record that names the old root. The two
+    substantive edits are internal-only: the workspace-restructure diagram's
+    docs/ children repaired after the previous PR double-substituted them, and
+    one rewritten roadmap sentence naming which phase-2 leg landed. Every path,
+    command and count quoted is about this repo's own directory shape. No real
+    name, employer, school, recruiter, posting, salary, email, phone or absolute
+    home path appears; the only persona referenced remains the fictional Jordan
+    Rivers "example" profile. No private/ content is added or reproduced — the
+    private/ mentions are pre-existing path strings naming overlay locations. No
+    file is added to or removed from the published set.
