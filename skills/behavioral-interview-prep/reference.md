@@ -86,7 +86,7 @@ story bank; story-bank content changes only when the user explicitly requests th
 
 ## Shared-source schema at a glance
 
-Use schema version 3 under `behavioral/question-bank/sources/<question-family>.yaml`. The source
+Use schema version 3 under `question-bank/sources/<question-family>.yaml`. The source
 slug is company-neutral. Its ordered output aliases let one answer strategy serve the natural
 general question and any equivalent company principles without duplicating answer content:
 

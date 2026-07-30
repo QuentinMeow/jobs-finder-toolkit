@@ -75,7 +75,14 @@ BYTES_PER_TOKEN = 4           # est. tokens = bytes / 4 (repo-wide convention)
 # FORMAT, so it must stay byte-identical to automation/gardener/
 # card_staleness.py's copy or every existing card reads as stale. The story bank's
 # on-disk LOCATION comes from config.story_bank_path().
-STORY_BANK_REL = "interviews/behavioral/story-bank"
+# The DISPLAY key a card records beside the story bank's sha256 — the location
+# itself comes from config.story_bank_path(). Both this file and its twin
+# (build_tailoring_card.py / card_staleness.py) must carry the SAME literal:
+# change one and not the other and every card reads permanently stale while the
+# hash and the on-disk path are both correct. Workspace phase 5 moved the bank
+# to me/interviews/story-bank, keeping the leaf name so the 33 sibling-relative
+# source_stories refs inside the question bank resolve unedited.
+STORY_BANK_REL = "me/interviews/story-bank"
 BUILD_CMD = "skills/resume-writer/scripts/build_tailoring_card.py"
 
 # Parses one header "source" line: ``- `<display path>` sha256:<64 hex>`` (any trailing

@@ -42,7 +42,7 @@ where its purpose is obvious:
 Skill-scoped code is an accepted exception: a skill may keep its implementation in its own
 `skills/<skill>/scripts/` because the parent skill folder already names the purpose.
 
-**Coding-interview files** (`interviews/company-specific/<company>/coding/`): a single-file
+**Coding-interview files** (`config.companies_root()/<company>/coding/`): a single-file
 solution stays flat as `<problem>.py`; give a problem its **own** subfolder
 `coding/<problem>/<problem>.py` only when it carries extra assets (question screenshots,
 PDFs, input files). Do not hard-wrap code lines in these files — keep each line on one line
@@ -53,7 +53,8 @@ unless it exceeds 150 characters (see the `coding-interview` skill).
 Ad-hoc, throwaway work — one-off API/ATS probes, scraper snippets, fetched raw HTML/JSON,
 sanity-check scripts, any disposable intermediate — MUST live under the single top-level
 **`local/`** folder in **purpose-named subfolders**, never in the repo root or a tracked/product
-folder (`applications/`, `scripts/`, `templates/`, `skills/`, `interviews/`). A hard rule
+folder (`applications/`, `scripts/`, `templates/`, `skills/`, the overlay's `companies/` and
+`me/` trees). A hard rule
 for every agent and skill; the old flat `tmp_*.py`-in-root habit is retired.
 
 - **Location & lifecycle:** everything disposable lives under `local/<purpose>/`. The whole `local/`

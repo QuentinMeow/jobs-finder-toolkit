@@ -191,13 +191,14 @@ Once you hear back (folder in `4_in_progress/`), prep with two skills:
 - **`company-research`** — deep, interview-ready research: product, the hard technical
   challenges and why they're hard, competitive moat/defensibility/growth (evidence-based,
   5-Whys), AI strategy, culture, the role deep-dive, plus offer-decision facts (comp/WLB/
-  visa) and a **question bank**. Saved under `interviews/company-specific/<company>/company-info/`.
+  visa) and a **question bank**. Saved under `config.companies_root()/<company>/research/`.
   > "Research <company> for my upcoming interview and build a question bank."
 - **`behavioral-interview-prep`** — project-based STAR story bank and reusable answers under
-  `interviews/behavioral/story-bank/` and `interviews/behavioral/question-bank/`.
+  `config.story_bank_path()` and the question bank beside it (`me/interviews/question-bank/`).
   > "Build behavioral stories from my profile and map them to Amazon LPs."
 
-(Real interview products mount under the private overlay — `private/interviews/...`.)
+(Real interview products mount under the private overlay — `private/companies/<key>/`
+for company-specific material, `private/me/interviews/` for the rest.)
 
 (Coding-interview prep is a separate **private** skill that ships only with the private
 overlay, so it isn't part of the public toolkit.)
@@ -212,9 +213,11 @@ config.yaml (git-ignored) / config.example.yaml   # identity, paths, filters (St
 requirements.txt                                   # Python deps
 examples/                                          # fake "Jordan Rivers" profile + a worked drafted app
 private/                                            # your overlay (own git repo, git-ignored) — real data mounts here:
-  applications/    # your pipeline (config.applications_root(): 0_profile 1_discoveries 2_ignored…6_drafted)
-  interviews/      # story banks + per-company research
-  templates/reference.docx    # your render template (config.reference_docx_path())
+  me/              # you: profile, baseline, tailoring card, resume/ (your render template —
+                   #   config.reference_docx_path()), interviews/ (story + question banks, calendar)
+  companies/       # one folder per company: research/, coding/, product-sense/ (config.companies_root())
+  applications/    # your pipeline (config.applications_root(): 2_ignored…6_drafted)
+  market/          # blacklist, search profiles, discovery scans, skip-logs
 skills/<skill>/                             # the skills (SKILL.md + self-contained scripts/)
 automation/shared|vendoring|gardener|publish/          # shared helpers, vendoring, exporter/leak-guard
 AGENTS.md                                           # the full agent contract (deep reference)

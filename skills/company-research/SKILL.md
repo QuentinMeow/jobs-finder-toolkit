@@ -57,7 +57,7 @@ Use this skill when the user asks to:
 - rate a company as a place to work, or score it against its competitors
 - prep a "why this company / why not competitors" answer, or deep questions to ask
 - gather personal-decision facts (funding/stage, comp, WLB, ratings, H-1B)
-- build or refresh `interviews/company-specific/<company>/company-info/`
+- build or refresh `config.companies_root()/<company>/research/`
 
 ## Before You Start
 
@@ -75,8 +75,8 @@ Use this skill when the user asks to:
    and their location + visa-sponsorship requirements from `config.location_policy()` and the
    profile's sponsorship flags (never assume a specific metro or visa status here).
 5. **Scratch stays in `local/`** (fetched HTML/JSON in `local/web_artifacts/`, probe scripts in
-   `local/scratch/`) — never the repo root or the `interviews/` tree (only finished notes belong
-   there). See `AGENTS.md` → "Scratch & Temporary Files".
+   `local/scratch/`) — never the repo root or the company-research tree (only finished notes
+   belong there). See `AGENTS.md` → "Scratch & Temporary Files".
 
 ## Research Method & Sourcing Rules
 
@@ -350,7 +350,7 @@ candidate will be *asked*: summarize the prepared, personalized answer and link 
 fuller `10-why-this-company.md` (at least two angles, grounded in the candidate's real
 background/interests — see `reference.md` § "Why-This-Company Template"). Name the specific
 competitors this company is chosen *over* and the honest reason, drawn from `04`/`05`.
-Keep personal specifics sourced from the profile / `references_private/`, never
+Keep personal specifics sourced from the profile / `config.skill_references_dir()`, never
 invented.
 
 Questions must make the user look like they already understand the product *and its
@@ -457,7 +457,7 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
 - **Why-this-company:** Does `10` give **≥2 honest, personalized angles** grounded in
   the candidate's *real* background/interests (an angle per role type when the app is
   multi-posting), each with a specific **"why not competitor X"** — and does `09` lead
-  with that pitch? Nothing invented beyond the profile / `references_private/`?
+  with that pitch? Nothing invented beyond the profile / `config.skill_references_dir()`?
 - **Concreteness:** Named subsystems/repos/posts/competitors/customers, not
   generalities?
 - **Questions:** Do they probe the hard problems, the moat's durability, growth, and

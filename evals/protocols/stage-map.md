@@ -98,7 +98,7 @@ block at ~2.8 min because LibreOffice PDF conversion is slow and runs twice for 
 For each stage, the pinned fixture that makes it independently benchmarkable and the observable
 stage boundary (file written / script exit). This lets a lever be measured on the one stage it
 touches instead of a whole noisy leg. Fixtures live in the private overlay under
-`private/benchmark/fixtures/` (see `evals/protocols/stage-benchmarks.md`).
+`private/evals/fixtures/` (see `evals/protocols/stage-benchmarks.md`).
 
 **Search leg**
 

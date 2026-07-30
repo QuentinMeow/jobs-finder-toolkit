@@ -395,7 +395,11 @@ def company_levels_path() -> Path:
     configured = _paths().get("company_levels_yaml")
     if configured:
         return _resolve(configured, "examples/profile/company-levels.example.yaml")
-    return profile_md_path().parent / "company-levels.yaml"
+    # Derived from candidate_dir(), NOT from the profile's parent. Both resolve to
+    # the same folder in a default layout, but the lifetime taxonomy moves the
+    # profile to ``me/`` while this file belongs with the market logs — and riding
+    # on ``profile_md_path().parent`` would silently follow the profile there.
+    return candidate_dir() / "company-levels.yaml"
 
 
 def applications_root() -> Path:
@@ -441,19 +445,33 @@ def candidate_dir() -> Path:
     return _resolve_configured("candidate_dir", applications_root() / CANDIDATE_DIRNAME)
 
 
+# These three used to be hard-derived as ``candidate_dir() / <FILENAME>`` with no
+# key of their own, which was fine while all three lived in one folder. The
+# lifetime taxonomy sends the card to ``me/`` and the logs to ``market/logs/``, and
+# one ``candidate_dir`` cannot express that — so each gets a key.
+#
+# The DEFAULT stays the old derivation, and that is load-bearing rather than
+# conservative. ``config.benchmark.yaml`` isolates benchmark writes SOLELY by
+# redirecting ``applications_root`` and letting ``candidate_dir()`` follow. Derive
+# these from a new ``me``/``market`` root instead and a benchmark run resolves the
+# REAL tailoring card and the REAL skip-log — and writes to them. A contaminated
+# skip-log is silent and durable: it suppresses real applications from then on.
 def tailoring_card_path() -> Path:
     """The distilled tailoring card (derived artifact; see the resume-writer skill)."""
-    return candidate_dir() / TAILORING_CARD_FILENAME
+    return _resolve_configured("tailoring_card",
+                               candidate_dir() / TAILORING_CARD_FILENAME)
 
 
 def applications_log_path() -> Path:
     """Skip-log of postings already generated/considered (derived, regenerable)."""
-    return candidate_dir() / APPLICATIONS_LOG_FILENAME
+    return _resolve_configured("applications_log",
+                               candidate_dir() / APPLICATIONS_LOG_FILENAME)
 
 
 def company_search_log_path() -> Path:
     """Skip-log of each employer's last SUCCESSFUL search."""
-    return candidate_dir() / COMPANY_SEARCH_LOG_FILENAME
+    return _resolve_configured("company_search_log",
+                               candidate_dir() / COMPANY_SEARCH_LOG_FILENAME)
 
 
 def blacklist_path() -> Path:

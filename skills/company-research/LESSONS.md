@@ -1,7 +1,7 @@
 # Company Research — Lessons
 
 Operational sourcing gotchas + evidence pointers for this skill (not company-specific facts —
-those go in the company-info folders). The depth bar, moat/5-Whys method, and file structure
+those go in the per-company research folders). The depth bar, moat/5-Whys method, and file structure
 live in SKILL.md; this file only carries what's additive to it.
 
 Last reviewed: 2026-07-19

@@ -4,7 +4,7 @@ Operating manual for the eval scaffolding that keeps this repo's real product �
 `SKILL.md` / `LESSONS.md` corpus — from silently degrading. This is **Phase 2 (Evals)** of
 the harness-engineering roadmap; the design and statistics live in the maintainer-only,
 overlay-mounted design doc (absent in contributor checkouts)
-[`private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md`](../private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md)
+[`private/docs/05-harness-engineering-methodology.md`](../private/docs/05-harness-engineering-methodology.md)
 (§1 skill-creator harness, §2 matched-pair A/B, Phase 2/3 plan, the quality-gates checklist).
 
 ## Purpose

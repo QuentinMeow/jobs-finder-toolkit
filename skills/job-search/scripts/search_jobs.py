@@ -155,30 +155,37 @@ FETCH_AFFECTING_FLAGS = (
 )
 
 
-def profile_dir() -> Path:
-    """Directory holding the skip-logs (applications-log / company-search-log).
+def _applications_log() -> Path:
+    """The already-considered skip-log, from the config layer.
 
-    Config-derived and rename-robust: the logs live next to the candidate profile,
-    so we prefer the parent of the configured profile markdown, then the configured
-    candidate dir (``config.candidate_dir()``). We then probe common layout names
-    and pick whichever actually holds a log file, so a folder rename
-    (``profile`` -> ``0_profile``) doesn't silently disable the already-considered /
-    recently-searched skips.
+    This replaces a ``profile_dir()`` helper that hunted for *a directory
+    containing a log file* and, finding none, returned its first guess. That was
+    rename-robust and location-fragile in the same breath: the moment the two logs
+    stopped living in the same folder as the profile — which the lifetime taxonomy
+    does, sending them to ``market/logs/`` while the profile goes to ``me/`` — every
+    probe came up empty, the fallback pointed at a directory with no logs in it, and
+    **both skips switched off without a word**. A search that skips nothing re-drafts
+    postings already applied to.
+
+    Reading the accessor directly cannot fail that way: if the key is wrong the path
+    does not exist and the skip is visibly empty, rather than silently correct-looking.
     """
-    candidates: list[Path] = []
-    root = applications_root()
     if config is not None:
         try:
-            candidates.append(config.profile_md_path().parent)
-            candidates.append(config.candidate_dir())
+            return config.applications_log_path()
         except Exception:  # noqa: BLE001
             pass
-    candidates += [root / CANDIDATE_DIRNAME, root / "profile"]
-    for cand in candidates:
-        if (cand / APPLICATIONS_LOG_NAME).exists() or \
-           (cand / COMPANY_SEARCH_LOG_NAME).exists():
-            return cand
-    return candidates[0] if candidates else root / "profile"
+    return applications_root() / CANDIDATE_DIRNAME / APPLICATIONS_LOG_NAME
+
+
+def _company_search_log() -> Path:
+    """The recently-searched skip-log, from the config layer. See ``_applications_log``."""
+    if config is not None:
+        try:
+            return config.company_search_log_path()
+        except Exception:  # noqa: BLE001
+            pass
+    return applications_root() / CANDIDATE_DIRNAME / COMPANY_SEARCH_LOG_NAME
 
 
 def load_yaml(path: Path) -> dict:
@@ -351,8 +358,8 @@ def load_considered(
 ) -> tuple[set[str], set[tuple[str, str]]]:
     """Postings already generated/considered (<applications_root>/0_profile/applications-log.yaml).
 
-    The profile directory comes from the config layer (``profile_dir()``), so this is
-    not tied to any candidate's directory and survives folder renames. Returns
+    The path comes straight from ``config.applications_log_path()``, so it is not
+    tied to any candidate's directory and cannot silently resolve to a log-less one. Returns
     (urls, (company_key, role) pairs). Each log row's company is expanded through the
     registry's match keys (name/alias/token + suffix-variant comparable forms), so a
     row stored under a short registry name matches an incoming aggregator posting that
@@ -360,7 +367,7 @@ def load_considered(
     the `reference.md` § Skip logic contract that identity resolves through the
     registry. New roles at the same company are NOT in the pair set, so they surface.
     """
-    path = profile_dir() / APPLICATIONS_LOG_NAME
+    path = _applications_log()
     urls: set[str] = set()
     pairs: set[tuple[str, str]] = set()
     if path.exists():
@@ -405,7 +412,7 @@ def load_company_search_log(
     written under an aggregator variant, e.g. "Arize" vs "Arize AI"), plus the
     row's own name/aliases so companies absent from the registry still work.
     """
-    path = profile_dir() / COMPANY_SEARCH_LOG_NAME
+    path = _company_search_log()
     skip_days = 7
     if profile:
         prof_skip = (profile.get("company_search_log") or {}).get("skip_within_days")

@@ -41,8 +41,8 @@ applications/3_rejected/<slug>/     # rejected at any stage
 applications/2_ignored/<slug>/      # decided not to submit; don't reconsider
 ```
 
-(The profile dir `<applications_root>/0_profile/` and `config.discoveries_dir()` are support
-folders, not applications — skip them.)
+(The profile-support dir `config.candidate_dir()` — `<applications_root>/0_profile/` by default —
+and `config.discoveries_dir()` are support folders, not applications — skip them.)
 
 Each application folder keeps a clean **root** (finished deliverables + tracking) and a
 **`source/`** subfolder (generation inputs/intermediates):
@@ -226,7 +226,7 @@ states:
 
 ### The calendar file (`config.calendar_path()`)
 
-One private `calendar.md` (default `<applications_root>/0_profile/calendar.md`) holds every
+One private `calendar.md` (`config.calendar_path()`; `<candidate_dir>/calendar.md` by default) holds every
 scheduling todo, confirmed interview time, follow-up date, and append-only reschedule history.
 The visible row is deliberately small: **the date/time or action first**, company + role as the
 single context link, then the phase label. Full context stays in the linked `notes.md`/`meta.yaml`;

@@ -43,8 +43,8 @@ and `coding-interview-cleanup` — both entire skills live only in the overlay.
 company-level cache, interviews, profile/baseline/reference DOCX); only the fake `examples/**`
 counterparts ship. **Personal content stays out of `SKILL.md`/`LESSONS.md`** — candidate DATA defers
 to `config.yaml`/the profile; residual personal skill guidance goes in the overlay's per-skill
-`references_private/`, reached by `config.skill_references_dir()` (exporter prunes it; leak guard
-fails on any tracked file under it). **If a path does not start with `private/`, what you write
+skill-notes folder, reached by `config.skill_references_dir()` (exporter prunes it; leak guard
+fails on any tracked file under a `references_private/` folder in the public tree). **If a path does not start with `private/`, what you write
 there is published** — no exceptions since 2026-07-28, when the last eight inbound symlinks were
 deleted; the overlay is reached ONLY through `config.*()` accessors. **The leak
 guard** (`automation/publish/check_public.py`) hardcodes NO identity — it derives personal tokens from
@@ -76,7 +76,7 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
 |------|---------|
 | `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, output-stem config; example is the "Jordan Rivers" placeholder + fallback |
 | `config.profile_md_path()` / `config.baseline_path()` | Candidate profile (source of truth for tailoring) / canonical transcription of the approved resume (start point for every `tailored.yaml`) |
-| `skills/job-search/companies.yaml` | Canonical **public** registry (company identity, ATS config, tags); candidate blacklist rows live in git-ignored `private/job-search/blacklist.yaml` |
+| `skills/job-search/companies.yaml` | Canonical **public** registry (company identity, ATS config, tags); candidate blacklist rows live in the git-ignored overlay at `config.blacklist_path()` (`private/market/blacklist.yaml`) |
 | `config.applications_root()` / `config.discoveries_dir()` | All applications in numbered status folders `0_profile`…`6_drafted` (the folder is the derived overall status) / ad-hoc job-search research |
 | `skills/` | Canonical skills dir — **entirely public** (see Public vs Private; private skills live at `private/skills/`) |
 | `automation/` (shared, vendoring, gardener, search-recall-audit, company-levels, metrics, publish, store, reconcile, hooks) | Everything that runs: canonical toolkit modules, vendoring, gardener, pipeline audits, metrics, leak guard, store tools, the reconciler, tracked git hooks |
@@ -204,7 +204,7 @@ Router:
 - **Skill lists**: honor the profile's Approved / Weak / Never lists; JD skills in none of them
   must be surfaced to the user for categorization, never added silently (full rule: `docs/handbook/tailoring-guardrails.md`).
 - **Blacklist/log preflight**: before searching or drafting, honor the company blacklist
-  (`private/job-search/blacklist.yaml`) and the skip-logs (`applications-log.yaml`,
+  (`config.blacklist_path()`, `private/market/blacklist.yaml`) and the skip-logs (`applications-log.yaml`,
   `company-search-log.yaml`) — never draft a blacklisted company or re-surface a logged posting.
 - **Location policy**: only draft a role whose `location` matches `config.location_policy()`
   (preferred metros + US-remote); verify with `status.py --check-locations`.

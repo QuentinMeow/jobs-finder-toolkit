@@ -43,7 +43,7 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   `meta.yaml`, and optional `notes.md` at its root; JD files (`source/JD-<job title>.md`),
   `tailored.yaml`, and the DOCX live in `source/`. `status.py`'s files column shows
   `docx+pdf+cl+txt` (txt = the bundled application file).
-- `<profile-dir>/applications-log.yaml` (`<applications_root>/0_profile/`) is regenerated from
+- The applications log (`config.applications_log_path()`) is regenerated from
   all folders with `status.py --sync-log`; re-run it after adding or moving applications so
   job-search skips already-considered postings. The canonical
   `skills/job-search/companies.yaml` registry carries the blacklist (`blacklist:`

@@ -3,7 +3,7 @@
 Step-by-step procedure for A/B testing a harness edit (a SKILL/LESSONS change, or a model
 upgrade) on the frozen canary set. Distilled from the maintainer-only,
 overlay-mounted design doc (absent in contributor checkouts)
-[`private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md`](../../private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md)
+[`private/docs/05-harness-engineering-methodology.md`](../../private/docs/05-harness-engineering-methodology.md)
 §2 and Phase 3. This is the Phase-3 companion to the Phase-2 regression canaries described in
 [`evals/README.md`](../README.md).
 

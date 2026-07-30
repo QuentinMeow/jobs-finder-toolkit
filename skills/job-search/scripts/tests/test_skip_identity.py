@@ -47,17 +47,27 @@ def _reg() -> Registry:
 
 
 class _LogFixture:
-    """Write skip-log YAML into a temp dir and point profile_dir() at it."""
+    """Write skip-log YAML into a temp dir and point the two log accessors at it.
+
+    Patches the accessors rather than a directory helper. The helper this replaced
+    searched for *a directory containing a log*, which meant a fixture could satisfy
+    it by accident; these name the two files directly, so a test that forgets to
+    write one gets a missing path rather than a plausible-looking empty answer.
+    """
 
     def __init__(self, test: unittest.TestCase):
         self._tmp = TemporaryDirectory()
         self.dir = Path(self._tmp.name)
-        self._orig = search_jobs.profile_dir
-        search_jobs.profile_dir = lambda: self.dir  # type: ignore[assignment]
+        self._orig = (search_jobs._applications_log, search_jobs._company_search_log)
+        search_jobs._applications_log = (  # type: ignore[assignment]
+            lambda: self.dir / "applications-log.yaml")
+        search_jobs._company_search_log = (  # type: ignore[assignment]
+            lambda: self.dir / "company-search-log.yaml")
         test.addCleanup(self._restore)
 
     def _restore(self):
-        search_jobs.profile_dir = self._orig  # type: ignore[assignment]
+        (search_jobs._applications_log,  # type: ignore[assignment]
+         search_jobs._company_search_log) = self._orig
         self._tmp.cleanup()
 
     def write_search_log(self, name: str, day: date = TODAY):

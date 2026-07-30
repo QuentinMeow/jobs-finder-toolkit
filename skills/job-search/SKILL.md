@@ -290,7 +290,7 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 | `scripts/registry.py` | Registry loader + resolver (canonical name, blacklist, poll targets, `tagged_keys` for the AI-native set) |
 | `scripts/_vendor/*.py` | **Generated** byte-identical copies of `automation/shared/*.py` (keep this skill self-contained). Do not edit — regenerate with `automation/vendoring/sync_vendored.py`; see `scripts/_vendor/README.md` |
 | `reference.md` | Pipeline internals, data-source endpoints, field notes, visa/scoring rationale, company management |
-| `<applications_root>/0_profile/company-search-log.yaml` | Last successful full-company search per employer (config-derived; 7-day default skip — see Step 1) |
+| `config.company_search_log_path()` | Last successful full-company search per employer (config-derived; 7-day default skip — see Step 1) |
 
 ## Guardrails
 

@@ -438,8 +438,9 @@ with `--company-tags`. For an exhaustive target-company scan, combine
 ## Skip logic (blacklist + already-considered + recently-searched)
 
 `search_jobs.py` filters results against the canonical company registry
-(`companies.yaml`) plus two logs under `<applications_root>/0_profile/` (config-derived
-via `config.applications_root()`, `applications/` by default). Company identity for all
+(`companies.yaml`) plus two skip-logs, `config.applications_log_path()` and
+`config.company_search_log_path()` (both default to `<applications_root>/0_profile/`, and a
+lifetime-organised overlay points them at its own market-logs folder). Company identity for all
 three checks is resolved through the registry (`scripts/registry.py`), so a board's
 canonical name matches a log/blacklist entry written under an alias or ATS token (e.g.
 `Arize` == `Arize AI` == `arizeai`). Companies absent from the registry fall back to

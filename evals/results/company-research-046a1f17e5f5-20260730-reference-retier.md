@@ -36,14 +36,14 @@ could detect this change pass" are different claims, and only the second one is 
 |-----------|---|---|---|---|---|
 | `cr-moat-5whys` | **1** | ~125k | 721 | 32 | Followed the moved pointer verbatim and read only the named section |
 | `cr-question-bank` | **1** | ~1.0M | 1767 | ~305 | Followed both moved pointers; see the efficiency finding below |
-| `cr-full-research-structure` | — | — | — | — | Run started; result recorded separately if it completes |
+| `cr-full-research-structure` | **1** | ~1.2M | 3221 | ~123 + 4 subagents | Produced all 17 files; the scorecard, rating and why-this-company templates all came out in their moved shapes |
 
-Pass rate on the canaries judged: **2/2**.
+Pass rate: **3/3**.
 
 ## Verdict
 
-- **Regression: PASS** on both judged canaries. Every `expected_behavior` bullet held and no
-  listed `failure_mode` appeared.
+- **Regression: PASS** on all three. Every `expected_behavior` bullet held and no listed
+  `failure_mode` appeared.
 - **The specific thing this run had to establish — that an agent still finds content behind a
   pointer instead of losing it — held in both cases.** Each run reported reading
   `reference.md` and quoted the trigger line that sent it there. `cr-moat-5whys` applied the
@@ -81,4 +81,22 @@ Both runs reported the same contradiction independently:
   none. Both runs hit it and improvised. Filed as
   `tasks/0_backlog/2026-07-30-company-research-no-application-record-fallback`.
 
-Neither is caused by the retiering; both were found by running it.
+- The `06` file must separate AI strategy that is **already shipped** from what is only
+  announced, and the skill's Final Checks demand dates and evidence for the split. But its
+  guidance for establishing *shipped* is only "cite the artifact", and the run found four
+  products the vendor's own product directory and docs landing pages present with **no maturity
+  badge at all** while they are in open or private beta. Following the skill's recommended
+  sources produced four wrong "shipped" classifications; only a second pass that read the launch
+  post and the docs body caught them. Filed as
+  `tasks/0_backlog/2026-07-30-company-research-shipped-vs-beta-needs-a-maturity-check`.
+
+None of the three is caused by the retiering; all three were found by running it. That is the
+argument for running canaries on a change that "only moves text": the run exercises the skill,
+not the diff.
+
+## One more thing worth recording about how this set behaves
+
+Two of the three runs fanned out into their own research subagents and each spent roughly 1M
+tokens. The canary set does not bound that, and `AGENTS.md`'s repo-wide cap of 8 subagents per
+request is the only thing that did. Anyone budgeting a full six-canary run on this skill should
+expect several million tokens, not the ~125k the one single-context run cost.

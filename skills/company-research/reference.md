@@ -1,6 +1,6 @@
 # Company Research Operational Reference
 
-Read this reference before live research and again before writing company-info outputs. The sourcing rules in `SKILL.md` remain controlling.
+Read this reference before live research and again before writing company-research outputs. The sourcing rules in `SKILL.md` remain controlling.
 
 ## Handy Fetches
 
@@ -26,18 +26,19 @@ but **never scrape it or schedule public-page collection**. Automated benchmark 
 access, with the license/access method recorded in provenance.
 
 When role research contributes reusable leveling or compensation facts, keep them in the schema-v2 company-level cache (the company-levels cache file format —
-a different file from application `meta.yaml`, whose only supported schema is v3) rather than `company-info/`: employer postings first, employer-authored
+a different file from application `meta.yaml`, whose only supported schema is v3) rather than the `research/` folder: employer postings first, employer-authored
 ladders second, licensed market benchmarks last. Record provenance per fact (provider, URL, retrieved date, geography, confidence, method, sample
 size/statistic, and access/license). Keep base, stock, bonus, and total compensation separate, preserve location-specific bands, and never infer total
 compensation.
 
 ## Output Location and Structure
 
-Write to `interviews/company-specific/<company>/company-info/` (real interview products mount under the private overlay — `private/interviews/...`; see
-`AGENTS.md` → "Public vs Private"):
+Write to `config.companies_root()/<company>/research/` — `private/companies/<company>/research/`
+with the overlay mounted, `examples/companies/<company>/research/` in a public checkout. A company
+folder is permanent: it outlives any one application (see `AGENTS.md` → "Public vs Private"):
 
 ```text
-interviews/company-specific/<company>/company-info/
+<companies_root>/<company>/research/
 ├── README.md                                  # index, research date, TL;DR, sources
 ├── for-interview/                              # discuss/demonstrate WITH interviewers
 │   ├── 01-company-overview.md                  # what they do, founding, stage, SIZE (headcount/revenue/valuation), thesis
@@ -148,9 +149,9 @@ company research serves each interview.
 
 **Personalization (read this):** ground every angle in the candidate's actual
 background and **career-direction preferences** — from the profile
-(`config.profile_md_path()`) and, when present, this skill's `references_private/`
-notes, which **OVERRIDE** the generic guidance here (see "Before You Start"). In public
-/ example mode (no `references_private/`), derive the threads from the profile and JD
+(`config.profile_md_path()`) and, when present, this skill's private notes at
+`config.skill_references_dir()`, which **OVERRIDE** the generic guidance here (see "Before You
+Start"). In public / example mode (no such folder), derive the threads from the profile and JD
 only, and keep the candidate's specifics out of the tracked skill.
 
 ```markdown

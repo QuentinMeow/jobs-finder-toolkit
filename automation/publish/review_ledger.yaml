@@ -584,3 +584,25 @@
     home path. The record deliberately states which canaries were NOT run rather
     than implying a full pass, and reports an unexplained token outlier rather
     than smoothing it over.
+
+- commit: a68bc187
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 61
+  digest: sha256:4808d0b4aae55d16
+  finding: >-
+    Clean, and reviewed with the leak surface as the first question, because this
+    range is what repoints every public document at the owner's private tree.
+    Three config accessors gain optional keys defaulting to the derivation they
+    already had (which is what keeps a benchmark run out of the real tailoring card
+    and the real skip-log); search_jobs stops guessing at a directory and reads the
+    log accessors; STORY_BANK_REL changes in both of its two homes; and the link
+    checker drops three skip prefixes whose directories no longer exist. Every new
+    path is written as a config accessor or as a SHAPE — me/, companies/<key>/
+    research/, market/logs/ — and no employer, person, posting, date, school,
+    salary, recruiter or filename from the overlay appears in any tracked file.
+    docs/handbook/private-overlay.md's worked config.yaml uses a <your-resume>.docx
+    placeholder. The three new decision items and the handover describe the
+    interview tree by counts only. No absolute home path. Covers one commit range
+    (config keys, the phase-5 public side, the handover) whose per-commit rows were
+    dropped when this branch was restacked onto its base's closing ledger commit.

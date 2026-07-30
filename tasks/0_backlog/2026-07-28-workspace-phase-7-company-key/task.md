@@ -46,10 +46,17 @@ company name reach a public file, a commit message, or a PR description.
 gates in this repo fail *open*, so a half-done phase is indistinguishable from a done one.
 
 Phase 5 merged, and the key-assignment approach decided (filed non-blocking as
-`2026-07-28-company-key-assignment-approach`; default is one proposal PR). **Not met as of
-2026-07-29** — phase 5 is not started, and it is what creates `companies/<key>/`. Phases 0, 3
-and 4 are merged; phases 1 and 2 are done and in review as open stacked PRs; phase 5 is not
-started.
+`2026-07-28-company-key-assignment-approach`; default is one proposal PR). **Met as of
+2026-07-30, pending merge** — phase 5 is done and in review, and `companies/<key>/` exists
+with 497 tracked files across 25 folders.
+
+**Phase 5 hands this task a starting point it did not have.** The 25 company folder names are
+now the de-facto key set: every one of them already holds that company's research, coding and
+product-sense material, and the 19 company-prefixed behavioural files were routed by matching
+their prefix against those same names. So `_index.yaml` is not being derived from scratch —
+it is being written down for 25 keys that already exist on disk, and then reconciled against
+the 213 free-text company strings in `meta.yaml`. Re-measure that 213/119 pair before quoting
+it: the folder count has drifted and the ratio was not re-derived with it.
 
 ## Definition of done
 

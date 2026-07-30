@@ -47,9 +47,20 @@ commit.
 `templates/queue/decision.md` with options and a recommendation, and end the session. Several
 gates in this repo fail *open*, so a half-done phase is indistinguishable from a done one.
 
-Phase 5 merged. **Not met as of 2026-07-29** — phase 5 is not started, and it is what creates
-`market/logs/`. Phases 0, 3 and 4 are merged; phases 1 and 2 are done and in review as open
-stacked PRs; phase 5 is not started.
+Phase 5 merged. **Met as of 2026-07-30, pending merge** — phase 5 is done and in review, and
+`market/logs/` exists: both skip-logs now live at `private/market/logs/` behind
+`config.applications_log_path()` and `config.company_search_log_path()`.
+
+**Phase 5 already did this task's second bullet, and did it properly.** `profile_dir()` is
+gone, not repointed — it searched for *a directory containing a log* and returned its first
+guess when none matched, which is a shape that cannot be made safe. Both call sites read the
+accessors directly, and the skip was proved live after the move: 367 URLs, 369 (company, role)
+pairs. So this task inherits a working accessor and can go straight at the file format.
+
+**One thing got more urgent, not less.** Phase 5 moved applications' durable knowledge out
+into `companies/`, which is what makes an application look disposable — while `sync_log()`
+still regenerates the log from the folders. Deleting a rejected application and re-syncing
+still re-opens the posting. The gap between "looks safe" and "is safe" is now wide open.
 
 ## Definition of done
 

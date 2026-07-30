@@ -11,8 +11,9 @@ skill: company-research
 default_setup: >
   config.yaml unset -> config.example.yaml + examples/** fallback. Live network research
   (curl / web fetch) is required for the real-company canaries. Output lands under
-  interviews/company-specific/<company>/company-info/ (a scratch/git-ignored path in a
-  public checkout — the transcript, not a commit, is what gets judged). No private overlay needed.
+  config.companies_root()/<company>/research/ — examples/companies/<company>/research/ under the
+  example config (a scratch/git-ignored path in a public checkout — the transcript, not a commit,
+  is what gets judged). No private overlay needed.
 
 canaries:
   - id: cr-full-research-structure

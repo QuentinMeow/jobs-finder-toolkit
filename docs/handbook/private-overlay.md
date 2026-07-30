@@ -33,7 +33,8 @@ git-ignored in the public repo, your real data is never committed to the public 
 - **Per-skill private notes.** Any candidate-specific skill guidance that used to be
   baked into a `SKILL.md` (real lead-project ordering, real metrics, personal
   anecdotes) lives in the overlay at `config.skill_references_dir("<skill>")` —
-  by default `private/skills/references_private/<skill>/`. Each `SKILL.md` reads it
+  `private/skills/skill-notes/<skill>/` under the layout below (set
+  `paths.skill_references_root`). Each `SKILL.md` reads it
   when present (its "Before You Start" **Personalization** stanza) and otherwise falls
   back to the generic examples. The leak guard fails on any tracked file under a
   `references_private/` folder anywhere in the tree, and the exporter prunes them.
@@ -55,42 +56,60 @@ git-ignored in the public repo, your real data is never committed to the public 
 
 ## Suggested overlay layout
 
-Keep the overlay as its own git repo (private). A clean layout that maps onto the
-`config.yaml` `paths.*` keys:
+Keep the overlay as its own git repo (private). The layout is organised **by lifetime** —
+what is permanently true about you (`me/`), what is permanently true about a company
+(`companies/<key>/`), what dies with a single req (`applications/`), and what describes
+the market you scan (`market/`). Each root maps onto `config.yaml` `paths.*` keys:
 
 ```
 my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 ├── config.yaml                # your real identity + paths (copied from config.example.yaml)
 ├── leak_tokens.txt            # -> private/leak_tokens.txt (extra publish-guard tokens)
-├── job-search/
-│   └── blacklist.yaml         # -> private/job-search/blacklist.yaml (registry skip rules)
-├── profile/
+├── me/                        # PERMANENT — role-agnostic, this is you
 │   ├── profile.md             # -> paths.profile_md
 │   ├── baseline.yaml          # -> paths.baseline_yaml
-│   ├── company-levels.yaml    # -> paths.company_levels_yaml (optional; defaults here)
-│   ├── applications-log.yaml  # auto-generated (job-search skip list)
-│   └── company-search-log.yaml
-├── templates/
-│   └── reference.docx         # -> paths.reference_docx
-├── applications/              # your real applications (-> paths.applications_root)
-│   └── 1_discoveries/         # discoveries dir; keep fresh scans in current/, aged ones in archive/
-│       ├── current/           # -> paths.discoveries_dir
-│       └── archive/
-├── interviews/                # your real interview prep
-├── skills/
-│   ├── coding-interview/      # private practice-generation skill
-│   ├── coding-interview-cleanup/ # private screenshot-cleanup/coaching skill
-│   └── references_private/    # candidate-specific references grouped by public skill
-│       └── resume-writer/     # -> config.skill_references_dir("resume-writer")
-└── job-search-profiles/       # -> config.search_profiles_dir()
-    ├── my-default.yaml        # your real search profile(s)
-    └── my-smb.yaml
+│   ├── tailoring-card.md      # -> paths.tailoring_card
+│   ├── resume/
+│   │   └── <your-resume>.docx # -> paths.reference_docx
+│   └── interviews/
+│       ├── calendar.md        # -> paths.calendar_md (upcoming interviews across everything)
+│       ├── story-bank/        # -> paths.story_bank_dir (behavioral project stories)
+│       ├── question-bank/     # generic behavioral answers
+│       └── common-message-replies/   # reusable recruiter-message templates
+├── companies/                 # PERMANENT — one folder per company (-> paths.companies_root)
+│   └── <key>/
+│       ├── research/          # company-research output
+│       ├── coding/            # coding problems seen at this company
+│       └── product-sense/     # product/design-sense prep for this company
+├── applications/              # DISPOSABLE — your real applications (-> paths.applications_root)
+│   └── <2_ignored…6_drafted>/<company>-<role>-<date>/
+├── market/                    # what the pipeline scans as a whole
+│   ├── blacklist.yaml         # -> paths.blacklist_yaml (registry skip rules)
+│   ├── universe/              # company universes you sweep
+│   ├── searches/              # -> paths.search_profiles_dir (your real search profile YAMLs)
+│   ├── scans/                 # dated discovery scans: fresh in current/, aged in archive/
+│   │   ├── current/           # -> paths.discoveries_dir
+│   │   └── archive/
+│   └── logs/                  # -> paths.candidate_dir
+│       ├── applications-log.yaml    # -> paths.applications_log (job-search skip list)
+│       ├── company-search-log.yaml  # -> paths.company_search_log
+│       └── company-levels.yaml      # -> paths.company_levels_yaml
+├── store/                     # raw-data layer, git-ignored payloads (-> paths.data_root)
+└── skills/
+    ├── coding-interview/      # private practice-generation skill
+    ├── coding-interview-cleanup/ # private screenshot-cleanup/coaching skill
+    └── skill-notes/           # candidate-specific references grouped by public skill
+        └── resume-writer/     # -> config.skill_references_dir("resume-writer")
 ```
+
+The overlay may also carry its own `memory/`, `message-queue/`, and `tasks/` folders —
+the private-scope mirror of the toolkit's process layer, for items that cannot be named
+in public (see `message-queue/README.md`).
 
 `private/leak_tokens.txt` is one token per line (blank / `#` lines ignored) — put
 identity attributes NOT stored in `config.yaml` here (extra handles, school, GPA,
 title, current/former employers, internal product and distinctive project names).
-`private/job-search/blacklist.yaml` holds identity-only rows (`name` + optional
+`private/market/blacklist.yaml` holds identity-only rows (`name` + optional
 `aliases` + a `blacklist:` reason) that `registry.py` merges into the company registry
 so personal skip rules never live in the public `companies.yaml`.
 
@@ -102,15 +121,18 @@ checkout root:
 
 ```bash
 # 1. Scaffold the overlay tree (directly at the git-ignored ./private/ mount):
-mkdir -p private/{profile,templates,job-search,job-search-profiles,interviews}
-mkdir -p private/applications/{1_discoveries/{current,archive},2_ignored,3_rejected,4_in_progress,5_applied,6_drafted}
-mkdir -p private/skills/references_private
+mkdir -p private/me/{resume,interviews/{story-bank,question-bank,common-message-replies}}
+mkdir -p private/companies
+mkdir -p private/applications/{2_ignored,3_rejected,4_in_progress,5_applied,6_drafted}
+mkdir -p private/market/{universe,searches,logs,scans/{current,archive}}
+mkdir -p private/skills/skill-notes
 
 # 2. Seed the data files from the tracked fixtures, then edit them to be YOU:
-cp examples/profile/profile.example.md        private/profile/profile.md
-cp examples/profile/baseline.example.yaml     private/profile/baseline.yaml
-cp examples/templates/reference.example.docx  private/templates/reference.docx
-cp skills/job-search/profiles/_TEMPLATE.yaml private/job-search-profiles/my-default.yaml
+cp examples/profile/profile.example.md        private/me/profile.md
+cp examples/profile/baseline.example.yaml     private/me/baseline.yaml
+cp examples/profile/company-levels.example.yaml private/market/logs/company-levels.yaml
+cp examples/templates/reference.example.docx  private/me/resume/reference.docx
+cp skills/job-search/profiles/_TEMPLATE.yaml  private/market/searches/my-default.yaml
 
 # 3. Arm the leak guard with your identity (one token per line: name variants,
 #    email localpart, phone, school, employers, distinctive project names):
@@ -129,8 +151,8 @@ python automation/bootstrap_overlay.py
 
 Git does not track empty directories, so the status folders under
 `applications/` materialize in a fresh clone only as the tools write into them —
-that is normal. The `interviews/` and `skills/` trees are optional; leave them
-empty until you have content (e.g. your own private interview-prep skill).
+that is normal. The `companies/`, `me/interviews/`, and `skills/` trees are optional;
+leave them empty until you have content (e.g. your own private interview-prep skill).
 
 ## Setup steps
 
@@ -168,15 +190,30 @@ empty until you have content (e.g. your own private interview-prep skill).
      name_slug: "Jordan_Rivers"
      title_slug: "Software_Engineer"
    paths:
-     profile_md: "private/profile/profile.md"
-     baseline_yaml: "private/profile/baseline.yaml"
-     company_levels_yaml: "private/profile/company-levels.yaml"
-     reference_docx: "private/templates/reference.docx"
+     profile_md: "private/me/profile.md"
+     baseline_yaml: "private/me/baseline.yaml"
+     tailoring_card: "private/me/tailoring-card.md"
+     reference_docx: "private/me/resume/<your-resume>.docx"
+     calendar_md: "private/me/interviews/calendar.md"
+     story_bank_dir: "private/me/interviews/story-bank"
      applications_root: "private/applications"
-     discoveries_dir: "private/applications/1_discoveries/current"
+     discoveries_dir: "private/market/scans/current"
+     applications_log: "private/market/logs/applications-log.yaml"
+     company_search_log: "private/market/logs/company-search-log.yaml"
+     company_levels_yaml: "private/market/logs/company-levels.yaml"
+     blacklist_yaml: "private/market/blacklist.yaml"
+     search_profiles_dir: "private/market/searches"
+     candidate_dir: "private/market/logs"
+     skill_references_root: "private/skills/skill-notes"
+     data_root: "private/store"
    job_search:
      default_profile: "my-default"
    ```
+
+   Every key after `applications_root` is optional — each has a default derived from
+   the roots above it — but a lifetime-organised overlay like this one overrides most
+   of them, because the defaults assume the flat "everything under
+   `<applications_root>/0_profile/`" layout the example candidate uses.
 
    `config.yaml` is git-ignored in the public repo, so your real identity never
    gets committed. (If you prefer, point `paths.*` at in-place folders like

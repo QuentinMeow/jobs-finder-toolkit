@@ -1,6 +1,6 @@
 # Current state
 
-- **Last-updated**: 2026-07-29
+- **Last-updated**: 2026-07-30
 
 - **Process layer**: AgentFold restructure in flight as a stacked PR train —
   `message-queue/` + `tasks/` + `memory/` merged (#56); `docs/handbook/` +
@@ -60,18 +60,33 @@
   an untracked tree — 102 files in, the same 102 paths out; the `.gitignore`
   rule, both link-checker skip lists, and every default write path move with
   it). Each moved check was re-proved against a planted defect rather than
-  trusted green. Two gaps the phase exposed are filed and open:
-  `verify_links.py` checks no `[text](path)` links at all (31–36 broken today, depending on
-  the checker — no two agree, which is itself the finding) and
-  silently drops backticked refs at unrecognised roots, and phase 8's per-skill
-  path counts are now obsolete. Phases 5–8 not started; their task files carry
-  the re-measured preconditions. See
+  trusted green. **Phase 5 is now also complete and in review** (2026-07-30): 747
+  tracked private files relocated across 32 commits into `me/` · `companies/` ·
+  `market/` · `store/` · `evals/`, with `applications/<status>/<slug>/` untouched,
+  the tracked total unchanged at 3,186, and every relocation recorded by git as a
+  rename. `history/` was dropped from the phase and filed as its own decision — it
+  is the only row in the move table that would remove files from a tracked history
+  rather than relocate within one. The three checks that fail *open* were each
+  re-proved on a planted defect: the search skips load 367 URLs from the new
+  location, the tailoring card rebuilds with its 7 stories and its staleness check
+  goes fresh → STALE → fresh, and `--require-roots` refused the first commit after
+  the move because a checker constant still named `benchmark/fixtures/`.
+  **Phases 6–8 are not started**; their preconditions are now met and their task
+  files carry re-measured scope. See
   `docs/designs/workspace-restructure/execution-plan.md`.
-- **Next work item: the link-checker repair, not phase 5** — owner decision,
-  2026-07-29. Phase 5 removes `interviews/` from `SKIP_PREFIXES` and repairs 244
-  relative markdown links there, which the current checker cannot verify, so the
-  repair would report success either way. It is a blocking precondition on the
-  phase-5 task. Two further owner decisions landed the same day: phase 5 moves
+- **The link-checker repair merged ahead of phase 5** — owner decision, 2026-07-29,
+  and it was the right order for a reason nobody had seen yet. `verify_links.py`
+  enumerated with `git ls-files` in the **public** repo, so it had never opened a
+  single file inside the overlay; removing `interviews/` from `SKIP_PREFIXES` would
+  have changed which public docs may name those paths and nothing else. It now reads
+  markdown links, heading anchors, refs at unrecognised roots, and the overlay's
+  1,019 tracked `.md`; it sorts a break by what its source document is FOR (a
+  handbook page fails, a plan is advisory, a dated record is permitted); it follows
+  renames across both repositories so a move cannot report a regression that did not
+  happen; and it runs in CI and pre-commit, where it previously ran nowhere. The
+  "31–36 broken, no two checkers agree" mystery was one omission: a code span may
+  contain a newline. The real count is **23, every one in a dated record**.
+  Two further owner decisions landed 2026-07-29: phase 5 moves
   company-specific interview material into company folders and reorganises
   nothing else (`memory/decisions/interview-material-moves-by-company-only.md`,
   which withdraws the plan's "four dozen judgment calls" item; its one open
@@ -83,4 +98,7 @@
   classification is deferred by the owner; it blocks nothing, which was checked
   rather than assumed. Still awaiting an answer:
   `message-queue/needs-human/decisions/private-scope-reconciler.md`, deliberately
-  left open.
+  left open, plus three filed 2026-07-30 alongside phase 5: whether `history/`
+  should be untracked, confirmation that the story bank keeps its leaf directory
+  name (already implemented), and where the coding-interview screenshot inbox
+  lives (left where it is on purpose).

@@ -7,8 +7,9 @@ operational detail, the supporting library, deep company + JD research, one-resu
 (Path A / Path B), the bundled-`.txt` templates + word counts, the cover-letter structure/length
 rules, the APPLICATION QUESTIONS mechanism, and the ATS optimization guidelines. Read the relevant
 section when its trigger fires. Everything candidate-specific still comes from `config` + the
-profile (`config.profile_md_path()`); `<profile-dir>` = `config.applications_root()/0_profile/` —
-the skip-log + tailoring-card directory (the profile file itself may live elsewhere).
+profile (`config.profile_md_path()`); `<profile-dir>` = `config.candidate_dir()` (default
+`<applications_root>/0_profile/`) — the skip-log directory. The tailoring card has its own key,
+`config.tailoring_card_path()`, and the profile file itself may live elsewhere again.
 
 ## Application folder layout (source/ + per-JD bundled .txt)
 
@@ -121,10 +122,10 @@ divergent multi-role split (Path B) — see "Path B" below; leave it unset other
 Beyond the tailoring card / profile, skim the supporting library for real, verifiable detail you
 can pull into bullets (open only on the SKILL.md trigger "the JD demands domains the card doesn't
 cover", and read only the relevant sections):
-- `interviews/behavioral/story-bank/` — deep, first-person write-ups of real projects
+- the story bank (`config.story_bank_path()`) — deep, first-person write-ups of real projects
   (concrete scale, artifacts, and metrics). These are the richest source of legitimate
   detail beyond the profile.
-- `interviews/behavioral/question-bank/`, prior tailorings in other
+- the question bank beside it (`me/interviews/question-bank/`), prior tailorings in other
   `applications/<status>/<slug>/` folders, and `notes.md` files — additional real context.
 - Everything here describes work the user actually did; it is a valid source of truth
   alongside the profile. It is NOT license to invent — only to surface real detail.
@@ -183,7 +184,7 @@ automatically; violating them fails the render.
 - You may **add real detail from the supporting library** (see "Supporting library (real detail
   sources)" above) to make
   a bullet more concrete and JD-relevant — e.g., pull specific scale, a named artifact, or a
-  real tool from `interviews/behavioral/story-bank/` when it strengthens the match. The
+  real tool from the story bank (`config.story_bank_path()`) when it strengthens the match. The
   detail must be traceable to a real source and must fit the 45-215 char limit.
 - This is still not a rewrite: change wording and add real specifics, but do not invent
   facts, and do not turn every bullet over. The check.py 60%-reworded warning is now a soft

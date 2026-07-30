@@ -6,7 +6,7 @@ derived applications-log, LESSONS staleness counts, and the instruction-budget
 summary. Prints YAML to stdout.
 
 ``--apply`` writes ``metrics.yaml`` NEXT TO the applications-log (inside the
-overlay via config paths, i.e. ``<applications_root>/0_profile/metrics.yaml``) —
+overlay via config paths, i.e. ``config.candidate_dir()/metrics.yaml``) —
 never into the toolkit tree.
 
 Usage:
@@ -135,7 +135,7 @@ def run(apply: bool = False) -> int:
         print(f"  APPLY: wrote {C.rel(out)}")
     else:
         print("  DRY-RUN: printed only. --apply writes "
-              "<applications_root>/0_profile/metrics.yaml.")
+              f"{config.candidate_dir()}/metrics.yaml.")
     return 0
 
 

@@ -14,6 +14,17 @@ paths:
   # per-job progress (interview schedules, booking todos, reschedule history).
   # Defaults to <applications_root>/0_profile/calendar.md when omitted.
   calendar_md: "examples/applications/0_profile/calendar.md"
+  # The tailoring card and the two skip-logs. Each defaults to
+  # <applications_root>/0_profile/<filename>, which is where the example keeps
+  # them, so all three are omitted here. Set one only when your layout puts it
+  # somewhere else — a lifetime-organised private tree, for instance, keeps the
+  # card with the profile and the logs with the market research:
+  #   tailoring_card:     "private/me/tailoring-card.md"
+  #   applications_log:   "private/market/logs/applications-log.yaml"
+  #   company_search_log: "private/market/logs/company-search-log.yaml"
+  # Leave them unset unless you mean it. The default derivation is what keeps a
+  # benchmark run — which redirects applications_root and nothing else — from
+  # writing into the real card and the real skip-log.
 job_search:
   default_profile: "example"
 generation:

@@ -16,7 +16,7 @@ omitted comes from `config.job_search.default_profile`.
 
 This folder is **entirely public** — those two files plus this README are all it may
 ever hold. Your own profiles are candidate data and live in the private overlay, at
-`config.search_profiles_dir()` (default `private/job-search-profiles/`). A bare
+`config.search_profiles_dir()` (default `private/market/searches/`). A bare
 `--profile <label>` resolves there FIRST and falls back to this folder, so a public
 checkout with no overlay still runs on `example`.
 
@@ -24,7 +24,7 @@ checkout with no overlay still runs on `example`.
 
 ```bash
 cp skills/job-search/profiles/_TEMPLATE.yaml \
-   private/job-search-profiles/my-profile.yaml
+   private/market/searches/my-profile.yaml
 # edit it, then:
 .venv/bin/python skills/job-search/scripts/search_jobs.py --profile my-profile
 ```

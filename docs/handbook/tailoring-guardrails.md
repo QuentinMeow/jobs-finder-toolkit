@@ -4,8 +4,8 @@ These expand the core `AGENTS.md` → "Guardrails" invariants.
 
 - **Traceability sources**: a bullet may pull real, traceable detail from the candidate
   profile (`config.profile_md_path()`) or the supporting library
-  (`interviews/behavioral/story-bank/`, `interviews/behavioral/question-bank/`, prior
-  applications, notes).
+  (the story bank at `config.story_bank_path()`, the question bank beside it under
+  `me/interviews/question-bank/`, prior applications, notes).
   Rewording and pulling in real detail from those sources is encouraged; fabrication is forbidden.
 - **Keyword density**: incorporate job description keywords naturally. Do not stuff.
   Readability matters — a human recruiter reads after ATS passes.
