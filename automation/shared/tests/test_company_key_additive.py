@@ -69,7 +69,29 @@ MATCH_PATHS: tuple[tuple[str, str, str], ...] = (
     ("reconciliation", "automation/shared/mail/reconciliation.py", "_normalize_applications"),
     ("reconciliation", "automation/shared/mail/reconciliation.py", "_thread_candidates"),
     ("reconciliation", "automation/shared/mail/reconciliation.py", "link_message"),
+    # ---- the DECIDERS -------------------------------------------------------
+    # Everything above collects or normalizes. These take the actual verdict, and
+    # an adversarial review found them missing: a guard over gatherers alone lets
+    # the key reach the decision one call later. `find_application_matches` is the
+    # sharp one — the same change that added this guard also put `company_key`
+    # into the record dict this function iterates, one token away from the
+    # `searchable` string it scores on.
+    ("handoff", "skills/job-search/scripts/handoff.py", "_duplicate_reason"),
+    ("handoff", "skills/job-search/scripts/handoff.py", "_register_row"),
+    ("handoff", "skills/job-search/scripts/handoff.py", "group_by_company"),
+    ("audit", "automation/search-recall-audit/audit.py", "coverage_for"),
+    ("store_refilter", "automation/search-recall-audit/store_refilter.py", "is_blacklisted"),
+    ("store_refilter", "automation/search-recall-audit/store_refilter.py", "gate_decisions"),
+    ("skip_log", "automation/shared/skip_log.py", "read_postings"),
+    ("skip_log", "automation/shared/skip_log.py", "fold"),
+    ("application_context", "skills/email-assistant/scripts/application_context.py",
+     "find_application_matches"),
 )
+# Deliberately NOT guarded: `application_context._records`, which is where the field
+# is legitimately surfaced to a reader. Guarding a function that must EMIT the key
+# would forbid the thing this phase added. The line the guard has to hold is
+# emit-yes / compare-no, and `_records` is on the emit side — which is precisely why
+# its consumer `find_application_matches` is guarded and it is not.
 
 # The readers that parse meta.yaml and return a skip/coverage set, as
 # `(alias, module path, function name, argument order)`. The two disagree on
@@ -152,7 +174,7 @@ class MatchPathSourceGuard(unittest.TestCase):
         which the subTest above would report — but DELETING a row would silently
         shrink the guard to nothing. Here the count is pinned too.
         """
-        self.assertGreaterEqual(len(MATCH_PATHS), 17)
+        self.assertGreaterEqual(len(MATCH_PATHS), 26)
         for alias, rel, dotted in MATCH_PATHS:
             with self.subTest(function=f"{rel}::{dotted}"):
                 self.assertTrue(callable(_resolve(_load(alias, rel), dotted)))
