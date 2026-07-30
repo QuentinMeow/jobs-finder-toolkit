@@ -25,7 +25,14 @@ Split by which phase does the moving (phase-2 tokens: `automation/maintenance/`,
 `docs/designs/`, `docs/roadmap/`, `local/` · phase-5 tokens: `0_profile`, `interviews/`,
 `job-search-profiles/`, `data/`):
 
-| Skill | phase 2 | phase 5 |
+**The phase-2 column below is obsolete as of 2026-07-29.** Phase 2 ran: it retired the
+`automation/maintenance/` token from every skill and re-spelled `handbook|design|roadmap|tmp`, so
+those counts describe tokens that no longer exist and the phase-8 estimate built on them
+over-states the work. Re-measure before starting — filed as
+[`2026-07-29-refresh-phase-8-instruction-surface-counts`](../2026-07-29-refresh-phase-8-instruction-surface-counts/task.md).
+The phase-5 column still holds.
+
+| Skill | phase 2 — **obsolete** | phase 5 |
 |---|---:|---:|
 | search-recall-audit | 19 | 1 |
 | job-search | 15 | 0 |
@@ -67,8 +74,9 @@ commit.
 gates in this repo fail *open*, so a half-done phase is indistinguishable from a done one.
 
 Phases 2, 4 and 5 merged, and `2026-07-28-slim-company-research-skill` merged. **Partly met as
-of 2026-07-29**: phase 4 is merged (PR #86), phases 2 and 5 are not started, and the slimming
-task is still in `tasks/0_backlog/`. Three of four preconditions outstanding.
+of 2026-07-29**: phase 4 is merged (PR #86); phase 2 is **done and in review** as an open stacked
+PR train, so it is finished but not yet merged; phase 5 is not started; and the slimming task is
+still in `tasks/0_backlog/`. Two of four preconditions fully outstanding.
 
 ## Definition of done
 

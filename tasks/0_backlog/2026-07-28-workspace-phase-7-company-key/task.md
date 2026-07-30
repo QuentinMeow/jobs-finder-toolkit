@@ -48,7 +48,8 @@ gates in this repo fail *open*, so a half-done phase is indistinguishable from a
 Phase 5 merged, and the key-assignment approach decided (filed non-blocking as
 `2026-07-28-company-key-assignment-approach`; default is one proposal PR). **Not met as of
 2026-07-29** — phase 5 is not started, and it is what creates `companies/<key>/`. Phases 0, 3
-and 4 are merged; 1, 2 and 5 are not.
+and 4 are merged; phases 1 and 2 are done and in review as open stacked PRs; phase 5 is not
+started.
 
 ## Definition of done
 

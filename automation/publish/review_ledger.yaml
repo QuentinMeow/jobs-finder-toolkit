@@ -387,3 +387,67 @@
     Rivers "example" profile. No private/ content is added or reproduced — the
     private/ mentions are pre-existing path strings naming overlay locations. No
     file is added to or removed from the published set.
+
+- commit: 15794a10
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 4
+  digest: sha256:ee1d0e343bf1e081
+  finding: >-
+    Clean. Read the whole diff — 545 added lines, four files, all process
+    records. The execution plan loses its pending phase-2 instructions and gains
+    a merged-phase record plus seven findings; seven relative links that PR 02
+    left one level too shallow are repaired; six statements phase 2 invalidated
+    (rule 3, two module paths in the phase-5 table, three rows in the facts
+    table, phase 8's preconditions) are corrected in place with the old claim
+    left visible rather than reworded away. The task file moves 0_backlog ->
+    3_in-review with two definition-of-done boxes deliberately unticked and the
+    reason written out. verification.md pastes real command output inline
+    instead of citing a path under local/, per the handbook's scratch rule; the
+    one 1.2 GB scratch listing is described by shape and NOT pasted, because its
+    filenames carry real employers. Two absolute home paths in that file were
+    caught by the staged-index leak guard on the first commit attempt and
+    redacted to "<the repo root>" before this commit. Every number quoted is
+    about this repo's own shape — file counts, canary counts, link counts,
+    export counts, git modes, sha256s of path listings. No real name, employer,
+    school, recruiter, posting, salary, email, phone or absolute home path
+    appears; no private/ content is reproduced — the private/ mentions are path
+    strings naming overlay locations plus one shape-only reference to an
+    overlay queue item. No file is added to or removed from the published set.
+
+- commit: 0da4274d
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 8
+  digest: sha256:6d4b5ec187e340b3
+  finding: >-
+    Clean. Read the whole diff — 278 added lines, eight files, all process
+    records and no code. Two new backlog tasks carry their own reproductions
+    inline (planted-defect transcripts, before/after link counts) rather than
+    citing a scratch path, per the handbook's scratch rule. Three phase task
+    files get one corrected sentence each, saying phase 2 is done and in review
+    rather than not started, plus an obsolescence note over phase 8's per-skill
+    table. The 2026-07-20 allowlist task gains a dated appended note about its
+    own Source citing gitignored scratch; the owner's original text is left
+    intact above it, nothing deleted. The roadmap paragraph is rewritten to the
+    finished phase-2 state with its proof numbers. The handover names the five
+    open PRs, the two new tasks and the three open decisions by public path. The
+    one private reference is shape-only: an overlay review item described as
+    "roughly 1.2 GB of application and interview material", with no filename, no
+    company, no folder name and no summary of its contents. Every other number
+    is about this repo's own shape. No real name, employer, school, recruiter,
+    posting, salary, email, phone or absolute home path appears. No file is
+    added to or removed from the published set.
+
+- commit: 04488de8
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 2
+  digest: sha256:49d81c4d1fbd40fd
+  finding: >-
+    Clean. Two process docs gain a qualification: the broken-markdown-link count
+    is given as a range because two independently written checkers disagree, and
+    the set-churn figure gains a warning that it overstates the damage because the
+    comparison keys on a source path that this phase moved. No name, employer,
+    school, posting, recruiter, date, salary, email, phone or absolute home path
+    appears in the diff, and no private/ path is added.

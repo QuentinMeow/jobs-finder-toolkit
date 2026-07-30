@@ -2,8 +2,8 @@
 
 - **Priority**: P1 (this round)
 - **Area**: repo
-- **Source**: [workspace-restructure execution plan](../../../design/workspace-restructure/execution-plan.md) · [design](../../../design/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
-- **Claimed-by**:
+- **Source**: [workspace-restructure execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) · [design](../../../docs/designs/workspace-restructure/README.md) · [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md)
+- **Claimed-by**: agent, 2026-07-29 (work complete; in review)
 
 ## Goal
 
@@ -12,7 +12,7 @@ every path literal in the same PR.
 
 ## Context
 
-Detail in [the execution plan](../../../design/workspace-restructure/execution-plan.md) under "Phase 2". `automation/maintenance/` splits
+Detail in [the execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) under "Phase 2". `automation/maintenance/` splits
 three ways, `docs/` absorbs `handbook`+`design`+`roadmap`, `evals/` absorbs the measurement
 protocols and flattens the per-skill canary folders, `tmp/` becomes `local/`.
 
@@ -82,18 +82,52 @@ gates in this repo fail *open*, so a half-done phase is indistinguishable from a
 None outstanding — phase 0 merged 2026-07-29 (PRs #81–#84), and Q4 was answered 2026-07-28
 (docs consolidation confirmed). This phase is ready to start.
 
+### Status placement, 2026-07-29
+
+This task sits in `3_in-review`, not `4_done`: `tasks/README.md` defines `4_done` as
+"merged/verified" and `3_in-review` as "work done, awaiting review/merge", and all five PRs in
+this stack are open. Phase 1's task went to `4_done` while its PRs were still open; this is the
+more accurate reading of the README, and one `git mv` promotes this folder when the stack merges.
+
 ## Definition of done
 
-- [ ] `automation/{gardener,search-recall-audit,company-levels}/` exist; all 9 `parents[N]`
-      constants converted to a `.git` upward walk; every gardener routine and the recall audit run
-- [ ] `docs/{handbook,designs,roadmap}/` with the `CLAUDE.md → AGENTS.md` shim re-created **as a
-      tracked symlink**; all 23 files naming `design/workspace-restructure/` updated
-- [ ] `evals/{protocols,canaries,rubrics,results}/`; `evals/canaries/<skill>.yaml`
-- [ ] `tmp/` → `local/`, root `.gitignore`, `handbook/file-organization.md`'s scratch rule and
-      `AGENTS.md`'s "Scratch & Temporary Files" bullet updated
-- [ ] `ci.yml`, `pull_request_template.md`, `ALLOWLIST_DIRS`, `marketplace.json`,
+Evidence for every ticked box is in `verification.md` beside this file — real commands, real
+output. Two boxes are deliberately left unticked with their reason.
+
+- [x] `automation/{gardener,search-recall-audit,company-levels}/` exist; all eight gardener
+      routines run (`gardener.py --all`, exit 0) and the recall audit's CLI resolves.
+      One caveat, recorded rather than hidden: `search-recall-audit/store_refilter.py` still
+      crashes at its last print on an undefined `prof_label`. That is **pre-existing** — the same
+      line is broken at `d9aa3cb`, before this phase started — so the script has never completed,
+      and the move neither caused nor fixed it. Added to the execution plan's
+      "pre-existing breakage to fix opportunistically" list.
+- [ ] **all 9 `parents[N]` constants converted to a `.git` upward walk** — **not done as
+      written, on purpose.** Six were converted: the five that break on the move plus
+      `import_company_levels.py`'s `parents[2]`, which was right only by coincidence of depth.
+      The other three are `GARDENER_DIR = Path(__file__).resolve().parents[1]` `sys.path`
+      bootstraps inside `automation/gardener/tests/`, relative to their own directory and
+      genuinely move-invariant — this plan's own table says so. Converting them would replace a
+      correct one-liner with a repo-root walk that answers a different question. Each now carries
+      a comment recording why it stays, and `test_store_report.py` gained its own
+      `_find_repo_root()` for the repo-root half that was *not* move-invariant.
+- [x] `docs/{handbook,designs,roadmap}/` with the `CLAUDE.md → AGENTS.md` shim re-created **as a
+      tracked symlink** (`git ls-files -s` reports mode `120000`)
+- [ ] **all 23 files naming `design/workspace-restructure/` updated** — **not done, and the count
+      was wrong.** 25 files named it, not 23. 19 were updated. Six still name it: four
+      `tasks/4_done/2026-07-28-workspace-phase-{0,1,3,4}-*/task.md`, one session handover, and
+      `memory/decisions/workspace-layout-public-root-plus-review-gate.md`. The first five are
+      dated records of a tree that was spelled that way at the time, and rewriting them would
+      falsify the record; the ADR is immutable. But their **markdown links are now broken**, and
+      no gate can see that — see the filed task
+      [`2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md),
+      which is where the reference-vs-record split gets decided rather than guessed at here.
+- [x] `evals/{protocols,canaries,rubrics,results}/`; `evals/canaries/<skill>.yaml`
+- [x] `tmp/` → `local/`, root `.gitignore`, the handbook's scratch rule and `AGENTS.md`'s
+      "Scratch & Temporary Files" bullet updated
+- [x] `ci.yml`, `pull_request_template.md`, `ALLOWLIST_DIRS`, `marketplace.json`,
       `verify_links.py`'s four constants and `reconcile.py`'s two updated
-- [ ] **Each moved check proven to still fail on a planted defect** — a green run is not evidence
-- [ ] Superseding ADR recorded
-- [ ] Review-ledger rows for every commit; branch ends with a ledger-only commit
-- [ ] Gate command + export dry-run + `instruction_budget.py --strict` clean
+- [x] **Each moved check proven to still fail on a planted defect** — a green run is not evidence
+- [x] Superseding ADR recorded
+      (`memory/decisions/docs-parent-for-the-human-read-trees.md`)
+- [x] Review-ledger rows for every commit; every branch ends with a ledger-only commit
+- [x] Gate command + export dry-run + `instruction_budget.py --strict` clean
