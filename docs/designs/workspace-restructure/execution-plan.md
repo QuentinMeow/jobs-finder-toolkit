@@ -3,14 +3,16 @@
 The implementation spec for [the workspace layout](README.md). Written for an agent that has
 read `AGENTS.md` and nothing else about this design.
 
-**Status: phases 0, 3 and 4 are merged; phases 1, 2, 5, 6, 7 and 8 are not started.** The
-merged three are recorded below as short records — what they changed and what the remaining
-phases may now rely on — not as instructions. Every number in this document was re-measured on
-2026-07-29 against `main` at commit `19d0829`; re-measure anything you are about to depend on,
-because the tree moves under this plan faster than the plan does.
+**Status: phases 0, 1, 2, 3 and 4 are done; phases 5, 6, 7 and 8 are not started.** Phases 0, 3
+and 4 are merged into `main`; phases 1 and 2 are finished and sitting in review as open stacked
+PRs, so their records below describe a tree you have to check out the stack to see. All five are
+recorded as short records — what they changed and what the remaining phases may now rely on —
+not as instructions. The phase-0/3/4 figures were re-measured on 2026-07-29 against `main` at
+commit `19d0829`, the phase-2 figures against the phase-2 stack's tip; re-measure anything you
+are about to depend on, because the tree moves under this plan faster than the plan does.
 
 Target layout: [README.md](README.md). Gate spec: [review-gate.md](review-gate.md).
-Topology decision: [`memory/decisions/workspace-layout-public-root-plus-review-gate.md`](../../memory/decisions/workspace-layout-public-root-plus-review-gate.md).
+Topology decision: [`memory/decisions/workspace-layout-public-root-plus-review-gate.md`](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md).
 
 ## How to work this plan
 
@@ -19,7 +21,13 @@ Topology decision: [`memory/decisions/workspace-layout-public-root-plus-review-g
 2. **The PR that moves a path updates every literal naming it.** Do not defer path fixes to a
    later phase — that is what made an earlier version of this plan unexecutable.
 3. **Every `git mv` is its own commit**, separate from content edits, so `git log --follow`
-   survives.
+   survives — **with the correction phase 2 forced on it**: a move commit may also carry the
+   checker constants that name the moved path, and nothing else. The rule as originally written
+   is unexecutable wherever a moved root is named by a checker constant, because
+   `automation/hooks/pre-commit` runs `reconcile.py --check --require-roots` and a move-only
+   commit that retires such a root cannot be committed at all. `--follow` survives the combined
+   commit anyway: what the constants change is *other files'* references, not the moved files'
+   own content. Full finding in [the phase-2 record](#merged-phase-2--public-side-cleanup).
 4. **Every commit needs a review-ledger row, and the branch ends with a ledger-only commit.**
    This is new since phase 3 and it changes the shape of every PR below. The gate
    (`automation/publish/review_gate.py`, run from `automation/hooks/pre-commit` and CI) fails
@@ -51,7 +59,7 @@ is not repeated):
 ```bash
 .venv/bin/python automation/reconcile/reconcile.py --check --require-roots \
   && .venv/bin/python automation/publish/check_public.py \
-  && .venv/bin/python automation/maintenance/gardener/verify_links.py \
+  && .venv/bin/python automation/gardener/verify_links.py \
   && .venv/bin/python automation/metrics/instruction_budget.py --strict \
   && .venv/bin/python automation/publish/review_gate.py --verify-all
 ```
@@ -72,7 +80,7 @@ inspecting nothing. They no longer do. What a later phase needs to know:
 - **Config discovery raises instead of falling back.** The upward walk stops at the first `.git`
   boundary; the example-persona fallback survives only for a fresh public clone with no overlay
   mounted (`JOBHUNT_REQUIRE_REAL_CONFIG=1` forces the raise everywhere). Recorded in
-  [`message-queue/needs-human/decisions/config-discovery-example-fallback.md`](../../message-queue/needs-human/decisions/config-discovery-example-fallback.md).
+  [`message-queue/needs-human/decisions/config-discovery-example-fallback.md`](../../../message-queue/needs-human/decisions/config-discovery-example-fallback.md).
 - **`SKILL.md` frontmatter is the only source of skill visibility.**
   `automation/publish/sync_skill_manifests.py` derives the public set at runtime;
   `export_public.py`, `.claude-plugin/marketplace.json`, `.claude/skills/*` and `.cursor/skills/*`
@@ -81,7 +89,8 @@ inspecting nothing. They no longer do. What a later phase needs to know:
 - **The exporter enumerates through `git ls-files`**, warns on an allowlisted directory that
   resolves to nothing, and refuses under `--strict`. `ALLOWLIST_DIRS` now carries
   `automation/store`, and the root files `CLAUDE.md`, `CONTRIBUTING.md`, and
-  `automation/bootstrap_overlay.py`, so the exported repo's own CI is green.
+  `automation/bootstrap_overlay.py`, so the exported repo's own CI is green. (Phase 2 later
+  retired the `handbook` and `design` entries in favour of `docs`.)
 - **`check_public._DENY_TREES` is an append-only union.** It already carries the names phase 5
   introduces — `store/`, `me/`, `companies/`, `market/` — alongside the historical
   `applications/`, `interviews/`, `data/`, `job-search-profiles/`, `.agents/inputs/` and the two
@@ -92,16 +101,17 @@ inspecting nothing. They no longer do. What a later phase needs to know:
 - **`registry.py` reads `config.blacklist_path()`** and prints a notice when an overlay is
   mounted and the file is absent, instead of silently treating it as "no blacklist".
 - **`verify_links.py` reads every tracked `.md`** — 264 files today, up from the 23 it used to
-  open — and `STRICT_ROOT_PREFIXES` covers `handbook/ design/ roadmap/ evals/ templates/
-  memory/ tasks/ message-queue/ history/`, each strict only in a tree that actually has that
-  root. `check_symlinks()` fails when it finds zero link roots.
+  open — and `STRICT_ROOT_PREFIXES` covers the human-doc and process roots (phase 2 re-spelled
+  the first three, so they read `docs/handbook/ docs/designs/ docs/roadmap/ evals/ templates/
+  memory/ tasks/ message-queue/ history/` today), each strict only in a tree that actually has
+  that root. `check_symlinks()` fails when it finds zero link roots.
 - **The reconciler gained `--require-roots`** (used by the maintainer pre-commit) while plain
   `--check` keeps its documented missing-root no-op, so the published repo's CI stays green.
   `file_retries()` no longer conjures `message-queue/needs-agent/retries` on a clean run.
 - **The private overlay has hooks**: `automation/hooks/overlay-pre-commit` and
   `overlay-pre-push`, installed by `automation/bootstrap_overlay.py`. Whether a private-scope
   reconciler also runs is open in
-  [`message-queue/needs-human/decisions/private-scope-reconciler.md`](../../message-queue/needs-human/decisions/private-scope-reconciler.md);
+  [`message-queue/needs-human/decisions/private-scope-reconciler.md`](../../../message-queue/needs-human/decisions/private-scope-reconciler.md);
   the default is no, and the hook reports the skip.
 
 ### The eleven config accessors, and what they mean for the moves ahead
@@ -203,99 +213,112 @@ tends to reach for a path under `tmp/`.
 owner's application data, so it is a move, never a clean. The inventory is in the overlay review
 item.
 
----
+## Merged: phase 2 — public-side cleanup
 
-## Phase 2 — public-side cleanup
+Four stacked PRs, commits `031e05d`…`fc0180b`. `automation/maintenance/` split three ways (38
+files); `handbook/`, `design/` and `roadmap/` consolidated under one `docs/` parent (135); the
+measurement docs and the nine per-skill canary folders absorbed into `evals/` (30); the
+gitignored scratch root renamed `tmp/` → `local/` (45). No behaviour changed anywhere — every
+commit is a move plus the literals naming it. What a later phase needs to know:
 
-**Blocking preconditions:** phase 0 merged (done). **Q4 answered** (docs consolidation
-confirmed — answered: yes, with a superseding ADR).
+- **`automation/` has no generic bucket left.** `automation/gardener/`,
+  `automation/search-recall-audit/` and `automation/company-levels/` replace
+  `automation/maintenance/`. Six of the nine `parents[N]` depth constants became a local upward
+  `.git` walk — the five that break on the move, plus `import_company_levels.py`'s `parents[2]`,
+  which was correct only by coincidence of depth. The three surviving `parents[1]` in the
+  gardener tests are `sys.path` bootstraps relative to the tests directory and are genuinely
+  move-invariant; each now says so in a comment, and `test_store_report.py` grew its own
+  `_find_repo_root()` for the repo-root half that was **not** move-invariant.
+- **The three human-read roots are `docs/handbook/`, `docs/designs/` and `docs/roadmap/`**, and
+  this design family moved with them. The `CLAUDE.md → AGENTS.md` shim survived as a tracked
+  symlink — `git ls-files -s docs/designs/CLAUDE.md` still reports mode `120000`. The published
+  file set is unchanged: `export_public.py --strict` emits 566 files both before and after. The
+  superseding ADR is
+  [`memory/decisions/docs-parent-for-the-human-read-trees.md`](../../../memory/decisions/docs-parent-for-the-human-read-trees.md).
+- **All measurement lives under `evals/`**: `protocols/`, `canaries/<skill>.yaml`, `rubrics/`,
+  `results/`. Nine canary sets and 50 canaries before and after, every file byte-identical across
+  the move. (`canaries/email-assistant.yaml` was edited one PR later by the scratch-root rename;
+  that is the only canary byte that changed in the whole phase.)
+- **The scratch root is `local/`.** One `mv` of an untracked tree: 102 files before, the same 102
+  paths after, ~1.2 GB. Nothing tracked moved; the `.gitignore` rule, both link-checker skip
+  lists and every default write path moved with it.
 
-### Split `automation/maintenance/`
+### What this phase learned the hard way
 
-`automation/` holds ten entries today: `bootstrap_overlay.py`, `hooks/`, `maintenance/`,
-`metrics/`, `publish/`, `reconcile/`, `shared/`, `store/`, `vendoring/`, and an untracked
-`__pycache__/`. Only `maintenance/` is a generic bucket, and it holds exactly three things:
+Four of the seven findings are corrections to this plan's own instructions and three are defects
+in the tree that the phase uncovered. They are recorded as errors rather than quietly folded into
+the text above, because the same shapes recur in phases 5 through 8.
 
-- `automation/maintenance/gardener/` → `automation/gardener/`
-- `automation/maintenance/search_recall_audit/` → `automation/search-recall-audit/`
-- `automation/maintenance/import_company_levels.py` → `automation/company-levels/`
+**Rule 3 is unexecutable where a moved root is named by a checker constant.** The rule as written
+says every `git mv` is its own commit, separate from content edits. But `automation/hooks/pre-commit`
+runs `reconcile.py --check --require-roots`, which asserts that the `roadmap` root exists — so a
+commit that moves `roadmap/` and nothing else **cannot be committed at all**. The move and the
+constants naming it have to land together. `git log --follow` survives that anyway, because what
+the constants change is *other files'* references, not the moved files' own content.
+[Rule 3](#how-to-work-this-plan) now carries the correction: a move commit may also carry the
+constants that name the moved path, and nothing else.
 
-**Five of the nine `parents[N]` depth constants under `automation/maintenance/` break** — they
-resolve `REPO_ROOT` by counting levels and would point at the parent of the repo. Fix them in
-the same commit; prefer the upward `.git` walk that `automation/shared/config.py` adopted in
-commit `5156598` (`_git_boundary()` / `_repo_root()`), for the reason recorded there: a fixed
-parent count cannot survive a move or a re-host.
+**The "every constant that has to move" table was incomplete.** It listed the two `roadmap`
+mentions in `automation/reconcile/reconcile.py` and stopped. It missed
+`automation/reconcile/tests/test_reconcile.py:82`, which carries a bare `"roadmap"` inside a
+`make_roots(skip=…)` tuple with **no trailing slash** — so no regex built from the table's
+`roadmap/` form finds it. Left alone it would have created a `docs/roadmap/` directory in the
+fixture while the skip list still named `roadmap`, silently changing what
+`test_plain_check_still_passes_on_the_same_tree` tests: the test would still have passed, and it
+would have stopped testing the missing-root no-op it exists to pin.
 
-| Constant | Breaks? |
-|---|---|
-| `gardener/_common.py:24` `parents[3]` | **yes** — one level shallower after the move |
-| `gardener/tests/test_store_report.py:29` `GARDENER_DIR.parents[2]` | **yes** |
-| `search_recall_audit/audit.py:43` `parents[3]` | **yes** |
-| `search_recall_audit/field_fidelity.py:45` `parents[3]` | **yes** |
-| `search_recall_audit/store_refilter.py:14` `parents[3]` | **yes** |
-| `gardener/tests/{test_skill_drift,test_store_report,test_verify_links}.py` `parents[1]` | no — relative to the tests dir, move-invariant |
-| `import_company_levels.py:34` `parents[2]` | no — `automation/company-levels/` sits at the same depth as `automation/maintenance/`; leave it correct by accident and it will bite the next move, so convert it too |
+**`git grep "automation/maintenance"` does not find the whole surface.** Four files name the
+bucket as a bare word rather than a path: `AGENTS.md`, `README.md`,
+`skills/ask-me-anything/SKILL.md`, and `docs/handbook/file-organization.md` — where
+`maintenance/` was cited as *an example of a good purpose-named folder*, which is the exact
+opposite of what this phase establishes by dissolving it.
 
-### Consolidate `docs/`
+**Every runtime scratch write path spelled the root as a bare quoted `"tmp"` segment, not
+`tmp/`.** Nine such literals existed across `automation/` and `skills/` — the two
+search-recall-audit `DEFAULT_OUT`s, its snapshot and refilter output roots, job-search's snapshot
+cache and both filter-variant report defaults, and the link checker's own
+`_FALLBACK_SKIP_DIRS`. A word-boundary sweep for `tmp/` sees none of them. Had the phase run that
+sweep alone, every document would have said `local/` while every script silently recreated `tmp/`
+beside it, outside the new ignore rule.
 
-`handbook/` → `docs/handbook/`; `design/` → `docs/designs/`; `roadmap/` → `docs/roadmap/`.
-Re-create the `CLAUDE.md → AGENTS.md` sibling shim under `docs/designs/`. It is a **tracked
-symlink** (git mode `120000`, one of only two outside the runtime `.claude/skills` and
-`.cursor/skills` trees), and `automation/publish/export_public.py:238-241` deliberately
-*follows* it so the export ships real content for checkouts without symlink support. So `git mv`
-the link rather than deleting and re-authoring it: the exported tree looks the same either way,
-which is exactly why a mistake here is invisible until Claude Code stops loading the folder's
-contract.
+**`automation/gardener/verify_links.py` never checks markdown links.** It only checks
+**backticked** refs: `_is_checkable()` rejects any token containing parentheses, so every
+`[text](path)` link in the repo is unverified. There are **31 broken relative markdown links** at
+this stack's tip and there were **36** at its base — but the two sets do not overlap at all, so
+that is not stability, it is churn the gate cannot see. PR 02's move broke a fresh batch that was
+caught and repaired only because a throwaway checker was written for the purpose; the gate
+reported "references: all resolve" the entire time. Filed as
+[`tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md).
 
-This move now also relocates **this design family itself**. `design/workspace-restructure/`
-becomes `docs/designs/workspace-restructure/`, and 23 tracked files name that path today —
-including `automation/publish/review_gate.py`'s docstring, the header comment inside
-`automation/publish/review_ledger.yaml`, `automation/publish/tests/test_review_gate.py`,
-`automation/publish/check_public.py`'s `_DENY_TREES` comment, the ADR, `roadmap/current-state.md`,
-and 13 task files across `tasks/0_backlog/` and `tasks/3_in-review/`. Every constant that has to
-move with the three roots:
+**A backticked ref whose first path segment is in no strict root prefix is invisible** — not
+broken, not advisory, not counted in any skip tally. It falls out of `check_references()` at the
+"not strict, not absent" fall-through (`verify_links.py:249-252`), where a token that resolved
+under no base is simply dropped. Proved on this tree: a planted
+`` `handbook/definitely-not-a-real-file.md` `` produced "references: all resolve" and exit 0,
+while the same ref written `` `docs/handbook/…` `` produced "BROKEN references: 1" and exit 1.
+**This is the silent-disarm this plan predicted, in a form it did not predict:** not the checker
+no-opping wholesale, but individual references dropping out of its universe one at a time as
+their root is renamed. 76 refs at the four retired root names survive across 24 record files and
+are now unmonitored. This is a pre-existing structural property of the checker rather than
+something the moves introduced — but the moves widened its blast radius, and it is filed with the
+markdown-link gap above because it is one file, one checker, one class of gap.
 
-| Constant | File | Names |
-|---|---|---|
-| `STRICT_ROOT_PREFIXES` | `automation/maintenance/gardener/verify_links.py:54` | `handbook/`, `design/`, `roadmap/`, `evals/`, `templates/` |
-| `PLAN_OR_RECORD_SOURCES` | `automation/maintenance/gardener/verify_links.py:87` | `design/`, `roadmap/desired-state.md`, `evals/results/` |
-| `SKIP_PREFIXES` | `automation/maintenance/gardener/verify_links.py:66` | `tmp/`, `private/tmp/` |
-| `_FALLBACK_SKIP_DIRS` | `automation/maintenance/gardener/verify_links.py:137` | `tmp` |
-| `ALLOWLIST_DIRS` | `automation/publish/export_public.py:76` | `handbook`, `design`, `evals`, `templates` |
-| `check_roadmap_fresh()` + `CHECK_ROOTS` | `automation/reconcile/reconcile.py:253,281` | `roadmap` (twice — the check body and the `--require-roots` map) |
+**Three pre-existing broken link targets were repaired in passing**, found only because a real
+checker was finally run against the tree: `../STYLE.md`, a file that has never existed,
+referenced from seven design docs; `PRIVATE_OVERLAY.md`; and `../ARCHITECTURE.md`, which resolved
+on macOS only through filesystem case-insensitivity against `handbook/architecture.md` and would
+have failed on Linux CI.
 
-A subtlety in `STRICT_ROOT_PREFIXES`: a prefix is strict only in a tree that has that root
-(`_present_strict_prefixes()`). Rename the roots without renaming the constant and nothing goes
-red — the checks simply stop checking. That silent-disarm is the failure mode to test for, not
-a broken-link report.
-
-### Absorb measurement into `evals/`
-
-`ab-protocol.md` and `design/stage-benchmarks/{protocol,stage-map}.md` → `evals/protocols/`;
-`evals/<skill>/canaries.yaml` → `evals/canaries/<skill>.yaml`. `evals/` holds **nine** tracked
-per-skill folders today, one `canaries.yaml` each: application-tracker, ask-me-anything,
-behavioral-interview-prep, company-research, email-assistant, github-workflow,
-interview-calendar, job-search, resume-writer. (`evals/coding-interview-cleanup/` exists on disk
-but is empty and untracked — git carries no empty directories, so it is local residue, not a
-tenth folder.) `rubrics/` and `results/` stay. The *rationale* docs stay in `docs/designs/`.
-
-### The rest
-
-- `tmp/` → `local/`, updating the root `.gitignore`, `handbook/file-organization.md`'s scratch
-  rule, and `AGENTS.md`'s "Scratch & Temporary Files" bullet (which names `tmp/ats_scripts/`,
-  `tmp/web_artifacts/`, `tmp/scratch/`). Nine tracked `SKILL.md` files name `tmp/` — heaviest
-  are `job-search` (15), `search-recall-audit` (10), `github-workflow` (7).
-- **Same PR:** `.github/workflows/ci.yml` — it carries 16 executed path pins, of which exactly
-  one moves in this phase (`automation/maintenance/gardener/tests`); check the other 15 rather
-  than assuming. `.github/pull_request_template.md:12` pins
-  `automation/maintenance/gardener/gardener.py`.
-- Write the superseding ADR for the `docs/` reversal into `memory/decisions/` — the prior
-  decision is recorded in `handbook/file-organization.md` ("the former generic `docs/` was
-  dissolved into `handbook/` + `design/`").
-
-**Green gate:** full gate command + export dry-run + `instruction_budget.py --strict`. Prove the
-silent-disarm case explicitly: after the move, plant a genuinely broken backticked ref in a
-`docs/handbook/` doc and confirm `verify_links.py` still fails on it.
+**What phase 5 inherits:** a public tree whose roots are final, so the only paths phase 5 changes
+are inside `private/` — but it inherits the two hazards this phase proved rather than assumed.
+First, `verify_links.py` sees no markdown links at all and drops backticked refs at unrecognised
+roots without counting them, so phase 5's plan to remove `interviews/` from `SKIP_PREFIXES` and
+fix its 244 relative links will report a clean run whether or not those links are right; run a
+real checker or fix the checker first. Second, a checker constant that names a moved root disarms
+the check instead of breaking it, and a root can be spelled as a bare quoted segment, a bare word
+in prose, or a slashed path — grep all three forms, and prove every moved check still fails on a
+planted defect before believing a green gate. Phase 5 also inherits the rule that a durable
+record may not cite scratch as its evidence, now with a renamed root: `local/`, not `tmp/`.
 
 ---
 
@@ -317,7 +340,7 @@ Phase 0's accessors changed the shape of this phase. Work through the move table
 | From | To | Config key, or the code change |
 |---|---|---|
 | `applications/0_profile/profile` | `me/` | `paths.profile_md` |
-| `applications/0_profile/baseline` | `me/` | `paths.baseline_yaml` — but read [`tasks/0_backlog/2026-07-29-baseline-path-diverges-from-candidate-dir`](../../tasks/0_backlog/2026-07-29-baseline-path-diverges-from-candidate-dir/task.md) first: its default is config-dir-relative, not `candidate_dir()`-derived |
+| `applications/0_profile/baseline` | `me/` | `paths.baseline_yaml` — but read [`tasks/0_backlog/2026-07-29-baseline-path-diverges-from-candidate-dir`](../../../tasks/0_backlog/2026-07-29-baseline-path-diverges-from-candidate-dir/task.md) first: its default is config-dir-relative, not `candidate_dir()`-derived |
 | `templates/resume/reference.docx` | `me/resume/reference.docx` | `paths.reference_docx` |
 | `applications/0_profile/company-levels.yaml` | `market/logs/` | `paths.company_levels_yaml` — **keep the file whole**, 27 YAML anchors cannot shard per company |
 | `applications/0_profile/calendar.md` | `me/interviews/calendar.md` | `paths.calendar_md` (already first-class since phase 0) |
@@ -334,8 +357,8 @@ Phase 0's accessors changed the shape of this phase. Work through the move table
 | `interviews/common-message-replies/` | `me/interviews/replies/` | mechanical, 2 files; no script names this path |
 | `interviews/company-specific/<c>/coding/` | `companies/<key>/coding/` | 163 files across 24 companies. An interview-running firm is a company too — it gets its own `companies/<key>/` |
 | `interviews/company-specific/TODO/` | keep as-is | an **untracked** screenshot inbox two private skills poll; moving it orphans them |
-| `benchmark/`, `config.benchmark.yaml`, `evals/` | `evals/{fixtures,runs,canaries}/` | the benchmark config resolves its paths relative to its own directory, so moving it relocates the whole overlay-derived path family with it — see [`memory/facts/overlay-root-follows-the-active-config.md`](../../memory/facts/overlay-root-follows-the-active-config.md) |
-| `docs/harness-engineering…` | `docs/` | **code** — `automation/maintenance/gardener/_common.py:32` `DESIGN_DOC` is a literal |
+| `benchmark/`, `config.benchmark.yaml`, `evals/` | `evals/{fixtures,runs,canaries}/` | the benchmark config resolves its paths relative to its own directory, so moving it relocates the whole overlay-derived path family with it — see [`memory/facts/overlay-root-follows-the-active-config.md`](../../../memory/facts/overlay-root-follows-the-active-config.md) |
+| `docs/harness-engineering…` | `docs/` | **code** — `automation/gardener/_common.py` `DESIGN_DOC` is a literal (the module moved out of `automation/maintenance/` in phase 2; re-derive the line number) |
 | `cursor-rules/private-skills.mdc` | `skills/` | mechanical |
 | `history/` (both repos) | `private/local/history/` | **code** — see the reconciler note below |
 
@@ -357,7 +380,7 @@ Phase 0's accessors changed the shape of this phase. Work through the move table
    directly. Phase 6 depends on the same function.
 3. **The story bank has a display key as well as a location.**
    `skills/resume-writer/scripts/build_tailoring_card.py:78` and
-   `automation/maintenance/gardener/card_staleness.py:41` both carry
+   `automation/gardener/card_staleness.py:41` both carry
    `STORY_BANK_REL = "interviews/behavioral/story-bank"` — the literal a card's header records
    next to the directory's sha256. The on-disk location already comes from
    `config.story_bank_path()`, so the hash will be right; change one display key and not the
@@ -484,8 +507,8 @@ already (commit `ef2d0a3`). Use the shape, never the instance.
 
 ## Phase 8 — instruction surface
 
-**Blocking preconditions:** phases 2, 4 and 5 merged (4 is done), and
-[`tasks/0_backlog/2026-07-28-slim-company-research-skill`](../../tasks/0_backlog/2026-07-28-slim-company-research-skill/task.md)
+**Blocking preconditions:** phases 2, 4 and 5 merged (4 is merged; 2 is done and in review), and
+[`tasks/0_backlog/2026-07-28-slim-company-research-skill`](../../../tasks/0_backlog/2026-07-28-slim-company-research-skill/task.md)
 merged.
 
 - **`skills/company-research/SKILL.md` is still at 595 lines against the hard 600-line budget in
@@ -496,9 +519,14 @@ merged.
   lines against a 500-line budget, so there is room.
 - **Every one of the 11 public `SKILL.md` files names a path that phase 2 or phase 5 moves** —
   the old "8 of 12" count predates both the `github-workflow` skill and phase 4's removal of the
-  two private skill trees from `skills/`. Split by which phase does the moving:
+  two private skill trees from `skills/`. Split by which phase does the moving. **The phase-2
+  column below is now obsolete:** phase 2 has run, so it retired the `automation/maintenance/`
+  token from every skill and re-spelled `handbook|design|roadmap|tmp`, and the counts — and the
+  phase-8 estimate built on them — no longer describe any file. Re-measure before starting; filed
+  as [`tasks/0_backlog/2026-07-29-refresh-phase-8-instruction-surface-counts`](../../../tasks/0_backlog/2026-07-29-refresh-phase-8-instruction-surface-counts/task.md).
+  The phase-5 column still holds.
 
-  | Skill | phase-2 paths (`automation/maintenance/`, `handbook/`, `design/`, `roadmap/`, `tmp/`) | phase-5 paths (`0_profile`, `interviews/`, `job-search-profiles/`, `data/`) |
+  | Skill | phase-2 paths (`automation/maintenance/`, `handbook/`, `design/`, `roadmap/`, `tmp/`) — **obsolete** | phase-5 paths (`0_profile`, `interviews/`, `job-search-profiles/`, `data/`) |
   |---|---:|---:|
   | search-recall-audit | 19 | 1 |
   | job-search | 15 | 0 |
@@ -524,37 +552,38 @@ merged.
 - This is a "large" edit under the risk-based eval gate — **canaries run for every touched
   skill**, recorded in `evals/results/`. Nine of the 11 public skills have a canary set;
   `gardener` and `search-recall-audit` have none, so an edit to those two is covered by the
-  written rationale rule in [`evals/README.md`](../../evals/README.md), not by a run.
+  written rationale rule in [`evals/README.md`](../../../evals/README.md), not by a run.
 
 ---
 
 ## Verified facts and hazards
 
-Re-measured 2026-07-29 against `main` at `19d0829`. Rows marked **historical** describe a state
-that no longer exists and are kept only so a reader of an older branch or PR is not confused.
+Re-measured 2026-07-29 — the private-tree rows against `main` at `19d0829`, the public-tree rows
+against the phase-2 stack's tip `fc0180b`. Rows marked **historical** describe a state that no
+longer exists and are kept only so a reader of an older branch or PR is not confused.
 
 | Fact | Value | Was |
 |---|---|---|
-| Public tracked files | 712 | 649 |
+| Public tracked files | 718 (566 of them published by `export_public.py`, unchanged across phase 2) | 712 before phase 2 · 649 before phase 0 |
 | Private tracked files | 3,158 (applications 2,403 · interviews 535 · benchmark 112) | 3,138 (2,401 · 518 · 112) |
 | Private files that actually move | 805 — `applications/<status>/` keeps its path | ~782 |
 | `notes.md` → `timeline.md` | 135 renames | 133 |
 | `interviews/company-specific/*/company-info/` | 282 files across 24 companies | 265 |
 | `interviews/company-specific/*/coding/` | 163 files | 151 |
 | Relative markdown links inside `interviews/` | 244 | ~300 |
-| Literal `private/` in public files | 462 lines across 115 files | 241 across 84 |
+| Literal `private/` in public files | 471 lines across 120 files | 462 across 115 · 241 across 84 |
 | `0_profile` in tracked files | 41 files, but only 10 in executable code (5 `config.py` copies, `search_jobs.py:92`, 4 test fixtures); the rest is prose | 15 files — **historical**, measured before phase 0 replaced the idiom with accessors |
-| `parents[N]` under `automation/maintenance/` | 9 occurrences, 5 of which break on the phase-2 move | 8 |
+| `parents[N]` under `automation/maintenance/` | 9 occurrences, 5 of which break on the move — **historical**; phase 2 dissolved the directory and converted 6 of the 9 to an upward `.git` walk, leaving 3 move-invariant `parents[1]` in the gardener tests | 8 |
 | `.venv/bin/python` in docs | 294 occurrences (unchanged by this plan) | 240 |
 | `private/data/` | 450 MB, 12 tracked files, 9 ignore patterns in `private/.gitignore` | 432 MB, 12, 9 |
 | Un-ignoring risk | renaming `data/`→`store/` without the sed exposes **83,491 files**, 37,614 of them under `data/email/` | 82,318 files, 36,465 raw email |
 | Application folders / distinct company strings / resolvable | 242 / 213 / 119 (94 unresolvable, 44%) | same |
 | `skills/company-research/SKILL.md` | 595 lines against a 600 budget | same |
 | Public skills | 11 (`github-workflow` added 2026-07-29); runtime lists 13 with the two private ones | 10 / 12 — **historical** |
-| Per-skill canary sets | 9 tracked folders, 4–8 canaries each; `gardener` and `search-recall-audit` have none | "8 folders holding one file each; one is empty" — **historical** |
-| `verify_links.py` reference sources | 264 tracked `.md` files | 23 — **historical**, fixed in phase 0 |
+| Per-skill canary sets | 9 sets, 50 canaries, 4–8 each, now `evals/canaries/<skill>.yaml`; `gardener` and `search-recall-audit` have none | "8 folders holding one file each; one is empty" — **historical** |
+| `verify_links.py` reference sources | 271 tracked `.md` files — but **backticked refs only**; `[text](path)` links are unchecked, and 31 of them are broken today | 23 — **historical**, fixed in phase 0 |
 | `check_public._DENY_TREES` | 11 entries, already including `store/`, `me/`, `companies/`, `market/` | 5 regexes — **historical** |
-| `ci.yml` executed path pins | 16, of which 1 moves in phase 2 | "12 pinned paths" |
+| `ci.yml` executed path pins | 16; the one that moved in phase 2 (`automation/gardener/tests`) is repointed, and `examples/data` is the one phase 8 moves | "12 pinned paths" |
 | Inbound public→private symlinks | 0 | 8 — **historical**, removed in phase 4 |
 
 **Hard hazards:**
@@ -570,11 +599,22 @@ that no longer exists and are kept only so a reader of an older branch or PR is 
 - Renaming a root that a checker names in a constant **disarms the checker instead of breaking
   it**. `verify_links.py`'s `_present_strict_prefixes()` and the reconciler's `CHECK_ROOTS`
   no-op on a missing root by design. After any rename, prove the check still fails on a planted
-  defect; a green run is not evidence.
+  defect; a green run is not evidence. Phase 2 found a second, finer-grained form of the same
+  hazard: an individual backticked ref whose root prefix is not in `STRICT_ROOT_PREFIXES` is
+  dropped at `check_references()`'s fall-through without being counted anywhere, so renaming a
+  root disarms every reference still spelled the old way one ref at a time. See
+  [the phase-2 record](#merged-phase-2--public-side-cleanup).
+- **A root is spelled three ways, and a sweep for one finds neither of the others**: a slashed
+  path (`tmp/`), a bare quoted segment in code (`REPO_ROOT / "tmp"`), and a bare word in prose
+  ("the `maintenance/` bucket"). Phase 2 hit all three. Grep for each form before believing a
+  rename is complete.
 
 **Pre-existing breakage to fix opportunistically (file, don't silently repair):** a job-search
-profile references `interviews/common-message-**relies**/` (typo), and a benchmark fixture
-symlink points at an uncompressed target that exists only as `.gz`. The third item on this list
+profile references `interviews/common-message-**relies**/` (typo); a benchmark fixture
+symlink points at an uncompressed target that exists only as `.gz`; and
+`automation/search-recall-audit/store_refilter.py` raises `NameError: prof_label` on its final
+print, so the script has never run to completion (broken at `d9aa3cb`, before phase 2 — the split
+neither caused nor fixed it). The third item on this list
 — a benchmark profile that could not be bootstrapped — was closed on 2026-07-29 (commits
 `eb7f07c`, `19d0829`): there was no regression, because `overlay_root()` follows the active
 config, so the benchmark config finds its own fixture profile with no symlink at all.
