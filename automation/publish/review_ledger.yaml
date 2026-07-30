@@ -496,3 +496,16 @@
     placement and names no employer, person, posting, date, school, salary or
     filename from the interview tree; no absolute home path appears and nothing
     under private/ is touched.
+
+- commit: a8d0c94e
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 5
+  digest: sha256:521cddf20b085940
+  finding: >-
+    Clean. The fold of an answered clarification into an ADR amendment, the
+    execution plan, the phase-5 task and the roadmap, plus the deletion of the
+    queue item. The interview tree is described by counts and folder shapes only —
+    552, 478, 25 folders, 299/163/15/1, 19/36/17/2 — with no employer, person,
+    posting, date, school, salary, recruiter or filename from it. No absolute home
+    path; nothing under private/ touched or newly named.
