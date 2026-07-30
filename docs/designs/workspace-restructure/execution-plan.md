@@ -3,13 +3,12 @@
 The implementation spec for [the workspace layout](README.md). Written for an agent that has
 read `AGENTS.md` and nothing else about this design.
 
-**Status: phases 0, 1, 2, 3 and 4 are done; phases 5, 6, 7 and 8 are not started.** Phases 0, 3
-and 4 are merged into `main`; phases 1 and 2 are finished and sitting in review as open stacked
-PRs, so their records below describe a tree you have to check out the stack to see. All five are
-recorded as short records — what they changed and what the remaining phases may now rely on —
-not as instructions. The phase-0/3/4 figures were re-measured on 2026-07-29 against `main` at
-commit `19d0829`, the phase-2 figures against the phase-2 stack's tip; re-measure anything you
-are about to depend on, because the tree moves under this plan faster than the plan does.
+**Status: phases 0, 1, 2, 3 and 4 are merged into `main`; phases 5, 6, 7 and 8 are not started.**
+All five are recorded below as short records — what they changed and what the remaining phases may
+now rely on — not as instructions. The phase-0/3/4 figures were re-measured on 2026-07-29 against
+`main` at commit `19d0829`, the phase-2 figures against the phase-2 stack before it merged;
+re-measure anything you are about to depend on, because the tree moves under this plan faster
+than the plan does.
 
 **Phase 5 is not the next thing to start.** The owner decided on 2026-07-29 that the link-checker
 repair lands first, because phase 5's largest verification step is unverifiable until it does —
@@ -488,14 +487,15 @@ An agent may still fix something *plainly* broken in passing — a typo'd path, 
 the wrong company's folder — but may not restructure. If a case needs argument to justify, it is
 not an obvious mistake, and the answer is to leave it and file it.
 
-**One thing this does not settle, and it is filed as an open question.** "Don't touch anything
-else" reads two ways for the 55 non-company files: (a) do not *reorganise* them, but still
-*relocate* them to their taxonomy home, or (b) leave `interviews/` where it is entirely. **This
-plan proceeds on reading (a)** — relocation is the taxonomy this phase exists to build, whereas
-reorganisation is what the owner declined — and the table above assumes it. Confirm before the
-first phase-5 commit:
-[`message-queue/needs-human/clarifications/phase-5-relocate-non-company-interview-material.md`](../../../message-queue/needs-human/clarifications/phase-5-relocate-non-company-interview-material.md).
-It is not blocking, because the link-checker task lands first either way.
+**The one thing this left open was settled on 2026-07-29.** "Don't touch anything else" read two
+ways for the 55 non-company files: (a) do not *reorganise* them, but still *relocate* them to
+their taxonomy home, or (b) leave `interviews/` where it is entirely. The plan proceeded on (a),
+and the owner confirmed (a): the story bank, the general question bank and the shared replies move
+to `me/interviews/{stories,questions,replies}/` with nothing inside them altered. The table above
+already assumed this, so no step changes — see the amendment in
+[the interview-material ADR](../../../memory/decisions/interview-material-moves-by-company-only.md).
+**Every one of the 552 interview files now has a named destination**, which is what makes this
+phase's interview work schedulable at all.
 
 ### Links inside `interviews/`
 

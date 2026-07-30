@@ -74,10 +74,24 @@ non-company files (the story bank, the general question bank, the shared reply d
 (a) do not *reorganise* them but still *relocate* them to their taxonomy home, or (b) leave the
 interview tree entirely where it is. The working assumption is **(a)** — relocation is the
 taxonomy phase 5 exists to build, whereas reorganisation is what the owner declined — and it is
-filed for confirmation as
-[`message-queue/needs-human/clarifications/phase-5-relocate-non-company-interview-material.md`](../../message-queue/needs-human/clarifications/phase-5-relocate-non-company-interview-material.md).
-It is not blocking: a separate owner decision put the link-checker repair ahead of phase 5, so
-there is time for an answer before any of it matters.
+filed for confirmation as a clarification queue item (since answered and deleted when folded —
+see the amendment below; the queue contract keeps git history as the archive rather than a
+`done/` folder). It is not blocking: a separate owner decision put the link-checker repair ahead
+of phase 5, so there is time for an answer before any of it matters.
+
+**Amendment, 2026-07-29 — settled as (a).** The owner confirmed in chat: *"I confirm that you are
+right, they get relocated to `me/interviews/…` without being reorganised."* So the 55 non-company
+files move to `me/interviews/stories/` (17), `me/interviews/questions/` (36) and
+`me/interviews/replies/` (2), with nothing inside them altered — not a filename, not a heading,
+not a directory below the top level. The clarification item was deleted in the commit that folded
+this in, per the queue contract; git history is its archive. The paragraph above is left standing
+rather than rewritten, because an ADR records what was decided *and when it was still open* — the
+fact that this hung on an inference for a day is part of the record, not an embarrassment to
+tidy away.
+
+Nothing in phase 5 changes as a result: (a) was already the working assumption the plan and the
+task were built on. What changes is that the largest remaining piece of phase 5 no longer rests
+on an agent's reading of an ambiguous sentence.
 
 **No company is named here, and none may be.** This tree *is* the owner's interview history;
 `AGENTS.md`'s leak rule forbids naming a real employer in the public tree, and the public review

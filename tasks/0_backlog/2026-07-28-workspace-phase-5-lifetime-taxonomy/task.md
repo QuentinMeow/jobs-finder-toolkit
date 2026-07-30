@@ -100,12 +100,15 @@ same count out, per company folder.
 
 An interview-running firm is a company, not a vendor — there is no `vendors/` root.
 
-**One open clarification, non-blocking:** whether the 55 non-company files (story bank, general
-question bank, shared replies) are *relocated* to `me/interviews/…` or left where they are. This
-task assumes **relocated** — see
-[the clarification](../../../message-queue/needs-human/clarifications/phase-5-relocate-non-company-interview-material.md).
-Confirm before the first commit that touches `interviews/`; there is time, because the
-link-checker task lands first.
+**Settled 2026-07-29 — the 55 non-company files are relocated, not reorganised.** The owner
+confirmed that the story bank (17 → `me/interviews/stories/`), the general question bank
+(36 → `me/interviews/questions/`) and the shared replies (2 → `me/interviews/replies/`) move to
+their taxonomy homes with nothing inside them altered. This was already the assumption this task
+carried, so no step changes; it is now a decision rather than an inference. Recorded as an
+amendment in
+[the interview-material ADR](../../../memory/decisions/interview-material-moves-by-company-only.md).
+**Nothing about the interview tree is open any more** — every one of its 552 files has a named
+destination.
 
 **The scratch-tree classification is deferred, and does not block this phase.** The owner set it
 aside on 2026-07-29 to deal with later. It was checked, not assumed: this phase creates

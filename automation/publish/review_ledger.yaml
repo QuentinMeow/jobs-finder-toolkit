@@ -484,3 +484,15 @@
     under private/ is touched or newly named; the scratch inventory it refers to is
     cited by role, not by path content. The one deletion is a queue file whose
     answer is preserved in the ADR that replaces it.
+
+- commit: 36202922
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 1
+  digest: sha256:64fda73e6dc90108
+  finding: >-
+    Clean. One clarification queue item records the owner's chat answer verbatim
+    and flips its Status to folding. The quoted sentence is about directory
+    placement and names no employer, person, posting, date, school, salary or
+    filename from the interview tree; no absolute home path appears and nothing
+    under private/ is touched.

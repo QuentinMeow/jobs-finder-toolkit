@@ -74,8 +74,10 @@
   phase-5 task. Two further owner decisions landed the same day: phase 5 moves
   company-specific interview material into company folders and reorganises
   nothing else (`memory/decisions/interview-material-moves-by-company-only.md`,
-  which withdraws the plan's "four dozen judgment calls" item and leaves one
-  non-blocking clarification covering 55 files), and config discovery keeps
+  which withdraws the plan's "four dozen judgment calls" item; its one open
+  clarification, covering 55 non-company files, was answered 2026-07-29 —
+  relocated to `me/interviews/…`, not reorganised — so every one of the 552
+  interview files now has a named destination), and config discovery keeps
   Option A (`memory/decisions/config-discovery-example-fallback.md`, a
   record-and-close — the behaviour was already live). The scratch-tree
   classification is deferred by the owner; it blocks nothing, which was checked
