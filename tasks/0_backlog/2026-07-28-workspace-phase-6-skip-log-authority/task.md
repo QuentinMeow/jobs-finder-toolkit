@@ -48,7 +48,8 @@ commit.
 gates in this repo fail *open*, so a half-done phase is indistinguishable from a done one.
 
 Phase 5 merged. **Not met as of 2026-07-29** — phase 5 is not started, and it is what creates
-`market/logs/`. Phases 0, 3 and 4 are merged; 1, 2 and 5 are not.
+`market/logs/`. Phases 0, 3 and 4 are merged; phases 1 and 2 are done and in review as open
+stacked PRs; phase 5 is not started.
 
 ## Definition of done
 

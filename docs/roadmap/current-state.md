@@ -44,17 +44,25 @@
   eight inbound public→private symlinks deleted; profiles/private-skill
   access now goes through config accessors and git-ignored `.claude/skills`
   /`.cursor/skills` links) are **merged** (PRs #81–#86, commits
-  `72d45e2`…`7809b4b`). Phase 2 is in flight as a stacked train: the former
-  generic maintenance bucket is split into `automation/gardener/`,
-  `automation/search-recall-audit/` and `automation/company-levels/`, and the
-  three human-doc roots now sit under one parent as `docs/handbook/`,
-  `docs/designs/` and `docs/roadmap/` (superseding ADR:
-  `memory/decisions/docs-parent-for-the-human-read-trees.md`), and `evals/`
-  absorbed all measurement into `protocols/` + `canaries/<skill>.yaml` beside
-  the existing `rubrics/` and `results/`, and the gitignored scratch root is
-  renamed `tmp/` → `local/` (one filesystem rename of an untracked tree; the
-  `.gitignore` rule, both link-checker skip lists, and every default write path
-  in `search-recall-audit` and `job-search` move with it). That closes the
-  code-carrying legs of phase 2. Phases 1, 5–8 not started;
-  their task files carry the re-measured preconditions. See
+  `72d45e2`…`7809b4b`). Phases 1 (both orphaned items refiled inside the
+  overlay; the scratch tree classified, never emptied) and 2 are **complete and
+  in review** as open stacked PRs. Phase 2 gave the public tree its final root
+  shape: the former generic maintenance bucket is split into
+  `automation/gardener/`, `automation/search-recall-audit/` and
+  `automation/company-levels/` with six of nine depth constants replaced by an
+  upward `.git` walk; the three human-doc roots sit under one parent as
+  `docs/handbook/`, `docs/designs/` and `docs/roadmap/` (superseding ADR:
+  `memory/decisions/docs-parent-for-the-human-read-trees.md`) with the published
+  file set unchanged at 566 files; `evals/` absorbed all measurement into
+  `protocols/` + `canaries/<skill>.yaml` beside the existing `rubrics/` and
+  `results/` with all nine canary sets byte-identical across the move; and the
+  gitignored scratch root is renamed `tmp/` → `local/` (one filesystem rename of
+  an untracked tree — 102 files in, the same 102 paths out; the `.gitignore`
+  rule, both link-checker skip lists, and every default write path move with
+  it). Each moved check was re-proved against a planted defect rather than
+  trusted green. Two gaps the phase exposed are filed and open:
+  `verify_links.py` checks no `[text](path)` links at all (31 broken today) and
+  silently drops backticked refs at unrecognised roots, and phase 8's per-skill
+  path counts are now obsolete. Phases 5–8 not started; their task files carry
+  the re-measured preconditions. See
   `docs/designs/workspace-restructure/execution-plan.md`.

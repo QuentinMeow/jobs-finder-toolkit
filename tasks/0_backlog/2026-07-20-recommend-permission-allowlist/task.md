@@ -41,3 +41,20 @@ the owner is uncomfortable auto-allowing — `git push` in particular.)
 
 - Owner has applied (or explicitly declined) an allowlist; a later mining
   run shows permission-denial blocks at ~zero.
+
+## 2026-07-29 — the Source line cites gitignored scratch
+
+This task's **Source** points at `local/transcript_mining/report.md` (the path was
+`tmp/transcript_mining/report.md` when it was written; workspace phase 2 renamed the scratch
+root). That is a durable record citing gitignored scratch as its evidence — the exact
+anti-pattern the scratch section of
+[`docs/handbook/file-organization.md`](../../../docs/handbook/file-organization.md#scratch--temporary-files)
+has forbidden since phase 1: a record that cites scratch is evidence with an expiry date and no
+expiry signal. Nobody but this checkout can verify the "9+ hard-blocks" measurement above, and
+the scratch tree is exactly the tree the owner has an open review item about clearing.
+
+**Before this task is actioned**, replace the citation with the evidence itself — the mined
+counts, and enough of the blocking commands to justify each allowlist row — pasted inline. The
+citation stays until then rather than being deleted, because it is still the only pointer to
+where the numbers came from.
+
