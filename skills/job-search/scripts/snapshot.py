@@ -80,7 +80,7 @@ def write_snapshot(
     """Write ``<profile>-stage<N>-<stamp>.json`` plus a ``-latest.json`` pointer.
 
     The pointer is a **full copy** (not a symlink): robust across platforms and
-    trivial to load, and the whole ``tmp/`` tree is disposable anyway. Returns
+    trivial to load, and the whole ``local/`` tree is disposable anyway. Returns
     ``(snapshot_path, latest_path)``.
     """
     cache_dir = Path(cache_dir)

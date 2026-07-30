@@ -179,11 +179,11 @@ class TestNoGitFallback(VerifyLinksTestCase):
     def test_walk_skips_private_and_tmp(self) -> None:
         self.write("docs/handbook/x.md", "ok\n")
         self.write("private/secret.md", "ok\n")
-        self.write("tmp/scratch/x.md", "ok\n")
+        self.write("local/scratch/x.md", "ok\n")
         names = {p.relative_to(self.root).as_posix() for p in V._instruction_files()}
         self.assertIn("docs/handbook/x.md", names)
         self.assertNotIn("private/secret.md", names)
-        self.assertNotIn("tmp/scratch/x.md", names)
+        self.assertNotIn("local/scratch/x.md", names)
 
 
 class TestSymlinkRootsFailClosed(VerifyLinksTestCase):

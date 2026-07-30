@@ -7,7 +7,7 @@ skill. This routine checks that:
   * every backticked, repo-relative TOOLKIT path that looks like a real file/dir
     exists (resolving symlinks). Config-derived placeholders (``config.*()``,
     ``<slug>``/``<company>`` templates) and data/overlay trees (``applications/``,
-    ``private/``, ``interviews/``, ``tmp/``) are skipped — they are runtime/illustrative,
+    ``private/``, ``interviews/``, ``local/``) are skipped — they are runtime/illustrative,
     not shipped toolkit files. So are refs into a root this tree does not ship,
     git-ignored (overlay-only / per-user) paths, and — as ADVISORY, since plans
     and records name target and historical paths on purpose — unresolved refs
@@ -63,10 +63,10 @@ STRICT_ROOT_PREFIXES = (
 # under ``private/docs/``) fall through to OVERLAY_PREFIX and are verified ONLY when
 # the overlay is mounted (otherwise counted "overlay-skipped" — a clean pass for
 # contributors).
-SKIP_PREFIXES = ("applications/", "interviews/", "tmp/",
+SKIP_PREFIXES = ("applications/", "interviews/", "local/",
                  ".agents/inputs/", ".git/", ".venv/",
                  "private/applications/", "private/interviews/",
-                 "private/job-search/", "private/tmp/")
+                 "private/job-search/", "private/local/")
 SKILLS_ROOT = "skills"
 
 # Backticked refs into the private overlay (maintainer-only design docs, real
@@ -134,7 +134,7 @@ def _bases_for(f: Path) -> list[Path]:
     return bases
 
 
-_FALLBACK_SKIP_DIRS = {".git", ".venv", "node_modules", "private", "tmp",
+_FALLBACK_SKIP_DIRS = {".git", ".venv", "node_modules", "private", "local",
                        "applications", "interviews", "__pycache__"}
 
 
@@ -145,7 +145,7 @@ def _instruction_files() -> list[Path]:
     ~155 docs), so a stale path in the handbook, a design doc, a task, a memory
     entry or the README was invisible. ``git ls-files`` (not ``rglob``) defines
     the set: it is exactly the publishable surface and it excludes the ignored
-    trees (``private/``, ``tmp/``, ``.venv/``) for free. The rglob fallback keeps
+    trees (``private/``, ``local/``, ``.venv/``) for free. The rglob fallback keeps
     the routine usable in an exported tarball that is not a git checkout.
     """
     r = subprocess.run(["git", "-C", str(C.REPO_ROOT), "ls-files", "-z", "*.md"],

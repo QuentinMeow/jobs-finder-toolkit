@@ -77,7 +77,7 @@ class CompactTableGoldenTests(unittest.TestCase):
         meta = {"stage": 1, "n_companies": 42,
                 "aggregators": ["jobicy", "themuse"], "n_raw": 1234}
         summary = search_jobs.render_run_summary(
-            meta, self._kept(), snapshot_display="tmp/search_cache/example-stage1-x.json",
+            meta, self._kept(), snapshot_display="local/search_cache/example-stage1-x.json",
             discoveries_path="applications/1_discoveries/20260115-example.md",
             json_path=None)
         lines = summary.splitlines()

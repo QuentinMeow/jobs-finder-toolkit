@@ -25,7 +25,7 @@ Design notes
   (white-box, because the whole point is to introspect that skill's gates). It
   never imports repo-root Python and never mutates any tracked file.
 * All output lands under a GITIGNORED scratch dir (default
-  ``tmp/search_recall_audit/``) — never the repo root or a tracked/product folder.
+  ``local/search_recall_audit/``) — never the repo root or a tracked/product folder.
 * Coverage matching uses the pipeline's OWN URL canonicalizer
   (``posting_identity.canonicalize_url``), NOT a naive query-string strip, so a
   distinct ``?gh_jid=`` posting is never falsely reported as "already covered".
@@ -70,7 +70,7 @@ for p in (REPO_ROOT / "automation" / "shared", _JS, _JS / "_vendor"):
 import yaml  # noqa: E402
 import config  # noqa: E402  (automation/shared/config.py)
 
-DEFAULT_OUT = REPO_ROOT / "tmp" / "search_recall_audit"
+DEFAULT_OUT = REPO_ROOT / "local" / "search_recall_audit"
 
 # Sensible default keyword combos (each = AND of terms, matched anywhere in the
 # JD). Tunable via --combo; keep them aligned with the profile's target roles.
@@ -118,7 +118,7 @@ def canon(url: str) -> str:
 
 
 def default_snapshot(profile: str) -> Path:
-    return REPO_ROOT / "tmp" / "search_cache" / f"{profile}-stage1-latest.json"
+    return REPO_ROOT / "local" / "search_cache" / f"{profile}-stage1-latest.json"
 
 
 def resolve_profile_name(name: str | None) -> str:
