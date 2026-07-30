@@ -414,3 +414,27 @@
     appears; no private/ content is reproduced — the private/ mentions are path
     strings naming overlay locations plus one shape-only reference to an
     overlay queue item. No file is added to or removed from the published set.
+
+- commit: 0da4274d
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 8
+  digest: sha256:6d4b5ec187e340b3
+  finding: >-
+    Clean. Read the whole diff — 278 added lines, eight files, all process
+    records and no code. Two new backlog tasks carry their own reproductions
+    inline (planted-defect transcripts, before/after link counts) rather than
+    citing a scratch path, per the handbook's scratch rule. Three phase task
+    files get one corrected sentence each, saying phase 2 is done and in review
+    rather than not started, plus an obsolescence note over phase 8's per-skill
+    table. The 2026-07-20 allowlist task gains a dated appended note about its
+    own Source citing gitignored scratch; the owner's original text is left
+    intact above it, nothing deleted. The roadmap paragraph is rewritten to the
+    finished phase-2 state with its proof numbers. The handover names the five
+    open PRs, the two new tasks and the three open decisions by public path. The
+    one private reference is shape-only: an overlay review item described as
+    "roughly 1.2 GB of application and interview material", with no filename, no
+    company, no folder name and no summary of its contents. Every other number
+    is about this repo's own shape. No real name, employer, school, recruiter,
+    posting, salary, email, phone or absolute home path appears. No file is
+    added to or removed from the published set.
