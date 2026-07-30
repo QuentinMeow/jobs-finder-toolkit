@@ -451,3 +451,21 @@
     comparison keys on a source path that this phase moved. No name, employer,
     school, posting, recruiter, date, salary, email, phone or absolute home path
     appears in the diff, and no private/ path is added.
+
+- commit: 0ea8347e
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 178
+  digest: sha256:a5add11dfae66164
+  finding: >-
+    Reconciliation row after the phase-2 stack merged. No new content is being
+    reviewed here: every one of these 178 files was reviewed on the branch it
+    landed from, under rows 18-26, and merging the stack bottom-up rebased PRs
+    100-103 so each of those commits now exists in main under a different SHA.
+    The rows stay because the ledger is append-only and an orphaned row records a
+    review that did happen; this row re-anchors the chain on the trunk tip. The
+    twins are e207aeb/8434650 (docs consolidation), 7968943/bc35b5b (evals
+    layout), bac58e0/b045f99 (tmp to local) and 15794a1/0da4274/04488de (the
+    phase-2 record). Re-checked on the merged tree rather than assumed: no real
+    name, employer, school, posting, recruiter, salary, email, phone or absolute
+    home path appears, and nothing under private/ is named.
