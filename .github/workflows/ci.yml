@@ -77,7 +77,7 @@ jobs:
       #     handovers, roadmap freshness (single source of truth: templates/).
       #     NOTE: deliberately WITHOUT --require-roots. Every check no-ops when its
       #     folder is absent so the published export (which ships none of
-      #     message-queue/, tasks/, memory/, roadmap/, history/) stays green;
+      #     message-queue/, tasks/, memory/, docs/roadmap/, history/) stays green;
       #     --require-roots is a maintainer-checkout assertion and lives in the
       #     pre-commit hook only.
       - name: Reconciler (process-layer schemas)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Provider conformance suite — every mail provider must pass.
 
-Two modes (design/raw-data-layer/03-provider-interfaces.md, isolation rules):
+Two modes (docs/designs/raw-data-layer/03-provider-interfaces.md, isolation rules):
 
 * **Synthetic (default, CI-safe).** Runs against the provider's generated
   fixture mailbox (``providers/<name>/synthetic.py`` →

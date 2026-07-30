@@ -18,9 +18,9 @@ Scope and rationale live in `memory/decisions/agentfold-restructure.md`.
 Planned stack:
 
 1. `todo/` → `message-queue/` + `tasks/`; records → `memory/` (this PR).
-2. `docs/` → `handbook/` + `design/` (annex split into named docs).
+2. `docs/` → `docs/handbook/` + `docs/designs/` (annex split into named docs).
 3. the hidden `.agents/skills/` dir → `skills/`; `scripts/` → `automation/`.
-4. Root-contract rewrite + `templates/` + `roadmap/` + `history/` +
+4. Root-contract rewrite + `templates/` + `docs/roadmap/` + `history/` +
    reconciler wired into pre-commit.
 5. Mirror the layout in the `private/` overlay repo.
 

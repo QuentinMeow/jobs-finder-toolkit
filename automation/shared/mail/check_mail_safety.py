@@ -4,7 +4,7 @@
 Replaces the old fixed-file ``check_draft_only.py`` (which scanned a hardcoded
 five-file list). This checker walks EVERY provider folder under
 ``providers/`` — no hardcoded file lists, so a new provider folder is covered
-the day it appears (design/raw-data-layer/03-provider-interfaces.md §2b). Per
+the day it appears (docs/designs/raw-data-layer/03-provider-interfaces.md §2b). Per
 provider it enforces:
 
 1. **Banned source patterns** in every ``*.py`` file: send scopes/routes

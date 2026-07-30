@@ -4,7 +4,7 @@
 Stdlib-only and idempotent — safe to re-run. Correct links are left untouched, a
 foreign file or a foreign git hook is NEVER clobbered (it is warned about
 instead). This is the one-shot "make my checkout work" step referenced by
-``README.md``, ``handbook/private-overlay.md``, and ``CONTRIBUTING.md``.
+``README.md``, ``docs/handbook/private-overlay.md``, and ``CONTRIBUTING.md``.
 
 It writes NOTHING into the public tree. It used to create eight INBOUND symlinks
 that put overlay content at public-looking paths — ``skills/coding-interview*``,

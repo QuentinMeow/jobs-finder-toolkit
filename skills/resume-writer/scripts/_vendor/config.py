@@ -139,7 +139,7 @@ def _repo_root(start: Path) -> Path:
     named a file that cannot exist and every "am I on the fictional example?"
     comparison against it answered a constant "no". The upward walk answers
     correctly from both homes, and it is also what
-    ``handbook/skills-and-vendoring.md`` requires: a skill folder dropped into
+    ``docs/handbook/skills-and-vendoring.md`` requires: a skill folder dropped into
     ANOTHER project has to find that host project's root.
 
     Markers, in order of authority:

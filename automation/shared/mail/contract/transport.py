@@ -1,6 +1,6 @@
 """The contract's ONE audited HTTP transport + the route-allowlist base class.
 
-The primary safety control (design/raw-data-layer/03-provider-interfaces.md
+The primary safety control (docs/designs/raw-data-layer/03-provider-interfaces.md
 §2b): every provider routes ALL mail-API network I/O through this single
 chokepoint; each provider ships a :class:`RoutePolicy` enumerating allowed
 method+path shapes, so send endpoints are structurally unreachable. Raw

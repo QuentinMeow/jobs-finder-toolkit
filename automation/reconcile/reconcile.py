@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reconciler — mechanical referee for the repo's process-layer invariants.
 
-Validates the message-queue/, tasks/, memory/, history/, and roadmap/
+Validates the message-queue/, tasks/, memory/, history/, and docs/roadmap/
 structures against their schemas (single source of truth: ``templates/``), and
 the derived skill manifests against ``skills/*/SKILL.md`` frontmatter (single
 source of truth for visibility). Instructions are wishes; this check is the
@@ -21,7 +21,7 @@ Design rules:
   * stdlib only — must run on a bare clone;
   * every check NO-OPS if its folder is absent, so any subset of the
     process folders can be adopted or deleted — and because the PUBLIC export
-    ships none of message-queue/, tasks/, memory/, roadmap/, history/, closing
+    ships none of message-queue/, tasks/, memory/, docs/roadmap/, history/, closing
     that no-op would turn the exported repo's CI red. ``--require-roots`` is the
     opt-in maintainer-checkout assertion that they are all present; it is wired
     into the pre-commit hook, never into CI;
@@ -248,9 +248,9 @@ def check_skill_manifests() -> list[Finding]:
 
 
 def check_roadmap_fresh() -> list[Finding]:
-    """roadmap/current-state.md exists alongside desired-state.md and is dated."""
+    """docs/roadmap/current-state.md exists alongside desired-state.md and is dated."""
     findings: list[Finding] = []
-    roadmap = REPO_ROOT / "roadmap"
+    roadmap = REPO_ROOT / "docs" / "roadmap"
     if not roadmap.is_dir():
         return findings
     current = roadmap / "current-state.md"
@@ -274,7 +274,7 @@ CHECKS = {
 
 # The folder whose absence makes each check no-op (see the module docstring: that
 # no-op is DELIBERATE — the published tree ships none of message-queue/, tasks/,
-# memory/, roadmap/ or history/, so closing it would turn the exported repo's CI
+# memory/, docs/roadmap/ or history/, so closing it would turn the exported repo's CI
 # red). --require-roots is the maintainer-checkout opposite: assert they are all
 # here, so a botched move cannot quietly disarm a check. Plain --check is
 # unchanged and still no-ops.
@@ -284,7 +284,7 @@ CHECK_ROOTS = {
     "memory-schema": "memory",
     "memory-index": "memory",
     "handover-present": "history/conversations",
-    "roadmap-fresh": "roadmap",
+    "roadmap-fresh": "docs/roadmap",
     "skill-manifests": "skills",
 }
 

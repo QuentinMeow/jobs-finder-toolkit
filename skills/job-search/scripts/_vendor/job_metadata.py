@@ -242,7 +242,7 @@ def legacy_stage_phase(stage: str | None) -> str | None:
 def default_progress_for_status(status: str, *, current: dict | None = None) -> dict:
     """The deterministic progress summary for a coarse per-job status transition.
 
-    Mirrors the migration mapping (design/application-progress-calendar §6):
+    Mirrors the migration mapping (docs/designs/application-progress-calendar §6):
     ``drafted`` -> application_prep + action_required; ``applied`` ->
     application_review + waiting_employer; ``rejected``/``ignored`` keep the
     last known phase with state ``closed``; ``in_progress`` keeps the current

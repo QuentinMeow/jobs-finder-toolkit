@@ -2,7 +2,7 @@
 
 - **Priority**: P2 (someday)
 - **Area**: repo
-- **Source**: found during phase 0b (`design/workspace-restructure/execution-plan.md`, item 0.12)
+- **Source**: found during phase 0b (`docs/designs/workspace-restructure/execution-plan.md`, item 0.12)
 - **Claimed-by**:
 
 ## Goal

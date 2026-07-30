@@ -3,7 +3,7 @@
 Schema v5 replaces the retired free-text per-job ``stage`` with the structured
 ``jobs[].progress`` summary ({phase, state, label?, calendar_item?,
 updated_at?, source?}). The mapping is deterministic and never guesses
-(design/application-progress-calendar §6):
+(docs/designs/application-progress-calendar §6):
 
 - ``drafted``      -> phase ``application_prep``,   state ``action_required``
 - ``applied``      -> phase ``application_review``, state ``waiting_employer``

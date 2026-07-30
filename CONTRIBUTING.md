@@ -121,7 +121,7 @@ index** the same way and rejects any staged `private/` path.
 
 You can use this toolkit with your **own real data** and still contribute — that
 is exactly what the private-overlay design is for (see
-[`handbook/private-overlay.md`](handbook/private-overlay.md), including how to create
+[`docs/handbook/private-overlay.md`](docs/handbook/private-overlay.md), including how to create
 your own overlay from scratch):
 
 - Your data lives in the git-ignored `private/` mount (optionally your **own**

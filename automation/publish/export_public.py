@@ -66,7 +66,7 @@ ALLOWLIST_FILES = [
     "requirements.txt",
     "config.example.yaml",
     # The one-shot "make my checkout work" step README.md / CONTRIBUTING.md /
-    # handbook/private-overlay.md all tell a new user to run.
+    # docs/handbook/private-overlay.md all tell a new user to run.
     "automation/bootstrap_overlay.py",
 ]
 
@@ -89,8 +89,11 @@ ALLOWLIST_DIRS = [
     "templates",
     ".github",
     ".claude-plugin",
-    "handbook",
-    "design",
+    # The two human-doc trees that ship. NOT a bare ``docs`` — that would newly
+    # export ``docs/roadmap/``, which has never been published (it names in-flight
+    # work), so the parent is spelled out one shipping child at a time.
+    "docs/handbook",
+    "docs/designs",
 ]
 
 
@@ -239,7 +242,7 @@ def _copy_tree(rel_dir: str, dest_root: Path, copied: list[str],
 
     Symlinks are followed (``shutil.copy2``), matching the previous behaviour:
     git stores a symlink as a blob holding its target, but the export wants the
-    CONTENT (e.g. the tracked ``design/CLAUDE.md -> AGENTS.md`` shim must be a
+    CONTENT (e.g. the tracked ``docs/designs/CLAUDE.md -> AGENTS.md`` shim must be a
     real file in a checkout that may not support symlinks). A tracked path whose
     worktree file is missing is skipped with a reason rather than crashing.
     """

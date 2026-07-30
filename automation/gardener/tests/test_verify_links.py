@@ -11,7 +11,7 @@ nothing here reads the real repo (or the private overlay).
 Two regressions are pinned:
   * the routine used to read 23 files (AGENTS.md + ``skills/*/{SKILL,LESSONS,
     reference,AGENTS}.md``) out of ~155 tracked docs, so a stale path anywhere in
-    ``handbook/``, ``memory/``, ``README.md`` … was invisible;
+    ``docs/handbook/``, ``memory/``, ``README.md`` … was invisible;
   * ``check_symlinks()`` used to report "all resolve" when it found NO link root
     to walk — a fail-open that a restructure would trip silently.
 """
@@ -75,7 +75,7 @@ class TestSourceSetWidening(VerifyLinksTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.write("handbook/architecture.md",
+        self.write("docs/handbook/architecture.md",
                    f"| `{BROKEN_REF}` | the renamed script |\n")
         self.write("memory/known-issues/stale.md", f"Repro via `{BROKEN_REF}`.\n")
         self.git_init()
@@ -85,7 +85,7 @@ class TestSourceSetWidening(VerifyLinksTestCase):
         self.assertEqual(advisory, [])
         self.assertEqual(
             sorted((b["file"], b["ref"]) for b in broken),
-            [("handbook/architecture.md", BROKEN_REF),
+            [("docs/handbook/architecture.md", BROKEN_REF),
              ("memory/known-issues/stale.md", BROKEN_REF)],
         )
 
@@ -98,18 +98,18 @@ class TestSourceSetWidening(VerifyLinksTestCase):
         self.assertEqual(broken, [])
 
     def test_tracked_md_set_is_used_and_ignores_untracked(self) -> None:
-        self.write("handbook/scratch-untracked.md", f"`{BROKEN_REF}`\n")  # not added
+        self.write("docs/handbook/scratch-untracked.md", f"`{BROKEN_REF}`\n")  # not added
         names = {p.relative_to(self.root).as_posix() for p in V._instruction_files()}
-        self.assertIn("handbook/architecture.md", names)
+        self.assertIn("docs/handbook/architecture.md", names)
         self.assertIn("memory/known-issues/stale.md", names)
-        self.assertNotIn("handbook/scratch-untracked.md", names)
+        self.assertNotIn("docs/handbook/scratch-untracked.md", names)
 
 
 class TestPlanAndRecordSourcesAreAdvisory(VerifyLinksTestCase):
     """Plans and records name target/past paths on purpose — advisory, not broken."""
 
     def test_design_task_and_adr_refs_do_not_fail_the_gate(self) -> None:
-        self.write("design/x/execution-plan.md", f"Create `{BROKEN_REF}`.\n")
+        self.write("docs/designs/x/execution-plan.md", f"Create `{BROKEN_REF}`.\n")
         self.write("tasks/0_backlog/2026-01-01-x/task.md", f"Produce `{BROKEN_REF}`.\n")
         self.write("memory/decisions/x.md", f"`{BROKEN_REF}` was dissolved.\n")
         self.git_init()
@@ -118,7 +118,7 @@ class TestPlanAndRecordSourcesAreAdvisory(VerifyLinksTestCase):
         self.assertEqual(len(advisory), 3)
 
     def test_handbook_is_not_treated_as_a_plan(self) -> None:
-        self.write("handbook/x.md", f"`{BROKEN_REF}`\n")
+        self.write("docs/handbook/x.md", f"`{BROKEN_REF}`\n")
         self.git_init()
         broken, advisory, _ = V.check_references()
         self.assertEqual(len(broken), 1)
@@ -129,13 +129,13 @@ class TestAbsentStrictRoots(VerifyLinksTestCase):
     """A strict prefix is strict only in a tree that HAS that root.
 
     The published export ships no ``memory/``, ``tasks/``, ``message-queue/``,
-    ``roadmap/`` or ``history/`` while AGENTS.md and the handbook necessarily name
+    ``docs/roadmap/`` or ``history/`` while AGENTS.md and the handbook necessarily name
     them; making them strict everywhere would turn the PUBLISHED repo's gardener
     red — the same trap the reconciler's missing-root no-op exists to avoid.
     """
 
     def test_ref_into_a_root_this_tree_lacks_is_skipped(self) -> None:
-        self.write("handbook/x.md", "See `memory/decisions/whatever.md`.\n")
+        self.write("docs/handbook/x.md", "See `memory/decisions/whatever.md`.\n")
         self.git_init()
         broken, advisory, skipped = V.check_references()
         self.assertEqual(broken, [])
@@ -143,7 +143,7 @@ class TestAbsentStrictRoots(VerifyLinksTestCase):
         self.assertEqual(skipped["absent-root"], 1)
 
     def test_same_ref_is_enforced_once_the_root_exists(self) -> None:
-        self.write("handbook/x.md", "See `memory/decisions/whatever.md`.\n")
+        self.write("docs/handbook/x.md", "See `memory/decisions/whatever.md`.\n")
         self.write("memory/decisions/other.md", "# other\n")
         self.git_init()
         broken, _, skipped = V.check_references()
@@ -156,7 +156,7 @@ class TestGitIgnoredRefs(VerifyLinksTestCase):
 
     def test_ignored_ref_is_skipped(self) -> None:
         self.write(".gitignore", "skills/coding-interview\n")
-        self.write("handbook/x.md", "The private `skills/coding-interview/SKILL.md`.\n")
+        self.write("docs/handbook/x.md", "The private `skills/coding-interview/SKILL.md`.\n")
         self.git_init()
         broken, _, skipped = V.check_references()
         self.assertEqual(broken, [])
@@ -166,7 +166,7 @@ class TestGitIgnoredRefs(VerifyLinksTestCase):
         """``private/**`` is git-ignored wholesale — the overlay branch owns it."""
         (self.root / "private/docs").mkdir(parents=True)
         self.write(".gitignore", "private/\n")
-        self.write("handbook/x.md", "See `private/docs/gone.md`.\n")
+        self.write("docs/handbook/x.md", "See `private/docs/gone.md`.\n")
         self.git_init()
         broken, _, skipped = V.check_references()
         self.assertEqual([b["ref"] for b in broken], ["private/docs/gone.md"])
@@ -177,11 +177,11 @@ class TestNoGitFallback(VerifyLinksTestCase):
     """Not a git checkout (exported tarball): walk, minus ignored/data trees."""
 
     def test_walk_skips_private_and_tmp(self) -> None:
-        self.write("handbook/x.md", "ok\n")
+        self.write("docs/handbook/x.md", "ok\n")
         self.write("private/secret.md", "ok\n")
         self.write("tmp/scratch/x.md", "ok\n")
         names = {p.relative_to(self.root).as_posix() for p in V._instruction_files()}
-        self.assertIn("handbook/x.md", names)
+        self.assertIn("docs/handbook/x.md", names)
         self.assertNotIn("private/secret.md", names)
         self.assertNotIn("tmp/scratch/x.md", names)
 

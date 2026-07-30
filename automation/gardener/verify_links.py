@@ -11,8 +11,8 @@ skill. This routine checks that:
     not shipped toolkit files. So are refs into a root this tree does not ship,
     git-ignored (overlay-only / per-user) paths, and — as ADVISORY, since plans
     and records name target and historical paths on purpose — unresolved refs
-    sourced from ``design/``, ``tasks/``, ``message-queue/``, ``history/``,
-    ``memory/decisions/``, ``evals/results/`` and ``roadmap/desired-state.md``.
+    sourced from ``docs/designs/``, ``tasks/``, ``message-queue/``, ``history/``,
+    ``memory/decisions/``, ``evals/results/`` and ``docs/roadmap/desired-state.md``.
     Every skipped class is COUNTED in the report, never silently dropped;
   * the ``.claude/skills/*`` and ``.cursor/skills/*`` compatibility symlinks resolve
     — and that there was something to resolve (no link root, an empty root, or a
@@ -46,14 +46,14 @@ BACKTICK_RE = re.compile(r"`([^`]+)`")
 # (below) or are documented optional/ephemeral references, and never hard-fail.
 #
 # A prefix is strict ONLY IN A TREE THAT HAS THAT ROOT (``_present_strict_prefixes``).
-# The published export ships none of message-queue/, tasks/, memory/, roadmap/,
+# The published export ships none of message-queue/, tasks/, memory/, docs/roadmap/,
 # history/ while AGENTS.md and the handbook necessarily name them, so making them
 # strict everywhere would turn the PUBLISHED repo's gardener red — the same trap
 # the reconciler's documented missing-root no-op exists to avoid. In the maintainer
 # checkout every root is present, so every one of those refs IS verified.
 STRICT_ROOT_PREFIXES = (
     "skills/", "automation/", ".claude-plugin/", "examples/",
-    "handbook/", "design/", "roadmap/", "evals/", "templates/",
+    "docs/handbook/", "docs/designs/", "docs/roadmap/", "evals/", "templates/",
     "memory/", "tasks/", "message-queue/", "history/",
 )
 # Runtime data / scratch trees — never verified (illustrative or absent in a public
@@ -81,12 +81,12 @@ OVERLAY_PREFIX = "private/"
 # claim that the file exists today: "create `automation/publish/review_gate.py`"
 # is a plan, and requiring it to exist inverts the doc's meaning. Unresolved refs
 # from these sources are counted and reported as ADVISORY, never a failure.
-# Everything else — AGENTS.md, README, CONTRIBUTING, handbook/, templates/,
+# Everything else — AGENTS.md, README, CONTRIBUTING, docs/handbook/, templates/,
 # skills/, examples/, evals/ protocol docs, memory/{facts,lessons,known-issues},
-# roadmap/current-state.md — asserts CURRENT state and fails hard.
+# docs/roadmap/current-state.md — asserts CURRENT state and fails hard.
 PLAN_OR_RECORD_SOURCES = (
-    "design/", "tasks/", "message-queue/", "history/",
-    "memory/decisions/", "evals/results/", "roadmap/desired-state.md",
+    "docs/designs/", "tasks/", "message-queue/", "history/",
+    "memory/decisions/", "evals/results/", "docs/roadmap/desired-state.md",
 )
 
 
@@ -209,7 +209,7 @@ def check_references() -> tuple[list[dict], list[dict], dict[str, int]]:
     Four classes never fail the gate, each counted so nothing is silently dropped:
       * ``private/`` overlay refs when the overlay is not mounted ("overlay");
       * refs under a strict root this tree does not ship ("absent-root") — the
-        published export has no message-queue/, tasks/, memory/, roadmap/, history/;
+        published export has no message-queue/, tasks/, memory/, docs/roadmap/, history/;
       * refs git ignores ("git-ignored") — overlay-only symlinks and per-user dirs;
       * unresolved refs whose SOURCE is a plan or a record (PLAN_OR_RECORD_SOURCES),
         which name target and historical paths on purpose ("advisory").

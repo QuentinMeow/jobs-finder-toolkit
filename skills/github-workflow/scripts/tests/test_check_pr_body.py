@@ -5,7 +5,7 @@ Run with (from the repo root):
 
 The module is loaded from its absolute path rather than imported by name: a
 skill's `scripts/` is not a package on `sys.path`, and nothing here may reach
-repo-root Python (`handbook/skills-and-vendoring.md`).
+repo-root Python (`docs/handbook/skills-and-vendoring.md`).
 """
 from __future__ import annotations
 

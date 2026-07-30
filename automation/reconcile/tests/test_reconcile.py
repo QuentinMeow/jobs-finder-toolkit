@@ -7,7 +7,7 @@ Run with (from the repo root):
 Two behaviours are pinned here, and they pull in opposite directions on purpose:
 
   * the missing-root NO-OP is DOCUMENTED, not a defect — the published tree ships
-    none of message-queue/, tasks/, memory/, roadmap/, history/, so plain
+    none of message-queue/, tasks/, memory/, docs/roadmap/, history/, so plain
     ``--check`` must stay green without them. ``--require-roots`` is the opt-in
     maintainer assertion that fails on exactly the same tree;
   * ``file_retries()`` must not create ``message-queue/needs-agent/retries/``
@@ -79,7 +79,7 @@ class TestRequireRoots(TempRepo):
         bare temp tree has no copy of. It is covered by automation/publish/tests.
         """
         self.make_roots(skip=("message-queue", "tasks", "memory",
-                              "roadmap", "history/conversations"))
+                              "docs/roadmap", "history/conversations"))
         saved = R.CHECKS
         R.CHECKS = {k: v for k, v in saved.items() if k != "skill-manifests"}
         self.addCleanup(lambda: setattr(R, "CHECKS", saved))
@@ -110,7 +110,7 @@ class TestFileRetries(TempRepo):
         self.assertFalse(stale.exists())
 
     def test_findings_create_the_queue_and_the_item(self) -> None:
-        f = R.Finding("roadmap-fresh", "roadmap/current-state.md", "missing")
+        f = R.Finding("roadmap-fresh", "docs/roadmap/current-state.md", "missing")
         R.file_retries([f], "2026-07-29")
         item = R.RETRIES_DIR / R._retry_name(f)
         self.assertTrue(item.is_file())

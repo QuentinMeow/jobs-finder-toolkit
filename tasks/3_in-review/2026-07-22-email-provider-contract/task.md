@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (next email round)
 - **Area**: email
-- **Source**: `design/application-progress-calendar/execution-plan.md` Stage 1
+- **Source**: `docs/designs/application-progress-calendar/execution-plan.md` Stage 1
 - **Claimed-by**: claude (subagent session 2026-07-22, branch `email/stage-1-provider-contract`)
 
 ## Goal
@@ -12,7 +12,7 @@ current Outlook assistant's behavior or draft-only safety guarantees.
 
 ## Context
 
-Implement `design/raw-data-layer/03-provider-interfaces.md`: one
+Implement `docs/designs/raw-data-layer/03-provider-interfaces.md`: one
 send-less `MailProvider` contract, audited raw-HTTP transport, provider
 route allowlists, isolated provider folders, and folder-walking safety
 checks. Relocate the current Outlook implementation, update pre-commit

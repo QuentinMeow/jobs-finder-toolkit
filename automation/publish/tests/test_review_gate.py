@@ -7,7 +7,7 @@ HOME/XDG_CONFIG_HOME and pins ``GIT_CONFIG_GLOBAL``/``GIT_CONFIG_SYSTEM``, so a
 user's ``core.hooksPath``, signing key, or commit template cannot leak in on either
 an old or a new git).
 
-The scenarios mirror the spec's green gate (design/workspace-restructure/review-gate.md)
+The scenarios mirror the spec's green gate (docs/designs/workspace-restructure/review-gate.md)
 plus the operational cases the spec leaves implicit:
 
   * a commit touching a public file FAILS, with the spec's wording          (exit 1)
@@ -194,7 +194,7 @@ class DecisionTests(GateTestCase):
 
     def test_public_change_fails_with_the_spec_message(self):
         self.bootstrap()
-        self.repo.write("handbook/private-overlay.md", "a public doc\n")
+        self.repo.write("docs/handbook/private-overlay.md", "a public doc\n")
         self.repo.write("AGENTS.md", "contract\n")
         head = self.repo.commit("public change")
 
@@ -206,7 +206,7 @@ class DecisionTests(GateTestCase):
                       msg)
         self.assertIn("touching 2 files:", msg)
         self.assertIn("    AGENTS.md", msg)
-        self.assertIn("    handbook/private-overlay.md", msg)
+        self.assertIn("    docs/handbook/private-overlay.md", msg)
         self.assertIn("These files ship to a public repository.", msg)
         self.assertIn(f"-- . ':!{LEDGER_REL}'", msg)
         self.assertIn(f"Then append to {LEDGER_REL}:", msg)
@@ -249,7 +249,7 @@ class DecisionTests(GateTestCase):
     def test_many_changed_files_are_truncated(self):
         self.bootstrap()
         for i in range(review_gate.MAX_LISTED_FILES + 7):
-            self.repo.write(f"handbook/doc{i:03d}.md", f"doc {i}\n")
+            self.repo.write(f"docs/handbook/doc{i:03d}.md", f"doc {i}\n")
         self.repo.commit("many files")
 
         msg = self.repo.gate().stderr
@@ -315,7 +315,7 @@ class LedgerValidationTests(GateTestCase):
                  "digest": EMPTY_DIGEST16}]
         base = seeded_at
         for i in range(6):
-            self.repo.write(f"handbook/doc{i}.md", f"doc {i}\n")
+            self.repo.write(f"docs/handbook/doc{i}.md", f"doc {i}\n")
             head = self.repo.commit(f"change {i}")
             rows.append(self.repo.row_for(head, base=base))
             base = head
@@ -342,7 +342,7 @@ class LedgerValidationTests(GateTestCase):
                  "digest": EMPTY_DIGEST16}]
         base = seeded_at
         for i in range(2):
-            self.repo.write(f"handbook/doc{i}.md", f"doc {i}\n")
+            self.repo.write(f"docs/handbook/doc{i}.md", f"doc {i}\n")
             head = self.repo.commit(f"change {i}")
             rows.append(self.repo.row_for(head, base=base))
             base = head
@@ -462,9 +462,9 @@ class UnreachableAckTests(GateTestCase):
         """
         self.bootstrap()
         self.repo.git("checkout", "-q", "-b", "side")
-        self.repo.write("handbook/side.md", "side work\n")
+        self.repo.write("docs/handbook/side.md", "side work\n")
         side_one = self.repo.commit("side change")
-        self.repo.write("handbook/side2.md", "more side work\n")
+        self.repo.write("docs/handbook/side2.md", "more side work\n")
         side_two = self.repo.commit("more side work")
         self.repo.git("checkout", "-q", "main")
 
@@ -492,7 +492,7 @@ class UnreachableAckTests(GateTestCase):
         self.bootstrap()
         first = self.repo.git("rev-list", "--max-parents=0", "HEAD").stdout.strip()
         for i in range(3):
-            self.repo.write(f"handbook/doc{i}.md", f"doc {i}\n")
+            self.repo.write(f"docs/handbook/doc{i}.md", f"doc {i}\n")
             self.repo.commit(f"change {i}")
         # Point the ledger at the ROOT commit, which a depth-1 clone will not have.
         self.repo.write_ledger([{"commit": self.repo.short(first), "files": 0,
@@ -549,16 +549,16 @@ class RebasedRowTests(GateTestCase):
         every PR above the one that landed.
         """
         seeded_at = self.bootstrap()
-        self.repo.write("handbook/a.md", "change A\n")
+        self.repo.write("docs/handbook/a.md", "change A\n")
         commit_a = self.repo.commit("change A")
 
         self.repo.git("checkout", "-q", "-b", "feat")
-        self.repo.write("handbook/b.md", "change B\n")
+        self.repo.write("docs/handbook/b.md", "change B\n")
         self.repo.commit("change B")
 
         # The PR below this one lands on main first.
         self.repo.git("checkout", "-q", "main")
-        self.repo.write("handbook/c.md", "change C\n")
+        self.repo.write("docs/handbook/c.md", "change C\n")
         self.repo.commit("change C")
 
         # Updating the stacked branch replays B under a new sha, then it merges.
@@ -630,9 +630,9 @@ class RebasedRowTests(GateTestCase):
         self.assertIn(f"git diff {self.repo.short(s['a'])}..{self.repo.short(s['head'])} "
                       f"-- . ':!{LEDGER_REL}'", msg)
         self.assertIn(f"({self.repo.short(s['a'])} → {self.repo.short(s['head'])})", msg)
-        self.assertIn("touching 2 files:", msg)         # handbook/b.md + handbook/c.md
-        self.assertIn("    handbook/b.md", msg)
-        self.assertIn("    handbook/c.md", msg)
+        self.assertIn("touching 2 files:", msg)         # docs/handbook/b.md + docs/handbook/c.md
+        self.assertIn("    docs/handbook/b.md", msg)
+        self.assertIn("    docs/handbook/c.md", msg)
         self.assertIn("      files: 2", msg)
         self.assertIn(f"      digest: sha256:{expected[:16]}", msg)
         # NOT from the orphan, which is what the old chain would have used.
@@ -750,7 +750,7 @@ class WorkflowTests(GateTestCase):
 
         # ── commit A: allowed (nothing watched changed since the seed) ──
         self.assertEqual(self._precommit().returncode, 0)
-        self.repo.write("handbook/a.md", "change A\n")
+        self.repo.write("docs/handbook/a.md", "change A\n")
         commit_a = self.repo.commit("change A")
 
         # ── commit B attempt 1: blocked, because A is unacknowledged ──
@@ -759,7 +759,7 @@ class WorkflowTests(GateTestCase):
         self.assertIn(f"- commit: {self.repo.short(commit_a)}", blocked.stderr)
 
         # ── stage the row for A ALONGSIDE change B ──
-        self.repo.write("handbook/b.md", "change B\n")
+        self.repo.write("docs/handbook/b.md", "change B\n")
         self.repo.write_ledger([
             {"commit": self.repo.short(seeded_at), "files": 0, "digest": EMPTY_DIGEST16},
             self.repo.row_for(commit_a, base=seeded_at),
@@ -772,8 +772,8 @@ class WorkflowTests(GateTestCase):
         again = self._precommit()
         self.assertEqual(again.returncode, 1, again.stdout + again.stderr)
         self.assertIn(f"- commit: {self.repo.short(commit_b)}", again.stderr)
-        self.assertIn("handbook/b.md", again.stderr)
-        self.assertNotIn("handbook/a.md", again.stderr)
+        self.assertIn("docs/handbook/b.md", again.stderr)
+        self.assertNotIn("docs/handbook/a.md", again.stderr)
 
         # ── close the branch with a ledger-only ack, as the message instructs ──
         self.repo.write_ledger([
@@ -790,7 +790,7 @@ class WorkflowTests(GateTestCase):
     def test_one_row_may_cover_a_range_of_commits(self):
         seeded_at = self.bootstrap()
         for i in range(4):
-            self.repo.write(f"handbook/doc{i}.md", f"doc {i}\n")
+            self.repo.write(f"docs/handbook/doc{i}.md", f"doc {i}\n")
             self.repo.commit(f"change {i}")
         head = self.repo.git("rev-parse", "HEAD").stdout.strip()
 
@@ -807,7 +807,7 @@ class WorkflowTests(GateTestCase):
     def test_head_flag_reads_the_ledger_from_that_rev(self):
         """CI evaluates a PR's own tip, not the merge commit's merged ledger."""
         seeded_at = self.bootstrap()
-        self.repo.write("handbook/a.md", "change A\n")
+        self.repo.write("docs/handbook/a.md", "change A\n")
         commit_a = self.repo.commit("change A")
         self.repo.write_ledger([
             {"commit": self.repo.short(seeded_at), "files": 0, "digest": EMPTY_DIGEST16},
@@ -816,7 +816,7 @@ class WorkflowTests(GateTestCase):
         tip = self.repo.commit("acknowledge change A")
 
         # Working tree moves on with an unacknowledged edit; --head <tip> ignores it.
-        self.repo.write("handbook/c.md", "uncommitted-then-committed\n")
+        self.repo.write("docs/handbook/c.md", "uncommitted-then-committed\n")
         self.repo.commit("change C")
 
         self.assertEqual(self.repo.gate("--head", tip).returncode, 0)
@@ -840,7 +840,7 @@ class AdvisoryDetectorTests(GateTestCase):
 
     def test_missing_index_reports_not_inspected(self):
         self.bootstrap()
-        self.repo.write("handbook/x.md", "some prose\n")
+        self.repo.write("docs/handbook/x.md", "some prose\n")
         self.repo.commit("public change")
 
         msg = self.repo.gate().stderr
@@ -852,7 +852,7 @@ class AdvisoryDetectorTests(GateTestCase):
     def test_present_index_with_a_clean_diff_reports_none(self):
         self.bootstrap()
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("handbook/x.md", "ordinary prose about rendering\n")
+        self.repo.write("docs/handbook/x.md", "ordinary prose about rendering\n")
         self.repo.commit("public change")
 
         msg = self.repo.gate().stderr
@@ -862,7 +862,7 @@ class AdvisoryDetectorTests(GateTestCase):
     def test_a_new_display_name_is_hinted_and_demands_a_human_row(self):
         self.bootstrap()
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("handbook/x.md", "worked with Lambda Systems Inc. on the cluster\n")
+        self.repo.write("docs/handbook/x.md", "worked with Lambda Systems Inc. on the cluster\n")
         self.repo.commit("public change")
 
         msg = self.repo.gate().stderr
@@ -874,7 +874,7 @@ class AdvisoryDetectorTests(GateTestCase):
         """`lambda` and `canonical` are ordinary words; only the display name fires."""
         self.bootstrap()
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("handbook/x.md", "a canonical lambda over the render path\n")
+        self.repo.write("docs/handbook/x.md", "a canonical lambda over the render path\n")
         self.repo.commit("public change")
 
         msg = self.repo.gate().stderr
@@ -886,7 +886,7 @@ class AdvisoryDetectorTests(GateTestCase):
         self.repo.seed()
         self.repo.commit("add review ledger")
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("handbook/x.md", "Lambda Systems Inc. again\n")
+        self.repo.write("docs/handbook/x.md", "Lambda Systems Inc. again\n")
         self.repo.commit("public change")
 
         msg = self.repo.gate().stderr
@@ -906,7 +906,7 @@ class AdvisoryDetectorTests(GateTestCase):
         """Hints on an ACKNOWLEDGED range do not turn a pass into a failure."""
         seeded_at = self.bootstrap()
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("handbook/x.md", "Lambda Systems Inc.\n")
+        self.repo.write("docs/handbook/x.md", "Lambda Systems Inc.\n")
         head = self.repo.commit("public change")
         self.repo.write_ledger([
             {"commit": self.repo.short(seeded_at), "files": 0, "digest": EMPTY_DIGEST16},

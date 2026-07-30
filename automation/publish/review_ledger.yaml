@@ -2,7 +2,7 @@
 #
 # Every commit that changes the published tree is reviewed for personal data
 # before it ships. Enforced by automation/publish/review_gate.py in `pre-commit`
-# and in CI — spec: design/workspace-restructure/review-gate.md.
+# and in CI — spec: docs/designs/workspace-restructure/review-gate.md.
 #
 # APPEND-ONLY. The history of who reviewed what is the point; rewriting a row is
 # itself a finding, and the gate detects it because every row's `digest` is
@@ -251,3 +251,46 @@
     date, salary, email, phone or absolute home path appears in the diff, and no
     private/ path is added. The one backlog task touched is repointed at a
     toolkit file, with no job-hunt content in the changed line.
+
+- commit: e207aeb8
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 58
+  digest: sha256:d33651bfe0487e35
+  finding: >-
+    Clean. 52 of the 58 files are 100%-similarity renames with zero content
+    change (handbook/ -> docs/handbook/, design/ -> docs/designs/, roadmap/ ->
+    docs/roadmap/), including the tracked design/CLAUDE.md symlink, which kept
+    git mode 120000. The remaining 6 files carry 41 insertions and 38 deletions,
+    all of them path literals and the comment prose that names them:
+    verify_links.py's STRICT_ROOT_PREFIXES and PLAN_OR_RECORD_SOURCES,
+    reconcile.py's check_roadmap_fresh() and CHECK_ROOTS, export_public.py's
+    ALLOWLIST_DIRS, the pre-commit comment, and two test files whose fixture
+    paths pin those constants. No real name, employer, school, posting,
+    recruiter, date, salary, email, phone or absolute home path appears in the
+    diff, and no private/ path is added. ALLOWLIST_DIRS gained docs/handbook
+    and docs/designs individually rather than a bare docs, so the published
+    file set is unchanged and docs/roadmap/ still does not ship.
+
+- commit: 8434650c
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 101
+  digest: sha256:3ef62ebf783289c9
+  finding: >-
+    Clean. Read in full. 101 files, and all but a handful of added lines are the
+    same mechanical rewrite — handbook/ -> docs/handbook/, design/ ->
+    docs/designs/, roadmap/ -> docs/roadmap/ — across AGENTS.md, README,
+    CONTRIBUTING, .gitignore, the CI comments, the handbook, the design docs,
+    the skills, the canonical shared modules and their byte-identical vendored
+    copies, and the live task and queue files. The genuinely new prose is one
+    superseding ADR (memory/decisions/docs-parent-for-the-human-read-trees.md),
+    a rewritten fan-out bullet in docs/handbook/file-organization.md, one
+    paragraph in docs/roadmap/current-state.md, and repaired relative-link
+    depths in docs/handbook/architecture.md and
+    docs/handbook/comparisons/resume-writing-tools.md. No real name, employer,
+    school, posting, recruiter, date, salary, email, phone or absolute home path
+    appears anywhere in the diff; no private/ path is added; every example name
+    remains the fictional persona or a toolkit filename. The published file set
+    is unchanged: an export before and after ships the same 566 files, and
+    docs/roadmap/ still does not ship.

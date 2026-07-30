@@ -188,7 +188,7 @@ Metadata rules:
 ### Per-job progress (phase + state + calendar link)
 
 `jobs[].progress` is the normalized "where is this role, and who acts next?" summary
-(design: `design/application-progress-calendar/README.md`). `label` preserves employer-specific
+(design: `docs/designs/application-progress-calendar/README.md`). `label` preserves employer-specific
 wording so the enums never grow per company. Fields: required `phase` + `state`; optional
 `label`, `calendar_item` (the linked `calendar.md` entry id), tool-stamped `updated_at`,
 and `source` (`{kind: manual|email, ref}` — an email source requires the neutral stored
