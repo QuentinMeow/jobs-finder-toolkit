@@ -1,6 +1,12 @@
 # verify_links.py checks neither markdown links nor refs at unknown roots
 
-- **Priority**: P1 (this round)
+- **Priority**: P1 (this round) — **scheduled next by the owner on 2026-07-29, ahead of workspace
+  phase 5.** Phase 5 removes `interviews/` from `SKIP_PREFIXES` and repairs the 244 relative
+  markdown links inside that tree; because this checker reads no markdown links at all, that
+  repair would report success whether or not it worked. Fixing the checker first turns phase 5's
+  largest verification step from unverifiable into verifiable, and doing it afterwards means
+  doing the link work twice. Recorded as a blocking precondition on
+  [the phase-5 task](../2026-07-28-workspace-phase-5-lifetime-taxonomy/task.md).
 - **Area**: harness
 - **Source**: workspace phase 2, 2026-07-29 — [the phase-2 record](../../../docs/designs/workspace-restructure/execution-plan.md#merged-phase-2--public-side-cleanup) and [its verification](../../3_in-review/2026-07-28-workspace-phase-2-public-cleanup/verification.md)
 - **Claimed-by**:
@@ -9,6 +15,23 @@
 
 Make `automation/gardener/verify_links.py` see the two whole classes of reference it is blind to
 today, so a rename cannot break links while the gate reports "references: all resolve".
+
+## A third case, found while filing this task
+
+**Folding a queue item into an ADR kills every inbound link from dated records.** `AGENTS.md`'s
+folding ritual ends "delete the queue file", and nothing in it says what happens to the handovers
+that linked it. Recording the config-discovery answer on 2026-07-29 deleted one queue file and
+broke its link in **five** `history/conversations/*/handover.md` records in a single commit —
+measured, not estimated. The handovers are dated records and rewriting them would falsify
+history, so those five links are staying broken.
+
+This is not a bug in the folding ritual; it is a gap in what a link checker should *mean*. Decide
+a policy here rather than inheriting one by accident. Two shapes worth weighing: resolve a dead
+link through its successor when the ADR names what it replaces (the ADR written that day does say
+which queue file it replaces, so the information exists), or treat links whose *source* is a dated
+record as advisory the way `PLAN_OR_RECORD_SOURCES` already treats backticked refs — noting that
+the second choice means a record can rot silently, which is the failure this whole task exists to
+close. Whatever is chosen, the count above is a live example to test against.
 
 ## Context
 

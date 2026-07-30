@@ -14,7 +14,10 @@ knowledge outlives any application.
 
 Target tree in [the design](../../../docs/designs/workspace-restructure/README.md); the full move table is in
 [the execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) under "Phase 5".
-805 tracked private files move; `applications/<status>/<slug>/` keeps its path.
+**825** tracked private files move; `applications/<status>/<slug>/` keeps its path. (Re-measured
+2026-07-29 evening — the plan's earlier 805 predates ~28 new tracked private files. Same formula:
+everything outside `applications/`, plus `applications/0_profile` (9) and
+`applications/1_discoveries` (41).)
 
 **Start by asking "is this a config edit?"** Phase 0 added eleven config accessors, eight of
 which read a `paths.*` key. Most rows in the move table are now a `config.yaml` edit and nothing
@@ -69,10 +72,46 @@ constant is move-invariant.)
 of its reach. It only bites if this phase also adds a root-anchored `/x/` rule to the public
 `.gitignore` — which it should not need to, since `private/` is ignored wholesale.
 
-**Roughly four dozen of the 535 `interviews/` files are judgment calls, not mechanical moves.**
-Route each through the owner; do not guess. An interview-running firm is a company, not a vendor
-— there is no `vendors/` root. (That count was estimated when the plan was written and has not
-been re-derived; recount before promising a date.)
+**The interview tree is now a mechanical move — the owner ruled on it on 2026-07-29.** The old
+"roughly four dozen judgment calls" item is withdrawn, not refined. The rule is: **move
+company-specific material into company folders, and reorganise nothing else.** Full reasoning:
+[the interview-material ADR](../../../memory/decisions/interview-material-moves-by-company-only.md).
+
+Re-measured 2026-07-29 evening (the plan's older `interviews/` figures are stale):
+
+| Subtree | Tracked | Goes to |
+|---|---:|---|
+| `interviews/` total | 552 | — |
+| `interviews/company-specific/` | 478, across 25 company folders | all of it → `companies/<key>/` |
+| ├ per-company research | 299, in 18 of them | `companies/<key>/research/` |
+| ├ per-company coding material | 163, in 9 of them | `companies/<key>/coding/` |
+| ├ per-company product-sense material | 15, in one of them | `companies/<key>/product-sense/` |
+| └ one loose reply draft | 1, inside a company folder | `companies/<key>/` |
+| `interviews/behavioral/question-bank/` | 55 | 19 company-prefixed → `companies/<key>/`; the other 36 (18 `_general_*`, README, 16 `sources/`, 1 `tests/`) → `me/interviews/questions/` |
+| `interviews/behavioral/story-bank/` | 17 | `me/interviews/stories/` |
+| `interviews/common-message-replies/` | 2 | `me/interviews/replies/` |
+
+**Do not reorganise anything while moving it.** No per-problem folders for flat solution files,
+no round-type schema for the product-sense folder, no splitting aggregate documents that span
+several problems. You may fix something *plainly* broken in passing — a typo'd path, a file under
+the wrong company — but if the fix needs an argument, it is not an obvious mistake: leave it and
+file it. Because nothing is reorganised, the acceptance test is file-for-file: same count in,
+same count out, per company folder.
+
+An interview-running firm is a company, not a vendor — there is no `vendors/` root.
+
+**One open clarification, non-blocking:** whether the 55 non-company files (story bank, general
+question bank, shared replies) are *relocated* to `me/interviews/…` or left where they are. This
+task assumes **relocated** — see
+[the clarification](../../../message-queue/needs-human/clarifications/phase-5-relocate-non-company-interview-material.md).
+Confirm before the first commit that touches `interviews/`; there is time, because the
+link-checker task lands first.
+
+**The scratch-tree classification is deferred, and does not block this phase.** The owner set it
+aside on 2026-07-29 to deal with later. It was checked, not assumed: this phase creates
+`private/local/`, which is a different directory from the gitignored public scratch root, and the
+link-checker task does not touch either. Do not re-raise it; if something here genuinely starts
+depending on it, tell the owner immediately rather than deciding it.
 
 **244 relative links inside `interviews/` are covered by no checker**; fix them here and drop
 the `interviews/` and `private/interviews/` entries from `verify_links.py`'s `SKIP_PREFIXES`.
@@ -92,9 +131,19 @@ execution plan applies per commit: a review-ledger row each, plus a closing ledg
 `templates/queue/decision.md` with options and a recommendation, and end the session. Several
 gates in this repo fail *open*, so a half-done phase is indistinguishable from a done one.
 
-None outstanding — phases 0 and 4 both merged 2026-07-29 (PRs #81–#84 and #86), and Q5/Q6 were
-answered 2026-07-28 (rendered artifacts stay in the application folder and only the USER deletes
-one; handovers are local-only). This phase is ready to start.
+**One outstanding, added 2026-07-29 by owner decision: the link-checker task must merge first.**
+[`tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
+lands before any commit of this phase. The reason is that one of this phase's own steps is
+unverifiable until it does: this phase removes `interviews/` from `verify_links.py`'s
+`SKIP_PREFIXES` and repairs the 244 relative markdown links inside that tree, and
+`verify_links.py` reads no markdown links at all — `_is_checkable()` rejects any token containing
+parentheses. Run in the old order, that repair reports success whether or not a single link
+resolves. Fixing the checker first converts this phase's largest verification step from
+unverifiable to verifiable; running it second means doing the link work twice.
+
+Everything else is clear — phases 0 and 4 both merged 2026-07-29 (PRs #81–#84 and #86), and
+Q5/Q6 were answered 2026-07-28 (rendered artifacts stay in the application folder and only the
+USER deletes one; handovers are local-only).
 
 ## Definition of done
 
@@ -105,7 +154,10 @@ one; handovers are local-only). This phase is ready to start.
 - [ ] `search_jobs.profile_dir()` reads the log accessors directly; both skips proven still live
 - [ ] `status.py` reports the same pipeline as before the move
 - [ ] The tailoring card rebuilds **with its stories**; level enrichment exercised
-- [ ] `verify_links.py` `SKIP_PREFIXES` no longer skips `interviews/`, and the 244 relative links resolve
-- [ ] The judgment-call files placed with recorded owner answers
+- [ ] `verify_links.py` `SKIP_PREFIXES` no longer skips `interviews/`, and the relative links
+      inside it resolve **according to the fixed checker** (the link-checker task merged first)
+- [ ] Every file under `interviews/company-specific/` landed under `companies/<key>/` with the
+      same count in as out, per company folder; nothing inside any moved file or folder was
+      restructured
 - [ ] Review-ledger rows for every commit; no company name in any public file
 - [ ] Gate command clean
