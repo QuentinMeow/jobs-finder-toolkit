@@ -758,3 +758,17 @@
     the leaking blob never entered pushed history. The detector now reports
     (none) for this range. Re-read after the fix: no employer, person, school,
     posting URL, application slug, salary or absolute home path remains.
+- commit: c8095c49
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:00b49fbb821f1d58
+  finding: >-
+    Read the full diff. A pure rename of the mail reconciler's in-memory match
+    key (field, helper, one parameter, two locals, and one loop variable in the
+    email assistant) plus a ten-line docstring saying which key it is and which
+    it is not. Proved pure mechanically: applying the token substitution to the
+    pre-commit file and diffing against the new one leaves exactly the added
+    docstring. No company name, employer, person, school, posting URL,
+    application slug, salary or absolute home path appears; the diff names no
+    data at all. The advisory company detector reports (none) for this range.

@@ -1774,10 +1774,59 @@ def validate_job_metadata(record: dict, *, prefix: str = "") -> list[str]:
         record.get("progress"), record.get("status"), f"{lead}progress"))
     errors.extend(_validate_status_date(record.get("status_date"), f"{lead}status_date"))
     errors.extend(_validate_store_key(record.get("store_key"), f"{lead}store_key"))
+    if "company_key" in record:
+        # A jobs[] entry is HALF-CLOSED: unknown structured fields are rejected
+        # above, unknown SCALARS are tolerated. So a per-job company_key would be
+        # silently accepted and silently ignored — the worst outcome, because the
+        # writer would believe it took effect. One folder is one employer (every
+        # meta.yaml carries exactly one top-level ``company``), so the key belongs
+        # beside it and nowhere else.
+        errors.append(
+            f"{lead}company_key is not a per-job field — one application folder is "
+            "one employer, so company_key belongs at the top level beside company")
     return errors
 
 
 _STORE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+# The owner's company key. Same PATTERN as ``company_index.KEY_RE``, deliberately
+# RESTATED rather than imported: this module is vendored byte-identically into
+# three skills and is stdlib+PyYAML only (module docstring), and no other module in
+# that vendored set imports a sibling — so an import here would mean vendoring the
+# whole index loader into three skills that use nothing but this one regex, with a
+# sys.path dance to keep the copies byte-identical. The two are pinned together by
+# ``test_job_metadata.py::test_company_key_pattern_matches_the_index_module``, so a
+# change to either that is not made to both turns the suite red.
+#
+# It is a SEPARATE constant from ``_STORE_KEY_RE`` despite the identical pattern:
+# store entity keys and company keys answer different questions and either may
+# change shape without the other.
+_COMPANY_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def _validate_company_key(value: Any) -> list[str]:
+    """Optional top-level link to an entry in the owner's private company index.
+
+    A FILING key, never a match key: nothing in this repository may put it into a
+    comparison that decides whether a posting is skipped, deduplicated, filtered
+    or counted as covered (guarded at source level by
+    ``automation/shared/tests/test_company_key_additive.py``).
+
+    Absent is fine and is the normal state — a new application is scaffolded
+    without one and the key is assigned later, deliberately. Present must be a
+    non-empty string of the documented shape.
+
+    Deliberately does NOT check that the key RESOLVES. The index is private, and
+    this module is vendored into three skills that must run correctly with no
+    overlay mounted at all; resolution is checked by the reconciler on the
+    maintainer's machine, where the index exists.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, str) or not _COMPANY_KEY_RE.match(value):
+        return ["company_key must be a lowercase company-index key "
+                "([a-z0-9-], starting with a letter or digit), or absent"]
+    return []
 
 
 def _validate_store_key(value: Any, path: str) -> list[str]:
@@ -1857,6 +1906,10 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
     errors: list[str] = []
     if not str(meta.get("company") or "").strip():
         errors.append("company is required")
+    # The top level is a DENYLIST (``stage``/``status``/``total_compensation_range``
+    # below), so ``company_key`` was already tolerated. This is the positive shape
+    # check, so a malformed key is caught here rather than carried to the reconciler.
+    errors.extend(_validate_company_key(meta.get("company_key")))
     if "stage" in meta:
         errors.append(
             "top-level stage is not allowed in schema v5 (stage was replaced by "

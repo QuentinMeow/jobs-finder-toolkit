@@ -794,6 +794,85 @@ class SchemaV5JobFieldTests(unittest.TestCase):
             self.assertEqual(validate_meta(meta, app_dir=app_dir), [])
 
 
+class CompanyKeyValidationTests(unittest.TestCase):
+    """``company_key`` is optional, shape-checked, and top-level ONLY."""
+
+    def test_company_key_is_optional(self):
+        # Absent is the normal state: handoff scaffolds an application without a
+        # key, and coverage is a number status.py prints rather than a gate.
+        self.assertNotIn("company_key", _valid_meta())
+        self.assertEqual(validate_meta(_valid_meta()), [])
+
+    def test_an_explicit_null_company_key_is_still_optional(self):
+        # ``company_key:`` with nothing after it parses as None. The reconciler
+        # treats that as unkeyed, so this validator must agree.
+        self.assertEqual(validate_meta(_valid_meta(company_key=None)), [])
+
+    def test_a_wellformed_company_key_passes(self):
+        for key in ("acmelabs", "acme-labs", "acme-labs-2", "7seas"):
+            with self.subTest(key=key):
+                self.assertEqual(validate_meta(_valid_meta(company_key=key)), [])
+
+    def test_a_malformed_company_key_is_rejected(self):
+        for key in ("Acme Labs", "acme labs", "-acme", "acme_labs", "acme.labs",
+                    "", 7, True, ["acme-labs"], {"key": "acme-labs"}):
+            with self.subTest(key=key):
+                errors = validate_meta(_valid_meta(company_key=key))
+                self.assertTrue(
+                    any("company_key must be a lowercase company-index key" in error
+                        for error in errors),
+                    f"{key!r} was accepted: {errors}")
+
+    def test_per_job_company_key_is_rejected(self):
+        """A jobs[] entry tolerates unknown SCALARS, so this would be silent.
+
+        Silently accepted and silently ignored is the worst outcome: the writer
+        believes the key took effect. The message names the top level so the fix
+        is obvious.
+        """
+        errors = validate_meta(_valid_meta(jobs=[_valid_job(company_key="acme-labs")]))
+        self.assertTrue(
+            any("jobs[0].company_key is not a per-job field" in error
+                for error in errors), errors)
+        self.assertTrue(
+            any("belongs at the top level beside company" in error
+                for error in errors), errors)
+
+    def test_company_key_pattern_matches_the_index_module(self):
+        """The duplicated regex is pinned to its source of truth.
+
+        ``job_metadata`` deliberately does NOT import ``company_index``: it is
+        vendored byte-identically into three skills and is stdlib+PyYAML only, and
+        no module in that vendored set imports a sibling. This test is what makes
+        the duplication safe — change either pattern without the other and it goes
+        red.
+
+        Both modules are loaded BY PATH out of ``automation/shared``. A plain
+        ``import job_metadata`` here can resolve to a vendored copy, because other
+        modules in this suite put a ``_vendor`` directory on ``sys.path`` first —
+        and pinning a copy to the canonical index would let the canonical pattern
+        drift until the next vendor sync.
+        """
+        import importlib.util
+
+        def canonical(name: str):
+            alias = f"_canonical_{name}"
+            spec = importlib.util.spec_from_file_location(
+                alias, SHARED_DIR / f"{name}.py")
+            module = importlib.util.module_from_spec(spec)
+            # ``@dataclass`` resolves its own module out of sys.modules, so the
+            # alias must be registered before the body runs.
+            sys.modules[alias] = module
+            try:
+                spec.loader.exec_module(module)
+            finally:
+                sys.modules.pop(alias, None)
+            return module
+
+        self.assertEqual(canonical("job_metadata")._COMPANY_KEY_RE.pattern,
+                         canonical("company_index").KEY_RE.pattern)
+
+
 class ProgressValidationTests(unittest.TestCase):
     def _errors(self, **job_overrides) -> list[str]:
         return validate_meta(_valid_meta(jobs=[_valid_job(**job_overrides)]))
