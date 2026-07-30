@@ -812,3 +812,16 @@
     private; the seven owner judgements are described by shape, never by
     company. No employer, person, school, posting URL, application slug, salary
     or absolute home path appears. The advisory detector reports (none).
+- commit: c69e8e91
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:adc98672552d33e7
+  finding: >-
+    Read the full diff. It extends the guarded-function list from 17 to 26 and
+    files two tasks recording what an adversarial review reproduced. No product
+    code changed. Every fixture employer in the new task files is invented
+    (`acme-*`, `beacon-works`); the review's real-data findings are described by
+    shape and count only, never by name. No employer, person, posting URL,
+    application slug, salary or absolute home path appears. The advisory
+    detector reports (none).
