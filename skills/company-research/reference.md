@@ -58,3 +58,148 @@ interviews/company-specific/<company>/company-info/
     ├── 05-visa-sponsorship-and-logistics.md
     └── 06-company-rating.md                    # 1–100 work-at score; company + working style only, NO personal prefs
 ```
+
+## Per-File Rubrics and Templates
+
+The blocks below are the per-file rubrics and skeletons `SKILL.md` points at — read the one named for the file you are about to write. The depth bar, sourcing rules, and the `03` deep-dive and `05` moat skeletons stay in `SKILL.md`.
+
+### Competitor Scorecard Template (in `04-business-customers-competitors.md`)
+
+A product review is not finished at a *list* of rivals — **rate them**. Score the
+target company **and every named competitor** on the same 1–100 scale so the reader
+sees exactly where this company sits in the field. This is the *outward,
+product/competitive-strength* rating (distinct from the `for-myself/06` company
+rating, which is about working there).
+
+Method — six weighted dimensions, each scored 0–100 from evidence, then a weighted
+sum (weights must total 100; keep them fixed across all entities in the table):
+
+| Dimension | Weight | What it measures |
+|-----------|-------:|------------------|
+| Product capability & breadth | 25 | how good/complete the product is at the core job-to-be-done |
+| Market position & traction | 20 | share, named customers, adoption, revenue scale |
+| Moat / defensibility | 20 | how hard it is to displace them (from `05`) |
+| Technology & execution velocity | 15 | engineering quality, ship rate, reliability |
+| Momentum / growth trajectory | 10 | are they gaining or losing ground, and how fast |
+| AI positioning | 10 | how well-placed to win (not lose) as AI reshapes the layer (from `06`) |
+
+Rules:
+- Produce a **table**: one row per entity (the company first, then each rival), a
+  column per dimension sub-score, and the final weighted 1–100. Then 1–2 sentences of
+  **My read** per rival: on which axis the company beats or loses to them, with
+  evidence.
+- Sub-scores are evidence-based judgments, not vibes — tag the weak ones
+  `[unverified]`/`[inference]`, and if a whole entity is thinly sourced, give a range
+  and say so rather than a false-precision number.
+- Band legend (reuse everywhere a 1–100 appears): **85–100** category leader ·
+  **70–84** strong · **55–69** credible/mid-pack · **40–54** trailing · **<40** weak.
+
+### 5 Whys, worked example (`05-competitive-moat-and-differentiation.md`)
+
+Do this, don't just assert "network effects":
+
+> Claim: "Our marketplace has network effects." → *Why a moat?* more buyers attract
+> more sellers. → *Why can't a rival copy it?* they'd start with no liquidity. →
+> *Why can't they buy liquidity with funding?* ... → if the honest answer is "a
+> well-funded rival could subsidize both sides in a region," the moat is **local and
+> contestable**, not absolute. **Evidence:** check take-rate stability, multi-homing
+> rates, and whether a funded competitor already gained share in any market.
+
+### Question Bank examples (`09-question-bank.md`)
+
+Model questions for the three required groups in `09` (`SKILL.md` § "Question Bank Guidance" holds the rules these illustrate):
+
+```markdown
+### Hard Problems & Challenges
+
+- (Architecture) Your <product> keeps <state> consistent across <N regions> — how
+  do you handle <specific failure/consistency trade-off>, and where does it still
+  hurt?
+
+### Differentiation, Moat & Growth
+
+- (Moat) <Competitor> bolts an agent layer on top of third-party transport; you own
+  the whole stack — where does that vertical integration pay off most, and what does
+  it cost you in speed?
+- (Defensibility) If a well-funded rival copied <feature> tomorrow, what's the part
+  they *still* couldn't replicate — and how do you know it's holding?
+- (Growth) Where does the next 10x of revenue come from — new segments, new products,
+  or deeper penetration — and what's the biggest risk to that path?
+
+### AI Strategy & Adoption
+
+- (Strategy) You've shipped <AI feature>; where's the line right now between what's in
+  production and what's still a prototype, and what's the next thing you'd ship?
+- (Moat under AI) As models commoditize <layer>, what's the part a well-funded rival
+  *still* can't copy — your first-party data, distribution, or workflow lock-in?
+- (Internal adoption) How AI-native is engineering day-to-day — what's mandated vs.
+  encouraged (Cursor / Claude Code / agents), and where has an eval/agent workflow
+  actually replaced manual work?
+```
+
+### Why-This-Company Template (`10-why-this-company.md`)
+
+The single most common interview question is "why do you want to work here (and why us
+over competitor X)?" Prepare a **personalized, honest** answer grounded in the
+candidate's *real* background and career interests — **not** generic enthusiasm.
+Provide **at least two angles**, and when the application spans multiple role types
+(e.g. a multi-posting `meta.yaml`), give an angle per distinct role type so the same
+company research serves each interview.
+
+**Personalization (read this):** ground every angle in the candidate's actual
+background and **career-direction preferences** — from the profile
+(`config.profile_md_path()`) and, when present, this skill's `references_private/`
+notes, which **OVERRIDE** the generic guidance here (see "Before You Start"). In public
+/ example mode (no `references_private/`), derive the threads from the profile and JD
+only, and keep the candidate's specifics out of the tracked skill.
+
+```markdown
+## Angle 1 — <role type / framing> (e.g. the <specific posting> role)
+- **The hook:** what *specifically* about this company/product/team pulls you in —
+  concrete, drawn from `01`–`08` (a real product, hard problem, or bet), not a tagline.
+- **Why you (fit):** the 2–3 genuine threads from your background + interests that
+  connect to this exact role (traceable to the profile — never invented).
+- **Why not competitor X / Y:** the specific, honest contrast (from `04`/`05`) — what
+  this company has that the alternative doesn't, phrased as *your* reason to prefer it,
+  not a knock on the rival.
+- **The forward-looking line:** where you want to grow and why this role is the vehicle.
+
+## Angle 2 — <different role type / framing>
+(same structure, from a genuinely different angle)
+
+## Curveballs
+- "Why not <bigger rival / the obvious alternative>?" — a one-line honest answer.
+- "Why leave your current company?" — grounded and non-negative.
+```
+
+### Company Rating Template (`for-myself/06-company-rating.md`)
+
+A single **1–100 "how good is this company to work at" score** from a fixed, weighted
+rubric. It judges the **company itself and its general working style only** — so the
+number is **comparable across every company you research**. **Hard exclusion:** do NOT
+let personal preferences move it — location, visa/sponsorship, commute, your personal
+comp target, or personal domain interest are handled elsewhere in `for-myself` and are
+out of scope here.
+
+Method — seven weighted dimensions, each scored 0–100 from evidence, then a weighted
+sum (weights total 100):
+
+| Dimension | Weight | What it measures (company-level, not personal) |
+|-----------|-------:|------------------------------------------------|
+| Future & growth potential | 25 | product/company trajectory, market tailwind, AI-era durability (from `05`/`06`) |
+| Financial stability & stage | 20 | profitability/runway, funding health, layoff history, concentration risk (from `for-myself/01`) |
+| Work–life balance & sustainability | 15 | realistic pace, hours, on-call, PTO culture (from `for-myself/03`) |
+| Engineering culture & technical quality | 15 | rigor, autonomy, tooling, AI adoption, how they ship (from `07`) |
+| Compensation competitiveness | 10 | pay/equity vs. market **as a company norm** (not your target) (from `for-myself/02`/`04`) |
+| Career growth & learning | 10 | scope, mobility, mentorship, résumé/brand value |
+| Employee sentiment & reputation | 5 | Glassdoor/Blind/Repvue trend + attrition signals (from `for-myself/04`) |
+
+Rules:
+- Show the **sub-score, the weight, and the contribution (sub-score × weight ÷ 100)**
+  for each dimension, then the summed **final 1–100** and its band (same legend as the
+  competitor scorecard).
+- Cite evidence + a confidence tag per dimension. If key dimensions are `[unverified]`,
+  give the score as a **range** and flag which facts would tighten it — never fake
+  precision.
+- End with a one-paragraph **My read**: the biggest upside, the biggest risk, and
+  whether the headline number over- or under-states the reality.

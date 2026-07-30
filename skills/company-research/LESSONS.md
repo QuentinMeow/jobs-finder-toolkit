@@ -13,13 +13,13 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 <!-- added: 2026-07-18 · last_confirmed: 2026-07-19 · status: active -->
 - The company's own **ATS board is the best org-structure signal**: the team list plus every
   open role reveals sibling teams, where the target team sits, and where headcount is going.
-  Ashby exposes this via `ApiJobBoardWithTeams` (see SKILL.md); Greenhouse/Lever have similar
+  Ashby exposes this via `ApiJobBoardWithTeams` (query in `reference.md`); Greenhouse/Lever have similar
   public JSON boards.
 - A company's **GitHub org** gives real, uninflated signal: repo languages = actual stack,
   stars = adoption, `created_at` = age, commit recency = activity. Stronger than marketing copy
   for OSS-heavy companies.
 - Marketing pages are usually **Next.js**; the readable copy is present in the HTML once you
-  strip `<script>`/`<style>`/tags (one-liner in SKILL.md). `/about` often lists investors;
+  strip `<script>`/`<style>`/tags. `/about` often lists investors;
   `/blog` reveals the real roadmap by recency.
 - **Funding figures conflict across sources and over time.** Record amount, round, date, lead
   investor, and source URL per data point; note the conflict rather than silently picking one.

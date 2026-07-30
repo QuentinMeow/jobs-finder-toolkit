@@ -509,3 +509,18 @@
     552, 478, 25 folders, 299/163/15/1, 19/36/17/2 — with no employer, person,
     posting, date, school, salary, recruiter or filename from it. No absolute home
     path; nothing under private/ touched or newly named.
+
+- commit: 046a1f17
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:c33099beee4df589
+  finding: >-
+    Clean. A retiering of one public skill: five escalation blocks move from
+    company-research SKILL.md into its reference.md behind task-conditioned
+    pointers, and two stale cross-references in LESSONS.md are corrected. Every
+    non-blank line of the original SKILL.md was verified to survive verbatim in
+    one file or the other, so nothing was dropped. The moved text is generic
+    research method — scorecard rubrics, a 5-Whys example, question templates —
+    and names no employer, person, posting, date, school or salary. No absolute
+    home path; nothing under private/ touched or newly named.
