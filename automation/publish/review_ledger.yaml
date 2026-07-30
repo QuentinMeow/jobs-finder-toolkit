@@ -689,3 +689,17 @@
     after the fix — no employer, person, posting, URL, slug or absolute home path
     remains, and the overlay's PR is referred to without a number since that repo is
     private.
+- commit: 3921f213
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:7d8543c17dd9e191
+  finding: >-
+    Read the full diff. AGENTS.md changes one instruction line, swapping a stale
+    literal path for the accessor that already resolved it correctly; no identity
+    data on either side. The task move and its new verification.md name only PR
+    numbers, repo-relative paths, line counts and a canary result filename. No
+    employer, person, school, salary, posting URL, application slug or absolute
+    home path appears. The company cross-reference reported NOT INSPECTED because
+    private/companies/_index.yaml does not exist yet, so this row rests on reading
+    the diff rather than on that detector.

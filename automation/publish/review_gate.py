@@ -77,6 +77,24 @@ WATCHED_PATHSPEC = [".", LEDGER_EXCLUDE]
 # The advisory detector's source of company display names. Created by phase 7 of the
 # workspace restructure; absent today, and absent for any contributor without the
 # overlay. Absent means "NOT INSPECTED", never "no matches" — see ``company_hints``.
+#
+# DO NOT route this through ``config.companies_root()``. It looks like an obvious
+# cleanup and it silently disarms the detector. Measured with ``config.example.yaml``
+# active — the fallback in any clone without a real ``config.yaml``::
+#
+#     applications_root -> <repo>/examples/applications
+#     companies_root    -> <repo>/examples/companies
+#     overlay_mounted   -> True
+#
+# So the accessor resolves INTO the public example tree. The moment a phase-8-style
+# ``examples/companies/`` exists, every public clone would read the EXAMPLE index and
+# report "inspected, (none)" — replacing the loud NOT INSPECTED banner with a false
+# clean bill of health, which is precisely the failure ``company_display_names``'
+# ``None`` return exists to prevent. The literal is correct; this comment is what was
+# missing. It is single-sourced as ``automation/shared/company_index.DEFAULT_REL`` and
+# the two are pinned by ``test_review_gate.test_index_path_matches_the_shared_constant``
+# — pinned by a TEST rather than by an import, because a gate must not gain an import
+# it can fail on.
 COMPANY_INDEX_REL = "private/companies/_index.yaml"
 # Paths that are SUPPOSED to name companies, so a match there is not news.
 # ``private/`` is git-ignored in this repo and can never be in a diff here; it is

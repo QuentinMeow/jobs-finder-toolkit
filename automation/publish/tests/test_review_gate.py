@@ -984,6 +984,38 @@ class ThisRepoTests(unittest.TestCase):
         self.assertIn("--verify-all", ci)
         self.assertIn("fetch-depth: 0", ci)
 
+    def test_index_path_matches_the_shared_constant(self):
+        """The index path is written twice; they must never drift.
+
+        ``automation/shared/company_index.DEFAULT_REL`` is the single source; the
+        gate restates it rather than importing it, because a gate that can fail on
+        an import is a gate that can be disabled by an unrelated breakage. This
+        test is what makes the restatement safe.
+        """
+        shared = review_gate.REPO_ROOT / "automation" / "shared"
+        if str(shared) not in sys.path:
+            sys.path.insert(0, str(shared))
+        import company_index  # noqa: E402
+
+        self.assertEqual(review_gate.COMPANY_INDEX_REL, company_index.DEFAULT_REL)
+
+    def test_the_index_path_is_not_routed_through_the_config_accessor(self):
+        """Routing it through ``config.companies_root()`` disarms the detector.
+
+        With ``config.example.yaml`` that accessor resolves into ``examples/``, and
+        ``overlay_mounted()`` returns True there — so the gate would read an EXAMPLE
+        index in every public clone and print "inspected, (none)" instead of the
+        NOT INSPECTED banner. The comment beside the constant records the
+        measurement; this pins that the constant stayed a literal.
+        """
+        source = (review_gate.REPO_ROOT / "automation/publish/review_gate.py").read_text()
+        # Comments are stripped first: the comment beside the constant NAMES the
+        # accessor in order to warn against it, so a naive substring test would
+        # fail on its own warning.
+        code = [line for line in source.splitlines() if not line.lstrip().startswith("#")]
+        self.assertNotIn("companies_root(", "\n".join(code))
+        self.assertIn("DO NOT route this through", source)
+
 
 if __name__ == "__main__":
     unittest.main()
