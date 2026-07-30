@@ -71,6 +71,7 @@ for _p in (_HERE, _HERE / "_vendor"):
     if str(_p) not in sys.path and _p.is_dir():
         sys.path.insert(0, str(_p))
 
+import company_index
 import config
 import skip_log
 from backfill_job_metadata import process_application
@@ -221,7 +222,10 @@ def load_application(app_dir: Path, status: str) -> dict | None:
             # and the per-job status/stage/status_date live per posting under
             # `jobs`, so they are read from there, not the top level. The top-level
             # retired `stage` field was replaced by the structured per-job `progress`.
-            for key in ["company", "role", "research_date", "posted_date",
+            # `company_key` is surfaced beside `company`, never instead of it: the
+            # grouping and skip paths keep comparing the free-text company string.
+            for key in ["company", "company_key", "role", "research_date",
+                        "posted_date",
                         "channel", "referrer", "next_action", "notes", "location",
                         "recruiter_email", "comp_notes", "url", "jobs",
                         "job_metadata_schema_version"]:
@@ -466,6 +470,112 @@ def check_metadata(statuses: list[str], as_json: bool = False) -> bool:
             print(f"          - {error}")
     print(f"Checked {len(rows)} applications; {len(invalid)} invalid.")
     return not invalid
+
+
+def company_keys_report(statuses: list[str], *, strict: bool = False,
+                        as_json: bool = False) -> bool:
+    """Report company-key COVERAGE. Coverage is a number, never a gate.
+
+    Deliberately fail-open but LOUD. An application is scaffolded without a key
+    and keyed later, so demanding one would block unrelated work in the window
+    between the two; instead the unkeyed count is printed, which is a number a
+    human reads rather than a silence a human misses.
+
+    What is never open is CORRECTNESS: a key that does not resolve is a defect,
+    and ``--strict`` exits 1 on one (the reconciler makes the same call a hard
+    finding on the maintainer's machine).
+
+    Degrades rather than crashes with no overlay: an absent index is reported as
+    absent, and every present key is then counted as unresolved-because-unreadable
+    rather than as wrong. Under ``--strict`` an absent index with keyed
+    applications still fails, because "cannot check" is not "checked and clean".
+    """
+    # The index path is a repo-root-relative LITERAL, not `config.companies_root()`.
+    # Under the example config that accessor resolves into `examples/`, so routing
+    # through it would one day check a placeholder index and report a clean bill of
+    # health for a tree that was never inspected — the same trap documented at
+    # `automation/publish/review_gate.py`. `JOBHUNT_COMPANY_INDEX` overrides it, for
+    # tests and for checking a proposed index before it is committed.
+    override = os.environ.get("JOBHUNT_COMPANY_INDEX", "").strip()
+    index_path = (Path(override) if override
+                  else Path(config.REPO_ROOT) / company_index.DEFAULT_REL)
+    index_present = index_path.is_file()
+    index: dict = {}
+    index_error = ""
+    if index_present:
+        try:
+            index = company_index.load(index_path)
+        except Exception as exc:                    # malformed YAML, unreadable file
+            index_error = f"{type(exc).__name__}: {exc}"
+
+    rows: list[dict] = []
+    for status in statuses:
+        status_dir = _status_dir(status)
+        if not status_dir.is_dir():
+            continue
+        for app_dir in sorted(status_dir.iterdir()):
+            if not app_dir.is_dir() or app_dir.name.startswith("."):
+                continue
+            info = load_application(app_dir, status)
+            key = str(info.get("company_key") or "").strip()
+            rows.append({
+                "slug": app_dir.name,
+                "status": status,
+                "company": str(info.get("company") or "").strip(),
+                "company_key": key,
+                # Unknown, not clean, when the index could not be read.
+                "resolves": bool(key) and bool(index) and key in index,
+            })
+
+    keyed = [r for r in rows if r["company_key"]]
+    unkeyed = [r for r in rows if not r["company_key"]]
+    unresolved = [r for r in keyed if not r["resolves"]]
+    distinct_companies = {r["company"].casefold() for r in rows if r["company"]}
+    distinct_keys = {r["company_key"] for r in keyed}
+    ok = not unresolved if strict else True
+
+    if as_json:
+        print(json.dumps({
+            "index_path": str(index_path),
+            "index_present": index_present,
+            "index_error": index_error,
+            "index_keys": len(index),
+            "applications": len(rows),
+            "distinct_companies": len(distinct_companies),
+            "keyed": len(keyed),
+            "distinct_keys": len(distinct_keys),
+            "unkeyed": [r["slug"] for r in unkeyed],
+            "unresolved": [{"slug": r["slug"], "company_key": r["company_key"]}
+                           for r in unresolved],
+            "strict": strict,
+            "ok": ok,
+        }, indent=2))
+        return ok
+
+    print(f"company keys: {len(rows)} applications, "
+          f"{len(distinct_companies)} distinct company strings")
+    print(f"  keyed:       {len(keyed):<4} ({len(distinct_keys)} distinct keys)")
+    print(f"  unkeyed:     {len(unkeyed):<4} -> listed below"
+          if unkeyed else f"  unkeyed:     {len(unkeyed)}")
+    print(f"  unresolved:  {len(unresolved):<4} -> company_key not in the index"
+          f"{' (FAIL under --strict)' if unresolved else ''}")
+    if not index_present:
+        print(f"\n  index not found at {company_index.DEFAULT_REL} — the company "
+              "index is private and is absent in any checkout without the "
+              "overlay. Resolution was NOT checked.")
+    elif index_error:
+        print(f"\n  index at {company_index.DEFAULT_REL} could not be read "
+              f"({index_error}). Resolution was NOT checked.")
+    if unkeyed:
+        print("\n  unkeyed applications:")
+        for r in unkeyed:
+            print(f"    {r['slug']}  ({r['status']})")
+    if unresolved:
+        print("\n  unresolved keys — add them to the index, or correct the "
+              "application:")
+        for r in unresolved:
+            print(f"    {r['slug']}  ->  {r['company_key']}")
+    return ok
 
 
 def check_locations(statuses: list[str], as_json: bool = False) -> bool:
@@ -2330,9 +2440,18 @@ def main():
                         help="Flag applications whose posting location is outside the "
                              "configured location policy (respects the search "
                              "criteria). Defaults to all status folders.")
+    parser.add_argument("--company-keys", action="store_true",
+                        help="Report company-key coverage (keyed / unkeyed / "
+                             "unresolved). Coverage is a printed number, never a "
+                             "gate; add --strict to exit 1 on a key that is not in "
+                             "the index.")
+    parser.add_argument("--strict", action="store_true",
+                        help="With --company-keys: exit 1 when any company_key does "
+                             "not resolve to a key in the company index.")
     parser.add_argument("--statuses", default=None,
                         help="Comma-separated status folders for --check-locations, "
-                             "--check-metadata, or --backfill-metadata "
+                             "--check-metadata, --backfill-metadata, or "
+                             "--company-keys "
                              f"(default: all). Options: {', '.join(STATUS_FOLDERS)}.")
     args = parser.parse_args()
 
@@ -2404,6 +2523,11 @@ def main():
     if args.check_locations:
         statuses = _resolve_statuses(args)
         ok = check_locations(statuses, as_json=args.json)
+        sys.exit(0 if ok else 1)
+
+    if args.company_keys:
+        statuses = _resolve_statuses(args)
+        ok = company_keys_report(statuses, strict=args.strict, as_json=args.json)
         sys.exit(0 if ok else 1)
 
     if args.log_search:

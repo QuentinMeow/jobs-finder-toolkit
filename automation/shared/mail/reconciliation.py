@@ -142,8 +142,8 @@ def _company_match_key(value: Any) -> str:
     modes: substituting it here would silently change which emails match which
     applications — an alias merge binds two employers' mail together, an alias
     split loses a thread. The two are named apart so that substitution cannot be
-    made by accident, and the source-level guard in
-    ``automation/shared/tests/test_company_key_additive.py`` keeps them apart.
+    made by accident, and a source-level guard in ``automation/shared/tests``
+    (the additive-invariant suite) keeps them apart.
     """
     return re.sub(r"[^a-z0-9]", "", _norm(value))
 

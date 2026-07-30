@@ -66,6 +66,13 @@ TARGETS: dict[str, list[str]] = {
         "skills/application-tracker/scripts/_vendor/skip_log.py",
         "skills/job-search/scripts/_vendor/skip_log.py",
     ],
+    # ONE copy, on purpose. Only the tracker's --company-keys report resolves a
+    # company key; job_metadata restates the key REGEX instead of importing this
+    # module (see its _COMPANY_KEY_RE comment), so resume-writer and job-search
+    # need no copy and do not get one.
+    "automation/shared/company_index.py": [
+        "skills/application-tracker/scripts/_vendor/company_index.py",
+    ],
 }
 
 # Canonical SOURCE DIRECTORY -> list of vendored COPY directory targets. Each copy
