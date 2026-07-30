@@ -29,6 +29,13 @@
   committed an application slug into the public tree.
 - Three separate versions of one small lint rule were wrong and each was killed by measuring rather
   than arguing — including a stop-list that would have *blinded* the new detector to 149 names.
+- **An adversarial pass over the finished work found a real hole and reproduced it.** The test
+  guarding the phase's central invariant — the key never decides a skip — was watching the functions
+  that *collect* rows, not the ones that take the *verdict*. Four mutations put the key into a match
+  decision with the guard and every suite green, and one of them measurably suppressed a genuinely
+  new posting. Nine deciders are now guarded and the mutation goes red. The sharpest instance had
+  been introduced by the very PR that added the guard, which put the key one token away from the
+  string the email matcher scores on.
 
 ## Where things stand
 
@@ -37,11 +44,13 @@
   overlay's PR holding the index itself. Merge the public pair bottom-up, #117 then #118. The public
   half is designed to merge alone — every new path no-ops without the overlay — and merging it first
   is what arms the tooling that validates the private half.
-- **Two defects in existing code were found on the way and filed, not fixed here.** The shared test
-  suite has been importing *vendored copies* rather than the modules it claims to test (harmless
-  only because a different gate keeps them byte-identical), and `job_metadata.py` still holds a
-  `_company_key` helper meaning something else entirely — the same collision the mail rename just
-  removed, now sitting in the file that defines the validator.
+- **Four defects were found on the way and filed rather than rushed.** The shared test suite has
+  been importing *vendored copies* rather than the modules it claims to test (harmless only because
+  a different gate keeps them byte-identical); `job_metadata.py` still holds a `_company_key` helper
+  meaning something else entirely; the invariant guard reads function bodies so a one-line helper
+  extraction still defeats it (**filed with the reproduction**, so the fix can be proved against what
+  actually broke it); and the three `company_key` validators disagree on trailing whitespace and on
+  empty/false/zero, with the coverage report being the most optimistic of the three.
 - **No company folder was renamed.** One slug rule reproduced all 25 existing names exactly.
 - **Phase 7 is deliberately not finished.** Two pieces were split out rather than rushed:
   [7b](../../../tasks/0_backlog/2026-07-31-workspace-phase-7b-company-key-on-meta/task.md), the
