@@ -61,7 +61,8 @@
   rule, both link-checker skip lists, and every default write path move with
   it). Each moved check was re-proved against a planted defect rather than
   trusted green. Two gaps the phase exposed are filed and open:
-  `verify_links.py` checks no `[text](path)` links at all (31 broken today) and
+  `verify_links.py` checks no `[text](path)` links at all (31–36 broken today, depending on
+  the checker — no two agree, which is itself the finding) and
   silently drops backticked refs at unrecognised roots, and phase 8's per-skill
   path counts are now obsolete. Phases 5–8 not started; their task files carry
   the re-measured preconditions. See

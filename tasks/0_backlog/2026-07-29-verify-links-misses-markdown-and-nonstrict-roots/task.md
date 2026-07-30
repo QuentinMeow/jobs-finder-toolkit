@@ -28,12 +28,20 @@ $ python mdlinks.py .                       # tip of the phase-2 stack
 TOTAL BROKEN RELATIVE LINKS: 31
 ```
 
-**31 broken relative markdown links stand in the tree right now.** The count fell across the
-phase, but the two sets share not one entry: 36 pre-existing breaks were repaired and 31 fresh
-ones appeared, nearly all `design/` → `docs/designs/` misses in dated records and task files. The
-phase-2 record PR repaired 10 of the 31 (seven in the execution plan, three in the phase-2 task
-file); the remaining 21 are the starting inventory for this task. Throughout all of it the
-gardener reported "references: all resolve".
+**Between 31 and 36 broken relative markdown links stand in the tree right now, and no two
+checkers agree on which.** The count fell across the phase on every checker tried. A second,
+independently written checker measured 36 on `main` and 33 at the stack tip. Throughout all of it
+the gardener reported "references: all resolve".
+
+**A warning for whoever picks this up: do not trust the set-churn figure.** Comparing the two
+inventories suggests the sets share almost no entries — 36 repaired, 31 fresh — which reads as
+though the phase broke as much as it fixed. It did not. The comparison keys each entry on
+`<source file> -> <target>`, and phase 2 *moved most of the source files*, so a pre-existing break
+inside `handbook/foo.md` reappears as a brand-new break inside `docs/handbook/foo.md`. Spot-checks
+of the "fresh" entries found them to be prose examples like `` [text](path) ``, links into the
+overlay that a detached worktree cannot resolve, or targets such as `migration.md` that have never
+existed in any commit. **Whatever this task builds must be able to follow a rename**, or its first
+run after any move will report a repo-wide regression that did not happen.
 
 **Gap two: a backticked ref at a root the checker does not recognise is invisible** — not broken,
 not advisory, not counted in any skip tally. `check_references()`
