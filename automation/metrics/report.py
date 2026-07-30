@@ -5,7 +5,7 @@ Reads the JSONL emitted by ``automation/metrics/hook_collect.py`` and prints one
 row per session, plus optional per-SHA rollups for A/B comparison. Token count
 and wall-clock are near-deterministic per fixed task, so ``--by-sha`` (n,
 mean/median tokens + wall-clock per commit) is the cheap efficiency channel for
-matched-pair harness A/B tests (see ``evals/ab-protocol.md``).
+matched-pair harness A/B tests (see ``evals/protocols/ab-protocol.md``).
 
 Usage:
     .venv/bin/python automation/metrics/report.py [--log PATH] [--by-sha]

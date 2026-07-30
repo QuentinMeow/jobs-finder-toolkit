@@ -3,8 +3,9 @@
 Step-by-step procedure for A/B testing a harness edit (a SKILL/LESSONS change, or a model
 upgrade) on the frozen canary set. Distilled from the maintainer-only,
 overlay-mounted design doc (absent in contributor checkouts)
-[`private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md`](../private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md)
-§2 and Phase 3. This is the Phase-3 companion to the Phase-2 regression canaries in `README.md`.
+[`private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md`](../../private/docs/harness-engineering-and-repo-evolution/05-harness-engineering-methodology.md)
+§2 and Phase 3. This is the Phase-3 companion to the Phase-2 regression canaries described in
+[`evals/README.md`](../README.md).
 
 ## The one governing fact
 
@@ -25,7 +26,7 @@ counts. Therefore:
    with no canary rubric regression"). Pre-registering the metric + read date is what stops peeking.
 3. **Pin the model version.** Every A/B result is valid within one model version only. Record the
    exact model id; if it changes mid-test, the test is void — restart.
-4. **Freeze the canary set.** Use the committed `evals/<skill>/canaries.yaml` prompts unchanged.
+4. **Freeze the canary set.** Use the committed `evals/canaries/<skill>.yaml` prompts unchanged.
    Job boards / the live web drift weekly, so a moving task set would confound the comparison
    (task non-stationarity). For network-dependent canaries (job-search, company-research), run A
    and B **back-to-back per prompt** so both hit the same board/web state.
@@ -54,7 +55,7 @@ counts. Therefore:
    signal — a 30% token / 40% wall-clock cut shows clearly at n = 5-10. Also report `tool_calls`
    (a loop/thrash leading indicator) as a secondary descriptive metric.
 10. **Quality (directional) — the secondary read.** Judge blind + pairwise per
-    [`rubrics/judging.md`](rubrics/judging.md): hide variant labels, present outputs as
+    [`evals/rubrics/judging.md`](../rubrics/judging.md): hide variant labels, present outputs as
     "Output 1 / 2" in randomized order, pick which better meets each canary's `expected_behavior`,
     tally after revealing labels. Report as a direction ("B preferred 6/8, 2 ties"), never a
     p-value. Calibrate the judge first (Cohen's kappa >= 0.6).
@@ -68,7 +69,7 @@ counts. Therefore:
 12. **Apply the pre-registered decision rule.** If the primary metric wins by the pre-set margin,
     quality is directionally non-worse, and no canary regressed → ship B.
 13. **Ship the winner as a normal single-purpose commit** (surgical, so `git revert` is clean if
-    it later disappoints). Record the A/B in `evals/results/` from `results/TEMPLATE.md` (the A/B
+    it later disappoints). Record the A/B in `evals/results/` from `evals/results/TEMPLATE.md` (the A/B
     section): variants, model id, n, primary-metric deltas (mean/median), the directional quality
     read, and the ship decision.
 
