@@ -1,6 +1,6 @@
 # When you said "don't touch anything else", did that also mean "don't move it"?
 
-- **Status**: awaiting-owner-input
+- **Status**: folding — answered 2026-07-30, being folded into the ADR and the phase-5 task
 - **Blocking**: no
 - **Assumption**: reading (a) — the 55 non-company interview files are **relocated** to their
   taxonomy home (`me/interviews/stories/`, `me/interviews/questions/`,
@@ -45,4 +45,11 @@ Two things worth knowing before you answer:
   permanently stale — so under (a) that pair has to move together, which the plan already tracks.
 - Under (b), nothing breaks either. The cost is only that the taxonomy is left half-built.
 
-**Your answer:** ______
+**Your answer:** (2026-07-30, in chat) *"I confirm that you are right, they get relocated to
+`me/interviews/…` without being reorganised."*
+
+Reading **(a)**, as assumed. The 55 non-company files move to `me/interviews/stories/`,
+`me/interviews/questions/` and `me/interviews/replies/`; nothing inside them changes — not a
+filename, not a heading, not a directory below the top level. The assumption phase 5 was already
+carrying is now a decision, so nothing about the plan changes; what changes is that it no longer
+rests on an inference.
