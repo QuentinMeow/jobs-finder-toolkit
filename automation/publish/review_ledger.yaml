@@ -661,3 +661,19 @@
     instead. One check fired correctly during review and is worth recording: the new
     CI step named a directory the exporter did not ship, which would have turned the
     EXPORTED repo's CI red while this one stayed green.
+- commit: bda67bfd
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 22
+  digest: sha256:23eaa889069b5f21
+  finding: >-
+    Documentation, three new task files, one new queue item, and the phase-6 task
+    moved to review with its evidence. Read for the one risk this class of commit
+    carries: the verification record and the worklog describe a proof that ran
+    against a copy of the overlay, so they were written to counts and structural
+    facts only. No employer, role title, URL, person, slug or absolute home path
+    appears in any of them, and the appended note on the parked logs-as-projections
+    decision names no posting either. The private-overlay handbook tree diagram gains
+    two filenames and one paths key, both generic. AGENTS.md and four SKILL/reference
+    files re-point at config accessors rather than literals, which is the direction
+    phase 5 established.
