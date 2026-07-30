@@ -23,7 +23,7 @@ Exit 1 on any broken reference / unresolved symlink / vendor drift; else exit 0.
 Report-only otherwise (it fixes nothing).
 
 Usage:
-    .venv/bin/python automation/maintenance/gardener/verify_links.py
+    .venv/bin/python automation/gardener/verify_links.py
 """
 
 from __future__ import annotations

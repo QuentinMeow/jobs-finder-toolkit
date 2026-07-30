@@ -2,8 +2,8 @@
 
 Run with (from the repo root):
     .venv/bin/python -m unittest discover \
-        -s automation/maintenance/gardener/tests \
-        -t automation/maintenance/gardener/tests
+        -s automation/gardener/tests \
+        -t automation/gardener/tests
 
 The routine is path-injected (find_drift takes explicit baseline/profile paths), so
 these tests use throwaway fixture files — no config layer or private overlay needed.

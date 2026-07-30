@@ -9,7 +9,7 @@
 - [ ] Tests pass: `.venv/bin/python -m unittest discover -s automation/publish/tests`
 - [ ] Budget clean: `.venv/bin/python automation/metrics/instruction_budget.py --strict`
 - [ ] Leak guard clean (exit 0, zero findings): `.venv/bin/python automation/publish/check_public.py`
-- [ ] Links OK: `.venv/bin/python automation/maintenance/gardener/gardener.py verify-links`
+- [ ] Links OK: `.venv/bin/python automation/gardener/gardener.py verify-links`
 - [ ] If any `skills/*/SKILL.md` / `LESSONS.md` / `reference.md` changed: per the risk-based gate, either ran that skill's canaries in `evals/<skill>/` and pasted results below, or recorded a one-line skip rationale (`Eval gate: skipped — <intention + size>`) — see `evals/README.md`
 - [ ] **No personal data** (no real names, emails, phones, employer/school names, or home paths) — this repo is PUBLIC
 

@@ -22,7 +22,7 @@ dimension the contract lists, per domain under the configured data root:
   violation is the one condition that makes this routine exit non-zero.
 
 Usage:
-    .venv/bin/python automation/maintenance/gardener/store_report.py
+    .venv/bin/python automation/gardener/store_report.py
     (or via the front-end)  gardener.py store-report
 """
 

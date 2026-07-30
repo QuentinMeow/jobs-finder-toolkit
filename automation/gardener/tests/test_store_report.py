@@ -2,8 +2,8 @@
 
 Run with (from the repo root):
     .venv/bin/python -m unittest discover \
-        -s automation/maintenance/gardener/tests \
-        -t automation/maintenance/gardener/tests
+        -s automation/gardener/tests \
+        -t automation/gardener/tests
 
 Isolation is via a copy of the tracked fictional fixture store under a tempdir +
 ``JOBHUNT_DATA_ROOT`` — never the real store, and the routine never mutates.
@@ -26,7 +26,26 @@ if str(GARDENER_DIR) not in sys.path:
 import store_report  # noqa: E402
 from store.paths import DomainLayout  # noqa: E402
 
-REPO_ROOT = GARDENER_DIR.parents[2]
+
+def _find_repo_root(start: Path) -> Path:
+    """The repo root above ``start``, found by walking UP — never by counting.
+
+    ``GARDENER_DIR`` above is a ``parents[1]`` relative to THIS file and is
+    move-invariant, but a parent count from there to the repo root is not: it
+    encodes how deep the gardener package sits, which changed when it moved out
+    of ``automation/maintenance/``. Same two markers, same order, as
+    ``automation/shared/config.py``'s ``_git_boundary()``/``_repo_root()``:
+    ``.git`` (``exists()``, since a worktree's ``.git`` is a FILE), then
+    ``config.example.yaml`` so a ``.git``-less export still resolves.
+    """
+    for marker in (".git", "config.example.yaml"):
+        for parent in (start, *start.parents):
+            if (parent / marker).exists():
+                return parent
+    return start
+
+
+REPO_ROOT = _find_repo_root(GARDENER_DIR)
 FIXTURE = REPO_ROOT / "examples" / "data"
 
 

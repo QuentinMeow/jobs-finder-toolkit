@@ -34,7 +34,7 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 .venv/bin/python skills/application-tracker/scripts/migrate_to_v5.py
 
 # Import user-supplied/licensed company-level facts (YAML/JSON/CSV; dry-run by default)
-.venv/bin/python automation/maintenance/import_company_levels.py INPUT <company-levels.yaml>
+.venv/bin/python automation/company-levels/import_company_levels.py INPUT <company-levels.yaml>
 
 # Regenerate applications-log.yaml (the postings job-search skips) from all folders
 # and upsert company-search-log.yaml created entries

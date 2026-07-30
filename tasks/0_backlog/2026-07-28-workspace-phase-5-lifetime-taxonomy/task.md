@@ -38,7 +38,7 @@ story bank, search profiles, per-skill private references, the company research 
    `config.company_search_log_path()` directly.
 3. **The story bank has a display key as well as a location.**
    `skills/resume-writer/scripts/build_tailoring_card.py:78` and
-   `automation/maintenance/gardener/card_staleness.py:41` both carry
+   `automation/gardener/card_staleness.py:41` both carry
    `STORY_BANK_REL = "interviews/behavioral/story-bank"` — the literal a card's header records
    beside the directory's sha256. The location already comes from `config.story_bank_path()`, so
    the hash will be right; change one display key and not the other and every card reads

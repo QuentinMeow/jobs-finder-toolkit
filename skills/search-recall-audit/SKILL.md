@@ -58,7 +58,7 @@ change is a separate, human-reviewed edit to `job-search` — never made on a hu
 ### Step 1 — Build the corpus (deterministic)
 Turns the latest pre-filter snapshot into a greppable corpus + a coverage index.
 ```bash
-.venv/bin/python automation/maintenance/search_recall_audit/audit.py corpus
+.venv/bin/python automation/search-recall-audit/audit.py corpus
 # defaults: --profile <config default> --snapshot latest (tmp/search_cache/<profile>-stage1-latest.json)
 ```
 Writes (to `tmp/search_recall_audit/`): `postings.jsonl`, `search_lines.txt` (one
@@ -69,7 +69,7 @@ If there is no snapshot, run a `job-search` first (or pass `--snapshot PATH`).
 ### Step 2 — Sample + AI-verify (divide-and-conquer)
 Randomly sample a few postings per keyword combo, **grepping the whole JD**:
 ```bash
-.venv/bin/python automation/maintenance/search_recall_audit/audit.py sample --per-combo 2
+.venv/bin/python automation/search-recall-audit/audit.py sample --per-combo 2
 # custom combos (repeatable, comma = AND): --combo 'kubernetes,remote' --combo 'san francisco,platform engineer'
 # --uncovered-only skips picks whose exact URL is already considered
 ```
@@ -128,7 +128,7 @@ per-JD verdicts (match? covered? verdict).
 ### Step 3 — Trace every apparent miss (deterministic root-cause)
 For each `MISSED`/`BORDERLINE` idx (or URL), run the pipeline's OWN gates:
 ```bash
-.venv/bin/python automation/maintenance/search_recall_audit/audit.py trace --idx 8283 --idx 9469
+.venv/bin/python automation/search-recall-audit/audit.py trace --idx 8283 --idx 9469
 # or --url '<posting url>' (repeatable). --idx is most robust (from the sample output).
 ```
 It prints, per posting, PASS/DROP for `posting_quality`/`title`/`location`/`visa`/
@@ -162,13 +162,13 @@ a separate `address`/`allLocations` field), so the gate decides on a lossy strin
 ```bash
 # 1. Re-run the SAME parsers the builder uses over the raw zone; compare generated
 #    location vs every raw location field (dedup by blob sha). Writes tmp/ only.
-.venv/bin/python automation/maintenance/search_recall_audit/field_fidelity.py corpus
+.venv/bin/python automation/search-recall-audit/field_fidelity.py corpus
 # 2. Curate/sample cases (weighted to flagged) for AI verification.
-.venv/bin/python automation/maintenance/search_recall_audit/field_fidelity.py sample --n 30
+.venv/bin/python automation/search-recall-audit/field_fidelity.py sample --n 30
 # 3. Re-parse ONE entity deterministically to root-cause a flagged case.
-.venv/bin/python automation/maintenance/search_recall_audit/field_fidelity.py check --source lever --id <native_id>
+.venv/bin/python automation/search-recall-audit/field_fidelity.py check --source lever --id <native_id>
 # 4. Escape hatch: list weird-format postings (review reason weird_location_format) as AI TODOs.
-.venv/bin/python automation/maintenance/search_recall_audit/field_fidelity.py todo
+.venv/bin/python automation/search-recall-audit/field_fidelity.py todo
 ```
 
 Design (owner-approved 2026-07-25): **fix KNOWN formats in code, escalate WEIRD
@@ -189,6 +189,6 @@ findings, ≤8 subagents). See LESSONS "Field-fidelity" + known-issue
 |------|---------|
 | `skills/search-recall-audit/SKILL.md` | This router + the canonical match prompt |
 | `skills/search-recall-audit/LESSONS.md` | Hard-won edge cases (hybrid-metro over-match, whole-JD grep, gh_jid URL dup, field-fidelity) |
-| `automation/maintenance/search_recall_audit/audit.py` | Recall/precision: `corpus` / `sample` / `trace` (imports `job-search` gates white-box; writes only to `tmp/`) |
-| `automation/maintenance/search_recall_audit/field_fidelity.py` | Field-fidelity: `corpus` / `sample` / `check` / `todo` (generated `location` vs raw source; writes only to `tmp/`) |
+| `automation/search-recall-audit/audit.py` | Recall/precision: `corpus` / `sample` / `trace` (imports `job-search` gates white-box; writes only to `tmp/`) |
+| `automation/search-recall-audit/field_fidelity.py` | Field-fidelity: `corpus` / `sample` / `check` / `todo` (generated `location` vs raw source; writes only to `tmp/`) |
 | `tmp/search_recall_audit/`, `tmp/field_fidelity_audit/` | Gitignored run artifacts (corpus, cases, selection summary, `location_todo.jsonl`) |

@@ -72,7 +72,7 @@ CEILING_BYTES = 8192          # ~2k tokens target ceiling for the card
 BYTES_PER_TOKEN = 4           # est. tokens = bytes / 4 (repo-wide convention)
 # DISPLAY key only — the literal string the card header records for the story-bank
 # hash line (and the "no story bank found at ..." hint). It is part of the stored card
-# FORMAT, so it must stay byte-identical to automation/maintenance/gardener/
+# FORMAT, so it must stay byte-identical to automation/gardener/
 # card_staleness.py's copy or every existing card reads as stale. The story bank's
 # on-disk LOCATION comes from config.story_bank_path().
 STORY_BANK_REL = "interviews/behavioral/story-bank"

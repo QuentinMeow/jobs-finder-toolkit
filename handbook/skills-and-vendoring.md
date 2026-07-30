@@ -38,5 +38,6 @@ skill-specific, keep it in that skill's `scripts/`. If a skill needs a **pure to
 module**, add it to `automation/vendoring/sync_vendored.py`'s `TARGETS`, run the sync, and
 import the `_vendor/` copy. The self-contained skills (`resume-writer`,
 `application-tracker`, `job-search`) vendor the shared modules they need; the repo-root
-maintenance tooling (`automation/maintenance/`, `automation/vendoring/`) may import
+maintenance tooling (`automation/gardener/`, `automation/search-recall-audit/`,
+`automation/company-levels/`, `automation/vendoring/`) may import
 `automation/shared/` directly since it always runs inside this repo.

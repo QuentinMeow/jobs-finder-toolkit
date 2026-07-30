@@ -15,8 +15,8 @@ Two working-memory logs (AGENTS.md "Memory Map" zone (d)) grow without bound:
 DRY-RUN by default: prints the prune plan and the regeneration note; writes nothing.
 
 Usage:
-    .venv/bin/python automation/maintenance/gardener/compact_logs.py
-    .venv/bin/python automation/maintenance/gardener/compact_logs.py --apply
+    .venv/bin/python automation/gardener/compact_logs.py
+    .venv/bin/python automation/gardener/compact_logs.py --apply
 """
 
 from __future__ import annotations

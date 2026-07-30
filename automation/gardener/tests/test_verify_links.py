@@ -2,8 +2,8 @@
 
 Run with (from the repo root):
     .venv/bin/python -m unittest discover \
-        -s automation/maintenance/gardener/tests \
-        -t automation/maintenance/gardener/tests
+        -s automation/gardener/tests \
+        -t automation/gardener/tests
 
 Every test builds a throwaway repo tree and points ``_common.REPO_ROOT`` at it, so
 nothing here reads the real repo (or the private overlay).

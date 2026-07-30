@@ -89,7 +89,7 @@ jobs:
       - name: Reconciler + gardener + overlay-hook unit tests
         run: |
           python -m unittest discover automation/reconcile/tests
-          python -m unittest discover automation/maintenance/gardener/tests
+          python -m unittest discover automation/gardener/tests
           python -m unittest discover automation/hooks/tests
 
       # 2d. Public review gate — every commit that changed the published tree must

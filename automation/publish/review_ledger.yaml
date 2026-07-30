@@ -221,3 +221,33 @@
     without naming the candidate, employer, school, posting, compensation, or any
     private path. Its date is the required session-history field, not a posting or
     interview date.
+
+- commit: 031e05d1
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 20
+  digest: sha256:60d6630a58b20171
+  finding: >-
+    Clean — a pure path refactor. 16 of the 20 files are byte-identical renames
+    out of automation/maintenance/ into gardener/, search-recall-audit/ and
+    company-levels/; the other four add the same private repo-root walk (.git,
+    then config.example.yaml) in place of a hardcoded parents[N]. No real name,
+    employer, school, posting, recruiter, date, salary, email or phone appears
+    anywhere in the diff, and no absolute home path: every path added is
+    repo-relative, and the only literals are ".git" and "config.example.yaml".
+    Nothing under private/ is touched or newly named.
+
+- commit: 653dde37
+  reviewed_by: agent
+  date: 2026-07-29
+  files: 30
+  digest: sha256:451f698f8006c2cb
+  finding: >-
+    Clean — the literal half of the same path refactor. Almost every hunk swaps
+    automation/maintenance/... for the folder that now holds the file; the few
+    prose rewrites (AGENTS.md's repo-map row, README's layout block,
+    ask-me-anything's tree sketch, handbook/file-organization.md's fan-out rule)
+    only rename directories. No real name, employer, school, posting, recruiter,
+    date, salary, email, phone or absolute home path appears in the diff, and no
+    private/ path is added. The one backlog task touched is repointed at a
+    toolkit file, with no job-hunt content in the changed line.

@@ -20,8 +20,28 @@ import re
 import sys
 from pathlib import Path
 
-# automation/maintenance/gardener/_common.py -> repo root is three parents up.
-REPO_ROOT = Path(__file__).resolve().parents[3]
+def _find_repo_root(start: Path) -> Path:
+    """The repo root above ``start``, found by walking UP — never by counting.
+
+    A fixed ``parents[N]`` encodes this file's depth, so it silently resolves to
+    the wrong directory the moment the folder moves (this module has already
+    moved once, from ``automation/maintenance/gardener/`` to
+    ``automation/gardener/``). Markers, in order of authority: ``.git`` — the
+    project boundary, tested with ``exists()`` because a git WORKTREE's ``.git``
+    is a FILE — then ``config.example.yaml``, the toolkit's own tracked root
+    marker, so a ``.git``-less export (source zip, public export tree) still
+    resolves. This is the local twin of ``automation/shared/config.py``'s
+    ``_git_boundary()``/``_repo_root()``, reproduced rather than imported
+    because the root is what tells us where ``config.py`` lives.
+    """
+    for marker in (".git", "config.example.yaml"):
+        for parent in (start, *start.parents):
+            if (parent / marker).exists():
+                return parent
+    return start
+
+
+REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
 
 # Import the canonical config loader (path/identity/retention source of truth).
 _SHARED = REPO_ROOT / "automation" / "shared"

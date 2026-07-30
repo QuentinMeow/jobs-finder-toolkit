@@ -20,7 +20,8 @@ where its purpose is obvious:
   `vendoring`, `company-info`, `oa-references`), not after a file type or a
   generic bucket (`scripts`, `docs`, `files`, `data`).
 - **Generic top-level folders must fan out into purpose subfolders.** `scripts/` splits
-  into `shared/`, `vendoring/`, and `maintenance/`; each skill keeps its code under
+  into `shared/`, `vendoring/`, `gardener/`, and a folder per job — the interim
+  `maintenance/` bucket was itself dissolved for breaking this rule; each skill keeps its code under
   `skills/<skill>/scripts/`. The former generic `docs/` was dissolved into
   `handbook/` (reference) + `design/` (design programs) for exactly this reason. Follow
   the same pattern for anything new that would otherwise land in a generic root.

@@ -15,8 +15,8 @@ human-reviewed per the self-evolution quality-control contract (README quality b
 it does not gate).
 
 Usage:
-    .venv/bin/python automation/maintenance/gardener/lessons_report.py
-    .venv/bin/python automation/maintenance/gardener/lessons_report.py --threshold 0.7
+    .venv/bin/python automation/gardener/lessons_report.py
+    .venv/bin/python automation/gardener/lessons_report.py --threshold 0.7
 """
 
 from __future__ import annotations

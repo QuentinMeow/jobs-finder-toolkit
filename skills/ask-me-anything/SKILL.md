@@ -216,7 +216,7 @@ private/                                            # your overlay (own git repo
   interviews/      # story banks + per-company research
   templates/reference.docx    # your render template (config.reference_docx_path())
 skills/<skill>/                             # the skills (SKILL.md + self-contained scripts/)
-automation/shared|vendoring|maintenance|publish/       # shared helpers, vendoring, exporter/leak-guard
+automation/shared|vendoring|gardener|publish/          # shared helpers, vendoring, exporter/leak-guard
 AGENTS.md                                           # the full agent contract (deep reference)
 README.md                                           # human quickstart
 ```
