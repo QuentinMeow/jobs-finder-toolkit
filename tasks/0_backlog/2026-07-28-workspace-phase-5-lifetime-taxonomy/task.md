@@ -135,7 +135,7 @@ execution plan applies per commit: a review-ledger row each, plus a closing ledg
 gates in this repo fail *open*, so a half-done phase is indistinguishable from a done one.
 
 **One outstanding, added 2026-07-29 by owner decision: the link-checker task must merge first.**
-[`tasks/0_backlog/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
+[`tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
 lands before any commit of this phase. The reason is that one of this phase's own steps is
 unverifiable until it does: this phase removes `interviews/` from `verify_links.py`'s
 `SKIP_PREFIXES` and repairs the 244 relative markdown links inside that tree, and
