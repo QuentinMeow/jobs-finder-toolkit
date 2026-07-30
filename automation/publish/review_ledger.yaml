@@ -642,3 +642,22 @@
     — an undeclared copy would leave the vendor gate green while the copies drift,
     which is why the suite also asserts the declaration and the byte-identity
     directly. Nothing reads or writes the new file yet, so no behaviour changed.
+- commit: 065a728f
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 18
+  digest: sha256:37207644ce94f091
+  finding: >-
+    Read the full diff. No employer, person, posting, URL, date, salary or
+    recruiter from the overlay appears anywhere in it, and no absolute home path —
+    every fixture is fictional (Example Corp / Northwind Labs, jobs.example.test,
+    fakejobs.test) and every test drives a temp tree with JOBHUNT_CONFIG pinned,
+    asserted in-test rather than by inspection. Three findings, all fixed in this
+    commit rather than filed: store_refilter's log branch had been reading two keys
+    the log has never carried, so its covered set was empty on every run since the
+    file was written; the same file crashed on an undefined name after writing its
+    first output; and --forget-log could be silently reverted by the next --sync-log
+    (or by a --force re-seed reading the retired YAML), which now both refuse
+    instead. One check fired correctly during review and is worth recording: the new
+    CI step named a directory the exporter did not ship, which would have turned the
+    EXPORTED repo's CI red while this one stayed green.

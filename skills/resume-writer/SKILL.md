@@ -61,8 +61,8 @@ examples as-is and take all candidate specifics from `config` + the tailoring ca
 Do this before Step 1. If the user only wants to refresh an existing draft, edit that folder —
 never create a second one.
 
-- **Duplicate scan (hard block — zero writes on a hit).** Scan the applications log
-  (`config.applications_log_path()`)
+- **Duplicate scan (hard block — zero writes on a hit).** Scan the applications skip-log
+  (`config.applications_jsonl_path()`)
   **and** every live folder
   `applications/{6_drafted,5_applied,4_in_progress,3_rejected,2_ignored}/<slug>/` (read each
   `meta.yaml` — company, `role` or `jobs:` entries, URLs). If this exact posting (same company +

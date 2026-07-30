@@ -224,7 +224,8 @@ Then hand off — **do not tailor here:**
   `applications/5_applied/` once submitted; the folder is the derived overall status (rollup).
 
 After creating a draft, run `skills/application-tracker/scripts/status.py --sync-log` so the
-posting lands in `applications-log.yaml` and the company in `company-search-log.yaml`, then confirm
+posting lands in the append-only `applications-log.jsonl` and the company in
+`company-search-log.yaml` (`--update`/`--update-job` already append as they go), then confirm
 with `... status.py --check-locations`. If you reviewed a company's board and decided **no suitable
 role**, record it:
 `.venv/bin/python skills/application-tracker/scripts/status.py --log-search "<Company>" --outcome no_suitable`

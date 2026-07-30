@@ -28,4 +28,19 @@ Logs stay independent and authoritative. When the revisit condition is met,
 whoever picks this up should bring store-vs-log divergence data from real
 usage — that evidence decides whether projection is worth the coupling.
 
+## Note appended 2026-07-30 — the applications half is now harder to reverse
+
+Workspace phase 6 made the applications skip-log **append-only and
+authoritative**: `applications-log.jsonl`, folded last-wins, never rewritten.
+That was not a decision on this question — it fixed a separate bug (a
+regenerated log meant deleting an application un-skipped its posting) — but it
+does move the cost. Projecting the applications half from the store would now
+mean *un*-making it authoritative, and the append-only file holds rows whose
+application folder no longer exists, which the store cannot reconstruct. The
+company-search half is untouched and still a plain upsert, so the question
+stands unchanged for it.
+
+If the answer here ever turns out to be "yes, project both", the migration owes
+an answer for those folder-less rows.
+
 **Your answer:** ______

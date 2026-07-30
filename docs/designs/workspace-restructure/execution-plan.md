@@ -3,16 +3,12 @@
 The implementation spec for [the workspace layout](README.md). Written for an agent that has
 read `AGENTS.md` and nothing else about this design.
 
-**Status: phases 0, 1, 2, 3 and 4 are merged into `main`; phases 5, 6, 7 and 8 are not started.**
-All five are recorded below as short records — what they changed and what the remaining phases may
-now rely on — not as instructions. The phase-0/3/4 figures were re-measured on 2026-07-29 against
-`main` at commit `19d0829`, the phase-2 figures against the phase-2 stack before it merged;
-re-measure anything you are about to depend on, because the tree moves under this plan faster
-than the plan does.
-
-**Phase 5 is not the next thing to start.** The owner decided on 2026-07-29 that the link-checker
-repair lands first, because phase 5's largest verification step is unverifiable until it does —
-[why, in one paragraph](#the-link-checker-lands-before-this-phase-not-after).
+**Status: phases 0-5 are merged into `main`; phase 6 is implemented and in review; phases 7 and 8
+are not started.** The merged phases are recorded below as short records — what they changed and
+what the remaining phases may now rely on — not as instructions. The phase-0/3/4 figures were
+re-measured on 2026-07-29 against `main` at commit `19d0829`, the phase-2 figures against the
+phase-2 stack before it merged; re-measure anything you are about to depend on, because the tree
+moves under this plan faster than the plan does.
 
 Target layout: [README.md](README.md). Gate spec: [review-gate.md](review-gate.md).
 Topology decision: [`memory/decisions/workspace-layout-public-root-plus-review-gate.md`](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md).
@@ -548,34 +544,61 @@ before; level enrichment exercised; the tailoring card rebuilds **with its stori
 
 ---
 
-## Phase 6 — the skip-log becomes authoritative
+## Phase 6 — the skip-log becomes authoritative — RECORD (implemented 2026-07-30, in review)
 
-**Blocking preconditions:** phase 5 merged.
+**What it did.** `sync_log()`'s wholesale `APPLICATIONS_LOG.write_text(...)` is gone. The skip-log
+is now `market/logs/applications-log.jsonl` behind `config.applications_jsonl_path()`: append-only,
+one JSON object per event, folded last-wins. Deleting a rejected application no longer un-skips its
+posting, which is what made phase 5's "applications are disposable" unsafe on its own.
 
-`skills/application-tracker/scripts/status.py:1954` `sync_log()` still does
-`APPLICATIONS_LOG.write_text(...)` at line 1967 — a wholesale regeneration from a scan of the
-application folders. So deleting a rejected application and re-syncing drops its rows and
-job-search re-surfaces the posting as fresh. This is the reason phase 5's "applications are
-disposable" is unsafe on its own. (Phase 0 changed *where* the file is found —
-`status.py:152` is now `config.applications_log_path()` — but not *how* it is written.)
+**Four things the plan got wrong, each found before it shipped. Later phases should not repeat them.**
 
-- New `market/logs/applications.jsonl` — append-only, one line per (posting, status-event),
-  **keyed by URL**. Not per-company markdown: `search_jobs.already_considered()` matches
-  normalized URL first and falls back to `(company, role)` through `registry.match_keys()`, so
-  it is deliberately key-independent; sharding by company key would turn every alias split
-  into a re-drafted application, and 213 file opens per search measured a **+25% token
-  regression** on the draft leg.
-- Demote `--sync-log` to a union-only upsert that can add rows but never truncate.
-- One-time backfill from the 242 application folders plus the existing log.
-- Two consumers read the old file and must be updated together: `search_jobs.load_considered`
-  (expands through the registry) and `handoff._posting_keys` (raw `_norm()`).
-- `search_jobs.profile_dir()` is the shared hazard with phase 5. If phase 5 fixed it to read
-  `config.applications_log_path()` directly, this phase inherits a working accessor; if phase 5
-  deferred it, fix it here **before** changing the file format, or the skips are already off and
-  the proof below will pass for the wrong reason.
+1. **"Keyed by URL" was not enough.** 2 of the 369 starting rows carry no URL, and both sit at a
+   status (`rejected`, `in_progress`) whose folder an owner is most likely to delete — precisely the
+   rows the phase exists to outlive. The identity is url-*else*-`(company, role)`, tagged so the two
+   branches cannot collide.
+2. **That identity must never be a reader's match key.** `search_jobs.load_considered` derives a URL
+   key **and** a `(company, role)` key from every row via two independent `if`s, not an if/else.
+   Using url-else-pair at read time drops the pair key for all 367 URL-bearing rows, so a req
+   reposted under a new ATS id resurfaces at a company that already rejected you. What made the
+   cutover safe instead: `skip_log.read_postings()` returns rows in **exactly the shape the YAML
+   `postings` entries had**, so every reader keeps its own normalizer and its diff is one line.
+   `test_skip_identity.py` could not have caught this — its fixture wrote `url: ''` on every row, so
+   the whole suite took the pair branch. A URL-bearing fixture was added.
+3. **Append-only removes the only repair mechanism the log ever had.** Regeneration used to heal a
+   wrong row for free. Without a replacement, a typo'd company string is immortal and hand-editing
+   an authoritative machine-owned file is the owner's only remedy — and agents may not delete lines.
+   Hence `--forget-log`: the un-skip is itself an append (a tombstone the fold honours), and it
+   refuses a key that is not currently folded rather than silently dropping nothing.
+4. **Do not order the fold by timestamp.** In an append-only file byte position already *is* causal
+   order; a second-granularity wall clock can run backwards (an NTP step or a resume-from-suspend
+   between two syncs), electing the older event with no sign anything is wrong. File order, last
+   wins. `recorded` is metadata nothing sorts on.
+
+Also worth carrying forward: `--sync-log`'s upsert collapses colliding rows **before** the append
+loop. Refreshing `fold[key]` inside the loop — the obvious fix — makes a shared-key collision append
+*both* rows every run instead of one.
+
+**What else moved.** `--update`/`--update-job` now append the event as it happens (the old
+"re-run --sync-log" hint is gone), so the file is an event log rather than a projection of whatever
+the folders looked like at the last sync. Five readers cut over: `load_considered`,
+`handoff._posting_keys`, `audit.build_coverage`, `self_measure._discovered_count`, and
+`store_refilter`, whose log branch had been reading `log["applications"]`/`log["entries"]` — keys the
+log has never carried — since it was written, so "covered" had silently meant "still has a live
+folder". `automation/search-recall-audit/` had no test suite and no CI step; it now has both.
+
+**What did NOT happen, deliberately.** No compaction routine: rewriting the file would restore the
+truncation this phase removes. The retired `applications-log.yaml` is not deleted or renamed —
+proposed to the owner in `message-queue/needs-human/decisions/retired-applications-log-yaml.md`.
+`handoff.py` still creates folders without recording the posting, which leaves one window open
+(create → delete → sync); filed as its own task with the reason it is not a two-line insertion.
+
+**Naming deviation:** the file is `applications-log.jsonl`, not the `applications.jsonl` this plan
+named, so it reads as the same log in a new format beside `company-search-log.yaml`.
 
 **Green gate:** delete a rejected application (as the user would), re-run search, confirm the
-posting does **not** resurface.
+posting does **not** resurface — and confirm the same proof FAILS against the old regenerating
+writer, so it is not vacuous.
 
 ---
 

@@ -91,7 +91,12 @@ my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 │   │   ├── current/           # -> paths.discoveries_dir
 │   │   └── archive/
 │   └── logs/                  # -> paths.candidate_dir
-│       ├── applications-log.yaml    # -> paths.applications_log (job-search skip list)
+│       ├── applications-log.jsonl   # -> paths.applications_jsonl (job-search skip list,
+│       │                            #    append-only: nothing rewrites it, so deleting an
+│       │                            #    application does not un-skip its posting)
+│       ├── applications-log.yaml    # -> paths.applications_log (RETIRED projection; read
+│       │                            #    once by --backfill-log, then unread. Remove it
+│       │                            #    yourself — no tool deletes owner data)
 │       ├── company-search-log.yaml  # -> paths.company_search_log
 │       └── company-levels.yaml      # -> paths.company_levels_yaml
 ├── store/                     # raw-data layer, git-ignored payloads (-> paths.data_root)
@@ -199,6 +204,7 @@ leave them empty until you have content (e.g. your own private interview-prep sk
      applications_root: "private/applications"
      discoveries_dir: "private/market/scans/current"
      applications_log: "private/market/logs/applications-log.yaml"
+     applications_jsonl: "private/market/logs/applications-log.jsonl"
      company_search_log: "private/market/logs/company-search-log.yaml"
      company_levels_yaml: "private/market/logs/company-levels.yaml"
      blacklist_yaml: "private/market/blacklist.yaml"

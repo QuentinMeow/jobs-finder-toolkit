@@ -64,7 +64,7 @@ canaries:
       rejection that could refer to multiple roles.
     expected_behavior:
       - "Runs review-window first, reads each candidate message, and confirms each application with sender plus exact role or job-ID evidence — down to the exact posting for per-role evidence — before changing local status."
-      - "Applies each single-role outcome to that posting with `status.py --update-job <slug> \"<role>\" in_progress|rejected` (the folder then follows the rollup); reserves `--update` for whole-application evidence (a receipt, or a rejection closing every tracked role). Then syncs applications-log.yaml."
+      - "Applies each single-role outcome to that posting with `status.py --update-job <slug> \"<role>\" in_progress|rejected` (the folder then follows the rollup); reserves `--update` for whole-application evidence (a receipt, or a rejection closing every tracked role). Those commands append the posting event to the skip-log themselves, so no separate sync step is required."
       - "Leaves the ambiguous company-only match unchanged and reports why; a single closed role lands as that posting's per-job status via --update-job, never a whole-folder move to rejected."
       - "Maintains the matched application's notes.md with Upcoming Events & To-Dos first, deduplicated People, and one concise reverse-chronological entry per matched Inbox/Sent message; reports every local old-to-new transition (with the affected role) plus already-current and ambiguous matches without copying full bodies."
     failure_modes:

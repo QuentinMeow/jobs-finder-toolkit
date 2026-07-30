@@ -43,8 +43,9 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   `meta.yaml`, and optional `notes.md` at its root; JD files (`source/JD-<job title>.md`),
   `tailored.yaml`, and the DOCX live in `source/`. `status.py`'s files column shows
   `docx+pdf+cl+txt` (txt = the bundled application file).
-- The applications log (`config.applications_log_path()`) is regenerated from
-  all folders with `status.py --sync-log`; re-run it after adding or moving applications so
-  job-search skips already-considered postings. The canonical
+- The applications skip-log (`config.applications_jsonl_path()`) is **append-only** —
+  `--update`/`--update-job` record the event as it happens and `--sync-log` is the backstop.
+  Nothing rewrites it, so deleting an application no longer un-skips its posting; a wrong row
+  is repaired by appending a tombstone (`--forget-log`), never by editing the file. The canonical
   `skills/job-search/companies.yaml` registry carries the blacklist (`blacklist:`
   reason per entry) of employers job-search should never surface.
