@@ -1538,3 +1538,15 @@
     no path, name or candidate data. NOTE for a future reader: the report's TABLE names private
     skill files when an overlay is mounted, so a run of it must never be pasted into public
     text. Nothing in this diff does that. The advisory company detector reports (none).
+- commit: 2b80acd1
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:4e620ee8cfe9ad0e
+  finding: |
+    Three files: one queue item, one task update, one session handover. Read all three in full
+    for public-text safety, because a handover is the shape of document that leaks. They name a
+    private PR by number and title (generic), application and company-folder COUNTS (already the
+    established practice across the design docs, the ledger and the task tree), and no company,
+    employer, slug, private skill name or absolute home path. The advisory company detector
+    reports (none).
