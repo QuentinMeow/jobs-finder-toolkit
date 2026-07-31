@@ -835,3 +835,24 @@
     there are four. Read the diff: it names counts, task slugs and mechanisms,
     no employer, person, posting URL, application slug or absolute home path.
     The advisory detector reports (none).
+- commit: 65f478dd
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 26
+  digest: sha256:e6f28c66ecb54555
+  finding: >-
+    Post-stack-merge reconciliation, plus one genuinely new commit. PRs #117 and
+    #118 merged while this work was in flight; retargeting #118 onto main rebased
+    it, so rows 46-51 name pre-rebase SHAs that are absent from the trunk. Those
+    rows are left untouched — the ledger is append-only and each records a review
+    that did happen. This row covers the range the gate computed from the closest
+    surviving ancestor row.
+    Everything in it except the tip was already reviewed commit-by-commit on the
+    branches, and landed here as twins: fa9b401 (was c8095c49), 743b07f
+    (53424e2a), 1dcc4aa (f734e0b7), e0d7283 (89a3e631), 74038a7 (c69e8e91),
+    dd8c456 (aebb58c2), plus the two merge commits and the ledger-only closers.
+    Only the tip 65f478dd is new content: it folds the owner's answers to the
+    seven company-key calls into the public record, correcting counts 223->222
+    and describing the one overruled call BY SHAPE ("a regional joint venture",
+    "its brand") with neither company named. Read that diff in full for exactly
+    that reason. The advisory detector reports (none) for the range.

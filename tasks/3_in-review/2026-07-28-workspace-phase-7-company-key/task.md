@@ -63,7 +63,7 @@ it: the folder count has drifted and the ratio was not re-derived with it.
 Evidence for every box is in `verification.md` beside this file. Three boxes changed meaning once
 the code was read; each says why.
 
-- [x] `companies/_index.yaml` exists and is the only **owner-owned** alias registry — 223 keys,
+- [x] `companies/_index.yaml` exists and is the only **owner-owned** alias registry — 222 keys,
       265 distinct names, no two keys sharing one. It resolves **214/214** of the company strings
       the applications carry, against the public resolver's 119/214.
 - [ ] ~~`company_key` added to 242 `meta.yaml` files~~ → **split out as 7b** (and the count was
