@@ -1247,3 +1247,17 @@
     key or the slug. The transcripts quote invented Acme/Beacon fixtures and example.test URLs;
     scratch and worktree paths are written as <scratch>. No real company, person, application
     slug, posting URL, salary or absolute home path. The advisory company detector reports (none).
+
+- commit: 0c55807c
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 8
+  digest: sha256:d42db2038917ccc3
+  finding: |
+    Read the full 8-file diff (4 canonical + 4 byte-identical vendored copies of two of them).
+    All new content is regex anchors, a PyYAML Loader subclass, lint rules and their tests.
+    Every fixture is invented (acme-*/Acme *, Northwind/Beacon in the reused suites) and the
+    one nonce token added to a test is a deliberate non-word. The ALIAS_STOP_LIST is unchanged
+    — no employer vocabulary was added or removed. No real company, person, application slug,
+    posting URL, salary, date of the owner's hunt, or absolute home path. The advisory company
+    detector reports (none).

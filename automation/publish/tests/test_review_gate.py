@@ -971,6 +971,35 @@ class AdvisoryDetectorTests(GateTestCase):
         msg = self.repo.gate().stderr
         self.assertIn("(advisory only):  (none)", msg)
 
+    def test_an_index_that_yields_no_names_reports_not_inspected(self):
+        """A detector that found nothing to look at must not report a clean diff.
+
+        Each shape below parses fine and produced ``[]``, which ``company_hints``
+        printed as *inspected, (none)* — a clean bill of health from a detector that
+        never had a name to match. That is precisely the failure the ``None`` return
+        is documented to prevent, so all three now return ``None``.
+
+        The message must NOT say the file is merely absent: here it is present.
+        """
+        for name, text in (
+            ("empty mapping", "{}\n"),
+            ("entries that are not mappings", "acme-labs: Acme Labs\n"),
+            ("entries with no display", "acme-labs:\n  kind: employer\n"),
+        ):
+            with self.subTest(shape=name):
+                self.setUp()
+                self.bootstrap()
+                self.repo.write(review_gate.COMPANY_INDEX_REL, text)
+                self.repo.write("docs/handbook/x.md", "some prose\n")
+                self.repo.commit("public change")
+
+                self.assertIsNone(
+                    review_gate.company_display_names(self.repo.root),
+                    "an index yielding zero names is not an inspected index")
+                msg = self.repo.gate().stderr
+                self.assertIn("private-company cross-reference: NOT INSPECTED", msg)
+                self.assertNotIn("(none)", msg)
+
     def test_detector_never_fails_the_gate_by_itself(self):
         """Hints on an ACKNOWLEDGED range do not turn a pass into a failure."""
         seeded_at = self.bootstrap()

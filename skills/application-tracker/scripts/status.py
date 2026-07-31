@@ -472,23 +472,50 @@ def check_metadata(statuses: list[str], as_json: bool = False) -> bool:
     return not invalid
 
 
+def _raw_company_key(app_dir: Path) -> object:
+    """The ``company_key`` as WRITTEN in ``meta.yaml``, falsy values included.
+
+    ``load_application`` copies a field only ``if meta_data.get(key)``, so ``""``,
+    ``false`` and ``0`` vanish there and an application carrying one looked exactly
+    like an application carrying none. Both other validators call those a hard
+    error, so the coverage report was the only one of the three giving that tree a
+    clean bill of health. Absent, unreadable and unparseable all return ``None``:
+    ``meta.yaml``'s own schema is ``job_metadata``'s business, and an unparseable
+    file has no key to report.
+    """
+    meta = app_dir / "meta.yaml"
+    if not meta.is_file():
+        return None
+    try:
+        data = yaml.safe_load(meta.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return None
+    return data.get("company_key") if isinstance(data, dict) else None
+
+
 def company_keys_report(statuses: list[str], *, strict: bool = False,
                         as_json: bool = False) -> bool:
     """Report company-key COVERAGE. Coverage is a number, never a gate.
 
-    Deliberately fail-open but LOUD. An application is scaffolded without a key
-    and keyed later, so demanding one would block unrelated work in the window
-    between the two; instead the unkeyed count is printed, which is a number a
-    human reads rather than a silence a human misses.
+    Deliberately fail-open but LOUD on COVERAGE. An application is scaffolded
+    without a key and keyed later, so demanding one would block unrelated work in
+    the window between the two; instead the unkeyed count is printed, which is a
+    number a human reads rather than a silence a human misses.
 
-    What is never open is CORRECTNESS: a key that does not resolve is a defect,
-    and ``--strict`` exits 1 on one (the reconciler makes the same call a hard
-    finding on the maintainer's machine).
+    What is never open is CORRECTNESS, and there are two ways to be incorrect —
+    kept apart because an unkeyed application and a broken one must not report the
+    same number:
 
-    Degrades rather than crashes with no overlay: an absent index is reported as
-    absent, and every present key is then counted as unresolved-because-unreadable
-    rather than as wrong. Under ``--strict`` an absent index with keyed
-    applications still fails, because "cannot check" is not "checked and clean".
+      * **malformed** — present but not a company key: ``""``, ``false``, ``0``,
+        ``"acme-labs\\n"``. ``job_metadata.validate_meta`` calls each of these an
+        ERROR and the reconciler calls each a FINDING, so this report agreeing with
+        them is the whole point. Shape is tested with ``company_index.KEY_RE``, the
+        same regex both of the others use;
+      * **unresolved** — a well-shaped key that is not in the index.
+
+    ``--strict`` exits 1 on either. An absent, empty, or unreadable index is
+    reported as such and every present key is then counted unresolved rather than
+    wrong — "cannot check" is not "checked and clean".
     """
     # The index path is a repo-root-relative LITERAL, not `config.companies_root()`.
     # Under the example config that accessor resolves into `examples/`, so routing
@@ -499,13 +526,21 @@ def company_keys_report(statuses: list[str], *, strict: bool = False,
     override = os.environ.get("JOBHUNT_COMPANY_INDEX", "").strip()
     index_path = (Path(override) if override
                   else Path(config.REPO_ROOT) / company_index.DEFAULT_REL)
-    index_present = index_path.is_file()
+    # ``exists() or is_symlink()``, not ``is_file()``: a directory or a dangling
+    # symlink here is a broken overlay, not a missing one, and reporting it as
+    # "no index" was a clean bill of health for a tree nothing had read.
+    index_present = index_path.exists() or index_path.is_symlink()
     index: dict = {}
     index_error = ""
+    index_empty = False
     if index_present:
         try:
-            index = company_index.load(index_path)
-        except Exception as exc:                    # malformed YAML, unreadable file
+            raw = company_index.read_raw(index_path)
+            # ``read_raw`` returns None for an EMPTY file. 0 keys is what a
+            # truncated file reports too, so it is named rather than counted.
+            index_empty = raw is None or not raw
+            index = company_index.from_raw(raw)
+        except Exception as exc:      # malformed YAML, unreadable or not-a-file
             index_error = f"{type(exc).__name__}: {exc}"
 
     rows: list[dict] = []
@@ -517,27 +552,35 @@ def company_keys_report(statuses: list[str], *, strict: bool = False,
             if not app_dir.is_dir() or app_dir.name.startswith("."):
                 continue
             info = load_application(app_dir, status)
-            key = str(info.get("company_key") or "").strip()
+            raw_key = _raw_company_key(app_dir)
+            well_formed = (isinstance(raw_key, str)
+                           and bool(company_index.KEY_RE.match(raw_key)))
             rows.append({
                 "slug": app_dir.name,
                 "status": status,
                 "company": str(info.get("company") or "").strip(),
-                "company_key": key,
+                "company_key": raw_key if well_formed else "",
+                # Absent is unkeyed; present-but-not-a-key is malformed. The two are
+                # different defects and the report must not merge them.
+                "malformed": None if raw_key is None else (not well_formed),
+                "raw_key": raw_key,
                 # Unknown, not clean, when the index could not be read.
-                "resolves": bool(key) and bool(index) and key in index,
+                "resolves": well_formed and bool(index) and raw_key in index,
             })
 
+    malformed = [r for r in rows if r["malformed"]]
     keyed = [r for r in rows if r["company_key"]]
-    unkeyed = [r for r in rows if not r["company_key"]]
+    unkeyed = [r for r in rows if r["malformed"] is None]
     unresolved = [r for r in keyed if not r["resolves"]]
     distinct_companies = {r["company"].casefold() for r in rows if r["company"]}
     distinct_keys = {r["company_key"] for r in keyed}
-    ok = not unresolved if strict else True
+    ok = not (unresolved or malformed) if strict else True
 
     if as_json:
         print(json.dumps({
             "index_path": str(index_path),
             "index_present": index_present,
+            "index_empty": index_empty,
             "index_error": index_error,
             "index_keys": len(index),
             "applications": len(rows),
@@ -545,6 +588,8 @@ def company_keys_report(statuses: list[str], *, strict: bool = False,
             "keyed": len(keyed),
             "distinct_keys": len(distinct_keys),
             "unkeyed": [r["slug"] for r in unkeyed],
+            "malformed": [{"slug": r["slug"], "company_key": repr(r["raw_key"])}
+                          for r in malformed],
             "unresolved": [{"slug": r["slug"], "company_key": r["company_key"]}
                            for r in unresolved],
             "strict": strict,
@@ -557,6 +602,8 @@ def company_keys_report(statuses: list[str], *, strict: bool = False,
     print(f"  keyed:       {len(keyed):<4} ({len(distinct_keys)} distinct keys)")
     print(f"  unkeyed:     {len(unkeyed):<4} -> listed below"
           if unkeyed else f"  unkeyed:     {len(unkeyed)}")
+    print(f"  malformed:   {len(malformed):<4} -> company_key present but not a key"
+          f"{' (FAIL under --strict)' if malformed else ''}")
     print(f"  unresolved:  {len(unresolved):<4} -> company_key not in the index"
           f"{' (FAIL under --strict)' if unresolved else ''}")
     if not index_present:
@@ -566,10 +613,19 @@ def company_keys_report(statuses: list[str], *, strict: bool = False,
     elif index_error:
         print(f"\n  index at {company_index.DEFAULT_REL} could not be read "
               f"({index_error}). Resolution was NOT checked.")
+    elif index_empty:
+        print(f"\n  index at {company_index.DEFAULT_REL} is EMPTY (0 entries) — "
+              "that is what a truncated or half-written file reports too. "
+              "Resolution was NOT checked.")
     if unkeyed:
         print("\n  unkeyed applications:")
         for r in unkeyed:
             print(f"    {r['slug']}  ({r['status']})")
+    if malformed:
+        print("\n  malformed company_key values — not a lowercase index key "
+              "([a-z0-9-], no whitespace); fix the meta.yaml:")
+        for r in malformed:
+            print(f"    {r['slug']}  ->  {r['raw_key']!r}")
     if unresolved:
         print("\n  unresolved keys — add them to the index, or correct the "
               "application:")
@@ -2446,8 +2502,9 @@ def main():
                              "gate; add --strict to exit 1 on a key that is not in "
                              "the index.")
     parser.add_argument("--strict", action="store_true",
-                        help="With --company-keys: exit 1 when any company_key does "
-                             "not resolve to a key in the company index.")
+                        help="With --company-keys: exit 1 when any company_key is "
+                             "malformed, or does not resolve to a key in the "
+                             "company index.")
     parser.add_argument("--statuses", default=None,
                         help="Comma-separated status folders for --check-locations, "
                              "--check-metadata, --backfill-metadata, or "

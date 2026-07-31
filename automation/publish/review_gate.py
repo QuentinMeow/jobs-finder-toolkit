@@ -452,13 +452,22 @@ class RowChain:
 def company_display_names(repo: Path) -> list[str] | None:
     """Display names + aliases from ``private/companies/_index.yaml``.
 
-    Returns None when the index is absent — the caller MUST report that as
+    Returns None when there was NOTHING TO INSPECT — the caller MUST report that as
     "not inspected". Silence from a detector that never ran is indistinguishable
     from a clean diff, which is the failure mode this return value exists to
     prevent. There is deliberately NO fallback that scans the private tree
     directly: measured, that matches 51 of 177 private company tokens across the
     current public tree (``canonical`` 114 files, ``writer`` 103, ``render`` 85,
     ``lambda`` 59), which is unusable even as a hint.
+
+    "Nothing to inspect" is every way the file fails to yield a name, not only the
+    three structural ones. An index that is an EMPTY mapping, one whose entries are
+    not mappings, and one whose entries all lack ``display`` each used to return
+    ``[]`` — reported by ``company_hints`` as *inspected, (none)*, a clean bill of
+    health from a detector that found nothing to look at. ``company_index.lint``
+    names the last two, but only on the maintainer's machine via the reconciler;
+    this gate never consults the linter, so it draws its own conclusion here. An
+    empty result IS the tell, so it is the test: zero names -> None.
     """
     path = repo / COMPANY_INDEX_REL
     if not path.is_file():
@@ -481,6 +490,8 @@ def company_display_names(repo: Path) -> list[str] | None:
             for alias in aliases:
                 if isinstance(alias, str) and alias.strip():
                     names.add(alias.strip())
+    if not names:
+        return None
     return sorted(names)
 
 
@@ -495,9 +506,10 @@ def company_hints(repo: Path, a: str, b: str) -> tuple[bool, list[str]]:
     """
     names = company_display_names(repo)
     if names is None:
+        # Absent, unreadable, or structurally yielding no name at all. There is no
+        # "inspected and empty" branch on purpose: a name set of zero is the shape
+        # of a detector that found nothing to look at, never of a clean index.
         return (False, [])
-    if not names:
-        return (True, [])
 
     proc = _git(["diff", f"{a}..{b}", "--", ".", LEDGER_EXCLUDE, *HINT_EXCLUDE], repo)
     if proc.returncode != 0:
@@ -522,9 +534,11 @@ def _hint_block(inspected: bool, hints: list[str]) -> list[str]:
     if not inspected:
         return [
             "Hint — private-company cross-reference: NOT INSPECTED.",
-            f"  {COMPANY_INDEX_REL} is absent (no overlay mounted, or the company",
-            "  index has not been built yet). This is NOT the same as 'no matches' —",
-            "  the detector did not run at all. Read the diff yourself.",
+            f"  {COMPANY_INDEX_REL} yielded no company names — it is absent (no",
+            "  overlay mounted, or the index has not been built yet), unreadable, or",
+            "  structurally broken (empty, or no entry carries a `display`). This is",
+            "  NOT the same as 'no matches' — the detector did not run against",
+            "  anything. Read the diff yourself.",
         ]
     if not hints:
         return ["Hint — names newly introduced by this diff that match a company in the",
