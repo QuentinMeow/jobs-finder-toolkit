@@ -54,19 +54,12 @@ TASK_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*$")
 STATUS_DIRS = ("0_backlog", "1_in-progress", "2_blocked", "3_in-review", "4_done")
 
 # ``- **Last-updated**: 2026-07-30`` and the plainer forms of the same line.
+#
+# The gardener's ``roadmap-staleness`` routine imports this regex and
+# :func:`parse_last_updated` rather than carrying its own copy, so the gate and the
+# reminder can never disagree about which line carries the date or how it is read.
 _LAST_UPDATED_RE = re.compile(
     r"^\s*[-*]?\s*\**Last-updated\**\s*:\s*(?P<date>\S+)", re.MULTILINE)
-# How stale docs/roadmap/current-state.md may be before it is a finding.
-#
-# 30 days is this repo's existing definition of "old": message-queue reviews are
-# swept at 30 days and the discovery scans carry a 30-day hard TTL. It is also
-# ~10x the observed cadence — current-state.md was rewritten eight times in the ten
-# days before this constant was written — so a roadmap that trips it is stale by any
-# reading, not merely quiet. The cost is real and deliberate: this check runs in
-# pre-commit and CI, so a roadmap left undated for a month blocks every commit until
-# somebody dates it. That is the point; the alternative is the read order sending
-# agents to a document nobody has confirmed since last year.
-ROADMAP_MAX_AGE_DAYS = 30
 
 # The owner's company index lives under this root. It is the only PRIVATE root any
 # check names; ``company_index.DEFAULT_REL`` is the single source for the file path
@@ -305,14 +298,54 @@ def check_skill_manifests() -> list[Finding]:
     return findings
 
 
-def check_roadmap_fresh(today: datetime.date | None = None) -> list[Finding]:
-    """current-state.md exists beside desired-state.md, is dated, and is RECENT.
+def roadmap_current_state() -> Path:
+    """The roadmap file whose ``Last-updated`` line both readers parse."""
+    return REPO_ROOT / "docs" / "roadmap" / "current-state.md"
+
+
+def parse_last_updated(text: str) -> tuple[str | None, datetime.date | None]:
+    """``(raw, date)`` for a document's ``Last-updated`` line.
+
+    ``raw`` is None when the line is absent; ``date`` is None when the raw string is
+    not an ISO date. Shared with the gardener's ``roadmap-staleness`` routine so the
+    two never disagree about what the date IS before they disagree about what to do
+    with it.
+    """
+    match = _LAST_UPDATED_RE.search(text)
+    if match is None:
+        return None, None
+    raw = match.group("date").strip("`*_")
+    try:
+        return raw, datetime.date.fromisoformat(raw)
+    except ValueError:
+        return raw, None
+
+
+def check_roadmap_dated(today: datetime.date | None = None) -> list[Finding]:
+    """current-state.md exists beside desired-state.md and carries a WELL-FORMED date.
 
     The check used to test that the STRING ``Last-updated`` appeared anywhere in the
-    file. It never read the date, so a roadmap a year stale passed, and so would
-    ``Last-updated: whenever``. ``docs/roadmap/README.md`` says this check "keeps it
-    dated" and the read order routes agents here for what is true today; both claims
-    were resting on a substring.
+    file. It never read the date, so ``Last-updated: whenever`` passed. It now parses
+    it — and it deliberately stops there. AGE IS NOT CHECKED HERE.
+
+    Why the split. This function runs from ``automation/hooks/pre-commit`` and CI, so
+    everything it can find blocks every commit in the repo. That is the right cost for
+    a MALFORMED roadmap — a missing ``desired-state.md`` (the gap between the two files
+    is the backlog's source, so one alone is not a roadmap), an unparseable date, or a
+    future date, which is the one way to defeat an age check by typing a date nobody
+    can age past. Each is a defect in the file that the committing agent introduced or
+    can fix in seconds.
+
+    An OLD date is different in kind: nothing is wrong with the file, somebody just has
+    not groomed it lately, and that is unrelated to whatever the current commit does.
+    Wiring it here turned a grooming reminder into an outage — with a 30-day window and
+    a roadmap dated 2026-07-31, every commit in the repo would have started failing on
+    2026-08-31 until somebody re-dated a planning document, including a one-line fix to
+    an unrelated script. Staleness therefore lives in the gardener's report-only
+    ``roadmap-staleness`` routine (``automation/gardener/roadmap_staleness.py``), which
+    is where this repo already puts age flags: stale LESSONS, a drifted tailoring card,
+    expired discovery scans. It surfaces the same fact, on a weekly sweep, to a human
+    who can act on it, and it blocks nothing.
     """
     findings: list[Finding] = []
     roadmap = REPO_ROOT / "docs" / "roadmap"
@@ -321,39 +354,25 @@ def check_roadmap_fresh(today: datetime.date | None = None) -> list[Finding]:
     desired = roadmap / "desired-state.md"
     if not desired.is_file():
         # Named in this function's contract since it was written, never checked.
-        # The gap between the two files IS the backlog's source; one of them alone
-        # is not a roadmap.
-        findings.append(Finding("roadmap-fresh", _rel(desired), "missing"))
+        findings.append(Finding("roadmap-dated", _rel(desired), "missing"))
     current = roadmap / "current-state.md"
     if not current.is_file():
-        findings.append(Finding("roadmap-fresh", _rel(current), "missing"))
+        findings.append(Finding("roadmap-dated", _rel(current), "missing"))
         return findings
 
-    match = _LAST_UPDATED_RE.search(current.read_text(encoding="utf-8"))
-    if match is None:
-        findings.append(Finding("roadmap-fresh", _rel(current),
+    raw, stamp = parse_last_updated(current.read_text(encoding="utf-8"))
+    if raw is None:
+        findings.append(Finding("roadmap-dated", _rel(current),
                                 "missing a Last-updated line"))
-        return findings
-    raw = match.group("date").strip("`*_")
-    try:
-        stamp = datetime.date.fromisoformat(raw)
-    except ValueError:
+    elif stamp is None:
         findings.append(Finding(
-            "roadmap-fresh", _rel(current),
+            "roadmap-dated", _rel(current),
             f"Last-updated: {raw!r} is not an ISO date (YYYY-MM-DD)"))
-        return findings
-
-    age = ((today or datetime.date.today()) - stamp).days
-    if age < 0:
+    elif ((today or datetime.date.today()) - stamp).days < 0:
         findings.append(Finding(
-            "roadmap-fresh", _rel(current),
+            "roadmap-dated", _rel(current),
             f"Last-updated: {raw} is in the future — a date nobody can go stale past "
             f"is not a freshness claim"))
-    elif age > ROADMAP_MAX_AGE_DAYS:
-        findings.append(Finding(
-            "roadmap-fresh", _rel(current),
-            f"Last-updated: {raw} is {age} days old (limit {ROADMAP_MAX_AGE_DAYS}) — "
-            f"describe what is true today, then re-date it"))
     return findings
 
 
@@ -476,7 +495,7 @@ CHECKS = {
     "memory-schema": check_memory_schema,
     "memory-index": check_memory_index,
     "handover-present": check_handover_present,
-    "roadmap-fresh": check_roadmap_fresh,
+    "roadmap-dated": check_roadmap_dated,
     "skill-manifests": check_skill_manifests,
     "company-index": check_company_index,
 }
@@ -493,7 +512,7 @@ CHECK_ROOTS = {
     "memory-schema": "memory",
     "memory-index": "memory",
     "handover-present": "history/conversations",
-    "roadmap-fresh": "docs/roadmap",
+    "roadmap-dated": "docs/roadmap",
     "skill-manifests": "skills",
     "company-index": COMPANY_INDEX_ROOT,
 }

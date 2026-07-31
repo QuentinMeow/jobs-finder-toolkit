@@ -96,7 +96,10 @@ jobs:
           --consumer skills/email-assistant/scripts
 
       # 2b. Process-layer invariants: queue/task/memory schemas, memory index,
-      #     handovers, roadmap freshness (single source of truth: templates/).
+      #     handovers, a well-formed roadmap date (single source of truth:
+      #     templates/). Roadmap STALENESS is deliberately not here: it is the
+      #     gardener's report-only roadmap-staleness routine, because an age limit
+      #     in this step fails every commit in the repo once the clock runs out.
       #     NOTE: deliberately WITHOUT --require-roots. Every check no-ops when its
       #     folder is absent so the published export (which ships none of
       #     message-queue/, tasks/, memory/, docs/roadmap/, history/) stays green;

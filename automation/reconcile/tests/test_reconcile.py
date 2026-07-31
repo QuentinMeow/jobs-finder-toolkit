@@ -130,13 +130,16 @@ class TestRequireRoots(TempRepo):
         self.assertEqual(set(R.CHECK_ROOTS), set(R.CHECKS))
 
 
-class TestRoadmapFreshness(TempRepo):
-    """The freshness gate has to READ the date it is named after.
+class TestRoadmapDated(TempRepo):
+    """The gate reads the date, and stops there. MALFORMED fails; OLD does not.
 
     It used to test that the string ``Last-updated`` appeared anywhere in
-    ``current-state.md``. A roadmap a year stale passed, ``Last-updated: whenever``
-    passed, and ``docs/roadmap/README.md``'s claim that this check "keeps it dated"
-    was resting on a substring.
+    ``current-state.md``, so ``Last-updated: whenever`` passed. Then it briefly aged
+    the date too — in a check that runs in pre-commit AND CI, which would have failed
+    every commit in the repo a month after the last re-date. Age now lives in the
+    gardener's report-only ``roadmap-staleness`` routine; this class pins BOTH halves
+    of that split, because a gate that quietly resumed blocking on age is the exact
+    regression the split exists to prevent.
     """
 
     TODAY = datetime.date(2026, 7, 31)
@@ -150,35 +153,34 @@ class TestRoadmapFreshness(TempRepo):
                 "# Desired state\n", encoding="utf-8")
 
     def messages(self) -> list[str]:
-        return [f.message for f in R.check_roadmap_fresh(today=self.TODAY)]
+        return [f.message for f in R.check_roadmap_dated(today=self.TODAY)]
 
     def test_a_recent_date_passes(self) -> None:
         self.roadmap("# Current state\n\n- **Last-updated**: 2026-07-30\n")
-        self.assertEqual(R.check_roadmap_fresh(today=self.TODAY), [])
+        self.assertEqual(R.check_roadmap_dated(today=self.TODAY), [])
 
-    def test_a_year_stale_roadmap_is_a_finding(self) -> None:
-        """The case the old check could not see at all."""
+    def test_a_year_stale_roadmap_does_not_block_a_commit(self) -> None:
+        """The whole point of the split: staleness is a reminder, not an outage."""
         self.roadmap("# Current state\n\n- **Last-updated**: 2025-07-30\n")
-        messages = self.messages()
-        self.assertEqual(len(messages), 1)
-        self.assertIn("366 days old", messages[0])
+        self.assertEqual(R.check_roadmap_dated(today=self.TODAY), [])
 
-    def test_the_boundary_is_the_declared_limit(self) -> None:
-        limit = R.ROADMAP_MAX_AGE_DAYS
-        edge = self.TODAY - datetime.timedelta(days=limit)
-        self.roadmap(f"- **Last-updated**: {edge.isoformat()}\n")
-        self.assertEqual(R.check_roadmap_fresh(today=self.TODAY), [],
-                         "exactly at the limit is still fresh")
-        over = self.TODAY - datetime.timedelta(days=limit + 1)
-        self.roadmap(f"- **Last-updated**: {over.isoformat()}\n")
-        self.assertEqual(len(self.messages()), 1)
+    def test_no_finding_message_mentions_an_age_limit(self) -> None:
+        """Guards against age quietly coming back through a message tweak."""
+        for body in ("- **Last-updated**: 2020-01-01\n",
+                     "- **Last-updated**: whenever\n",
+                     "- **Last-updated**: 2027-01-01\n",
+                     "# Current state\n\nno date here\n"):
+            self.roadmap(body)
+            for message in self.messages():
+                self.assertNotIn("days old", message, body)
+                self.assertNotIn("limit", message, body)
 
     def test_an_unparseable_date_is_a_finding(self) -> None:
         self.roadmap("- **Last-updated**: whenever\n")
         self.assertIn("is not an ISO date", self.messages()[0])
 
     def test_a_future_date_is_a_finding(self) -> None:
-        """Otherwise the gate is defeated by typing a date nobody can age past."""
+        """Otherwise an age check is defeated by typing a date nobody can age past."""
         self.roadmap("- **Last-updated**: 2027-01-01\n")
         self.assertIn("in the future", self.messages()[0])
 
@@ -189,20 +191,28 @@ class TestRoadmapFreshness(TempRepo):
     def test_a_missing_desired_state_is_a_finding(self) -> None:
         """Named in the check's contract since it was written, never checked."""
         self.roadmap("- **Last-updated**: 2026-07-30\n", desired=False)
-        subjects = [f.subject for f in R.check_roadmap_fresh(today=self.TODAY)]
+        subjects = [f.subject for f in R.check_roadmap_dated(today=self.TODAY)]
         self.assertEqual(subjects, ["docs/roadmap/desired-state.md"])
 
     def test_an_absent_roadmap_root_still_no_ops(self) -> None:
         """The published export ships no docs/roadmap/; plain --check stays green."""
         self.assertFalse((self.root / "docs/roadmap").exists())
-        self.assertEqual(R.check_roadmap_fresh(today=self.TODAY), [])
+        self.assertEqual(R.check_roadmap_dated(today=self.TODAY), [])
 
-    def test_the_real_roadmap_is_fresh_today(self) -> None:
-        """Blast radius: this repo's own roadmap must pass the stricter check."""
+    def test_the_real_roadmap_is_well_formed_today(self) -> None:
+        """Blast radius: this repo's own roadmap must pass the check."""
         saved = R.REPO_ROOT
         R.REPO_ROOT = Path(__file__).resolve().parents[3]
         self.addCleanup(lambda: setattr(R, "REPO_ROOT", saved))
-        self.assertEqual(R.check_roadmap_fresh(), [])
+        self.assertEqual(R.check_roadmap_dated(), [])
+
+    def test_the_parser_is_the_one_the_gardener_imports(self) -> None:
+        """Both readers must agree on what the date IS before they differ on age."""
+        self.assertEqual(R.parse_last_updated("- **Last-updated**: `2026-07-30`\n"),
+                         ("2026-07-30", datetime.date(2026, 7, 30)))
+        self.assertEqual(R.parse_last_updated("nothing here\n"), (None, None))
+        raw, stamp = R.parse_last_updated("- **Last-updated**: whenever\n")
+        self.assertEqual((raw, stamp), ("whenever", None))
 
 
 class TestFileRetries(TempRepo):
@@ -222,11 +232,11 @@ class TestFileRetries(TempRepo):
         self.assertFalse(stale.exists())
 
     def test_findings_create_the_queue_and_the_item(self) -> None:
-        f = R.Finding("roadmap-fresh", "docs/roadmap/current-state.md", "missing")
+        f = R.Finding("roadmap-dated", "docs/roadmap/current-state.md", "missing")
         R.file_retries([f], "2026-07-29")
         item = R.RETRIES_DIR / R._retry_name(f)
         self.assertTrue(item.is_file())
-        self.assertIn("**Check**: roadmap-fresh", item.read_text(encoding="utf-8"))
+        self.assertIn("**Check**: roadmap-dated", item.read_text(encoding="utf-8"))
 
     def test_hand_written_items_survive_the_gc(self) -> None:
         R.RETRIES_DIR.mkdir(parents=True)
@@ -244,7 +254,7 @@ class TestFileRetries(TempRepo):
         """
         self.assertIn("company-index", R.PRIVATE_CHECKS)
         private = R.Finding("company-index", "private/companies/_index.yaml", "boom")
-        public = R.Finding("roadmap-fresh", "docs/roadmap/current-state.md", "missing")
+        public = R.Finding("roadmap-dated", "docs/roadmap/current-state.md", "missing")
         R.file_retries([private, public], "2026-07-30")
         filed = sorted(p.name for p in R.RETRIES_DIR.iterdir())
         self.assertEqual(filed, [R._retry_name(public)])

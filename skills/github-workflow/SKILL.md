@@ -185,7 +185,7 @@ both places is often invoked with different flags in each.
 | 5 | Mail send-less policy (`automation/shared/mail/check_mail_safety.py`) | hook + CI | any mail path exposes send capability |
 | 6 | Byte-compile (`compileall`) | hook + CI | a toolkit or skill script has a syntax error |
 | 7 | Instruction budget (`automation/metrics/instruction_budget.py --strict`) | hook + CI | a `SKILL.md` passes 600 lines, a `LESSONS.md` 160, an `AGENTS.md` its tier's budget |
-| 8 | Reconciler (`automation/reconcile/reconcile.py --check`) | hook + CI; the hook adds `--require-roots` **only when `private/` is mounted**, CI never does | a queue/task/memory item breaks its `templates/` schema, the memory index is stale, a session has no handover, `skill-manifests` drifted |
+| 8 | Reconciler (`automation/reconcile/reconcile.py --check`) | hook + CI; the hook adds `--require-roots` **only when `private/` is mounted**, CI never does | a queue/task/memory item breaks its `templates/` schema, the memory index is stale, a session has no handover, `skill-manifests` drifted, the roadmap's `Last-updated` line is missing/unparseable/in the future (an OLD date does not gate — that is the gardener's `roadmap-staleness` report) |
 | 9 | References + markdown links (`automation/gardener/verify_links.py`) | hook + CI; the hook adds `--require-roots --no-overlay` **only when `private/` is mounted**, CI never does | a backticked path or `[text](path)` in a must-resolve document does not resolve, a skill symlink dangles, or a vendored copy drifted |
 | 10 | Leak guard, armed | `automation/hooks/pre-push` | the guard is UNARMED (no identity tokens) — it refuses the push rather than certify a tree it cannot inspect |
 
