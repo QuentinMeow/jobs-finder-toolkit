@@ -440,8 +440,8 @@ def _store_review_context() -> tuple[list[dict[str, Any]], dict[str, tuple[str, 
                 normalized = validate_company_email_domains({company: [value]})
             except ValueError:
                 continue
-            for company_key, clean_values in normalized.items():
-                domains[company_key] = tuple(sorted(set(domains.get(company_key, ())) | set(clean_values)))
+            for company_match_key, clean_values in normalized.items():
+                domains[company_match_key] = tuple(sorted(set(domains.get(company_match_key, ())) | set(clean_values)))
     return applications, domains
 
 

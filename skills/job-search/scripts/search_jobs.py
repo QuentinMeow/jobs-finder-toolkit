@@ -400,7 +400,7 @@ def load_considered(
 
     The path comes straight from ``config.applications_jsonl_path()``, so it is not
     tied to any candidate's directory and cannot silently resolve to a log-less one. Returns
-    (urls, (company_key, role) pairs). Each log row's company is expanded through the
+    (urls, (company match key, role) pairs). Each log row's company is expanded through the
     registry's match keys (name/alias/token + suffix-variant comparable forms), so a
     row stored under a short registry name matches an incoming aggregator posting that
     names the same employer with a trailing legal suffix (and vice-versa) — honoring

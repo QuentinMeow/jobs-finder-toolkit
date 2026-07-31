@@ -132,7 +132,19 @@ def _norm(value: Any) -> str:
     return re.sub(r"\s+", " ", _text(value).casefold()).strip()
 
 
-def _company_key(value: Any) -> str:
+def _company_match_key(value: Any) -> str:
+    """This module's own company MATCH key. NOT the owner's filing key.
+
+    It strips every non-alphanumeric character and NO legal suffix, and it exists
+    only to bind an email thread to an application inside this module. The
+    optional key persisted in ``meta.yaml`` (see ``automation/shared/company_index.py``)
+    is a hand-assigned FILING key with a different job and different failure
+    modes: substituting it here would silently change which emails match which
+    applications — an alias merge binds two employers' mail together, an alias
+    split loses a thread. The two are named apart so that substitution cannot be
+    made by accident, and a source-level guard in ``automation/shared/tests``
+    (the additive-invariant suite) keeps them apart.
+    """
     return re.sub(r"[^a-z0-9]", "", _norm(value))
 
 
@@ -458,8 +470,8 @@ def categorize_message(message: Mapping[str, Any]) -> dict[str, Any]:
 def validate_company_email_domains(company_domains: Mapping[str, Iterable[str]]) -> dict[str, tuple[str, ...]]:
     """Validate/write-gate per-company domains, rejecting shared ATS domains."""
     result: dict[str, tuple[str, ...]] = {}
-    for company, values in sorted(company_domains.items(), key=lambda item: _company_key(item[0])):
-        key = _company_key(company)
+    for company, values in sorted(company_domains.items(), key=lambda item: _company_match_key(item[0])):
+        key = _company_match_key(company)
         if not key:
             raise ValueError("company email-domain mapping has an empty company")
         domains = []
@@ -499,7 +511,7 @@ def _normalize_applications(applications: Iterable[Mapping[str, Any]]) -> list[d
                 "requisition_id": _text(job.get("requisition_id") or job.get("req_id")),
                 "progress": dict(job.get("progress") or {}) if isinstance(job.get("progress"), Mapping) else {},
             })
-        normalized.append({"slug": slug, "company": company, "company_key": _company_key(company), "jobs": jobs_out})
+        normalized.append({"slug": slug, "company": company, "company_match_key": _company_match_key(company), "jobs": jobs_out})
     return sorted(normalized, key=lambda app: app["slug"])
 
 
@@ -569,7 +581,7 @@ def _human_link(message_key: str, confirmations: Mapping[str, Any], apps: list[d
     return _link(app["company"], app["slug"], job, derivation="human_confirmed", confidence="exact")
 
 
-def _thread_candidates(thread_keys: Sequence[str], thread_links: Mapping[str, Any], company_key: str | None) -> list[dict[str, Any]]:
+def _thread_candidates(thread_keys: Sequence[str], thread_links: Mapping[str, Any], company_match_key: str | None) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     for key in thread_keys:
         raw = thread_links.get(key)
@@ -577,12 +589,12 @@ def _thread_candidates(thread_keys: Sequence[str], thread_links: Mapping[str, An
         for record in records:
             if not isinstance(record, Mapping):
                 continue
-            if company_key and _company_key(record.get("company")) not in {"", company_key}:
+            if company_match_key and _company_match_key(record.get("company")) not in {"", company_match_key}:
                 continue  # never carry Company A's thread link into Company B mail
             found.append(dict(record))
     unique: dict[tuple[Any, ...], dict[str, Any]] = {}
     for record in found:
-        marker = (record.get("application_slug"), record.get("job_index"), record.get("role"), _company_key(record.get("company")))
+        marker = (record.get("application_slug"), record.get("job_index"), record.get("role"), _company_match_key(record.get("company")))
         unique[marker] = record
     return [unique[key] for key in sorted(unique, key=lambda value: tuple(str(item) for item in value))]
 
@@ -611,8 +623,8 @@ def link_message(
         return _link(None, None, None, derivation="shared_ats_vendor", confidence="none", note="sender domain is a shared ATS vendor")
     recognized_companies = {_company_for_domain(domain, domains) for domain in candidate_domains if domain}
     recognized_companies.discard(None)
-    company_key = next(iter(recognized_companies)) if len(recognized_companies) == 1 else None
-    company_apps = [app for app in apps if app["company_key"] == company_key] if company_key else []
+    company_match_key = next(iter(recognized_companies)) if len(recognized_companies) == 1 else None
+    company_apps = [app for app in apps if app["company_match_key"] == company_match_key] if company_match_key else []
     company = company_apps[0]["company"] if company_apps else None
     text = f"{normalized.get('subject', '')}\n{normalized.get('body_text', '')}"
     if company_apps:
@@ -623,7 +635,7 @@ def link_message(
         if len(matched) > 1:
             return _link(company, None, None, derivation="structured_token_ambiguous", confidence="weak", candidates=[app["slug"] for app, _ in matched], note="structured token matched more than one job")
 
-    inherited = _thread_candidates(normalized.get("thread_keys", ()), thread_links or {}, company_key)
+    inherited = _thread_candidates(normalized.get("thread_keys", ()), thread_links or {}, company_match_key)
     if len(inherited) == 1:
         prior = inherited[0]
         return _link(

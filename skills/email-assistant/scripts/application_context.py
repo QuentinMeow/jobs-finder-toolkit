@@ -109,6 +109,11 @@ def _records(applications_root: Path):
             "path": app_dir.resolve(),
             "status": status_label_for_dir(folder_name) or folder_name,
             "company": str(meta.get("company", "")).strip(),
+            # Surfaced beside `company`, never instead of it. The mail reconciler
+            # binds threads to applications on its own `company_match_key`,
+            # computed from the free-text string; this is a filing key for a human
+            # reading the context, and nothing may match on it.
+            "company_key": str(meta.get("company_key") or "").strip(),
             "roles": tuple(role for role in roles if role),
             "recruiter_email": str(meta.get("recruiter_email", "")).strip(),
             "slug": app_dir.name,

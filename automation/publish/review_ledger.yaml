@@ -758,3 +758,80 @@
     the leaking blob never entered pushed history. The detector now reports
     (none) for this range. Re-read after the fix: no employer, person, school,
     posting URL, application slug, salary or absolute home path remains.
+- commit: c8095c49
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:00b49fbb821f1d58
+  finding: >-
+    Read the full diff. A pure rename of the mail reconciler's in-memory match
+    key (field, helper, one parameter, two locals, and one loop variable in the
+    email assistant) plus a ten-line docstring saying which key it is and which
+    it is not. Proved pure mechanically: applying the token substitution to the
+    pre-commit file and diffing against the new one leaves exactly the added
+    docstring. No company name, employer, person, school, posting URL,
+    application slug, salary or absolute home path appears; the diff names no
+    data at all. The advisory company detector reports (none) for this range.
+- commit: 53424e2a
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 5
+  digest: sha256:4c953397070e220b
+  finding: >-
+    Read the full diff. One optional top-level schema field plus its shape check,
+    a rejection of the same field inside a jobs entry, and their tests; the three
+    vendored copies are byte-identical regenerations of the same hunks. The key
+    REGEX is restated rather than imported, and a test loads both modules by path
+    and pins the two patterns together, so the duplication cannot drift. No
+    company name, employer, person, school, posting URL, application slug, salary
+    or absolute home path appears; every fixture value is invented. The advisory
+    company detector reports (none) for this range.
+- commit: f734e0b7
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 11
+  digest: sha256:09db4e1bd105954e
+  finding: >-
+    Read the full diff. It adds the additive-invariant suite, surfaces
+    company_key to two readers, adds status.py --company-keys, and documents the
+    field. Two docstrings were reworded rather than any code changed: one in
+    search_jobs described its pair set as "(company_key, role) pairs" when it
+    means the registry MATCH key, which is precisely the confusion this phase
+    exists to prevent and which a source-level guard reads. No employer, person,
+    posting URL, application slug, salary or absolute home path appears; every
+    fixture key is invented. The advisory company detector reports (none).
+- commit: 89a3e631
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:ae8023b93bb19c9d
+  finding: >-
+    Two follow-up task files and the session handover. Read the full diff. The
+    handover names PR numbers, repo-relative paths and queue-item links only,
+    and refers to the overlay's PR without a number because that repo is
+    private; the seven owner judgements are described by shape, never by
+    company. No employer, person, school, posting URL, application slug, salary
+    or absolute home path appears. The advisory detector reports (none).
+- commit: c69e8e91
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:adc98672552d33e7
+  finding: >-
+    Read the full diff. It extends the guarded-function list from 17 to 26 and
+    files two tasks recording what an adversarial review reproduced. No product
+    code changed. Every fixture employer in the new task files is invented
+    (`acme-*`, `beacon-works`); the review's real-data findings are described by
+    shape and count only, never by name. No employer, person, posting URL,
+    application slug, salary or absolute home path appears. The advisory
+    detector reports (none).
+- commit: aebb58c2
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 1
+  digest: sha256:5abeb2bf68615d18
+  finding: >-
+    Handover correction only — it under-reported the filed defects as two when
+    there are four. Read the diff: it names counts, task slugs and mechanisms,
+    no employer, person, posting URL, application slug or absolute home path.
+    The advisory detector reports (none).
