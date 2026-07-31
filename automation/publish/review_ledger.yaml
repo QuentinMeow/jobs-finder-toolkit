@@ -1062,3 +1062,16 @@
     values replaced by <set>. The only dates are process-record metadata. No person,
     employer, school, company, posting URL, application slug or salary appears. The
     advisory company detector reports (none).
+
+- commit: e3d5b432
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:618dfd508d272279
+  finding: >-
+    Read the full 3-file diff. Tooling and test code only: the mail-safety checker gains two
+    helpers and three coverage findings, its pass line prints the provider-folder and consumer-file
+    counts, and the vendored copy is the byte-identical mirror the drift gate requires. The only
+    strings added are fixture code and error text naming generic paths (providers/, _vendor/,
+    tests/). No person, employer, school, company, mailbox address, posting URL, application slug,
+    salary or absolute home path appears. The advisory company detector reports (none).
