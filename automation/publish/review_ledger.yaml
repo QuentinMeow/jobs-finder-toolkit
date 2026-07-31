@@ -928,3 +928,19 @@
     identifier, person, employer, school, company, posting URL, application slug,
     salary or absolute home path appears; the verification transcript redacts the
     repo path to <repo-root>. The advisory company detector reports (none).
+
+- commit: 3f6ac80a
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 4
+  digest: sha256:53b2ff3dd4b6705a
+  finding: >-
+    Read the full 4-file diff. It adds three CI steps (the mail send-less policy,
+    the instruction-file budget, and the four skill unit suites that ran nowhere
+    in CI), points the pull-request template's check box at CONTRIBUTING.md's
+    list instead of naming one suite, extends that list with the four suites and
+    the mail-safety command, and corrects one repo-map phrase. No product code
+    changes and no new secrets or tokens; the only path pinned is the tracked
+    config.example.yaml. No person, employer, school, company, posting URL,
+    application slug, salary, date beyond process metadata, or absolute home path
+    appears. The advisory company detector reports (none).

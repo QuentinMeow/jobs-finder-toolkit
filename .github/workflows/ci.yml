@@ -122,13 +122,15 @@ jobs:
       #     retry filing, the gardener routines (link/reference verification,
       #     skill drift, store report, the self-measure funnel), the private-overlay
       #     git hooks, and the search-recall-audit readers of the applications
-      #     skip-log (whose log branch had no test at all before it was fixed).
-      - name: Reconciler + gardener + overlay-hook + recall-audit unit tests
+      #     skip-log (whose log branch had no test at all before it was fixed),
+      #     and the instruction-budget gate's discovery + leaf tiers.
+      - name: Reconciler + gardener + overlay-hook + recall-audit + metrics unit tests
         run: |
           python -m unittest discover automation/reconcile/tests
           python -m unittest discover automation/gardener/tests
           python -m unittest discover automation/hooks/tests
           python -m unittest discover automation/search-recall-audit/tests
+          python -m unittest discover automation/metrics/tests
 
       # 2d. Public review gate — every commit that changed the published tree must
       #     carry a row in automation/publish/review_ledger.yaml. This is the copy
