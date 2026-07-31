@@ -1476,3 +1476,12 @@
     every figure attached to it is from a public docs page, launch post or SEC filing. No real
     name, private-tree employer, school, date, salary or posting URL. The advisory company
     detector reports (none).
+- commit: 18eeec97
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 1
+  digest: sha256:ee56651d1148e205
+  finding: |
+    One file, the eval record. Read the diff: numeric corrections to the maturity-gate product
+    counts (22 -> 84 classified, 6 -> 17 unverified) and a rewritten paragraph on the hedging
+    trade. No new company, path or identity string enters the tree.
