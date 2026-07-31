@@ -1046,3 +1046,19 @@
     private/applications/ and examples/applications/ mount points. No person, employer, school,
     company, posting URL, application slug, salary, date or absolute home path appears. The
     advisory company detector reports (none).
+
+- commit: eccac937
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 14
+  digest: sha256:256465a5ec058ac7
+  finding: >-
+    Read the full 14-file diff. Process records only: four task folders with their
+    verification and worklog files, plus one repaired cross-reference and one inherited
+    DoD item on the phase-8 task. The verification records quote real command output, so
+    they were written with the overlay's own content elided — the reproduced drift report
+    names the file paths it read but the skill token it printed is redacted, absolute home
+    paths are written as <repo-root>, and the config.yaml excerpt shows key names with the
+    values replaced by <set>. The only dates are process-record metadata. No person,
+    employer, school, company, posting URL, application slug or salary appears. The
+    advisory company detector reports (none).
