@@ -1207,3 +1207,16 @@
     text — and describes them only as US-remote, no visa denial, still open. The overlay's own
     queue item was read but not edited and is not quoted. No company, employer, person, slug,
     posting URL, salary or home path. The advisory company detector reports (none).
+
+- commit: 15add0aa
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 4
+  digest: sha256:dd9b609f31a69efc
+  finding: >-
+    Read the full 4-file diff: one new backlog task about /tmp paths in the job-search skill, a
+    correction block appended to the bundled-txt canary task quoting one line of status.py, a
+    one-line docstring fix in test_verify_links.py, and a paragraph in desired-state.md naming
+    four memory/known-issues entries by their public filenames. All four files name only public
+    toolkit paths, public issue slugs and counts. No company, employer, person, application slug,
+    posting URL, salary or absolute home path. The advisory company detector reports (none).
