@@ -239,7 +239,9 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    exact paths into a managed block in `.git/info/exclude`. That file is local Git
    metadata: it is never committed or exported, so every runtime sees the skill
    while the public repository never learns its name. Adding or renaming a private
-   skill requires only re-running bootstrap.
+   skill requires only re-running bootstrap. Removing one also removes its stale
+   generated adapters and local exclude rows; foreign runtime entries are never
+   touched.
 
    Your other overlay content needs no wiring at all — the toolkit reaches it through
    config accessors: personal search profiles via `config.search_profiles_dir()`

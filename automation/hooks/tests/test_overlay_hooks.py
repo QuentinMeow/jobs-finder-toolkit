@@ -396,6 +396,28 @@ class TestBootstrapWritesNothingIntoThePublicTree(unittest.TestCase):
             self.assertNotIn("hidden-b", after)
             self.assertIn("hidden-a", after)
 
+    def test_bootstrap_removes_only_obsolete_generated_adapters(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            foreign = root / ".cursor/skills/third-party"
+            foreign.mkdir(parents=True)
+
+            self.assertEqual(bootstrap_overlay.bootstrap(check=False), 0)
+            obsolete = [root / host / "hidden-b"
+                        for host in bootstrap_overlay.SKILL_HOSTS]
+            self.assertTrue(all(link.is_symlink() for link in obsolete))
+
+            shutil.rmtree(root / "private/skills/hidden-b")
+            self.assertEqual(bootstrap_overlay.bootstrap(check=False), 0)
+
+            self.assertTrue(all(not link.is_symlink() and not link.exists()
+                                for link in obsolete))
+            self.assertTrue(foreign.is_dir())
+            exclude = (root / ".git/info/exclude").read_text(encoding="utf-8")
+            self.assertNotIn("hidden-b", exclude)
+            self.assertIn("hidden-a", exclude)
+
 
 if __name__ == "__main__":
     unittest.main()

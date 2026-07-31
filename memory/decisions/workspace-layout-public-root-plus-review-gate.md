@@ -30,8 +30,8 @@ use and develop the toolkit. Defense is two layers:
 
 1. **Naming carries the instruction.** Every private path contains `private/`. The eight
    symlinks that currently break this — four `skills/job-search/profiles/<personal-name>.yaml`
-   whose *filenames are personal tokens in the public tree*, two `references_private/`, two
-   two overlay-only skill trees — are deleted and replaced by config accessors
+   whose *filenames are personal tokens in the public tree*, two
+   `references_private/`, and two overlay-only skill trees — are deleted and replaced by config accessors
    and runtime adapter entries pointing at `private/skills/`.
 2. **Detection after the fact.** A review gate: every commit touching the public tree fails a
    test until a row is appended to a tracked ledger recording the commit range, file count, a

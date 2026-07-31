@@ -869,3 +869,20 @@
     retain that overlay-only identifier. No person, employer, school, posting
     URL, application slug, salary or absolute home path appears. The advisory
     detector reports (none).
+- commit: 3711e844
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 53
+  digest: sha256:b1b437542e39ebcb
+  finding: >-
+    Read the full diff in runtime/test, instruction/documentation, and process-
+    record groups. It replaces one broad Codex pointer with 11 tracked public
+    adapters, adds dynamic local adapters for all three runtimes, stores their
+    exact overlay-only paths in repository-local Git metadata, and derives
+    mounted overlay identifiers as leak-guard tokens. Tests cover local-exclude
+    ownership, manifest drift, link resolution, staged content, and config-less
+    export behavior. Documentation and records remove the identifiers from the
+    new public snapshot; the old values appear only on the deletion side of this
+    cleanup diff because published history was not rewritten. No person,
+    employer, school, posting URL, application slug, salary or absolute home
+    path appears. The advisory detector reports (none).

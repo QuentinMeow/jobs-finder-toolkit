@@ -47,6 +47,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 OK = "ok"        # already correct — no-op
 CREATE = "create"
 UPDATE = "update"  # stale overlay symlink replaced (overlay-managed links only)
+REMOVE = "remove"  # obsolete generated adapter removed
 SKIP = "skip"
 WARN = "warn"    # foreign file / hook left untouched, or missing prerequisite
 NOTE = "note"    # informational reminder
@@ -241,6 +242,22 @@ def _private_skill_links(private: Path) -> list[tuple[Path, Path]]:
     return links
 
 
+def _owned_private_skill_links() -> list[Path]:
+    """Existing generated adapters whose targets point into overlay skills."""
+    links: list[Path] = []
+    for host in SKILL_HOSTS:
+        host_dir = REPO_ROOT / host
+        if not host_dir.is_dir():
+            continue
+        for entry in host_dir.iterdir():
+            if not entry.is_symlink():
+                continue
+            target = os.readlink(entry).replace(os.sep, "/")
+            if "private/skills/" in target:
+                links.append(entry)
+    return sorted(links)
+
+
 def _not_ignored(links: list[Path]) -> list[str]:
     """Which of ``links`` git does NOT ignore (repo-relative). Empty off-git.
 
@@ -269,8 +286,11 @@ def bootstrap(check: bool) -> int:
     private = REPO_ROOT / "private"
     if private.is_dir():
         planned = _private_skill_links(private)
+        wanted_links = {link for link, _ in planned}
+        existing_owned = set(_owned_private_skill_links())
+        protected_links = sorted(wanted_links | existing_owned)
         excludes_ready = _sync_local_excludes(
-            [link for link, _ in planned], check=check, results=results)
+            protected_links, check=check, results=results)
         if excludes_ready:
             for link, dest in planned:
                 # Only a link we already own (one pointing into private/skills/)
@@ -287,6 +307,16 @@ def bootstrap(check: bool) -> int:
                 results.append((status, msg))
                 if status in (CREATE, UPDATE) and not check:
                     _apply_symlink(link, target, status)
+            stale = sorted(existing_owned - wanted_links)
+            for link in stale:
+                results.append((REMOVE, f"{_disp(link)} (overlay skill no longer present)"))
+                if not check:
+                    link.unlink()
+            if stale and not check:
+                # The first update protected stale paths until their generated
+                # links were gone. Now prune those names from local metadata too.
+                _sync_local_excludes(
+                    sorted(wanted_links), check=False, results=results)
             for rel in _not_ignored([link for link, _ in planned]):
                 results.append((WARN, f"{rel} is NOT git-ignored — re-run bootstrap "
                                       "to repair the repository-local exclude block"))
@@ -324,7 +354,7 @@ def bootstrap(check: bool) -> int:
         print(f"  [{status:>6}] {msg}")
 
     warns = [r for r in results if r[0] == WARN]
-    pending = [r for r in results if r[0] in (CREATE, UPDATE)]
+    pending = [r for r in results if r[0] in (CREATE, UPDATE, REMOVE)]
     if check and pending:
         print(f"\n{len(pending)} change(s) pending — re-run without --check to apply.")
     if warns:

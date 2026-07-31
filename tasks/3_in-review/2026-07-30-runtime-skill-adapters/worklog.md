@@ -1,8 +1,5 @@
 # Worklog — 2026-07-30-runtime-skill-adapters
 
-<Append-only, newest at bottom, one entry per session. Keep entries short:
-what moved, what's next, what surprised you.>
-
 ## 2026-07-30 — session 1 (Codex)
 
 - Confirmed Codex currently sees only the tracked public `skills/` tree while
@@ -21,3 +18,6 @@ what moved, what's next, what surprised you.>
   removed that empty directory and re-ran the reconciler.
 - History rewrite is intentionally out of scope and filed as an owner decision;
   default is the non-destructive current-tree and future-commit cleanup.
+- Closing review added removal coverage: when an overlay skill disappears,
+  bootstrap removes only its generated adapters and prunes their local excludes,
+  while preserving foreign runtime entries.

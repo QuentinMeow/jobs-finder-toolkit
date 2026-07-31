@@ -1,11 +1,5 @@
 # Verification — 2026-07-30-runtime-skill-adapters
 
-<Only commands actually run and their real output. Never fabricated, never
-paraphrased into "all tests pass" without the evidence. Required before a
-task enters 3_in-review or 4_done.>
-
-Verification evidence will be appended after implementation.
-
 ## Runtime adapter shape
 
 ```
