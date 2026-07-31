@@ -1,6 +1,6 @@
-# Where does the coding-interview screenshot inbox live after phase 5?
+# Where does the coding interview screenshot inbox live after phase 5?
 
-- **Status**: awaiting-owner-input
+- **Status**: folding
 - **Filed**: 2026-07-29
 - **Source**: [workspace-restructure execution plan, phase 5 move table](../../../docs/designs/workspace-restructure/execution-plan.md#phase-5--the-lifetime-taxonomy-inside-private)
 - **Blocking**: nothing. Phase 5 proceeds on the default path.
@@ -65,4 +65,5 @@ to slip into a 764-file migration. If you say B, it is a two-line change plus a
 Option C is listed for completeness and is not recommended: phase 4 removed every
 inbound symlink in this repo for reasons that still apply.
 
-**Your answer:** ______
+**Your answer:** Move the inbox to `private/me/interviews/practice/TODO/`, migrate
+the existing folder there, and redirect every skill reference to the new location.
