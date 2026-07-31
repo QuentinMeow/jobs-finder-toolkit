@@ -28,9 +28,11 @@ The regressions pinned here, oldest first:
     SEPARATE git repository and ``git ls-files`` in the public repo cannot see it.
 
 ``check_references()`` returns ``(broken, advisory, permitted, skipped,
-unrecognised)``. Two tests are ``@unittest.expectedFailure``: they encode a case the
-design's §7 test plan requires and the module does not yet implement, so they flip to
-an UNEXPECTED SUCCESS the moment the module is fixed. Each says so in its docstring.
+unrecognised)``. **One** test is ``@unittest.expectedFailure``: it encodes a case the
+design's §7 test plan requires and the module does not yet implement, so it flips to
+an UNEXPECTED SUCCESS the moment the module is fixed. It says so in its docstring.
+(This line said "two" for longer than it was true — the second was implemented and the
+sentence was not updated. A run reports ``expected failures=1``; that is the count.)
 """
 from __future__ import annotations
 

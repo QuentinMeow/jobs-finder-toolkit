@@ -71,3 +71,25 @@ still re-opens the posting. The gap between "looks safe" and "is safe" is now wi
 - [ ] **The proof:** the user deletes a rejected application, search re-runs, the posting does
       **not** resurface
 - [ ] Gate command clean
+
+## Held in `3_in-review`, 2026-07-31 — what is missing
+
+A bookkeeping pass promoted six finished in-review folders to `4_done` and deliberately left this
+one behind. PRs #114 and #115 are merged and the evidence in this folder is otherwise excellent —
+an `ALL GREEN` block, two mutation checks, an acceptance proof with a non-vacuity control. But
+**all six definition-of-done boxes are `- [ ]`**, so the folder asserts in checkbox form that
+nothing was done.
+
+**The one substantive gap — the backfill — is closed, and here is the number.** Re-measured
+2026-07-31 against the append-only skip-log resolved through `config.applications_jsonl_path()`:
+
+```
+events: 369
+distinct urls: 367
+```
+
+That is exactly the 369-event backfill the phase specified, and it matches the 367-URL figure in
+`docs/roadmap/current-state.md`. So this is a records gap, not a data gap, and it is **not**
+urgent. What it needs is somebody with the branch in front of them ticking six boxes against
+evidence that is already in `verification.md` — which is a claim this bookkeeping pass is not
+entitled to make on the implementer's behalf.

@@ -15,31 +15,60 @@ the repo: a format lint, a leak scan, and a gardener hygiene routine.
 
 ## Context
 
-Three gaps the review demonstrated:
+**Rewritten 2026-07-31: two of the three gaps this task was filed for have since shipped.** They
+are recorded below rather than deleted, because a task that describes work already done sends the
+next reader to build it twice. What remains is real and is stated first.
 
-1. **No format lint.** Queue files have mandated front-matter (Status/
-   Priority/Area/Source for tasks; Status/Filed/Blocking/default-path +
-   `**Your answer:**` line for decisions; Filed/Look-at/Resolution for
-   reviews) but nothing checks it — the launch seeds themselves shipped
-   with violations. Add a small linter over `message-queue/**` front-matter +
-   required sections, wired into pre-commit.
-2. **No leak scan on message-queue/ content.** The queue READMEs say "leak-guard
-   rules apply" but no automated scan runs on public-tree queue items
-   (applied-to company names + dates aren't the owner's identity tokens, so
-   the identity guard alone can't catch them). Extend the pre-commit check
-   to run the structural screens over `message-queue/**`, and add a reviews/-specific
-   rule: flag real-company-plus-date shapes.
-3. **No gardener routine.** Add `todo-hygiene` to the gardener (dry-run
-   like everything): reviews/ items past 30 days, tasks stuck `done` past
-   one PR cycle, decisions/ items pending longer than N weeks (surface a
-   reminder line for the owner), parked items whose revisit condition
-   references a shipped stage.
+**Verify-with**:
+
+```bash
+grep -n 'def check_queue_schema\|def check_task_structure' automation/reconcile/reconcile.py
+grep -n 'reconcile.py --check' automation/hooks/pre-commit
+grep -n 'def _structural_hits' -A 14 automation/publish/check_public.py
+grep -n 'ROUTINES = {' -A 12 automation/gardener/gardener.py
+```
+
+### Gap A — no company-plus-date structural screen (the surviving half of old gap 2)
+
+`check_public.py --staged` runs in pre-commit with **no exclusion for `message-queue/`** — the
+tree is explicitly named in the module as legitimately scanned — so queue items *are* scanned. But
+`_structural_hits` screens exactly four shapes: email, phone, home path and LinkedIn. There is no
+real-company-plus-date rule, which is the one shape the identity guard structurally cannot see
+(company names are not identity tokens — that is why the review gate exists). So the DoD's planted
+`message-queue/needs-human/reviews/` defect would still walk through today.
+
+**This one needs a narrow owner decision before it is built.** A company-plus-date regex over a
+*public* tree is a false-positive generator: this repo's own docs and ADRs name ATS vendors and
+dates constantly. Decide the shape (allowlist of vendor names? advisory-only hint like the review
+gate's detector, rather than a blocker?) before writing the regex.
+
+### Gap B — no gardener routine (old gap 3, unchanged and still true)
+
+The gardener has 8 routines — `expire-discoveries`, `compact-logs`, `lessons-report`,
+`card-staleness`, `skill-drift`, `store-report`, `verify-links`, `self-measure` — and **none of
+them touches `message-queue/`, `tasks/`, or `memory/known-issues/`**. Add `todo-hygiene`
+(dry-run, exit 0 always, like everything there): `reviews/` items past 30 days, tasks dwelling in
+`1_in-progress`/`3_in-review`, `decisions/` items pending longer than N weeks, and parked items
+whose revisit condition references a shipped stage.
+
+Note that this overlaps a proposal now in front of the owner
+([process-weight](../../../message-queue/needs-human/decisions/process-weight-what-to-cut.md),
+D6b) — check the answer before building, so the routine is not built twice under two names.
+
+### Shipped since filing — do NOT rebuild
+
+- ~~**No format lint.**~~ `reconcile.py::check_queue_schema` validates required keys per queue
+  subfolder against `templates/`, and `check_task_structure` enforces `Priority`/`Area`/`Source`,
+  the folder-name regex, `Claimed-by` outside backlog, and `verification.md` in
+  `3_in-review`/`4_done`. Both are wired into `automation/hooks/pre-commit`. (The *reviews* key set
+  drifted from this task's original claim — the templates won.)
+- ~~**No leak scan on `message-queue/` content.**~~ It is scanned, in pre-commit, with no
+  exclusion. Only the company-plus-date screen is missing; that is gap A.
 
 ## Definition of done
 
-- [ ] Lint green on the current tree; a planted malformed queue file fails
-      pre-commit with a message naming the missing field.
-- [ ] Leak scan over `message-queue/**` runs in pre-commit; a planted
-      real-company+date line in `message-queue/needs-human/reviews/` is flagged.
-- [ ] `gardener` offers `todo-hygiene` (dry-run), reporting the three aging
-      dimensions above.
+- [ ] The company-plus-date screen exists in whatever shape the owner's decision settles, and a
+      planted real-company+date line in `message-queue/needs-human/reviews/` is caught by it
+- [ ] `gardener` offers `todo-hygiene` (dry-run, never gating), reporting the aging dimensions
+      above, and no-opping cleanly when `message-queue/` and `tasks/` are absent (the exported
+      public tree ships neither)

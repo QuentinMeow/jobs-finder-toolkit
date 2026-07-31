@@ -28,3 +28,14 @@
   session's handover), `handbook/collaboration-modes.md`, and delta edits
   to `AGENTS.md` (mode line, boot additions, reconciler guardrail,
   templates router line).
+
+## 2026-07-31 — session 2 (agent, bookkeeping)
+
+- Closed. All four stack PRs (#56–#59) are merged, the process folders and the reconciler ship in
+  both repositories, and `reconcile --check --require-roots` is clean. Evidence in
+  `verification.md`; moved `1_in-progress` -> `4_done`.
+- Recorded the one reversal rather than hiding it: item 3's top-level `handbook/` + `design/` was
+  undone by workspace phase 2 under the superseding ADR
+  `memory/decisions/docs-parent-for-the-human-read-trees.md`.
+- The cost of leaving this open was not the folder — it was the false in-flight signal. Nine days
+  after the work merged, `tasks/1_in-progress/` still claimed someone was on it.

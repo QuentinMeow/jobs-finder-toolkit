@@ -144,3 +144,43 @@ DOCX generation succeeded, but LibreOffice exited without creating its PDF.
 The application-tracker canaries must be rerun in fresh model-pinned sessions
 before merge because `SKILL.md` changed behavior. Unit/integration verification
 does not replace that instruction-harness gate.
+
+---
+
+## Closing check, 2026-07-31 (bookkeeping pass, not the implementing session)
+
+This task sat in `1_in-progress` for nine days after its work merged, blocked in its own worklog
+on two gates. **Both are satisfied by evidence the folder never absorbed.** Re-checked before
+moving it to `4_done`:
+
+**1. The canary gate the worklog calls "pending before merge".** A post-UX-revision run exists:
+
+```
+$ ls evals/results/ | grep application-tracker
+application-tracker-389dfee-20260720-schema-v4-status-rollup.md
+application-tracker-9e3bec374fb4-20260728-company-view.md
+application-tracker-efcde9a-20260722.md
+$ grep -n 'Pass rate' evals/results/application-tracker-9e3bec374fb4-20260728-company-view.md
+25:Pass rate: `6/6`.
+```
+
+Six of six, dated 2026-07-28 — after the UX revision the worklog says the earlier 5/5 predated.
+
+**2. The fleet migration to schema v5.**
+
+```
+$ grep -h 'job_metadata_schema_version' $(find <applications-root> -name meta.yaml) | sort | uniq -c
+ 243 job_metadata_schema_version: 5
+$ .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata
+Checked 243 applications; 0 invalid.
+```
+
+All 243 at v5, zero at v4. The migration is complete.
+
+**The code is on `main`.** `automation/shared/calendar_todos.py` and
+`skills/application-tracker/scripts/tests/test_progress_calendar.py` are both tracked and present.
+
+**Overtaken twice, and worth recording rather than closing silently:** a separate
+`skills/interview-calendar/` skill now owns calendar reconciliation, and workspace phase 5 moved
+the calendar out of the path this task's definition of done names. So the task closes as shipped —
+its scope has since been re-homed, and a reader should follow the skill, not this folder.

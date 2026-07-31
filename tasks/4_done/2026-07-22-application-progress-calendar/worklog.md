@@ -115,3 +115,13 @@
   fresh-session 5-canary run; this session cannot create the required isolated
   agent sessions under its collaboration policy. The previous same-day v5 run
   was 5/5 but predates this UX revision.
+
+## 2026-07-31 — session (agent, bookkeeping)
+
+- Closed. Both blockers this worklog left open are satisfied: the post-UX-revision canary run is
+  `evals/results/application-tracker-9e3bec374fb4-20260728-company-view.md` at 6/6, and the fleet
+  migration is done — 243 of 243 application `meta.yaml` at schema v5, zero at v4,
+  `--check-metadata` 243 checked / 0 invalid. Evidence appended to `verification.md`; moved
+  `1_in-progress` -> `4_done`.
+- Noted that the scope has been re-homed twice since (the `interview-calendar` skill, and phase
+  5's move of the calendar path), so this folder is a record and not a pointer.

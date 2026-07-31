@@ -294,7 +294,7 @@ this stack's tip and there were **36** at its base — but the two sets do not o
 that is not stability, it is churn the gate cannot see. PR 02's move broke a fresh batch that was
 caught and repaired only because a throwaway checker was written for the purpose; the gate
 reported "references: all resolve" the entire time. Filed as
-[`tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md).
+[`tasks/4_done/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/4_done/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md).
 
 **A backticked ref whose first path segment is in no strict root prefix is invisible** — not
 broken, not advisory, not counted in any skip tally. It falls out of `check_references()` at the
@@ -374,7 +374,7 @@ because the private tree grew — 3,186 tracked files, of which 2,411 are applic
 
 This phase used to be the next thing to start. It no longer is: the owner decided on
 2026-07-29 to fix the link checker first — the task
-[`tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
+[`tasks/4_done/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../../tasks/4_done/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
 merges before any phase-5 commit.
 
 The reason is that one of this phase's own steps is unverifiable without it. Phase 5 removes
@@ -697,48 +697,54 @@ employer's real name and the gate's baseline subtraction already makes it safe.
 
 ## Phase 8 — instruction surface
 
-**Blocking preconditions:** phases 2, 4 and 5 merged (4 is merged; 2 is done and in review), and
-[`tasks/0_backlog/2026-07-28-slim-company-research-skill`](../../../tasks/0_backlog/2026-07-28-slim-company-research-skill/task.md)
-merged.
+**Blocking preconditions: all met as of 2026-07-31; nothing blocks this phase.** Phase 2
+(#99–#103, #105), phase 4 (#86), phase 5's public side (#111) and
+[`tasks/4_done/2026-07-28-slim-company-research-skill`](../../../tasks/4_done/2026-07-28-slim-company-research-skill/task.md)
+(#108) are all merged.
 
-- **`skills/company-research/SKILL.md` is still at 595 lines against the hard 600-line budget in
-  `automation/metrics/instruction_budget.py`** (re-measured 2026-07-29 — unchanged). Five lines
-  of headroom, and this phase adds path references. The slimming PR lands first or this phase
-  cannot commit, because `automation/hooks/pre-commit` runs `instruction_budget.py --strict`.
-- `AGENTS.md`: the private-tree map, routing into `private/`, the new guardrails. It is at 307
+- **The 595-line hard blocker is gone.** `skills/company-research/SKILL.md` is at **469 lines**
+  against the 600-line budget in `automation/metrics/instruction_budget.py`, so there are 131
+  lines of headroom where this plan claimed five, and `instruction_budget.py --strict` reports
+  `OK: all instruction files within budget`. The slimming PR landed. *(Superseded text, kept as
+  the dated record: "`skills/company-research/SKILL.md` is still at 595 lines ... Five lines of
+  headroom ... The slimming PR lands first or this phase cannot commit.")*
+- `AGENTS.md`: the private-tree map, routing into `private/`, the new guardrails. It is at 318
   lines against a 500-line budget, so there is room.
-- **Every one of the 11 public `SKILL.md` files names a path that phase 2 or phase 5 moves** —
-  the old "8 of 12" count predates both the `github-workflow` skill and phase 4's removal of the
-  two private skill trees from `skills/`. Split by which phase does the moving. **The phase-2
-  column below is now obsolete:** phase 2 has run, so it retired the `automation/maintenance/`
-  token from every skill and re-spelled `handbook|design|roadmap|tmp`, and the counts — and the
-  phase-8 estimate built on them — no longer describe any file. Re-measure before starting; filed
-  as [`tasks/0_backlog/2026-07-29-refresh-phase-8-instruction-surface-counts`](../../../tasks/0_backlog/2026-07-29-refresh-phase-8-instruction-surface-counts/task.md).
-  The phase-5 column still holds.
+- **The per-skill path table that stood here is deleted, re-measured 2026-07-31: both of its
+  columns are now zero.** It counted, per public `SKILL.md`, how many paths phase 2 moves and how
+  many phase 5 moves; the phase-2 column was already flagged obsolete, and the re-measurement
+  found the phase-5 column had gone the same way. Record the command, not the coordinates:
 
-  | Skill | phase-2 paths (`automation/maintenance/`, `handbook/`, `design/`, `roadmap/`, `tmp/`) — **obsolete** | phase-5 paths (`0_profile`, `interviews/`, `job-search-profiles/`, `data/`) |
-  |---|---:|---:|
-  | search-recall-audit | 19 | 1 |
-  | job-search | 15 | 0 |
-  | gardener | 11 | 0 |
-  | github-workflow | 7 | 0 |
-  | behavioral-interview-prep | 2 | 9 |
-  | ask-me-anything | 3 | 4 |
-  | company-research | 3 | 1 |
-  | email-assistant | 3 | 0 |
-  | resume-writer | 1 | 3 |
-  | application-tracker | 2 | 0 |
-  | interview-calendar | 1 | 0 |
+  ```bash
+  # phase-2 tokens: automation/maintenance/, and bare handbook/ design/ roadmap/ tmp/
+  grep -cE 'automation/maintenance/|(^|[^s/])handbook/|(^|[^s/])design/|(^|[^s/])roadmap/|(^|[^/[:alnum:]])tmp/' skills/*/SKILL.md
+  # phase-5 tokens
+  grep -nE '0_profile|interviews/|job-search-profiles/' skills/*/SKILL.md
+  ```
 
-  The two overlay-only `private/skills/<name>/SKILL.md` files name one each.
-- **7 handbook docs**, not 5, name `private/`: `private-overlay.md` (45 lines),
-  `public-private-split.md` (9), `repo-map.md` (6), `architecture.md` (4),
-  `command-cookbook.md` (3), `memory-map.md` (2), `configuration.md` (1).
+  **Phase-2: 0 hits across all 11 public skills** — phase 2 retired every one of those tokens.
+  (The only raw `tmp/` matches anywhere are five `/tmp/*.json` examples in
+  `skills/job-search/SKILL.md`: the OS temp dir, not this repo's scratch root. Real finding, its
+  own task, not phase-8 work.) **Phase-5: 0 stale references** — 14 raw token hits survive across
+  four skills, but every one already names its post-phase-5 destination
+  (`private/me/interviews/{story-bank,question-bank}`, `<applications_root>/0_profile/`), and
+  three further hits in `company-research` are English prose ("founder interviews/podcasts"), not
+  paths. `verify_links` reports every reference resolving. So the instruction-surface half of
+  phase 8 is `AGENTS.md`'s private-tree map plus whatever the `examples/` reshape drags with it —
+  not a sweep of eleven skills.
+
+  **There are THREE overlay-only `private/skills/<name>/SKILL.md` files, not two.**
+- **8 handbook docs**, not 7 and not 5, name `private/`, re-measured 2026-07-31:
+  `private-overlay.md` (58), `public-private-split.md` (10), `repo-map.md` (6),
+  `architecture.md` (4), `command-cookbook.md` (4), `memory-map.md` (2), `configuration.md` (1),
+  `application-folders.md` (1).
 - `examples/` reshaped to mirror the private tree (`me/`, `companies/`, `applications/`,
   `store/`), fixing the two violations it carries today: `examples/data/` is a generic bucket
   and `examples/templates/` collides with the root `templates/`. `examples/data` is one of
-  `ci.yml`'s 16 executed path pins (`automation/store/validate_store.py examples/data
-  --check-fixture-size`) — same PR.
+  an executed path pin in `ci.yml` (`automation/store/validate_store.py examples/data
+  --check-fixture-size`) — same PR. *(The earlier "one of 16 pins" figure is not reproducible
+  and has been dropped rather than re-guessed; the pin itself is real and was re-confirmed
+  2026-07-31.)*
 - This is a "large" edit under the risk-based eval gate — **canaries run for every touched
   skill**, recorded in `evals/results/`. Nine of the 11 public skills have a canary set;
   `gardener` and `search-recall-audit` have none, so an edit to those two is covered by the
@@ -810,9 +816,12 @@ so a reader of an older branch or PR is not confused.
 **Pre-existing breakage to fix opportunistically (file, don't silently repair):** a job-search
 profile references `interviews/common-message-**relies**/` (typo); a benchmark fixture
 symlink points at an uncompressed target that exists only as `.gz`; and
-`automation/search-recall-audit/store_refilter.py` raises `NameError: prof_label` on its final
-print, so the script has never run to completion (broken at `d9aa3cb`, before phase 2 — the split
-neither caused nor fixed it). The third item on this list
+~~`automation/search-recall-audit/store_refilter.py` raises `NameError: prof_label` on its final
+print, so the script has never run to completion~~ — **this third claim is false as of
+2026-07-31 and is struck rather than deleted, because a hazard list whose purpose is to be
+trusted must show when one of its rows stopped being true.** `prof_label` is assigned and read at
+**module level** with no intervening scope boundary (AST-checked), so the name cannot be unbound
+at the print. It was broken at `d9aa3cb` and has since been repaired. The item on this list
 — a benchmark profile that could not be bootstrapped — was closed on 2026-07-29 (commits
 `eb7f07c`, `19d0829`): there was no regression, because `overlay_root()` follows the active
 config, so the benchmark config finds its own fixture profile with no symlink at all.

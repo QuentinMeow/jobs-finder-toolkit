@@ -34,3 +34,18 @@ preflight and `isDraft: true` assertion.
   no mailbox mutation occurs.
 - Behavioral instruction edits pass the email-assistant canaries and record
   the result.
+
+## Held in `3_in-review`, 2026-07-31 — what is missing
+
+A bookkeeping pass promoted six finished in-review folders to `4_done` and deliberately left this
+one behind. PR #60 is merged; the gap is in the definition of done, not in the code:
+
+- **The read-only `--live` conformance run has never happened.** It needs the real keyring login
+  and is the documented owner action. The folder says so; nothing here can close it.
+- **The recorded canary result the last bullet asks for does not exist.** No `email-assistant`
+  eval record exists for this task's date. The worklog records a deliberate skip under the
+  risk-based eval gate, which is defensible — but the bullet as written asks for a record, and a
+  reader cannot tell "skipped with rationale" from "run and passed" without one.
+
+Promoting this folder would assert both. Either satisfy them, or amend the two bullets to say what
+was actually decided.
