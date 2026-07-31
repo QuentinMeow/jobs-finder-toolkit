@@ -1275,3 +1275,17 @@
     they are run against, which is local output, not tracked content. The handbook clause names
     no employer. No real company, person, application slug, posting URL, salary or absolute home
     path. The advisory company detector reports (none).
+
+- commit: 2bc3f840
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:dd001d7b330dfe72
+  finding: |
+    Read the full 3-file diff: one task record moved into 3_in-review with its verification and
+    worklog. Checked the two places private data could have entered. The blast-radius section
+    carries counts and shapes only (222 index entries, 0 duplicates, 0 findings; 243
+    applications, 243 keyed, 0 malformed, 0 unresolved) and names no employer, key or slug. The
+    transcripts quote invented Acme/Beacon/Northwind fixtures; scratch and worktree paths are
+    written as <scratch>. No real company, person, application slug, posting URL, salary or
+    absolute home path. The advisory company detector reports (none).
