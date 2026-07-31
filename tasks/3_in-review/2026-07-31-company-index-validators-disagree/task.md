@@ -3,7 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: harness
 - **Source**: adversarial review of workspace phase 7, 2026-07-30 — all reproduced
-- **Claimed-by**:
+- **Claimed-by**: agent (fix/07-company-key-validators-agree), 2026-07-31
 
 ## Goal
 
@@ -81,11 +81,11 @@ names. So no employer was blinded. The test just does not prove it.
 
 ## Definition of done
 
-- [ ] The three validators agree on trailing whitespace, `""`, `false`, `0`, and absent
-- [ ] `--company-keys` distinguishes unkeyed from malformed, and `--strict` fails on malformed
-- [ ] Duplicate top-level keys are a lint finding (reuse the ledger loader's approach)
-- [ ] Display↔display and key↔display collisions are lint findings; `resolve()` is total on a
+- [x] The three validators agree on trailing whitespace, `""`, `false`, `0`, and absent
+- [x] `--company-keys` distinguishes unkeyed from malformed, and `--strict` fails on malformed
+- [x] Duplicate top-level keys are a lint finding (reuse the ledger loader's approach)
+- [x] Display↔display and key↔display collisions are lint findings; `resolve()` is total on a
       lint-clean index, as its docstring already claims
-- [ ] Not-a-regular-file at the index path is a finding, not a no-op
-- [ ] The detector reports NOT INSPECTED rather than "(none)" when it found nothing to inspect
-- [ ] The stop-list test can fail
+- [x] Not-a-regular-file at the index path is a finding, not a no-op
+- [x] The detector reports NOT INSPECTED rather than "(none)" when it found nothing to inspect
+- [x] The stop-list test can fail

@@ -1261,3 +1261,17 @@
     — no employer vocabulary was added or removed. No real company, person, application slug,
     posting URL, salary, date of the owner's hunt, or absolute home path. The advisory company
     detector reports (none).
+
+- commit: 2844fd0b
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 7
+  digest: sha256:54bdfd4597392b14
+  finding: |
+    Read the full 7-file diff. The three consumers of the company key plus one handbook clause.
+    All new fixtures are invented (acme-*, Beacon Works, Northwind Data Ltd., Lambda Systems
+    Inc.) and every test runs against a temp tree, never the owner's. The report gained a
+    `malformed` line and an `index_empty` flag; both print slugs and key values from the tree
+    they are run against, which is local output, not tracked content. The handbook clause names
+    no employer. No real company, person, application slug, posting URL, salary or absolute home
+    path. The advisory company detector reports (none).
