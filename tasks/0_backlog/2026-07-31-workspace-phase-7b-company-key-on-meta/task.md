@@ -13,18 +13,24 @@ application.
 
 ## Context
 
-Phase 7 landed the index (223 keys) and the public contract: the schema accepts the field, the
+Phase 7 landed the index (222 keys) and the public contract: the schema accepts the field, the
 loader resolves it, and the reconciler check verifies every key that is present. **No `meta.yaml`
 carries the field yet**, which is why the check currently passes vacuously.
 
-### Blocking precondition
+### Precondition — MET as of 2026-07-30
 
-**The owner's seven judgement calls must be answered first.** They are filed in the overlay at
-`message-queue/needs-human/decisions/company-key-index-seven-calls.md`, each with the evidence and
-a default, and every default is already applied to the committed index. This was split out of
-phase 7 deliberately: settling the keys before 243 files point at them is far cheaper than
-re-pointing 243 files afterwards. Check the decision file before starting; if it is still
-unanswered, the defaults stand and you may proceed — but say so in the PR.
+The owner's seven judgement calls are **answered**, so this task is unblocked. Six took the
+recorded default; one was overruled, and it changed the key set — a regional joint venture that
+had been given its own key with a `parent` edge is now the *same company* as its brand, so that
+key is gone and the entity's name is an alias. 223 keys → 222. The ruling and its reasoning are in
+the overlay's decision log; the general rule it sets is that a separate legal entity is not
+automatically a separate key.
+
+**Consequence you must not skip: regenerate the mapping, do not reuse it.** The
+`meta_updates.tsv` produced alongside the original proposal still points one application at the
+retired key. Re-derive `company_key` for every folder from the index as committed, and diff the
+result against the stale file — that diff should contain exactly the rows the ruling moved, and
+anything else in it is a bug in your regeneration.
 
 ### What makes this more than a loop
 

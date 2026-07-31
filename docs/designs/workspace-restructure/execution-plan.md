@@ -671,7 +671,7 @@ was renamed so the substitution cannot be made by accident.
 
 ### What landed
 
-- `private/companies/_index.yaml` — 223 keys, 265 distinct names, no two keys sharing one.
+- `private/companies/_index.yaml` — 222 keys, 265 distinct names, no two keys sharing one.
   One slug rule, nothing dropped, which reproduced all 25 existing company folder names exactly,
   so **no folder was renamed**. Five merges, each under a named mechanical rule.
 - `automation/shared/company_index.py` — the loader and linter.

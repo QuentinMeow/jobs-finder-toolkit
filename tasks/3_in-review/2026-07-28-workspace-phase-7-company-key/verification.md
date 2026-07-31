@@ -61,12 +61,29 @@ data is and disappears where it is not, which is what keeps the exported repo's 
 ```
 $ .venv/bin/python -c "company_index.lint(read_raw('private/companies/_index.yaml'))"
 lint findings on the SHIPPED index: 0
-keys loaded: 223
+keys loaded: 222
 ```
 
-223 keys · 265 distinct names, no two keys sharing one · 31 keys with aliases · 222 `employer`,
-1 `interview_vendor` · 2 `parent` edges · all 25 pre-existing company folder names reproduced
+222 keys · 265 distinct names, no two keys sharing one · 32 keys with aliases · 221 `employer`,
+1 `interview_vendor` · 1 `parent` edge · all 25 pre-existing company folder names reproduced
 exactly, so **no folder was renamed**.
+
+**Those counts moved once, after the owner answered.** The index was generated with seven
+judgement calls left open, each carrying a default that was already applied. Six defaults were
+taken. The seventh was **overruled**: a regional joint venture had been given its own key with a
+`parent` edge to its brand, on the reasoning that a separate legal entity with its own board and
+process should not have a rejection attributed to the parent. The owner ruled the two are the same
+company, so that key is gone and the entity's full name is an alias of the brand — 223 keys → 222,
+2 `parent` edges → 1, 31 aliased keys → 32.
+
+The two invariants that matter both held across the edit: **distinct names stayed 265**, because
+the display did not disappear but moved to the alias list; and **resolution stayed 214/214**,
+because the application carrying the long string now resolves through the alias instead of through
+its own key. Re-linted after the change: 0 findings.
+
+The general rule the ruling sets, recorded in the overlay's decision log: *a separate legal entity
+is not automatically a separate key — the test is whether the owner thinks of it as a different
+employer, not whether it files separately.*
 
 ## The alias rule, which took three drafts and two measurements
 

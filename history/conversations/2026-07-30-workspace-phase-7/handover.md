@@ -62,13 +62,12 @@
 
 ## Needs your attention
 
-- **[Seven judgement calls on the company index](../../../private/message-queue/needs-human/decisions/company-key-index-seven-calls.md)**
-  (in the overlay) — an interview vendor that is not an employer, a joint venture sharing a brand,
-  an acquired product applied to on the acquirer's board, two rebrands, three legal suffixes with
-  no second spelling to compare against, and four company folders with no application behind them.
-  **Every default is already applied**, so saying nothing is a valid answer — but 7b is held until
-  you answer, because settling keys before 243 files point at them is far cheaper than re-pointing
-  them afterwards.
+- ~~Seven judgement calls on the company index~~ — **answered the same day.** Six defaults taken;
+  one overruled, which changed the key set: a regional joint venture that had been given its own
+  key with a `parent` edge is now the same company as its brand, so 223 keys became 222. The queue
+  item is folded and deleted, the decision recorded in the overlay's log, and **7b is unblocked** —
+  but its precomputed mapping is stale and must be regenerated, because one row still points at the
+  retired key.
 - **[The retired `applications-log.yaml`](../../../message-queue/needs-human/decisions/retired-applications-log-yaml.md)**
   from phase 6 is still unanswered — the old skip-log is read by nothing now; delete it or keep it.
   While it exists it stays a resurrection source for rows you later un-skip.
