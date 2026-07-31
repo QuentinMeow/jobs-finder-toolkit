@@ -1117,3 +1117,17 @@
     rather than anything about a job hunt. The only paths named are docs/roadmap/ and
     message-queue/. No person, employer, school, company, posting URL, application slug,
     salary or absolute home path appears. The advisory company detector reports (none).
+
+- commit: ef2d14ea
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:83558537c76dcf0b
+  finding: >-
+    Read the full 3-file diff — one task folder (task.md, worklog.md, verification.md). The
+    verification record quotes real command output, written with absolute home paths redacted
+    to <repo-root> and throwaway temp directories to <tmp>; the transcripts name only public
+    toolkit paths, fixture package names and this repository's own process roots. The dates
+    are process-record metadata and fixture dates. No person, employer, school, company,
+    posting URL, application slug or salary appears. The advisory company detector reports
+    (none).
