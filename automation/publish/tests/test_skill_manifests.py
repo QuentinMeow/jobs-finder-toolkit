@@ -199,16 +199,24 @@ class SyntheticVisibilityTests(unittest.TestCase):
                                  f"{ssm.PRIVATE_SKILL_TARGET_PREFIX}hidden")
 
     def test_foreign_symlink_and_directory_are_left_alone(self):
-        """A third-party skill installed into the same host dir is not ours."""
+        """A third-party skill installed into the same host dir is not ours.
+
+        The plain directory is deliberate: a renamed-away skill leaves one behind
+        (`.cursor/skills/github-manager` outlived the github-manager ->
+        github-workflow rename), and so does any tool that installs a real skill
+        folder rather than a symlink. Ownership is decided by TARGET, so neither
+        is reported or touched. The fixture name is kept unambiguously foreign so
+        nobody reads this test as blessing one of our own leftovers.
+        """
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             _fixture(root)
-            (root / ".cursor/skills/github-manager").mkdir()
+            (root / ".cursor/skills/some-other-tools-skill").mkdir()
             os.symlink("../../elsewhere/thing", root / ".cursor/skills/thing")
 
             self.assertEqual(ssm.findings(root), [])
             ssm.sync(root)
-            self.assertTrue((root / ".cursor/skills/github-manager").is_dir())
+            self.assertTrue((root / ".cursor/skills/some-other-tools-skill").is_dir())
             self.assertTrue((root / ".cursor/skills/thing").is_symlink())
 
     def test_missing_visibility_key_is_a_finding_and_never_public(self):

@@ -1348,3 +1348,17 @@
     Both are process/architecture prose about this public repo. No real name, employer,
     school, date, salary, application slug, posting URL or absolute home path. The advisory
     company detector reports (none).
+- commit: 04664b9a
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 8
+  digest: sha256:61f8c666b65000d6
+  finding: |
+    Read the full 8-file diff. Path/prose corrections in AGENTS.md, two handbook pages, three
+    SKILL.md files, the two workspace-restructure design docs, and one new backlog task file.
+    Deliberately checked the risky class: every location is written as an accessor
+    (config.search_profiles_dir(), config.companies_root()/<key>/derived/) or a generic
+    placeholder, so no real company key, application slug or overlay filename appears. The
+    behavioural-prep paragraph describes file SHAPES and counts only, per the interview-material
+    ADR's "counts and shapes only" rule. No real name, employer, school, date, salary, posting
+    URL or absolute home path. The advisory company detector reports (none).
