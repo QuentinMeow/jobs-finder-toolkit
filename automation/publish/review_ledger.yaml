@@ -1362,3 +1362,14 @@
     behavioural-prep paragraph describes file SHAPES and counts only, per the interview-material
     ADR's "counts and shapes only" rule. No real name, employer, school, date, salary, posting
     URL or absolute home path. The advisory company detector reports (none).
+- commit: 24fd699e
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 1
+  digest: sha256:0e4c32124838c5c2
+  finding: |
+    Read the full 1-file diff: a unit-test fixture directory name changed from this repo's own
+    retired skill name to an unambiguously foreign one, plus a docstring explaining why a plain
+    directory is the case under test. Assertions follow the rename; no production code, no
+    behaviour change. No real name, employer, school, date, salary, application slug, posting
+    URL or absolute home path. The advisory company detector reports (none).
