@@ -3,10 +3,19 @@
 # Steps 1-3 (vendored-copy drift check, compile, example render + validate) verify
 # the toolkit itself and pass in ANY checkout (with or without the private overlay).
 #
-# Steps 4-6 run the unit tests: resume-writer schema/extraction/render/E2E, the
+# Steps 4-6b run the unit tests: resume-writer schema/extraction/render/E2E, the
 # shared-module suite (job metadata, the metadata editor, layout/search/backfill),
-# and the publish leak-guard suite (structural PII detection, path denylist,
-# fail-closed binaries, allowlist copy). These must pass everywhere.
+# the four skill suites (application-tracker, email-assistant,
+# behavioral-interview-prep, github-workflow), and the publish leak-guard suite
+# (structural PII detection, path denylist, fail-closed binaries, allowlist
+# copy). These must pass everywhere.
+#
+# Steps 2a and 2e are the two gates that used to run ONLY in the local
+# automation/hooks/pre-commit chain: the mail send-less policy and the
+# instruction-file budget. CONTRIBUTING.md and skills/github-workflow/SKILL.md
+# both describe them as hard gates, so they run here too — an uninstalled hook,
+# a `git commit --no-verify`, or a fork PR can no longer land a change either
+# one would have refused. Both are stdlib-only and need no config.yaml.
 #
 # Step 7 is the public leak guard (automation/publish/check_public.py) — a BLOCKING
 # gate. This IS the public toolkit repo, so the guard must be completely clean
@@ -73,6 +82,19 @@ jobs:
       - name: Compile all Python
         run: python -m compileall automation skills/*/scripts
 
+      # 2a. Mail send-less policy — BLOCKING, and the one guardrail here whose
+      #     failure is irreversible for the user: a sent email cannot be recalled.
+      #     AGENTS.md states the invariant absolutely (never request Mail.Send,
+      #     never expose a send command), and automation/hooks/pre-commit has
+      #     enforced it since the mail layer landed — but only locally, so an
+      #     uninstalled hook or a fork PR could add sendMail and keep CI green.
+      #     Same invocation as the hook: walks every provider folder plus the
+      #     email-assistant CLI named by --consumer.
+      - name: Mail send-less policy (blocking)
+        run: >-
+          python automation/shared/mail/check_mail_safety.py
+          --consumer skills/email-assistant/scripts
+
       # 2b. Process-layer invariants: queue/task/memory schemas, memory index,
       #     handovers, roadmap freshness (single source of truth: templates/).
       #     NOTE: deliberately WITHOUT --require-roots. Every check no-ops when its
@@ -132,6 +154,17 @@ jobs:
             python automation/publish/review_gate.py --verify-all
           fi
 
+      # 2e. Instruction-file budget (--strict) — the anti-bloat gate. Every
+      #     AGENTS.md (root at 500 lines, folder leaves at 100), every
+      #     skills/*/SKILL.md (600) and LESSONS.md (160) must be within budget;
+      #     going over forces a consolidation pass, not an exception.
+      #     CONTRIBUTING.md and skills/github-workflow/SKILL.md both list it as a
+      #     hard gate, and until now only the local hook ran it. The private
+      #     overlay's skills and the generated store README are measured ONLY
+      #     when they exist, so this run measures the public files alone.
+      - name: Instruction-file budget (strict)
+        run: python automation/metrics/instruction_budget.py --strict
+
       # 3. Render + validate the worked example using the fake "Jordan Rivers"
       #    config.example.yaml. render.py auto-runs check.py (locked fields, real
       #    titles/skills, bullet lengths, one-page PDF, cover-letter prose).
@@ -173,6 +206,24 @@ jobs:
             -s skills/job-search/scripts/tests \
             -t skills/job-search/scripts/tests
           python skills/job-search/scripts/validate_filter_variants.py --check
+
+      # 6b. The remaining skill suites. These existed and passed locally but ran
+      #     nowhere in CI, so application-tracker (the v5 meta.yaml schema, the
+      #     status rollup, the folder moves over owner data) and email-assistant
+      #     (the send-less mail path, the Graph client, store sync) could regress
+      #     at merge behind a green tick. CONTRIBUTING.md and README.md both say
+      #     CI runs the suites; now it does.
+      #     Only application-tracker reads config (applications root, location
+      #     policy, skip-log paths), so only that line pins JOBHUNT_CONFIG, the
+      #     same way steps 3/4/6 do. CI has no config.yaml, so the other three
+      #     fall back to config.example.yaml on their own.
+      - name: Application-tracker, email-assistant, behavioral-prep, github-workflow tests
+        run: |
+          JOBHUNT_CONFIG="$PWD/config.example.yaml" \
+            python -m unittest discover -s skills/application-tracker/scripts/tests
+          python -m unittest discover -s skills/email-assistant/scripts/tests
+          python -m unittest discover -s skills/behavioral-interview-prep/scripts/tests
+          python -m unittest discover -s skills/github-workflow/scripts/tests
 
       # 7. Publish leak-guard + exporter UNIT TESTS (required gate). Exercises the
       #    guard's structural PII / path-denylist / fail-closed logic and the

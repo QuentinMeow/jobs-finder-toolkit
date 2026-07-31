@@ -30,7 +30,9 @@ python automation/bootstrap_overlay.py        # installs automation/hooks/pre-co
 
 ## Running the checks
 
-Run these before opening a PR (all must pass; CI runs them too):
+This list is the canonical one — the pull-request template points here instead of
+repeating it, and `.github/workflows/ci.yml` runs the same set. Run it before
+opening a PR; all of it must pass.
 
 ```bash
 # Resume-writer schema/extraction/render tests (includes one fake multi-experience E2E)
@@ -45,8 +47,19 @@ Run these before opening a PR (all must pass; CI runs them too):
   -t skills/job-search/scripts/tests
 .venv/bin/python skills/job-search/scripts/validate_filter_variants.py --check
 
+# The remaining skill suites (application-tracker reads config; the other three do not)
+JOBHUNT_CONFIG="$PWD/config.example.yaml" \
+  .venv/bin/python -m unittest discover -s skills/application-tracker/scripts/tests
+.venv/bin/python -m unittest discover -s skills/email-assistant/scripts/tests
+.venv/bin/python -m unittest discover -s skills/behavioral-interview-prep/scripts/tests
+.venv/bin/python -m unittest discover -s skills/github-workflow/scripts/tests
+
 # Publish leak-guard + exporter unit tests
 .venv/bin/python -m unittest discover -s automation/publish/tests
+
+# Mail send-less policy — the email path must never expose send capability
+.venv/bin/python automation/shared/mail/check_mail_safety.py \
+  --consumer skills/email-assistant/scripts
 
 # Instruction-file size budget (strict)
 .venv/bin/python automation/metrics/instruction_budget.py --strict
@@ -59,6 +72,12 @@ Run these before opening a PR (all must pass; CI runs them too):
 # Link / symlink / vendor-drift check
 .venv/bin/python automation/gardener/gardener.py verify-links
 ```
+
+CI additionally runs the maintenance-tooling suites
+(`automation/{reconcile,gardener,hooks,search-recall-audit,metrics}/tests`), the
+reconciler, and the example render — see `.github/workflows/ci.yml` for the
+authoritative order. The tracked pre-commit hook runs the cheap gates from this
+list on every commit.
 
 Vendored copies must stay in sync; after editing a canonical `automation/shared/`
 module, regenerate with `.venv/bin/python automation/vendoring/sync_vendored.py` (the
