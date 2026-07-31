@@ -1301,3 +1301,15 @@
     fictional folder names in a temp tree. No allowlist, no weakened check. No real company,
     person, application slug, posting URL, salary or absolute home path. The advisory company
     detector reports (none).
+
+- commit: b9f388bb
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:9afe459c9fa0c833
+  finding: |
+    Read the full 2-file diff: two invented fixture slugs on one test line reworded so gitleaks'
+    generic-api-key rule has no keyword-then-quoted-value shape to match, plus the worklog entry.
+    Re-ran that rule locally over every added line of this push: 0 matches. No allowlist, no
+    weakened check. No real company, person, application slug, posting URL, salary or absolute
+    home path. The advisory company detector reports (none).
