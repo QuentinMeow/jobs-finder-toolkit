@@ -2392,6 +2392,38 @@ def forget_log(values: list[str]) -> None:
           f"({len(skip_log.fold(APPLICATIONS_JSONL))} posting(s) still folded)")
 
 
+# Flags that scan EVERY application under the active config's applications root. They
+# take no path or slug, so `--check-metadata <folder>` exits 2 with a bare argparse
+# "unrecognized arguments" and no way to tell a wrong path from a wrong call shape.
+# Three measured subject-agent runs each burned a retry on exactly that; the entries
+# below turn the rejection into an instruction. (attr, flag, per-application alternative)
+_SCAN_FLAGS_TAKING_NO_PATH = (
+    ("check_metadata", "--check-metadata", "--enrich-metadata <slug-or-path>"),
+    ("backfill_metadata", "--backfill-metadata", "--enrich-metadata <slug-or-path>"),
+    ("check_locations", "--check-locations", None),
+    ("company_keys", "--company-keys", None),
+)
+
+
+def _reject_extra_args(parser, args, extras):
+    """Exit 2 on unrecognized arguments, naming the fix when a scan flag caused it."""
+    named = " ".join(extras)
+    for attr, flag, alternative in _SCAN_FLAGS_TAKING_NO_PATH:
+        if not getattr(args, attr, False):
+            continue
+        hint = (f"{flag} scans every application under the active config's "
+                "applications root and takes no path argument; narrow it with "
+                "--statuses <folder>")
+        if alternative:
+            hint += f", or target one application with {alternative}"
+        parser.print_usage(sys.stderr)
+        print(f"{parser.prog}: error: unrecognized arguments: {named}",
+              file=sys.stderr)
+        print(f"{parser.prog}: hint: {hint}.", file=sys.stderr)
+        sys.exit(2)
+    parser.error(f"unrecognized arguments: {named}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Application status tracker")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
@@ -2510,7 +2542,9 @@ def main():
                              "--check-metadata, --backfill-metadata, or "
                              "--company-keys "
                              f"(default: all). Options: {', '.join(STATUS_FOLDERS)}.")
-    args = parser.parse_args()
+    args, extras = parser.parse_known_args()
+    if extras:
+        _reject_extra_args(parser, args, extras)
 
     if args.update:
         update_status(args.update[0], args.update[1])

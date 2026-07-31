@@ -1425,3 +1425,16 @@
     (243 applications, 214 distinct company strings, 208 distinct keys, 0 unkeyed) with no
     key, slug, employer or filename quoted. No real name, school, date, salary or posting
     URL. The advisory company detector reports (none).
+- commit: 48f9b46a
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:243cbe008cfa7651
+  finding: |
+    Read the full 3-file diff line by line. Public content only: the maturity ladder, the
+    company-scope fallback, and the scoped reference read are all generic instruction text.
+    The only company named anywhere is Cloudflare, which the canary set already used as its
+    public real-company fixture, and the one live figure quoted (a ~1.1 MB llms-full.txt on
+    2026-07-31) is a public docs mirror. No real name, employer from the private tree,
+    school, date, salary, posting URL or absolute home path. The advisory company detector
+    reports (none).
