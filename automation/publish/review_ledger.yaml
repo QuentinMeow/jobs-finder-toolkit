@@ -1104,3 +1104,16 @@
     repetitions, not real commits. No person, employer, school, company, posting URL,
     application slug, salary or absolute home path appears. The advisory company detector
     reports (none).
+
+- commit: ef5cbc79
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:fc924f31b1f39653
+  finding: >-
+    Read the full 3-file diff. Reconciler tooling, its unit tests, and one paragraph of
+    docs/roadmap/README.md. The dates that appear are fixture dates (2025-07-30, 2027-01-01)
+    and the roadmap's own Last-updated value, which is process metadata about this repository
+    rather than anything about a job hunt. The only paths named are docs/roadmap/ and
+    message-queue/. No person, employer, school, company, posting URL, application slug,
+    salary or absolute home path appears. The advisory company detector reports (none).
