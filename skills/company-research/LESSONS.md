@@ -30,12 +30,18 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   `[unverified] — confirm with recruiter`; MyVisaJobs / USCIS H-1B data confirms *past*
   sponsorship, not current policy.
 
-## Named exemplars (companies that write about their hard problems)
-<!-- added: 2026-07-18 · last_confirmed: 2026-07-19 · status: active -->
+## What a usable exemplar looks like
+<!-- added: 2026-07-18 · last_confirmed: 2026-07-31 · status: active -->
 - Depth lives in the engineering blog, talks, and founder interviews — read those *in full* and
-  extract the trade-off, not the headline. Good exemplars: Figma's database sharding / LiveGraph
-  posts; LiveKit's turn-detection / cold-start posts. If a section reads like a press release
-  (headcount, funding, a tagline), it isn't done.
+  extract the trade-off, not the headline. The posts worth citing name a constraint the company
+  could not buy its way out of, and say what it cost: splitting a datastore that had outgrown one
+  node and what that did to consistency; a real-time system's tail latency and cold-start budget
+  forcing an architecture nobody wanted. If a section reads like a press release (headcount,
+  funding, a tagline), it isn't done.
+- **Name the companies in the per-company research folders, never in this file.** A company named
+  here says which companies the candidate is researching, and the leak rule keeps real employers
+  out of the public tree. Neither armed gate catches it — a company name is not an identity token
+  — so it is on the editor. Describe the shape of the exemplar instead, as above.
 
 ## Best evidence sources for moat/growth
 <!-- added: 2026-07-18 · last_confirmed: 2026-07-19 · status: active -->

@@ -1485,3 +1485,13 @@
     One file, the eval record. Read the diff: numeric corrections to the maturity-gate product
     counts (22 -> 84 classified, 6 -> 17 unverified) and a rewritten paragraph on the hedging
     trade. No new company, path or identity string enters the tree.
+- commit: 9eef3a8d
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 13
+  digest: sha256:555a574fd0645449
+  finding: |
+    Read the diff. Toolkit + docs only: the reconciler's roadmap check loses its age branch and
+    is renamed roadmap-dated, a new report-only gardener routine takes over staleness, and the
+    docs that describe the gate follow. No candidate data, no company, no employer, no date about
+    the owner's job hunt, no absolute home path. The advisory company detector reports (none).
