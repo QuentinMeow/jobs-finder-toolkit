@@ -23,6 +23,8 @@ if str(SHARED) not in sys.path:
 from mail.check_mail_safety import (  # noqa: E402
     check_consumer_dir,
     check_providers_tree,
+    consumer_files,
+    provider_dirs,
 )
 
 _UNIQUE = itertools.count()
@@ -193,6 +195,75 @@ class MailSafetyCheckerTests(unittest.TestCase):
         )
         errors = check_consumer_dir(scripts)
         self.assertTrue(any("CLI command surface changed" in e for e in errors))
+
+
+class NothingWasVerifiedTests(unittest.TestCase):
+    """Having inspected NO send surface is a finding, never a pass.
+
+    A missing ``providers/`` was always a finding. A present-but-empty one, and a
+    provider directory hidden from the walk by the ``_``/``.`` rule, both produced
+    zero errors and printed "mail safety policy: PASS" — the repo's most
+    consequential guardrail reporting clean over a tree it never read.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_empty_providers_tree_is_a_finding(self):
+        providers = _write_tree(self.root, {})
+        errors = check_providers_tree(providers)
+        self.assertTrue(
+            any("nothing was verified" in e for e in errors),
+            f"an empty providers tree must not pass; got {errors}",
+        )
+
+    def test_pycache_alone_does_not_count_as_a_provider(self):
+        providers = _write_tree(self.root, {})
+        (providers / "__pycache__").mkdir()
+        (providers / "__pycache__" / "provider.cpython-312.pyc").write_bytes(b"\x00")
+        errors = check_providers_tree(providers)
+        self.assertTrue(any("nothing was verified" in e for e in errors))
+        self.assertFalse([e for e in errors if "__pycache__/" in e],
+                         "a bytecode cache is not unscanned source")
+
+    def test_underscored_directory_holding_python_is_a_finding(self):
+        """A send path in ``providers/_outlook/`` used to be invisible."""
+        providers = _write_tree(self.root, {
+            "providers/clean/route_policy.py": _CLEAN_POLICY,
+            "providers/_outlook/provider.py":
+                'def send_mail(msg):\n    return post("/sendMail", msg)\n',
+        })
+        errors = check_providers_tree(providers)
+        self.assertTrue(
+            any("_outlook/" in e and "NEVER scanned" in e for e in errors),
+            f"the hidden directory must be reported; got {errors}",
+        )
+
+    def test_consumer_dir_with_only_tests_and_vendor_is_a_finding(self):
+        scripts = self.root / "scripts"
+        (scripts / "tests").mkdir(parents=True)
+        (scripts / "_vendor").mkdir(parents=True)
+        (scripts / "tests" / "test_probe.py").write_text(
+            'URL = "https://graph.microsoft.com/v1.0/me/sendMail"\n', encoding="utf-8")
+        (scripts / "_vendor" / "mail.py").write_text("VALUE = 1\n", encoding="utf-8")
+        errors = check_consumer_dir(scripts)
+        self.assertTrue(
+            any("nothing was verified" in e for e in errors),
+            f"a scripts dir with nothing scannable must not pass; got {errors}",
+        )
+
+    def test_real_tree_still_reports_what_it_scanned(self):
+        """The live gate keeps passing, and says what it read."""
+        repo_root = SHARED.parents[1]
+        self.assertEqual(check_providers_tree(), [])
+        names, hidden = provider_dirs(SHARED / "mail" / "providers")
+        self.assertTrue(names, "the real providers tree must hold a provider")
+        self.assertTrue(
+            consumer_files(repo_root / "skills/email-assistant/scripts"),
+            "the real consumer dir must hold a scannable script",
+        )
 
 
 if __name__ == "__main__":

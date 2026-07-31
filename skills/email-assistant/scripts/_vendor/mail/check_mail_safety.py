@@ -22,6 +22,9 @@ provider it enforces:
 4. **Scope pins**: any ``*SCOPES``-style literal in a provider must be
    registered here with its exact expected value (the generalization of the
    old ``DELEGATED_SCOPES`` pin).
+5. **Coverage**: having scanned NOTHING is a finding, not a pass — an empty
+   providers tree, a directory the ``_``/``.`` rule hid from the walk while it
+   carried Python, or a consumer dir with nothing outside ``tests``/``_vendor``.
 
 ``--consumer <scripts-dir>`` additionally scans a consumer skill's scripts
 (excluding ``tests/`` and the generated ``_vendor/``) for the banned patterns
@@ -93,6 +96,30 @@ def _python_files(root: Path) -> list[Path]:
         p for p in root.rglob("*.py")
         if "__pycache__" not in p.parts
     )
+
+
+def provider_dirs(root: Path) -> tuple[list[str], list[Path]]:
+    """``(scannable provider names, directories the ``_``/``.`` rule skips)``.
+
+    The skip rule exists for ``__pycache__``; it is not a licence to hide code.
+    Every skipped directory is handed back so the caller can FAIL on one that
+    carries Python — see ``check_providers_tree``.
+    """
+    entries = sorted(p for p in root.iterdir() if p.is_dir())
+    names = [p.name for p in entries if not p.name.startswith(("_", "."))]
+    hidden = [p for p in entries if p.name.startswith(("_", "."))]
+    return names, hidden
+
+
+def consumer_files(scripts_dir: Path) -> list[Path]:
+    """The consumer scripts this checker actually reads.
+
+    ``_vendor`` is drift-gated against the canonical copy and ``tests`` hold the
+    probe URLs on purpose, so both are excluded — which is exactly why the count
+    of what is left has to be asserted rather than assumed.
+    """
+    return [p for p in _python_files(scripts_dir)
+            if not ({"_vendor", "tests"} & set(p.relative_to(scripts_dir).parts))]
 
 
 def _literal_str_elements(node: ast.AST, env: dict[str, set[str]]) -> set[str] | None:
@@ -257,14 +284,35 @@ def _probe_route_policy(providers_root: Path, provider: str) -> list[str]:
 
 
 def check_providers_tree(providers_root: Path | None = None) -> list[str]:
+    """Every provider folder's findings — and a FINDING when nothing was scanned.
+
+    Two fail-opens, both of which printed "mail safety policy: PASS" after
+    inspecting no send surface at all: a providers root that EXISTS but holds no
+    provider folder (a missing root was already a finding; an empty one was a
+    pass), and a directory hidden from the walk by the ``_``/``.`` rule — a send
+    path in ``providers/_outlook/`` was filtered out unscanned. Same shape as
+    ``verify_links.check_symlinks``: verifying nothing is a finding, never a pass.
+    """
     root = (providers_root or DEFAULT_PROVIDERS_ROOT).resolve()
     if not root.is_dir():
         return [f"providers root missing: {root}"]
-    providers = sorted(
-        p.name for p in root.iterdir()
-        if p.is_dir() and not p.name.startswith(("_", "."))
-    )
+    providers, hidden = provider_dirs(root)
     errors: list[str] = []
+    for directory in hidden:
+        # __pycache__ holds no ``*.py`` and never trips this. Anything that does
+        # is code the walk would never have read.
+        carried = _python_files(directory)
+        if carried:
+            errors.append(
+                f"{directory.name}/: directory skipped by the '_'/'.' rule carries "
+                f"{len(carried)} python file(s) and was NEVER scanned — rename it to "
+                f"a provider name or move the code out of providers/"
+            )
+    if not providers:
+        errors.append(
+            f"providers root {root} contains no provider folder — nothing was "
+            f"verified (an EMPTY tree used to print PASS)"
+        )
     for provider in providers:
         siblings = set(providers) - {provider}
         for path in _python_files(root / provider):
@@ -275,14 +323,22 @@ def check_providers_tree(providers_root: Path | None = None) -> list[str]:
 
 
 def check_consumer_dir(scripts_dir: Path) -> list[str]:
+    """A consumer skill's scripts — and a FINDING when none were scanned.
+
+    Same fail-open as the providers tree: a scripts dir holding only ``tests/``
+    and ``_vendor/`` produced zero errors and a PASS line.
+    """
     scripts_dir = scripts_dir.resolve()
     if not scripts_dir.is_dir():
         return [f"consumer scripts dir missing: {scripts_dir}"]
     errors: list[str] = []
-    for path in _python_files(scripts_dir):
-        relative = path.relative_to(scripts_dir).parts
-        if "_vendor" in relative or "tests" in relative:
-            continue  # _vendor is drift-gated against canonical; tests hold probe URLs
+    scannable = consumer_files(scripts_dir)
+    if not scannable:
+        errors.append(
+            f"consumer scripts dir {scripts_dir} holds no scannable python file "
+            f"(only tests/ and _vendor/ are excluded) — nothing was verified"
+        )
+    for path in scannable:
         source = path.read_text(encoding="utf-8")
         try:
             tree = ast.parse(source)
@@ -334,7 +390,14 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(f"MAIL SAFETY FAIL: {error}", file=sys.stderr)
         return 1
-    print("mail safety policy: PASS")
+    # The pass line names what was read. "PASS" over an empty tree is the failure
+    # this checker's own findings now prevent; printing the counts means a reader
+    # can see the gate had something to inspect without trusting that it did.
+    root = (args.providers_root or DEFAULT_PROVIDERS_ROOT).resolve()
+    names, _ = provider_dirs(root)
+    scanned = sum(len(consumer_files(c.resolve())) for c in args.consumer)
+    print(f"mail safety policy: PASS — {len(names)} provider folder(s) "
+          f"[{', '.join(names)}], {scanned} consumer file(s)")
     return 0
 
 
