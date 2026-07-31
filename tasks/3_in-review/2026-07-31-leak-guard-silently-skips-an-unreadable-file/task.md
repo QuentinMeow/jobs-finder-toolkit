@@ -3,7 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: repo
 - **Source**: re-filed 2026-07-31 from `2026-07-21-tree-instructions-validator`, which was deleted — this was the one item in it with a live consequence
-- **Claimed-by**:
+- **Claimed-by**: agent session 2026-07-31 (PR fix/02-leak-guard-unreadable)
 
 ## Goal
 
