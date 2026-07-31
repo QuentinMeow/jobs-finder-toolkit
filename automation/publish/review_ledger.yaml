@@ -1550,3 +1550,60 @@
     established practice across the design docs, the ledger and the task tree), and no company,
     employer, slug, private skill name or absolute home path. The advisory company detector
     reports (none).
+- commit: 1ed38ee2
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 181
+  digest: sha256:90ee505bcaf08c2f
+  finding: |
+    Reconciliation row for the trunk tip after the 11-PR stack (#122-#132) merged bottom-up.
+    GitHub rebased each PR onto its newly merged base, so 71 rows name commits that are not
+    ancestors of main. NO ROW WAS EDITED OR DELETED, and none needed to be: every one of the
+    71 has a twin in main carrying the same change under a new sha — 70 matched by identical
+    `git patch-id --stable`, and row 32 by an identical result tree. There is no orphan
+    without a twin, so no reviewed change failed to land. Mapped by branch, orphan-range ->
+    twin-range: rows 7-51 (older, already-deleted branches) 51565987..aebb58c2 ->
+    ee4ba831..dd8c4566; 58-61 3f6ac80a..5762f247 -> 6e214794..991ff3a5; 62-66
+    af57f393..eccac937 -> e9805a9f..0e139cde; 67-71 e3d5b432..ef2d14ea -> 4b78c450..e522db7f;
+    72-77 6bf874b3..15add0aa -> e2c17ece..155527bb; 78-79 c4201ee0..93090b32 ->
+    342d2855..c390c0f7; 80-85 0c55807c..aa4d7ff8 -> bf6a3b27..8f443ff5; 86-90
+    3f6822e0..1a7a38ef -> 18b88a9d..7684a7f8; 91-93 dccc2aba..7b316c08 -> 06c6e165..a1fdb418;
+    94-98 48f9b46a..18eeec97 -> e08c2e9e..01674e1e; 99-104 9eef3a8d..2b80acd1 ->
+    a714fd2d..e9d2a1b6. `git cherry main <branch>` reports 0 unmatched commits for all ten
+    stale branches, independently confirming the same result.
+
+    This content was already reviewed row by row on the branches as they were built. It was
+    ALSO re-read here, in full, across all 181 watched files. Clean on every category the
+    gate asks about: no real name, email, phone, handle, school, degree, GPA or salary; no
+    absolute home path (every pasted transcript redacts to <repo-root>/<scratch>/<worktree>);
+    no application slug naming a real company — every slug-shaped fixture is acme-* or
+    example-corp-*; no text quoted out of a private file. Private-tree paths appear as
+    structure with counts, never contents. The armed leak guard passes whole-tree (843 files,
+    14 active tokens), and the advisory company detector reports (none).
+
+    Two things this read found that are worth recording rather than glossing.
+    (1) POSITIVE: this range REMOVES a pre-existing leak. A public skill LESSONS.md had, since
+    2026-07-18, cited two real companies as blog exemplars; one of them is absent from the
+    public ATS registry and has a research folder in the owner's overlay, so the public tree
+    was disclosing a research target. Both citations are deleted in this range and replaced
+    with an explicit rule that companies are named only in per-company research folders.
+    Verified independently: zero occurrences of the unregistered name remain anywhere in the
+    tracked tree, and the other name survives only as its sanctioned public registry row. A
+    second skill file's company-prefixed filename example was generalised to <company>- the
+    same way. The open queue item company-detector-over-the-skills-tree.md carries the
+    follow-up question.
+    (2) DISCLOSED BY DESIGN, flagged so the choice stays conscious: the range publishes
+    AGGREGATE counts of the owner's private tree (application, company-folder, company-index
+    and skip-log totals). No company, posting, role, date or person is named, and this is the
+    practice already established by earlier rows and by docs/roadmap/current-state.md — but a
+    reader does learn the scale of the hunt. One new instance sits in
+    automation/shared/tests/test_company_key_additive.py and will go stale silently.
+
+    Gate-safety check on the changes to the guards themselves: every edit to check_public.py,
+    export_public.py, review_gate.py and check_mail_safety.py in this range is
+    net-strengthening (skill-notes deny is an append-only superset; review_gate's
+    NotApplicable path no longer exits 0 unconditionally; "scanned nothing" is now a mail
+    finding). The one new bypass flag, review_gate --allow-not-applicable, appears in no hook
+    and in no CI workflow. The single narrowing is reconcile's roadmap AGE check moving to a
+    report-only gardener routine, which is doc grooming, not a privacy gate, and the same
+    change adds three new blocking failures.
