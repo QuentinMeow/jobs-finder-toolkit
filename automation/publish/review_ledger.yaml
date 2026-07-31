@@ -1373,3 +1373,16 @@
     directory is the case under test. Assertions follow the rename; no production code, no
     behaviour change. No real name, employer, school, date, salary, application slug, posting
     URL or absolute home path. The advisory company detector reports (none).
+- commit: 1a7a38ef
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:833f1c163eafa3ec
+  finding: |
+    Read the full 3-file diff: the task record for this branch (task/verification/worklog).
+    verification.md pastes real command output, so it was read line by line for the two risky
+    classes: absolute home paths are redacted to <repo-root> and the scratchpad path to
+    <scratchpad>, and the private-tree evidence is counts only (19 derived files, 0 non-general
+    files in the question bank) with no company key, filename or content quoted. No real name,
+    employer, school, date, salary, application slug or posting URL. The advisory company
+    detector reports (none).
