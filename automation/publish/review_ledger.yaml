@@ -1175,3 +1175,19 @@
     counts. The re-measurement quotes five /tmp/*.json examples from skills/job-search/SKILL.md,
     which are the OS temp dir in the shipped skill, not private paths. No company, employer,
     person, slug, posting URL, salary or home path. Advisory company detector reports (none).
+
+- commit: 19fa24de
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 16
+  digest: sha256:5e005f3d76c6d91a
+  finding: >-
+    Read the full 16-file diff. Two task folders moved 1_in-progress -> 4_done with a new
+    verification file and worklog entries; four tracked records deleted (two task folders, two
+    resolved memory/known-issues entries) with memory/index.md regenerated; two refusal notes
+    appended; both roadmap files corrected. The two new verification blocks quote command output
+    and the applications root is elided to <applications-root>; what remains is counts (243 files,
+    schema v5, 6/6 canary), public PR numbers and public toolkit paths. The permission-allowlist
+    note quotes .claude/settings.local.json, which holds one entry, "Bash(git *)" — no secret and
+    no path. No company, employer, person, slug, posting URL, salary or home path. The advisory
+    company detector reports (none).
