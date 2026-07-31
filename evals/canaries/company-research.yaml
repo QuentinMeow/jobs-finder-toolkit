@@ -12,8 +12,12 @@ default_setup: >
   config.yaml unset -> config.example.yaml + examples/** fallback. Live network research
   (curl / web fetch) is required for the real-company canaries. Output lands under
   config.companies_root()/<company>/research/ — examples/companies/<company>/research/ under the
-  example config (a scratch/git-ignored path in a public checkout — the transcript, not a commit,
-  is what gets judged). No private overlay needed.
+  example config. That path is UNTRACKED but NOT git-ignored, so a run in the primary checkout
+  leaves stageable files behind: run each canary in a detached worktree with JOBHUNT_CONFIG pinned
+  to that worktree's config.example.yaml, and confirm companies_root() resolves inside it before
+  starting. The transcript and the produced artifact, not a commit, are what get judged.
+  No private overlay needed. Pin each canary to ONE context — do not let a run fan out into
+  research subagents (the 2026-07-30 run did, and two canaries cost ~1M tokens apiece).
 
 canaries:
   - id: cr-full-research-structure

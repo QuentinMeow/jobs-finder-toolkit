@@ -1,6 +1,6 @@
 # Company Research Operational Reference
 
-**This file is read by section, never end to end.** Before live research read §§ "Handy Fetches", "Maturity fetches" and "Output Location and Structure"; every other section is a per-file template fetched only when `SKILL.md` names it for the file you are about to write. The sourcing rules in `SKILL.md` remain controlling.
+**This file is read by section, on demand.** Before live research read §§ "Handy Fetches", "Maturity fetches" and "Output Location and Structure"; every other section is a per-file template fetched only when `SKILL.md` names it for the file you are about to write. A full-folder run fires every pointer and so reads most of this file; a single-file run should read a fraction of it. The sourcing rules in `SKILL.md` remain controlling.
 
 ## Handy Fetches
 
@@ -43,16 +43,22 @@ STRIP='import sys,re,html;t=sys.stdin.read();t=re.sub(r"<(script|style).*?</\1>"
 curl -s -L -A "Mozilla/5.0" "<launch-post-url>" | .venv/bin/python -c "$STRIP" \
   | grep -o -i -E ".{140}(generally available|out of (open |private |closed )?beta|now GA|open beta|private beta|closed beta|early access|preview|waitlist|request access).{140}"
 
-# 2. The docs OVERVIEW and PRICING pages of that product — body text, same grep.
+# 2. The docs OVERVIEW, PRICING and CHANGELOG/release-notes pages — body text, same grep.
+#    For a vendor that ships continuously the DATED changelog entry usually settles it outright.
 curl -s -L -A "Mozilla/5.0" "<docs-overview-url>" | .venv/bin/python -c "$STRIP" | grep -o -i -E ".{140}(beta|preview|early access|experimental|generally available).{140}"
 
 # Many docs sites publish a plain-text mirror that skips the nav entirely. GREP it, never read it —
-# these run to megabytes (Cloudflare's per-product llms-full.txt was ~1.1 MB on 2026-07-31).
-curl -s -L "<docs-root>/llms-full.txt" | grep -o -i -E ".{140}(beta|preview|generally available).{140}" | head
+# these run to megabytes (Cloudflare's per-product llms-full.txt was ~1.1 MB / 31,553 lines on 2026-07-31).
+# The `tr` is NOT optional: these mirrors are hard-wrapped, `.` never matches a newline in grep -E, and
+# a 140+140 window almost never fits on one line — without it the command returns ZERO hits on a file
+# that contains the answer three times, which this gate would then misread as `Ambiguous`.
+curl -s -L "<docs-root>/llms-full.txt" | tr '\n' ' ' | grep -o -i -E ".{140}(beta|preview|generally available).{140}" | head
 ```
 
 Read what the grep returns in context before classifying: "free during the open beta" on a pricing page is a **beta** statement, while "Available on all plans" is a
-plan-entitlement line that says nothing about lifecycle stage. A zero-hit grep on both fetches is the `Ambiguous` rung — record which URLs you checked, do not promote it to shipped.
+plan-entitlement line that says nothing about lifecycle stage, and a bare "Beta" inside a nav list or a blog tag cloud is not a statement at all. A zero-hit grep on both
+fetches is the `Ambiguous` rung — but first confirm the grep can actually hit: run `grep -c -i beta` on the same fetch, and if that is non-zero while the windowed grep
+returns nothing, your command is wrong, not the evidence. Record which URLs you checked; never promote a zero-hit to shipped.
 
 ## Output Location and Structure
 

@@ -72,13 +72,20 @@ Use this skill when the user asks to:
    `meta.yaml`, the JD file(s) `source/JD-*.md`, and `notes.md` if present.
    **No application record is the ordinary case** — research usually runs before an
    application exists. Do not improvise an accommodation; switch to **company scope**:
-   - Produce the **whole folder anyway**. Only the three outputs below are specified in
-     terms of a posting; everything else is company-level and unchanged.
+   - Produce **whatever the request asked for, in full** — the whole folder for a
+     full-research request, one file when one file was asked for. Company scope changes a
+     file's *subject*, never how many files you write. Only the three outputs below are
+     specified in terms of a posting; everything else is company-level and unchanged.
    - The subject of `08`, of `10`'s angles, and of `09`'s level/scope questions becomes the
      **role family named in the request** (e.g. "Senior SWE, Platform"), sourced from the
      company's own open postings on its ATS board — real, fetchable evidence that needs no
-     application. Put `Scope: company-level — no saved posting; grounded in the ATS board as
-     of <date>` under the title of each of those three.
+     application. **The request often names no role** ("research company X"), or names one no
+     posting carries — companies use their own title vocabulary and one word like "Platform"
+     routinely spans several orgs. Either way: never invent a posting. Enumerate the closest
+     real reqs, name the ambiguity, `[JD-dependent]`-tag the choice, and pick the reading
+     closest to the candidate's profile.
+     Put `Scope: company-level — no saved posting; grounded in the ATS board as of <date>`
+     under the title of `08` and `10`, and under `09`'s level/scope heading.
    - Tag every line a real posting would change `[JD-dependent]`, so a later run *with* the
      application re-targets those lines instead of rewriting the file.
    - A required cross-file link whose target this run did not produce (`09` → `10`, when only
@@ -123,12 +130,14 @@ offer decision. Wrong "facts" are worse than missing ones. So:
 
 Before live research, read exactly three sections of `reference.md`: §§ "Handy Fetches" (canonical fetches, restricted-source rules, compensation-cache provenance),
 "Maturity fetches", and "Output Location and Structure" (private-overlay routing, the full output tree). Those are what every run needs.
-The rest of the file is per-file templates: **each file's entry below names the one section to read before writing that file, and those pointers are the complete list — nothing here asks you to read `reference.md` end to end.**
+The rest of the file is per-file templates: **each file's entry below — or, for `05` and `09`, the `Trigger` line under that file's template — names the section(s) to read before writing that file, and those pointers are the complete list. Read a template when its pointer fires, never ahead of it, and never the file end to end on your own initiative.**
+Every template section is reachable from at least one pointer, so adding a section to `reference.md` means adding its pointer here in the same edit or it becomes unreachable rather than merely unread. Be honest about what this buys: a **full-folder** run fires every pointer and so ends up reading effectively the whole file anyway. The saving is real only for a single-file request; the always-read floor is the three sections above.
 Keep the sourcing guardrails above and the output rules below as the controlling gates.
 
 Rules:
-- Create the whole folder. Scaffold thin files with `[unverified]` + where-to-look;
-  never invent to fill space.
+- Create the whole folder when the request is for research broadly; a request scoped to
+  one file produces **that file only**. Scaffold thin files with `[unverified]` +
+  where-to-look; never invent to fill space.
 - `for-interview` = things to *discuss/demonstrate* (depth + POV);
   `for-myself` = things to *know/decide*. Keep comp/WLB/visa out of the question
   bank; they live in `for-myself`.
@@ -324,27 +333,37 @@ observable** from **your judgment**, tag confidence, and label reasoned inferenc
 Maturity is a **sourced claim, not a page impression**. One measured run produced four wrong
 "shipped" calls here — one for a product fifteen months into open beta — because the pages this
 skill sends you to carry no maturity badge at all. The candidate then says those sentences to
-the person who built the product. So classify **every product you name** — in `06`, and wherever
-`04`/`05` reason from a shipped capability — down this ladder, in order, and stop at the first
-match:
+the person who built the product. So classify **every product you name** — in `06`, in any `09`
+question you will ask out loud ("you've shipped X" to X's own engineer is the highest-stakes
+place to be wrong), and wherever `04`/`05` reason from a shipped capability — down this ladder,
+in order, stopping at the first match. Classify a **sub-feature** in its own right: a GA product
+routinely carries beta pieces.
 
 1. **Beta / preview** — the words *beta, preview, early access, experimental, waitlist, request
-   access,* or *"free during the beta"* appear in the product's launch post, its docs **body**,
-   its pricing page, or the changelog. **This beats any GA-looking signal**, unless a *dated* GA
-   announcement is newer than the newest dated beta statement.
+   access,* or *"free during the beta"* appear **in a sentence about that product** in its
+   launch post, its docs **body**, its pricing page, or the changelog. Read the hit in context:
+   a bare keyword in a nav list, tag cloud, or sidebar is not a statement. **A stage statement
+   beats any GA-looking signal**, unless a *dated* GA announcement is newer than the newest
+   dated beta statement.
 2. **GA / shipped** — a dated launch, GA, or "out of beta" post or changelog entry; or a pricing
    page that bills it at a general price with no beta qualifier.
 3. **Announced / planned** — a roadmap line, exec quote, press release, partnership, or job req,
    with no docs and no way to use it.
-4. **Ambiguous** — you checked 1 and 2 and found no stage word either way.
+4. **Ambiguous** — you checked 1 and 2 and found no stage word either way, **or** the newest
+   thing you found is a docs body updated *after* the last beta statement that says nothing
+   about stage. A silent refresh neither renews the old beta claim nor announces GA; do not
+   pin a product to a stale beta statement a fresher page declines to repeat.
 
 **None of the following is evidence of GA**, and each has produced a wrong call: a
 product-directory or "our products" listing · a docs landing/nav page carrying no stage word · a
 plan-entitlement line ("Available on all plans", "Included in Pro" — a *pricing tier*, not a
 lifecycle stage) · the existence of an API, SDK, dashboard tile, or docs · the **absence** of a
-beta badge. Two fetches settle it and no other source is needed: the product's launch /
-announcement post, then the **body text** of its docs overview and pricing page (`reference.md`
-§ "Maturity fetches"); the changelog breaks a tie.
+beta badge. Two fetches settle it: the product's launch / announcement post, then the **body
+text** of its docs overview, pricing page and **dated changelog / release notes**
+(`reference.md` § "Maturity fetches"). For a vendor that ships continuously the dated changelog
+entry is usually the decisive artifact, not the launch post. A docs GA banner establishes the
+*stage* but often not the *date* — take the date from the launch post or the changelog entry,
+and never from the page you read the banner on.
 
 **When it is ambiguous, say so.** File that product under its own `### Maturity unverified`
 heading, never under `Already shipped`. Here an honest hedge is correct output and a confident
@@ -354,7 +373,8 @@ wrong call is the failure this gate exists to stop — never resolve an ambiguit
 `[GA <date>]` · `[beta since <date> — <N> months]` · `[announced <date>, not shipped]` ·
 `[maturity unverified — checked launch post + docs body]`. A beta always carries its
 **duration**, because "in beta" and "in beta for fifteen months" are different facts about how
-the company executes.
+the company executes; when the start date is not findable, write `[beta, start date unverified]`
+rather than dropping the stage.
 
 ```markdown
 ## AI-era survival & strategy
@@ -410,7 +430,7 @@ competitors."** Before the questions to *ask*, `09` must lead with a required
 `## Why this company / Why not competitors` section that answers the question the
 candidate will be *asked*: summarize the prepared, personalized answer and link to the
 fuller `10-why-this-company.md` (at least two angles, grounded in the candidate's real
-background/interests — see `reference.md` § "Why-This-Company Template"). Name the specific
+background/interests; its shape comes from the trigger below). Name the specific
 competitors this company is chosen *over* and the honest reason, drawn from `04`/`05`.
 Keep personal specifics sourced from the profile / `config.skill_references_dir()`, never
 invented.
@@ -444,8 +464,9 @@ questions per group. Each question on its own line with a short parenthesized in
 tag; reference a *specific* product, repo, blog post, competitor, or customer.
 Keep comp/WLB/visa probes out of this file (those are `for-myself`).
 
-**Trigger — drafting the questions themselves:** read ONLY `reference.md` §
-"Question Bank examples" for a model question in each of the three groups.
+**Trigger — drafting `09`:** read `reference.md` §§ "Question Bank examples" (a model question
+per group) **and** "Why-This-Company Template" (the shape of the pitch `09` opens with, which
+`09` needs whether or not `10` is written this run). Those two sections, and no others.
 
 ## Formatting Conventions
 

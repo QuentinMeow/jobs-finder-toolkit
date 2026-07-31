@@ -1438,3 +1438,14 @@
     2026-07-31) is a public docs mirror. No real name, employer from the private tree,
     school, date, salary, posting URL or absolute home path. The advisory company detector
     reports (none).
+- commit: ac2ea0a7
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:85442a73699d2d0e
+  finding: |
+    Read the full 2-file diff line by line. status.py gains a parse_known_args branch and a
+    hint string; the new test builds its fixtures in a tempdir with an invented candidate
+    ("Test Candidate") and an invented slug ("acme-swe-20260101"). No real name, employer,
+    school, date, salary, posting URL or absolute home path; no path outside the repo is
+    written. The advisory company detector reports (none).
