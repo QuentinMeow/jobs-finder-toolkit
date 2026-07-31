@@ -974,3 +974,16 @@
     metadata. No person, employer, school, company, posting URL, application
     slug, salary or absolute home path appears. The advisory company detector
     reports (none).
+
+- commit: 5762f247
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 2
+  digest: sha256:a6e1caad9bc3ade3
+  finding: >-
+    Read the full 2-file diff. Process records only: it replaces this task's
+    local timing estimate with the durations measured on the branch's own CI run
+    and shows the API call that produced them, with owner and repository redacted
+    in the transcript. The only dates are process-record metadata. No person,
+    employer, school, company, posting URL, application slug, salary or absolute
+    home path appears. The advisory company detector reports (none).
