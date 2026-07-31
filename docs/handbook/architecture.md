@@ -115,7 +115,7 @@ also publishes the public skills as a Claude Code plugin marketplace.
 
 ## Public / private split
 
-This repo is the PUBLIC toolkit: tooling, the eight public skills, an identity-only
+This repo is the PUBLIC toolkit: tooling, the eleven public skills, an identity-only
 company registry, and the fictional Jordan Rivers dataset under `examples/`. Everything
 tied to a real person mounts under the git-ignored `private/` overlay (its own git
 repo) and is pointed at by the git-ignored `config.yaml`. Three defenses keep the

@@ -85,6 +85,12 @@ pre-commit hook and CI both fail on drift).
 
 ## Commits & pull requests
 
+**Who this section binds.** It is written for **outside contributors** working
+from a fork. The maintainer branches directly in this repo and follows
+`skills/github-workflow/SKILL.md`, which allows practices this list rules out
+for forks — stacking above all (see rule 6). Where the two disagree, the
+audience decides: fork → this file, maintainer branch → the skill.
+
 1. **Fork** the repo on GitHub (maintainer: branch directly), then create a topic
    branch off `main` named `<type>/<short-slug>` where `<type>` is one of
    `feature`, `fix`, `docs`, `chore` — e.g. `fix/guard-comment-tokens`.
@@ -101,10 +107,15 @@ pre-commit hook and CI both fail on drift).
 5. **CI must be green.** Fork PRs run the leak guard tokenless (structural + path
    checks) — a clean tree passes; if the guard fires on your PR, it found
    something that looks personal and it must come out, not be excepted.
-6. **Avoid stacked PRs** (a PR based on another PR's branch). If two changes must
-   land in order, say so in the descriptions; the maintainer merges base-first.
-   (When stacked PRs are merged, each head branch must be deleted on merge so
-   GitHub retargets the next one — merging out of order strands content.)
+6. **Avoid stacked PRs from a fork** (a PR based on another PR's branch). If two
+   changes must land in order, say so in the descriptions; the maintainer merges
+   base-first. A fork's branches are not in this repo, so a stack built there is
+   one the maintainer cannot rebase or retarget for you when the bottom merges.
+   **This rule does not bind the maintainer**, who stacks branches inside this
+   repo — the procedure is `skills/github-workflow/SKILL.md` §2, and `AGENTS.md`
+   routes "stacked PRs" there. (Either way, when stacked PRs are merged each head
+   branch must be deleted on merge so GitHub retargets the next one — merging out
+   of order strands content.)
 7. The maintainer reviews every PR; merged work arrives in the next
    `git pull` — there is no mirror or sync step.
 

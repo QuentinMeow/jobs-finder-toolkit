@@ -1326,3 +1326,14 @@
     content. The decision item describes the flagged text as invented fixture folder-name slugs
     and quotes none of it. No real company, person, application slug, posting URL, salary or
     absolute home path. The advisory company detector reports (none).
+- commit: 3f6822e0
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:084555c82208dd2c
+  finding: |
+    Read the full 2-file diff. Both are public skill documents describing this repo's own
+    tooling: the gate table in github-workflow (gate names, flags, hook-vs-CI placement) and
+    two previously undocumented gardener routines with their accessors and exit-code rules.
+    No real name, employer, school, date, salary, application slug, posting URL or absolute
+    home path; nothing about the owner's job hunt. The advisory company detector reports (none).
