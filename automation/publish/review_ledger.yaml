@@ -1527,3 +1527,14 @@
     files, and the one command that gained a JOBHUNT_CONFIG pin gained it precisely so it stops
     describing the owner's real tree. No slug, company, employer or absolute home path enters.
     The advisory company detector reports (none).
+- commit: 24af702f
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:365dc35f62805f6c
+  finding: |
+    Two files in automation/metrics: a NEAR warning band on the instruction-budget report plus
+    its tests. Read the diff — arithmetic and print statements over public instruction files,
+    no path, name or candidate data. NOTE for a future reader: the report's TABLE names private
+    skill files when an overlay is mounted, so a run of it must never be pasted into public
+    text. Nothing in this diff does that. The advisory company detector reports (none).
