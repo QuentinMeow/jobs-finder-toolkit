@@ -1399,3 +1399,16 @@
     comments name no employer. No real name, employer, school, date, salary,
     application slug or posting URL, and no absolute home path. The advisory company
     detector reports (none).
+- commit: b6b52643
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 4
+  digest: sha256:449445012f77e299
+  finding: |
+    Read the full 4-file diff. The canonical change is three identifier occurrences
+    (`_company_key` -> `_company_match_key`, and the `company_key` local in
+    `lookup_company_level`) plus a comment naming the three normalizers this repo runs;
+    the other three files are the byte-identical vendored copies. Every name in the new
+    comment is a module or function path in this repository — no employer, and the
+    advisory company detector reports (none). No real name, school, date, salary,
+    application slug, posting URL or absolute home path.
