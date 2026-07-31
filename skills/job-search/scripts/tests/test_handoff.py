@@ -719,5 +719,120 @@ class HandoffTests(unittest.TestCase):
         self.assertNotIn("MISMATCH", err)
 
 
+class ScaffoldedCompanyKeyTests(unittest.TestCase):
+    """What a freshly scaffolded ``meta.yaml`` says about ``company_key``.
+
+    The field is written ALWAYS and EMPTY always. Three properties, and each is
+    here because collapsing it into another one hides a real defect:
+
+    * **present** — before this, the scaffold omitted the field, so a new
+      application was indistinguishable from one whose key had been considered
+      and rejected, and coverage decayed with nothing saying so;
+    * **null, not blank** — ``null`` is UNASSIGNED to ``validate_meta``, to the
+      reconciler and to ``--company-keys``; ``""`` / ``false`` / ``0`` are
+      MALFORMED to all three. Writing the wrong one turns every new application
+      into a finding;
+    * **never resolved** — the index is the owner's and lives in the private
+      overlay, so the scaffold's output must not depend on whether an overlay
+      happens to be mounted.
+
+    The three fixtures are BORROWED from ``HandoffTests`` rather than inherited:
+    subclassing it would re-run its whole suite under a second name for the sake
+    of a temp dir and a ``file://`` JD.
+    """
+
+    setUp = HandoffTests.setUp
+    _write_json = HandoffTests._write_json
+    _run = HandoffTests._run
+
+    def _meta_text(self) -> tuple[str, dict, str]:
+        code, folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code, 0, err)
+        text = (folder / "meta.yaml").read_text(encoding="utf-8")
+        return text, yaml.safe_load(text), err
+
+    def test_the_field_is_present_and_empty(self):
+        _text, meta, _err = self._meta_text()
+        self.assertIn("company_key", meta,
+                      "a scaffolded application must SAY it is unkeyed; an "
+                      "absent field is indistinguishable from a considered one")
+        self.assertIsNone(meta["company_key"])
+
+    def test_the_empty_key_is_null_and_not_a_blank_string(self):
+        """``""``/``false``/``0`` are MALFORMED everywhere; ``null`` is unassigned.
+
+        Pinned on the LINE as well as on the parsed value: the two spellings of
+        "no key" parse to different Python objects, and the wrong one makes every
+        fresh handoff a ``validate_meta`` error, a reconciler finding and a
+        ``--company-keys --strict`` failure at once.
+        """
+        text, meta, _err = self._meta_text()
+        self.assertIsNone(meta["company_key"])
+        self.assertIn("\ncompany_key: null\n", text)
+
+    def test_the_key_line_sits_directly_under_company(self):
+        """The same position the 243 migrated files use, so the two files read alike."""
+        text, _meta, _err = self._meta_text()
+        lines = [line for line in text.splitlines() if line.strip()]
+        company_at = next(i for i, line in enumerate(lines)
+                          if line.startswith("company:"))
+        self.assertTrue(lines[company_at + 1].startswith("company_key:"),
+                        f"company_key is not the line after company:\n{text}")
+
+    def test_the_scaffold_still_validates(self):
+        code, folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code, 0, err)
+        meta = yaml.safe_load((folder / "meta.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(validate_meta(meta, app_dir=folder), [])
+
+    def test_handoff_says_the_key_is_empty(self):
+        """The gap is announced when it is CREATED, not only when a report is run."""
+        _text, _meta, err = self._meta_text()
+        self.assertIn("empty company_key", err)
+        self.assertIn("status.py --company-keys", err)
+
+    def test_handoff_never_reads_the_company_index(self):
+        """The scaffold resolves nothing, with or without an overlay.
+
+        Opportunistic resolution was considered and rejected: it would make the
+        bytes of a new ``meta.yaml`` depend on whether the private overlay is
+        mounted, and it would put an index reader in the module that holds four
+        of the additive guard's roots. Reversing that is a decision, so it has to
+        delete this test rather than slip in.
+        """
+        source = (_SCRIPTS_DIR / "handoff.py").read_text(encoding="utf-8")
+        self.assertNotIn("company_index", source)
+
+    def test_the_tracker_counts_it_unkeyed_and_not_malformed(self):
+        """The cross-skill half: what the coverage report says about this file.
+
+        ``--company-keys`` is the surface that reports the gap, and it must call
+        a scaffolded application UNKEYED. If it called it MALFORMED instead,
+        ``--strict`` would fail on every fresh handoff and the report would be
+        useless the moment it mattered.
+        """
+        code, folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code, 0, err)
+
+        config_yaml = self.tmp / "keys-config.yaml"
+        config_yaml.write_text(
+            f"paths:\n  applications_root: {json.dumps(str(self.root))}\n",
+            encoding="utf-8")
+        index = self.tmp / "_index.yaml"
+        index.write_text("acme-labs:\n  display: Acme Labs\n  kind: employer\n",
+                         encoding="utf-8")
+        env = dict(os.environ, JOBHUNT_CONFIG=str(config_yaml),
+                   JOBHUNT_COMPANY_INDEX=str(index))
+        proc = subprocess.run(
+            [sys.executable, str(_STATUS_PY), "--company-keys", "--strict",
+             "--statuses", "drafted", "--json"],
+            capture_output=True, text=True, env=env)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertEqual(report["unkeyed"], [folder.name])
+        self.assertEqual(report["malformed"], [])
+        self.assertEqual(report["unresolved"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

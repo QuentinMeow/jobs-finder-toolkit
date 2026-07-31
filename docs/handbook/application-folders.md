@@ -75,8 +75,10 @@ Root files:
  `company`, never a match key, and rejected inside a `jobs:` entry; coverage is reported by
  `status.py --company-keys`, never gated — but a key that is PRESENT and malformed (`""`,
  `false`, `0`, or any value with whitespace, including a trailing newline) is an error to
- `validate_meta`, a reconciler finding, and a `--company-keys --strict` failure. Omit the
- field entirely when no key is assigned; never write a blank one),
+ `validate_meta`, a reconciler finding, and a `--company-keys --strict` failure. `handoff.py`
+ scaffolds every new application with `company_key: null` — an explicit **unassigned**, which
+ an absent field also means and which all three readers count as unkeyed; never write a blank
+ one),
  plus company-scope fields and a uniform **`jobs:` list — one entry per posting, always a list
  even for a single role** (each entry carries `role`, its exact `jd_file`, a required per-job
  `status` and structured `progress` (optional `status_date`), `location`, `workplace`, `sponsorship`, and the flat
