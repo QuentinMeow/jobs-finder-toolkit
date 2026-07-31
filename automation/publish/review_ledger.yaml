@@ -928,3 +928,62 @@
     identifier, person, employer, school, company, posting URL, application slug,
     salary or absolute home path appears; the verification transcript redacts the
     repo path to <repo-root>. The advisory company detector reports (none).
+
+- commit: 3f6ac80a
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 4
+  digest: sha256:53b2ff3dd4b6705a
+  finding: >-
+    Read the full 4-file diff. It adds three CI steps (the mail send-less policy,
+    the instruction-file budget, and the four skill unit suites that ran nowhere
+    in CI), points the pull-request template's check box at CONTRIBUTING.md's
+    list instead of naming one suite, extends that list with the four suites and
+    the mail-safety command, and corrects one repo-map phrase. No product code
+    changes and no new secrets or tokens; the only path pinned is the tracked
+    config.example.yaml. No person, employer, school, company, posting URL,
+    application slug, salary, date beyond process metadata, or absolute home path
+    appears. The advisory company detector reports (none).
+
+- commit: 99319933
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 4
+  digest: sha256:89faf896661211ee
+  finding: >-
+    Read the full 4-file diff. It replaces the budget script's fixed AGENTS.md
+    glob with a pruned tree walk, adds a leaf tier (100 lines and 4096 bytes),
+    adds the script's first unit tests, and wires that suite into CI. The walk
+    skips the private overlay, scratch trees and dot-directories, and does not
+    follow symlinks, so nothing outside the public tree can be measured or
+    printed. Test fixtures are throwaway temp trees. No person, employer, school,
+    company, posting URL, application slug, salary, date beyond process metadata,
+    or absolute home path appears. The advisory company detector reports (none).
+
+- commit: a8e98c6a
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 4
+  digest: sha256:c779db6a3d7bb690
+  finding: >-
+    Read the full 4-file diff. Process records only: the task, worklog and
+    verification for this branch, plus a note on the tree-instructions validator
+    task recording which part of its budget checkbox landed early. The
+    verification transcript is real command output with the checkout path
+    redacted to <repo-root>/<scratch>. The only dates are process-record
+    metadata. No person, employer, school, company, posting URL, application
+    slug, salary or absolute home path appears. The advisory company detector
+    reports (none).
+
+- commit: 5762f247
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 2
+  digest: sha256:a6e1caad9bc3ade3
+  finding: >-
+    Read the full 2-file diff. Process records only: it replaces this task's
+    local timing estimate with the durations measured on the branch's own CI run
+    and shows the API call that produced them, with owner and repository redacted
+    in the transcript. The only dates are process-record metadata. No person,
+    employer, school, company, posting URL, application slug, salary or absolute
+    home path appears. The advisory company detector reports (none).
