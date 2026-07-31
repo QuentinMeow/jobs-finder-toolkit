@@ -1462,3 +1462,17 @@
     llms-full.txt, 31,553 lines, on 2026-07-31). No real name, private-tree employer, school,
     date, salary, posting URL or absolute home path. The advisory company detector reports
     (none).
+- commit: b53d40c3
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 15
+  digest: sha256:9506ddc9ea922ecb
+  finding: |
+    Read all 15 files. The eval record and the four verification.md files paste real command
+    output, so they were read line by line: every absolute path is redacted to <repo-root> or
+    <scratchpad>, the scratch worktree paths appear only as <scratch>/cr_wt_<id>, and the test
+    fixtures quoted are the invented "Test Candidate" and "acme-swe-20260101". The only company
+    named anywhere is Cloudflare, the canary set's existing public real-company fixture, and
+    every figure attached to it is from a public docs page, launch post or SEC filing. No real
+    name, private-tree employer, school, date, salary or posting URL. The advisory company
+    detector reports (none).

@@ -104,8 +104,10 @@ no HN/Reddit, no computed market cap) to the token cap rather than to the skill.
 ## Did the Maturity gate actually work?
 
 That is the one question this branch exists to answer, so it is recorded separately from the
-rubric bookkeeping. Across the two runs that wrote `06`, the gate staged **22 products** — every
-one with a quotable sentence and a URL behind it. Concretely, it:
+rubric bookkeeping. Across the four runs that staged products (`cr-ai-strategy` 22 and 25 on the
+two heads, `cr-full-research-structure` 17, `cr-question-bank` 20), the gate classified
+**84 products**, every one with a quotable sentence and a URL behind it, and put **17** of them
+under `Maturity unverified` rather than guessing. Concretely, it:
 
 - **rediscovered the failure that filed the original task**, independently: AI Search,
   `[open beta since 2025-04-07 — 15.8 months]`, from the pricing docs **body**
@@ -117,16 +119,19 @@ one with a quotable sentence and a URL behind it. Concretely, it:
 - **refused the three trap signals by name, in the output file**: AI Gateway's "Available on
   all plans", Attribution's "available to all Bot Management customers", and the absence of a
   badge on a docs page — each explicitly declined as evidence of GA rather than silently used;
-- **hedged where it should have.** Six products went under `Maturity unverified` with the URLs
-  checked. Zero open- or private-beta products appeared under "Already shipped" in either run.
+- **hedged where it should have.** Seventeen products went under `Maturity unverified` with the
+  URLs checked. **Zero open- or private-beta products appeared under "Already shipped" in any of
+  the four runs** — which is the precise failure the original task filed.
 - **changed a downstream judgment.** In `cr-moat-5whys` the 13-month private beta on the
   pay-per-crawl product is the stated reason its moat verdict is "not yet a moat — a
   well-positioned option" instead of the confident framing the company's own materials support.
 
-The hedging cost the task warned about is real and visible: six `Maturity unverified` entries in
-one file, at least two of which (`Precursor`, the Agents SDK) the run itself says are unverified
-because it did not fetch the launch post, not because the post is silent. That is the trade —
-the gate converts "confidently wrong" into "visibly unfinished", and unfinished is recoverable.
+The hedging cost the task warned about is real and visible: five to six `Maturity unverified`
+entries per AI-strategy file, and in the first round at least two of them were unverified because
+the run did not fetch the launch post, not because the post was silent. That is the trade — the
+gate converts "confidently wrong" into "visibly unfinished", each entry carrying the URLs already
+checked so the reader can finish it in one click. Unfinished is recoverable; wrong, said out loud
+in an interview, is not.
 
 ## Judge spot-checks (independent of the runs' own reports)
 
