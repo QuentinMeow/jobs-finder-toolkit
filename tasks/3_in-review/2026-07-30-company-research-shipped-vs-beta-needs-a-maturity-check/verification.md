@@ -69,15 +69,21 @@ four wrong "shipped" calls from following the skill's own sources — is unaffec
 
 ```
 $ .venv/bin/python automation/metrics/instruction_budget.py --strict
-skills/company-research/SKILL.md                       535  36022     9005        600      ok
+skills/company-research/SKILL.md                       536  36024     9006        600      ok
 OK: all instruction files within budget.
 ```
 
+*(Corrected 2026-07-31: the row was first captured mid-edit as `535 36022 9005`, which
+matches no commit in this stack. Reproduce the branch head's figures without a checkout:
+`git cat-file blob 48f9b46:skills/company-research/SKILL.md | wc -lc` -> `536 36024`;
+`~TOKENS` is bytes/4.)*
+
 ## Canary evidence
 
-`evals/results/company-research-48f9b46a366e-20260731-correctness.md`. Four canaries run,
-**4/4 rubric_pass**. The two runs that write `06` staged **22 products**, every one with a
-quotable sentence and a URL, and:
+`evals/results/company-research-48f9b46a366e-20260731-correctness.md`. Six runs — four
+canaries at `48f9b46a366e` plus two re-runs at the fixed head `2a9ab0b95166` — **6/6
+rubric_pass**. The two runs that write `06` staged **47 products** (22, then 25 on the
+re-run), every one with a quotable sentence and a URL, and:
 
 - independently rediscovered the failure that filed this task — the AI-search product,
   `[open beta since 2025-04-07 - 15.8 months]`, established from the pricing docs **body**;
@@ -86,8 +92,15 @@ quotable sentence and a URL, and:
   sub-feature in its own right;
 - refused all three trap signals **by name in the output file** ("Available on all plans",
   "available to all <product> customers", and the absence of a badge);
-- filed **six** products under `Maturity unverified` with the URLs checked. Zero open- or
-  private-beta products appeared under "Already shipped" in either run.
+- filed **eleven** products under `Maturity unverified` with the URLs checked (6, then 5 on
+  the re-run). Zero open- or private-beta products appeared under "Already shipped" in
+  either run.
+
+*(Corrected 2026-07-31: this section first reported the FIRST `06` run's figures — 4 runs,
+22 products, 6 unverified — while describing "the two runs that write `06`". Commit `18eeec9`
+later corrected the eval record to 84 products and 17 unverified across all four
+product-staging runs; the two `06` runs are 22 + 25 = 47 of those, and 6 + 5 = 11 of the
+unverified. `sed -n '106,112p'` and `sed -n '250,252p'` of the eval record show both rows.)*
 
 The runs also found the gate's own fetch recipe was broken (see the task's worklog and the
 eval record, finding 1) — the documented grep returned zero hits on a file containing the

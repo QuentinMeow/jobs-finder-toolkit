@@ -11,17 +11,22 @@ $ grep -n 'company_key' automation/shared/job_metadata.py
 498:# never compared against ``meta.yaml``'s ``company_key``, and never resolved
 500:# ``_validate_company_key`` further down this same file, and the two must not be
 504:# ``automation/shared/tests/test_company_key_additive.py``).
-1807:    if "company_key" in record:
-1809:        # above, unknown SCALARS are tolerated. So a per-job company_key would be
-1815:            f"{lead}company_key is not a per-job field — one application folder is
-1816:            "one employer, so company_key belongs at the top level beside company")
-1828:# ``test_job_metadata.py::test_company_key_pattern_matches_the_index_module``, so a
-1841:def _validate_company_key(value: Any) -> list[str]:
-1847:    ``automation/shared/tests/test_company_key_additive.py``).
-1861:        return ["company_key must be a lowercase company-index key "
-1944:    # below), so ``company_key`` was already tolerated. This is the positive shape
-1946:    errors.extend(_validate_company_key(meta.get("company_key")))
+1808:    if "company_key" in record:
+1810:        # above, unknown SCALARS are tolerated. So a per-job company_key would be
+1816:            f"{lead}company_key is not a per-job field — one application folder is "
+1817:            "one employer, so company_key belongs at the top level beside company")
+1829:# ``test_job_metadata.py::test_company_key_pattern_matches_the_index_module``, so a
+1842:def _validate_company_key(value: Any) -> list[str]:
+1848:    ``automation/shared/tests/test_company_key_additive.py``).
+1862:        return ["company_key must be a lowercase company-index key "
+1945:    # below), so ``company_key`` was already tolerated. This is the positive shape
+1947:    errors.extend(_validate_company_key(meta.get("company_key")))
 ```
+
+*(Corrected 2026-07-31: this block was first captured mid-edit and every line from 1807 on
+was one low. The numbers above are the real output, and the blob is unchanged since
+`b6b5264`, so `git cat-file blob b6b5264:automation/shared/job_metadata.py | grep -n
+company_key` reproduces them exactly.)*
 
 Every remaining occurrence is `_validate_company_key`, the `meta.yaml` field name, or prose about
 one of the two. The normalizer and its local are gone:

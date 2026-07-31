@@ -1506,3 +1506,13 @@
     queue item describes the redaction by shape and names no company. No identity token, no
     application slug, no date about the owner's job hunt. The advisory company detector reports
     (none), which is expected — it reads names ADDED by a diff, and this diff only removes them.
+- commit: 04fcc305
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:1ecbbf6957205270
+  finding: |
+    Read the diff. A handbook markdown link becomes a backticked path (the export never ships
+    memory/, so the link 404s there), one CI comment gains a pointer to the test that now proves
+    the claim, and the publish suite gains that test. No candidate data, no company, no absolute
+    home path. The advisory company detector reports (none).

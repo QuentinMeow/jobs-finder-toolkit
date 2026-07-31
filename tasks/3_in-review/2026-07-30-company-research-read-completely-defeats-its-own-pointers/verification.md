@@ -69,11 +69,16 @@ change is justified by determinism, not by the tokens, and the eval record says 
 ```
 $ .venv/bin/python automation/metrics/instruction_budget.py --strict
 FILE                                                 LINES  BYTES  ~TOKENS     BUDGET  STATUS
-skills/company-research/SKILL.md                       535  36022     9005        600      ok
+skills/company-research/SKILL.md                       536  36024     9006        600      ok
 skills/company-research/LESSONS.md                      52   3512      878        160      ok
 skills/company-research/reference.md                   229  15323     3830          -     n/a
 OK: all instruction files within budget.
 ```
+
+*(Corrected 2026-07-31: the SKILL.md row was first captured mid-edit as `535 36022 9005`,
+which matches no commit in this stack; the other two rows were already right. Reproduce all
+three at the branch head with
+`git cat-file blob 48f9b46:skills/company-research/<file> | wc -lc`; `~TOKENS` is bytes/4.)*
 
 ## Canary evidence
 
