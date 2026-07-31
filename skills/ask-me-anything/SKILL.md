@@ -99,16 +99,21 @@ repo — `config.yaml` itself is git-ignored.
 ## Step 1 — Profile & Filters (who you are, what you want)
 
 Your *identity/experience* lives in the profile (Step 0). Your *search criteria* live in a
-**job-search profile**: `skills/job-search/profiles/<label>.yaml`, selected by
-`config.job_search.default_profile`. It encodes target roles/titles, keywords, seniority
-band, location + radius, visa policy, recency, and AI-native-company preference.
+**job-search profile** — `<label>.yaml` in `config.search_profiles_dir()`, your own overlay
+folder, selected by `config.job_search.default_profile`. **Your profiles are candidate data
+and never belong in the public tree**: `skills/job-search/profiles/` is public and holds only
+`_TEMPLATE.yaml`, `example.yaml` and its README. A bare `--profile <label>` resolves against
+the overlay FIRST and falls back to that public folder, so a checkout with no overlay still
+runs on `example`. A profile encodes target roles/titles, keywords, seniority band, location
++ radius, visa policy, recency, and AI-native-company preference.
 
 Tell the agent something like:
 > "Set up my job-search filters: senior backend/platform roles, my metro area + US-remote,
 > needs H-1B transfer sponsorship, AI-infra companies preferred."
 
-The agent edits/copies a profile YAML (starting from `profiles/_TEMPLATE.yaml` or
-`profiles/example.yaml`) — criteria live in the profile, never baked into scripts.
+The agent copies `skills/job-search/profiles/_TEMPLATE.yaml` (or `example.yaml`) into
+`config.search_profiles_dir()` and edits it there — criteria live in the profile, never
+baked into scripts, and never written back into the public folder.
 
 **Dependencies:** just `config.yaml` + a profile YAML (pyyaml). No network yet.
 

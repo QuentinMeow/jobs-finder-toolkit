@@ -83,7 +83,7 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
 | `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, output-stem config; example is the "Jordan Rivers" placeholder + fallback |
 | `config.profile_md_path()` / `config.baseline_path()` | Candidate profile (source of truth for tailoring) / canonical transcription of the approved resume (start point for every `tailored.yaml`) |
 | `skills/job-search/companies.yaml` | Canonical **public** registry (company identity, ATS config, tags); candidate blacklist rows live in the git-ignored overlay at `config.blacklist_path()` (`private/market/blacklist.yaml`) |
-| `config.applications_root()` / `config.discoveries_dir()` | All applications in numbered status folders `0_profile`…`6_drafted` (the folder is the derived overall status) / ad-hoc job-search research |
+| `config.applications_root()` / `config.discoveries_dir()` | All applications in the five numbered status folders `2_ignored`…`6_drafted` (the folder is the derived overall status; `0_profile`/`1_discoveries` sit beside them but are **support folders, never statuses** — `automation/shared/layout.py`) / ad-hoc job-search research |
 | `skills/` | Canonical skills dir — **entirely public** (see Public vs Private; private skills live at `private/skills/`) |
 | `automation/` (shared, vendoring, gardener, search-recall-audit, company-levels, metrics, publish, store, reconcile, hooks) | Everything that runs: canonical toolkit modules, vendoring, gardener, pipeline audits, metrics, leak guard, store tools, the reconciler, tracked git hooks |
 | `templates/` | **Single source of truth for every process-file schema** — copy one to create any queue/task/memory item (`templates/README.md`) |
@@ -292,7 +292,7 @@ literal folder at the repo root, which is git-ignored and invisible to every tra
 
 Each application is a folder `<company>-<role>-<YYYYMMDD>/` under `applications/6_drafted/`; **each
 `jobs:` entry carries a per-job `status`, and the parent status folder is the derived overall status
-(rollup) — the two must agree** (`0_profile`…`6_drafted`; the **user** moves folders, or use
+(rollup) — the two must agree** (`2_ignored`…`6_drafted`; the **user** moves folders, or use
 `status.py --update`/`--update-job` — agents never move them unless asked). One resume covers the folder, but
 **cover letters are one-to-one with JDs** — one `<COVER_STEM>_<job title>.pdf` + one bundled
 `<APPLICATION_STEM>_<job title>.txt` per `meta.yaml` role; `render.py`/`cover_letter.py` emit all

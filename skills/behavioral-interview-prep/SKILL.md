@@ -23,7 +23,8 @@ Use this skill when the user asks to:
 1. Read `AGENTS.md` for repo guardrails.
 2. Read your candidate profile (`config.profile_md_path()`) unless the user already provided complete story material.
 3. If the prep is company-specific, read the relevant JD file(s) — `config.applications_root()/<status>/<slug>/source/JD-<job title>.md` (one per posting) — and that folder's `notes.md` if present (the app usually lives in the `4_in_progress/<slug>/` folder by interview time).
-4. Read relevant company-prefixed files in `private/me/interviews/question-bank/`.
+4. Read that company's prepared answers in `config.companies_root()/<key>/derived/` — the
+   company-prefixed files live there, not in the question bank, which holds only `_general_*`.
 5. **Personalization / private overrides:** if `config.skill_references_dir()` for this
    skill exists in the overlay, read every file in it — those candidate-specific
    notes and examples OVERRIDE the generic examples in this SKILL.md. When it is absent
@@ -187,10 +188,17 @@ Use `private/me/interviews/story-bank/` (`config.story_bank_path()`) for canonic
 stories. Each file should be one project or major workstream, for example
 `payments-microservices-migration.md`.
 
-Reusable company-principle answers belong in the answer bank and use a company-prefixed output
-name, such as `question-bank/amazon-deliver-results.md`, while the shared source remains
-`question-bank/sources/deliver-results.yaml`. Keep company-specific behavioral products in this
-same question bank; use company-prefixed filenames instead of a separate company folder.
+Reusable company-principle answers use a company-prefixed output name (`<company>-<principle>.md`)
+while the shared source stays company-neutral in `question-bank/sources/<principle>.yaml`. **The
+company-prefixed answer files live under `config.companies_root()/<key>/derived/`, not in the
+question bank** — the question bank holds only the `_general_*` files. Company-specific material
+belongs to its company folder (`memory/decisions/interview-material-moves-by-company-only.md`).
+
+**Known gap, do not paper over it:** `answer_bank.py --render` still writes every output beside
+its source's parent, i.e. back into `question-bank/<slug>.md`. So a rendered company answer lands
+in the wrong tree today and must be moved to the company's `derived/` folder afterwards. Fixing
+the generator is filed as `tasks/0_backlog/2026-07-31-answer-bank-renders-company-answers-into-the-question-bank/`;
+never "fix" it by moving the real files back.
 
 ## Story Bank Coverage
 
@@ -436,8 +444,9 @@ questions. Keep one principle per company-prefixed file, with at least two title
 ## Optional Persistence
 
 If the user wants prep saved for a specific application:
-- save reusable company-specific answers in `private/me/interviews/question-bank/` with a
-  company-prefixed output alias backed by a neutral shared source
+- save reusable company-specific answers in `config.companies_root()/<key>/derived/` with a
+  company-prefixed output alias backed by a neutral shared source in `question-bank/sources/`
+  (`--render` still emits into the question bank — move the file; see § File Location)
 - change `private/me/interviews/story-bank/` only when the user explicitly asks
 - update `config.applications_root()/<status>/<slug>/notes.md` only when the note is tied to one application record
 - add a `## Behavioral Prep` section rather than editing the base profile

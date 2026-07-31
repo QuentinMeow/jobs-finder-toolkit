@@ -120,9 +120,9 @@ private/
 │   ├── profile.md  baseline.yaml  tailoring-card.md
 │   ├── resume/                            #   master.docx  master.pdf  reference.docx
 │   └── interviews/
-│       ├── stories/                       #   behavioral story bank
-│       ├── questions/                     #   generic behavioral answers
-│       ├── replies/                       #   reusable message templates
+│       ├── story-bank/                    #   behavioral story bank
+│       ├── question-bank/                 #   generic answers (_general_*) + sources/
+│       ├── common-message-replies/        #   reusable message templates
 │       ├── practice/                      #   coding practice tied to no company
 │       └── calendar.md                    #   upcoming interviews across everything
 │
@@ -135,7 +135,7 @@ private/
 │       ├── people.yaml                    #   recruiters, hiring managers
 │       ├── research/                      #   company-research output
 │       ├── coding/<problem>/              #   problems seen here
-│       ├── derived/behavioral.md          #   their-values answers; sources[] + build hash
+│       ├── derived/                       #   their-values answers, ONE FILE PER principle
 │       └── decision.md                    #   offer, comp, would-I-work-here
 │
 │                                          #   (a firm that RUNS interviews on a client's
