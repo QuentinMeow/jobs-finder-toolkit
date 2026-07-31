@@ -1801,7 +1801,11 @@ _STORE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 # It is a SEPARATE constant from ``_STORE_KEY_RE`` despite the identical pattern:
 # store entity keys and company keys answer different questions and either may
 # change shape without the other.
-_COMPANY_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+#
+# ``\A``/``\Z`` rather than ``^``/``$``: ``$`` matches BEFORE a trailing newline, so
+# ``"acme-labs\n"`` used to validate here while the reconciler called the same value
+# a finding. A key is spent as a folder name, and a folder name cannot hold one.
+_COMPANY_KEY_RE = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
 
 
 def _validate_company_key(value: Any) -> list[str]:

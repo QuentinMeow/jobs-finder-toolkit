@@ -380,10 +380,16 @@ def company_index_findings(index_path: Path,
     block unrelated public commits made between scaffolding and keying.
     """
     findings: list[Finding] = []
-    if not index_path.is_file():
+    if not index_path.exists() and not index_path.is_symlink():
         # The root exists but the index has not been built yet. That is the same
         # "not adopted" state as an absent root, and it is what lets this public
         # check merge before the owner's private half exists.
+        #
+        # Tested with ``exists()``, NOT ``is_file()``: a directory or a dangling
+        # symlink at this path is not a regular file either, and reading it as "not
+        # adopted yet" made this check return clean while applications carried keys.
+        # ``read_raw`` raises OSError on one, which lands in the handler below —
+        # the same place a ``chmod 000`` file already landed.
         return findings
 
     # Deliberately function-local: reconcile.py must import stdlib only on a bare
@@ -421,10 +427,16 @@ def company_index_findings(index_path: Path,
         if key is None:
             continue          # unkeyed is legitimate: coverage is measured, not gated
         subject = _rel_safe(meta)
-        if not isinstance(key, str) or not key.strip():
+        # Shape first, membership second, and the shape test is ``company_index.KEY_RE``
+        # itself — the same regex ``job_metadata._validate_company_key`` restates. Before
+        # this, ``key.strip()`` accepted ``"acme-labs\n"`` here and the value fell through
+        # to the membership test, which called a MALFORMED key a MISSING one and told the
+        # owner to add the newline to their index.
+        if not isinstance(key, str) or not company_index.KEY_RE.match(key):
             findings.append(Finding(
                 "company-index", subject,
-                f"company_key must be a non-empty string, got {key!r}"))
+                f"company_key must be a lowercase company-index key "
+                f"([a-z0-9-], starting with a letter or digit), got {key!r}"))
         elif key not in index:
             findings.append(Finding(
                 "company-index", subject,

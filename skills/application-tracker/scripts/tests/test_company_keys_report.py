@@ -124,6 +124,89 @@ class CompanyKeysReportTests(unittest.TestCase):
         self.assertTrue(data["index_present"])
         self.assertTrue(data["index_error"])
 
+    # ── unkeyed is not malformed ─────────────────────────────────────────────
+
+    def test_a_malformed_company_key_is_not_counted_as_unkeyed(self):
+        """The defect this class of test exists for.
+
+        ``load_application`` copies a field only ``if meta_data.get(key)``, so
+        ``""``, ``false`` and ``0`` were dropped on the way in and reported as
+        UNKEYED — the same number as an application that simply has not been keyed
+        yet — while ``validate_meta`` called each an ERROR and the reconciler called
+        each a FINDING. ``"acme-labs\\n"`` was worse: ``.strip()`` made it look like
+        a real key and it was counted keyed AND resolved.
+        """
+        for name, literal in (("trailing-newline", '"acme-labs\\n"'),
+                              ("empty-string", '""'),
+                              ("false", "false"),
+                              ("zero", "0")):
+            with self.subTest(shape=name):
+                slug = f"broken-{name}-20260730"
+                rc, data = self._run({slug: literal})
+                self.assertEqual(data["unkeyed"], [],
+                                 "a present-but-broken key is not an absent one")
+                self.assertEqual([r["slug"] for r in data["malformed"]], [slug])
+                self.assertEqual(data["keyed"], 0)
+                self.assertEqual(rc, 0, "coverage alone never fails without --strict")
+
+    def test_a_malformed_company_key_fails_under_strict(self):
+        for name, literal in (("trailing-newline", '"acme-labs\\n"'),
+                              ("empty-string", '""'),
+                              ("false", "false"),
+                              ("zero", "0")):
+            with self.subTest(shape=name):
+                rc, data = self._run({f"broken-{name}-20260730": literal},
+                                     strict=True)
+                self.assertEqual(rc, 1, data)
+                self.assertFalse(data["ok"])
+
+    def test_absent_is_the_one_class_that_stays_clean_everywhere(self):
+        """The fifth row of the agreement table, and the only permissive one.
+
+        Both shapes of absent: a meta.yaml with no ``company_key:`` line at all,
+        and one with nothing after the colon (which YAML parses as null).
+        """
+        apps = {"no-field-swe-20260730": None, "explicit-null-swe-20260730": ""}
+        rc, data = self._run(apps, strict=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(data["malformed"], [])
+        self.assertEqual(sorted(data["unkeyed"]), sorted(apps))
+
+    # ── the index itself ─────────────────────────────────────────────────────
+
+    def test_an_empty_index_file_is_named_rather_than_counted_as_zero_keys(self):
+        """0 keys is what a truncated file reports too."""
+        rc, data = self._run({"acme-labs-swe-20260730": "acme-labs"}, index="")
+        self.assertTrue(data["index_present"])
+        self.assertTrue(data["index_empty"])
+        self.assertEqual(data["index_keys"], 0)
+        self.assertEqual(rc, 0)
+
+    def test_a_directory_at_the_index_path_is_reported_not_treated_as_absent(self):
+        """``is_file()`` is False for a directory, so this read as "no overlay"."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app = root / "apps" / "6_drafted" / "acme-labs-swe-20260730"
+            app.mkdir(parents=True)
+            (app / "meta.yaml").write_text(
+                "company: Acme Labs\ncompany_key: acme-labs\n", encoding="utf-8")
+            (root / "config.yaml").write_text(textwrap.dedent(f"""\
+                paths:
+                  applications_root: "{(root / 'apps').as_posix()}"
+                """), encoding="utf-8")
+            index_path = root / "_index.yaml"
+            index_path.mkdir()
+            env = dict(os.environ,
+                       JOBHUNT_CONFIG=str(root / "config.yaml"),
+                       JOBHUNT_COMPANY_INDEX=str(index_path))
+            proc = subprocess.run(
+                [sys.executable, str(STATUS), "--company-keys", "--json"],
+                capture_output=True, text=True, env=env)
+            data = json.loads(proc.stdout)
+            self.assertTrue(data["index_present"],
+                            "a directory here is a broken overlay, not a missing one")
+            self.assertIn("not a regular file", data["index_error"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -306,7 +306,7 @@ class TestCompanyIndexCheck(TempRepo):
                 self.assertLess(guard, src.index(statement),
                                 f"{statement} must sit below the is_dir() guard")
         body = inspect.getsource(R.company_index_findings)
-        self.assertLess(body.index("if not index_path.is_file():"),
+        self.assertLess(body.index("if not index_path.exists()"),
                         body.index("import yaml"))
 
     def test_an_absent_index_file_is_not_a_finding(self) -> None:
@@ -366,7 +366,71 @@ class TestCompanyIndexCheck(TempRepo):
         apps = self.application("acme-labs-swe-20260730",
                                 "company: Acme Labs\ncompany_key: 7\n")
         findings = R.company_index_findings(self.index_at(self.INDEX), apps)
-        self.assertIn("must be a non-empty string", findings[0].message)
+        self.assertIn("must be a lowercase company-index key", findings[0].message)
+
+    def test_every_malformed_company_key_is_a_finding_here_too(self) -> None:
+        """The three validators must agree on the SAME five input classes.
+
+        Each value below is an ERROR to ``job_metadata.validate_meta`` and a
+        malformed row to ``status.py --company-keys``; before this, the trailing
+        newline reached the MEMBERSHIP test here and was reported as a missing key,
+        which told the owner to add a newline to their index.
+        """
+        index = self.index_at(self.INDEX)
+        for name, literal in (("trailing-newline", '"acme-labs\\n"'),
+                              ("empty-string", '""'),
+                              ("false", "false"),
+                              ("zero", "0")):
+            with self.subTest(shape=name):
+                slug = f"acme-labs-{name}-20260730"
+                apps = self.application(slug,
+                                        f"company: Acme Labs\ncompany_key: {literal}\n")
+                mine = [f for f in R.company_index_findings(index, apps)
+                        if slug in f.subject]
+                self.assertEqual(len(mine), 1, mine)
+                self.assertIn("must be a lowercase company-index key", mine[0].message)
+
+    def test_a_directory_at_the_index_path_is_a_finding_not_a_no_op(self) -> None:
+        """``is_file()`` is False for a directory, so the check used to go clean.
+
+        A ``chmod 000`` file already reported ``unreadable``; a path that is not a
+        regular file is the same "cannot read the index" state and must report the
+        same way — silently returning clean while applications carry keys is the
+        one answer that is wrong.
+        """
+        path = self.root / R.COMPANY_INDEX_ROOT / "_index.yaml"
+        path.mkdir(parents=True)
+        apps = self.application("acme-labs-swe-20260730",
+                                "company: Acme Labs\ncompany_key: acme-labs\n")
+        findings = R.company_index_findings(path, apps)
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("unreadable", findings[0].message)
+        self.assertIn("not a regular file", findings[0].message)
+
+    def test_a_dangling_symlink_at_the_index_path_is_a_finding(self) -> None:
+        path = self.root / R.COMPANY_INDEX_ROOT / "_index.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.symlink_to(self.root / "nowhere.yaml")
+        findings = R.company_index_findings(path, None)
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("unreadable", findings[0].message)
+
+    def test_an_empty_index_file_is_a_finding(self) -> None:
+        """0 keys is what a truncated file reports; it must not read as clean."""
+        findings = R.company_index_findings(self.index_at(""), None)
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("empty", findings[0].message)
+
+    def test_a_duplicate_top_level_key_is_a_finding(self) -> None:
+        """PyYAML keeps the LAST one, so one employer is deleted in silence."""
+        path = self.index_at(self.INDEX + textwrap.dedent("""\
+            acme-labs:
+              display: Acme Cloud
+              kind: employer
+            """))
+        findings = R.company_index_findings(path, None)
+        self.assertTrue(any("defined more than once" in f.message for f in findings),
+                        findings)
 
     def test_an_unkeyed_application_is_not_a_finding(self) -> None:
         """Coverage is a number status.py prints, never a gate.

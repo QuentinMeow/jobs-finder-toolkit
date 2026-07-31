@@ -1247,3 +1247,82 @@
     key or the slug. The transcripts quote invented Acme/Beacon fixtures and example.test URLs;
     scratch and worktree paths are written as <scratch>. No real company, person, application
     slug, posting URL, salary or absolute home path. The advisory company detector reports (none).
+
+- commit: 0c55807c
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 8
+  digest: sha256:d42db2038917ccc3
+  finding: |
+    Read the full 8-file diff (4 canonical + 4 byte-identical vendored copies of two of them).
+    All new content is regex anchors, a PyYAML Loader subclass, lint rules and their tests.
+    Every fixture is invented (acme-*/Acme *, Northwind/Beacon in the reused suites) and the
+    one nonce token added to a test is a deliberate non-word. The ALIAS_STOP_LIST is unchanged
+    — no employer vocabulary was added or removed. No real company, person, application slug,
+    posting URL, salary, date of the owner's hunt, or absolute home path. The advisory company
+    detector reports (none).
+
+- commit: 2844fd0b
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 7
+  digest: sha256:54bdfd4597392b14
+  finding: |
+    Read the full 7-file diff. The three consumers of the company key plus one handbook clause.
+    All new fixtures are invented (acme-*, Beacon Works, Northwind Data Ltd., Lambda Systems
+    Inc.) and every test runs against a temp tree, never the owner's. The report gained a
+    `malformed` line and an `index_empty` flag; both print slugs and key values from the tree
+    they are run against, which is local output, not tracked content. The handbook clause names
+    no employer. No real company, person, application slug, posting URL, salary or absolute home
+    path. The advisory company detector reports (none).
+
+- commit: 2bc3f840
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:dd001d7b330dfe72
+  finding: |
+    Read the full 3-file diff: one task record moved into 3_in-review with its verification and
+    worklog. Checked the two places private data could have entered. The blast-radius section
+    carries counts and shapes only (222 index entries, 0 duplicates, 0 findings; 243
+    applications, 243 keyed, 0 malformed, 0 unresolved) and names no employer, key or slug. The
+    transcripts quote invented Acme/Beacon/Northwind fixtures; scratch and worktree paths are
+    written as <scratch>. No real company, person, application slug, posting URL, salary or
+    absolute home path. The advisory company detector reports (none).
+
+- commit: 970da612
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:cb513b5371bdceb3
+  finding: |
+    Read the full 2-file diff: one invented test fixture slug renamed to stop gitleaks'
+    generic-api-key rule matching it, plus the worklog entry recording why. Both slugs are
+    fictional folder names in a temp tree. No allowlist, no weakened check. No real company,
+    person, application slug, posting URL, salary or absolute home path. The advisory company
+    detector reports (none).
+
+- commit: b9f388bb
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:9afe459c9fa0c833
+  finding: |
+    Read the full 2-file diff: two invented fixture slugs on one test line reworded so gitleaks'
+    generic-api-key rule has no keyword-then-quoted-value shape to match, plus the worklog entry.
+    Re-ran that rule locally over every added line of this push: 0 matches. No allowlist, no
+    weakened check. No real company, person, application slug, posting URL, salary or absolute
+    home path. The advisory company detector reports (none).
+
+- commit: aa4d7ff8
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:6414581e23f7b15a
+  finding: |
+    Read the full 3-file diff: a new root .gitleaksignore holding two commit-pinned fingerprints,
+    the owner decision item that asks whether the repo should carry that file at all, and the
+    worklog entry. The fingerprints name only shas, a path, a rule name and a line number — no
+    content. The decision item describes the flagged text as invented fixture folder-name slugs
+    and quotes none of it. No real company, person, application slug, posting URL, salary or
+    absolute home path. The advisory company detector reports (none).

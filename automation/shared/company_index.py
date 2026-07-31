@@ -45,15 +45,22 @@ Casing of ``display``/``aliases`` is DISPLAY casing — the advisory detector in
 ``automation/publish/review_gate.py`` prints them verbatim and lowercases only at
 comparison time, so a lowercased alias would print as noise.
 
-TWO TRAPS THIS LINTER EXISTS FOR
---------------------------------
+THREE TRAPS THIS LINTER EXISTS FOR
+----------------------------------
 1. **PyYAML types plain scalar keys.** An unquoted ``on:`` / ``no:`` / ``yes:`` /
    ``off:`` / ``y:`` / ``n:`` top-level key is resolved to a Python ``bool``
    BEFORE :data:`KEY_RE` ever sees a string — YAML 1.1 booleans. Same class of bug
    that forced ``review_gate._LedgerLoader``. Hence the "every top-level key is a
    str" rule, and hence :func:`from_raw` drops such an entry instead of stringifying
    it into a key that was never written.
-2. **The advisory detector does a plain substring test.**
+2. **PyYAML collapses a duplicate key, last-wins, in silence.** The same employer
+   key written twice deletes one entry and hands its key to the other, and no check
+   over the PARSED mapping can see it because the loser is already gone. That is the
+   half of ``review_gate._LedgerLoader``'s approach this module reuses:
+   :class:`_IndexLoader` records duplicates while parsing and :func:`lint` reports
+   them. It keeps implicit typing ON, unlike the ledger loader — trap 1 needs to see
+   the boolean, not be protected from it.
+3. **The advisory detector does a plain substring test.**
    ``review_gate.company_hints`` computes ``[n for n in names if n.lower() in added]``
    over the whole added-lines blob of a diff, so an alias that is also an ordinary
    English word fires on unrelated code — and a diff the detector fired on must be
@@ -147,7 +154,12 @@ DEFAULT_REL = "private/companies/_index.yaml"
 
 # Same shape as ``job_metadata._STORE_KEY_RE``: usable as a folder name and as a URL
 # fragment, which is what the key is actually spent on.
-KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+#
+# ``\A``/``\Z``, NOT ``^``/``$``. ``$`` matches BEFORE a trailing newline, so
+# ``"acme-labs\n"`` satisfied the old pattern — and a key carrying a newline becomes
+# a directory name. The same anchors are used by ``job_metadata._COMPANY_KEY_RE``,
+# which is pinned to this pattern by a test.
+KEY_RE = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
 
 # ``interview_vendor`` is a firm that RUNS an interview rather than one that hires:
 # its artifacts belong to some other employer's application, so a report must be
@@ -240,17 +252,101 @@ def normalize(value: Any) -> str:
 
 # ── loading ──────────────────────────────────────────────────────────────────
 
+class RawIndex(dict):
+    """The parsed index, carrying the keys YAML saw more than once.
+
+    A plain ``dict`` cannot record them: by the time :func:`lint` is handed a
+    mapping, PyYAML has already collapsed ``acme-labs:`` written twice into one
+    entry, last-wins — one employer silently deleted and the other inheriting its
+    key. So the duplicates are captured at PARSE time by :class:`_IndexLoader` and
+    ride along on the mapping itself, which keeps :func:`lint`'s one-argument
+    signature (the reconciler adapter depends on it).
+    """
+
+    #: Top-level keys defined more than once, in file order, class-level default so
+    #: a plain ``dict`` handed to :func:`lint` by a test behaves like a clean parse.
+    duplicates: tuple[Any, ...] = ()
+
+
+class _IndexLoader(yaml.SafeLoader):
+    """SafeLoader that RECORDS duplicate mapping keys instead of silently last-winning.
+
+    Same move as ``review_gate._LedgerLoader``, and for the same reason: PyYAML's
+    defaults are wrong for one specific file, and the fix belongs in a Loader rather
+    than in a post-hoc check that cannot see what the parser threw away.
+
+    It reuses only the *half* it needs. ``_LedgerLoader`` switches implicit typing
+    OFF because every ledger scalar is meant to be text; this loader leaves implicit
+    typing ON, because the "top-level keys must be strings" rule exists precisely to
+    SEE the YAML 1.1 boolean an unquoted ``on:`` key becomes — turning typing off
+    here would hide the trap instead of reporting it.
+    """
+
+    def construct_mapping(self, node, deep=False):        # type: ignore[override]
+        self.flatten_mapping(node)
+        mapping = RawIndex()
+        duplicates: list[Any] = []
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            try:
+                hash(key)
+            except TypeError:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping", node.start_mark,
+                    "found unhashable key", key_node.start_mark)
+            value = self.construct_object(value_node, deep=deep)
+            if key in mapping:
+                duplicates.append(key)
+            mapping[key] = value
+        mapping.duplicates = tuple(duplicates)
+        return mapping
+
+
+def _construct_yaml_map(loader: _IndexLoader, node):
+    """Mirror of ``SafeConstructor.construct_yaml_map`` that keeps the RawIndex.
+
+    The stock constructor yields a bare ``{}`` and then ``update()``s it, which
+    would drop the ``duplicates`` attribute on the way out.
+    """
+    data = RawIndex()
+    yield data
+    value = loader.construct_mapping(node)
+    data.update(value)
+    data.duplicates = getattr(value, "duplicates", ())
+
+
+_IndexLoader.add_constructor(
+    "tag:yaml.org,2002:map", _construct_yaml_map)
+
+
 def read_raw(path: str | Path) -> Any:
     """The parsed YAML at ``path``; ``{}`` when the file is absent.
 
-    Malformed YAML PROPAGATES (``yaml.YAMLError``). A silent empty index would
-    read as "this owner has no companies", which is indistinguishable from a clean
-    file and is exactly the failure the detector's ``None`` return exists to avoid.
+    Three states this deliberately keeps apart, because collapsing any two of them
+    produces the same false clean bill of health:
+
+      * **absent** -> ``{}``. The index has not been built yet, which is the normal
+        state in any checkout without the overlay;
+      * **present but not a regular file** (a directory, a dangling symlink, a
+        socket) -> ``OSError``. ``is_file()`` is False for all of these, so the old
+        guard read them as "absent" and every caller went clean while applications
+        carried keys. A ``chmod 000`` file already raised; these now raise too;
+      * **empty** -> ``None``, which :func:`lint` reports as a finding. An empty file
+        parses as no index at all, and "this owner has no companies" is
+        indistinguishable from a clean one — the failure the detector's ``None``
+        return exists to avoid. Write ``{}`` to mean an index with no entries.
+
+    Malformed YAML PROPAGATES (``yaml.YAMLError``).
     """
     p = Path(path)
-    if not p.is_file():
+    if not p.exists() and not p.is_symlink():
         return {}
-    return yaml.safe_load(p.read_text(encoding="utf-8"))
+    if not p.is_file():
+        raise OSError(
+            f"{p} exists but is not a regular file "
+            f"({'a dangling symlink' if p.is_symlink() else 'a directory or a special file'})"
+            " — the company index must be a readable YAML file")
+    return yaml.load(p.read_text(encoding="utf-8"), Loader=_IndexLoader)
 
 
 def from_raw(raw: Any) -> dict[str, Entry]:
@@ -437,36 +533,58 @@ def _parent_findings(index: Mapping[str, Entry]) -> list[tuple[str, str]]:
     return out
 
 
-def _collision_findings(index: Mapping[str, Entry]) -> list[tuple[str, str]]:
-    """No alias is claimed twice, and no alias is another entry's key or display.
+# Every ordered (this role, the role that claimed the string first) pairing, so a
+# collision reads the same way whichever two spellings produced it. The first three
+# are the historical alias messages, kept verbatim.
+_COLLISION_PHRASE = {
+    ("alias", "alias"):     "alias {raw!r} is already claimed by {owner!r}",
+    ("alias", "key"):       "alias {raw!r} is another entry's key ({owner!r})",
+    ("alias", "display"):   "alias {raw!r} is another entry's display name ({owner!r})",
+    ("display", "display"): "display {raw!r} is also the display name of {owner!r}",
+    ("display", "key"):     "display {raw!r} is another entry's key ({owner!r})",
+    ("display", "alias"):   "display {raw!r} is already claimed as an alias of {owner!r}",
+    ("key", "key"):         "key {raw!r} is already claimed by {owner!r}",
+    ("key", "display"):     "key {raw!r} is another entry's display name ({owner!r})",
+    ("key", "alias"):       "key {raw!r} is already claimed as an alias of {owner!r}",
+}
 
-    All three are the same collision by different spellings, and any of them makes
-    :func:`resolve` a coin flip decided by file order.
+_COLLISION_SUFFIX = (" — the two normalize to the same string, so resolve() would "
+                     "return whichever entry the file happens to list first")
+
+
+def _collision_findings(index: Mapping[str, Entry]) -> list[tuple[str, str]]:
+    """No normalized string is claimed by two different entries.
+
+    :func:`lookup_table` maps ``{key} u {display} u aliases -> key``, so ANY string
+    two entries both claim makes :func:`resolve` a coin flip decided by file order.
+    All nine pairings are that one defect wearing different spellings — and the
+    display-vs-display and key-vs-display pairs are the ones that turn a real
+    employer into a lookup for a different one, which is worse than the alias cases
+    that were linted first. Whitespace and case are already folded by
+    :func:`normalize`, so two displays differing only by a non-breaking space or by
+    surrounding blanks collide here rather than passing.
+
+    An entry may spell ITSELF more than one way (an alias equal to its own display
+    is redundant, not ambiguous), so only cross-entry claims are reported.
     """
     out: list[tuple[str, str]] = []
-    by_key = {normalize(key): key for key in index}
-    by_display: dict[str, str] = {}
+    # normalized string -> (owning key, the role it was claimed as, the spelling)
+    claims: dict[str, tuple[str, str, str]] = {}
     for key, entry in index.items():
-        by_display.setdefault(normalize(entry.display), key)
-
-    alias_owner: dict[str, str] = {}
-    for key, entry in index.items():
-        for alias in entry.aliases:
-            norm = normalize(alias)
+        for role, raw in (("key", key), ("display", entry.display),
+                          *(("alias", a) for a in entry.aliases)):
+            norm = normalize(raw)
             if not norm:
                 continue
-            owner = alias_owner.get(norm)
-            if owner is not None and owner != key:
-                out.append((key, f"alias {alias!r} is already claimed by {owner!r}"))
+            prior = claims.get(norm)
+            if prior is None:
+                claims[norm] = (key, role, raw)
                 continue
-            alias_owner[norm] = key
-            other = by_key.get(norm)
-            if other is not None and other != key:
-                out.append((key, f"alias {alias!r} is another entry's key ({other!r})"))
-            other = by_display.get(norm)
-            if other is not None and other != key:
-                out.append((key, f"alias {alias!r} is another entry's display name "
-                                 f"({other!r})"))
+            owner, owner_role, _owner_raw = prior
+            if owner == key:
+                continue
+            phrase = _COLLISION_PHRASE[(role, owner_role)]
+            out.append((key, phrase.format(raw=raw, owner=owner) + _COLLISION_SUFFIX))
     return out
 
 
@@ -478,13 +596,28 @@ def lint(raw: Any) -> list[tuple[str, str]]:
     or :data:`FILE_SUBJECT` for a problem with the file as a whole.
     """
     if raw is None:
-        raw = {}
+        # An EMPTY file, not an absent one: ``read_raw`` returns ``{}`` when the file
+        # is not there. Reported rather than treated as an empty index, because
+        # "0 keys" is exactly what a truncated or half-written file reports, and
+        # every consumer then goes quietly clean.
+        return [(FILE_SUBJECT,
+                 "the index file is empty — an empty file parses as no index at all, "
+                 "which reads the same as an index with nothing wrong with it. Write "
+                 "'{}' if you really mean an index with no entries")]
     if not isinstance(raw, Mapping):
         return [(FILE_SUBJECT,
                  "the index must be a mapping of key -> entry, "
                  f"got {type(raw).__name__}")]
 
     out: list[tuple[str, str]] = []
+    # Duplicates are invisible in the mapping (PyYAML kept the last one), so they
+    # come from the parser via ``RawIndex``. Reported first: every later finding
+    # about such a key describes the surviving entry only.
+    for dup in dict.fromkeys(getattr(raw, "duplicates", ())):
+        out.append((dup if isinstance(dup, str) else repr(dup),
+                    "this top-level key is defined more than once — YAML keeps the "
+                    "LAST one silently, so one employer is deleted and the other "
+                    "inherits its key. Merge the two entries, or give one a new key"))
     for key, body in raw.items():
         if not isinstance(key, str):
             out.append((repr(key),
