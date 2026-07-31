@@ -827,6 +827,37 @@ class CompanyKeyValidationTests(unittest.TestCase):
                         for error in errors),
                     f"{key!r} was accepted: {errors}")
 
+    def test_the_five_input_classes_all_three_validators_must_agree_on(self):
+        """The exact table an adversarial review drove through all three checkers.
+
+        ``absent`` is the only one of the five that is OK, and it is OK everywhere.
+        The other four are an ERROR here, a FINDING to the reconciler, and a
+        ``malformed`` row that fails ``status.py --company-keys --strict``. Before
+        this, ``"acme-labs\\n"`` was ACCEPTED here — ``$`` matches before a trailing
+        newline — while the reconciler called the same value a finding.
+        """
+        self.assertEqual(validate_meta(_valid_meta()), [],
+                         "absent is the normal state and is valid")
+        for key in ("acme-labs\n", "", False, 0):
+            with self.subTest(key=key):
+                errors = validate_meta(_valid_meta(company_key=key))
+                self.assertTrue(
+                    any("company_key must be a lowercase company-index key" in error
+                        for error in errors),
+                    f"{key!r} was accepted: {errors}")
+
+    def test_no_surrounding_whitespace_is_tolerated_in_a_company_key(self):
+        """None of the three strips, so none of them may accept whitespace.
+
+        A key is spent as a folder name and as a URL fragment; a leading or
+        trailing blank in one of those is a different key that looks the same.
+        """
+        for key in (" acme-labs", "acme-labs ", "acme-labs\t", "acme\nlabs",
+                    "acme-labs\r\n"):
+            with self.subTest(key=key):
+                self.assertTrue(validate_meta(_valid_meta(company_key=key)),
+                                f"{key!r} was accepted")
+
     def test_per_job_company_key_is_rejected(self):
         """A jobs[] entry tolerates unknown SCALARS, so this would be silent.
 
