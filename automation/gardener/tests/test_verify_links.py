@@ -997,6 +997,20 @@ class TestAnchors(VerifyLinksTestCase):
         broken, _, _, _, _ = V.check_references()
         self.assertEqual(broken, [])
 
+    def test_blank_heading_does_not_absorb_the_next_heading(self) -> None:
+        """Heading indentation and post-marker space cannot cross a newline."""
+        self.write(
+            "docs/handbook/x.md",
+            "## \n\n## Test Results\n\nSee [a](#test-results).\n",
+        )
+        self.git_init()
+        broken, _, _, _, _ = V.check_references()
+        self.assertEqual(broken, [])
+        self.assertIn("test-results", V._anchors(
+            (self.root / "docs/handbook/x.md").read_text(encoding="utf-8")))
+        self.assertNotIn("-test-results", V._anchors(
+            (self.root / "docs/handbook/x.md").read_text(encoding="utf-8")))
+
     def test_cross_file_fragment_is_checked_against_the_target(self) -> None:
         self.write("docs/handbook/y.md", "## Present\n")
         self.write("docs/handbook/x.md", "See [a](y.md#missing) and [b](y.md#present).\n")

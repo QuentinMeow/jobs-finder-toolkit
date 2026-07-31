@@ -94,11 +94,14 @@
   relocated to `me/interviews/…`, not reorganised — so every one of the 552
   interview files now has a named destination), and config discovery keeps
   Option A (`memory/decisions/config-discovery-example-fallback.md`, a
-  record-and-close — the behaviour was already live). The scratch-tree
-  classification is deferred by the owner; it blocks nothing, which was checked
-  rather than assumed. Still awaiting an answer:
+  record-and-close — the behaviour was already live). The coding interview
+  screenshot inbox now lives at `private/me/interviews/practice/TODO/`; both
+  private consumers poll that path, and the existing screenshot was moved there
+  byte-for-byte
+  (`memory/decisions/interview-screenshot-inbox-moves-to-personal-practice.md`).
+  The scratch-tree classification is deferred by the owner; it blocks nothing,
+  which was checked rather than assumed. Still awaiting an answer:
   `message-queue/needs-human/decisions/private-scope-reconciler.md`, deliberately
-  left open, plus three filed 2026-07-30 alongside phase 5: whether `history/`
-  should be untracked, confirmation that the story bank keeps its leaf directory
-  name (already implemented), and where the coding interview screenshot inbox
-  lives (left where it is on purpose).
+  left open, plus two filed 2026-07-30 alongside phase 5: whether `history/`
+  should be untracked and confirmation that the story bank keeps its leaf
+  directory name (already implemented).

@@ -258,7 +258,10 @@ def _iter_links(masked: str):
 
 
 # --- Heading anchors ------------------------------------------------------------
-_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(?P<text>.+?)\s*#*\s*$", re.MULTILINE)
+_HEADING_RE = re.compile(
+    r"^[ \t]{0,3}(#{1,6})[ \t]+(?P<text>.+?)[ \t]*#*[ \t]*$",
+    re.MULTILINE,
+)
 _EXPLICIT_ANCHOR_RE = re.compile(r"<a[^>]+\bid=[\"'](?P<id>[^\"']+)[\"']",
                                  re.IGNORECASE)
 _SPAN_TEXT_RE = re.compile(r"`+([^`]*)`+")
