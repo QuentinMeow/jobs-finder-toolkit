@@ -1386,3 +1386,16 @@
     files in the question bank) with no company key, filename or content quoted. No real name,
     employer, school, date, salary, application slug or posting URL. The advisory company
     detector reports (none).
+- commit: dccc2aba
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 4
+  digest: sha256:436054cc18441d46
+  finding: |
+    Read the full 4-file diff: handoff.py's scaffold + its module docstring, the new
+    ScaffoldedCompanyKeyTests, and the two doc lines describing what an unkeyed
+    application looks like. Every company string added is invented (Acme Labs, and the
+    file's existing Nimbus Robotics fixture); the new stderr line and the new code
+    comments name no employer. No real name, employer, school, date, salary,
+    application slug or posting URL, and no absolute home path. The advisory company
+    detector reports (none).
