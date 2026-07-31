@@ -1425,3 +1425,63 @@
     (243 applications, 214 distinct company strings, 208 distinct keys, 0 unkeyed) with no
     key, slug, employer or filename quoted. No real name, school, date, salary or posting
     URL. The advisory company detector reports (none).
+- commit: 48f9b46a
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:243cbe008cfa7651
+  finding: |
+    Read the full 3-file diff line by line. Public content only: the maturity ladder, the
+    company-scope fallback, and the scoped reference read are all generic instruction text.
+    The only company named anywhere is Cloudflare, which the canary set already used as its
+    public real-company fixture, and the one live figure quoted (a ~1.1 MB llms-full.txt on
+    2026-07-31) is a public docs mirror. No real name, employer from the private tree,
+    school, date, salary, posting URL or absolute home path. The advisory company detector
+    reports (none).
+- commit: ac2ea0a7
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:85442a73699d2d0e
+  finding: |
+    Read the full 2-file diff line by line. status.py gains a parse_known_args branch and a
+    hint string; the new test builds its fixtures in a tempdir with an invented candidate
+    ("Test Candidate") and an invented slug ("acme-swe-20260101"). No real name, employer,
+    school, date, salary, posting URL or absolute home path; no path outside the repo is
+    written. The advisory company detector reports (none).
+- commit: 2a9ab0b9
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 8
+  digest: sha256:d5531c46778a0b0b
+  finding: |
+    Read the full diff line by line. Four content files (SKILL.md, reference.md, LESSONS.md,
+    the canary set) plus four pure task-folder renames with no content change. All generic
+    instruction text; the only company named is Cloudflare, already the canary set's public
+    real-company fixture, and the only live figures are public docs facts (a ~1.1 MB
+    llms-full.txt, 31,553 lines, on 2026-07-31). No real name, private-tree employer, school,
+    date, salary, posting URL or absolute home path. The advisory company detector reports
+    (none).
+- commit: b53d40c3
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 15
+  digest: sha256:9506ddc9ea922ecb
+  finding: |
+    Read all 15 files. The eval record and the four verification.md files paste real command
+    output, so they were read line by line: every absolute path is redacted to <repo-root> or
+    <scratchpad>, the scratch worktree paths appear only as <scratch>/cr_wt_<id>, and the test
+    fixtures quoted are the invented "Test Candidate" and "acme-swe-20260101". The only company
+    named anywhere is Cloudflare, the canary set's existing public real-company fixture, and
+    every figure attached to it is from a public docs page, launch post or SEC filing. No real
+    name, private-tree employer, school, date, salary or posting URL. The advisory company
+    detector reports (none).
+- commit: 18eeec97
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 1
+  digest: sha256:ee56651d1148e205
+  finding: |
+    One file, the eval record. Read the diff: numeric corrections to the maturity-gate product
+    counts (22 -> 84 classified, 6 -> 17 unverified) and a rewritten paragraph on the hedging
+    trade. No new company, path or identity string enters the tree.

@@ -48,5 +48,6 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 - Overview/role files are **scanned** (keep tight); `03` technical-challenges and `05`
   differentiation are **studied** (let them run long, always end with a **My read** POV).
 - The question bank lands best when a question names a **specific** product, repo, blog post,
-  competitor, or customer. Always include a "Hard Problems & Challenges" and a
-  "Differentiation, Moat & Growth" group (matching the SKILL.md `09` file's group names).
+  competitor, or customer. SKILL.md mandates **three** deep groups — "Hard Problems &
+  Challenges", "Differentiation, Moat & Growth" and "AI Strategy & Adoption" — and that list,
+  not this one, is authoritative.
