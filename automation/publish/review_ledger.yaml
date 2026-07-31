@@ -1089,3 +1089,18 @@
     comments describe this repository's own documentation corpus, not any owner data. No person,
     employer, school, company, posting URL, application slug, salary or absolute home path
     appears. The advisory company detector reports (none).
+
+- commit: 495e2e5d
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:25b48caed48c4b49
+  finding: >-
+    Read the full 2-file diff. Review-gate tooling and its unit tests only: the not-applicable
+    branch becomes conditional on a published-export shape test, a new --allow-not-applicable
+    flag, two new operator messages, and six test cases built on throwaway git sandboxes. The
+    only paths named are public process roots (tasks/, memory/, message-queue/, history/,
+    docs/roadmap/) and the ledger path itself; the sandbox shas are literal "abc"/"beef"
+    repetitions, not real commits. No person, employer, school, company, posting URL,
+    application slug, salary or absolute home path appears. The advisory company detector
+    reports (none).

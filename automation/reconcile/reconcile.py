@@ -39,6 +39,7 @@ Design rules:
 from __future__ import annotations
 
 import argparse
+import datetime
 import importlib
 import re
 import sys
@@ -51,6 +52,21 @@ RECONCILER_SIGNATURE = "by reconcile"
 
 TASK_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*$")
 STATUS_DIRS = ("0_backlog", "1_in-progress", "2_blocked", "3_in-review", "4_done")
+
+# ``- **Last-updated**: 2026-07-30`` and the plainer forms of the same line.
+_LAST_UPDATED_RE = re.compile(
+    r"^\s*[-*]?\s*\**Last-updated\**\s*:\s*(?P<date>\S+)", re.MULTILINE)
+# How stale docs/roadmap/current-state.md may be before it is a finding.
+#
+# 30 days is this repo's existing definition of "old": message-queue reviews are
+# swept at 30 days and the discovery scans carry a 30-day hard TTL. It is also
+# ~10x the observed cadence — current-state.md was rewritten eight times in the ten
+# days before this constant was written — so a roadmap that trips it is stale by any
+# reading, not merely quiet. The cost is real and deliberate: this check runs in
+# pre-commit and CI, so a roadmap left undated for a month blocks every commit until
+# somebody dates it. That is the point; the alternative is the read order sending
+# agents to a document nobody has confirmed since last year.
+ROADMAP_MAX_AGE_DAYS = 30
 
 # The owner's company index lives under this root. It is the only PRIVATE root any
 # check names; ``company_index.DEFAULT_REL`` is the single source for the file path
@@ -289,18 +305,55 @@ def check_skill_manifests() -> list[Finding]:
     return findings
 
 
-def check_roadmap_fresh() -> list[Finding]:
-    """docs/roadmap/current-state.md exists alongside desired-state.md and is dated."""
+def check_roadmap_fresh(today: datetime.date | None = None) -> list[Finding]:
+    """current-state.md exists beside desired-state.md, is dated, and is RECENT.
+
+    The check used to test that the STRING ``Last-updated`` appeared anywhere in the
+    file. It never read the date, so a roadmap a year stale passed, and so would
+    ``Last-updated: whenever``. ``docs/roadmap/README.md`` says this check "keeps it
+    dated" and the read order routes agents here for what is true today; both claims
+    were resting on a substring.
+    """
     findings: list[Finding] = []
     roadmap = REPO_ROOT / "docs" / "roadmap"
     if not roadmap.is_dir():
         return findings
+    desired = roadmap / "desired-state.md"
+    if not desired.is_file():
+        # Named in this function's contract since it was written, never checked.
+        # The gap between the two files IS the backlog's source; one of them alone
+        # is not a roadmap.
+        findings.append(Finding("roadmap-fresh", _rel(desired), "missing"))
     current = roadmap / "current-state.md"
     if not current.is_file():
         findings.append(Finding("roadmap-fresh", _rel(current), "missing"))
-    elif "Last-updated" not in current.read_text(encoding="utf-8"):
+        return findings
+
+    match = _LAST_UPDATED_RE.search(current.read_text(encoding="utf-8"))
+    if match is None:
         findings.append(Finding("roadmap-fresh", _rel(current),
                                 "missing a Last-updated line"))
+        return findings
+    raw = match.group("date").strip("`*_")
+    try:
+        stamp = datetime.date.fromisoformat(raw)
+    except ValueError:
+        findings.append(Finding(
+            "roadmap-fresh", _rel(current),
+            f"Last-updated: {raw!r} is not an ISO date (YYYY-MM-DD)"))
+        return findings
+
+    age = ((today or datetime.date.today()) - stamp).days
+    if age < 0:
+        findings.append(Finding(
+            "roadmap-fresh", _rel(current),
+            f"Last-updated: {raw} is in the future — a date nobody can go stale past "
+            f"is not a freshness claim"))
+    elif age > ROADMAP_MAX_AGE_DAYS:
+        findings.append(Finding(
+            "roadmap-fresh", _rel(current),
+            f"Last-updated: {raw} is {age} days old (limit {ROADMAP_MAX_AGE_DAYS}) — "
+            f"describe what is true today, then re-date it"))
     return findings
 
 
