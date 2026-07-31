@@ -108,11 +108,10 @@ pre-commit hook and CI) fails on any drift. Edit the canonical source, never a c
 (This is "Approach 2" of the historical design exploration in
 `docs/designs/skill-script-sharing/`.)
 
-Skills are discovered by listing `skills/` — any AI agent that reads
-`AGENTS.md` finds them there. `.claude/skills/` and `.cursor/skills/` are
-compatibility symlinks for tools that look in their own skill directories, and
-`.claude-plugin/marketplace.json` publishes the public skills as a Claude Code plugin
-marketplace.
+The public skill sources live in `skills/`. Per-skill compatibility adapters in
+`.agents/skills/`, `.claude/skills/`, and `.cursor/skills/` make the same set
+discoverable to Codex, Claude Code, and Cursor. `.claude-plugin/marketplace.json`
+also publishes the public skills as a Claude Code plugin marketplace.
 
 ## Public / private split
 

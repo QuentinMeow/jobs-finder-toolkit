@@ -98,13 +98,13 @@ OK: no public-repo leaks detected. Safe to publish.
 ```console
 $ .venv/bin/python automation/maintenance/gardener/gardener.py verify-links
   BROKEN references: 1
-    AGENTS.md:98  ->  skills/coding-interview/
+    AGENTS.md:98  ->  skills/<overlay-only-skill>/
   skill symlinks: all resolve
   vendor drift check: OK — vendored copies in sync
 ```
 
 The single finding is caused ONLY by the missing private overlay in this
-worktree: `skills/coding-interview` is the gitignored symlink
+worktree: `skills/<overlay-only-skill>` is the gitignored symlink
 `bootstrap_overlay.py` creates when `private/` is mounted. It pre-exists this
 change and resolves in any overlay-mounted checkout.
 

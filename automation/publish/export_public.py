@@ -254,14 +254,14 @@ def _copy_tree(rel_dir: str, dest_root: Path, copied: list[str],
 
 
 def _regenerate_symlinks(dest_root: Path, skills: list[str]) -> list[str]:
-    """Recreate .claude/skills + .cursor/skills compat symlinks for PUBLIC skills.
+    """Recreate every runtime compatibility tree for PUBLIC skills.
 
     Mirrors the source checkout: ``<host>/<skill> -> ../../skills/<skill>``. The
     trees are REGENERATED rather than copied, because git records a symlink as a
     blob holding its target and the source trees may also hold links for skills
     that are not part of this repo. ``skills`` comes from the SKILL.md
-    frontmatter, so the private coding-interview skills are excluded by
-    construction rather than by a hand-maintained exception.
+    frontmatter, so overlay-only skills are excluded by construction rather than
+    by a hand-maintained exception.
     """
     created: list[str] = []
     for host in sync_skill_manifests.SYMLINK_HOSTS:

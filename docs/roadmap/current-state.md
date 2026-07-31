@@ -100,5 +100,5 @@
   `message-queue/needs-human/decisions/private-scope-reconciler.md`, deliberately
   left open, plus three filed 2026-07-30 alongside phase 5: whether `history/`
   should be untracked, confirmation that the story bank keeps its leaf directory
-  name (already implemented), and where the coding-interview screenshot inbox
+  name (already implemented), and where the coding interview screenshot inbox
   lives (left where it is on purpose).

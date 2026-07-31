@@ -91,13 +91,13 @@ $ <venv> automation/metrics/instruction_budget.py --strict
 skills/application-tracker/SKILL.md   483 lines   BUDGET 600   ok   (all files ok)
 $ <venv> automation/maintenance/gardener/gardener.py verify-links
   BROKEN references: 1
-    AGENTS.md:98  ->  skills/coding-interview/
+    AGENTS.md:98  ->  skills/<overlay-only-skill>/
   skill symlinks: all resolve
   vendor drift check: OK — vendored copies in sync
 ```
 
 The single verify-links finding is the pre-existing private-overlay pointer
-(`skills/coding-interview/` exists only when `private/` is mounted; this
+(`skills/<overlay-only-skill>/` exists only when `private/` is mounted; this
 worktree has no overlay). It is present on the base branch and untouched by
 this change; it resolves in the primary checkout.
 

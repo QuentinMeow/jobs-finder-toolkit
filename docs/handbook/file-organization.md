@@ -42,11 +42,11 @@ where its purpose is obvious:
 Skill-scoped code is an accepted exception: a skill may keep its implementation in its own
 `skills/<skill>/scripts/` because the parent skill folder already names the purpose.
 
-**Coding-interview files** (`config.companies_root()/<company>/coding/`): a single-file
+**Coding interview files** (`config.companies_root()/<company>/coding/`): a single-file
 solution stays flat as `<problem>.py`; give a problem its **own** subfolder
 `coding/<problem>/<problem>.py` only when it carries extra assets (question screenshots,
 PDFs, input files). Do not hard-wrap code lines in these files — keep each line on one line
-unless it exceeds 150 characters (see the `coding-interview` skill).
+unless it exceeds 150 characters (see the applicable overlay-only interview skill).
 
 ## Scratch & temporary files
 

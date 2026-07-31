@@ -45,7 +45,7 @@ Phases 6, 7 and 8 are **not started**. Their preconditions are now met.
 - **[The story bank keeps its directory name — confirm?](../../../message-queue/needs-human/decisions/story-bank-keeps-its-leaf-name.md)**
   Already implemented, filed for the record. Renaming it to the design's spelling would
   have forced a 33-line edit inside files your interview ruling said not to alter.
-- **[Where does the coding-interview screenshot inbox live?](../../../message-queue/needs-human/decisions/coding-interview-todo-inbox-home.md)**
+- **[Where does the coding interview screenshot inbox live?](../../../message-queue/needs-human/decisions/interview-screenshot-inbox-home.md)**
   Left exactly where it is, on purpose — changing a folder you drag files into
   mid-interview is not something to slip into a 747-file migration.
 - **Still open from before, unchanged:**

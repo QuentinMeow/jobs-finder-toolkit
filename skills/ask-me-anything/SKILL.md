@@ -200,7 +200,7 @@ Once you hear back (folder in `4_in_progress/`), prep with two skills:
 (Real interview products mount under the private overlay — `private/companies/<key>/`
 for company-specific material, `private/me/interviews/` for the rest.)
 
-(Coding-interview prep is a separate **private** skill that ships only with the private
+(Coding interview prep is a separate **private** skill that ships only with the private
 overlay, so it isn't part of the public toolkit.)
 
 **Dependencies:** network access for live company research (`curl`/web fetch); the
@@ -230,8 +230,8 @@ specific `SKILL.md` for the step at hand — this guide is the map, those are th
 ## Public vs Private (why some things aren't here)
 
 The toolkit ships as a **public** repo (timeless tooling + the fake example candidate) with an
-optional **private overlay** (your real identity, applications, interviews, and the private
-`coding-interview` skill) — its own git repo mounted at a git-ignored `private/` path. If you
+optional **private overlay** (your real identity, applications, interviews, and
+any overlay-only skills) — its own git repo mounted at a git-ignored `private/` path. If you
 cloned the public repo, everything in Steps 0–5 works with the example config immediately; drop
 in your own `config.yaml` + private files to make it yours. For the authoritative model see
 **`AGENTS.md`** → "Public vs Private", the README's "Public + private (two-repo) setup", and

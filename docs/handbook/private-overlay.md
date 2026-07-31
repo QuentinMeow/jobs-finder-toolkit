@@ -9,7 +9,7 @@ real person or a real job hunt stays **private**. It ships as two layers:
    tied to a real person or a dated posting.
 2. **PRIVATE overlay repo** — its **own git repo**, synced to a private GitHub
    remote, holding your real data: profile, resume baseline, reference DOCX,
-   applications, interviews, the private coding-interview skills, `config.yaml`,
+   applications, interviews, any overlay-only skills, `config.yaml`,
    and your real job-search profile YAML(s).
 
 The overlay **mounts into a git-ignored `private/` directory** inside a public
@@ -24,9 +24,10 @@ git-ignored in the public repo, your real data is never committed to the public 
   overlay, so the rule has no exceptions — *if a path does not start with `private/`,
   what you write there is published.* The overlay is reached only through
   `config.*()` accessors and the git-ignored runtime entries described in step 4 below.
-- The exported public repo's `.gitignore` ignores `private/`, `config.yaml`, the
-  private-skill runtime entries under `.claude/skills/` + `.cursor/skills/`, and the
+- The exported public repo's `.gitignore` ignores `private/`, `config.yaml`, and the
   legacy in-place product folders (`applications/`, `interviews/`, `.agents/inputs/`).
+  Exact overlay-only runtime adapter paths live only in the checkout's
+  `.git/info/exclude`, which bootstrap maintains from the mounted overlay.
   So you can still work **in place** for those product trees; everything else belongs
   under `private/`. This layered source checkout may carry private products on a
   private branch; the public exporter excludes those paths before publishing.
@@ -45,11 +46,12 @@ git-ignored in the public repo, your real data is never committed to the public 
   `JOBHUNT_PERSONAL_TOKENS` **arms** it; `leak_tokens.txt` adds tokens but cannot arm it,
   and an unarmed guard exits 2 instead of reporting "safe to publish" (`--allow-unarmed`
   runs the token-independent checks knowingly).
-- Skills are discovered by listing `skills/` (public) plus the agent host trees
-  `.claude/skills/` and `.cursor/skills/` (see `AGENTS.md`). A private skill lives
-  only in the overlay; `automation/bootstrap_overlay.py` gives it a git-ignored entry
-  in those host trees pointing straight at `private/skills/<name>`, so it is
-  discoverable **only** when the overlay is mounted, and never sits under `skills/`.
+- Skills are discovered through the tracked public adapters plus the Codex, Claude
+  Code, and Cursor agent-host trees (see `AGENTS.md`). A private skill lives only
+  in the overlay; `automation/bootstrap_overlay.py` gives it a repository-locally
+  ignored entry in all three host trees pointing straight at
+  `private/skills/<name>`, so it is discoverable **only** when the overlay is
+  mounted and its name never enters the tracked public tree.
 - `config.yaml`'s `paths.*` are resolved **relative to the config file's
   directory**, so you can point them at `private/…` (or anywhere) and swap the
   fake example candidate for your real one without editing any tooling.
@@ -101,8 +103,7 @@ my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 │       └── company-levels.yaml      # -> paths.company_levels_yaml
 ├── store/                     # raw-data layer, git-ignored payloads (-> paths.data_root)
 └── skills/
-    ├── coding-interview/      # private practice-generation skill
-    ├── coding-interview-cleanup/ # private screenshot-cleanup/coaching skill
+    ├── <overlay-skill>/       # zero or more private skills
     └── skill-notes/           # candidate-specific references grouped by public skill
         └── resume-writer/     # -> config.skill_references_dir("resume-writer")
 ```
@@ -231,12 +232,14 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    python automation/bootstrap_overlay.py          # add --check to preview, make no changes
    ```
 
-   It writes **nothing** into the public tree. With `private/` mounted it links each
-   private skill — any `private/skills/<name>/` holding a `SKILL.md` — into the agent
-   host trees as `.claude/skills/<name>` and `.cursor/skills/<name>`, pointing straight
-   at `private/skills/<name>`. Those entries are git-ignored, so the runtime lists the
-   private skills next to the public ones while the public index can never carry them.
-   Adding a private skill? Add its two `.gitignore` lines; bootstrap warns if you forget.
+   It writes **nothing tracked** into the public tree. With `private/` mounted it
+   links each private skill — any `private/skills/<name>/` holding a `SKILL.md` —
+   into the Codex, Claude Code, and Cursor host trees, pointing straight at
+   `private/skills/<name>`. Before creating those adapters, bootstrap writes their
+   exact paths into a managed block in `.git/info/exclude`. That file is local Git
+   metadata: it is never committed or exported, so every runtime sees the skill
+   while the public repository never learns its name. Adding or renaming a private
+   skill requires only re-running bootstrap.
 
    Your other overlay content needs no wiring at all — the toolkit reaches it through
    config accessors: personal search profiles via `config.search_profiles_dir()`
@@ -273,8 +276,10 @@ there is no export/mirror step between a maintainer checkout and what you see.
 fresh history from the maintainer's pre-split combined repo, and lives on as the
 end-to-end harness for the leak-guard test suite and as a sanitized-copy tool.)
 
-The gate is the leak guard (`automation/publish/check_public.py`). It fails if any
-private skill, `private/` path, tracked `references_private/` file, or
+The gate is the leak guard (`automation/publish/check_public.py`). It derives
+overlay-only skill names from mounted `private/skills/*/SKILL.md` at runtime and
+fails if any appears in the tracked public tree. It also fails on any private
+skill tree, `private/` path, tracked `references_private/` file, or
 personal-identity token (in a path, text content, or extracted `.docx`/`.pdf`
 content) is tracked. Its tokens are derived at runtime from `config.yaml` +
 `private/leak_tokens.txt` + `JOBHUNT_PERSONAL_TOKENS` (nothing hardcoded), so

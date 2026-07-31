@@ -1,11 +1,11 @@
 """Tests for the skill-visibility single source of truth.
 
 ``skills/<name>/SKILL.md`` frontmatter (``visibility: public|private``) is the ONE
-declaration of whether a skill ships. Four surfaces are derived from it — the
-exporter's public-skill list, ``.claude-plugin/marketplace.json``, and the
-``.claude/skills`` / ``.cursor/skills`` compat symlink trees — and they used to be
-hand-maintained copies that drifted (``search-recall-audit`` existed but had
-never shipped in any export and was not installable as a plugin).
+declaration of whether a skill ships. Five surfaces are derived from it — the
+exporter's public-skill list, ``.claude-plugin/marketplace.json``, and the Codex,
+Claude Code, and Cursor compat symlink trees — and they used to be hand-maintained
+copies that drifted (``search-recall-audit`` existed but had never shipped in any
+export and was not installable as a plugin).
 
 These tests work on a SYNTHETIC tree so flipping a visibility is possible without
 touching the real repo, plus a handful of assertions against the live tree so the
@@ -319,12 +319,12 @@ class LiveTreeTests(unittest.TestCase):
         """Phase 4 invariant: nothing under ``skills/`` is private any more.
 
         This replaces an assertion that read the private skills THROUGH the
-        deleted ``skills/coding-interview*`` overlay symlinks and skipped itself
-        when the overlay was absent. Those symlinks put overlay content at a
-        public-looking path, which is exactly what phase 4 removed, so the
-        strictly stronger statement now holds in every checkout: ``skills/`` is
-        entirely public. ``check_public.find_private_skill_violations`` stays
-        armed for the case a private skill is ever put back there.
+        deleted overlay symlinks and skipped itself when the overlay was absent.
+        Those symlinks put overlay content at a public-looking path, which is
+        exactly what phase 4 removed, so the strictly stronger statement now
+        holds in every checkout: ``skills/`` is entirely public.
+        ``check_public.find_private_skill_violations`` stays armed for the case
+        a private skill is ever put back there.
         """
         self.assertEqual(ssm.private_skills(REPO_ROOT), [])
 

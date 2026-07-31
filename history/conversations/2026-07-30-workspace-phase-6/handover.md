@@ -52,7 +52,7 @@
   looks authoritative is the failure mode this phase removes. While it exists it stays a
   resurrection source for rows you later un-skip.
 - The four decisions already open before this session are unchanged: `history/` untracking,
-  the story-bank leaf name, the coding-interview screenshot inbox, and the two you parked
+  the story-bank leaf name, the coding interview screenshot inbox, and the two you parked
   (`private-scope-reconciler`, `logs-as-store-projections`). The parked
   logs-as-projections one gained a dated note: this phase did not answer it, but it raised
   the cost of answering "yes" for the applications half, because the append-only file holds

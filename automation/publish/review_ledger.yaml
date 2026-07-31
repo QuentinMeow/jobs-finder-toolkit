@@ -856,3 +856,16 @@
     and describing the one overruled call BY SHAPE ("a regional joint venture",
     "its brand") with neither company named. Read that diff in full for exactly
     that reason. The advisory detector reports (none) for the range.
+- commit: 4f7ea707
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 1
+  digest: sha256:4a36a4670fc66484
+  finding: >-
+    Read the full one-file diff. It gives a pending interview-inbox decision a
+    generic public filename and title, marks the answer as being folded, and
+    records the owner's choice as a path under the private overlay. The removed
+    filename already existed in published history; the new snapshot does not
+    retain that overlay-only identifier. No person, employer, school, posting
+    URL, application slug, salary or absolute home path appears. The advisory
+    detector reports (none).

@@ -41,16 +41,16 @@ canaries:
 
   - id: ama-private-overlay
     requires_overlay: false
-    prompt: "Where does my real personal data go, and why isn't the coding-interview skill here?"
+    prompt: "Where does my real personal data go, and why are some of my skills not in this public checkout?"
     setup: "Default setup."
     expected_behavior:
       - "Explains the public repo (timeless tooling + the fake example candidate) + an optional private overlay — real identity/applications/interviews mount under a git-ignored `private/` path that is its own git repo."
       - "Says config.yaml is git-ignored and its paths point at the private overlay; real profile/baseline/reference DOCX and all applications/interviews stay private."
-      - "Explains the coding-interview skill ships ONLY with the private overlay, so it is not part of the public toolkit."
+      - "Explains overlay-only skills ship ONLY with the private overlay, so they are not part of the public toolkit."
       - "Points to the authoritative sources — AGENTS.md 'Public vs Private' and docs/handbook/private-overlay.md."
     failure_modes:
       - "Suggests committing real identity to the public repo, or says config.yaml is tracked."
-      - "Claims coding-interview is a public skill, or invents a different private-data location."
+      - "Claims an overlay-only skill is public, or invents a different private-data location."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 

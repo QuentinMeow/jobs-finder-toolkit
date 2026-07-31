@@ -276,8 +276,8 @@ class TestGitIgnoredRefs(VerifyLinksTestCase):
     """A git-ignored path exists only in some checkouts — never a claim."""
 
     def test_ignored_ref_is_skipped(self) -> None:
-        self.write(".gitignore", "skills/coding-interview\n")
-        self.write("docs/handbook/x.md", "The private `skills/coding-interview/SKILL.md`.\n")
+        self.write(".gitignore", "skills/hidden-practice\n")
+        self.write("docs/handbook/x.md", "The private `skills/hidden-practice/SKILL.md`.\n")
         self.git_init()
         broken, _, _, skipped, _ = V.check_references()
         self.assertEqual(broken, [])
@@ -311,6 +311,7 @@ class TestSymlinkRootsFailClosed(VerifyLinksTestCase):
     """check_symlinks() must not report success after verifying nothing."""
 
     def test_zero_link_roots_is_a_finding(self) -> None:
+        self.assertFalse((self.root / ".agents/skills").exists())
         self.assertFalse((self.root / ".claude/skills").exists())
         self.assertFalse((self.root / ".cursor/skills").exists())
         bad = V.check_symlinks()

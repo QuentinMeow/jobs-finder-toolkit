@@ -88,8 +88,8 @@ inspecting nothing. They no longer do. What a later phase needs to know:
   The queue item that carried the question is closed and deleted.
 - **`SKILL.md` frontmatter is the only source of skill visibility.**
   `automation/publish/sync_skill_manifests.py` derives the public set at runtime;
-  `export_public.py`, `.claude-plugin/marketplace.json`, `.claude/skills/*` and `.cursor/skills/*`
-  all follow it, and the reconciler's `skill-manifests` check fails when they disagree.
+  `export_public.py`, `.claude-plugin/marketplace.json`, and all three runtime adapter
+  trees follow it; the reconciler's `skill-manifests` check fails when they disagree.
   `search-recall-audit` ships as a result.
 - **The exporter enumerates through `git ls-files`**, warns on an allowlisted directory that
   resolves to nothing, and refuses under `--strict`. `ALLOWLIST_DIRS` now carries
@@ -98,8 +98,8 @@ inspecting nothing. They no longer do. What a later phase needs to know:
   retired the `handbook` and `design` entries in favour of `docs`.)
 - **`check_public._DENY_TREES` is an append-only union.** It already carries the names phase 5
   introduces — `store/`, `me/`, `companies/`, `market/` — alongside the historical
-  `applications/`, `interviews/`, `data/`, `job-search-profiles/`, `.agents/inputs/` and the two
-  `skills/coding-interview*` trees. Two tests lock this: `test_deny_trees_are_append_only`
+  `applications/`, `interviews/`, `data/`, `job-search-profiles/`, and
+  `.agents/inputs/`. Two tests lock this: `test_deny_trees_are_append_only`
   fails if a name is removed, and `test_every_root_anchored_gitignore_product_rule_is_denied`
   fails if a root-anchored `/x/` rule is added to the **public** `.gitignore` without a matching
   deny entry.
@@ -175,12 +175,11 @@ narrowed to diff-only, minus the pre-change baseline, matching display names, sk
 
 Merged as PR #86, commits `1b837b7`…`7809b4b`. All eight inbound symlinks that
 `automation/bootstrap_overlay.py` used to create are deleted: four personal search-profile files
-under `skills/job-search/profiles/`, two `skills/<skill>/references_private/` folders, and the
-two `skills/coding-interview{,-cleanup}/` skill trees. `_overlay_links()` is gone; the private
-skills are reached through git-ignored `.claude/skills/<name>` and `.cursor/skills/<name>` entries
-pointing straight at `private/skills/<name>`, and the runtime lists 13 skills (11 public, 2
-private). The matching `.gitignore` rules were removed in the same commit, leaving a comment
-that records why.
+under `skills/job-search/profiles/`, two `skills/<skill>/references_private/` folders, and two
+overlay-only skill trees. `_overlay_links()` is gone; the private skills are reached through
+runtime adapter entries pointing straight at `private/skills/<name>`, and the runtime lists
+the public and mounted private sets together. The matching `.gitignore` rules were removed in
+the same commit, leaving a comment that records why.
 
 **The rule this establishes, which every later phase depends on: if a path does not start with
 `private/`, what you write there is published.** There are no exceptions left — no glob, no
@@ -731,7 +730,7 @@ merged.
   | application-tracker | 2 | 0 |
   | interview-calendar | 1 | 0 |
 
-  The two private skills (`private/skills/coding-interview{,-cleanup}/SKILL.md`) name one each.
+  The two overlay-only `private/skills/<name>/SKILL.md` files name one each.
 - **7 handbook docs**, not 5, name `private/`: `private-overlay.md` (45 lines),
   `public-private-split.md` (9), `repo-map.md` (6), `architecture.md` (4),
   `command-cookbook.md` (3), `memory-map.md` (2), `configuration.md` (1).

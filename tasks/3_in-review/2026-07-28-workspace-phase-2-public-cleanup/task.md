@@ -61,7 +61,7 @@ contract.
 `evals/` holds nine tracked per-skill folders today, one `canaries.yaml` each
 (application-tracker, ask-me-anything, behavioral-interview-prep, company-research,
 email-assistant, github-workflow, interview-calendar, job-search, resume-writer), plus
-`rubrics/` and `results/`. An empty untracked `evals/coding-interview-cleanup/` sits on disk;
+`rubrics/` and `results/`. An empty untracked overlay-only eval directory sits on disk;
 git carries no empty directories, so it is local residue.
 
 Consolidating `docs/` reverses a decision recorded in `handbook/file-organization.md`; write

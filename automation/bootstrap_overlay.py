@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
-"""Wire a fresh checkout after cloning: private-skill runtime links + git hooks.
+"""Wire a fresh checkout after cloning: overlay-skill runtime links + git hooks.
 
 Stdlib-only and idempotent — safe to re-run. Correct links are left untouched, a
 foreign file or a foreign git hook is NEVER clobbered (it is warned about
 instead). This is the one-shot "make my checkout work" step referenced by
 ``README.md``, ``docs/handbook/private-overlay.md``, and ``CONTRIBUTING.md``.
 
-It writes NOTHING into the public tree. It used to create eight INBOUND symlinks
-that put overlay content at public-looking paths — ``skills/coding-interview*``,
-each public skill's ``references_private/``, and one per personal job-search
-profile (whose FILENAME was itself a personal token sitting under ``skills/``).
-All eight are gone: the private skills are reached through the agent-host link
-trees below, and the other two families through ``config.skill_references_dir()``
-and ``config.search_profiles_dir()``. The rule now has no exceptions — if a path
-does not start with ``private/``, what you write there is published.
+It writes NOTHING tracked into the public tree. Overlay-only skills are reached
+through the agent-host link trees below, while the other private content families
+use ``config.skill_references_dir()`` and ``config.search_profiles_dir()``. The
+rule has no exceptions — if a path does not start with ``private/``, what you
+write there is published unless it is runtime metadata explicitly managed here.
 
 What it does:
   (a) If the private overlay is mounted at ``private/``: link each private skill
-      (``private/skills/<name>/SKILL.md``) into the git-ignored agent host trees
-      ``.claude/skills/<name>`` and ``.cursor/skills/<name>``, so the runtime
-      lists the private skills alongside the public ones. The links point
-      STRAIGHT at ``private/skills/<name>`` — no public-tree hop.
+      (``private/skills/<name>/SKILL.md``) into the Codex, Claude Code, and Cursor
+      agent-host trees, so every runtime lists it alongside the public skills.
+      The links point STRAIGHT at ``private/skills/<name>`` — no public-tree hop.
+      Their exact paths are written only to ``.git/info/exclude`` (repository-local
+      Git metadata), never to the tracked ``.gitignore``.
   (b) Always: install the tracked git hooks (``automation/hooks/pre-commit`` /
       ``automation/hooks/pre-push``) into ``.git/hooks`` — only when missing or already
       pointing there; a foreign hook is left alone with a warning. When the overlay
@@ -113,6 +111,83 @@ def _git_hooks_dir(repo: Path | None = None) -> Path | None:
     return None
 
 
+def _git_common_dir(repo: Path | None = None) -> Path | None:
+    """Resolve Git's common metadata dir for a normal checkout or worktree."""
+    repo = REPO_ROOT if repo is None else repo
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--git-common-dir"],
+        capture_output=True, text=True)
+    if proc.returncode != 0:
+        return None
+    raw = proc.stdout.strip()
+    if not raw:
+        return None
+    common = Path(raw)
+    if not common.is_absolute():
+        common = repo / common
+    return common.resolve()
+
+
+LOCAL_EXCLUDE_BEGIN = "# BEGIN jobhunt overlay skill adapters (managed)"
+LOCAL_EXCLUDE_END = "# END jobhunt overlay skill adapters (managed)"
+
+
+def _render_local_excludes(existing: str, patterns: list[str]) -> str:
+    """Replace this tool's block while preserving every user-owned exclude line."""
+    lines = existing.splitlines()
+    begin = [i for i, line in enumerate(lines) if line == LOCAL_EXCLUDE_BEGIN]
+    end = [i for i, line in enumerate(lines) if line == LOCAL_EXCLUDE_END]
+    if len(begin) != len(end) or len(begin) > 1 or (begin and begin[0] > end[0]):
+        raise ValueError("managed overlay-skill marker block is malformed")
+    if begin:
+        del lines[begin[0]:end[0] + 1]
+    while lines and not lines[-1]:
+        lines.pop()
+    if lines:
+        lines.append("")
+    lines.extend([LOCAL_EXCLUDE_BEGIN, *sorted(patterns), LOCAL_EXCLUDE_END])
+    return "\n".join(lines) + "\n"
+
+
+def _sync_local_excludes(
+        links: list[Path], *, check: bool,
+        results: list[tuple[str, str]]) -> bool:
+    """Keep exact overlay adapter names only in repository-local Git metadata.
+
+    Returns True when the current checkout already has (or was just given) the
+    required exclude block. False means callers must not create links: an
+    unignored adapter path could otherwise be staged into the public index.
+    """
+    common = _git_common_dir()
+    if common is None:
+        results.append((WARN, ".git common dir not found — refusing to wire "
+                              "overlay-only skill adapters"))
+        return False
+    path = common / "info" / "exclude"
+    try:
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        patterns = [f"/{_disp(link)}" for link in links]
+        desired = _render_local_excludes(existing, patterns)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        results.append((WARN, f"cannot manage repository-local skill excludes: {exc}"))
+        return False
+    if existing == desired:
+        results.append((OK, "repository-local overlay skill excludes already correct"))
+        return True
+    status = UPDATE if path.exists() else CREATE
+    results.append((status, "repository-local overlay skill excludes "
+                            f"need {status}"))
+    if check:
+        return False
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(desired, encoding="utf-8")
+    except OSError as exc:
+        results.append((WARN, f"cannot write repository-local skill excludes: {exc}"))
+        return False
+    return True
+
+
 # hook filename in .git/hooks -> tracked source under automation/hooks/.
 TOOLKIT_HOOKS = {"pre-commit": "pre-commit", "pre-push": "pre-push"}
 OVERLAY_HOOKS = {"pre-commit": "overlay-pre-commit", "pre-push": "overlay-pre-push"}
@@ -140,7 +215,7 @@ def _install_hooks(hooks_dir: Path, sources: dict[str, str], label: str,
 # the entries for PRIVATE skills (``-> ../../private/skills/<name>``,
 # git-ignored). Neither touches the other's entries — they are told apart by
 # where the link points.
-SKILL_HOSTS = (".claude/skills", ".cursor/skills")
+SKILL_HOSTS = (".agents/skills", ".claude/skills", ".cursor/skills")
 
 
 def _private_skill_links(private: Path) -> list[tuple[Path, Path]]:
@@ -148,8 +223,8 @@ def _private_skill_links(private: Path) -> list[tuple[Path, Path]]:
 
     A private skill is any ``private/skills/<name>/`` holding a ``SKILL.md`` —
     which excludes the sibling ``references_private/`` notes folder. A host is
-    skipped when its agent root (``.claude`` / ``.cursor``) does not exist, so a
-    checkout that uses only one editor gets only that one.
+    skipped when its agent root does not exist, so a checkout that uses only a
+    subset of the supported runtimes gets only those adapters.
     """
     skills_dir = private / "skills"
     if not skills_dir.is_dir():
@@ -169,10 +244,10 @@ def _private_skill_links(private: Path) -> list[tuple[Path, Path]]:
 def _not_ignored(links: list[Path]) -> list[str]:
     """Which of ``links`` git does NOT ignore (repo-relative). Empty off-git.
 
-    Every private-skill runtime link MUST be git-ignored: it names overlay
+    Every private-skill runtime link MUST be git-ignored: its path names overlay
     content, and a ``git add -A`` that staged one would put a private path into
-    the public index. Adding a private skill therefore needs its two ``.gitignore``
-    lines; forgetting is silent, so it is reported here.
+    the public index. The exact paths live only in the managed local exclude
+    block; forgetting is silent, so it is reported here.
     """
     rels = [_disp(p) for p in links]
     if not rels:
@@ -194,23 +269,27 @@ def bootstrap(check: bool) -> int:
     private = REPO_ROOT / "private"
     if private.is_dir():
         planned = _private_skill_links(private)
-        for link, dest in planned:
-            # Only a link we already own (one pointing into private/skills/) may
-            # be re-pointed. An entry the manifest generator owns (a same-named
-            # PUBLIC skill, -> ../../skills/<name>) or a third-party install is
-            # foreign and is warned about, never clobbered.
-            ours = (link.is_symlink()
-                    and "private/skills/" in os.readlink(link).replace(os.sep, "/"))
-            status, msg, target = _plan_symlink(link, dest, allow_replace_symlink=ours)
-            if status in (CREATE, UPDATE) and not dest.exists():
-                results.append((SKIP, f"{_disp(link)} (overlay target {_disp(dest)} missing; skipped)"))
-                continue
-            results.append((status, msg))
-            if status in (CREATE, UPDATE) and not check:
-                _apply_symlink(link, target, status)
-        for rel in _not_ignored([link for link, _ in planned]):
-            results.append((WARN, f"{rel} is NOT git-ignored — add a `/{rel}` line to "
-                                  ".gitignore so a private skill can never be staged"))
+        excludes_ready = _sync_local_excludes(
+            [link for link, _ in planned], check=check, results=results)
+        if excludes_ready:
+            for link, dest in planned:
+                # Only a link we already own (one pointing into private/skills/)
+                # may be re-pointed. A same-named PUBLIC adapter or a third-party
+                # install is foreign and is warned about, never clobbered.
+                ours = (link.is_symlink()
+                        and "private/skills/" in os.readlink(link).replace(os.sep, "/"))
+                status, msg, target = _plan_symlink(
+                    link, dest, allow_replace_symlink=ours)
+                if status in (CREATE, UPDATE) and not dest.exists():
+                    results.append((SKIP, f"{_disp(link)} (overlay target "
+                                          f"{_disp(dest)} missing; skipped)"))
+                    continue
+                results.append((status, msg))
+                if status in (CREATE, UPDATE) and not check:
+                    _apply_symlink(link, target, status)
+            for rel in _not_ignored([link for link, _ in planned]):
+                results.append((WARN, f"{rel} is NOT git-ignored — re-run bootstrap "
+                                      "to repair the repository-local exclude block"))
     else:
         results.append((SKIP, "private/ overlay not mounted — no private skills to wire"))
 

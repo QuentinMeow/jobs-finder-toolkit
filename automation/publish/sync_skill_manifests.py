@@ -11,8 +11,9 @@ any export and was not installable as a plugin):
   * ``.claude-plugin/marketplace.json`` — the plugin manifest (one entry per
     public skill, ``description`` taken from the same frontmatter so the blurb
     cannot drift either);
-  * ``.claude/skills/<name>`` and ``.cursor/skills/<name>`` — the runtime compat
-    symlink trees, ``<host>/<skill> -> ../../skills/<skill>``.
+  * ``.agents/skills/<name>``, ``.claude/skills/<name>``, and
+    ``.cursor/skills/<name>`` — the runtime compat symlink trees,
+    ``<host>/<skill> -> ../../skills/<skill>``.
 
 This module is the ONE implementation everything reads: the exporter imports
 ``public_skills()``, the reconciler imports ``findings()`` (check
@@ -41,7 +42,7 @@ same directories and are neither reported nor touched:
   * a third-party skill installed into the same host directory by some other tool.
 
 Usage:
-    # Regenerate marketplace.json + both symlink trees from the frontmatter
+    # Regenerate marketplace.json + all runtime adapter trees from the frontmatter
     .venv/bin/python automation/publish/sync_skill_manifests.py
 
     # Verify only — exit 1 if any manifest drifted (the reconciler runs this
@@ -66,7 +67,7 @@ MARKETPLACE_REL = ".claude-plugin/marketplace.json"
 
 # ``<host>/<skill> -> ../../skills/<skill>``. A host is skipped entirely when its
 # top-level directory is absent, so an agent-specific tree can simply not exist.
-SYMLINK_HOSTS = (".claude/skills", ".cursor/skills")
+SYMLINK_HOSTS = (".agents/skills", ".claude/skills", ".cursor/skills")
 SYMLINK_TARGET_PREFIX = "../../skills/"
 
 # A PRIVATE skill's runtime link in the same host dirs, written by
@@ -226,7 +227,7 @@ def marketplace_findings(repo_root: Path = REPO_ROOT) -> list[tuple[str, str]]:
     return []
 
 
-# ── .claude/skills + .cursor/skills symlink trees ────────────────────────────
+# ── Runtime skill-adapter symlink trees ─────────────────────────────────────
 
 def _managed_links(host_dir: Path) -> dict[str, str]:
     """Entries under ``host_dir`` this tool owns: symlinks into ``../../skills/``.
@@ -251,7 +252,7 @@ def _managed_links(host_dir: Path) -> dict[str, str]:
 
 
 def _active_hosts(repo_root: Path) -> list[Path]:
-    """Host dirs whose agent root (``.claude`` / ``.cursor``) exists."""
+    """Host dirs whose agent-specific root exists."""
     root = Path(repo_root)
     return [root / host for host in SYMLINK_HOSTS if (root / host).parent.is_dir()]
 

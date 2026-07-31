@@ -67,7 +67,7 @@
   pass — and the run be recorded in `evals/results/` — before this branch
   merges.
 - Environment note: `gardener.py verify-links` reports one pre-existing
-  broken reference (`AGENTS.md -> skills/coding-interview/`) because the
+  broken reference (`AGENTS.md -> skills/<overlay-only-skill>/`) because the
   private overlay is not mounted in this worktree; unrelated to this change
   and untouched by it.
 

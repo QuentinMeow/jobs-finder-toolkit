@@ -311,6 +311,8 @@ class ArmingTests(unittest.TestCase):
             leak_file.write_text("# comment\nAcmeRobotics\nStateUniversity\n",
                                  encoding="utf-8")
             with mock.patch.object(check_public, "LEAK_TOKENS_FILES", [leak_file]), \
+                 mock.patch.object(check_public, "_overlay_skill_name_tokens",
+                                   return_value=set()), \
                  mock.patch.object(check_public, "_load_shared_config",
                                    return_value=_ExampleConfigStub):
                 self.assertEqual(check_public.identity_tokens(), set())
@@ -324,6 +326,21 @@ class ArmingTests(unittest.TestCase):
         with mock.patch.object(check_public, "_load_shared_config",
                                return_value=_ExampleConfigStub):
             self.assertIn("RealName", check_public.identity_tokens())
+
+    def test_overlay_skill_names_are_derived_without_a_public_name_list(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            skill = root / "private/skills/hidden-practice"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nvisibility: private\n---\n", encoding="utf-8")
+            notes = root / "private/skills/skill-notes"
+            notes.mkdir()
+
+            self.assertEqual(
+                check_public._overlay_skill_name_tokens(root),
+                {"hidden-practice"},
+            )
 
     def test_unarmed_report_names_the_config_it_looked_for(self):
         with mock.patch.object(check_public, "_load_shared_config",
@@ -459,9 +476,9 @@ class StagedIndexTests(unittest.TestCase):
         # An overlay symlink's blob IS its target path; that path names private data.
         with tempfile.TemporaryDirectory() as td:
             repo = self._repo(td)
-            os.symlink("../private/skills/coding-interview", repo / "link")
+            os.symlink("../private/skills/hidden-practice", repo / "link")
             _git(repo, "add", "link")
-            result = check_public.scan_staged(repo, tokens=["coding-interview"])
+            result = check_public.scan_staged(repo, tokens=["hidden-practice"])
         self.assertFalse(result["ok"])
         self.assertTrue(result["violations"]["personal_token"])
 
@@ -523,7 +540,6 @@ class RealTreeStructuralTests(unittest.TestCase):
         """
         required = {
             "applications/", "interviews/", ".agents/inputs/",
-            "skills/coding-interview/", "skills/coding-interview-cleanup/",
             "data/", "job-search-profiles/",
             "store/", "me/", "companies/", "market/",
         }
@@ -620,16 +636,17 @@ class ExporterEndToEndTests(unittest.TestCase):
                       if p.is_file() and ".git/" not in p.relative_to(dest).as_posix()]
 
             # No private product trees leaked into the manifest.
-            for bad in ("applications/", "interviews/",
-                        ".agents/inputs/", "skills/coding-interview/",
-                        "skills/coding-interview-cleanup/"):
+            for bad in ("applications/", "interviews/", ".agents/inputs/"):
                 offenders = [c for c in copied if c.startswith(bad)]
                 self.assertEqual(offenders, [], f"{bad} leaked: {offenders}")
 
-            # references_private is pruned; the private skill is never copied.
+            # references_private is pruned; only frontmatter-declared public
+            # skills are copied.
             self.assertFalse([c for c in copied if "references_private" in c])
-            self.assertFalse((dest / "skills/coding-interview").exists())
-            self.assertFalse((dest / "skills/coding-interview-cleanup").exists())
+            exported_skills = {
+                p.parent.name for p in (dest / "skills").glob("*/SKILL.md")
+            }
+            self.assertEqual(exported_skills, set(export_public.public_skills()))
 
             # meta.yaml only under examples/; no stray docx/pdf outside examples/.
             for c in copied:
@@ -638,36 +655,30 @@ class ExporterEndToEndTests(unittest.TestCase):
                 if Path(c).suffix.lower() in (".docx", ".pdf"):
                     self.assertTrue(c.startswith("examples/"), c)
 
-            # The public .gitignore anchors the overlay mount + private trees.
-            # workspace-restructure phase 4 dropped the "/skills/coding-interview/"
-            # and "/skills/coding-interview-cleanup/" needles: nothing private is
-            # placed under skills/ any more, so those rules hid nothing and only
-            # kept alive the idea that a private tree may wear a public name. The
-            # names are NOT retired as a guard — check_public._DENY_TREES still
-            # carries both (test_deny_trees_are_append_only pins that), which is
-            # the layer a `git add -f` cannot override.
+            # The public .gitignore anchors the overlay mount + private product
+            # trees. Overlay-skill adapter names belong only in the checkout's
+            # repository-local Git metadata, never in this exported file.
             # Compared against the ACTIVE RULES, not the raw text: the file's own
             # comments name the retired rules on purpose.
             rules = {ln.strip() for ln in (dest / ".gitignore").read_text().splitlines()
                      if ln.strip() and not ln.strip().startswith("#")}
             for needle in ("private/", "/applications/", "/interviews/"):
                 self.assertIn(needle, rules)
-            for gone in ("/skills/coding-interview/",
-                         "/skills/coding-interview-cleanup/",
-                         "skills/coding-interview",
-                         "skills/coding-interview-cleanup",
-                         "skills/job-search/profiles/*.yaml",
+            for gone in ("skills/job-search/profiles/*.yaml",
                          "skills/*/references_private",
                          "skills/*/references_private/"):
                 self.assertNotIn(gone, rules)
+            for name in check_public._overlay_skill_name_tokens(REPO_ROOT):
+                for host in export_public.sync_skill_manifests.SYMLINK_HOSTS:
+                    self.assertNotIn(f"/{host}/{name}", rules)
             self.assertFalse([r for r in rules if r.startswith("!")],
                              "a negation is back: an ignore glob with negations is "
                              "what let a personal filename sit under skills/")
 
             # PHASE 4 INVARIANT: no exported path — file OR symlink — reaches into
-            # the overlay. The private skills' runtime entries under .claude/skills
-            # and .cursor/skills are git-ignored, so `git ls-files` never sees them
-            # and _regenerate_symlinks only writes ../../skills/<public>.
+            # the overlay. Overlay-only runtime entries are repository-locally
+            # ignored, so `git ls-files` never sees them and
+            # _regenerate_symlinks only writes ../../skills/<public>.
             inbound = [p.relative_to(dest).as_posix() for p in dest.rglob("*")
                        if p.is_symlink() and "private/" in os.readlink(p)]
             self.assertEqual(inbound, [], f"symlinks into the overlay: {inbound}")

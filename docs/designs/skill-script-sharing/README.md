@@ -232,8 +232,8 @@ Any approach is judged on:
 **Adopt Approach 4 (Hybrid), rolled out in phases.** Rationale:
 
 - This repo is a **single monorepo**, not a skill marketplace, and the compatibility
-  symlinks (`.claude/skills`, `.cursor/skills`) already give cross-tool reuse *within
-  the repo*. So the extreme portability of pure vendoring (Approach 2) is not needed
+  adapter trees already give cross-tool reuse *within the repo*. So the extreme
+  portability of pure vendoring (Approach 2) is not needed
   today — but it is cheap to preserve as an option for the one or two skills that are
   genuinely reusable elsewhere (`job-search`).
 - The real, measured pain is **fragile `sys.path` imports (§2.1, §2.2)**, **an
