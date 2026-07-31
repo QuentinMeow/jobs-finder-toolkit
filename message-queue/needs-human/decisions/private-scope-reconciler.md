@@ -35,7 +35,7 @@ written):
 | memory-schema | 0 |
 | memory-index | 1 — the overlay's memory index is missing (`--fix-index` would write it) |
 | handover-present | 0 |
-| roadmap-fresh | 0 (the overlay has no roadmap folder — the check no-ops) |
+| roadmap-dated | 0 (the overlay has no roadmap folder — the check no-ops) |
 | skill-manifests | n/a — a public-tree surface |
 
 So switching this on TODAY would block every commit in the overlay until those two

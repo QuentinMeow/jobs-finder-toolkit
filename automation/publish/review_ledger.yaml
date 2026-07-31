@@ -1485,3 +1485,68 @@
     One file, the eval record. Read the diff: numeric corrections to the maturity-gate product
     counts (22 -> 84 classified, 6 -> 17 unverified) and a rewritten paragraph on the hedging
     trade. No new company, path or identity string enters the tree.
+- commit: 9eef3a8d
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 13
+  digest: sha256:555a574fd0645449
+  finding: |
+    Read the diff. Toolkit + docs only: the reconciler's roadmap check loses its age branch and
+    is renamed roadmap-dated, a new report-only gardener routine takes over staleness, and the
+    docs that describe the gate follow. No candidate data, no company, no employer, no date about
+    the owner's job hunt, no absolute home path. The advisory company detector reports (none).
+- commit: 4e81eae5
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:e6ca8d3e262c0dea
+  finding: |
+    This commit REMOVES a near-leak rather than adding one. Read the diff: a LESSONS bullet that
+    named two real companies now describes the exemplar by shape and states the rule; the new
+    queue item describes the redaction by shape and names no company. No identity token, no
+    application slug, no date about the owner's job hunt. The advisory company detector reports
+    (none), which is expected — it reads names ADDED by a diff, and this diff only removes them.
+- commit: 04fcc305
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:1ecbbf6957205270
+  finding: |
+    Read the diff. A handbook markdown link becomes a backticked path (the export never ships
+    memory/, so the link 404s there), one CI comment gains a pointer to the test that now proves
+    the claim, and the publish suite gains that test. No candidate data, no company, no absolute
+    home path. The advisory company detector reports (none).
+- commit: 3948dd1c
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 6
+  digest: sha256:dc7115e4fd9b08c7
+  finding: |
+    Six task-record files, corrections to quoted command output plus dated notes saying what was
+    wrong. Read the diff: the replaced transcripts are grep/sed/budget output over public toolkit
+    files, and the one command that gained a JOBHUNT_CONFIG pin gained it precisely so it stops
+    describing the owner's real tree. No slug, company, employer or absolute home path enters.
+    The advisory company detector reports (none).
+- commit: 24af702f
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:365dc35f62805f6c
+  finding: |
+    Two files in automation/metrics: a NEAR warning band on the instruction-budget report plus
+    its tests. Read the diff — arithmetic and print statements over public instruction files,
+    no path, name or candidate data. NOTE for a future reader: the report's TABLE names private
+    skill files when an overlay is mounted, so a run of it must never be pasted into public
+    text. Nothing in this diff does that. The advisory company detector reports (none).
+- commit: 2b80acd1
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:4e620ee8cfe9ad0e
+  finding: |
+    Three files: one queue item, one task update, one session handover. Read all three in full
+    for public-text safety, because a handover is the shape of document that leaks. They name a
+    private PR by number and title (generic), application and company-folder COUNTS (already the
+    established practice across the design docs, the ledger and the task tree), and no company,
+    employer, slug, private skill name or absolute home path. The advisory company detector
+    reports (none).

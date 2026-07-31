@@ -228,7 +228,7 @@ Router:
 - **Doc ownership**: `README.md` is human-facing (no agent instructions); `AGENTS.md` is agent-facing
   (no human usage guides).
 - **The reconciler is a gate**: `automation/reconcile/reconcile.py --check` (process-layer
-  schemas, memory index, handovers, roadmap freshness) runs in pre-commit + CI and must pass —
+  schemas, memory index, handovers, a well-formed roadmap date) runs in pre-commit + CI and must pass —
   fix the finding or let `--file-retries` queue it; never weaken a check to make a commit pass,
   never bypass with `--no-verify`.
 - **Risk-based eval gate on harness edits**: for any change to a skill's

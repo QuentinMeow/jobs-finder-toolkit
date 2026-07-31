@@ -9,9 +9,11 @@
   repositories, with `reconcile --check --require-roots` wired into pre-commit
   and CI. One item was reversed: top-level `handbook/` + `design/` became
   `docs/{handbook,designs}` under workspace phase 2's superseding ADR. *(This
-  bullet described a PR train "in review" for nine days after it merged; the
-  freshness gate could not see that, because it only checks that a
-  `Last-updated` line exists.)*
+  bullet described a PR train "in review" for nine days after it merged. No date
+  check catches that: the reconciler's `roadmap-dated` gate proves only that the
+  `Last-updated` line is a real, non-future date, and the gardener's
+  `roadmap-staleness` routine only measures its age. A wrong bullet under a fresh
+  date reads as current to both — re-dating means re-reading.)*
 - **Email program**: design merged (PR #54: `docs/designs/application-progress-calendar/`,
   `docs/designs/raw-data-layer/03-provider-interfaces.md`, `04-email-download-categorization.md`).
   Stage 1 built on `email/stage-1-provider-contract` (PR #60): send-less

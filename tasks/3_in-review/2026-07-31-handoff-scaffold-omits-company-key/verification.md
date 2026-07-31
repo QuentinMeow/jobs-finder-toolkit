@@ -8,11 +8,16 @@ session scratchpad to `<scratchpad>`; nothing else is edited.
 
 ```
 $ grep -n -A3 'scaffold = {' skills/job-search/scripts/handoff.py
-489:    scaffold = {
-490-        "job_metadata_schema_version": APPLICATION_SCHEMA_VERSION,
-491-        "company": str(lead.get("company") or ""),
-492-        # The owner's company-index key, ALWAYS written and ALWAYS empty here.
+492:    scaffold = {
+493-        "job_metadata_schema_version": APPLICATION_SCHEMA_VERSION,
+494-        "company": str(lead.get("company") or ""),
+495-        # The owner's company-index key, ALWAYS written and ALWAYS empty here.
 ```
+
+*(Corrected 2026-07-31: the first capture put the head of the block at 489 — the line it sat
+on BEFORE this change added three lines above it — while numbering the rest from the new
+file. 492 is the post-change line, which is what `git show dccc2ab`'s hunk header
+`@@ -489,6 +492,36 @@` says too, and the command above reproduces it at head.)*
 
 The comment that follows records three things: why the field is written (absence is invisible),
 why it is empty (the index is private and the key is owner-assigned), and why `null` and not `""`

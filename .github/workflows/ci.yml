@@ -96,7 +96,10 @@ jobs:
           --consumer skills/email-assistant/scripts
 
       # 2b. Process-layer invariants: queue/task/memory schemas, memory index,
-      #     handovers, roadmap freshness (single source of truth: templates/).
+      #     handovers, a well-formed roadmap date (single source of truth:
+      #     templates/). Roadmap STALENESS is deliberately not here: it is the
+      #     gardener's report-only roadmap-staleness routine, because an age limit
+      #     in this step fails every commit in the repo once the clock runs out.
       #     NOTE: deliberately WITHOUT --require-roots. Every check no-ops when its
       #     folder is absent so the published export (which ships none of
       #     message-queue/, tasks/, memory/, docs/roadmap/, history/) stays green;
@@ -114,7 +117,10 @@ jobs:
       #     NOTE: deliberately WITHOUT --require-roots, exactly like the reconciler
       #     above. That flag asserts every root named in a constant exists, which is
       #     a maintainer-checkout assertion; the published export ships fewer roots
-      #     and would go red. It lives in the pre-commit hook only.
+      #     and would go red. It lives in the pre-commit hook only. That this step is
+      #     ALSO green inside a real export is not left to prose: it is asserted by
+      #     automation/publish/tests -> test_verify_links_passes_inside_the_export,
+      #     which is the only place a markdown link into a non-exported root shows up.
       - name: References + markdown links
         run: python automation/gardener/verify_links.py
 

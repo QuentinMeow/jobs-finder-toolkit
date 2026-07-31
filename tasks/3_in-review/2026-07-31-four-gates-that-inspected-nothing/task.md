@@ -66,4 +66,10 @@ checkout too.
       `EXPORT_ABSENT_ROOTS` against `export_public.ALLOWLIST_DIRS`
 - [x] `check_roadmap_fresh` parses the date and fails on missing / unparseable / future
       / older than `ROADMAP_MAX_AGE_DAYS` (30), and checks `desired-state.md` exists
+      *(Amended 2026-07-31, later in the same stack: the AGE half was removed from the
+      gate and the check renamed `roadmap-dated`. An age limit in a check that runs in
+      pre-commit AND CI fails every commit in the repo once the clock runs out — with
+      a 30-day window and a roadmap dated 2026-07-31, from 2026-08-31 onward. Age is
+      now the gardener's report-only `roadmap-staleness` routine; missing, unparseable
+      and future dates plus the `desired-state.md` check still gate, unchanged.)*
 - [x] Full gate script ALL GREEN, including a detached config-less worktree run

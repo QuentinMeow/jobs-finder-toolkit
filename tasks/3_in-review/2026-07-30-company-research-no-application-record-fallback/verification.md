@@ -22,10 +22,13 @@ The second instance holds too — `09` was required to link a file that a `09`-o
 produces:
 
 ```
-$ git show b7227ae97:skills/company-research/SKILL.md | sed -n '350,351p'
+$ git show b7227ae97:skills/company-research/SKILL.md | sed -n '349,350p'
 candidate will be *asked*: summarize the prepared, personalized answer and link to the
 fuller `10-why-this-company.md` (at least two angles, grounded in the candidate's real
 ```
+
+*(Corrected 2026-07-31: the range was cited as `350,351p`, which prints the following pair.
+The two lines quoted are at 349-350.)*
 
 ## This is the common case, not an edge case
 
@@ -33,10 +36,16 @@ Under the example config there is exactly one application, and it is not the com
 canary set researches — so 4 of the 6 canaries take this path on every run:
 
 ```
-$ .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata
+$ JOBHUNT_CONFIG="$PWD/config.example.yaml" \
+      .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata
 ok      example-corp-senior-software-engineer
 Checked 1 applications; 0 invalid.
 ```
+
+*(Corrected 2026-07-31: the command was first written without the `JOBHUNT_CONFIG` pin. The
+claim above is about the EXAMPLE config, which is what the canaries run under; unpinned in a
+maintainer checkout the same command resolves the owner's overlay and reports a three-digit
+count instead, so the command as written could not produce the output shown.)*
 
 ## The three questions, answered in one place
 

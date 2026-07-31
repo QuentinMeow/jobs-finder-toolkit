@@ -65,10 +65,15 @@ ALL_ORDER = ["self-measure", "expire-discoveries", "compact-logs",
              "verify-links"]
 ```
 
+*(Still eight as of this PR. Later in the same stack a ninth, `roadmap-staleness`, was added
+when the roadmap's age moved out of the reconciler's gate — so the two blocks above are the
+state at this branch's head, not at the stack's, and the `sed` line offsets shifted with it.)*
+
 Accessors and exit codes as documented in the new rows:
 
 ```
 $ grep -n 'config\.' automation/gardener/skill_drift.py automation/gardener/store_report.py
+automation/gardener/skill_drift.py:6:The baseline resume (``config.paths.baseline_yaml``) is the master a tailored resume
 automation/gardener/skill_drift.py:157:    return find_drift(config.baseline_path(), config.profile_md_path())
 automation/gardener/store_report.py:240:    root = config.data_root()
 
@@ -77,7 +82,13 @@ $ sed -n '256,262p' automation/gardener/store_report.py
     print("\n  store-report is READ-ONLY (the gardener never prunes; run "
           "automation/store/gc_store.py --execute to act on retention).")
     return rc
+```
 
+*(Corrected 2026-07-31: the `grep` block above first showed two hits. The real command emits
+three — the docstring mention at `skill_drift.py:6` was dropped. It changes nothing about the
+conclusion, but a transcript that cannot be reproduced is not evidence.)*
+
+```
 $ .venv/bin/python automation/gardener/gardener.py skill-drift --apply | head -1
 note: 'skill-drift' is report-only; --apply has no effect.
 ```

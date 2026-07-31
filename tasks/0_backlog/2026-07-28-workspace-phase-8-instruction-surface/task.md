@@ -60,11 +60,16 @@ eleven skills.
 (4), `command-cookbook.md` (4), `memory-map.md` (2), `configuration.md` (1),
 `application-folders.md` (1).
 
-**The hard blocker named below is gone.** `skills/company-research/SKILL.md` is **469 lines
-against the 600-line budget**, not 595 — the slimming task merged (PR #108) and is in
-`tasks/4_done/2026-07-28-slim-company-research-skill`. `instruction_budget.py --strict` reports
-`OK: all instruction files within budget`, with **131 lines of headroom** where the text below
-claims five. `AGENTS.md` is at 318 of 500, not 307 — the substance holds, the number does not.
+**The hard blocker named below is gone, but the headroom it was about has mostly been spent
+again.** `skills/company-research/SKILL.md` is not the 595 lines the text below claims: the
+slimming task merged (PR #108, in `tasks/4_done/2026-07-28-slim-company-research-skill`) and
+took it to **469 of 600**, 131 of headroom. The company-research correctness stack then added
+99 lines back, and it now stands at **568 of 600 — 32 lines left** (re-measured 2026-07-31 at
+the head of that stack). `instruction_budget.py --strict` still exits 0, and now prints the
+file as `NEAR` with the remaining count, so whoever edits it next meets the number in the gate
+output rather than discovering it at the cliff. **Treat the next substantive company-research
+edit as a consolidation pass, not an addition.** `AGENTS.md` is at 318 of 500, not 307 — the
+substance holds, the number does not.
 
 > Original text, kept as the dated record of what was believed on 2026-07-29 and superseded by the
 > measurement above: *"Hard blocker, re-measured 2026-07-29 and unchanged: `skills/company-research/SKILL.md`
@@ -103,6 +108,31 @@ eval protocols and both trees' notes — plus the prose and canary YAML the chec
 **Re-measure before scoping this phase**: what remains is `examples/` and whatever the sweep
 missed, not the table's original estimate. The link checker is now the instrument for the part
 it can see, and it reports `references: all resolve` today.
+
+### Status after the 2026-07-31 hardening stack — scoped, partly landed, blocked on the owner
+
+**Scoped.** The phase was re-measured in full this session: the per-skill instruction sweep is
+zero work in both columns (above), the `examples/` target shape is mapped file by file against
+the private tree that actually exists, and every literal that has to move with it was counted —
+**85 references in 42 files** naming `examples/{data,templates,profile,applications}` outside
+the record trees, including `ci.yml`'s executed `examples/data` pin.
+
+**Landed in that stack (no path moves, so no owner call was needed):** the four factually wrong
+instructions this phase was also chartered to fix are corrected — search-profile locations in
+`ask-me-anything` and `job-search`, and where company behavioural answers belong in
+`behavioral-interview-prep`. That is the phase's PR 1.
+
+**Deliberately NOT done: the `examples/` reshape itself.** Every remaining piece renames,
+deletes or invents a **published** path in a public repo, or changes what a generator writes
+into the owner's private tree. Seven such calls are filed as one item —
+[`message-queue/needs-human/decisions/examples-reshape-seven-calls.md`](../../../message-queue/needs-human/decisions/examples-reshape-seven-calls.md)
+— with options, a recommendation and a default for each. **This task does not move out of
+`0_backlog/` until that item is answered**; the default path is that nothing moves.
+
+One correction to the plan worth carrying forward: it proposed an `examples/skills/skill-notes/`
+counterpart and then argued against it, correctly. That directory would re-create the
+`examples/templates/`-vs-`templates/` collision this phase exists to close, so the smoke
+assertion carves `skill_references_dir()` out instead (decision D4 in the item above).
 
 ## Definition of done
 
