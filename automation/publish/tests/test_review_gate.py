@@ -532,6 +532,75 @@ class UnreachableAckTests(GateTestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# "NOT APPLICABLE" used to be exit 0 for ANY tree in which no row resolved. That
+# is the export mirror's normal state AND a rewritten ledger's normal state, so
+# the second passed on the first's licence — in pre-commit and in CI. The mirror
+# is now told apart by its SHAPE, because it runs this repo's own tracked hook
+# and workflow: a flag those files passed would disarm the maintainer checkout too.
+# ─────────────────────────────────────────────────────────────────────────────
+class NotApplicableIsConditionalTests(GateTestCase):
+
+    def _unresolvable_ledger(self) -> None:
+        """A ledger whose every row names a well-formed sha this repo lacks."""
+        self.repo.write_ledger([{"commit": "abc" * 10 + "d", "files": 0,
+                                 "digest": EMPTY_DIGEST16},
+                                {"commit": "beef" * 10, "files": 3,
+                                 "digest": "1" * 16}])
+
+    def test_a_maintainer_shaped_tree_with_no_resolvable_row_fails(self):
+        """A wholesale ledger rewrite. This is the case that used to exit 0."""
+        self.repo.write("README.md", "public toolkit\n")
+        for root in review_gate.EXPORT_ABSENT_ROOTS:
+            self.repo.write(f"{root}/README.md", "process root\n")
+        self._unresolvable_ledger()
+        self.repo.commit("rewrite the ledger")
+        proc = self.repo.gate()
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("the ledger describes a history this checkout does not have",
+                      proc.stderr.lower())
+        self.assertIn("APPEND-ONLY", proc.stderr)
+        self.assertNotIn("NOT APPLICABLE", proc.stdout)
+
+    def test_one_surviving_process_root_is_enough_to_fail(self):
+        """Fail closed: a half-shaped tree is not the published mirror."""
+        self.repo.write("README.md", "public toolkit\n")
+        self.repo.write("tasks/README.md", "process root\n")
+        self._unresolvable_ledger()
+        self.repo.commit("rewrite the ledger")
+        self.assertEqual(self.repo.gate().returncode, 2)
+
+    def test_the_export_shape_is_still_tolerated_and_says_why(self):
+        """The published mirror ships none of those roots — it must stay green."""
+        self.repo.write("README.md", "exported toolkit\n")
+        self.repo.write("docs/handbook/architecture.md", "shipped doc\n")
+        self._unresolvable_ledger()
+        self.repo.commit("export")
+        proc = self.repo.gate()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("NOT APPLICABLE in this checkout", proc.stdout)
+        self.assertIn("published-export shape", proc.stdout)
+
+    def test_the_explicit_flag_overrides_the_shape_test(self):
+        self.repo.write("README.md", "public toolkit\n")
+        for root in review_gate.EXPORT_ABSENT_ROOTS:
+            self.repo.write(f"{root}/README.md", "process root\n")
+        self._unresolvable_ledger()
+        self.repo.commit("rewrite the ledger")
+        proc = self.repo.gate("--allow-not-applicable")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("--allow-not-applicable was passed", proc.stdout)
+
+    def test_a_resolvable_row_never_reaches_the_tolerance_branch(self):
+        """The normal maintainer run is untouched by any of this."""
+        self.bootstrap()
+        for root in review_gate.EXPORT_ABSENT_ROOTS:
+            self.repo.write(f"{root}/README.md", "process root\n")
+        self.repo.commit("add the process roots")
+        # HEAD now has an unreviewed change: exit 1 (review required), never 0 or 2.
+        self.assertEqual(self.repo.gate().returncode, 1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # The rebase case: a row acknowledged before a stacked PR was updated names a sha
 # that never landed. The chain is built from the ANCESTOR rows alone; the orphan is
 # skipped for verification and REPORTED, never dropped.
@@ -983,6 +1052,33 @@ class ThisRepoTests(unittest.TestCase):
         self.assertIn("automation/publish/review_gate.py", ci)
         self.assertIn("--verify-all", ci)
         self.assertIn("fetch-depth: 0", ci)
+
+    def test_this_checkout_is_not_mistaken_for_the_published_export(self):
+        """The maintainer tree and CI must get the STRICT branch, not the mirror's."""
+        self.assertFalse(review_gate.is_published_export(review_gate.REPO_ROOT))
+
+    def test_export_absent_roots_are_really_absent_from_the_export(self):
+        """The shape test is only honest while the exporter ships none of them.
+
+        Pinned rather than imported, for the same reason ``COMPANY_INDEX_REL`` is:
+        a gate must not gain an import it can fail on. Adding one of these roots to
+        ``export_public.ALLOWLIST_DIRS`` without updating ``EXPORT_ABSENT_ROOTS``
+        would make the mirror fail its own CI, so this test fails first.
+        """
+        publish = review_gate.REPO_ROOT / "automation" / "publish"
+        if str(publish) not in sys.path:
+            sys.path.insert(0, str(publish))
+        import export_public  # noqa: E402
+
+        shipped = list(export_public.ALLOWLIST_DIRS) + list(export_public.ALLOWLIST_FILES)
+        for root in review_gate.EXPORT_ABSENT_ROOTS:
+            self.assertTrue((review_gate.REPO_ROOT / root).is_dir(),
+                            f"{root} must exist in the maintainer checkout")
+            self.assertFalse(
+                [p for p in shipped if p == root or p.startswith(root + "/")],
+                f"{root} is now exported; EXPORT_ABSENT_ROOTS is no longer a "
+                f"discriminator for the published mirror",
+            )
 
     def test_index_path_matches_the_shared_constant(self):
         """The index path is written twice; they must never drift.

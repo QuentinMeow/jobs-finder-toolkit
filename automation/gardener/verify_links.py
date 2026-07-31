@@ -42,8 +42,14 @@ Also checked: heading anchors (``#section``) with GitHub's slug rules; the Codex
 Claude Code, and Cursor compatibility symlinks resolve — and that there was
 something to resolve; and vendored copies are in sync.
 
-Exit 1 on any broken reference / unresolved symlink / vendor drift; else 0.
-Report-only otherwise (it fixes nothing).
+**The summary never says "all resolve".** It reports how many references were
+VERIFIED against this tree next to how many were not, because the old line was a
+clean bill of health issued over everything the skip buckets had swallowed. And
+verifying NOTHING is a finding rather than a pass — the same rule
+``check_symlinks`` already applies to the compatibility symlink roots.
+
+Exit 1 on any broken reference / unresolved symlink / vendor drift / zero
+coverage; else 0. Report-only otherwise (it fixes nothing).
 
 Usage:
     .venv/bin/python automation/gardener/verify_links.py
@@ -529,10 +535,21 @@ def _suggest(target: str, tracked: set[str], renames: dict[str, str]) -> str | N
 
 
 # --- The check ------------------------------------------------------------------
+VERIFIED_KEY = "verified"
+
+
 def _new_skipped() -> dict[str, int]:
+    """Every counter the reference pass keeps.
+
+    All keys but ``verified`` are SKIP classes and have a label in
+    ``_SKIP_LABELS``. ``verified`` is the opposite number — how many references
+    were actually resolved against this tree — and it exists because without it a
+    run over zero refs is indistinguishable from a run where every ref resolved.
+    Both used to print "references: all resolve".
+    """
     return {"overlay": 0, "absent-root": 0, "git-ignored": 0,
             "unrecognised-root": 0, "external": 0, "placeholder": 0,
-            "skip-tree": 0, "anchor-only": 0}
+            "skip-tree": 0, "anchor-only": 0, VERIFIED_KEY: 0}
 
 
 def check_references(check_anchors: bool = True):
@@ -603,10 +620,13 @@ def check_references(check_anchors: bool = True):
                 if token.startswith(OVERLAY_PREFIX):
                     if not overlay_mounted:
                         skipped["overlay"] += 1
-                    elif not _resolves(token, bases):
-                        sink.append(hit)
+                    else:
+                        skipped[VERIFIED_KEY] += 1
+                        if not _resolves(token, bases):
+                            sink.append(hit)
                     continue
                 if _resolves(token, bases):
+                    skipped[VERIFIED_KEY] += 1
                     continue
                 if token.startswith(absent):
                     skipped["absent-root"] += 1
@@ -628,6 +648,7 @@ def check_references(check_anchors: bool = True):
         if hit["ref"].rstrip("/") in ignored:
             skipped["git-ignored"] += 1
         else:
+            skipped[VERIFIED_KEY] += 1
             sink.append(hit)
 
     # Pass 3 — markdown links, images, reference links, HTML attributes, anchors.
@@ -662,12 +683,14 @@ def check_references(check_anchors: bool = True):
             else:
                 norm = posixpath.normpath(posixpath.join(srcdir, path_part))
             if norm.startswith(".."):
+                skipped[VERIFIED_KEY] += 1
                 sink.append({**hit, "ref": dest, "target": norm,
                              "why": "escapes the repository root"})
                 continue
             ok = target_resolves(norm)
             if ok is None:
                 continue
+            skipped[VERIFIED_KEY] += 1
             if not ok:
                 sink.append({**hit, "ref": dest, "target": norm,
                              "why": "markdown links resolve against their own "
@@ -909,7 +932,7 @@ def run(check_anchors: bool = True, require_roots: bool = False,
           + (f" ({n_ovl} of them in the mounted overlay)" if n_ovl else ""))
 
     for key, count in skipped.items():
-        if count:
+        if count and key != VERIFIED_KEY:
             extra = ""
             if key == "unrecognised-root":
                 extra = (f", of which {sum(1 for u in unrecognised if u['names_a_file'])}"
@@ -926,10 +949,29 @@ def run(check_anchors: bool = True, require_roots: bool = False,
     if permitted:
         _print_findings("permitted (dated records — rewriting them would falsify "
                         "the record)", permitted, tracked_pub, {})
+    # The summary says what was VERIFIED, never "all resolve". The old line was a
+    # clean bill of health issued over a third of the corpus: on this repo it printed
+    # after 729 refs had been counted as unresolvable-here and 89 findings had been
+    # listed above it in the advisory and permitted tiers. Both numbers are now in
+    # the sentence, so nobody has to know that "references" meant "the broken tier".
+    verified = skipped[VERIFIED_KEY]
+    unverified = sum(v for k, v in skipped.items() if k != VERIFIED_KEY)
     if broken:
         _print_findings("BROKEN references", broken, tracked_pub, {})
+    no_coverage = verified == 0
+    if no_coverage:
+        # The check_symlinks rule, applied to references: verifying nothing is a
+        # finding. Zero verified refs across N files means the source enumeration,
+        # the checkable-token filter or the tracked set stopped working — each of
+        # which used to leave the routine printing a pass over an unread tree.
+        print(f"  references: NOTHING WAS VERIFIED — 0 refs resolved against this "
+              f"tree across {len(files)} tracked .md files ({unverified} were "
+              f"counted as unresolvable here). A run that checked nothing is a "
+              f"finding, not a pass.")
     else:
-        print("  references: all resolve")
+        print(f"  references: {len(broken)} broken of {verified} verified · "
+              f"{len(advisory)} advisory · {len(permitted)} permitted · "
+              f"{unverified} refs NOT verified in this tree (classes above)")
 
     if list_unrecognised:
         print(f"  unrecognised-root refs ({len(unrecognised)}):")
@@ -975,7 +1017,8 @@ def run(check_anchors: bool = True, require_roots: bool = False,
         print(f"  compare vs {compare}: resolved {summary['resolved']} · "
               f"new {summary['new']} · unchanged {summary['unchanged']} · "
               f"matched-loosely {summary['matched_loosely']}")
-        for key in ("broken", "advisory", "permitted", "unrecognised-root"):
+        for key in ("broken", "advisory", "permitted", "unrecognised-root",
+                    VERIFIED_KEY):
             before, after = old["counts"].get(key, 0), snapshot["counts"].get(key, 0)
             if before != after:
                 print(f"    {key}: {before} -> {after} ({after - before:+d})")
@@ -991,9 +1034,11 @@ def run(check_anchors: bool = True, require_roots: bool = False,
             print(f"    {p}")
 
     failed = (bool(broken) or bool(bad_links) or vendor_rc != 0
-              or bool(missing_roots) or compare_failed)
+              or bool(missing_roots) or compare_failed or no_coverage)
     print("\n  " + ("FAIL: broken references / symlinks / drift found."
-                    if failed else "OK: links, symlinks, and vendored copies verified."))
+                    if failed
+                    else f"OK: {verified} references, the skill symlinks and the "
+                         f"vendored copies verified."))
     return 1 if failed else 0
 
 

@@ -351,6 +351,60 @@ class TestSymlinkRootsFailClosed(VerifyLinksTestCase):
         self.assertIn("TRACKED in git", bad[0]["target"])
 
 
+class TestReferenceCoverageIsReported(VerifyLinksTestCase):
+    """The reference summary must not issue a clean bill of health it cannot back.
+
+    ``check_symlinks`` already refuses to say "all resolve" after verifying
+    nothing; the reference pass did exactly that. Two failures shared the line:
+
+      * it printed "references: all resolve" while the skip buckets held refs it
+        had never resolved — on the real repo, 729 of them at the time this was
+        written, 133 of which name a file;
+      * a run that verified NOTHING was indistinguishable from a run where every
+        ref resolved, so a broken source enumeration or token filter would report
+        a pass over an unread tree.
+    """
+
+    def test_summary_names_what_was_not_verified(self) -> None:
+        self.write("docs/handbook/x.md",
+                   "Real: `skills/job-search/SKILL.md`. "
+                   "Shorthand: `nosuchroot/whatever.md`.\n")
+        self.link_root()
+        self.git_init()
+        rc, out = self.run_report()
+        self.assertEqual(rc, 0)
+        self.assertNotIn("references: all resolve", out)
+        self.assertIn("NOT verified", out)
+        self.assertIn("of 1 verified", out)
+
+    def test_zero_verified_references_is_a_finding(self) -> None:
+        """A corpus with nothing resolvable in it is a finding, not a pass."""
+        self.write("docs/handbook/x.md", "Prose with no repo paths in it.\n")
+        self.link_root()
+        self.git_init()
+        _, _, _, skipped, _ = V.check_references()
+        self.assertEqual(skipped[V.VERIFIED_KEY], 0)
+        rc, out = self.run_report()
+        self.assertEqual(rc, 1)
+        self.assertIn("NOTHING WAS VERIFIED", out)
+
+    def test_a_resolving_ref_is_enough_coverage_to_pass(self) -> None:
+        self.write("docs/handbook/x.md", "See `skills/job-search/SKILL.md`.\n")
+        self.link_root()
+        self.git_init()
+        _, _, _, skipped, _ = V.check_references()
+        self.assertEqual(skipped[V.VERIFIED_KEY], 1)
+        rc, out = self.run_report()
+        self.assertEqual(rc, 0)
+        self.assertIn("0 broken of 1 verified", out)
+
+    def test_the_verified_count_travels_in_a_baseline_snapshot(self) -> None:
+        """``--compare`` must be able to see coverage collapse, not just findings."""
+        self.write("docs/handbook/x.md", "See `skills/job-search/SKILL.md`.\n")
+        self.git_init()
+        self.assertEqual(self.snapshot()["counts"][V.VERIFIED_KEY], 1)
+
+
 class TestReferencesPrivateIsOptional(VerifyLinksTestCase):
     """``references_private/`` is overlay-only and per-user — never a claim.
 
@@ -893,8 +947,13 @@ class TestRootDisappearance(VerifyLinksTestCase):
 
     def plant(self) -> None:
         self.make_prefix_roots(skip=("history/",))
+        # The second ref RESOLVES, and it is load-bearing rather than decorative:
+        # with only the unresolvable one this tree verifies nothing at all, and
+        # "nothing was verified" is now its own finding. These two tests are about
+        # a missing ROOT, not about a corpus with no coverage.
         self.write("docs/handbook/x.md",
-                   "See `history/conversations/x/handover.md`.\n")
+                   "See `history/conversations/x/handover.md`, "
+                   "and `skills/job-search/SKILL.md`.\n")
         self.link_root()
         self.git_init()
 

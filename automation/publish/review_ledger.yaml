@@ -1062,3 +1062,72 @@
     values replaced by <set>. The only dates are process-record metadata. No person,
     employer, school, company, posting URL, application slug or salary appears. The
     advisory company detector reports (none).
+
+- commit: e3d5b432
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:618dfd508d272279
+  finding: >-
+    Read the full 3-file diff. Tooling and test code only: the mail-safety checker gains two
+    helpers and three coverage findings, its pass line prints the provider-folder and consumer-file
+    counts, and the vendored copy is the byte-identical mirror the drift gate requires. The only
+    strings added are fixture code and error text naming generic paths (providers/, _vendor/,
+    tests/). No person, employer, school, company, mailbox address, posting URL, application slug,
+    salary or absolute home path appears. The advisory company detector reports (none).
+
+- commit: e40c9317
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:7ed414fd8620a37b
+  finding: >-
+    Read the full 2-file diff. Link-checker tooling and its unit tests only: a verified-reference
+    counter, an honest summary line, a zero-coverage finding, and four new test cases plus two
+    fixture refs. The only paths named are public toolkit paths (skills/job-search/SKILL.md,
+    docs/handbook/, history/conversations/x/handover.md as a fixture). The counts quoted in the
+    comments describe this repository's own documentation corpus, not any owner data. No person,
+    employer, school, company, posting URL, application slug, salary or absolute home path
+    appears. The advisory company detector reports (none).
+
+- commit: 495e2e5d
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:25b48caed48c4b49
+  finding: >-
+    Read the full 2-file diff. Review-gate tooling and its unit tests only: the not-applicable
+    branch becomes conditional on a published-export shape test, a new --allow-not-applicable
+    flag, two new operator messages, and six test cases built on throwaway git sandboxes. The
+    only paths named are public process roots (tasks/, memory/, message-queue/, history/,
+    docs/roadmap/) and the ledger path itself; the sandbox shas are literal "abc"/"beef"
+    repetitions, not real commits. No person, employer, school, company, posting URL,
+    application slug, salary or absolute home path appears. The advisory company detector
+    reports (none).
+
+- commit: ef5cbc79
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:fc924f31b1f39653
+  finding: >-
+    Read the full 3-file diff. Reconciler tooling, its unit tests, and one paragraph of
+    docs/roadmap/README.md. The dates that appear are fixture dates (2025-07-30, 2027-01-01)
+    and the roadmap's own Last-updated value, which is process metadata about this repository
+    rather than anything about a job hunt. The only paths named are docs/roadmap/ and
+    message-queue/. No person, employer, school, company, posting URL, application slug,
+    salary or absolute home path appears. The advisory company detector reports (none).
+
+- commit: ef2d14ea
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:83558537c76dcf0b
+  finding: >-
+    Read the full 3-file diff — one task folder (task.md, worklog.md, verification.md). The
+    verification record quotes real command output, written with absolute home paths redacted
+    to <repo-root> and throwaway temp directories to <tmp>; the transcripts name only public
+    toolkit paths, fixture package names and this repository's own process roots. The dates
+    are process-record metadata and fixture dates. No person, employer, school, company,
+    posting URL, application slug or salary appears. The advisory company detector reports
+    (none).

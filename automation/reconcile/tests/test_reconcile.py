@@ -26,6 +26,7 @@ overlay.
 """
 from __future__ import annotations
 
+import datetime
 import inspect
 import shutil
 import sys
@@ -127,6 +128,81 @@ class TestRequireRoots(TempRepo):
     def test_check_roots_cover_every_check(self) -> None:
         """A new check without a declared root would silently escape the flag."""
         self.assertEqual(set(R.CHECK_ROOTS), set(R.CHECKS))
+
+
+class TestRoadmapFreshness(TempRepo):
+    """The freshness gate has to READ the date it is named after.
+
+    It used to test that the string ``Last-updated`` appeared anywhere in
+    ``current-state.md``. A roadmap a year stale passed, ``Last-updated: whenever``
+    passed, and ``docs/roadmap/README.md``'s claim that this check "keeps it dated"
+    was resting on a substring.
+    """
+
+    TODAY = datetime.date(2026, 7, 31)
+
+    def roadmap(self, current: str, *, desired: bool = True) -> None:
+        (self.root / "docs/roadmap").mkdir(parents=True, exist_ok=True)
+        (self.root / "docs/roadmap/current-state.md").write_text(
+            current, encoding="utf-8")
+        if desired:
+            (self.root / "docs/roadmap/desired-state.md").write_text(
+                "# Desired state\n", encoding="utf-8")
+
+    def messages(self) -> list[str]:
+        return [f.message for f in R.check_roadmap_fresh(today=self.TODAY)]
+
+    def test_a_recent_date_passes(self) -> None:
+        self.roadmap("# Current state\n\n- **Last-updated**: 2026-07-30\n")
+        self.assertEqual(R.check_roadmap_fresh(today=self.TODAY), [])
+
+    def test_a_year_stale_roadmap_is_a_finding(self) -> None:
+        """The case the old check could not see at all."""
+        self.roadmap("# Current state\n\n- **Last-updated**: 2025-07-30\n")
+        messages = self.messages()
+        self.assertEqual(len(messages), 1)
+        self.assertIn("366 days old", messages[0])
+
+    def test_the_boundary_is_the_declared_limit(self) -> None:
+        limit = R.ROADMAP_MAX_AGE_DAYS
+        edge = self.TODAY - datetime.timedelta(days=limit)
+        self.roadmap(f"- **Last-updated**: {edge.isoformat()}\n")
+        self.assertEqual(R.check_roadmap_fresh(today=self.TODAY), [],
+                         "exactly at the limit is still fresh")
+        over = self.TODAY - datetime.timedelta(days=limit + 1)
+        self.roadmap(f"- **Last-updated**: {over.isoformat()}\n")
+        self.assertEqual(len(self.messages()), 1)
+
+    def test_an_unparseable_date_is_a_finding(self) -> None:
+        self.roadmap("- **Last-updated**: whenever\n")
+        self.assertIn("is not an ISO date", self.messages()[0])
+
+    def test_a_future_date_is_a_finding(self) -> None:
+        """Otherwise the gate is defeated by typing a date nobody can age past."""
+        self.roadmap("- **Last-updated**: 2027-01-01\n")
+        self.assertIn("in the future", self.messages()[0])
+
+    def test_a_missing_line_still_reads_as_undated(self) -> None:
+        self.roadmap("# Current state\n\nno date here\n")
+        self.assertIn("missing a Last-updated line", self.messages()[0])
+
+    def test_a_missing_desired_state_is_a_finding(self) -> None:
+        """Named in the check's contract since it was written, never checked."""
+        self.roadmap("- **Last-updated**: 2026-07-30\n", desired=False)
+        subjects = [f.subject for f in R.check_roadmap_fresh(today=self.TODAY)]
+        self.assertEqual(subjects, ["docs/roadmap/desired-state.md"])
+
+    def test_an_absent_roadmap_root_still_no_ops(self) -> None:
+        """The published export ships no docs/roadmap/; plain --check stays green."""
+        self.assertFalse((self.root / "docs/roadmap").exists())
+        self.assertEqual(R.check_roadmap_fresh(today=self.TODAY), [])
+
+    def test_the_real_roadmap_is_fresh_today(self) -> None:
+        """Blast radius: this repo's own roadmap must pass the stricter check."""
+        saved = R.REPO_ROOT
+        R.REPO_ROOT = Path(__file__).resolve().parents[3]
+        self.addCleanup(lambda: setattr(R, "REPO_ROOT", saved))
+        self.assertEqual(R.check_roadmap_fresh(), [])
 
 
 class TestFileRetries(TempRepo):
