@@ -1516,3 +1516,14 @@
     memory/, so the link 404s there), one CI comment gains a pointer to the test that now proves
     the claim, and the publish suite gains that test. No candidate data, no company, no absolute
     home path. The advisory company detector reports (none).
+- commit: 3948dd1c
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 6
+  digest: sha256:dc7115e4fd9b08c7
+  finding: |
+    Six task-record files, corrections to quoted command output plus dated notes saying what was
+    wrong. Read the diff: the replaced transcripts are grep/sed/budget output over public toolkit
+    files, and the one command that gained a JOBHUNT_CONFIG pin gained it precisely so it stops
+    describing the owner's real tree. No slug, company, employer or absolute home path enters.
+    The advisory company detector reports (none).

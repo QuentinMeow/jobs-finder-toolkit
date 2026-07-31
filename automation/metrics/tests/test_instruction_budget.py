@@ -15,13 +15,18 @@ What is pinned here:
     under the root's 500-line budget must not make an over-weight leaf pass;
   * the walk must not descend into the private overlay, scratch trees, or
     dot-directories, and must not follow a symlink back into the tree (which
-    would report the same file twice).
+    would report the same file twice);
+  * a file inside the NEAR band is warned about and is NOT a violation — the
+    band exists because the budget is a cliff and the report used to say nothing
+    until you were already over it.
 """
 from __future__ import annotations
 
+import io
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -136,6 +141,58 @@ class LeafBudgetTests(BudgetTestCase):
     def test_root_keeps_the_root_budget(self) -> None:
         _write(self.root / "AGENTS.md", "line\n" * 300)
         self.assertEqual(self._violations(), {})
+
+
+class NearBudgetTests(BudgetTestCase):
+    """NEAR warns before the cliff and never fails, in --strict or out of it."""
+
+    def _rows(self) -> dict[str, dict]:
+        rows, _violations = IB.build_report(self.root)
+        return {r["path"]: r for r in rows}
+
+    def test_a_file_inside_the_near_band_is_flagged_but_not_a_violation(self) -> None:
+        near = int(IB.BUDGETS["SKILL.md"] * IB.NEAR_BUDGET_FRACTION) + 1
+        _write(self.root / "skills" / "x" / "SKILL.md", "line\n" * near)
+        row = self._rows()["skills/x/SKILL.md"]
+        self.assertTrue(row["near"])
+        self.assertFalse(row["over"])
+        _rows, violations = IB.build_report(self.root)
+        self.assertEqual(violations, [])
+
+    def test_comfortably_under_budget_is_not_near(self) -> None:
+        _write(self.root / "skills" / "x" / "SKILL.md", "line\n" * 100)
+        self.assertFalse(self._rows()["skills/x/SKILL.md"]["near"])
+
+    def test_over_budget_is_over_not_near(self) -> None:
+        """The two are exclusive, so a file cannot be reported twice."""
+        _write(self.root / "skills" / "x" / "SKILL.md",
+               "line\n" * (IB.BUDGETS["SKILL.md"] + 1))
+        row = self._rows()["skills/x/SKILL.md"]
+        self.assertTrue(row["over"])
+        self.assertFalse(row["near"])
+
+    def test_a_leaf_can_be_near_on_bytes_alone(self) -> None:
+        """The byte budget is a real dimension, so it needs its own warning band."""
+        target = int(IB.BYTE_BUDGETS["AGENTS.md (leaf)"] * IB.NEAR_BUDGET_FRACTION) + 1
+        line = "x" * 79 + "\n"                       # 80 bytes, well under 100 lines
+        _write(self.root / "docs" / "AGENTS.md", line * (target // 80 + 1))
+        row = self._rows()["docs/AGENTS.md"]
+        self.assertTrue(row["near"])
+        self.assertFalse(row["over"])
+
+    def test_strict_still_exits_zero_with_a_near_file(self) -> None:
+        """The whole point: this is a heads-up, not a gate."""
+        near = int(IB.BUDGETS["SKILL.md"] * IB.NEAR_BUDGET_FRACTION) + 1
+        _write(self.root / "skills" / "x" / "SKILL.md", "line\n" * near)
+        with mock.patch.object(IB, "REPO_ROOT", self.root):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = IB.main(["--strict"])
+        self.assertEqual(rc, 0)
+        out = buf.getvalue()
+        self.assertIn("NEAR", out)
+        self.assertIn(f"({IB.BUDGETS['SKILL.md'] - near} left)", out)
+        self.assertIn("OK: all instruction files within budget.", out)
 
 
 if __name__ == "__main__":

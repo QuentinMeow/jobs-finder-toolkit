@@ -58,6 +58,22 @@ BYTE_BUDGETS = {
     "AGENTS.md (leaf)": 4096,
 }
 
+# A file at or past this fraction of its budget is reported NEAR. Advisory only: it
+# never changes the exit code, in --strict or out of it.
+#
+# The budget is a cliff, and until now the report said nothing until you were over it.
+# The failure that motivated this: a SKILL.md that grew 99 lines in one PR and landed
+# at 568 of 600 — under budget, gate green, and 32 lines from forcing an unplanned
+# consolidation on whoever edits it next. Whoever that is meets this table, so this is
+# where the warning belongs.
+#
+# 0.90 rather than 0.95 because 568/600 is 94.7%: a threshold that misses the case it
+# was written for is decoration. It buys 60 lines of runway on a SKILL.md and 16 on a
+# LESSONS.md — enough to plan a considered cut instead of the cheapest one. Measured
+# against the tree the day it was added, exactly one file is NEAR, so it is a signal
+# and not a second row of noise on every run.
+NEAR_BUDGET_FRACTION = 0.90
+
 # Directory names the AGENTS.md walk never descends into: VCS/build/scratch
 # trees, and the private overlay (a separate repository, reached through
 # ``_private_skills_dir`` instead). Dot-directories are pruned wholesale, which
@@ -199,6 +215,10 @@ def build_report(root: Path):
         over_primary = budget is not None and measure > budget
         over_bytes = byte_budget is not None and n_bytes > byte_budget
         over = over_primary or over_bytes
+        near = not over and (
+            (budget is not None and measure >= budget * NEAR_BUDGET_FRACTION)
+            or (byte_budget is not None
+                and n_bytes >= byte_budget * NEAR_BUDGET_FRACTION))
         try:
             display_path = path.relative_to(root).as_posix()
         except ValueError:
@@ -215,6 +235,7 @@ def build_report(root: Path):
                 "over_primary": over_primary,
                 "over_bytes": over_bytes,
                 "over": over,
+                "near": near,
             }
         )
         if over:
@@ -234,6 +255,8 @@ def _format_table(rows) -> str:
             status = "n/a"
         elif r["over"]:
             status = "OVER"
+        elif r.get("near"):
+            status = "NEAR"
         else:
             status = "ok"
         display.append(
@@ -269,6 +292,23 @@ def main(argv=None) -> int:
 
     print("Instruction-file budget (lines; est. tokens = bytes / 4):")
     print(_format_table(rows))
+
+    near = [r for r in rows if r.get("near")]
+    if near:
+        print()
+        pct = int(NEAR_BUDGET_FRACTION * 100)
+        print(f"{len(near)} file(s) NEAR budget (>= {pct}%) — advisory, never a failure:")
+        for r in near:
+            if r["budget"] is not None:
+                measure = r["tokens"] if r["kind"] in TOKEN_BUDGET_KINDS else r["lines"]
+                unit = "tokens" if r["kind"] in TOKEN_BUDGET_KINDS else "lines"
+                print(f"  ~ {r['path']}: {measure} of {r['budget']} {unit} "
+                      f"({r['budget'] - measure} left)")
+            if r["byte_budget"] is not None and r["bytes"] >= r["byte_budget"] * NEAR_BUDGET_FRACTION:
+                print(f"  ~ {r['path']}: {r['bytes']} of {r['byte_budget']} bytes "
+                      f"({r['byte_budget'] - r['bytes']} left)")
+        print("  Plan the next substantive edit to this file as a consolidation pass, "
+              "not an addition.")
 
     if violations:
         print()
