@@ -44,11 +44,24 @@ the WORKING TREE: you satisfy the gate by staging the acknowledgment row for HEA
 behind. A ledger-only commit changes no watched file, so it acknowledges the tip
 without creating new work — that is how you land a branch green before pushing.
 
+NOT APPLICABLE IS NOT A FREE PASS
+---------------------------------
+A checkout where NO ledger row names a commit it has is either the published
+export mirror (expected) or a ledger that was rewritten out from under the gate
+(a silent disarm). It used to be exit 0 either way. The mirror is now recognised
+on its SHAPE — it ships none of ``EXPORT_ABSENT_ROOTS`` — because it runs this
+repo's own tracked pre-commit hook and CI workflow, so any flag those files
+passed would disarm the maintainer checkout too. ``--allow-not-applicable`` is
+the explicit override for a tree you know is a mirror and that carries those
+roots anyway.
+
 EXIT CODES
 ----------
-    0  pass, or "not applicable" (this checkout is not the repo the ledger records)
+    0  pass, or "not applicable" (this checkout is the published export mirror,
+       or --allow-not-applicable was passed)
     1  unreviewed public changes — action required
-    2  ledger or repository problem (bad digest, malformed row, stale ack, shallow)
+    2  ledger or repository problem (bad digest, malformed row, stale ack, shallow,
+       or no row resolving in a tree that should be the ledger's own repository)
 
 Run:
     .venv/bin/python automation/publish/review_gate.py             # pre-commit / on demand
@@ -101,6 +114,19 @@ COMPANY_INDEX_REL = "private/companies/_index.yaml"
 # listed so the detector cannot flag the index against itself in any checkout that
 # does track it (the throwaway repos the tests build, for one).
 HINT_EXCLUDE = [":!examples", ":!skills/job-search/companies.yaml", ":!private"]
+
+# Roots the maintainer tree has and ``export_public.py`` never ships — its
+# ALLOWLIST_DIRS names none of them. Their ABSENCE is how this repo already
+# recognises the published mirror: ``reconcile.CHECK_ROOTS`` no-ops on exactly
+# this signal and ``verify_links._present_strict_prefixes`` does too. It is the
+# discriminator the gate needs, because the export runs the SAME tracked
+# ``automation/hooks/pre-commit`` and ``.github/workflows/ci.yml`` this repo does —
+# a flag those files pass would disarm the gate here as well as there.
+#
+# Pinned against ``export_public.ALLOWLIST_DIRS`` by a TEST rather than by an
+# import: a gate must not gain an import it can fail on (same rule as
+# COMPANY_INDEX_REL above).
+EXPORT_ABSENT_ROOTS = ("tasks", "memory", "message-queue", "history", "docs/roadmap")
 
 REQUIRED_KEYS = ("commit", "reviewed_by", "date", "files", "digest", "finding")
 REVIEWERS = ("agent", "human")
@@ -644,7 +670,17 @@ def _shallow_message() -> str:
     ])
 
 
-def _not_applicable_message(n_rows: int) -> str:
+def is_published_export(repo: Path) -> bool:
+    """True when this tree has NONE of the roots only the maintainer repo ships.
+
+    The published mirror is the one place where "no ledger row resolves" is
+    expected rather than alarming, so tolerating it has to be conditional on
+    actually being that mirror — see ``EXPORT_ABSENT_ROOTS``.
+    """
+    return not any((repo / root).is_dir() for root in EXPORT_ABSENT_ROOTS)
+
+
+def _not_applicable_message(n_rows: int, reason: str = "") -> str:
     return "\n".join([
         "public review gate: NOT APPLICABLE in this checkout.",
         "",
@@ -652,6 +688,31 @@ def _not_applicable_message(n_rows: int) -> str:
         "not the repository whose review history the ledger records — an exported public",
         "mirror (export_public.py --git-init) or a re-initialised tree. There is nothing",
         "to review against. The gate is a no-op here and exits 0.",
+        *([f"", f"Tolerated because: {reason}"] if reason else []),
+    ])
+
+
+def _no_resolvable_row_message(n_rows: int) -> str:
+    roots = ", ".join(f"{r}/" for r in EXPORT_ABSENT_ROOTS)
+    return "\n".join([
+        "PUBLIC REVIEW GATE — the ledger describes a history this checkout does not have.",
+        "",
+        f"None of the {n_rows} ledger row(s) names a commit that exists here, and yet this",
+        f"tree carries the maintainer-only roots ({roots}), so it IS the",
+        "repository whose review history the ledger records. Every recorded review has",
+        "become unverifiable in one step: the ledger was rewritten or truncated, or this",
+        "branch's history was replaced.",
+        "",
+        "This exit used to be 0. It is the documented exported-mirror case, and the same",
+        "path swallowed a wholesale ledger rewrite in pre-commit and in CI.",
+        "",
+        "The ledger is APPEND-ONLY — recover the rows rather than writing new ones:",
+        "",
+        "    git log -p -- automation/publish/review_ledger.yaml",
+        "",
+        "If this genuinely is a mirror that ships the process roots, say so explicitly:",
+        "",
+        "    review_gate.py --allow-not-applicable",
     ])
 
 
@@ -721,7 +782,8 @@ def verify_rows(repo: Path, chain: RowChain, to_verify: list[dict],
 
 def check(repo: Path = REPO_ROOT, head: str = "HEAD", ledger_rev: str | None = None,
           verify_tail: int = DEFAULT_VERIFY_TAIL, verify_all: bool = False,
-          today: str | None = None, out=None, err=None) -> int:
+          today: str | None = None, out=None, err=None,
+          allow_not_applicable: bool = False) -> int:
     """Run the gate. Returns an exit code.
 
     Prints nothing on a clean pass, except the off-chain row report when the ledger
@@ -754,7 +816,18 @@ def check(repo: Path = REPO_ROOT, head: str = "HEAD", ledger_rev: str | None = N
             if is_shallow(repo):
                 raise GateError(_shallow_message())
             if not chain.any_resolved():
-                raise NotApplicable(_not_applicable_message(len(rows)))
+                # NOT unconditionally exit 0 any more. "No row resolves" is the
+                # published mirror's normal state and a wholesale ledger rewrite's
+                # normal state, and the second was passing on the first's licence.
+                if allow_not_applicable:
+                    raise NotApplicable(_not_applicable_message(
+                        len(rows), "--allow-not-applicable was passed"))
+                if is_published_export(repo):
+                    raise NotApplicable(_not_applicable_message(
+                        len(rows), "this tree ships none of "
+                        + ", ".join(f"{r}/" for r in EXPORT_ABSENT_ROOTS)
+                        + " — the published-export shape"))
+                raise GateError(_no_resolvable_row_message(len(rows)))
             raise GateError(_stale_ack_message(repo, chain, head_rev))
         base_rev = chain.rev(last["index"])
 
@@ -808,12 +881,19 @@ def main(argv: list[str] | None = None) -> int:
                         metavar="N",
                         help=f"how many trailing rows a default run recomputes "
                              f"(default: {DEFAULT_VERIFY_TAIL})")
+    parser.add_argument("--allow-not-applicable", action="store_true",
+                        help="exit 0 when NO ledger row names a commit this checkout "
+                             "has. Only for a tree you know is a mirror: it is also "
+                             "what a wholesale ledger rewrite looks like. The "
+                             "published export is detected on its own shape and does "
+                             "not need this flag")
     args = parser.parse_args(argv)
 
     repo = Path(args.repo).resolve()
     head = args.head or "HEAD"
     return check(repo=repo, head=head, ledger_rev=args.head,
-                 verify_tail=args.verify_tail, verify_all=args.verify_all)
+                 verify_tail=args.verify_tail, verify_all=args.verify_all,
+                 allow_not_applicable=args.allow_not_applicable)
 
 
 if __name__ == "__main__":
