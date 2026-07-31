@@ -117,7 +117,10 @@ jobs:
       #     NOTE: deliberately WITHOUT --require-roots, exactly like the reconciler
       #     above. That flag asserts every root named in a constant exists, which is
       #     a maintainer-checkout assertion; the published export ships fewer roots
-      #     and would go red. It lives in the pre-commit hook only.
+      #     and would go red. It lives in the pre-commit hook only. That this step is
+      #     ALSO green inside a real export is not left to prose: it is asserted by
+      #     automation/publish/tests -> test_verify_links_passes_inside_the_export,
+      #     which is the only place a markdown link into a non-exported root shows up.
       - name: References + markdown links
         run: python automation/gardener/verify_links.py
 

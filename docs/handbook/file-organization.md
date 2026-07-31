@@ -28,7 +28,9 @@ where its purpose is obvious:
   `docs/roadmap/` (desired vs current state). Nothing may sit directly in `docs/`, and the
   category has a testable boundary: if an agent or a script reads a file to do its job, that file
   is not documentation and belongs elsewhere. Full reasoning, including what the earlier call got
-  right, is in [`memory/decisions/docs-parent-for-the-human-read-trees.md`](../../memory/decisions/docs-parent-for-the-human-read-trees.md).
+  right, is in `memory/decisions/docs-parent-for-the-human-read-trees.md` — named rather than
+  linked, because the published export ships `docs/handbook/` and never `memory/`, so a clickable
+  link here 404s for every reader of the public mirror.
   Follow the same pattern for anything new that would otherwise land in a generic root.
 - **Don't orphan single files at a generic root.** A lone reference PDF, asset, image, or
   note belongs in a named subfolder (e.g. an OA reference PDF goes in

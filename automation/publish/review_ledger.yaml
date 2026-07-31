@@ -1495,3 +1495,14 @@
     is renamed roadmap-dated, a new report-only gardener routine takes over staleness, and the
     docs that describe the gate follow. No candidate data, no company, no employer, no date about
     the owner's job hunt, no absolute home path. The advisory company detector reports (none).
+- commit: 4e81eae5
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:e6ca8d3e262c0dea
+  finding: |
+    This commit REMOVES a near-leak rather than adding one. Read the diff: a LESSONS bullet that
+    named two real companies now describes the exemplar by shape and states the rule; the new
+    queue item describes the redaction by shape and names no company. No identity token, no
+    application slug, no date about the owner's job hunt. The advisory company detector reports
+    (none), which is expected — it reads names ADDED by a diff, and this diff only removes them.

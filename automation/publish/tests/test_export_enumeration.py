@@ -386,6 +386,23 @@ class CIPathsExistInExportTests(unittest.TestCase):
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
+    def test_verify_links_passes_inside_the_export(self):
+        """CI step 2b-ii, run where it actually has to hold.
+
+        ``ci.yml`` says both process-layer steps are written without
+        ``--require-roots`` so the published mirror stays green. That was true of the
+        reconciler and false of this one: a markdown link resolves against its own
+        directory with NO absent-root allowance (a backticked path has one), so a
+        handbook page linking into ``memory/`` — which the export never ships — broke
+        here and nowhere else. The maintainer checkout cannot see it, which is why the
+        assertion has to run against a real export.
+        """
+        proc = subprocess.run(
+            [sys.executable, "automation/gardener/verify_links.py"],
+            cwd=self.export, capture_output=True, text=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
 
 class ExportedSkillTreeTests(unittest.TestCase):
     """The export ships exactly the skills the frontmatter declares public."""
