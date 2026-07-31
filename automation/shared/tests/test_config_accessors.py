@@ -218,26 +218,30 @@ class AccessorDefaultTests(unittest.TestCase):
             self.assertEqual(config.calendar_path(),
                              apps / "0_profile" / "calendar.md")
 
-            # registry.py's _overlay_blacklist_paths() built exactly this.
+            # The four defaults below derive the LIFETIME layout the handbook
+            # documents (docs/handbook/private-overlay.md), not the flat pre-phase-5
+            # tree. The live config.yaml overrides all four, so nothing but this test
+            # holds them to it: an overlay built from the handbook that omits the
+            # optional keys must still resolve.
             self.assertEqual(config.blacklist_path(),
-                             overlay / "job-search" / "blacklist.yaml")
+                             overlay / "market" / "blacklist.yaml")
 
             self.assertEqual(config.search_profiles_dir(),
-                             overlay / "job-search-profiles")
+                             overlay / "market" / "searches")
             self.assertEqual(config.skill_references_dir("job-search"),
-                             overlay / "skills" / "references_private" / "job-search")
+                             overlay / "skills" / "skill-notes" / "job-search")
             self.assertEqual(config.companies_root(), overlay / "companies")
 
-    def test_story_bank_matches_both_independent_derivations(self):
-        # The trap: build_tailoring_card.py and card_staleness.py each computed
-        # ``config.applications_root().parent / "interviews/behavioral/story-bank"``.
-        # If the accessor answers anything else, the card is built from an empty
-        # directory and stamped with a sha256 that the staleness check agrees with —
-        # a card with zero stories that never reports itself stale.
+    def test_story_bank_matches_the_display_key_both_hashers_record(self):
+        # The trap: build_tailoring_card.py and card_staleness.py each hash this
+        # directory and each stamps the card with a ``STORY_BANK_REL`` display key.
+        # If the accessor and that key disagree, the card is built from an empty
+        # directory and stamped with a sha256 the staleness check agrees with —
+        # a card with zero stories that never reports itself stale. So the default
+        # derivation must equal ``<overlay_root>/`` + the display key.
         with _active_config(self.CONFIG):
-            legacy = (config.applications_root().parent
-                      / "interviews" / "behavioral" / "story-bank")
-            self.assertEqual(config.story_bank_path(), legacy)
+            self.assertEqual(config.story_bank_path(),
+                             config.overlay_root() / "me" / "interviews" / "story-bank")
 
     def test_story_bank_does_not_require_the_directory_to_exist(self):
         with _active_config(self.CONFIG):

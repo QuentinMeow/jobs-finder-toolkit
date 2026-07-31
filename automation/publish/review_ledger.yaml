@@ -1002,3 +1002,18 @@
     appears; the failure message the guard prints is assembled at runtime from
     whatever the child touched, never from a literal. The advisory company
     detector reports (none).
+
+- commit: 95d649b6
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 6
+  digest: sha256:516f245ad8f4bdd4
+  finding: >-
+    Read the full 6-file diff. Guard code, its tests, and the three documents
+    that state the rule. The only paths added are structural folder names
+    (skill-notes/, references_private/, private/) and one repository-relative
+    task-folder path used as a negative fixture. No person, employer, school,
+    company, posting URL, application slug, salary or absolute home path
+    appears; the new accessor-tied test reads a folder NAME from the live config
+    and compares it to a constant, never printing a resolved path. The advisory
+    company detector reports (none).

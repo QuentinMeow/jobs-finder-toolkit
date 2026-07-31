@@ -219,9 +219,12 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    ```
 
    Every key after `applications_root` is optional — each has a default derived from
-   the roots above it — but a lifetime-organised overlay like this one overrides most
-   of them, because the defaults assume the flat "everything under
-   `<applications_root>/0_profile/`" layout the example candidate uses.
+   the roots above it. `blacklist_yaml`, `story_bank_dir`, `search_profiles_dir` and
+   `skill_references_root` default to exactly the lifetime paths shown above, so an
+   overlay laid out like this one can omit all four. The card and the two skip-logs
+   still default to the flat "everything under `<applications_root>/0_profile/`"
+   layout the example candidate uses, so a lifetime-organised overlay must set those
+   explicitly — as this one does.
 
    `config.yaml` is git-ignored in the public repo, so your real identity never
    gets committed. (If you prefer, point `paths.*` at in-place folders like

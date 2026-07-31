@@ -1,6 +1,6 @@
 """The overlay blacklist actually reaches the search preflight (item 0.8).
 
-The live ``private/job-search/blacklist.yaml`` is ``companies: []``, so every
+The live ``private/market/blacklist.yaml`` is ``companies: []``, so every
 existing test passes whether the overlay blacklist is loaded or not — a broken
 path built "no blacklist" and nothing observable changed. These tests therefore
 PLANT a real blacklist row in a temp overlay and assert the filter pipeline drops
@@ -50,8 +50,11 @@ def _overlay(*, blacklist: bool):
         root = Path(tmp).resolve()
         (root / "private" / "applications" / "0_profile").mkdir(parents=True)
         if blacklist:
-            (root / "private" / "job-search").mkdir(parents=True)
-            (root / "private" / "job-search" / "blacklist.yaml").write_text(
+            # The DEFAULT derivation, deliberately: config.yaml below sets only
+            # applications_root, so this fixture is what pins blacklist_path()'s
+            # default to the layout the handbook documents.
+            (root / "private" / "market").mkdir(parents=True)
+            (root / "private" / "market" / "blacklist.yaml").write_text(
                 BLACKLIST_YAML, encoding="utf-8")
         cfg = root / "config.yaml"
         cfg.write_text('paths:\n  applications_root: "private/applications"\n',

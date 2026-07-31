@@ -420,7 +420,7 @@ def load_registry(path: str | Path | None = None) -> Registry:
 
     When loading the DEFAULT registry (``path is None``), also merges the optional
     git-ignored overlay blacklist (``config.blacklist_path()``, i.e.
-    ``private/job-search/blacklist.yaml`` by default) if present. Overlay rows use
+    ``private/market/blacklist.yaml`` by default) if present. Overlay rows use
     the same entry shape as identity-only blacklist rows (``name`` + optional
     ``aliases`` + ``blacklist`` reason), so personal skip rules never live in the
     public ``companies.yaml``.
