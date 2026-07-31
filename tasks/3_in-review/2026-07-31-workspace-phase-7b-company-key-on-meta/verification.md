@@ -100,13 +100,16 @@ field for it to verify. It now verifies 243 keys and stays clean.
 
 ## What this agent could NOT verify, stated rather than restated
 
+(One of the two entries below has since been verified after all; it is corrected in place rather
+than deleted, so the record shows what was checked and when.)
+
 - **The per-file pre-write / post-write round-trip assertion, and its "0 failures, 0 reverts"
   count.** That is a property of the run, not of the tree, and it left no artifact. What the tree
   proves instead — and proves more strongly — is the outcome the assertion existed to guarantee:
   every file still parses (`--check-metadata` 243/243 valid), and the diff is +1/−0 on every file.
   The box is ticked on that evidence, and this limitation is why the wording is recorded here.
-- **The diff against the proposal-era `meta_updates.tsv`.** That file exists in **neither
-  repository**, in the working tree or in any commit of either history:
+- ~~**The diff against the proposal-era `meta_updates.tsv`.**~~ **Corrected 2026-07-31, and the
+  diff was run.** The TSV is tracked by neither repository — that part stands:
 
   ```
   $ git log --all --name-only --format='' | grep -c 'meta_updates.tsv'   # public
@@ -115,11 +118,23 @@ field for it to verify. It now verifies 243 keys and stays clean.
   0
   ```
 
-  So the task's instruction to "diff the regeneration against the stale TSV" was
-  unfollowable as written, and any claim about that diff cannot be checked by anyone now. The
-  property it was meant to establish — that the mapping came from the index **as committed** and
-  not from a stale copy — is instead established directly: all 243 keys resolve against the
-  committed 222-key index, which a stale mapping pointing at the retired key could not do.
+  But it survives in the implementing session's scratchpad, and an independent agent has since
+  diffed its 243 rows against the `company_key` each `meta.yaml` actually carries:
+
+  ```
+  $ .venv/bin/python -c "<read the TSV; compare proposed_company_key against the committed
+                          company_key in each meta.yaml>"
+  tsv rows: 243
+  agree: 242  disagree: 1  unlocatable: 0
+  ```
+
+  **Exactly one row disagrees, and it is the expected one**: the joint-venture folder the owner's
+  ruling moved, where the proposal assigned the joint venture its own key and the committed file
+  carries the parent brand's. So the mapping is the index **as committed**, not a stale copy, and
+  the single divergence is the owner's decision rather than drift. The TSV holds real employer
+  names and is deliberately not copied into either repository, which is why only shapes and counts
+  appear here. This entry originally read "unfollowable as written"; it understated what could be
+  checked.
 
 ## Definition of done — what is and is not covered
 

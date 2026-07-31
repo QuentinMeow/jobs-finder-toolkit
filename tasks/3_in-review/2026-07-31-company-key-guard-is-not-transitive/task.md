@@ -3,7 +3,8 @@
 - **Priority**: P1 (this round)
 - **Area**: harness
 - **Source**: adversarial review of workspace phase 7, 2026-07-30 — reproduced, not theoretical
-- **Claimed-by**:
+- **Claimed-by**: agent, 2026-07-31 — see [verification.md](verification.md) and
+  [worklog.md](worklog.md)
 
 ## Goal
 
@@ -66,10 +67,14 @@ While here, two related weaknesses from the same review:
 
 ## Definition of done
 
-- [ ] The guard follows calls out of each guarded function, not just its body
-- [ ] At least one of the four reproduced mutations is a regression test, and is shown to pass the
+- [x] The guard follows calls out of each guarded function, not just its body
+- [x] At least one of the four reproduced mutations is a regression test, and is shown to pass the
       OLD guard and fail the new one
-- [ ] When it fires, the message names the call path
-- [ ] What the guard deliberately does not cover is written down in the module docstring
-- [ ] `test_the_guard_list_is_not_vacuous` pins membership rather than a count
-- [ ] Full gate green
+- [x] When it fires, the message names the call path
+- [x] What the guard deliberately does not cover is written down in the module docstring
+- [x] `test_the_guard_list_is_not_vacuous` pins membership rather than a count
+- [x] Full gate green
+
+Also done, beyond the list: the behavioural half now covers `audit.build_coverage` too, and the
+fixture carries an alias merge so that comparison is not vacuous. Evidence in
+[verification.md](verification.md).

@@ -1220,3 +1220,30 @@
     four memory/known-issues entries by their public filenames. All four files name only public
     toolkit paths, public issue slugs and counts. No company, employer, person, application slug,
     posting URL, salary or absolute home path. The advisory company detector reports (none).
+- commit: c4201ee0
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 1
+  digest: sha256:94e7c1274302ef85
+  finding: >-
+    Read the full diff of the one file, a unit test under automation/shared/tests. It adds an ast
+    call-closure walker, a membership pin over the guarded list, a carve-out list with one entry,
+    a regression test that mutates a copy of a public automation module in a temp dir, and one
+    behavioural method. The only employer names are the invented "Acme Labs", "Acme Cloud",
+    "Beacon Works" fixtures already in this file, plus one new invented "Acme Labs International"
+    row; example.test URLs throughout. No real company, person, application slug, posting URL,
+    date from the owner's hunt, or absolute home path. The advisory company detector reports (none).
+- commit: 93090b32
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 4
+  digest: sha256:b7513e285abff9e6
+  finding: >-
+    Read the full 4-file diff: a task record moved into 3_in-review with its verification and
+    worklog, plus one corrected entry in phase 7b's verification. Deliberately checked the
+    correction, because the source it describes is a scratchpad TSV of real employer names: the
+    corrected entry carries counts and shapes only (243 rows, 242 agree, 1 disagrees) and
+    describes the one divergence as "the joint-venture folder" without naming the employer, the
+    key or the slug. The transcripts quote invented Acme/Beacon fixtures and example.test URLs;
+    scratch and worktree paths are written as <scratch>. No real company, person, application
+    slug, posting URL, salary or absolute home path. The advisory company detector reports (none).
