@@ -29,8 +29,10 @@ canaries:
       - "Writes 02 for a cold reader: a jargon-free product answer before component names, prerequisite concepts defined in order, at least one concrete end-to-end use case, and explicit company-hosted versus customer-owned boundaries."
       - "Does live research (fetches primary sources, cites the specific artifact) rather than writing from memory; marks non-first-party claims [confirmed]/[likely]/[unverified] and inferences [inference]."
       - "Keeps comp/WLB/visa OUT of the question bank — those live in for-myself/."
+      - "No application record exists for Cloudflare under the example config, so the run must take the company-scope path from SKILL.md 'Before You Start' step 3 rather than improvising: still produces the whole folder, subjects 08/10/09's level questions to the role family from the ATS board with the stated scope line, and tags posting-dependent lines [JD-dependent]."
     failure_modes:
       - "Homepage-depth summary that could have been written without reading anything specific."
+      - "Invents a job posting to fill 08, or silently drops 08/10 because no application record exists."
       - "Skips 03 / 05 / 09, or omits the for-myself/ files."
       - "Uncited claims, or facts written from memory with no source artifact."
     primary_metric: rubric_pass
@@ -83,11 +85,15 @@ canaries:
     expected_behavior:
       - "Answers AI-era survival explicitly — is AI a tailwind/headwind/existential threat to the product — reasoned from the product's job-to-be-done, not a restated tagline."
       - "Separates AI strategy that is ALREADY SHIPPED (features live to users/engineers, with dates + evidence, tagged [confirmed]/[likely]) from what is only ANNOUNCED/PLANNED (roadmap, exec quotes, job reqs, partnerships), marking aspiration [inference]."
+      - "Establishes the shipped/beta split from EVIDENCE THAT CAN CARRY IT — the launch/GA post or changelog entry and the docs BODY, not a product-directory entry, a docs landing page, or a pricing tier line — and tags every named product with its stage ([GA <date>] / [beta since <date> - <N> months] / [announced <date>, not shipped] / [maturity unverified]), giving each beta its duration."
+      - "Anything whose stage the run could not establish is listed under its own 'Maturity unverified' heading with the URLs checked, never folded into 'Already shipped'. Spot-check at least two named GA claims against the vendor's launch post: a product in open or private beta presented as shipped is a rubric FAIL even if every other bullet holds."
       - "Derives a non-obvious AI edge from real structural assets (first-party data, distribution/integration lock-in, workflow/system-of-record ownership, regulatory/trust moat, unit-economics headroom) labeled [inference], and names the inverse threat (model owner moving down-stack, commoditization)."
       - "Covers internal AI adoption — how aggressively they use AI inside (mandates, dev tools like Cursor/Claude Code, agent/eval workflows) AND whether they ship AI in both internal tooling and user-facing product, each surface named."
       - "Ends with a 'My read' that judges real/structural vs. early-but-credible vs. AI-washing; keeps Claim/Evidence/Judgment distinct with confidence tags."
     failure_modes:
       - "Parrots an 'AI-first' tagline or lists AI press releases as if shipped, without separating shipped from planned."
+      - "Calls a product shipped on the strength of a product-directory entry, a docs landing page, a plan-entitlement line ('Available on all plans'), or the mere absence of a beta badge - the four-wrong-calls failure this canary exists to catch."
+      - "Resolves an ambiguous maturity toward 'shipped' instead of saying the evidence is ambiguous."
       - "Only lists user-facing AI features and never assesses survival, the non-obvious edge, or internal adoption."
       - "Asserts an AI edge with no structural reasoning/evidence and no [inference] label; omits the 'My read' verdict."
     primary_metric: rubric_pass

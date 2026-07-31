@@ -70,6 +70,21 @@ Use this skill when the user asks to:
      candidate specifics from `config` and the profile.
 3. Find the application record under `config.applications_root()/<status>/<slug>/`: its
    `meta.yaml`, the JD file(s) `source/JD-*.md`, and `notes.md` if present.
+   **No application record is the ordinary case** — research usually runs before an
+   application exists. Do not improvise an accommodation; switch to **company scope**:
+   - Produce the **whole folder anyway**. Only the three outputs below are specified in
+     terms of a posting; everything else is company-level and unchanged.
+   - The subject of `08`, of `10`'s angles, and of `09`'s level/scope questions becomes the
+     **role family named in the request** (e.g. "Senior SWE, Platform"), sourced from the
+     company's own open postings on its ATS board — real, fetchable evidence that needs no
+     application. Put `Scope: company-level — no saved posting; grounded in the ATS board as
+     of <date>` under the title of each of those three.
+   - Tag every line a real posting would change `[JD-dependent]`, so a later run *with* the
+     application re-targets those lines instead of rewriting the file.
+   - A required cross-file link whose target this run did not produce (`09` → `10`, when only
+     `09` was asked for) **stays a link**, marked `(not yet written)`. Never inline another
+     file's template to avoid a dangling reference: the summary `09` already owes is the
+     deliverable, and the link is only a pointer.
 4. Skim your candidate profile (`config.profile_md_path()`) so research and questions connect to
    the candidate's real background and needs — take their domain/experience from the profile
    and their location + visa-sponsorship requirements from `config.location_policy()` and the
@@ -106,8 +121,10 @@ offer decision. Wrong "facts" are worse than missing ones. So:
 
 ### Acquisition and Output Reference
 
-Before live research and before writing outputs, read `reference.md` completely. It contains the canonical fetches, restricted-source rules, compensation-cache
-provenance requirements, private-overlay routing, the full output tree, and the per-file rubrics and templates the file list below points at. Keep the sourcing guardrails above and the output rules below as the controlling gates.
+Before live research, read exactly three sections of `reference.md`: §§ "Handy Fetches" (canonical fetches, restricted-source rules, compensation-cache provenance),
+"Maturity fetches", and "Output Location and Structure" (private-overlay routing, the full output tree). Those are what every run needs.
+The rest of the file is per-file templates: **each file's entry below names the one section to read before writing that file, and those pointers are the complete list — nothing here asks you to read `reference.md` end to end.**
+Keep the sourcing guardrails above and the output rules below as the controlling gates.
 
 Rules:
 - Create the whole folder. Scaffold thin files with `[unverified]` + where-to-look;
@@ -176,7 +193,9 @@ Rules:
   strategy** — is AI a tailwind
   or an existential threat to this product, and what AI-first / AI-native strategy
   have they *already shipped* vs. only *announced / planned* (separate the two, with
-  evidence and dates); **(b) the non-obvious AI edge** — reasoned, often
+  evidence and dates — run the **Maturity gate** below; a product-directory entry, a docs
+  landing page, or a pricing tier is **not** evidence that something shipped);
+  **(b) the non-obvious AI edge** — reasoned, often
   *not-publicly-stated* structural reasons this product is unusually well- (or
   poorly-) positioned to win as AI commoditizes its layer — derive them from their
   data/distribution/workflow/regulatory position, not their press releases, and label
@@ -264,7 +283,9 @@ For EACH candidate moat, write:
   → ... until you hit bedrock (a structural reason) or the claim collapses.
 - **Evidence:** the observable proof (or its absence) — numbers, customer behavior,
   competitor attempts, retention, pricing power. Tag `[confirmed]`/`[likely]`/
-  `[unverified]`.
+  `[unverified]`. When the proof is a *product capability*, carry its maturity tag from
+  the `06` Maturity gate — a capability still in beta is weaker evidence for a moat than
+  a GA one, and one whose stage you could not establish is weaker still.
 - **Verdict:** REAL & durable / real but eroding / weak / just a feature. One line.
 
 ## Defensibility scorecard (vs. each threat vector)
@@ -298,17 +319,58 @@ about it?* Same discipline as `05`: separate **what they say** from **what's
 observable** from **your judgment**, tag confidence, and label reasoned inferences
 `[inference]`. Do NOT restate an "AI-first" tagline as a finding — test it.
 
+### Maturity gate — apply this before writing the shipped-vs-planned split
+
+Maturity is a **sourced claim, not a page impression**. One measured run produced four wrong
+"shipped" calls here — one for a product fifteen months into open beta — because the pages this
+skill sends you to carry no maturity badge at all. The candidate then says those sentences to
+the person who built the product. So classify **every product you name** — in `06`, and wherever
+`04`/`05` reason from a shipped capability — down this ladder, in order, and stop at the first
+match:
+
+1. **Beta / preview** — the words *beta, preview, early access, experimental, waitlist, request
+   access,* or *"free during the beta"* appear in the product's launch post, its docs **body**,
+   its pricing page, or the changelog. **This beats any GA-looking signal**, unless a *dated* GA
+   announcement is newer than the newest dated beta statement.
+2. **GA / shipped** — a dated launch, GA, or "out of beta" post or changelog entry; or a pricing
+   page that bills it at a general price with no beta qualifier.
+3. **Announced / planned** — a roadmap line, exec quote, press release, partnership, or job req,
+   with no docs and no way to use it.
+4. **Ambiguous** — you checked 1 and 2 and found no stage word either way.
+
+**None of the following is evidence of GA**, and each has produced a wrong call: a
+product-directory or "our products" listing · a docs landing/nav page carrying no stage word · a
+plan-entitlement line ("Available on all plans", "Included in Pro" — a *pricing tier*, not a
+lifecycle stage) · the existence of an API, SDK, dashboard tile, or docs · the **absence** of a
+beta badge. Two fetches settle it and no other source is needed: the product's launch /
+announcement post, then the **body text** of its docs overview and pricing page (`reference.md`
+§ "Maturity fetches"); the changelog breaks a tie.
+
+**When it is ambiguous, say so.** File that product under its own `### Maturity unverified`
+heading, never under `Already shipped`. Here an honest hedge is correct output and a confident
+wrong call is the failure this gate exists to stop — never resolve an ambiguity toward shipped.
+
+**Tag every product inline** with its stage, beside the usual source-confidence tag:
+`[GA <date>]` · `[beta since <date> — <N> months]` · `[announced <date>, not shipped]` ·
+`[maturity unverified — checked launch post + docs body]`. A beta always carries its
+**duration**, because "in beta" and "in beta for fifteen months" are different facts about how
+the company executes.
+
 ```markdown
 ## AI-era survival & strategy
 Is AI a **tailwind, a headwind, or an existential threat** to this product? Reason
 from the product's job-to-be-done: what does AI make cheaper/obsolete, and what does
 it make more valuable? Then inventory their AI strategy, **separating shipped from
 promised**:
-- **Already shipped** — AI features/products live in the hands of users or engineers,
-  with dates and evidence (changelog, blog, release). Tag `[confirmed]`/`[likely]`.
+- **Already shipped (GA)** — features/products the maturity gate classified GA, with the
+  dated launch/GA post or changelog entry that proves it. Tag `[GA <date>]` + `[confirmed]`.
+- **Shipped but still beta / preview** — usable, but not GA. Give the stage, the date it
+  entered it, and how long it has been there: `[beta since <date> — <N> months]`.
 - **Announced / planned** — roadmap statements, exec quotes, job reqs (this JD is a
   signal), acquisitions/partnerships. Mark aspiration `[inference]`; do not treat a
   press release as a shipped capability.
+- **Maturity unverified** — you checked the launch post and the docs body and neither
+  states a stage. List it here rather than guessing; say what you checked.
 - **AI-first / AI-native posture** — is AI bolted on (a chatbot on the side) or woven
   into the core product/architecture/business model? Give the concrete evidence.
 
@@ -403,6 +465,7 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
 
 ```
 - [ ] Read AGENTS.md, LESSONS.md, the app meta.yaml + JD(s) + notes, and profile
+      (no application record? company scope — see "Before You Start" step 3)
 - [ ] First-party pass: site (about/careers/blog/pricing/docs), GitHub, ATS teams/roles
 - [ ] DEPTH pass: read eng blog posts/talks/founder interviews/HN in full (cite artifacts)
 - [ ] Secondary pass: funding/valuation, headcount, ratings, visa (cite + date)
@@ -411,7 +474,8 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
 - [ ] Write 05 moat & differentiation: contrarian bet + moat (5-Whys + evidence) +
       defensibility scorecard + growth potential + risks + My read
 - [ ] Write 06 AI embrace: public (customer-facing) + private (internal adoption);
-      AI-era survival + shipped-vs-planned + non-obvious AI edge ([inference]) + My read
+      AI-era survival + shipped-vs-planned (Maturity gate: launch post + docs body, per-product
+      stage tag, betas dated with duration) + non-obvious AI edge ([inference]) + My read
 - [ ] Write 01 (incl. company SIZE — headcount/trend/revenue/valuation), 07, 08
       (facts + POV + confidence tags + Sources)
 - [ ] Write 04 business/customers/competitors + the 1–100 competitor scorecard
@@ -441,7 +505,10 @@ Keep comp/WLB/visa probes out of this file (those are `for-myself`).
 - **AI-strategy rigor:** Does `06` frame AI embrace on **both axes — publicly
   (customer-facing products/launches) and privately (internal adoption)** — and answer
   all three: **(a)** AI-era survival with shipped-vs-planned strategy separated
-  (dates/evidence), **(b)** a non-obvious AI edge derived from real assets and labeled
+  (dates/evidence) — **and does every named product carry a maturity tag from the Maturity
+  gate, with each beta dated and given its duration, and anything unsettled listed under
+  `Maturity unverified` rather than folded into shipped?** **(b)** a non-obvious AI edge
+  derived from real assets and labeled
   `[inference]` (plus the inverse threat), and **(c)** internal AI adoption covering
   *both* internal and user-facing AI — ending with a **My read** that calls real
   strategy vs. AI-washing? Is an "AI-first" tagline tested, not parroted?

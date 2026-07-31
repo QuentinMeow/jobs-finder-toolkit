@@ -1,6 +1,6 @@
 # Company Research Operational Reference
 
-Read this reference before live research and again before writing company-research outputs. The sourcing rules in `SKILL.md` remain controlling.
+**This file is read by section, never end to end.** Before live research read §§ "Handy Fetches", "Maturity fetches" and "Output Location and Structure"; every other section is a per-file template fetched only when `SKILL.md` names it for the file you are about to write. The sourcing rules in `SKILL.md` remain controlling.
 
 ## Handy Fetches
 
@@ -30,6 +30,29 @@ a different file from application `meta.yaml`, whose only supported schema is v3
 ladders second, licensed market benchmarks last. Record provenance per fact (provider, URL, retrieved date, geography, confidence, method, sample
 size/statistic, and access/license). Keep base, stock, bonus, and total compensation separate, preserve location-specific bands, and never infer total
 compensation.
+
+## Maturity fetches
+
+The two fetches that settle whether a product is GA, beta, or only announced (`SKILL.md` § "Maturity gate" holds the ladder these feed). A product-directory listing or a docs landing
+page sometimes carries a stage badge and often does not, and its silence proves nothing; the statement that settles it lives in the launch post and in the **body** of the docs
+overview and pricing pages. Strip each to text and grep it rather than reading the rendered nav:
+
+```bash
+# 1. The product's launch / announcement post, and the changelog entry if there is one.
+STRIP='import sys,re,html;t=sys.stdin.read();t=re.sub(r"<(script|style).*?</\1>","",t,flags=re.S);t=re.sub(r"<[^>]+>"," ",t);print(re.sub(r"\s+"," ",html.unescape(t)))'
+curl -s -L -A "Mozilla/5.0" "<launch-post-url>" | .venv/bin/python -c "$STRIP" \
+  | grep -o -i -E ".{140}(generally available|out of (open |private |closed )?beta|now GA|open beta|private beta|closed beta|early access|preview|waitlist|request access).{140}"
+
+# 2. The docs OVERVIEW and PRICING pages of that product — body text, same grep.
+curl -s -L -A "Mozilla/5.0" "<docs-overview-url>" | .venv/bin/python -c "$STRIP" | grep -o -i -E ".{140}(beta|preview|early access|experimental|generally available).{140}"
+
+# Many docs sites publish a plain-text mirror that skips the nav entirely. GREP it, never read it —
+# these run to megabytes (Cloudflare's per-product llms-full.txt was ~1.1 MB on 2026-07-31).
+curl -s -L "<docs-root>/llms-full.txt" | grep -o -i -E ".{140}(beta|preview|generally available).{140}" | head
+```
+
+Read what the grep returns in context before classifying: "free during the open beta" on a pricing page is a **beta** statement, while "Available on all plans" is a
+plan-entitlement line that says nothing about lifecycle stage. A zero-hit grep on both fetches is the `Ambiguous` rung — record which URLs you checked, do not promote it to shipped.
 
 ## Output Location and Structure
 
