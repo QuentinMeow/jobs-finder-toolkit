@@ -51,4 +51,11 @@ a clause in `docs/handbook/application-folders.md` recording that a present-but-
 (1 skipped), application-tracker 82 OK, vendor drift in sync, reconciler 9 checks
 clean, leak guard clean.
 
-- Next: PR against `fix/06-company-key-guard-transitive`, then watch CI.
+- PR #128 opened against `fix/06-company-key-guard-transitive`. `build` passed on the
+  first run; `secret-scan` (gitleaks) failed on a FALSE POSITIVE — its `generic-api-key`
+  rule fired on a test fixture slug that happened to read as `key-<high-entropy>` beside a
+  quote. Fixed by renaming the fixture and lifting the two slugs into named variables, so
+  the rule has no `key = "..."` shape to match. No allowlist was added and no check was
+  weakened: the finding was a real pattern match on text that is genuinely not a secret,
+  and the cheapest honest fix is to stop writing that pattern.
+- Next: re-watch CI on the amended tip.
