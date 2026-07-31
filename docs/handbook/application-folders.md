@@ -22,7 +22,10 @@ agree.** Applications are always created under
 
 **Numeric-prefix convention.** Every folder under `applications/` carries a `0_`–`6_`
 prefix (`0_profile`, `1_discoveries`, `2_ignored`, `3_rejected`, `4_in_progress`,
-`5_applied`, `6_drafted`) so a plain directory listing sorts into pipeline order. The
+`5_applied`, `6_drafted`) so a plain directory listing sorts into pipeline order.
+Only the five in the table above are **statuses**: `automation/shared/layout.py`'s
+`STATUS_DIRS` maps exactly those labels, and `status.py` skips `0_profile` and
+`1_discoveries` as support folders — an application never lives in either. The
 prefix is part of the on-disk folder name only — the CLI status **labels** stay
 unprefixed (`drafted`, `applied`, `in_progress`, `rejected`, `ignored`): the summary table
 and `status.py --update <slug> <status>` still take the bare label, and `status.py` maps

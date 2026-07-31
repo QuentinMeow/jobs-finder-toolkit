@@ -63,13 +63,18 @@ This is the complete routine path — an ordinary search needs nothing below it.
 5. **Subagent cap: at most 8 subagents total** per request — see `AGENTS.md` → "Subagent Budget".
 
 ### Step 1 — Confirm the profile and filters
-Profiles live in `profiles/<label>.yaml`; the default is `config.job_search.default_profile`
-(shipped demo: `example`). The profile — not the script — holds all criteria: **location**
+The candidate's own profiles live in `config.search_profiles_dir()` (the overlay), NOT in this
+skill: `--profile <label>` resolves there first and falls back to the public `profiles/` folder,
+which may only ever hold `_TEMPLATE.yaml`, `example.yaml` and its README. The default label is
+`config.job_search.default_profile` (shipped demo: `example`). A configured profiles dir that
+resolves inside public `skills/` is dropped outright, so a personal profile can never be
+addressable at a public path. The profile — not the script — holds all criteria: **location**
 (`config.location_policy()`: `metro` + `allow_us_remote` + `us_only`; the profile's own `location:` block adds `preferred`/`allow_remote`/`require_match`), **roles/keywords**,
 **seniority** the allowed band, **experience** (drop JDs stating a minimum above
 `max_years_experience`; keep if unstated), and **visa** policy (e.g. `policy: exclude_negative`
-when sponsorship is required). To change scope, edit `profiles/<label>.yaml` or pass a flag
-override — never hardcode criteria into scripts. Scope the run to the profile(s) the user asked
+when sponsorship is required). To change scope, edit the profile in
+`config.search_profiles_dir()` or pass a flag override — never hardcode criteria into scripts,
+and never write the candidate's criteria into the public `profiles/` folder. Scope the run to the profile(s) the user asked
 for; add no unprompted extra sweeps.
 
 - **Seniority band:** a `[mid, senior]` profile demotes staff+/principal/manager/entry titles
@@ -276,8 +281,8 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 
 | Path | Purpose |
 |------|---------|
-| `profiles/<label>.yaml` | Search criteria (roles, keywords, location + radius, visa, recency, `ai_company`, `sources`/stage config); default label = `config.job_search.default_profile`. Two useful styles: an **evergreen company-board sweep** and a **widened two-stage market scan** (see `profiles/_TEMPLATE.yaml`) |
-| `profiles/example.yaml` | Generic general-software-engineer example profile (copy + tune) |
+| `config.search_profiles_dir()/<label>.yaml` | Where the candidate's OWN search profiles live (overlay, resolved first): roles, keywords, location + radius, visa, recency, `ai_company`, `sources`/stage config; default label = `config.job_search.default_profile`. Two useful styles: an **evergreen company-board sweep** and a **widened two-stage market scan** (see `profiles/_TEMPLATE.yaml`) |
+| `profiles/` | The PUBLIC fallback folder — `example.yaml` (generic general-software-engineer profile, copy + tune), `_TEMPLATE.yaml`, and its README. Nothing else may ever be written here |
 | `companies.yaml` | Canonical company registry — identity, ATS poll config, tags (incl. the `ai-lab`/`ai-infra`/`ai-native` family), blacklist |
 | `config.company_levels_path()` | Dated reusable company level/YOE/base/total-comp reference; separate from the identity registry (see reference.md § Leveling cache) |
 | `scripts/search_jobs.py` | Main pipeline (two-stage fetch → filter → score → rank → output); `--stage`, `--ai-native-only`, `--no-jobspy`, `--max-per-company`, `--top-k`, `--max-age-days`, `--visa-policy`, `--refilter latest`, `--print-full` |
@@ -295,8 +300,9 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 
 ## Guardrails
 
-- **Profiles hold criteria, scripts stay generic.** Tune `profiles/*.yaml`; never bake a person's
-  criteria into code.
+- **Profiles hold criteria, scripts stay generic.** Tune the profile in
+  `config.search_profiles_dir()`; never bake a person's criteria into code, and never into the
+  public `profiles/` folder.
 - **Visa detection is advisory.** `yes`/`no`/`unclear` come from text heuristics; always tell the
   user to confirm sponsorship directly with the employer.
 - **No fabricated postings.** Every result must carry a real `source` + `url`; `?` for missing

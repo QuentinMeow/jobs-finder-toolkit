@@ -401,15 +401,15 @@ Phase 0's accessors changed the shape of this phase. Work through the move table
 | `applications/0_profile/calendar.md` | `me/interviews/calendar.md` | `paths.calendar_md` (already first-class since phase 0) |
 | `applications/1_discoveries/` | `market/scans/{current,archive}/` | `paths.discoveries_dir` covers `current/`; **the `archive/` tier is new structure** — the gardener's discovery-expiry routine needs the second directory |
 | `job-search/blacklist.yaml` | `market/` | `paths.blacklist_yaml` |
-| `interviews/behavioral/story-bank/` | `me/interviews/stories/` | `paths.story_bank_dir` for the location, 17 files — **but** see the display-key trap below |
+| `interviews/behavioral/story-bank/` | `me/interviews/story-bank/` | `paths.story_bank_dir` for the location, 17 files — **but** see the display-key trap below |
 | `job-search-profiles/` | `market/searches/` | `paths.search_profiles_dir` |
 | `interviews/company-specific/<c>/company-info/` | `companies/<key>/research/` | `paths.companies_root`; **299** files across 18 company folders, mechanical (the plan's earlier 282 / "24 companies" is stale — re-measured 2026-07-29) |
 | `data/` | `store/` | `paths.data_root` / `$JOBHUNT_DATA_ROOT`, **plus** the nine ignore patterns in `private/.gitignore` in the same commit |
 | `applications/0_profile/tailoring-card.md` | `me/` | **code** — no config key; see below |
 | `applications/0_profile/{applications-log,company-search-log}.yaml` | `market/logs/` | **code** — no config key; see below |
-| `interviews/behavioral/question-bank/{README,_general_*,sources,tests}` | `me/interviews/questions/` | mechanical; **36** of the question bank's 55 tracked files (18 `_general_*`, 1 README, 16 under `sources/`, 1 under `tests/`) |
-| `interviews/behavioral/question-bank/<company>-*.md` | `companies/<key>/derived/behavioral.md` | **code** — these are build outputs; `skills/behavioral-interview-prep/scripts/answer_bank.py` must learn cross-tree targets. **19** files, and every one's pre-hyphen prefix matches an existing company folder name, so the routing is mechanical (re-measured 2026-07-29) |
-| `interviews/common-message-replies/` | `me/interviews/replies/` | mechanical, 2 files; no script names this path |
+| `interviews/behavioral/question-bank/{README,_general_*,sources,tests}` | `me/interviews/question-bank/` | mechanical; **36** of the question bank's 55 tracked files (18 `_general_*`, 1 README, 16 under `sources/`, 1 under `tests/`) |
+| `interviews/behavioral/question-bank/<company>-*.md` | `companies/<key>/derived/<company>-<principle>.md` | **code** — these are build outputs; `skills/behavioral-interview-prep/scripts/answer_bank.py` must learn cross-tree targets. **19** files, and every one's pre-hyphen prefix matches an existing company folder name, so the routing is mechanical (re-measured 2026-07-29) |
+| `interviews/common-message-replies/` | `me/interviews/common-message-replies/` | mechanical, 2 files; no script names this path |
 | `interviews/company-specific/<c>/coding/` | `companies/<key>/coding/` | 163 files across 9 company folders (not 24 — re-measured 2026-07-29). An interview-running firm is a company too — it gets its own `companies/<key>/`. **Moves as-is**: no per-problem folders, no split aggregates — see [what the owner ruled out](#what-the-owner-decided-and-what-that-forbids) |
 | `interviews/company-specific/<c>/product-sense/` | `companies/<key>/product-sense/` | 15 files in one company folder; mechanical. Previously flagged as a judgment call because "the schema does not model this round type" — it does not need to: the folder moves whole under its company |
 | `interviews/company-specific/<c>/<loose reply draft>` | `companies/<key>/` | 1 file sitting directly inside a company folder; company-specific by location, so it moves with the folder |
@@ -483,9 +483,9 @@ company as well. The re-measured shape of the tree, taken 2026-07-29 against the
 | Subtree | Tracked files | Where the ruling sends it |
 |---|---:|---|
 | `interviews/` total | 552 | — |
-| `interviews/behavioral/question-bank/` | 55 | splits: 19 company-prefixed → `companies/<key>/`; the other 36 → `me/interviews/questions/` |
-| `interviews/behavioral/story-bank/` | 17 | `me/interviews/stories/` |
-| `interviews/common-message-replies/` | 2 | `me/interviews/replies/` |
+| `interviews/behavioral/question-bank/` | 55 | splits: 19 company-prefixed → `companies/<key>/`; the other 36 → `me/interviews/question-bank/` |
+| `interviews/behavioral/story-bank/` | 17 | `me/interviews/story-bank/` |
+| `interviews/common-message-replies/` | 2 | `me/interviews/common-message-replies/` |
 | `interviews/company-specific/` | 478 across 25 company folders | all of it → `companies/<key>/` |
 | ├ `company-info/` | 299 across 18 of them | `companies/<key>/research/` |
 | ├ `coding/` | 163 across 9 of them | `companies/<key>/coding/` |
@@ -515,7 +515,9 @@ not an obvious mistake, and the answer is to leave it and file it.
 ways for the 55 non-company files: (a) do not *reorganise* them, but still *relocate* them to
 their taxonomy home, or (b) leave `interviews/` where it is entirely. The plan proceeded on (a),
 and the owner confirmed (a): the story bank, the general question bank and the shared replies move
-to `me/interviews/{stories,questions,replies}/` with nothing inside them altered. The table above
+to `me/interviews/{story-bank,question-bank,common-message-replies}/` with nothing inside
+them altered — the leaf names are kept, which is what makes the 33 sibling-relative
+`../../story-bank/` references inside the YAML sources keep resolving. The table above
 already assumed this, so no step changes — see the amendment in
 [the interview-material ADR](../../../memory/decisions/interview-material-moves-by-company-only.md).
 **Every one of the 552 interview files now has a named destination**, which is what makes this

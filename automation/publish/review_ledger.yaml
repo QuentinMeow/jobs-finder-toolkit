@@ -1326,3 +1326,63 @@
     content. The decision item describes the flagged text as invented fixture folder-name slugs
     and quotes none of it. No real company, person, application slug, posting URL, salary or
     absolute home path. The advisory company detector reports (none).
+- commit: 3f6822e0
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:084555c82208dd2c
+  finding: |
+    Read the full 2-file diff. Both are public skill documents describing this repo's own
+    tooling: the gate table in github-workflow (gate names, flags, hook-vs-CI placement) and
+    two previously undocumented gardener routines with their accessors and exit-code rules.
+    No real name, employer, school, date, salary, application slug, posting URL or absolute
+    home path; nothing about the owner's job hunt. The advisory company detector reports (none).
+- commit: f997915a
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:37a6b3987146a0fd
+  finding: |
+    Read the full 2-file diff. CONTRIBUTING.md gains an audience paragraph and a reworded
+    stacked-PR rule; architecture.md changes one word ("eight" to "eleven" public skills).
+    Both are process/architecture prose about this public repo. No real name, employer,
+    school, date, salary, application slug, posting URL or absolute home path. The advisory
+    company detector reports (none).
+- commit: 04664b9a
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 8
+  digest: sha256:61f8c666b65000d6
+  finding: |
+    Read the full 8-file diff. Path/prose corrections in AGENTS.md, two handbook pages, three
+    SKILL.md files, the two workspace-restructure design docs, and one new backlog task file.
+    Deliberately checked the risky class: every location is written as an accessor
+    (config.search_profiles_dir(), config.companies_root()/<key>/derived/) or a generic
+    placeholder, so no real company key, application slug or overlay filename appears. The
+    behavioural-prep paragraph describes file SHAPES and counts only, per the interview-material
+    ADR's "counts and shapes only" rule. No real name, employer, school, date, salary, posting
+    URL or absolute home path. The advisory company detector reports (none).
+- commit: 24fd699e
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 1
+  digest: sha256:0e4c32124838c5c2
+  finding: |
+    Read the full 1-file diff: a unit-test fixture directory name changed from this repo's own
+    retired skill name to an unambiguously foreign one, plus a docstring explaining why a plain
+    directory is the case under test. Assertions follow the rename; no production code, no
+    behaviour change. No real name, employer, school, date, salary, application slug, posting
+    URL or absolute home path. The advisory company detector reports (none).
+- commit: 1a7a38ef
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:833f1c163eafa3ec
+  finding: |
+    Read the full 3-file diff: the task record for this branch (task/verification/worklog).
+    verification.md pastes real command output, so it was read line by line for the two risky
+    classes: absolute home paths are redacted to <repo-root> and the scratchpad path to
+    <scratchpad>, and the private-tree evidence is counts only (19 derived files, 0 non-general
+    files in the question bank) with no company key, filename or content quoted. No real name,
+    employer, school, date, salary, application slug or posting URL. The advisory company
+    detector reports (none).

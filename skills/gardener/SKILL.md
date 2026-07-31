@@ -28,8 +28,10 @@ and staleness/duplicate flagging.
   the live search log is never edited in place — a `*.compacted.yaml` copy is written for review.
 - **Human confirms `--apply`.** Never run `--apply` on the user's behalf without explicit
   approval. If a run would touch **more than ~10 items**, surface the plan and get a fresh OK first.
-- **Report-only routines don't act.** `lessons-report` and `verify-links` never mutate anything —
-  promotion/demotion of a lesson is a **separate human-reviewed commit** (self-evolution contract).
+- **Report-only routines don't act.** `lessons-report`, `card-staleness`, `skill-drift`,
+  `store-report` and `verify-links` never mutate anything, and `--apply` on one only prints
+  `note: '<routine>' is report-only` — promotion/demotion of a lesson is a **separate
+  human-reviewed commit** (self-evolution contract), and store pruning is `gc_store.py`.
 - Always use the repo venv: `.venv/bin/python`.
 
 ## Routines
@@ -40,6 +42,8 @@ and staleness/duplicate flagging.
 | `compact-logs` | `company-search-log.yaml` rows older than `search_log_prune_days` (90) → prune; the append-only `applications-log.jsonl` is **never compacted** — rewriting it would restore the truncation this log exists to prevent | dry-run; `--apply` writes a compacted copy + runs `--sync-log`, which now *appends* changed postings | never edits either live log in place |
 | `lessons-report` | Flag LESSONS sections whose `last_confirmed` > `lesson_confirm_days` (180) or that are untagged; flag near-duplicate bullets within a LESSONS.md and vs its SKILL.md | **report-only** | human ratifies any promotion/deletion |
 | `card-staleness` | Compare the source hashes recorded in the resume-writer tailoring card (`config.tailoring_card_path()`) with current profile/baseline/story-bank hashes; flag the card when a source drifted | **report-only** | rebuild is the skill's job (`build_tailoring_card.py --force`), never the gardener's |
+| `skill-drift` | Flag skill tokens in the baseline resume (`config.baseline_path()`) whose spelling is not in the profile's canonical Approved/Weak/Never lists, so a mis-spelled skill is caught in upkeep instead of mid-render by `check.py` | **report-only** | fixing a spelling (in the baseline, or by adding the skill to the profile lists) is a human edit; always exits 0, and reports "nothing to check" when the baseline or profile is absent |
+| `store-report` | Raw-data-layer store health per domain under `config.data_root()`: zone sizes, manifest/blob counts, the four blob availability states, orphaned blobs, manifest-less fetch dirs, torn JSONL tails, stale locks, cursor ages, triage + annotation-conflict backlogs, and the `validate_store` result | **report-only** | NEVER prunes — pruning is `automation/store/gc_store.py`, run deliberately. Exits non-zero only on a `validate_store` failure (corrupt blob / schema violation) |
 | `verify-links` | Backticked toolkit paths AND `[text](path)` markdown links resolve — in the overlay's tracked `.md` too when it is mounted; heading anchors match a real heading; skill symlinks resolve; `sync_vendored.py --check` | report-only; **exit 1 on break** | runs in CI and pre-commit; fails on a broken link / vendor drift |
 | `self-measure` | Recompute the funnel (discovered/drafted/applied/in_progress/rejected/ignored) + LESSONS staleness + instruction-budget summary | dry-run; `--apply` writes `metrics.yaml` | writes only into the overlay (`config.candidate_dir()/metrics.yaml`), never the toolkit |
 
@@ -49,7 +53,10 @@ Retention windows come from the optional `retention:` block in `config.yaml`
 ## Commands
 
 ```bash
-# Run every routine in dry-run (safe weekly sweep)
+# Run ALL EIGHT routines in dry-run (safe weekly sweep). Fixed order:
+# self-measure, expire-discoveries, compact-logs, lessons-report, card-staleness,
+# skill-drift, store-report, verify-links — verify-links LAST so its exit code is
+# the overall gate. --apply is ignored under --all; every routine runs dry.
 .venv/bin/python automation/gardener/gardener.py --all
 
 # A single routine (dry-run)
@@ -57,6 +64,8 @@ Retention windows come from the optional `retention:` block in `config.yaml`
 .venv/bin/python automation/gardener/gardener.py compact-logs
 .venv/bin/python automation/gardener/gardener.py lessons-report
 .venv/bin/python automation/gardener/gardener.py card-staleness
+.venv/bin/python automation/gardener/gardener.py skill-drift
+.venv/bin/python automation/gardener/gardener.py store-report
 .venv/bin/python automation/gardener/gardener.py verify-links
 .venv/bin/python automation/gardener/gardener.py self-measure
 
