@@ -3,7 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: harness
 - **Source**: workspace phase 7 PR-D, 2026-07-30 (assessed and deliberately deferred)
-- **Claimed-by**:
+- **Claimed-by**: agent (PR 09, company-key loose ends), 2026-07-31
 
 ## Goal
 
@@ -48,9 +48,29 @@ comment naming the three disagreeing normalizers (this one, `registry.comparable
 `mail/_company_match_key`) is worth more than trying to unify them — unifying them would change
 which companies match which level rows, which is a behaviour change and needs its own task.
 
+## Resolution (2026-07-31) — renamed, and the three normalizers are named rather than unified
+
+`_company_key` -> `_company_match_key`, and the `company_key` local in `lookup_company_level` ->
+`company_match_key`. Nothing else changed.
+
+The task's suggestion was followed: a comment above the function names all three disagreeing
+normalizers and what each disagreement buys — this one strips 7 legal suffixes ANYWHERE,
+`registry.comparable_base` strips its whole `_LEGAL_SUFFIXES` set (15 today) TRAILING-only and
+never the last remaining token, and `mail/reconciliation._company_match_key` strips none. Unifying
+them would change which companies match which level rows, which rows dedup and which threads bind,
+so it stays its own task with its own before/after corpus.
+
+One correction to the task text: `registry._LEGAL_SUFFIXES` holds **15** entries, not 14. The
+comment names the constant and dates the count so a drift is visible.
+
 ## Definition of done
 
-- [ ] `job_metadata.py` has no symbol named `company_key` that is not the owner's persisted field
-- [ ] Level-lookup output is proved identical before and after on a fixture corpus
-- [ ] All three vendored copies re-synced; `sync_vendored.py --check` clean
-- [ ] The additive-invariant suite still passes; full gate green
+Evidence in [`verification.md`](verification.md) beside this file.
+
+- [x] `job_metadata.py` has no symbol named `company_key` that is not the owner's persisted field
+      — every remaining occurrence is `_validate_company_key`, the `meta.yaml` field name, or
+      prose about them
+- [x] Level-lookup output is proved identical before and after on a fixture corpus — 7744 cases,
+      1004 of them matching a level row, same sha256 before and after and from each vendored copy
+- [x] All three vendored copies re-synced; `sync_vendored.py --check` clean
+- [x] The additive-invariant suite still passes; full gate green

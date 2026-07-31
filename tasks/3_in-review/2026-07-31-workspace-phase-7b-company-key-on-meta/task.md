@@ -76,7 +76,9 @@ anything else in it is a bug in your regeneration.
   runs against a possibly-absent overlay, so it cannot resolve a key at scaffold time; a new
   application stays unkeyed until one is assigned, and `status.py --company-keys` is the surface
   that shows it. Filed as its own public task,
-  [`2026-07-31-handoff-scaffold-omits-company-key`](../../0_backlog/2026-07-31-handoff-scaffold-omits-company-key/task.md).
+  [`2026-07-31-handoff-scaffold-omits-company-key`](../2026-07-31-handoff-scaffold-omits-company-key/task.md)
+  (link re-pointed 2026-07-31: that task was picked up and is now in `3_in-review` beside this
+  one; the decision above stands — the scaffold still resolves nothing, it just says so).
 
 ## Definition of done
 

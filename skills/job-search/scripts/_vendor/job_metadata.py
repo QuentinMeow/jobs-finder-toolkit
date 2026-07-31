@@ -492,7 +492,38 @@ def _clean(value: Any) -> str:
     return _WS_RE.sub(" ", str(value or "").strip().lower())
 
 
-def _company_key(value: Any) -> str:
+# NOT the owner's ``company_key``. This is a throwaway MATCH key: it exists only
+# so ``lookup_company_level`` can decide whether a free-text company string names
+# the same employer as a row in the company-levels cache. It is never persisted,
+# never compared against ``meta.yaml``'s ``company_key``, and never resolved
+# against the company index. The persisted field's validator is
+# ``_validate_company_key`` further down this same file, and the two must not be
+# read as versions of each other — which is why this one carries ``match`` in its
+# name (the mail reconciler's identically-shaped helper was renamed for the same
+# reason, and is guarded by name in
+# ``automation/shared/tests/test_company_key_additive.py``).
+#
+# THREE NORMALIZERS, THREE DIFFERENT SUFFIX RULES, ON PURPOSE — do not unify them
+# without measuring, because each disagreement changes what matches what:
+#
+#   * this one — strips 7 legal suffixes (incorporated|inc|llc|ltd|corp|
+#     corporation|company) ANYWHERE in the string via ``\b``, then folds every
+#     non-alphanumeric run to a space. Deliberately loose: it is matching a
+#     hand-written cache of employer names, where "Acme Labs" and "Acme Labs,
+#     Inc." are the same row;
+#   * ``skills/job-search/scripts/registry.py::comparable_base`` — strips the
+#     whole of that module's ``_LEGAL_SUFFIXES`` (15 entries today), TRAILING
+#     only, and never the last remaining token. A trailing-only rule keeps an
+#     employer whose real name merely CONTAINS one of those words ("Inc
+#     Magazine") distinct, which matters where the registry decides identity;
+#   * ``automation/shared/mail/reconciliation.py::_company_match_key`` — strips
+#     NOTHING. It binds email threads to applications, where a wrong merge routes
+#     a recruiter's mail to the wrong employer.
+#
+# Making them agree would change which companies match which level rows, which
+# rows dedup, and which threads bind — a behaviour change that needs its own task
+# and its own before/after corpus, not a tidy-up.
+def _company_match_key(value: Any) -> str:
     key = _clean(value)
     key = re.sub(
         r"\b(?:incorporated|inc|llc|ltd|corp|corporation|company)\b\.?",
@@ -746,12 +777,12 @@ def load_company_levels(path: str | Path | None) -> dict:
 
 def lookup_company_level(company: str, title: str, reference: dict) -> tuple[dict, dict] | None:
     """Find the longest matching company-specific level title pattern."""
-    company_key = _company_key(company)
+    company_match_key = _company_match_key(company)
     title_key = _clean(title)
     best: tuple[int, dict, dict] | None = None
     for company_entry in _companies(reference):
         names = [company_entry.get("name"), *(company_entry.get("aliases") or [])]
-        if company_key not in {_company_key(name) for name in names if name}:
+        if company_match_key not in {_company_match_key(name) for name in names if name}:
             continue
         for level in company_entry.get("levels") or []:
             if not isinstance(level, dict):

@@ -1386,3 +1386,42 @@
     files in the question bank) with no company key, filename or content quoted. No real name,
     employer, school, date, salary, application slug or posting URL. The advisory company
     detector reports (none).
+- commit: dccc2aba
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 4
+  digest: sha256:436054cc18441d46
+  finding: |
+    Read the full 4-file diff: handoff.py's scaffold + its module docstring, the new
+    ScaffoldedCompanyKeyTests, and the two doc lines describing what an unkeyed
+    application looks like. Every company string added is invented (Acme Labs, and the
+    file's existing Nimbus Robotics fixture); the new stderr line and the new code
+    comments name no employer. No real name, employer, school, date, salary,
+    application slug or posting URL, and no absolute home path. The advisory company
+    detector reports (none).
+- commit: b6b52643
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 4
+  digest: sha256:449445012f77e299
+  finding: |
+    Read the full 4-file diff. The canonical change is three identifier occurrences
+    (`_company_key` -> `_company_match_key`, and the `company_key` local in
+    `lookup_company_level`) plus a comment naming the three normalizers this repo runs;
+    the other three files are the byte-identical vendored copies. Every name in the new
+    comment is a module or function path in this repository — no employer, and the
+    advisory company detector reports (none). No real name, school, date, salary,
+    application slug, posting URL or absolute home path.
+- commit: 7b316c08
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 8
+  digest: sha256:354ac0fcd89e56b6
+  finding: |
+    Read the full 8-file diff, with the two verification.md files read line by line because
+    they paste real command output. Absolute home paths are redacted to <repo-root> and the
+    session scratchpad to <scratchpad>; the only company strings are the invented Acme Labs
+    and the test file's existing Nimbus Robotics; the private-tree evidence is counts only
+    (243 applications, 214 distinct company strings, 208 distinct keys, 0 unkeyed) with no
+    key, slug, employer or filename quoted. No real name, school, date, salary or posting
+    URL. The advisory company detector reports (none).

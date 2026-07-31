@@ -40,7 +40,10 @@ For each resulting folder the tool:
    using the vendored ``metadata_editor`` (the same formatting-preserving editor
    the tracker's ``--enrich-metadata`` uses, so a later enrich is a no-op). Facts a
    row lacks are NOT invented; they are left for the tracker's
-   ``status.py --enrich-metadata`` follow-up.
+   ``status.py --enrich-metadata`` follow-up. The top-level ``company_key`` is
+   always written and always EMPTY (``null``) — it is the owner's filing key, its
+   index is private, and a key this script invented would not be in it; an
+   explicit empty line says "unassigned" where a missing field said nothing at all.
 4. Validate with the vendored ``job_metadata`` validator before exit. On failure
    the tool exits non-zero and lists what is missing.
 5. Run the SAME location-policy check the tracker's ``status.py --check-locations``
@@ -489,6 +492,36 @@ def build_meta_bytes(
     scaffold = {
         "job_metadata_schema_version": APPLICATION_SCHEMA_VERSION,
         "company": str(lead.get("company") or ""),
+        # The owner's company-index key, ALWAYS written and ALWAYS empty here.
+        #
+        # WHY IT IS WRITTEN. Absence is invisible. Before this the field was
+        # simply missing from every scaffold, so an application created today was
+        # indistinguishable from one whose key someone had considered and decided
+        # against — and full coverage decayed one folder at a time with nothing
+        # saying so until a human happened to run
+        # `status.py --company-keys`. An explicit null is the same "unkeyed"
+        # state, sitting on the line where the key belongs, in the file the owner
+        # already opens.
+        #
+        # WHY IT IS EMPTY. The index is the owner's and lives in the private
+        # overlay (`private/companies/_index.yaml`), which this public script may
+        # not have; and a key is OWNER-ASSIGNED — `handoff` inventing one would
+        # write a key the index does not contain, which is worse than none. So
+        # this never resolves anything, with or without an overlay: the output is
+        # the same on the owner's machine, in CI and in a bare clone.
+        #
+        # WHY `null` AND NOT `""`. A null (or absent) key means UNASSIGNED and is
+        # counted unkeyed by `status.py --company-keys`, skipped by the
+        # reconciler's company-index check and accepted by `validate_meta`. A
+        # blank string, `false`, `0` or any value carrying whitespace is
+        # MALFORMED to all three. The two must never be confused, and
+        # `tests/test_handoff.py::ScaffoldedCompanyKeyTests` pins that they are
+        # not.
+        #
+        # It is ADDITIVE and stays that way: nothing here compares it, and no
+        # skip, dedup, filter or coverage path reaches this function
+        # (`automation/shared/tests/test_company_key_additive.py`).
+        "company_key": None,
         "research_date": research_date,
         "channel": str(lead.get("source") or ""),
         "jobs": job_entries,
@@ -747,6 +780,18 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
     (folder / "meta.yaml").write_bytes(meta_bytes)
     for message in editor_errors:
         print(f"handoff: metadata not carried: {message}", file=sys.stderr)
+    # The company key is scaffolded EMPTY on purpose (the long reason is in
+    # ``build_meta_bytes``). Say so once per folder, at the moment the gap is
+    # created: a coverage report read weeks later is the surface that already
+    # existed, and it is the one that let coverage decay unnoticed.
+    print(
+        f"handoff: meta.yaml carries an empty company_key for {company!r}. It is "
+        "owner-assigned and its index is private, so nothing here can resolve "
+        "one: fill it in (adding the employer to the index first if it is new), "
+        "or leave it null and `status.py --company-keys` keeps counting this "
+        "application unkeyed.",
+        file=sys.stderr,
+    )
 
     # --- validate (vendored job_metadata) --------------------------------- #
     meta = yaml.safe_load(meta_bytes.decode("utf-8"))

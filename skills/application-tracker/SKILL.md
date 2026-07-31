@@ -97,10 +97,11 @@ company-scope `channel` (how you found the lead) is named apart from the per-fac
 ```yaml
 job_metadata_schema_version: 5
 company: "Google"
-# company_key: "acme-labs"  # optional, top-level ONLY: the owner's company-index key.
+company_key: null            # optional, top-level ONLY: the owner's company-index key.
                            # A FILING key (research/interview material lives under it), never a
-                           # match key — nothing skips, dedups or filters on it. Omit it when
-                           # unassigned; `status.py --company-keys` reports coverage.
+                           # match key — nothing skips, dedups or filters on it. `handoff.py`
+                           # scaffolds it `null` = UNASSIGNED (absent means the same; a blank
+                           # string is malformed); `status.py --company-keys` reports coverage.
 research_date: "2026-04-16"  # search date: when the draft was generated
 channel: "linkedin"          # how you found it (free text; e.g. linkedin | referral | recruiter | cold)
 referrer: "John Doe"         # who referred you (if applicable)
