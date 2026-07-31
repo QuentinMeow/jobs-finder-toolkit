@@ -1017,3 +1017,19 @@
     appears; the new accessor-tied test reads a folder NAME from the live config
     and compares it to a constant, never printing a resolved path. The advisory
     company detector reports (none).
+
+- commit: a3cbd595
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 12
+  digest: sha256:ca21d91f212ca85a
+  finding: >-
+    Read the full 12-file diff (4 of the 12 are byte-identical vendored copies of
+    the shared config module). Every added line is a structural folder name from
+    the documented overlay layout — market/, me/interviews/, skills/skill-notes —
+    or a test fixture built in a temp directory. The one candidate name in the
+    diff is the fictional example persona already shipped in the tracked fixtures,
+    and the one company name is the invented "Fictional Skip Corp" the blacklist
+    test plants. No real person, employer, school, posting URL, application slug,
+    salary, date or absolute home path appears. The advisory company detector
+    reports (none).

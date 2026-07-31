@@ -43,6 +43,11 @@ the whole folder); **one bundled application `.txt` per JD** at root
 gets a distinct, individually researched letter per posting, never one shared letter. Tell the
 user which artifacts you produced and where.
 
+**`applications/` in this skill is shorthand for `config.applications_root()`** — resolve it before
+running any command below. A literal `applications/` at the repo root is git-ignored and invisible
+to `status.py`, `--check-locations`, `--sync-log` and the skip-log, so an application written there
+is silently lost on the next clean checkout.
+
 **Boot reads (once, at the start — skip anything already in context):** `AGENTS.md` (guardrails:
 no fabrication/consistency; scratch stays in `local/`, never the repo root, an application folder,
 or `scripts/`; **≤ 8 subagents total per request**); `.agents/MEMORY.md` if it exists
@@ -198,9 +203,10 @@ bullets under the same honesty/length rules as project bullets. Rules below appl
 The folder exists from Step 1; this only ensures `source/` exists:
 
 ```bash
-mkdir -p applications/6_drafted/<slug>/source
-# <baseline> = config.baseline_path() (resolve from config; real data under private/)
-cp <baseline> applications/6_drafted/<slug>/source/tailored.yaml
+# <apps> = config.applications_root(), <baseline> = config.baseline_path()
+# (resolve BOTH from config before running; real data under private/)
+mkdir -p <apps>/6_drafted/<slug>/source
+cp <baseline> <apps>/6_drafted/<slug>/source/tailored.yaml
 ```
 
 `config.baseline_path()` is the exact transcription of the user's approved resume; tailoring means

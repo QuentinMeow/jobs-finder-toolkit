@@ -287,6 +287,9 @@ Each expands in a named `docs/handbook/` doc; the bolded name is the canonical s
 
 ## Application Folder Convention
 
+**`applications/` here and in every skill is shorthand for `config.applications_root()`** — never a
+literal folder at the repo root, which is git-ignored and invisible to every tracker command.
+
 Each application is a folder `<company>-<role>-<YYYYMMDD>/` under `applications/6_drafted/`; **each
 `jobs:` entry carries a per-job `status`, and the parent status folder is the derived overall status
 (rollup) — the two must agree** (`0_profile`…`6_drafted`; the **user** moves folders, or use
