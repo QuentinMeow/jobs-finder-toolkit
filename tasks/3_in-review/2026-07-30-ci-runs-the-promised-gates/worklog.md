@@ -17,5 +17,7 @@
 - Left the router-table discovery and the 32 KiB chain budget with
   `tasks/0_backlog/2026-07-21-tree-instructions-validator/`, and appended a note
   there recording what landed early.
-- Cost of the change: CI gains roughly 100 s, almost all of it the
-  application-tracker suite (~90 s locally).
+- Cost of the change, measured on the PR's own run rather than guessed from the
+  laptop: the four suites take 15 s on the runner and the two gates 1 s, against
+  73 s for the same four suites locally. The local number over-estimated by ~4x;
+  the PR description carries the CI one.

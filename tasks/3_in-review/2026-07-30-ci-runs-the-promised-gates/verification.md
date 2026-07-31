@@ -82,8 +82,23 @@ both with and without it: only application-tracker imports `config` (six of its
 seven modules do), and all four pass either way in a checkout with no
 `config.yaml`, because the loader falls back to `config.example.yaml`.
 
-Cost: about **73 s** of extra CI wall time, ~63 s of it the application-tracker
-suite.
+Local cost: about **73 s**, ~63 s of it the application-tracker suite. On the
+GitHub runner the same four take **15 s** — measured on the PR's own run, below.
+
+## Measured on CI, not predicted from local timings
+
+```
+$ gh api repos/<owner>/<repo>/actions/runs/<run-id>/jobs --jq \
+    '.jobs[] | select(.name=="build") | .steps[] | ...'
+Mail send-less policy (blocking): 1s
+Reconciler + gardener + overlay-hook + recall-audit + metrics unit tests: 4s
+Instruction-file budget (strict): 0s
+Application-tracker, email-assistant, behavioral-prep, github-workflow tests: 15s
+```
+
+Every step of the `build` job reported `success`, including all four added ones;
+whole job 1 m 59 s. The local worktree over-estimated the added cost by ~4x, so
+the honest figure for the PR description is the CI one.
 
 ## The workflow file still parses, and the new steps are where they should be
 
