@@ -420,7 +420,7 @@ All overrides beat profile values (`search_jobs.py`):
 ... --profile example --all-matches
 
 # also emit machine-readable JSON
-... --profile example --json-out /tmp/matches.json
+... --profile example --json-out local/matches.json
 
 # re-search companies logged within the last 7 days (still skips blacklist)
 ... --profile example --include-recent

@@ -3,7 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: job-search
 - **Source**: backlog triage, 2026-07-31 — found while re-measuring phase 8's per-skill path counts; **not** phase-8 work
-- **Claimed-by**:
+- **Claimed-by**: agent session 2026-07-31 (PR fix/01-scratch-rule-consistency)
 
 ## Goal
 

@@ -66,8 +66,8 @@ for every agent and skill; the old flat `tmp_*.py`-in-root habit is retired.
 - **Purpose-named buckets** (the name must announce the contents' job): `local/ats_scripts/` (job-board/
   ATS API probes), `local/web_artifacts/` (fetched raw HTML/JSON/career-page snapshots), `local/scratch/`
   (quick sanity checks). Descriptive lowercase file names inside each; never a bare `tmp_*.py` in the
-  root. Machine scratch (`--json-out`) may target the OS `/tmp`, but keep anything worth revisiting
-  in a named `local/` bucket.
+  root. Machine scratch (`--json-out`) targets a named `local/` bucket too — keep anything worth
+  revisiting there.
 - **A durable record never cites scratch as its evidence.** A task's `verification.md`, an
   `evals/results/` row, a `memory/` entry, a design doc — none of them may point at a path under
   `local/` as the proof of a claim. Scratch gets swept; the citation then names nothing and the claim

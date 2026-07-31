@@ -39,7 +39,7 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 - Layout resolution lives in `check.py` (`application_dir`/`source_dir`/`tailored_path`);
   `render.py`/`check.py`/`status.py` all accept the app folder OR the `source/tailored.yaml`
   path.
-- Quick visual check after render: `sips -s format png "<...Resume.pdf>" --out /tmp/preview.png`
+- Quick visual check after render: `sips -s format png "<...Resume.pdf>" --out local/scratch/preview.png`
   (or `pdftoppm`) and eyeball the employer row alignment.
 
 ## Pre-render layout budget — calibrated constants
