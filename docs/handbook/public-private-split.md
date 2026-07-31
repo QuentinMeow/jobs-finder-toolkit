@@ -43,8 +43,9 @@ skill guidance (real lead-project ordering, real metrics, personal anecdotes) go
 overlay's per-skill **skill-notes** folder, reached by
 `config.skill_references_dir("<skill>")` (`private/skills/skill-notes/<skill>/` under the
 current overlay layout; set `paths.skill_references_root`) — the exporter prunes any such
-folder and the leak guard fails on any tracked file under a `references_private/` folder
-anywhere in the public tree. Each `SKILL.md`
+folder and the leak guard fails on any tracked file under a `skill-notes/` folder —
+or under its retired name `references_private/`, which stays denied — anywhere in the
+public tree. Each `SKILL.md`
 "Before You Start" carries a **Personalization** stanza telling the agent to read that
 folder (it overrides the generic examples) when present, and to fall back to the generic
 examples otherwise.

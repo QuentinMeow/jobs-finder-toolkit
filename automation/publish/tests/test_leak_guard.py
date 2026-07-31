@@ -228,20 +228,57 @@ class PrivateSkillTests(unittest.TestCase):
         self.assertTrue(result["ok"], result["violations"])
 
 
-class ReferencesPrivateTests(unittest.TestCase):
-    def test_references_private_flagged_by_guard(self):
+class SkillNotesTests(unittest.TestCase):
+    """The per-skill private-notes folder, under BOTH of its names.
+
+    Phase 5 renamed ``references_private/`` to ``skill-notes/``. Keying on the old
+    name alone left the rule enforcing nothing at its stated purpose: notes under the
+    new name inside the public ``skills/`` tree walked past both guards. Nothing
+    leaked only because the notes also moved under ``private/``, which both tools deny
+    wholesale — a coincidence, not the rule doing its job.
+    """
+
+    def _scan_planted(self, rel: str) -> dict:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            files = {"skills/job-search/references_private/notes.md": "x\n"}
-            tracked = _write_tree(root, files)
-            result = check_public.scan(root=root, tracked=tracked, tokens=[])
-        self.assertFalse(result["ok"])
-        self.assertTrue(result["violations"]["references_private"])
+            tracked = _write_tree(root, {rel: "candidate-specific notes\n"})
+            return check_public.scan(root=root, tracked=tracked, tokens=[])
 
-    def test_references_private_pruned_by_exporter(self):
-        self.assertEqual(
-            export_public._deny_reason("x/references_private/y.md", []),
-            "references_private")
+    def test_both_folder_names_are_flagged_by_guard(self):
+        for rel in ("skills/job-search/references_private/notes.md",
+                    "skills/job-search/skill-notes/notes.md"):
+            with self.subTest(planted=rel):
+                result = self._scan_planted(rel)
+                self.assertFalse(result["ok"])
+                self.assertEqual([v["path"] for v in result["violations"]["skill_notes"]],
+                                 [rel])
+
+    def test_both_folder_names_are_pruned_by_exporter(self):
+        for rel in ("x/references_private/y.md", "x/skill-notes/y.md"):
+            with self.subTest(planted=rel):
+                self.assertEqual(export_public._deny_reason(rel, []), "skill-notes")
+
+    def test_a_similarly_named_file_is_not_flagged(self):
+        """Matching is per path SEGMENT — this repo tracks a task folder whose name
+        ends in ``-skill-notes``, and denying it would make the guard unusable."""
+        rel = "tasks/0_backlog/2026-07-30-leak-guard-does-not-know-skill-notes/task.md"
+        self.assertEqual(check_public.find_skill_notes_violations([rel]), [])
+        self.assertIsNone(export_public._deny_reason(rel, []))
+
+    def test_the_denied_names_still_name_something_real(self):
+        """The rename that disarmed this check would have failed HERE first.
+
+        ``verify_links.py --require-roots`` pins its prefix constants against the
+        tree; nothing pinned these. This ties the deny list to the accessor that
+        decides where the notes actually live, so moving the folder without teaching
+        the guard is a test failure rather than a silent disarm.
+        """
+        sys.path.insert(0, str(REPO_ROOT / "automation" / "shared"))
+        import config  # noqa: PLC0415
+        live = config.skill_references_dir("resume-writer").parent.name
+        self.assertIn(live, check_public.SKILL_NOTES_DIRNAMES,
+                      f"config.skill_references_dir() resolves under '{live}/', which "
+                      "check_public.SKILL_NOTES_DIRNAMES does not deny")
 
     def test_env_tokens_ignore_comment_lines(self):
         # The env var may be populated verbatim from private/leak_tokens.txt
@@ -499,7 +536,7 @@ class RealTreeStructuralTests(unittest.TestCase):
 
     def test_tracked_tree_has_no_structural_violations(self):
         self.assertEqual(check_public.find_personal_overlay_violations(self.tracked), [])
-        self.assertEqual(check_public.find_references_private_violations(self.tracked), [])
+        self.assertEqual(check_public.find_skill_notes_violations(self.tracked), [])
         self.assertEqual(check_public.find_path_denylist_violations(self.tracked), [])
         self.assertEqual(
             check_public.find_private_skill_violations(REPO_ROOT, self.tracked), [])
@@ -640,9 +677,10 @@ class ExporterEndToEndTests(unittest.TestCase):
                 offenders = [c for c in copied if c.startswith(bad)]
                 self.assertEqual(offenders, [], f"{bad} leaked: {offenders}")
 
-            # references_private is pruned; only frontmatter-declared public
-            # skills are copied.
-            self.assertFalse([c for c in copied if "references_private" in c])
+            # Per-skill private notes are pruned under either folder name; only
+            # frontmatter-declared public skills are copied.
+            for name in check_public.SKILL_NOTES_DIRNAMES:
+                self.assertFalse([c for c in copied if f"/{name}/" in f"/{c}"])
             exported_skills = {
                 p.parent.name for p in (dest / "skills").glob("*/SKILL.md")
             }

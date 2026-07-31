@@ -38,7 +38,8 @@ git-ignored in the public repo, your real data is never committed to the public 
   `paths.skill_references_root`). Each `SKILL.md` reads it
   when present (its "Before You Start" **Personalization** stanza) and otherwise falls
   back to the generic examples. The leak guard fails on any tracked file under a
-  `references_private/` folder anywhere in the tree, and the exporter prunes them.
+  `skill-notes/` folder (or its retired name `references_private/`) anywhere in the
+  tree, and the exporter prunes them.
 - **Guard tokens are config-derived.** `automation/publish/check_public.py` hardcodes no
   identity; it derives its personal-token set from `config.yaml`, an optional
   `private/leak_tokens.txt`, and the `JOBHUNT_PERSONAL_TOKENS` env var, and scans both
@@ -218,9 +219,12 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    ```
 
    Every key after `applications_root` is optional — each has a default derived from
-   the roots above it — but a lifetime-organised overlay like this one overrides most
-   of them, because the defaults assume the flat "everything under
-   `<applications_root>/0_profile/`" layout the example candidate uses.
+   the roots above it. `blacklist_yaml`, `story_bank_dir`, `search_profiles_dir` and
+   `skill_references_root` default to exactly the lifetime paths shown above, so an
+   overlay laid out like this one can omit all four. The card and the two skip-logs
+   still default to the flat "everything under `<applications_root>/0_profile/`"
+   layout the example candidate uses, so a lifetime-organised overlay must set those
+   explicitly — as this one does.
 
    `config.yaml` is git-ignored in the public repo, so your real identity never
    gets committed. (If you prefer, point `paths.*` at in-place folders like
@@ -281,7 +285,7 @@ end-to-end harness for the leak-guard test suite and as a sanitized-copy tool.)
 The gate is the leak guard (`automation/publish/check_public.py`). It derives
 overlay-only skill names from mounted `private/skills/*/SKILL.md` at runtime and
 fails if any appears in the tracked public tree. It also fails on any private
-skill tree, `private/` path, tracked `references_private/` file, or
+skill tree, `private/` path, tracked `skill-notes/` (or `references_private/`) file, or
 personal-identity token (in a path, text content, or extracted `.docx`/`.pdf`
 content) is tracked. Its tokens are derived at runtime from `config.yaml` +
 `private/leak_tokens.txt` + `JOBHUNT_PERSONAL_TOKENS` (nothing hardcoded), so

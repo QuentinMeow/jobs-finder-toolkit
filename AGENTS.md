@@ -45,7 +45,8 @@ company-level cache, interviews, profile/baseline/reference DOCX); only the fake
 counterparts ship. **Personal content stays out of `SKILL.md`/`LESSONS.md`** — candidate DATA defers
 to `config.yaml`/the profile; residual personal skill guidance goes in the overlay's per-skill
 skill-notes folder, reached by `config.skill_references_dir()` (exporter prunes it; leak guard
-fails on any tracked file under a `references_private/` folder in the public tree).
+fails on any tracked file under a `skill-notes/` folder — or its retired name
+`references_private/` — in the public tree).
 **If a path does not start with `private/`, tracked content written there is
 published.** The only local metadata outside that prefix is the generated runtime
 adapter links described below. The overlay is reached through `config.*()` accessors
@@ -285,6 +286,9 @@ Each expands in a named `docs/handbook/` doc; the bolded name is the canonical s
   for a file over ~800 lines, prefer a `grep` or an offset/limit slice over reading the whole file.
 
 ## Application Folder Convention
+
+**`applications/` here and in every skill is shorthand for `config.applications_root()`** — never a
+literal folder at the repo root, which is git-ignored and invisible to every tracker command.
 
 Each application is a folder `<company>-<role>-<YYYYMMDD>/` under `applications/6_drafted/`; **each
 `jobs:` entry carries a per-job `status`, and the parent status folder is the derived overall status

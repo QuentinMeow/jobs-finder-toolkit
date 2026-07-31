@@ -987,3 +987,78 @@
     in the transcript. The only dates are process-record metadata. No person,
     employer, school, company, posting URL, application slug, salary or absolute
     home path appears. The advisory company detector reports (none).
+
+- commit: af57f393
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:cd77416e781d16cc
+  finding: >-
+    Read the full 2-file diff. Test code only. The new isolation guard and the
+    reworked skill-drift test name the overlay mount point (private/) and the
+    JOBHUNT_CONFIG variable as strings, and build every fixture in a temp
+    directory under a placeholder candidate name. No person, employer, school,
+    company, posting URL, application slug, salary, date or absolute home path
+    appears; the failure message the guard prints is assembled at runtime from
+    whatever the child touched, never from a literal. The advisory company
+    detector reports (none).
+
+- commit: 95d649b6
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 6
+  digest: sha256:516f245ad8f4bdd4
+  finding: >-
+    Read the full 6-file diff. Guard code, its tests, and the three documents
+    that state the rule. The only paths added are structural folder names
+    (skill-notes/, references_private/, private/) and one repository-relative
+    task-folder path used as a negative fixture. No person, employer, school,
+    company, posting URL, application slug, salary or absolute home path
+    appears; the new accessor-tied test reads a folder NAME from the live config
+    and compares it to a constant, never printing a resolved path. The advisory
+    company detector reports (none).
+
+- commit: a3cbd595
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 12
+  digest: sha256:ca21d91f212ca85a
+  finding: >-
+    Read the full 12-file diff (4 of the 12 are byte-identical vendored copies of
+    the shared config module). Every added line is a structural folder name from
+    the documented overlay layout — market/, me/interviews/, skills/skill-notes —
+    or a test fixture built in a temp directory. The one candidate name in the
+    diff is the fictional example persona already shipped in the tracked fixtures,
+    and the one company name is the invented "Fictional Skip Corp" the blacklist
+    test plants. No real person, employer, school, posting URL, application slug,
+    salary, date or absolute home path appears. The advisory company detector
+    reports (none).
+
+- commit: 11576674
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 5
+  digest: sha256:6109b6f6297f244d
+  finding: >-
+    Read the full 5-file diff. Instruction text only: one shorthand definition added to each of
+    five documents, and two command lines in the resume-writer skill rewritten to take the
+    config accessor instead of a literal folder. The only paths named are the generic
+    private/applications/ and examples/applications/ mount points. No person, employer, school,
+    company, posting URL, application slug, salary, date or absolute home path appears. The
+    advisory company detector reports (none).
+
+- commit: eccac937
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 14
+  digest: sha256:256465a5ec058ac7
+  finding: >-
+    Read the full 14-file diff. Process records only: four task folders with their
+    verification and worklog files, plus one repaired cross-reference and one inherited
+    DoD item on the phase-8 task. The verification records quote real command output, so
+    they were written with the overlay's own content elided — the reproduced drift report
+    names the file paths it read but the skill token it printed is redacted, absolute home
+    paths are written as <repo-root>, and the config.yaml excerpt shows key names with the
+    values replaced by <set>. The only dates are process-record metadata. No person,
+    employer, school, company, posting URL, application slug or salary appears. The
+    advisory company detector reports (none).

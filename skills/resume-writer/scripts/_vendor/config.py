@@ -52,10 +52,10 @@ Config schema::
       overlay_root: "private"                            # OPTIONAL
       candidate_dir: "applications/0_profile"            # OPTIONAL
       calendar_md: "applications/0_profile/calendar.md"  # OPTIONAL
-      blacklist_yaml: "private/job-search/blacklist.yaml"          # OPTIONAL
-      story_bank_dir: "private/interviews/behavioral/story-bank"   # OPTIONAL
-      search_profiles_dir: "private/job-search-profiles"           # OPTIONAL
-      skill_references_root: "private/skills/references_private"   # OPTIONAL
+      blacklist_yaml: "private/market/blacklist.yaml"              # OPTIONAL
+      story_bank_dir: "private/me/interviews/story-bank"           # OPTIONAL
+      search_profiles_dir: "private/market/searches"               # OPTIONAL
+      skill_references_root: "private/skills/skill-notes"          # OPTIONAL
       companies_root: "private/companies"                          # OPTIONAL
     job_search:
       default_profile: "default"
@@ -496,40 +496,48 @@ def company_search_log_path() -> Path:
 def blacklist_path() -> Path:
     """Candidate blacklist overlay merged into the public company registry.
 
-    Defaults to ``<overlay_root>/job-search/blacklist.yaml``; override with
+    Defaults to ``<overlay_root>/market/blacklist.yaml``; override with
     ``paths.blacklist_yaml``. Personal skip rules never live in the public
     ``skills/job-search/companies.yaml``.
     """
     return _resolve_configured(
-        "blacklist_yaml", overlay_root() / "job-search" / "blacklist.yaml")
+        "blacklist_yaml", overlay_root() / "market" / "blacklist.yaml")
 
 
 def story_bank_path() -> Path:
     """Behavioral story bank directory (may not exist; callers degrade gracefully).
 
-    Defaults to ``<overlay_root>/interviews/behavioral/story-bank``; override with
+    Defaults to ``<overlay_root>/me/interviews/story-bank``; override with
     ``paths.story_bank_dir``. Both the tailoring-card builder and the gardener's
-    staleness check hash this directory, so they MUST agree on it byte for byte.
+    staleness check hash this directory, so they MUST agree on it byte for byte —
+    which is why they read this accessor rather than re-deriving the path, and why
+    their ``STORY_BANK_REL`` display constant tracks the same layout.
     """
     return _resolve_configured(
-        "story_bank_dir", overlay_root() / "interviews" / "behavioral" / "story-bank")
+        "story_bank_dir", overlay_root() / "me" / "interviews" / "story-bank")
 
 
 def search_profiles_dir() -> Path:
-    """Candidate job-search profiles. Override with ``paths.search_profiles_dir``."""
+    """Candidate job-search profiles.
+
+    Defaults to ``<overlay_root>/market/searches``; override with
+    ``paths.search_profiles_dir``.
+    """
     return _resolve_configured(
-        "search_profiles_dir", overlay_root() / "job-search-profiles")
+        "search_profiles_dir", overlay_root() / "market" / "searches")
 
 
 def skill_references_dir(skill: str) -> Path:
     """Per-skill private reference folder for candidate-specific skill guidance.
 
-    Defaults to ``<overlay_root>/skills/references_private/<skill>``; override the
-    root with ``paths.skill_references_root``. Never tracked in the public tree —
-    the leak guard fails on any tracked file under a ``references_private/`` folder.
+    Defaults to ``<overlay_root>/skills/skill-notes/<skill>``; override the root with
+    ``paths.skill_references_root``. Never tracked in the public tree — the leak guard
+    fails on any tracked file under a ``skill-notes/`` folder (or under the folder's
+    retired name, ``references_private/``; see
+    ``automation/publish/check_public.SKILL_NOTES_DIRNAMES``).
     """
     root = _resolve_configured(
-        "skill_references_root", overlay_root() / "skills" / "references_private")
+        "skill_references_root", overlay_root() / "skills" / "skill-notes")
     return root / skill
 
 

@@ -6,6 +6,10 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 `~/Applications`, `/Applications`, or `soffice` on `PATH` (override with the
 `JOBHUNT_SOFFICE` env var).
 
+**`applications/` in every command below is shorthand for `config.applications_root()`**
+(`private/applications/` for a real hunt, `examples/applications/` under the shipped
+example config) — substitute the resolved path, never a literal folder at the repo root.
+
 ```bash
 # Render a tailored resume to DOCX (source/) + PDF (root) and validate it (format,
 # locked fields, one page). Also renders one cover letter PER JD from each bundled

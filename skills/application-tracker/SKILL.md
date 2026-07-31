@@ -29,6 +29,10 @@ Use this skill when the user asks to:
 
 ## Application Folder Convention
 
+**`applications/` in this skill is shorthand for `config.applications_root()`** — resolve it before
+running any command below; a literal `applications/` at the repo root is git-ignored and is not the
+tree these scripts read.
+
 **Each `jobs:` entry carries its own `status`; the status folder an application lives in is the
 DERIVED overall status** — a rollup of the per-job statuses (see "Overall status" below). Each
 application is a folder `<company>-<role>-<YYYYMMDD>/` that sits inside one status folder:

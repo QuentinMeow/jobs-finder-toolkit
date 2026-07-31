@@ -3,6 +3,10 @@
 The canonical file tree is in `AGENTS.md` → "Application Folder Convention". The full status
 model, per-file descriptions, `meta.yaml` fields, and the divergent-role split follow.
 
+**`applications/` throughout this document is shorthand for `config.applications_root()`**
+(`private/applications/` for a real hunt, `examples/applications/` under the shipped example
+config) — never a literal folder at the repo root.
+
 Each application is a folder named `<company>-<role>-<YYYYMMDD>/`. **Each `jobs:` entry carries a
 per-job `status`; the parent status folder is the derived overall status (rollup) and the two must
 agree.** Applications are always created under

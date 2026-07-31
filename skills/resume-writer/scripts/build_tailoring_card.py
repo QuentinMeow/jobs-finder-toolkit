@@ -9,11 +9,11 @@ the JD demands a deep dive (see the resume-writer SKILL.md workflow).
 Inputs (via the vendored config accessors — self-contained skill, no repo-root imports):
   * profile markdown  — ``config.profile_md_path()``
   * baseline yaml      — ``config.baseline_path()``
-  * story bank         — ``config.story_bank_path()``: ``interviews/behavioral/story-bank/``
+  * story bank         — ``config.story_bank_path()``: ``me/interviews/story-bank/``
                          under the OVERLAY ROOT — NOT the config file's directory. In the
                          real deployment ``config.yaml`` sits at the repo root while the
                          private overlay is mounted at ``private/``, so the bank resolves to
-                         ``private/interviews/behavioral/story-bank/``. (An overlay-resident
+                         ``private/me/interviews/story-bank/``. (An overlay-resident
                          ``config.yaml`` resolves to the same place.) The gardener's
                          card_staleness routine reads the SAME accessor — if the two ever
                          disagreed, the card would carry zero stories and a valid sha256.

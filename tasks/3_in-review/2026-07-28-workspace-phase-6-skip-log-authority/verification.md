@@ -32,7 +32,7 @@ OK (expected failures=1)
 
 `automation/search-recall-audit/` had no suite and no CI step before this change; the 9
 tests and the CI step are new. The gardener's one expected failure predates this work and
-is untouched — flagged in `tasks/0_backlog/2026-07-30-skill-drift-test-reads-the-real-profile`.
+is untouched — flagged in `tasks/3_in-review/2026-07-30-skill-drift-test-reads-the-real-profile`.
 
 ## The full CI-equivalent gate
 
