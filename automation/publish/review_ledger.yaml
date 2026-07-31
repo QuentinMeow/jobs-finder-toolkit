@@ -689,3 +689,72 @@
     after the fix — no employer, person, posting, URL, slug or absolute home path
     remains, and the overlay's PR is referred to without a number since that repo is
     private.
+- commit: 3921f213
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 3
+  digest: sha256:7d8543c17dd9e191
+  finding: >-
+    Read the full diff. AGENTS.md changes one instruction line, swapping a stale
+    literal path for the accessor that already resolved it correctly; no identity
+    data on either side. The task move and its new verification.md name only PR
+    numbers, repo-relative paths, line counts and a canary result filename. No
+    employer, person, school, salary, posting URL, application slug or absolute
+    home path appears. The company cross-reference reported NOT INSPECTED because
+    private/companies/_index.yaml does not exist yet, so this row rests on reading
+    the diff rather than on that detector.
+- commit: b4946f97
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 5
+  digest: sha256:89b81231211e29da
+  finding: >-
+    Read the full diff. Five files: one new pure library plus its tests, one new
+    test over the shipped public company registry, and a comment-only edit to the
+    review gate with two tests pinning it. Every fixture is fictional (acme-* keys,
+    Acme * display names, Zzz Planted * registry rows); no employer, person,
+    school, salary, posting URL, application slug or absolute home path appears.
+    Two findings were fixed BEFORE this commit rather than merely noted. First, the
+    advisory detector fired on an earlier draft: that draft carried a ~620-word
+    English stop-list, 149 of whose tokens were absent from the public tree, and
+    publishing a word puts it in the tree where the detector subtracts it forever —
+    so the list would have blinded the detector to 149 names. The list is now
+    restricted to vocabulary this repo already uses, verified token by token and
+    pinned by a test, and the detector reports (none) on this range. Second, one
+    test fixture composed a real research institution's name; it was replaced with
+    this repo's established fictional vocabulary. The linter itself was also run
+    against the owner's real index, where it found one over-strict rule of mine and
+    that rule was narrowed until the real data passes clean.
+- commit: 130db75e
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 2
+  digest: sha256:e2cc5dfe27d1a2b5
+  finding: >-
+    Read the full diff. It adds one reconciler check plus its tests. The check
+    emits application paths and company keys as finding subjects, which is why
+    the same commit adds a PRIVATE_CHECKS filter to file_retries: that command
+    writes TRACKED files under message-queue/needs-agent/retries/ whose bodies
+    repeat a finding's subject and message verbatim, so without the filter one
+    run would have committed an application slug and a company key into the
+    public tree — and the staged-index leak guard would not have caught it,
+    because company names are not identity tokens. No company name, employer,
+    person, posting URL, application slug or absolute home path appears in the
+    diff itself; the test fixtures use invented keys. The advisory company
+    detector, armed for the first time by the overlay's index, reports (none)
+    for this range.
+- commit: 0a7cd219
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 11
+  digest: sha256:d5db54b2a342c287
+  finding: >-
+    The phase-7 record, its ADR, the task moves and two follow-up tasks. Read
+    the full diff. An EARLIER draft of this same content DID leak: the
+    verification file pasted a linter run verbatim and named seven real
+    employers. The advisory detector — armed for the first time by this phase —
+    fired on exactly those seven names and required human review. The draft was
+    rewritten to shapes and the commit was reset rather than amended forward, so
+    the leaking blob never entered pushed history. The detector now reports
+    (none) for this range. Re-read after the fix: no employer, person, school,
+    posting URL, application slug, salary or absolute home path remains.

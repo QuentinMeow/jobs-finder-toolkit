@@ -3,8 +3,10 @@
 The implementation spec for [the workspace layout](README.md). Written for an agent that has
 read `AGENTS.md` and nothing else about this design.
 
-**Status: phases 0-5 are merged into `main`; phase 6 is implemented and in review; phases 7 and 8
-are not started.** The merged phases are recorded below as short records — what they changed and
+**Status: phases 0-6 are merged into `main`. Phase 7's index and public contract are implemented
+and in review; its `meta.yaml` pass and its email-assistant half were split out as 7b and 7c,
+which are not started. Phase 8 is not started.** The merged phases are recorded below as short
+records — what they changed and
 what the remaining phases may now rely on — not as instructions. The phase-0/3/4 figures were
 re-measured on 2026-07-29 against `main` at commit `19d0829`, the phase-2 figures against the
 phase-2 stack before it merged; re-measure anything you are about to depend on, because the tree
@@ -602,44 +604,95 @@ writer, so it is not vacuous.
 
 ---
 
-## Phase 7 — the company key
+## Phase 7 — the company key — RECORD (index landed 2026-07-30; the rest split out)
 
-**Blocking preconditions:** phase 5 merged, and the key-assignment approach decided (filed
-non-blocking as its own task; default is one proposal PR).
+**Status:** the index and the public contract landed. The `company_key` pass over the
+`meta.yaml` files and the email-assistant work were split into 7b and 7c; see below.
 
-242 application folders carry **213 distinct free-text company strings**; `registry.canonical()`
-resolves only 119 — **94 unresolvable, 44%** (re-measured 2026-07-29; unchanged since the plan
-was written). The unresolvable set breaks into four recurring shapes. The private tree has live
-instances of each; **naming them here would put the owner's application list in the public tree,
-which is the leak this design exists to prevent** — and which the review gate caught once
-already (commit `ef2d0a3`). Use the shape, never the instance.
+What this section said before the phase ran:
 
-| Shape | Example form |
-|---|---|
-| bare name vs. name + legal suffix | `<Name>` / `<Name> Ltd.` |
-| bare name vs. name + parenthesised legal entity | `<Name>` / `<Name> (<LegalEntity>)` |
-| bare name vs. name + category word | `<Name>` / `<Name> AI` |
-| two folders, same employer, different slug prefix | `<name>-<role>-<date>` twice |
+> 242 application folders carry 213 distinct free-text company strings; `registry.canonical()`
+> resolves only 119 — 94 unresolvable, 44%.
 
-- `companies/_index.yaml`: `key → {display, aliases[], parent, kind}`. `kind` distinguishes an
-  employer from an interview-running firm (one that runs the loop on a client's behalf and has
-  its own question set); `parent` handles subsidiaries and joint ventures — a cloud arm under
-  its parent, a regional JV under the global brand, an acquired product under the acquirer.
-- `meta.yaml` gains `company_key` alongside the human `company:` string — 242 edits.
-- Retire the other three alias registries (`companies.yaml` `aliases:`,
-  `company-search-log.yaml` per-row `aliases:`, `company-levels.yaml` per-company `aliases:`)
-  by generating them from `_index.yaml` or deleting them.
-- Reconciler check: every `company_key` resolves; no two keys share an alias. It belongs in
-  `CHECKS` with an entry in `CHECK_ROOTS` (`automation/reconcile/reconcile.py:265,281`) so it
-  no-ops in the published tree like every other process check — a check that hard-fails without
-  the overlay turns the exported repo's CI red.
-- `skills/email-assistant` emits `durable: true|false` per `timeline.md` entry, and a `promote`
-  command moves flagged entries into `companies/<key>/`. Without this the durable/disposable
-  split degrades every time the assistant runs. There are 135 `notes.md` files to rename to
-  `timeline.md`.
-- This phase's PRs will be large and will name companies in their diffs. Rule 4's ledger row
-  applies per commit, and the advisory company detector is likely to fire — expect
-  `reviewed_by: human` rows here more than anywhere else in this plan.
+**Re-measured 2026-07-30, and four of those five numbers were wrong.** 243 folders, **214**
+distinct strings, **119/214 = 55.6%** resolved, **95** unresolvable. Weighted by folder the
+resolution rate is 143/243 = 58.8%. The `notes.md` count was wrong too: **126** under the
+applications root, not 135 — the higher figure counted 9 fixtures under `private/evals/`.
+
+### What the plan got wrong, beyond the counts
+
+**1. The premise. The 44% is not a spelling problem.** The plan reads as though the unresolvable
+set is name drift that a better alias table would fix. It is not: **~85% of it is employers
+simply absent from the public registry**, because `skills/job-search/companies.yaml` is a
+*polling* registry — `registry.lint_entries` requires a row without `ats` to carry a blacklist
+reason, and all 310 rows carry `ats`. A household-name employer with a custom career site
+structurally cannot live there. That is *why* the phase needs its own key space; the
+justification in the plan describes a different problem than the one the data has.
+
+**2. "Retire the other three alias registries" — none of them can be, and none were.**
+
+| registry | verdict | why |
+|---|---|---|
+| `companies.yaml` `aliases:` (public, 47 rows / 62 strings) | **keep** | it cannot be generated from a private source: the exporter ships tracked files and CI has no overlay, and a public file derived from private data is the exact leak this design prevents. It is toolkit-owned identity data serving every user, not an owner alias registry |
+| `company-search-log.yaml` per-row `aliases:` | **keep** | read by `search_jobs.py:482-491` into `is_recently_searched` — a **skip path**. 352 of its 361 rows carry only a lowercased copy of their own name; the 9 real aliases were copied into the index, but the field itself stays |
+| `company-levels.yaml` per-company `aliases:` | **keep** | read by `job_metadata.lookup_company_level` — an **enrichment path**, vendored into three skills. All 4 rows were absorbed into the index; the field stays |
+
+**3. `CHECK_ROOTS` does not make a check no-op, and for a private root it does the opposite.**
+It is read only by `check_required_roots()` and by one coverage test; the no-op is a hand-written
+`if not <root>.is_dir(): return findings` inside each check function. Worse, `automation/hooks/pre-commit`
+runs `--require-roots` whenever `private/` is merely mounted — so declaring a private root without
+an exemption would make the overlay's shape a gate on public commits. The check therefore carries
+its own guard, and `check_required_roots()` skips `private/`-prefixed roots explicitly.
+
+**4. `reconcile.py` is stdlib-only by contract**, so the YAML parsing lives below the directory
+guard, reached the way `check_skill_manifests` reaches `sync_skill_manifests`.
+
+**5. The index already had a public consumer, and the obvious cleanup would have broken it.**
+`review_gate.py` has read `private/companies/_index.yaml` all along through a hardcoded literal,
+and the shape `key -> {display, aliases[], kind}` was already pinned by a public test fixture.
+Routing that literal through `config.companies_root()` looks like an obvious tidy-up and is a
+**silent disarm**: under `config.example.yaml`, `companies_root()` resolves into `examples/` and
+`overlay_mounted()` returns True, so once phase 8 creates `examples/companies/` the gate would
+read the *example* index in every public clone and print a clean bill of health instead of
+`NOT INSPECTED`. The literal is correct; it is now single-sourced and pinned by a test.
+
+### The invariant this phase is actually about
+
+**The key never enters a match path.** It decides no skip, no dedup, no filter, no coverage count.
+This is phase 6's lesson applied before the mistake rather than after: ~44% of the keys are a
+human judgement made in one review pass, which makes them the least-verified data in the repo,
+and the design README already said that sharding the skip check by key "would turn every alias
+split into a re-drafted application". Least-verified data does not go on the most consequential
+path. The invariant is enforced at source level, not by convention.
+
+Related, and easy to trip over: `mail/reconciliation.py` already emitted an in-memory field
+literally named `company_key` that **is** a match key, binding email threads to applications. It
+was renamed so the substitution cannot be made by accident.
+
+### What landed
+
+- `private/companies/_index.yaml` — 223 keys, 265 distinct names, no two keys sharing one.
+  One slug rule, nothing dropped, which reproduced all 25 existing company folder names exactly,
+  so **no folder was renamed**. Five merges, each under a named mechanical rule.
+- `automation/shared/company_index.py` — the loader and linter.
+- The reconciler check, gated so it cannot affect a tree without the overlay.
+- The public registry's own lint, which existed and ran nowhere, wired in as a unit test.
+
+An alias lint rule was specified as a minimum length and **corrected after measurement**: run
+against the real index, a length floor deleted a legitimate three-letter division acronym and an
+ampersand initialism, while missing two 5-character ordinary English words. The rule is a
+stop-list applied to aliases only — never to `display`, because a short display name is the
+employer's real name and the gate's baseline subtraction already makes it safe.
+
+### Split out, deliberately
+
+- **7b — `company_key` on the `meta.yaml` files.** Held until the owner answers the seven
+  judgement calls, because settling the keys first is cheaper than re-pointing 243 files.
+- **7c — the email assistant's `durable:`/`promote` and the 126 `notes.md` renames.** No Python
+  writes `notes.md` today; it is produced entirely by the model from prose in the SKILL. So this
+  is greenfield, its first consumer *moves files*, and it depends on the key existing. Shipping it
+  in the same change as a 44%-hand-judged key assignment would put a file-moving command on the
+  least-verified data in the repo.
 
 ---
 

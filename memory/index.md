@@ -4,6 +4,7 @@
 ## decisions
 
 - `memory/decisions/agentfold-restructure.md` — Restructure the repo's process layer on the AgentFold pattern
+- `memory/decisions/company-key-is-additive-never-a-match-key.md` — The company key files and navigates; it never matches
 - `memory/decisions/config-discovery-example-fallback.md` — Fall back to the example persona only when no private overlay is mounted
 - `memory/decisions/derived-zone-git-tracking.md` — Keep the datastore's derived zone out of git
 - `memory/decisions/docs-parent-for-the-human-read-trees.md` — Give the human-read trees one docs/ parent

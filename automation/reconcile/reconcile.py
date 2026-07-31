@@ -26,13 +26,20 @@ Design rules:
     opt-in maintainer-checkout assertion that they are all present; it is wired
     into the pre-commit hook, never into CI;
   * checks validate the PUBLIC tree only (the private overlay mirror is its
-    own repo with its own lifecycle);
+    own repo with its own lifecycle) — with ONE declared exception,
+    ``check_company_index``, which reads the owner's company index because a
+    check nobody is forced to run is the failure mode this module exists to fix.
+    Three things bound that exception to the maintainer's own machine: it no-ops
+    unless ``private/companies/`` is present, ``--require-roots`` never asserts a
+    private root, and ``file_retries`` never writes a private subject into the
+    tracked retry queue;
   * to change a file format, change ``templates/`` AND the matching check
     here in the same commit.
 """
 from __future__ import annotations
 
 import argparse
+import importlib
 import re
 import sys
 from dataclasses import dataclass
@@ -44,6 +51,16 @@ RECONCILER_SIGNATURE = "by reconcile"
 
 TASK_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*$")
 STATUS_DIRS = ("0_backlog", "1_in-progress", "2_blocked", "3_in-review", "4_done")
+
+# The owner's company index lives under this root. It is the only PRIVATE root any
+# check names; ``company_index.DEFAULT_REL`` is the single source for the file path
+# itself, and a test pins this to be its parent.
+COMPANY_INDEX_ROOT = "private/companies"
+
+# ``automation/shared`` resolved from THIS FILE rather than from REPO_ROOT: the tests
+# point REPO_ROOT at a throwaway tree, but the sibling package's location is a
+# property of this file, not of the tree under inspection.
+_SHARED_DIR = Path(__file__).resolve().parents[1] / "shared"
 
 
 @dataclass(frozen=True)
@@ -58,6 +75,31 @@ class Finding:
 
 def _rel(p: Path) -> str:
     return p.relative_to(REPO_ROOT).as_posix()
+
+
+def _rel_safe(p: Path) -> str:
+    """``_rel`` for a path that may sit outside the repo.
+
+    The overlay can be configured anywhere, and printing the absolute fallback
+    would put the maintainer's home directory in the output; the tail is enough to
+    identify the file.
+    """
+    try:
+        return _rel(p)
+    except ValueError:
+        return "/".join(p.parts[-3:])
+
+
+def _shared_import(name: str):
+    """Import a module from ``automation/shared/``.
+
+    Only ever called BELOW a check's ``is_dir()`` guard, so this module keeps its
+    stdlib-only-on-a-bare-clone contract (module docstring, "Design rules"). Same
+    sys.path-insert-then-import shape as :func:`check_skill_manifests`.
+    """
+    if str(_SHARED_DIR) not in sys.path:
+        sys.path.insert(0, str(_SHARED_DIR))
+    return importlib.import_module(name)
 
 
 def _items(folder: Path) -> list[Path]:
@@ -262,6 +304,107 @@ def check_roadmap_fresh() -> list[Finding]:
     return findings
 
 
+def company_index_findings(index_path: Path,
+                           applications_root: Path | None) -> list[Finding]:
+    """Index integrity + key resolution, given explicit paths.
+
+    Split out of :func:`check_company_index` so the tests can drive it against a
+    throwaway tree without a config.
+
+    TWO FINDING FAMILIES, and the DIRECTION of the second is load-bearing:
+
+      1. **index integrity** — every ``company_index.lint`` pair, adapted;
+      2. **key resolution** — every ``company_key`` written in a ``meta.yaml``
+         names a key that exists in the index. ``meta.yaml -> index``, NEVER the
+         reverse. A key with zero applications is a legitimate state (a company
+         researched after recruiter contact but never applied to), and the reverse
+         check would turn the reconciler red the moment the owner deletes an
+         application folder — which AGENTS.md explicitly reserves to them.
+
+    **Coverage is deliberately NOT a finding.** "Every meta.yaml has a
+    ``company_key``" is a number ``status.py --company-keys`` prints, never a gate:
+    new applications are scaffolded without a key by design, so gating it would
+    block unrelated public commits made between scaffolding and keying.
+    """
+    findings: list[Finding] = []
+    if not index_path.is_file():
+        # The root exists but the index has not been built yet. That is the same
+        # "not adopted" state as an absent root, and it is what lets this public
+        # check merge before the owner's private half exists.
+        return findings
+
+    # Deliberately function-local: reconcile.py must import stdlib only on a bare
+    # clone, and this line is unreachable without the overlay (module docstring).
+    import yaml
+    company_index = _shared_import("company_index")
+    index_rel = _rel_safe(index_path)
+
+    try:
+        raw = company_index.read_raw(index_path)
+    except (yaml.YAMLError, OSError) as exc:
+        return [Finding("company-index", index_rel, f"unreadable: {exc}")]
+
+    for subject, message in company_index.lint(raw):
+        findings.append(Finding("company-index", index_rel, f"{subject}: {message}"))
+
+    index = company_index.from_raw(raw)
+    if applications_root is None or not applications_root.is_dir():
+        return findings
+
+    for meta in sorted(applications_root.rglob("meta.yaml")):
+        try:
+            text = meta.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if "company_key" not in text:
+            continue          # cheap prefilter: most files never carry the field
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError:
+            continue          # meta.yaml's own schema is job_metadata's business
+        if not isinstance(data, dict):
+            continue
+        key = data.get("company_key")
+        if key is None:
+            continue          # unkeyed is legitimate: coverage is measured, not gated
+        subject = _rel_safe(meta)
+        if not isinstance(key, str) or not key.strip():
+            findings.append(Finding(
+                "company-index", subject,
+                f"company_key must be a non-empty string, got {key!r}"))
+        elif key not in index:
+            findings.append(Finding(
+                "company-index", subject,
+                f"company_key {key!r} is not a key in {index_rel} — add it there, "
+                "or correct the application"))
+    return findings
+
+
+def check_company_index() -> list[Finding]:
+    """The owner's company index is consistent, and every company_key resolves.
+
+    NO-OPS when ``private/companies/`` is absent — the normal case in the published
+    tree, in CI, and in any contributor checkout without the overlay. The ``yaml``
+    and ``company_index`` imports live BELOW that guard so this module stays
+    stdlib-only on a bare clone (module docstring, "Design rules"), which is also
+    where the one private-tree exception is declared.
+    """
+    root = REPO_ROOT / COMPANY_INDEX_ROOT
+    if not root.is_dir():
+        return []
+
+    company_index = _shared_import("company_index")
+    config = _shared_import("config")
+    try:
+        applications_root = config.applications_root()
+    except (config.ConfigNotFound, config.ConfigError):
+        # No usable config: there is no applications tree to resolve keys against.
+        # The index itself is still linted, which is the half that does not need one.
+        applications_root = None
+    return company_index_findings(REPO_ROOT / company_index.DEFAULT_REL,
+                                  applications_root)
+
+
 CHECKS = {
     "queue-schema": check_queue_schema,
     "task-structure": check_task_structure,
@@ -270,6 +413,7 @@ CHECKS = {
     "handover-present": check_handover_present,
     "roadmap-fresh": check_roadmap_fresh,
     "skill-manifests": check_skill_manifests,
+    "company-index": check_company_index,
 }
 
 # The folder whose absence makes each check no-op (see the module docstring: that
@@ -286,13 +430,29 @@ CHECK_ROOTS = {
     "handover-present": "history/conversations",
     "roadmap-fresh": "docs/roadmap",
     "skill-manifests": "skills",
+    "company-index": COMPANY_INDEX_ROOT,
 }
+
+# Checks whose findings name PRIVATE subjects — an application slug, a company key.
+# A retry item is a TRACKED file in the public tree, so filing one of these would
+# publish exactly what the leak guard exists to keep out. They are printed on the
+# maintainer's machine and fixed there. See ``file_retries``.
+PRIVATE_CHECKS = frozenset(
+    check for check, root in CHECK_ROOTS.items() if root.startswith("private/"))
 
 
 def check_required_roots() -> list[Finding]:
-    """--require-roots only: every root a check silently no-ops without exists."""
+    """--require-roots only: every PUBLIC root a check silently no-ops without exists."""
     findings: list[Finding] = []
     for root in sorted(set(CHECK_ROOTS.values())):
+        # Private roots are declared so CHECK_ROOTS stays a complete map of every
+        # check, but they are never ASSERTED: this module validates the public tree,
+        # and automation/hooks/pre-commit runs --require-roots whenever private/ is
+        # merely mounted, so asserting one would make an overlay's shape a public
+        # commit gate — and would put a private path into a public test's expected
+        # output.
+        if root.startswith("private/"):
+            continue
         if (REPO_ROOT / root).is_dir():
             continue
         checks = ", ".join(sorted(c for c, r in CHECK_ROOTS.items() if r == root))
@@ -317,7 +477,14 @@ def file_retries(findings: list[Finding], today: str) -> None:
     be mkdir'd unconditionally, so a clean run in a repo that had deliberately
     deleted ``message-queue/`` silently re-created the queue it had dropped —
     which then also re-armed ``queue-schema`` on a tree that opted out of it.
+
+    Findings from a :data:`PRIVATE_CHECKS` check are dropped before anything is
+    written. A retry item is a TRACKED file whose name and body carry the finding's
+    subject and message verbatim, so filing one would commit an application slug or
+    a company key into the public tree. Those findings are printed on the
+    maintainer's machine, where they are the only place they belong.
     """
+    findings = [f for f in findings if f.check not in PRIVATE_CHECKS]
     if not findings and not RETRIES_DIR.is_dir():
         return  # nothing to file, and no queue to GC — do not conjure one
     if findings:

@@ -109,7 +109,7 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
    (generated) — open only the entries relevant to your task.
 4. If your work changes overall architecture, read `docs/roadmap/current-state.md` and
    `docs/roadmap/desired-state.md` — a new task should trace to a desired-state line.
-5. Before tailoring, read the tailoring card (`<applications_root>/0_profile/tailoring-card.md`) — the distilled default context; open the full profile (`config.profile_md_path()`, source of truth) only on the resume-writer skill's escalation triggers (card missing/stale/`--check` fail, or a JD domain the card doesn't cover).
+5. Before tailoring, read the tailoring card (`config.tailoring_card_path()`) — the distilled default context; open the full profile (`config.profile_md_path()`, source of truth) only on the resume-writer skill's escalation triggers (card missing/stale/`--check` fail, or a JD domain the card doesn't cover).
 
 ## Async Collaboration (message-queue/ + tasks/ + doc dialogue)
 
