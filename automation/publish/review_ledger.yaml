@@ -1160,3 +1160,18 @@
     names only public PR numbers, this repo's own paths, and counts (369 events / 367 urls,
     747 renames, 10 and 6 unticked boxes). No company, employer, person, application slug,
     posting URL, salary or absolute home path. The advisory company detector reports (none).
+
+- commit: 3c9217f3
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 7
+  digest: sha256:ce25d3d6c983d9ef
+  finding: >-
+    Read the full 7-file diff: the phase-8 task and its twin section in the workspace-restructure
+    execution plan lose a dead per-skill table and gain the grep command that re-derives it; one
+    struck hazard row; the todo-queue-hygiene task rewritten to its two live gaps; two dead
+    private/benchmark/ paths repointed at private/evals/; and one task folder deleted. All new
+    prose names public toolkit paths, public PR numbers (#86, #99-#105, #108, #109, #111) and
+    counts. The re-measurement quotes five /tmp/*.json examples from skills/job-search/SKILL.md,
+    which are the OS temp dir in the shipped skill, not private paths. No company, employer,
+    person, slug, posting URL, salary or home path. Advisory company detector reports (none).

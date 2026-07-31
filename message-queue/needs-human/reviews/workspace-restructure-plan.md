@@ -173,3 +173,28 @@ and a handover written on one machine is invisible on the other.
 **Default: local-only as you asked.** Alternative: `private/memory/history/`, tracked in the
 overlay, which keeps the gate real everywhere and survives machine loss.
 **Your answer:** ______
+
+---
+
+## 2026-07-31 (agent) — re-checked, and NOT swept
+
+A bookkeeping pass reached this item under the 30-day sweep rule and **declined to delete it**.
+Recording why, so the next pass does not re-litigate it:
+
+- **Every phase this review gated has merged.** Phases 0–7's public sides are all on `main`;
+  phase 8 is the only one left and it is now unblocked. Q3 is closed — the task it deferred to,
+  `2026-07-28-company-key-assignment-approach`, is in `tasks/4_done/`, and the company index it
+  produced holds 222 keys with all 243 applications resolving against it.
+- **Your typed answer at line 69 IS folded**, and this is the thing that was worth checking. It is
+  in `memory/decisions/workspace-layout-public-root-plus-review-gate.md`, in the Decision section:
+  the public repo stays the working root, *"Nothing is hidden from agents; instructions route them
+  into `private/` for real data"*, and *"Preventing writes to public files is explicitly not a
+  goal"*. Defence is naming plus after-the-fact detection — which is your "structurally hard to
+  make mistakes, or easy to catch them" restated as a mechanism.
+- **So why keep the file.** The Resolution says this item stays open until you confirm nothing was
+  mis-folded, and that confirmation has not happened. Line 69 is the only owner-typed prose in the
+  public queue and it exists verbatim nowhere else. Deleting it to satisfy a sweep rule would
+  destroy owner text to tidy a folder, which is the wrong trade at any age.
+
+**What is now left for you: one line.** If the fold above looks right, say so and this file can be
+deleted. Nothing else in it is open.

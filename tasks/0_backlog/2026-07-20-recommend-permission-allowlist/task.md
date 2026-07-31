@@ -58,3 +58,30 @@ counts, and enough of the blocking commands to justify each allowlist row — pa
 citation stays until then rather than being deleted, because it is still the only pointer to
 where the numbers came from.
 
+
+## 2026-07-31 — re-verified, and kept rather than deleted
+
+A backlog triage nominated this for deletion as "not a task". It was re-checked and **kept**,
+because every claim in it still holds and it is the only tracked record of the recommendation:
+
+```
+$ ls .claude/settings.json           -> No such file or directory
+$ git ls-files --error-unmatch .claude/settings.local.json
+error: pathspec ... did not match any file(s) known to git      # untracked, as intended
+$ cat .claude/settings.local.json    -> permissions.allow has exactly ONE entry, Bash(git *)
+$ ls local/transcript_mining/        -> still present (gitignored scratch)
+```
+
+So the proposal is still a net +4 rows against a one-row allowlist, and the file it targets is
+still one agents may not edit. **This is a security-posture decision only the owner can make** —
+deleting the task would delete the ask, not the work.
+
+Two things remain true and unresolved, and they are the reason it has not moved:
+
+1. The addendum above blocks actioning it until the mined counts are pasted inline, and nobody has
+   pasted them.
+2. The evidence still lives in `local/transcript_mining/`, gitignored scratch — verifiable on this
+   checkout and nowhere else.
+
+If the mined counts can no longer be recovered, the honest close is to re-derive the allowlist
+from current friction rather than to cite a measurement nobody can check.

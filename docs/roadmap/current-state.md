@@ -1,11 +1,17 @@
 # Current state
 
-- **Last-updated**: 2026-07-30
+- **Last-updated**: 2026-07-31
 
-- **Process layer**: AgentFold restructure in flight as a stacked PR train —
-  `message-queue/` + `tasks/` + `memory/` merged (#56); `docs/handbook/` +
-  `docs/designs/` (#57) and `skills/` + `automation/` (#58) in review; this PR
-  adds `templates/`, `docs/roadmap/`, `history/`, and the reconciler.
+- **Process layer**: the AgentFold restructure is **done and closed**, not in
+  flight — all four PRs (#56–#59) merged on 2026-07-22, and the task moved to
+  `tasks/4_done/` on 2026-07-31. `message-queue/`, `tasks/`, `memory/`,
+  `templates/`, `docs/roadmap/`, `history/` and the reconciler all ship, in both
+  repositories, with `reconcile --check --require-roots` wired into pre-commit
+  and CI. One item was reversed: top-level `handbook/` + `design/` became
+  `docs/{handbook,designs}` under workspace phase 2's superseding ADR. *(This
+  bullet described a PR train "in review" for nine days after it merged; the
+  freshness gate could not see that, because it only checks that a
+  `Last-updated` line exists.)*
 - **Email program**: design merged (PR #54: `docs/designs/application-progress-calendar/`,
   `docs/designs/raw-data-layer/03-provider-interfaces.md`, `04-email-download-categorization.md`).
   Stage 1 built on `email/stage-1-provider-contract` (PR #60): send-less
