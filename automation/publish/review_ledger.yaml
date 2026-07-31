@@ -1313,3 +1313,16 @@
     Re-ran that rule locally over every added line of this push: 0 matches. No allowlist, no
     weakened check. No real company, person, application slug, posting URL, salary or absolute
     home path. The advisory company detector reports (none).
+
+- commit: aa4d7ff8
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 3
+  digest: sha256:6414581e23f7b15a
+  finding: |
+    Read the full 3-file diff: a new root .gitleaksignore holding two commit-pinned fingerprints,
+    the owner decision item that asks whether the repo should carry that file at all, and the
+    worklog entry. The fingerprints name only shas, a path, a rule name and a line number — no
+    content. The decision item describes the flagged text as invented fixture folder-name slugs
+    and quotes none of it. No real company, person, application slug, posting URL, salary or
+    absolute home path. The advisory company detector reports (none).
