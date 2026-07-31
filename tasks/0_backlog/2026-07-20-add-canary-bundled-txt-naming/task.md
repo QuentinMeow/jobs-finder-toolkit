@@ -44,3 +44,28 @@ Relevant files:
   metadata-validation flow that surfaces the deliverable), and fails if the
   naming convention is violated.
 - The canary passes under a live run against the shipped example fixture.
+
+## 2026-07-31 — one count corrected, and a defect routed here rather than filed separately
+
+**The canary-file count in Context is stale.** `evals/canaries/application-tracker.yaml` is
+**112 lines with 6 canaries**, not 93 with 5 — a sixth, `at-refresh-in-progress-company-view`, was
+added. All five named ids still exist and are correct, and the substantive claim holds: none of
+the six references `.txt` or the bundled-file naming, so the gap is still open.
+
+**Verify-with**: `grep -n '  - id:' evals/canaries/application-tracker.yaml`
+
+**And this task is bigger than it looks, because the code it would gate is wrong.** A triage found
+a live defect with no task of its own; rather than file a second task for it, it is recorded here,
+because a canary written to the definition of done below would **fail against current code** and
+whoever picks this up needs to know that before they start:
+
+```
+$ grep -n 'APPLICATION_STEM}\*\.txt' skills/application-tracker/scripts/status.py
+206:        "has_app_txt": bool(list(app_dir.glob(f"{APPLICATION_STEM}*.txt"))),
+```
+
+The glob is **prefix-only**. It never checks the `_<job title>` suffix and it never checks the
+one-`.txt`-per-JD rule, so a two-role folder carrying a single `.txt` reports healthy and
+pipeline-health quietly overstates bundle completeness. So this is a bug ticket wearing a canary
+ticket's clothes: **tighten the glob first, then write the canary against the tightened
+behaviour.** Doing it the other way round lands a red canary against correct-looking code.

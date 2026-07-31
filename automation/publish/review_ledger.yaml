@@ -1191,3 +1191,19 @@
     note quotes .claude/settings.local.json, which holds one entry, "Bash(git *)" — no secret and
     no path. No company, employer, person, slug, posting URL, salary or home path. The advisory
     company detector reports (none).
+
+- commit: 38c2cfeb
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 6
+  digest: sha256:7d29a7cca4cc0c5e
+  finding: >-
+    Read the full 6-file diff — three new needs-human/decisions items, two existing decision items
+    updated, and the phase-7c task descoped. This is the diff with the most privacy surface in the
+    branch, because two of the items describe overlay data. Checked line by line: the phase-7c item
+    reports the narrative files only as counts and line-length distributions (126 files, 18 with
+    extras, tails 544/192/24/10/4...), never a path, a slug or a heading. The recency-window item
+    deliberately does NOT restate the two real postings that motivated it — it says so in the
+    text — and describes them only as US-remote, no visa denial, still open. The overlay's own
+    queue item was read but not edited and is not quoted. No company, employer, person, slug,
+    posting URL, salary or home path. The advisory company detector reports (none).

@@ -50,3 +50,31 @@
    `examples/applications/` would newly break the three canaries that walk the
    example tree (`at-pipeline-health`, `at-validate-drafted-metadata`,
    `rw-duplicate-preflight`).
+
+---
+
+## The gap this list does not describe: the backlog is inverted relative to damage
+
+Recorded 2026-07-31, deliberately as one paragraph here rather than as seven task
+folders. Of the 24 open backlog items, 19 concern the harness that tracks the work
+and 5 concern the job hunt. Meanwhile **`memory/known-issues/` holds 7 open entries
+and only one is referenced by any task** — and four of those are defects in the
+*product*, not the harness:
+
+- `check-py-never-skill-hyphen-substring-false-positive` — **blocks a render with a
+  spurious FAIL** on a hyphenated compound;
+- `visa-sponsorship-negation-phrase-gap` — the sponsorship classifier misses real
+  denial wordings, so a role that will not sponsor survives the filter;
+- `location-title-only-foreign-leak` — a foreign role classifies as US-remote when
+  the city appears only in the title;
+- `rw-tailor-single-posting-canary-fixture-conflict` — a canary that cannot be
+  satisfied against the shipped example folder.
+
+Those four are the items with the shortest path to a wrong artifact reaching the
+user, and none is on this list or in `tasks/`. **They are not converted to tasks
+here on purpose**: `memory/known-issues/` is the correct container for a known
+defect, and what is actually missing is a *drain* — nothing in the repo ever
+promotes, expires, or re-reviews an entry, which is why one survived 49 merge cycles
+against its own "delete after one PR cycle" instruction. That drain is question D7(c)
+in `message-queue/needs-human/decisions/process-weight-what-to-cut.md`. Until it is
+answered, treat this paragraph as the pointer the backlog does not give you.
