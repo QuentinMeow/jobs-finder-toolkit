@@ -1033,3 +1033,16 @@
     test plants. No real person, employer, school, posting URL, application slug,
     salary, date or absolute home path appears. The advisory company detector
     reports (none).
+
+- commit: 11576674
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 5
+  digest: sha256:6109b6f6297f244d
+  finding: >-
+    Read the full 5-file diff. Instruction text only: one shorthand definition added to each of
+    five documents, and two command lines in the resume-writer skill rewritten to take the
+    config accessor instead of a literal folder. The only paths named are the generic
+    private/applications/ and examples/applications/ mount points. No person, employer, school,
+    company, posting URL, application slug, salary, date or absolute home path appears. The
+    advisory company detector reports (none).

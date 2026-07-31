@@ -4,7 +4,7 @@
 - **Area**: repo
 - **Source**: found while repointing the instruction surface for workspace phase 5, 2026-07-30 —
   [the phase-5 record](../../3_in-review/2026-07-28-workspace-phase-5-lifetime-taxonomy/verification.md)
-- **Claimed-by**:
+- **Claimed-by**: agent, 2026-07-31 (branch `fix/03-owner-data-paths`; work complete, in review)
 
 ## Goal
 

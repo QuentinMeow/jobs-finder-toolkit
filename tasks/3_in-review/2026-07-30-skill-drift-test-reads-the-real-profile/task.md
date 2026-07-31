@@ -3,6 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: harness
 - **Source**: workspace phase 6 implementation, 2026-07-30 (found while adding gardener tests)
+- **Claimed-by**: agent, 2026-07-31 (branch `fix/03-owner-data-paths`; work complete, in review)
 
 ## Goal
 

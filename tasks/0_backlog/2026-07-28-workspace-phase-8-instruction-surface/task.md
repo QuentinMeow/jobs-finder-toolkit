@@ -92,6 +92,14 @@ it can see, and it reports `references: all resolve` today.
 - [ ] All 11 public `SKILL.md` files and 7 handbook docs updated
 - [ ] `examples/` mirrors the private tree; `data/` and `templates/` violations fixed;
       `ci.yml`'s `examples/data` pin updated in the same PR
+- [ ] **Inherited 2026-07-31** from
+      [the config-defaults task](../../3_in-review/2026-07-30-config-defaults-still-name-the-pre-phase-5-layout/verification.md):
+      the four accessor defaults now derive the lifetime layout, but under the example config
+      `overlay_root()` is `examples/`, so `blacklist_path()`, `story_bank_path()`,
+      `search_profiles_dir()` and `skill_references_dir()` still resolve to directories that do
+      not exist there (as they did before). Reshaping `examples/` is what closes it — together
+      with the smoke assertion that every `config.*()` path exists **under the example config**,
+      which is the check a maintainer-only run cannot make
 - [ ] ADRs recorded for the layout and any remaining reversals
 - [ ] Per-skill canaries pass and are recorded for the 9 skills that have a set; a one-line
       rationale recorded for `gardener` and `search-recall-audit`
