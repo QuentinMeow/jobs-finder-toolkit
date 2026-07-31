@@ -4,8 +4,7 @@
 - **Area**: harness
 - **Source**: found by the `cr-moat-5whys` and `cr-question-bank` canary runs, 2026-07-30 —
   [the eval record](../../../evals/results/company-research-046a1f17e5f5-20260730-reference-retier.md)
-- **Claimed-by**:
-
+- **Claimed-by**: agent (fix/10-company-research-correctness, 2026-07-31)
 ## Goal
 
 Make the skill's two instructions about how much of `reference.md` to read agree, so the

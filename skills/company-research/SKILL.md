@@ -130,7 +130,7 @@ offer decision. Wrong "facts" are worse than missing ones. So:
 
 Before live research, read exactly three sections of `reference.md`: §§ "Handy Fetches" (canonical fetches, restricted-source rules, compensation-cache provenance),
 "Maturity fetches", and "Output Location and Structure" (private-overlay routing, the full output tree). Those are what every run needs.
-The rest of the file is per-file templates: **each file's entry below — or, for `05` and `09`, the `Trigger` line under that file's template — names the section(s) to read before writing that file, and those pointers are the complete list. Read a template when its pointer fires, never ahead of it, and never the file end to end on your own initiative.**
+The rest of the file is per-file templates: **each file's entry below — or, for `05` and `09`, the `Trigger` line inside that file's own section — names the section(s) to read before writing that file, and those pointers are the complete list. Read a template when its pointer fires, never ahead of it, and never the file end to end on your own initiative.**
 Every template section is reachable from at least one pointer, so adding a section to `reference.md` means adding its pointer here in the same edit or it becomes unreachable rather than merely unread. Be honest about what this buys: a **full-folder** run fires every pointer and so ends up reading effectively the whole file anyway. The saving is real only for a single-file request; the always-read floor is the three sections above.
 Keep the sourcing guardrails above and the output rules below as the controlling gates.
 
@@ -141,7 +141,8 @@ Rules:
 - `for-interview` = things to *discuss/demonstrate* (depth + POV);
   `for-myself` = things to *know/decide*. Keep comp/WLB/visa out of the question
   bank; they live in `for-myself`.
-- Always produce `03`, `05`, `06`, `09`, and `10`, the **1–100 competitor scorecard**
+- **In a full-folder run**, always produce `03`, `05`, `06`, `09`, and `10`, the
+  **1–100 competitor scorecard**
   in `04`, and the **1–100 company rating** in `for-myself/06` — the deep-dive,
   differentiation, AI-embrace, question bank, why-this-company pitch, competitor
   scorecard, and company rating are the point of this skill. (`06` scales with AI
@@ -344,21 +345,27 @@ routinely carries beta pieces.
    launch post, its docs **body**, its pricing page, or the changelog. Read the hit in context:
    a bare keyword in a nav list, tag cloud, or sidebar is not a statement. **A stage statement
    beats any GA-looking signal**, unless a *dated* GA announcement is newer than the newest
-   dated beta statement.
+   dated beta statement, or rung 4's staleness case applies.
 2. **GA / shipped** — a dated launch, GA, or "out of beta" post or changelog entry; or a pricing
    page that bills it at a general price with no beta qualifier.
 3. **Announced / planned** — a roadmap line, exec quote, press release, partnership, or job req,
    with no docs and no way to use it.
 4. **Ambiguous** — you checked 1 and 2 and found no stage word either way, **or** the newest
-   thing you found is a docs body updated *after* the last beta statement that says nothing
-   about stage. A silent refresh neither renews the old beta claim nor announces GA; do not
-   pin a product to a stale beta statement a fresher page declines to repeat.
+   thing you found is a docs body updated *after* the last beta statement and silent on stage.
+   That second case **overrides rung 1**, which would otherwise have stopped first: a silent
+   refresh neither renews the old beta claim nor announces GA. Keep the last *stated* stage in
+   the tag, mark the current stage `[unverified]`, and write the defensible sentence — "the
+   <date> post called it <stage>; I found no <newer stage> announcement since" — rather than
+   asserting either. Never resolve this case upward to GA.
 
 **None of the following is evidence of GA**, and each has produced a wrong call: a
 product-directory or "our products" listing · a docs landing/nav page carrying no stage word · a
 plan-entitlement line ("Available on all plans", "Included in Pro" — a *pricing tier*, not a
 lifecycle stage) · the existence of an API, SDK, dashboard tile, or docs · the **absence** of a
-beta badge. Two fetches settle it: the product's launch / announcement post, then the **body
+beta badge. A nav or sidebar stage pill is worth **recording in the ledger as corroboration** —
+it is usually right — but it cannot establish a stage on its own, because it is rendered from
+front-matter and goes stale silently. Two fetches settle it: the product's launch /
+announcement post, then the **body
 text** of its docs overview, pricing page and **dated changelog / release notes**
 (`reference.md` § "Maturity fetches"). For a vendor that ships continuously the dated changelog
 entry is usually the decisive artifact, not the launch post. A docs GA banner establishes the
@@ -374,7 +381,9 @@ wrong call is the failure this gate exists to stop — never resolve an ambiguit
 `[maturity unverified — checked launch post + docs body]`. A beta always carries its
 **duration**, because "in beta" and "in beta for fifteen months" are different facts about how
 the company executes; when the start date is not findable, write `[beta, start date unverified]`
-rather than dropping the stage.
+rather than dropping the stage. Back the tags with a short **Maturity evidence** table in the
+file — product · tag · the sentence · the URL — so a reader can audit a stage call without
+re-fetching, and so `Maturity unverified` shows what was actually checked.
 
 ```markdown
 ## AI-era survival & strategy
@@ -458,7 +467,9 @@ file **must** include three deep groups:
   workflow lock-in?" / "How AI-native is day-to-day engineering here — what's mandated
   vs. encouraged, and where has an agent/eval workflow actually replaced manual work?"
 
-Also include: `For the Hiring Manager`, `For Engineers on the team`, `For a
+Also include: `Product & platform depth`, `Level, scope & team fit` (the level/scope group —
+in company scope it carries the `Scope:` line from "Before You Start" step 3), `For the Hiring
+Manager`, `For Engineers on the team`, `For a
 Skip-level / Leadership`, `For the Recruiter (logistics)`. Prefer ~4–8 sharp
 questions per group. Each question on its own line with a short parenthesized intent
 tag; reference a *specific* product, repo, blog post, competitor, or customer.

@@ -4,8 +4,7 @@
 - **Area**: harness
 - **Source**: found by the `cr-moat-5whys` and `cr-question-bank` canary runs, 2026-07-30 —
   [the eval record](../../../evals/results/company-research-046a1f17e5f5-20260730-reference-retier.md)
-- **Claimed-by**:
-
+- **Claimed-by**: agent (fix/10-company-research-correctness, 2026-07-31)
 ## Goal
 
 Give the skill a stated path for "research this company" when no application folder for it

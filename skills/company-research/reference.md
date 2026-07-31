@@ -39,9 +39,15 @@ overview and pricing pages. Strip each to text and grep it rather than reading t
 
 ```bash
 # 1. The product's launch / announcement post, and the changelog entry if there is one.
+#    Match PHRASES, not the bare word: a vendor's blog renders its whole tag list into every post,
+#    and a tag cloud containing "Beta" otherwise produces a false hit on 100% of that vendor's posts.
 STRIP='import sys,re,html;t=sys.stdin.read();t=re.sub(r"<(script|style).*?</\1>","",t,flags=re.S);t=re.sub(r"<[^>]+>"," ",t);print(re.sub(r"\s+"," ",html.unescape(t)))'
+STAGE='(generally available|general availability|out of (open |private |closed )?beta|now GA|GA release|in (open|private|closed|public) beta|currently in beta|is in beta|enters? .{0,20}beta|early access|in preview|is experimental|waitlist|request access)'
+NAV='([A-Z][A-Za-z]+ ){5}'   # 5+ consecutive Title-Case words = the site's tag list or nav, never a sentence
 curl -s -L -A "Mozilla/5.0" "<launch-post-url>" | .venv/bin/python -c "$STRIP" \
-  | grep -o -i -E ".{140}(generally available|out of (open |private |closed )?beta|now GA|open beta|private beta|closed beta|early access|preview|waitlist|request access).{140}"
+  | grep -o -i -E ".{140}$STAGE.{140}" | grep -v -E "$NAV"
+# Verified 2026-07-31 on three posts of one vendor: drops the tag-cloud false positive to zero while
+# keeping both real "in private beta" sentences and the real "General Availability" sentence.
 
 # 2. The docs OVERVIEW, PRICING and CHANGELOG/release-notes pages — body text, same grep.
 #    For a vendor that ships continuously the DATED changelog entry usually settles it outright.

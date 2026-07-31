@@ -1449,3 +1449,16 @@
     ("Test Candidate") and an invented slug ("acme-swe-20260101"). No real name, employer,
     school, date, salary, posting URL or absolute home path; no path outside the repo is
     written. The advisory company detector reports (none).
+- commit: 2a9ab0b9
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 8
+  digest: sha256:d5531c46778a0b0b
+  finding: |
+    Read the full diff line by line. Four content files (SKILL.md, reference.md, LESSONS.md,
+    the canary set) plus four pure task-folder renames with no content change. All generic
+    instruction text; the only company named is Cloudflare, already the canary set's public
+    real-company fixture, and the only live figures are public docs facts (a ~1.1 MB
+    llms-full.txt, 31,553 lines, on 2026-07-31). No real name, private-tree employer, school,
+    date, salary, posting URL or absolute home path. The advisory company detector reports
+    (none).

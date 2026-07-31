@@ -4,8 +4,7 @@
 - **Area**: harness
 - **Source**: found by the `cr-full-research-structure` canary run, 2026-07-30 —
   [the eval record](../../../evals/results/company-research-046a1f17e5f5-20260730-reference-retier.md)
-- **Claimed-by**:
-
+- **Claimed-by**: agent (fix/10-company-research-correctness, 2026-07-31)
 ## Goal
 
 Give the skill one line telling the agent where product maturity actually lives, so the
