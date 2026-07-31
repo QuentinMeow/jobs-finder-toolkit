@@ -1,0 +1,20 @@
+# Reviewed gitleaks findings that are NOT secrets, pinned one per line as
+# <commit>:<file>:<rule>:<line>. This is a review RECORD, not a rule change: the
+# rule itself is untouched, so the same shape anywhere else — including the same
+# file on a later line — still fires. Same contract as
+# automation/publish/review_ledger.yaml: a fingerprint names one diff a human read.
+#
+# Add an entry ONLY after reading the flagged line and confirming it is not a
+# credential. A finding you cannot explain is a finding, not an entry here.
+#
+# Both entries below are the same false positive in a unit test: gitleaks'
+# default `generic-api-key` rule matches `<identifier containing "key"> <sep>
+# "<10+ chars>"`, and a fixture folder-name slug spelled `...key...` sitting
+# beside another quoted slug on the same line supplies exactly that shape. Every
+# value involved is an invented folder name written into a temp directory by
+# skills/application-tracker/scripts/tests/test_company_keys_report.py. The
+# current file no longer contains the shape (the slugs were renamed); these two
+# entries cover the two commits whose DIFFS still do, which cannot be edited
+# without rewriting published history and orphaning review-ledger rows.
+970da61231c2c12f0068183fddaf3bf119092a01:skills/application-tracker/scripts/tests/test_company_keys_report.py:generic-api-key:167
+2844fd0b59fd306ec86e4807d577b7c17ad9ed6c:skills/application-tracker/scripts/tests/test_company_keys_report.py:generic-api-key:170

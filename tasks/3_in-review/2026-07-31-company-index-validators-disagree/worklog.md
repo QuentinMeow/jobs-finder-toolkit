@@ -66,4 +66,11 @@ clean, leak guard clean.
   whoever touches this file next: three PRE-EXISTING lines still carry the shape (a slug
   spelled `...-key-...` followed by a quoted value); gitleaks only scans newly pushed
   commits, so they are dormant until someone edits them.
-- Next: re-watch CI on the amended tip.
+- The `push`-event `secret-scan` went green, but the `pull_request`-event one scans the
+  WHOLE PR range, so the two earlier commits' diffs still carry the flagged line — and a
+  diff cannot be edited without rewriting published history, which would orphan this
+  branch's review-ledger rows. Recorded the two findings as reviewed in a new root
+  `.gitleaksignore` (commit-pinned fingerprints; the rule itself is untouched, so the same
+  shape anywhere else still fires) and filed the "should this repo carry that file at all"
+  fork at `message-queue/needs-human/decisions/gitleaksignore-for-reviewed-false-positives.md`
+  with options and a default, per the async contract.
