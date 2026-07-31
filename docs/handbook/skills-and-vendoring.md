@@ -35,6 +35,20 @@ module is **vendored** (copied) into the skill:
 - Skill scripts import the vendored module locally, e.g.
   `from _vendor.location import classify_location`.
 
+**Testing the canonical module, not a copy.** `automation/shared/tests` is the
+suite for `automation/shared/`, but `unittest` discovery imports every module in
+that directory into one process, and some of them reach a skill's entry-point
+script — which puts that skill's `_vendor/` on `sys.path`. A bare
+`import job_metadata` then resolved to a COPY. Every `test_*.py` there now calls
+`pin_shared_modules()` (from `automation/shared/tests/_canonical_imports.py`)
+before its first repo-local import; it installs a `sys.meta_path` finder that
+pins every vendored name to `automation/shared/`, so resolution no longer depends
+on import order. Read that module's docstring before changing it — it lists what
+the pin does **not** cover, chiefly that it is not a drift check and that the
+`_vendor/` copies are exercised only by the per-skill suites under
+`skills/*/scripts/tests`. `test_canonical_module_resolution.py` fails if a new
+test module skips the call.
+
 Where does a new shared module go? If **only one skill** needs it and it's
 skill-specific, keep it in that skill's `scripts/`. If a skill needs a **pure toolkit
 module**, add it to `automation/vendoring/sync_vendored.py`'s `TARGETS`, run the sync, and

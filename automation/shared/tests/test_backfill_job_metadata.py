@@ -6,6 +6,10 @@ from unittest.mock import patch
 
 import yaml
 
+from _canonical_imports import pin_shared_modules
+
+pin_shared_modules()   # subject imports must resolve under automation/shared/
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TRACKER_SCRIPTS = (
     REPO_ROOT / "skills" / "application-tracker" / "scripts"

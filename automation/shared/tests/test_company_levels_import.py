@@ -8,6 +8,10 @@ from pathlib import Path
 
 import yaml
 
+from _canonical_imports import pin_shared_modules
+
+pin_shared_modules()   # subject imports must resolve under automation/shared/
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 COMPANY_LEVELS_DIR = REPO_ROOT / "automation" / "company-levels"

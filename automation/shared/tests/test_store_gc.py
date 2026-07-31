@@ -21,6 +21,10 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from _canonical_imports import pin_shared_modules
+
+pin_shared_modules()   # subject imports must resolve under automation/shared/
+
 SHARED = Path(__file__).resolve().parents[1]
 if str(SHARED) not in sys.path:
     sys.path.insert(0, str(SHARED))

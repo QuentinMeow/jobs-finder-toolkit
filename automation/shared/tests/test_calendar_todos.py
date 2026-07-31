@@ -3,6 +3,10 @@ import sys
 import unittest
 from pathlib import Path
 
+from _canonical_imports import pin_shared_modules
+
+pin_shared_modules()   # subject imports must resolve under automation/shared/
+
 SHARED_DIR = Path(__file__).resolve().parents[1]
 if str(SHARED_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_DIR))
