@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: harness
 - **Source**: found while implementing workspace phase 7 PR-D, 2026-07-30
-- **Claimed-by**:
+- **Claimed-by**: agent (fix/01-shared-tests-import-path), 2026-07-30
 
 ## Goal
 
@@ -56,9 +56,9 @@ package targets.
 
 ## Definition of done
 
-- [ ] After a full discovery pass over `automation/shared/tests`, every module under test resolves
+- [x] After a full discovery pass over `automation/shared/tests`, every module under test resolves
       under `automation/shared/`
-- [ ] A regression test asserts that, and is shown to fail against the current arrangement
-- [ ] The other `TARGETS`/`DIR_TARGETS` modules are checked for the same shadowing and the result
+- [x] A regression test asserts that, and is shown to fail against the current arrangement
+- [x] The other `TARGETS`/`DIR_TARGETS` modules are checked for the same shadowing and the result
       recorded (fixed, or explicitly not affected)
-- [ ] `sync_vendored.py --check` still clean; full gate green
+- [x] `sync_vendored.py --check` still clean; full gate green

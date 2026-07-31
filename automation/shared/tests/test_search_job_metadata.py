@@ -3,6 +3,10 @@ import sys
 import unittest
 from pathlib import Path
 
+from _canonical_imports import pin_shared_modules
+
+pin_shared_modules()   # subject imports must resolve under automation/shared/
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SEARCH_SCRIPTS = REPO_ROOT / "skills" / "job-search" / "scripts"
 SEARCH_VENDOR = SEARCH_SCRIPTS / "_vendor"
