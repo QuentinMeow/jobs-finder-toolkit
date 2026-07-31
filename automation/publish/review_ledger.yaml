@@ -1131,3 +1131,18 @@
     are process-record metadata and fixture dates. No person, employer, school, company,
     posting URL, application slug or salary appears. The advisory company detector reports
     (none).
+
+- commit: 6bf874b3
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 4
+  digest: sha256:d7337e36f675dda0
+  finding: >-
+    Read the full 4-file diff — the phase-7b task folder moved into 3_in-review with a
+    verification record and a worklog, plus one new backlog task. The verification transcripts
+    are the risk here, and every path in them is elided: the applications root, the company
+    index, the overlay repo and the scratch worktree appear as <applications-root>, <index>,
+    <overlay> and <scratch>, and the keying commit as <the keying commit>. What remains is
+    counts and shapes — 243 files, 222 keys, 214 company strings, 208 keys, 367 urls, 369
+    pairs. No company name, employer, person, application slug, posting URL, salary or
+    absolute home path appears. The advisory company detector reports (none).

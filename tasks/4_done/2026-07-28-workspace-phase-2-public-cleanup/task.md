@@ -89,6 +89,18 @@ This task sits in `3_in-review`, not `4_done`: `tasks/README.md` defines `4_done
 this stack are open. Phase 1's task went to `4_done` while its PRs were still open; this is the
 more accurate reading of the README, and one `git mv` promotes this folder when the stack merges.
 
+**Update, 2026-07-31 — the stack merged and this folder is now in `4_done`.** Re-checked before
+moving it: PRs #99, #100, #101, #102, #103 and the ledger re-anchor #105 all report `MERGED`. The
+promotion is the `git mv` this paragraph promised.
+
+**The two unticked boxes below stay unticked on purpose and are not evidence of unfinished work.**
+Both are recorded de-scopes with their reasons in place: three `parents[N]` bootstraps are
+genuinely move-invariant and converting them would answer a different question, and six files
+naming the pre-phase-2 spelling are dated records or an immutable ADR, which rewriting would
+falsify. The second one already spawned its own task, which has since merged (PR #109). If a later
+reader disagrees with either call, the argument is in the box text — that is what a de-scope
+looks like here, as distinct from a box nobody got to.
+
 ## Definition of done
 
 Evidence for every ticked box is in `verification.md` beside this file — real commands, real
@@ -119,7 +131,7 @@ output. Two boxes are deliberately left unticked with their reason.
       dated records of a tree that was spelled that way at the time, and rewriting them would
       falsify the record; the ADR is immutable. But their **markdown links are now broken**, and
       no gate can see that — see the filed task
-      [`2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md),
+      [`2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../4_done/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md),
       which is where the reference-vs-record split gets decided rather than guessed at here.
 - [x] `evals/{protocols,canaries,rubrics,results}/`; `evals/canaries/<skill>.yaml`
 - [x] `tmp/` → `local/`, root `.gitignore`, the handbook's scratch rule and `AGENTS.md`'s

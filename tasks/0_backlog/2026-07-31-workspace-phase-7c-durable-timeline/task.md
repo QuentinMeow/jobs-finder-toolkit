@@ -1,6 +1,6 @@
 # Workspace phase 7c — durable vs disposable in the application timeline
 
-- **Priority**: P2 (someday) — after [7b](../2026-07-31-workspace-phase-7b-company-key-on-meta/task.md)
+- **Priority**: P2 (someday) — after [7b](../../3_in-review/2026-07-31-workspace-phase-7b-company-key-on-meta/task.md)
 - **Area**: email
 - **Source**: [workspace phase 7](../../4_done/2026-07-28-workspace-phase-7-company-key/task.md) · [design](../../../docs/designs/workspace-restructure/README.md)
 - **Claimed-by**:

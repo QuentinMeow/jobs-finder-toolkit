@@ -83,7 +83,7 @@ The cause is `check_references()` at `automation/gardener/verify_links.py:249-25
 resolved under no base is only recorded when it starts with an absent strict root or a present
 one. Anything else falls out of the loop. 76 references at the four retired root names survive
 across 24 record files and are now in that hole. Filed as
-[`2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md).
+[`2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../4_done/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md).
 
 ### `--require-roots` still fails when `docs/roadmap/` is absent
 

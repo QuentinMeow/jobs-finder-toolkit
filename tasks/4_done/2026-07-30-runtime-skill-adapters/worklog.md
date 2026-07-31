@@ -21,3 +21,11 @@
 - Closing review added removal coverage: when an overlay skill disappears,
   bootstrap removes only its generated adapters and prunes their local excludes,
   while preserving foreign runtime entries.
+
+## 2026-07-31 — session 2 (agent, bookkeeping)
+
+- Recorded the missing PR reference. The definition of done's last bullet asks for an open public
+  pull request, and no file in this folder named one. It is **PR #121, "Make overlay skills private
+  across all runtimes"**, confirmed `MERGED`. Without that line the folder's final box could not be
+  checked by anyone reading it.
+- Moved `3_in-review` -> `4_done` on that evidence. Nothing else in the folder changed.

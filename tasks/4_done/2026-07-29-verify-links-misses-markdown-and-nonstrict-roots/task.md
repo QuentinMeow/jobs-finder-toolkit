@@ -8,7 +8,7 @@
   doing the link work twice. Recorded as a blocking precondition on
   [the phase-5 task](../2026-07-28-workspace-phase-5-lifetime-taxonomy/task.md).
 - **Area**: harness
-- **Source**: workspace phase 2, 2026-07-29 — [the phase-2 record](../../../docs/designs/workspace-restructure/execution-plan.md#merged-phase-2--public-side-cleanup) and [its verification](../../3_in-review/2026-07-28-workspace-phase-2-public-cleanup/verification.md)
+- **Source**: workspace phase 2, 2026-07-29 — [the phase-2 record](../../../docs/designs/workspace-restructure/execution-plan.md#merged-phase-2--public-side-cleanup) and [its verification](../../4_done/2026-07-28-workspace-phase-2-public-cleanup/verification.md)
 - **Claimed-by**: agent, 2026-07-29 — see [verification.md](verification.md) and
   [worklog.md](worklog.md). Three of this file's numbers were wrong and are corrected in
   the Definition of done below; the reasoning is in the worklog rather than rewritten

@@ -135,7 +135,7 @@ execution plan applies per commit: a review-ledger row each, plus a closing ledg
 gates in this repo fail *open*, so a half-done phase is indistinguishable from a done one.
 
 **One outstanding, added 2026-07-29 by owner decision: the link-checker task must merge first.**
-[`tasks/3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../3_in-review/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
+[`tasks/4_done/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots`](../../4_done/2026-07-29-verify-links-misses-markdown-and-nonstrict-roots/task.md)
 lands before any commit of this phase. The reason is that one of this phase's own steps is
 unverifiable until it does: this phase removes `interviews/` from `verify_links.py`'s
 `SKIP_PREFIXES` and repairs the 244 relative markdown links inside that tree, and
@@ -164,3 +164,27 @@ USER deletes one; handovers are local-only).
       restructured
 - [ ] Review-ledger rows for every commit; no company name in any public file
 - [ ] Gate command clean
+
+## Held in `3_in-review`, 2026-07-31 — what is missing
+
+A bookkeeping pass promoted six finished in-review folders to `4_done` and deliberately left this
+one behind. PR #111 is merged and the migration itself is well evidenced (747 renames, 19
+accessors, both skips live, the tailoring card, the `--require-roots` catch). But **every one of
+the ten definition-of-done boxes is `- [ ]`**, and four of them have no evidence anywhere in the
+folder:
+
+- *"`status.py` reports the same pipeline as before"* — the string `status.py` does not appear in
+  this folder at all.
+- *"every gardener routine runs"* — no run is recorded here. Phase 2's folder pastes one; this one
+  does not.
+- the per-company in/out counts under `companies/<key>/` — only aggregate totals were recorded.
+- a full-gate `ALL GREEN` block — phases 2, 6 and 7 each paste one; this folder pastes three
+  checks.
+
+**And one box is not merely unevidenced but explicitly unapplied**: `config.yaml`'s `paths.*`
+re-point. The verification says the block "is in the session scratchpad rather than here" — which
+is both an owner action nobody performed and a durable record citing gitignored scratch, the thing
+commit `7d8eac9` forbids.
+
+Promoting this folder would assert ten pieces of evidence, four of which do not exist and one of
+which contradicts itself.

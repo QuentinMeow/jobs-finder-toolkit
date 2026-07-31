@@ -2,7 +2,7 @@
 
 - **Priority**: P1 (this round)
 - **Area**: repo
-- **Source**: [workspace phase 7](../../3_in-review/2026-07-28-workspace-phase-7-company-key/task.md) · [execution plan](../../../docs/designs/workspace-restructure/execution-plan.md)
+- **Source**: [workspace phase 7](../../4_done/2026-07-28-workspace-phase-7-company-key/task.md) · [execution plan](../../../docs/designs/workspace-restructure/execution-plan.md)
 - **Claimed-by**: agent (workspace phase 7b), 2026-07-30
 
 ## Goal

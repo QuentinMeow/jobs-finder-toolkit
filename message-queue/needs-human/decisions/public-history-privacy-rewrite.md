@@ -2,7 +2,7 @@
 
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-30
-- **Source**: [runtime skill adapters task](../../../tasks/3_in-review/2026-07-30-runtime-skill-adapters/task.md)
+- **Source**: [runtime skill adapters task](../../../tasks/4_done/2026-07-30-runtime-skill-adapters/task.md)
 - **Blocking**: nothing. The non-destructive runtime fix and current-tree cleanup proceed.
 - **Default path**: keep published history unchanged; prevent the identifiers from
   appearing in the current tree, future commits, branch name, commit messages, and PR text.
