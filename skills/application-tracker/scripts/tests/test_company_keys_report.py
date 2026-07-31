@@ -161,14 +161,16 @@ class CompanyKeysReportTests(unittest.TestCase):
                 self.assertFalse(data["ok"])
 
     def test_absent_is_the_one_class_that_stays_clean_everywhere(self):
-        """The fifth row of the agreement table, and the only permissive one."""
-        # Two shapes of absent: no `company_key:` line at all, and one with
-        # nothing after the colon (which YAML parses as null).
-        no_field, null_field = "unkeyed-swe-20260730", "explicit-null-swe-20260730"
-        rc, data = self._run({no_field: None, null_field: ""}, strict=True)
+        """The fifth row of the agreement table, and the only permissive one.
+
+        Both shapes of absent: a meta.yaml with no ``company_key:`` line at all,
+        and one with nothing after the colon (which YAML parses as null).
+        """
+        apps = {"no-field-swe-20260730": None, "explicit-null-swe-20260730": ""}
+        rc, data = self._run(apps, strict=True)
         self.assertEqual(rc, 0)
         self.assertEqual(data["malformed"], [])
-        self.assertEqual(sorted(data["unkeyed"]), sorted([no_field, null_field]))
+        self.assertEqual(sorted(data["unkeyed"]), sorted(apps))
 
     # ── the index itself ─────────────────────────────────────────────────────
 

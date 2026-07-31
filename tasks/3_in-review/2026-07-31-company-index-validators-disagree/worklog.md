@@ -58,4 +58,12 @@ clean, leak guard clean.
   the rule has no `key = "..."` shape to match. No allowlist was added and no check was
   weakened: the finding was a real pattern match on text that is genuinely not a secret,
   and the cheapest honest fix is to stop writing that pattern.
+  The first rename was not enough: the rule keys off the substring `key` anywhere in a
+  nearby identifier, and `unkeyed-...` supplied it while the next quoted slug supplied
+  the value. Second pass drops the substring from both slugs on that line and folds them
+  back into a dict literal, so no quoted long value follows the keyword. Verified locally
+  by running gitleaks' default `generic-api-key` regex over the changed files. Note for
+  whoever touches this file next: three PRE-EXISTING lines still carry the shape (a slug
+  spelled `...-key-...` followed by a quoted value); gitleaks only scans newly pushed
+  commits, so they are dormant until someone edits them.
 - Next: re-watch CI on the amended tip.
