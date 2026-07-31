@@ -31,27 +31,32 @@ data in the public tree** — it ships only the fake "Jordan Rivers" example.
   `config.example.yaml` is the tracked placeholder.
 - **Private overlay repo** — its own git repo, mounted at the git-ignored `private/` dir;
   `config.yaml` points `paths.*` into it (real identity, profile, baseline, reference DOCX,
-  applications, interviews, private coding-interview skills). See `docs/handbook/private-overlay.md`.
+  applications, interviews, and overlay-only skills). See `docs/handbook/private-overlay.md`.
 
 **Skill visibility** is a `visibility: public|private` key in each `SKILL.md`. **PUBLIC skills**
 (SKILL.md + scripts published; PRODUCTS stay private): `ask-me-anything`, `job-search`,
 `resume-writer`, `application-tracker`, `behavioral-interview-prep`, `company-research`,
-`email-assistant`, `interview-calendar`, `gardener`, `search-recall-audit`, `github-workflow`. **PRIVATE skills**: `coding-interview`
-and `coding-interview-cleanup` — both entire skills live only in the overlay.
+`email-assistant`, `interview-calendar`, `gardener`, `search-recall-audit`,
+`github-workflow`. **PRIVATE skills are intentionally not enumerated here**:
+each entire skill lives only in the overlay, and bootstrap discovers it dynamically.
 
 **PRODUCTS are always private** and mount under `private/` (real applications, discoveries,
 company-level cache, interviews, profile/baseline/reference DOCX); only the fake `examples/**`
 counterparts ship. **Personal content stays out of `SKILL.md`/`LESSONS.md`** — candidate DATA defers
 to `config.yaml`/the profile; residual personal skill guidance goes in the overlay's per-skill
 skill-notes folder, reached by `config.skill_references_dir()` (exporter prunes it; leak guard
-fails on any tracked file under a `references_private/` folder in the public tree). **If a path does not start with `private/`, what you write
-there is published** — no exceptions since 2026-07-28, when the last eight inbound symlinks were
-deleted; the overlay is reached ONLY through `config.*()` accessors. **The leak
+fails on any tracked file under a `references_private/` folder in the public tree).
+**If a path does not start with `private/`, tracked content written there is
+published.** The only local metadata outside that prefix is the generated runtime
+adapter links described below. The overlay is reached through `config.*()` accessors
+and those adapters. **The leak
 guard** (`automation/publish/check_public.py`) hardcodes NO identity — it derives personal tokens from
 `config.yaml`/overlay/`JOBHUNT_PERSONAL_TOKENS` and scans text + `.docx`/`.pdf`; `export_public.py`
-runs it as the final publish gate. Routing: `skills/` is entirely public and lists the public skills;
-each private skill is reached from `.claude/skills/`+`.cursor/skills/` entries pointing at
-`private/skills/<name>` (git-ignored; `automation/bootstrap_overlay.py` creates them).
+runs it as the final publish gate. Routing: `skills/` is entirely public and lists
+the public skills; each private skill is reached from generated entries in
+`.agents/skills/`, `.claude/skills/`, and `.cursor/skills/` pointing at
+`private/skills/<name>`. Their exact paths live only in repository-local Git
+metadata; `automation/bootstrap_overlay.py` creates them dynamically.
 Full detail: `docs/handbook/public-private-split.md`.
 
 ## Configuration
@@ -98,13 +103,12 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
    it points you there. Route by need: `ask-me-anything` (new user / how it works / where to start),
    `job-search` (find/filter postings), `resume-writer` (tailoring), `application-tracker` (status),
    `behavioral-interview-prep`, `company-research` (company/role research + question bank),
-   `coding-interview-cleanup` (organize coding screenshots and build a coaching guide),
    `email-assistant` (read personal Outlook mail, create repository-grounded reply drafts),
    `interview-calendar` (reconcile email evidence, tracker progress, and Outlook interview events),
    `search-recall-audit` (spot-check whether job-search is missing/over-keeping roles),
    `github-workflow` (PR descriptions, stacked PRs, CI, the push gates).
-   Private `coding-interview` and `coding-interview-cleanup` live at `private/skills/<name>/`
-   and are listed by the runtime when the overlay is mounted.
+   Overlay-only skills live at `private/skills/<name>/`; their names are deliberately
+   absent from the public tree and are listed by the runtime when the overlay is mounted.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context, and skim `memory/index.md`
    (generated) — open only the entries relevant to your task.
 4. If your work changes overall architecture, read `docs/roadmap/current-state.md` and
@@ -263,7 +267,7 @@ Each expands in a named `docs/handbook/` doc; the bolded name is the canonical s
   into each skill's `scripts/_vendor/` via `automation/vendoring/sync_vendored.py`; never edit a copy. Detail: `docs/handbook/skills-and-vendoring.md`.
 - **File & Folder Organization** — group files by purpose in a meaningful subfolder (never a
   generic *scripts*/*docs*/*data* bucket); reason tree-first before creating any file. Detail (incl. the
-  coding-interview 150-char no-hard-wrap rule): `docs/handbook/file-organization.md`.
+  coding interview file 150-char no-hard-wrap rule): `docs/handbook/file-organization.md`.
 - **Scratch & Temporary Files** — throwaway work (probes, scraped HTML/JSON, sanity checks) lives ONLY
   under the top-level gitignored **`local/`** in purpose-named subfolders (`local/ats_scripts/`,
   `local/web_artifacts/`, `local/scratch/`) — never the repo root or a tracked/product folder. Detail: `docs/handbook/file-organization.md`.

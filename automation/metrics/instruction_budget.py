@@ -70,12 +70,12 @@ def _store_readme_target():
 def _private_skills_dir():
     """The overlay's ``skills/`` dir, or None when no overlay is mounted.
 
-    The PRIVATE skills used to be measured through ``skills/coding-interview*``
-    overlay symlinks. Workspace-restructure phase 4 deleted those (a private tree
-    may not wear a public name), which would silently have dropped them from the
-    budget — so they are read from the overlay directly instead. Conditional by
-    design, exactly like ``_store_readme_target``: CI has no overlay and measures
-    only the public files.
+    Overlay-only skills used to be measured through inbound symlinks under the
+    public ``skills/`` tree. Those links were deleted (a private tree may not wear
+    a public name), which would silently have dropped the files from the budget —
+    so they are read from the overlay directly instead. Conditional by design,
+    exactly like ``_store_readme_target``: CI has no overlay and measures only
+    the public files.
     """
     try:
         import config  # automation/shared/config.py

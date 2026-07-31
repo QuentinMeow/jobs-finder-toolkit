@@ -179,3 +179,37 @@ silence.
   application and re-syncing still re-opens the posting. Phase 6.
 - `answer_bank.py` still does not emit to `companies/<key>/derived/`; the 19
   company-prefixed files were relocated, not re-derived.
+
+## Post-review screenshot inbox migration
+
+The owner subsequently chose the personal-practice home for the untracked coding
+interview screenshot inbox.
+
+```
+source screenshot count: 1
+destination screenshot count: 1
+SHA-256 before move: matches SHA-256 after move
+former inbox path: absent
+new inbox path: present
+stale active references to the former path: 0
+canonical private skill references to the new path: 2
+runtime adapter references to the new path: 6
+```
+
+The two private `SKILL.md` changes were path-only substitutions, so canaries were
+skipped under the risk-based eval gate. Direct path and adapter checks exercise the
+only changed behavior.
+
+The full repository link verifier initially reported nine unrelated
+private-overlay reference findings. One stale path label and eight imported
+document anchors were repaired, and the retry item was closed. Six anchor
+findings also exposed a parser bug where newline characters could be treated as
+heading indentation; the parser now accepts only spaces and tabs there.
+
+```
+gardener link-verifier tests: 69 passed (1 expected failure)
+mounted-overlay link verification: OK
+broken references after repair: 0
+skill symlinks: all resolve
+vendor drift: none
+```

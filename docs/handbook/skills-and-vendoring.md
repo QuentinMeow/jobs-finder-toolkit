@@ -5,7 +5,9 @@ Expands `AGENTS.md` → "Sharing Code Across Skills".
 ## Skill directory layout
 
 - `skills` is the canonical Agent Skills directory. Edit skill content there.
-- `.claude/skills/<skill>` and `.cursor/skills/<skill>` are symlinks for tool compatibility. Do not edit through duplicated copies.
+- `.agents/skills/<skill>`, `.claude/skills/<skill>`, and
+  `.cursor/skills/<skill>` are symlinks for tool compatibility. Do not edit
+  through duplicated copies.
 - Keep each skill folder named the same as the `name` field in `SKILL.md`; use lowercase letters, numbers, and hyphens.
 
 ## Vendoring (how self-contained skills share code)

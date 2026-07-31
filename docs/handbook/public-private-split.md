@@ -13,8 +13,8 @@ person or a real job hunt stays private:
 - **Private overlay repo** — its **own git repo** synced to a private GitHub remote, mounted
   at a git-ignored **`private/`** directory inside the public checkout. `config.yaml`
   (git-ignored) points the toolkit's `paths.*` into it — real
-  identity, profile, baseline, reference DOCX, applications, interviews, and the private
-  `coding-interview` skill all live under `private/`. See `docs/handbook/private-overlay.md`.
+  identity, profile, baseline, reference DOCX, applications, interviews, and any
+  overlay-only skills all live under `private/`. See `docs/handbook/private-overlay.md`.
 
 **Skill visibility** is declared by a `visibility: public|private` key in each `SKILL.md`
 frontmatter:
@@ -23,9 +23,9 @@ frontmatter:
   `ask-me-anything`, `job-search`, `resume-writer`, `application-tracker`,
   `behavioral-interview-prep`, `company-research`, `email-assistant`, `interview-calendar`, `gardener`,
   `search-recall-audit`, `github-workflow`.
-- **PRIVATE skills**: `coding-interview` and `coding-interview-cleanup` — both ENTIRE skills
-  (SKILL.md + scripts/assets/evals and products) live only in the private overlay and never ship
-  in the public repo.
+- **PRIVATE skills** are intentionally not named in this repository. Each entire
+  skill (SKILL.md + scripts/assets/evals and products) lives only in the private
+  overlay and never ships in the public repo.
 
 **PRODUCTS are always private** and mount under `private/`: anything tied to real jobs, the
 candidate's background, or dated/time-sensitive info — the real applications
@@ -62,9 +62,10 @@ copied tree as the final gate.
 **Routing**: skills are discovered by listing `skills/` — which is now ENTIRELY public;
 the skills table in `docs/handbook/repo-map.md` names exactly what ships. A private skill lives
 only at `private/skills/<name>/` and reaches the runtime through a git-ignored entry in
-`.claude/skills/<name>` + `.cursor/skills/<name>` that `automation/bootstrap_overlay.py`
-creates, pointing straight at the overlay. So it stays discoverable whenever the overlay is
-mounted, without any private path ever wearing a public name (workspace-restructure phase 4,
-2026-07-28: all eight inbound symlinks deleted). `automation/publish/sync_skill_manifests.py`
-owns the public entries in those same host directories and tells the two apart by where a
-link points, never by its name.
+each runtime's `<host>/skills/<name>` adapter tree that
+`automation/bootstrap_overlay.py` creates, pointing straight at the overlay. The
+exact adapter paths are stored only in repository-local Git metadata. The skill
+therefore stays discoverable whenever the overlay is mounted without its name
+appearing in the tracked public tree. `automation/publish/sync_skill_manifests.py`
+owns the public entries in those same host directories and tells the two apart by
+where a link points, never by its name.

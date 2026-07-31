@@ -36,3 +36,22 @@
   minutes earlier. **Tag before a migration; use `git -C` always.**
 - Next: phase 6 (the skip-log stops being derived), then 7 and 8. Phase 5 makes deletion
   *look* safe while phase 6 is outstanding, so 6 should not wait long.
+
+## 2026-07-30 — session 2 (agent)
+
+- The owner resolved the last untracked interview-tree exception: the coding
+  interview screenshot inbox moved into `private/me/interviews/practice/TODO/`.
+- The inbox contained one screenshot. Its SHA-256 matched before and after the
+  directory move, and the former inbox path no longer exists.
+- Both private consumers now poll the new path. The `.agents`, `.claude`, and
+  `.cursor` runtime adapters all expose those updated canonical skill files; no
+  copied instruction file needed a separate edit.
+- The pending queue item was folded into a permanent decision record, the phase-5
+  move table, and the current-state roadmap, then removed.
+- Canary suites were skipped because both `SKILL.md` edits are mechanical
+  one-line path substitutions with no behavioral, prompt, or control-flow change;
+  stale-reference and adapter sweeps cover the risk directly.
+- The mounted-overlay link gate surfaced nine unrelated findings. The private
+  references were repaired, and a public parser fix prevents blank Markdown
+  headings from changing the following heading's anchor. All 69 verifier tests
+  and the full mounted-overlay check now pass.

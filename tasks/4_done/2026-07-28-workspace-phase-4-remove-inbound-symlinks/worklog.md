@@ -17,7 +17,7 @@ what moved, what's next, what surprised you.>
   - `1b837b7` "Delete the eight inbound symlinks: no private path wears a
     public name". Deletes all eight symlinks `bootstrap_overlay._overlay_
     links()` used to create (4 personal `skills/job-search/profiles/*.yaml`
-    filenames, 2 `references_private/` folders, 2 private coding-interview
+    filenames, 2 `references_private/` folders, 2 overlay-only interview
     skill dirs). Replaces them with `config.search_profiles_dir()` /
     `config.skill_references_dir()` accessors (from phase-0b) and
     git-ignored `.claude/skills/<name>` / `.cursor/skills/<name>` links

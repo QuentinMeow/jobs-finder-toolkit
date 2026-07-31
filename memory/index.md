@@ -11,6 +11,7 @@
 - `memory/decisions/email-git-policy.md` — Track only safe email index headers and annotations
 - `memory/decisions/fine-grained-stage-benchmarks.md` — Benchmark at stage granularity with pinned fixtures, not only end-to-end
 - `memory/decisions/interview-material-moves-by-company-only.md` — Phase 5 moves company-specific interview material into company folders and reorganises nothing else
+- `memory/decisions/interview-screenshot-inbox-moves-to-personal-practice.md` — Move the coding interview screenshot inbox into personal practice
 - `memory/decisions/job-filter-triage-and-lineage.md` — Preserve ambiguous job roles and source metadata for review
 - `memory/decisions/job-index-durable-floor.md` — Preserve index-only job history during builds
 - `memory/decisions/process-folders-layout.md` — Process folders: tasks/, memory/known-issues/, memory/decisions/, unresolved-decisions/

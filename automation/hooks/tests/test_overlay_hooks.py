@@ -273,12 +273,10 @@ class TestBootstrapWiring(unittest.TestCase):
 class TestBootstrapWritesNothingIntoThePublicTree(unittest.TestCase):
     """The phase-4 invariant, asserted on the PLAN rather than on a live run.
 
-    ``bootstrap_overlay`` used to create eight INBOUND symlinks — two private
-    skills at ``skills/coding-interview*``, one ``references_private/`` per public
-    skill, and one per personal job-search profile, whose FILENAME was itself a
-    personal token sitting under ``skills/``. Nothing it plans may land inside the
-    public tree any more; a private skill reaches the runtime through the
-    git-ignored agent host trees instead.
+    ``bootstrap_overlay`` used to create inbound symlinks inside the public
+    ``skills/`` tree, including paths whose names were private. Nothing it plans
+    may land there any more; an overlay-only skill reaches the runtime through
+    repository-locally ignored agent host trees instead.
     """
 
     def _tree(self, td: str):
@@ -310,6 +308,7 @@ class TestBootstrapWritesNothingIntoThePublicTree(unittest.TestCase):
             planned = bootstrap_overlay._private_skill_links(root / "private")
             rels = sorted(link.relative_to(root).as_posix() for link, _ in planned)
             self.assertEqual(rels, [
+                ".agents/skills/hidden-a", ".agents/skills/hidden-b",
                 ".claude/skills/hidden-a", ".claude/skills/hidden-b",
                 ".cursor/skills/hidden-a", ".cursor/skills/hidden-b",
             ])
@@ -342,7 +341,82 @@ class TestBootstrapWritesNothingIntoThePublicTree(unittest.TestCase):
             shutil.rmtree(root / ".cursor")
             hosts = {link.relative_to(root).parts[0]
                      for link, _ in bootstrap_overlay._private_skill_links(root / "private")}
-            self.assertEqual(hosts, {".claude"})
+            self.assertEqual(hosts, {".agents", ".claude"})
+
+    def test_local_excludes_hide_all_three_runtime_adapters(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            exclude = root / ".git/info/exclude"
+            exclude.write_text("# user-owned line\n*.scratch\n", encoding="utf-8")
+            planned = bootstrap_overlay._private_skill_links(root / "private")
+            results: list[tuple[str, str]] = []
+
+            self.assertTrue(bootstrap_overlay._sync_local_excludes(
+                [link for link, _ in planned], check=False, results=results))
+
+            text = exclude.read_text(encoding="utf-8")
+            self.assertIn("# user-owned line\n*.scratch\n", text)
+            self.assertEqual(text.count(bootstrap_overlay.LOCAL_EXCLUDE_BEGIN), 1)
+            self.assertEqual(text.count(bootstrap_overlay.LOCAL_EXCLUDE_END), 1)
+            for link, _ in planned:
+                rel = link.relative_to(root).as_posix()
+                self.assertIn(f"/{rel}\n", text)
+                probe = subprocess.run(
+                    ["git", "-C", str(root), "check-ignore", "--no-index", rel],
+                    capture_output=True, text=True)
+                self.assertEqual(probe.returncode, 0, probe.stderr)
+
+    def test_local_exclude_sync_is_idempotent_and_removes_stale_owned_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            planned = bootstrap_overlay._private_skill_links(root / "private")
+            results: list[tuple[str, str]] = []
+            links = [link for link, _ in planned]
+            self.assertTrue(bootstrap_overlay._sync_local_excludes(
+                links, check=False, results=results))
+            exclude = root / ".git/info/exclude"
+            before = exclude.read_text(encoding="utf-8")
+
+            results = []
+            self.assertTrue(bootstrap_overlay._sync_local_excludes(
+                links, check=True, results=results))
+            self.assertEqual(exclude.read_text(encoding="utf-8"), before)
+            self.assertEqual(results, [
+                (bootstrap_overlay.OK,
+                 "repository-local overlay skill excludes already correct")
+            ])
+
+            kept = [link for link in links if link.name == "hidden-a"]
+            results = []
+            self.assertTrue(bootstrap_overlay._sync_local_excludes(
+                kept, check=False, results=results))
+            after = exclude.read_text(encoding="utf-8")
+            self.assertNotIn("hidden-b", after)
+            self.assertIn("hidden-a", after)
+
+    def test_bootstrap_removes_only_obsolete_generated_adapters(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            foreign = root / ".cursor/skills/third-party"
+            foreign.mkdir(parents=True)
+
+            self.assertEqual(bootstrap_overlay.bootstrap(check=False), 0)
+            obsolete = [root / host / "hidden-b"
+                        for host in bootstrap_overlay.SKILL_HOSTS]
+            self.assertTrue(all(link.is_symlink() for link in obsolete))
+
+            shutil.rmtree(root / "private/skills/hidden-b")
+            self.assertEqual(bootstrap_overlay.bootstrap(check=False), 0)
+
+            self.assertTrue(all(not link.is_symlink() and not link.exists()
+                                for link in obsolete))
+            self.assertTrue(foreign.is_dir())
+            exclude = (root / ".git/info/exclude").read_text(encoding="utf-8")
+            self.assertNotIn("hidden-b", exclude)
+            self.assertIn("hidden-a", exclude)
 
 
 if __name__ == "__main__":

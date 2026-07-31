@@ -72,7 +72,7 @@
   from phase 6 is still unanswered — the old skip-log is read by nothing now; delete it or keep it.
   While it exists it stays a resurrection source for rows you later un-skip.
 - The four decisions open before this session are unchanged: `history/` untracking, the story-bank
-  leaf name, the coding-interview screenshot inbox, and the two parked ones
+  leaf name, the coding interview screenshot inbox, and the two parked ones
   (`private-scope-reconciler`, `logs-as-store-projections`).
 - **Task-tracker drift I did not sweep**: five folders in `tasks/3_in-review/` have merged PRs, but
   at least one (`2026-07-28-workspace-phase-5-lifetime-taxonomy`) still has every definition-of-done

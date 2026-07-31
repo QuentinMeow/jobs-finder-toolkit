@@ -38,9 +38,9 @@ to have no counter at all: a backticked token whose first segment is not a recog
 root ("unrecognised-root"). Renaming a root moves references into that bucket one at a
 time, so the bucket is compared against a baseline rather than thresholded.
 
-Also checked: heading anchors (``#section``) with GitHub's slug rules; the
-``.claude/skills/*`` and ``.cursor/skills/*`` compatibility symlinks resolve — and
-that there was something to resolve; and vendored copies are in sync.
+Also checked: heading anchors (``#section``) with GitHub's slug rules; the Codex,
+Claude Code, and Cursor compatibility symlinks resolve — and that there was
+something to resolve; and vendored copies are in sync.
 
 Exit 1 on any broken reference / unresolved symlink / vendor drift; else 0.
 Report-only otherwise (it fixes nothing).
@@ -258,7 +258,10 @@ def _iter_links(masked: str):
 
 
 # --- Heading anchors ------------------------------------------------------------
-_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(?P<text>.+?)\s*#*\s*$", re.MULTILINE)
+_HEADING_RE = re.compile(
+    r"^[ \t]{0,3}(#{1,6})[ \t]+(?P<text>.+?)[ \t]*#*[ \t]*$",
+    re.MULTILINE,
+)
 _EXPLICIT_ANCHOR_RE = re.compile(r"<a[^>]+\bid=[\"'](?P<id>[^\"']+)[\"']",
                                  re.IGNORECASE)
 _SPAN_TEXT_RE = re.compile(r"`+([^`]*)`+")
@@ -680,7 +683,7 @@ def check_references(check_anchors: bool = True):
 
 # Editor compatibility trees carrying the ``skills/*`` symlinks. At least one must
 # exist: finding none used to mean "all resolve".
-SYMLINK_ROOTS = (".claude/skills", ".cursor/skills")
+SYMLINK_ROOTS = (".agents/skills", ".claude/skills", ".cursor/skills")
 
 
 def _tracked_symlink_roots() -> set[str] | None:
@@ -701,7 +704,7 @@ def check_symlinks() -> list[dict]:
     """Unresolved skill compat symlinks — and a FINDING when nothing was verified.
 
     Was fail-open in three ways, all of which reported "skill symlinks: all
-    resolve" after checking nothing: both roots absent (a restructure renames or
+    resolve" after checking nothing: all roots absent (a restructure renames or
     drops them), a root present but empty, and a root tracked in git yet missing
     from the working tree. Each is now its own finding.
     """

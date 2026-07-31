@@ -19,12 +19,11 @@ message:
   3. references_private leak. Any tracked file under a per-skill
      ``references_private/`` folder — candidate-specific skill content.
   4. Path/filename denylist (defense in depth). Any tracked path under a private
-     product tree (``applications/``, ``interviews/``, ``.agents/inputs/``, the
-     private coding-interview skills), any non-markdown, non-example file under
-     ``templates/`` (root templates/ = tracked process schemas), any
-     ``meta.yaml`` outside ``examples/``, or any ``.docx`` /
-     ``.pdf`` outside ``examples/``. This catches private trees even when zero
-     identity tokens are active.
+     product tree (``applications/``, ``interviews/``, ``.agents/inputs/``), any
+     non-markdown, non-example file under ``templates/`` (root templates/ =
+     tracked process schemas), any ``meta.yaml`` outside ``examples/``, or any
+     ``.docx`` / ``.pdf`` outside ``examples/``. This catches private trees even
+     when zero identity tokens are active.
   5. Structural PII (independent of the token list). Raw emails, US phone shapes,
      absolute home paths (``/Users/<name>``, ``/home/<name>``), and
      ``linkedin.com/in/<handle>`` handles are flagged even with 0 tokens. A small
@@ -166,8 +165,6 @@ _DENY_TREES = [
     (re.compile(r"^applications/"), "applications/"),
     (re.compile(r"^interviews/"), "interviews/"),
     (re.compile(r"^\.agents/inputs/"), ".agents/inputs/"),
-    (re.compile(r"^skills/coding-interview/"), "skills/coding-interview/"),
-    (re.compile(r"^skills/coding-interview-cleanup/"), "skills/coding-interview-cleanup/"),
     (re.compile(r"^data/"), "data/"),
     (re.compile(r"^job-search-profiles/"), "job-search-profiles/"),
     # names the planned private-tree renames introduce (denied before they exist)
@@ -439,6 +436,24 @@ def _tokens_from_file(path: Path) -> set[str]:
     return toks
 
 
+def _overlay_skill_name_tokens(root: Path = REPO_ROOT) -> set[str]:
+    """Exact overlay-only skill names, derived locally and never hardcoded.
+
+    A private skill is a direct child of ``private/skills/`` that owns a
+    ``SKILL.md``. Adding or renaming one therefore arms the local content/path
+    scan for that name automatically, while the public copy of this guard never
+    carries the name itself.
+    """
+    skills = Path(root) / "private" / "skills"
+    if not skills.is_dir():
+        return set()
+    return {
+        child.name
+        for child in skills.iterdir()
+        if child.is_dir() and (child / "SKILL.md").is_file()
+    }
+
+
 def _env_tokens() -> set[str]:
     """Tokens forwarded through ``JOBHUNT_PERSONAL_TOKENS``.
 
@@ -478,14 +493,16 @@ def supplementary_tokens() -> set[str]:
     """Extra tokens that widen the scan but can NEVER arm it.
 
     ``private/leak_tokens.txt`` holds identity ATTRIBUTES (employers, school,
-    product names) — never the name/email/handles — so a non-empty file says
-    nothing about whether the identity itself is known. Gating on the union of
-    this set and ``identity_tokens()`` is exactly the fail-open bug this split
-    exists to prevent.
+    product names), and mounted overlay skill directory names protect the
+    repository structure itself. Neither source proves that the candidate's
+    name/email/handles are known. Gating on the union of this set and
+    ``identity_tokens()`` is exactly the fail-open bug this split exists to
+    prevent.
     """
     toks: set[str] = set(PERSONAL_TOKENS)
     for leak_file in LEAK_TOKENS_FILES:
         toks |= _tokens_from_file(leak_file)
+    toks |= _overlay_skill_name_tokens()
     return toks
 
 
@@ -950,7 +967,8 @@ def print_report(result: dict) -> None:
         print(f"  identity tokens:      {identity}"
               f" (config.yaml / ${TOKENS_ENV_VAR}){armed}")
         print(f"  supplementary tokens: {supplementary}"
-              f" ({'/'.join(f.name for f in LEAK_TOKENS_FILES)}; never arming)")
+              f" ({'/'.join(f.name for f in LEAK_TOKENS_FILES)} + mounted "
+              "overlay skill names; never arming)")
         print(f"  active tokens:        {result.get('personal_token_count', 0)} (union, deduped)")
     if result.get("config_status"):
         # Says WHY the identity count is what it is — a refused or failed config

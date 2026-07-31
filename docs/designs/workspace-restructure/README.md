@@ -41,11 +41,11 @@ with two negations:
 |---|---|
 | `skills/job-search/profiles/<personal-name>.yaml` ×4 | symlinks into the overlay — **the filename itself is a personal token, sitting in the public tree** |
 | `skills/<skill>/references_private/` ×2 | symlinks into the overlay |
-| `skills/coding-interview{,-cleanup}/` ×2 | symlinks into the overlay |
+| `skills/<overlay-only-name>/` ×2 | symlinks into the overlay |
 
 All eight are deleted and replaced by `config.search_profiles_dir()`,
-`config.skill_references_dir()`, and `.claude/skills` + `.cursor/skills` entries pointing
-straight at `private/skills/`. Verified removable: `search_jobs.resolve_profile()` already
+`config.skill_references_dir()`, and runtime adapter entries pointing straight at
+`private/skills/`. Verified removable: `search_jobs.resolve_profile()` already
 accepts an absolute path first and documents the case;
 `bootstrap_overlay._overlay_links()` is the only writer of all three families.
 
@@ -83,7 +83,7 @@ jobs-finder-toolkit/
 │   ├── company-research/  email-assistant/  gardener/  interview-calendar/
 │   ├── job-search/                        #   keeps companies.yaml, profiles/, filter_variants/
 │   ├── resume-writer/  search-recall-audit/
-│   └── (no coding-interview* symlinks — the runtime finds them in private/skills/)
+│   └── (no overlay-only symlinks — runtimes find them in private/skills/)
 ├── automation/
 │   ├── shared/  vendoring/  hooks/  reconcile/  metrics/  store/  bootstrap/
 │   ├── gardener/                          # was maintenance/gardener/
@@ -163,8 +163,7 @@ private/
 │   └── email/{raw,derived,index,state,annotations}/
 │
 ├── skills/
-│   ├── coding-interview/                  #   private skills; dir name == SKILL.md name:
-│   ├── coding-interview-cleanup/
+│   ├── <overlay-skill>/                   #   zero or more private skills
 │   └── skill-notes/<skill>/               #   was skills/references_private/<skill>/
 │
 ├── memory/  message-queue/  tasks/        # ══ private-scope process layer ══

@@ -46,7 +46,7 @@ The phase-5 column still holds.
 | application-tracker | 2 | 0 |
 | interview-calendar | 1 | 0 |
 
-The two private skills (`private/skills/coding-interview{,-cleanup}/SKILL.md`) name one each.
+The two overlay-only `private/skills/<name>/SKILL.md` files name one each.
 
 **7 handbook docs name `private/`, not 5**: `private-overlay.md` (45 lines),
 `public-private-split.md` (9), `repo-map.md` (6), `architecture.md` (4), `command-cookbook.md`

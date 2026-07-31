@@ -198,5 +198,5 @@ run to fall back on.
 All canaries are **fully public**: only the "Jordan Rivers" fixture identity + fictional or
 real-public companies with fictional postings. Zero personal data (the leak guard must be
 completely clean — `automation/publish/check_public.py` exits 0 with zero findings in this repo;
-ANY finding is a regression). The private `coding-interview` skill is
-deliberately out of scope — evals must be runnable on a public-only checkout.
+ANY finding is a regression). Overlay-only skills are deliberately out of scope
+— evals must be runnable on a public-only checkout.
