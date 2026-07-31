@@ -53,7 +53,7 @@ the SAME stage + fixture version + model id — state all three.
 | Field | Value |
 |-------|-------|
 | Stage id | `<S1–S9 / D1–D11>` (boundary + fixture per `evals/protocols/stage-map.md`) |
-| Fixture | `private/benchmark/fixtures/<version>/<fixture>/` (version pinned; an edit invalidates the row) |
+| Fixture | `private/evals/fixtures/<version>/<fixture>/` (version pinned; an edit invalidates the row) |
 | Variants (SHA pair) | A = `<baseline sha>`, B = `<lever branch sha>` |
 | Model version | `<claude model id>` (pinned; a mid-test change voids the row) |
 | Primary metric | `<total_tokens | wall_clock_s>` — registered `YYYY-MM-DD` BEFORE the B runs |
@@ -81,7 +81,7 @@ failures by tool `<...>`, retry classification `<meaningless / transient / adapt
 in failed + meaningless-retry turns `<n>`. Target: meaningless-retry = 0 (nonzero → file in
 `memory/known-issues/`, not accepted as noise).
 
-**Artifacts:** stage output for A and B saved under `private/benchmark/artifacts/<row-id>/` for the
+**Artifacts:** stage output for A and B saved under `private/evals/artifacts/<row-id>/` for the
 pairwise quality read.
 
 **Ship decision:** apply the pre-registered rule — ship B as one revertible commit / no change. A

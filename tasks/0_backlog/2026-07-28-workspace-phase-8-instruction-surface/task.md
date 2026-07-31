@@ -14,49 +14,62 @@ the new layout.
 
 Detail in [the execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) under "Phase 8". `examples/` gets reshaped to mirror
 the private tree and to fix its own two violations (`examples/data/` is a generic bucket,
-`examples/templates/` collides with the root `templates/`). `examples/data` is one of
-`ci.yml`'s 16 executed path pins (`automation/store/validate_store.py examples/data
---check-fixture-size`) — same PR.
+`examples/templates/` collides with the root `templates/`). `examples/data` is an executed path
+pin in `ci.yml` (`automation/store/validate_store.py examples/data --check-fixture-size`) —
+same PR.
 
-**The "8 of 12 `SKILL.md` files" count is stale.** Re-measured 2026-07-29: **all 11 public
-`SKILL.md` files** name a path that phase 2 or phase 5 moves. The old count predates both the
-`github-workflow` skill and phase 4's removal of the two private skill trees from `skills/`.
-Split by which phase does the moving (phase-2 tokens: `automation/maintenance/`, `docs/handbook/`,
-`docs/designs/`, `docs/roadmap/`, `local/` · phase-5 tokens: `0_profile`, `interviews/`,
-`job-search-profiles/`, `data/`):
+### Scope, re-measured 2026-07-31 — the per-skill table is dead in both columns
 
-**The phase-2 column below is obsolete as of 2026-07-29.** Phase 2 ran: it retired the
-`automation/maintenance/` token from every skill and re-spelled `handbook|design|roadmap|tmp`, so
-those counts describe tokens that no longer exist and the phase-8 estimate built on them
-over-states the work. Re-measure before starting — filed as
-[`2026-07-29-refresh-phase-8-instruction-surface-counts`](../2026-07-29-refresh-phase-8-instruction-surface-counts/task.md).
-The phase-5 column still holds.
+The table that used to sit here counted, per public `SKILL.md`, how many paths phase 2 moves and
+how many phase 5 moves. **It has been re-measured and both columns are now zero.** That is the
+whole of what
+`2026-07-29-refresh-phase-8-instruction-surface-counts` asked for; the task has been deleted and
+its measurement folded in here and in the execution plan in the same commit, as its own definition
+of done required.
 
-| Skill | phase 2 — **obsolete** | phase 5 |
-|---|---:|---:|
-| search-recall-audit | 19 | 1 |
-| job-search | 15 | 0 |
-| gardener | 11 | 0 |
-| github-workflow | 7 | 0 |
-| behavioral-interview-prep | 2 | 9 |
-| ask-me-anything | 3 | 4 |
-| company-research | 3 | 1 |
-| email-assistant | 3 | 0 |
-| resume-writer | 1 | 3 |
-| application-tracker | 2 | 0 |
-| interview-calendar | 1 | 0 |
+**Verify-with** (record the command, not the coordinates — line numbers rot, this does not):
 
-The two overlay-only `private/skills/<name>/SKILL.md` files name one each.
+```bash
+# phase-2 tokens: automation/maintenance/, and bare handbook/ design/ roadmap/ tmp/
+grep -cE 'automation/maintenance/|(^|[^s/])handbook/|(^|[^s/])design/|(^|[^s/])roadmap/|(^|[^/[:alnum:]])tmp/' skills/*/SKILL.md
+# phase-5 tokens
+grep -nE '0_profile|interviews/|job-search-profiles/' skills/*/SKILL.md
+```
 
-**7 handbook docs name `private/`, not 5**: `private-overlay.md` (45 lines),
-`public-private-split.md` (9), `repo-map.md` (6), `architecture.md` (4), `command-cookbook.md`
-(3), `memory-map.md` (2), `configuration.md` (1).
+- **Phase-2 column: 0 across all 11 public skills.** Phase 2 retired `automation/maintenance/` and
+  re-spelled `handbook|design|roadmap|tmp`; not one token survives in any `SKILL.md`. (The only
+  raw `tmp/` matches anywhere are five `/tmp/*.json` examples in `skills/job-search/SKILL.md` —
+  the OS temp dir, not this repo's scratch root. They are a separate, real finding against
+  `AGENTS.md`'s `local/` rule, filed as its own task, and they are **not** phase-8 work.)
+- **Phase-5 column: 0 stale references.** 14 raw token hits remain across four skills
+  (behavioral-interview-prep 9, ask-me-anything 3, application-tracker 1, resume-writer 1), plus
+  three prose false positives in company-research where "interviews/" is English
+  ("founder interviews/podcasts"). **Every one of the 14 already names the post-phase-5 path**:
+  `private/me/interviews/{story-bank,question-bank}` and `<applications_root>/0_profile/` all
+  exist on disk today, and `verify_links` reports every reference resolving.
 
-**Hard blocker, re-measured 2026-07-29 and unchanged:** `skills/company-research/SKILL.md` is at
-**595 lines against the hard 600-line budget** in `automation/metrics/instruction_budget.py`,
-which `automation/hooks/pre-commit` runs with `--strict`. Five lines of headroom, and this phase
-adds path references. The slimming task (`2026-07-28-slim-company-research-skill`) must land
-first or this phase cannot commit. `AGENTS.md` itself is at 307 of 500, so there is room there.
+So the instruction-surface half of this phase is smaller than the table implied — it is
+`AGENTS.md`'s private-tree map and whatever the `examples/` reshape drags with it, not a sweep of
+eleven skills.
+
+**Correction: there are THREE overlay-only skills, not two.** `private/skills/` holds three
+`SKILL.md` files today. Their names are deliberately absent from the public tree.
+
+**8 handbook docs name `private/`, not 7 and not 5**, re-measured 2026-07-31:
+`private-overlay.md` (58), `public-private-split.md` (10), `repo-map.md` (6), `architecture.md`
+(4), `command-cookbook.md` (4), `memory-map.md` (2), `configuration.md` (1),
+`application-folders.md` (1).
+
+**The hard blocker named below is gone.** `skills/company-research/SKILL.md` is **469 lines
+against the 600-line budget**, not 595 — the slimming task merged (PR #108) and is in
+`tasks/4_done/2026-07-28-slim-company-research-skill`. `instruction_budget.py --strict` reports
+`OK: all instruction files within budget`, with **131 lines of headroom** where the text below
+claims five. `AGENTS.md` is at 318 of 500, not 307 — the substance holds, the number does not.
+
+> Original text, kept as the dated record of what was believed on 2026-07-29 and superseded by the
+> measurement above: *"Hard blocker, re-measured 2026-07-29 and unchanged: `skills/company-research/SKILL.md`
+> is at 595 lines against the hard 600-line budget ... Five lines of headroom ... The slimming task
+> must land first or this phase cannot commit."*
 
 This is a "large" edit under the risk-based eval gate — canaries run for **every touched
 skill**, recorded in `evals/results/`. Nine of the 11 public skills have a canary set;
@@ -77,6 +90,11 @@ Phases 2, 4 and 5 merged, and `2026-07-28-slim-company-research-skill` merged. *
 as of 2026-07-30, pending merge**: phase 4 is merged (PR #86); phases 2 and 5 are done and in
 review; and the slimming landed — `skills/company-research/SKILL.md` is **469 lines against the
 600 budget**, 131 of headroom where it had five.
+
+**Re-confirmed 2026-07-31: all four preconditions are met outright, none "pending".** Phase 2's
+task is now in `tasks/4_done/` (#99–#103, #105 all merged), phase 4 in `4_done` (#86), phase 5's
+public side merged (#111) though its folder is held in review for missing evidence, and the
+slimming is in `4_done` (#108). **Nothing blocks this phase.**
 
 **Phase 5 already absorbed most of the phase-5 column below.** Its rule 2 (the PR that moves a
 path updates every literal naming it) meant the migration had to repair every reference the

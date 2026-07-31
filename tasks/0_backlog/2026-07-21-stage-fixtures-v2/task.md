@@ -34,10 +34,25 @@ gaps, all evidenced in the row:
 
 ## Definition of done
 
-- `private/benchmark/fixtures/v2/` with the added raw-page + provenance-led
+- `private/evals/fixtures/v2/` with the added raw-page + provenance-led
   cases, MANIFEST updated (provenance, SHA-256, replay commands).
 - A pinned stage-task prompt template in
   `evals/protocols/stage-benchmarks.md` (or a new tasks section)
   encoding lessons 3's two rules.
 - One re-run of the S6 row on v2 fixtures with the fetch-time flow allowed,
   recorded in `evals/results/`.
+
+## 2026-07-31 — one stale coordinate corrected
+
+The definition of done said `private/benchmark/fixtures/v2/`. **`private/benchmark/` does not
+exist**; the tree is `private/evals/fixtures/v1/` (7 files, 4,330–9,684 bytes — the claim's
+"4.3–9.7 KB" holds to the decimal). Commit `7c525e3` re-pointed every literal at the new `evals/`
+layout and touched this very file, but changed only its protocol-doc line and left the dead
+fixture path in the DoD. The path above is now corrected, and the same dead path was corrected in
+`evals/results/TEMPLATE.md`, which copies itself into every future run record.
+
+**Verify-with**: `ls -d private/evals/fixtures/v1/jd-set/` · `grep -rn 'private/benchmark' .`
+
+Nothing else in this task changed: `evals/protocols/stage-benchmarks.md` still exists with zero
+code fences, so neither of lesson 3's rules is pinned anywhere, and the S6 re-run still has not
+happened.

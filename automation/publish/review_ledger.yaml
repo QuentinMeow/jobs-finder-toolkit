@@ -1146,3 +1146,17 @@
     counts and shapes — 243 files, 222 keys, 214 company strings, 208 keys, 367 urls, 369
     pairs. No company name, employer, person, application slug, posting URL, salary or
     absolute home path appears. The advisory company detector reports (none).
+
+- commit: 26ccea41
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 26
+  digest: sha256:910c658af5e9b815
+  finding: >-
+    Read the full diff. It is 20 pure folder renames inside tasks/ (3_in-review -> 4_done, git
+    reports them as renames with no content change), plus six edited files: cross-references
+    re-pointed at 4_done, a status note in the phase-2 task, a worklog line naming public PR
+    #121, and four dated "what is missing" blocks appended to the held folders. The new prose
+    names only public PR numbers, this repo's own paths, and counts (369 events / 367 urls,
+    747 renames, 10 and 6 unticked boxes). No company, employer, person, application slug,
+    posting URL, salary or absolute home path. The advisory company detector reports (none).
