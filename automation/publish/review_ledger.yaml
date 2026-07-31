@@ -886,3 +886,16 @@
     cleanup diff because published history was not rewritten. No person,
     employer, school, posting URL, application slug, salary or absolute home
     path appears. The advisory detector reports (none).
+- commit: 802398e2
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 6
+  digest: sha256:80744c1785a646c6
+  finding: >-
+    Read the full six-file diff. It adds stale-adapter cleanup for overlay
+    skills, tests that only generated adapters and their repository-local
+    exclusions are removed, and documents that unrelated runtime entries are
+    preserved. The remaining changes correct public records and verification
+    notes. No private skill identifier, person, employer, school, posting URL,
+    application slug, salary or absolute home path appears. The advisory
+    detector reports (none).
