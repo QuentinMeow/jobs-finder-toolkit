@@ -1412,3 +1412,16 @@
     comment is a module or function path in this repository — no employer, and the
     advisory company detector reports (none). No real name, school, date, salary,
     application slug, posting URL or absolute home path.
+- commit: 7b316c08
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 8
+  digest: sha256:354ac0fcd89e56b6
+  finding: |
+    Read the full 8-file diff, with the two verification.md files read line by line because
+    they paste real command output. Absolute home paths are redacted to <repo-root> and the
+    session scratchpad to <scratchpad>; the only company strings are the invented Acme Labs
+    and the test file's existing Nimbus Robotics; the private-tree evidence is counts only
+    (243 applications, 214 distinct company strings, 208 distinct keys, 0 unkeyed) with no
+    key, slug, employer or filename quoted. No real name, school, date, salary or posting
+    URL. The advisory company detector reports (none).
