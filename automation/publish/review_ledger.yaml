@@ -987,3 +987,18 @@
     in the transcript. The only dates are process-record metadata. No person,
     employer, school, company, posting URL, application slug, salary or absolute
     home path appears. The advisory company detector reports (none).
+
+- commit: af57f393
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 2
+  digest: sha256:cd77416e781d16cc
+  finding: >-
+    Read the full 2-file diff. Test code only. The new isolation guard and the
+    reworked skill-drift test name the overlay mount point (private/) and the
+    JOBHUNT_CONFIG variable as strings, and build every fixture in a temp
+    directory under a placeholder candidate name. No person, employer, school,
+    company, posting URL, application slug, salary, date or absolute home path
+    appears; the failure message the guard prints is assembled at runtime from
+    whatever the child touched, never from a literal. The advisory company
+    detector reports (none).

@@ -129,8 +129,8 @@ GITIGNORE_REL = ".gitignore"
 def _deny_reason(rel: str, tokens: list[str]) -> str | None:
     """Return why ``rel`` (repo-root-relative, posix) is excluded, or None.
 
-    Applied AFTER the allowlist. Order: mechanical junk -> per-skill
-    references_private -> explicit personal profiles -> personal-identity token in
+    Applied AFTER the allowlist. Order: mechanical junk -> per-skill private notes
+    -> explicit personal profiles -> personal-identity token in
     PATH -> personal-identity token in CONTENT (text files scanned line by line;
     document binaries have their extracted text/metadata scanned; the guard file
     is content-exempt).
@@ -144,8 +144,10 @@ def _deny_reason(rel: str, tokens: list[str]) -> str | None:
         return "junk:*.pyc"
     if "__pycache__" in parts:
         return "junk:__pycache__"
-    if "references_private" in parts:
-        return "references_private"
+    # Both the current folder name and its retired one — see
+    # check_public.SKILL_NOTES_DIRNAMES for why the old name is never dropped.
+    if any(p in check_public.SKILL_NOTES_DIRNAMES for p in parts):
+        return "skill-notes"
     if rel.startswith(PROFILES_DIR + "/") and name not in PUBLIC_PROFILE_FILES:
         return "personal-profile"
 
@@ -429,8 +431,8 @@ def export(dest: Path, git_init: bool, force: bool, strict: bool = False) -> int
     if rc != 0:
         print("\nLEAK GUARD FAILED (exit "
               f"{rc}) — export NOT committed. Fix the violations above (genericize "
-              "the offending file, move personal content into references_private/ or "
-              "the overlay, or extend the token list) and re-run.")
+              "the offending file, move personal content into the overlay's "
+              "skill-notes/ folder, or extend the token list) and re-run.")
         return rc
 
     print("Leak guard PASSED.")

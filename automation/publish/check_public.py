@@ -16,8 +16,9 @@ message:
      frontmatter declares ``visibility: private`` MUST have zero tracked files.
   2. Personal overlay leak. Any tracked path under the private overlay prefix
      (``private/``) must never ship.
-  3. references_private leak. Any tracked file under a per-skill
-     ``references_private/`` folder — candidate-specific skill content.
+  3. Per-skill private-notes leak. Any tracked file under a per-skill notes folder
+     — ``skill-notes/`` (current) or ``references_private/`` (its former name) —
+     which holds candidate-specific skill content.
   4. Path/filename denylist (defense in depth). Any tracked path under a private
      product tree (``applications/``, ``interviews/``, ``.agents/inputs/``), any
      non-markdown, non-example file under ``templates/`` (root templates/ =
@@ -132,8 +133,16 @@ SKILLS_DIR = "skills"
 # Per-skill folder that holds candidate-specific ("private") skill content. It is
 # git-ignored and must never be tracked/shipped; any tracked file under it is a
 # leak. (The sibling ``references_public/`` folder IS public and ships.)
-REFERENCES_PRIVATE_DIRNAME = "references_private"
-_REFERENCES_PRIVATE_RE = re.compile(r"(^|/)references_private(/|$)")
+#
+# APPEND-ONLY UNION, for the same reason as ``_DENY_TREES`` below. Workspace phase 5
+# renamed ``references_private/`` to ``skill-notes/`` and moved it into the overlay;
+# keying on the old name alone left this check enforcing nothing at its stated
+# purpose. The old name stays denied: a stale checkout, an old branch or a restored
+# backup can still put it in the public tree. Matching is per PATH SEGMENT, so a file
+# whose name merely ends in ``-skill-notes`` is not hit.
+SKILL_NOTES_DIRNAMES = ("references_private", "skill-notes")
+_SKILL_NOTES_RE = re.compile(
+    r"(^|/)(" + "|".join(re.escape(n) for n in SKILL_NOTES_DIRNAMES) + r")(/|$)")
 
 # The genericized, publicly-shippable example dataset. Files under it carry the
 # fictional "Jordan Rivers" persona by design and are the ONLY place a tracked
@@ -630,12 +639,16 @@ def find_personal_overlay_violations(tracked: list[str]) -> list[dict]:
     return violations
 
 
-def find_references_private_violations(tracked: list[str]) -> list[dict]:
-    """Any tracked file under a per-skill ``references_private/`` folder is a leak."""
+def find_skill_notes_violations(tracked: list[str]) -> list[dict]:
+    """Any tracked file under a per-skill private-notes folder is a leak.
+
+    Both names in ``SKILL_NOTES_DIRNAMES`` count — the current ``skill-notes/`` and
+    the retired ``references_private/``.
+    """
     return [
-        {"category": "references_private", "path": p}
+        {"category": "skill_notes", "path": p}
         for p in tracked
-        if _REFERENCES_PRIVATE_RE.search(p)
+        if _SKILL_NOTES_RE.search(p)
     ]
 
 
@@ -837,14 +850,14 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
     private_skill = find_private_skill_violations(
         Path(visibility_root).resolve() if visibility_root else root, tracked)
     overlay = find_personal_overlay_violations(tracked)
-    references_private = find_references_private_violations(tracked)
+    skill_notes = find_skill_notes_violations(tracked)
     path_denylist = find_path_denylist_violations(tracked)
     token_viols, pii_viols, unscanned = find_token_and_pii_violations(root, tracked, tokens)
 
     violations = {
         "private_skill_tracked": private_skill,
         "personal_overlay": overlay,
-        "references_private": references_private,
+        "skill_notes": skill_notes,
         "path_denylist": path_denylist,
         "structural_pii": pii_viols,
         "personal_token": token_viols,
@@ -948,7 +961,7 @@ def print_report(result: dict) -> None:
 
     private_skill = v["private_skill_tracked"]
     overlay = v["personal_overlay"]
-    references_private = v["references_private"]
+    skill_notes = v["skill_notes"]
     path_denylist = v["path_denylist"]
     structural = v["structural_pii"]
     tokens = v["personal_token"]
@@ -997,10 +1010,11 @@ def print_report(result: dict) -> None:
             print(f"  - {item['path']}  [{item.get('prefix', '')}]")
         print()
 
-    if references_private:
-        print(f"[3] Tracked files under a per-skill '{REFERENCES_PRIVATE_DIRNAME}/' "
-              f"folder ({len(references_private)}):")
-        for item in references_private:
+    if skill_notes:
+        names = " / ".join(f"'{n}/'" for n in SKILL_NOTES_DIRNAMES)
+        print(f"[3] Tracked files under a per-skill private-notes folder "
+              f"({names}) ({len(skill_notes)}):")
+        for item in skill_notes:
             print(f"  - {item['path']}")
         print()
 

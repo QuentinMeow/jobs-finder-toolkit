@@ -38,7 +38,8 @@ git-ignored in the public repo, your real data is never committed to the public 
   `paths.skill_references_root`). Each `SKILL.md` reads it
   when present (its "Before You Start" **Personalization** stanza) and otherwise falls
   back to the generic examples. The leak guard fails on any tracked file under a
-  `references_private/` folder anywhere in the tree, and the exporter prunes them.
+  `skill-notes/` folder (or its retired name `references_private/`) anywhere in the
+  tree, and the exporter prunes them.
 - **Guard tokens are config-derived.** `automation/publish/check_public.py` hardcodes no
   identity; it derives its personal-token set from `config.yaml`, an optional
   `private/leak_tokens.txt`, and the `JOBHUNT_PERSONAL_TOKENS` env var, and scans both
@@ -281,7 +282,7 @@ end-to-end harness for the leak-guard test suite and as a sanitized-copy tool.)
 The gate is the leak guard (`automation/publish/check_public.py`). It derives
 overlay-only skill names from mounted `private/skills/*/SKILL.md` at runtime and
 fails if any appears in the tracked public tree. It also fails on any private
-skill tree, `private/` path, tracked `references_private/` file, or
+skill tree, `private/` path, tracked `skill-notes/` (or `references_private/`) file, or
 personal-identity token (in a path, text content, or extracted `.docx`/`.pdf`
 content) is tracked. Its tokens are derived at runtime from `config.yaml` +
 `private/leak_tokens.txt` + `JOBHUNT_PERSONAL_TOKENS` (nothing hardcoded), so
