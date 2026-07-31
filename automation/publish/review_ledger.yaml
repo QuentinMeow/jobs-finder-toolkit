@@ -899,3 +899,16 @@
     notes. No private skill identifier, person, employer, school, posting URL,
     application slug, salary or absolute home path appears. The advisory
     detector reports (none).
+- commit: 230f03d9
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 10
+  digest: sha256:0b1faeaae5601934
+  finding: >-
+    Read the full ten-file diff. It folds the owner's generic screenshot-inbox
+    location choice into the design, roadmap, decision record, task evidence and
+    handover; removes the resolved queue item; and fixes a heading parser that
+    treated newlines as indentation, with focused regression coverage. The only
+    date is process-record metadata. No overlay-only skill identifier, person,
+    employer, school, posting URL, application slug, salary or absolute home path
+    appears. The advisory detector reports (none).
