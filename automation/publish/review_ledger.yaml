@@ -912,3 +912,19 @@
     date is process-record metadata. No overlay-only skill identifier, person,
     employer, school, posting URL, application slug, salary or absolute home path
     appears. The advisory detector reports (none).
+
+- commit: 1b55cbbf
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 32
+  digest: sha256:62766faf9b10165d
+  finding: >-
+    Read the full 32-file diff. It adds a test-only sys.meta_path finder
+    (automation/shared/tests/_canonical_imports.py) that pins the vendored module
+    names to automation/shared/, its regression suite, a four-line call site in
+    each of the 26 existing test modules, a handbook paragraph, and the task's
+    status move plus its verification and worklog records. No product code
+    changes. The only dates are process-record metadata. No overlay-only skill
+    identifier, person, employer, school, company, posting URL, application slug,
+    salary or absolute home path appears; the verification transcript redacts the
+    repo path to <repo-root>. The advisory company detector reports (none).
