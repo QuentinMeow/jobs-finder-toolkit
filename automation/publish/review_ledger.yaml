@@ -959,3 +959,18 @@
     printed. Test fixtures are throwaway temp trees. No person, employer, school,
     company, posting URL, application slug, salary, date beyond process metadata,
     or absolute home path appears. The advisory company detector reports (none).
+
+- commit: a8e98c6a
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 4
+  digest: sha256:c779db6a3d7bb690
+  finding: >-
+    Read the full 4-file diff. Process records only: the task, worklog and
+    verification for this branch, plus a note on the tree-instructions validator
+    task recording which part of its budget checkbox landed early. The
+    verification transcript is real command output with the checkout path
+    redacted to <repo-root>/<scratch>. The only dates are process-record
+    metadata. No person, employer, school, company, posting URL, application
+    slug, salary or absolute home path appears. The advisory company detector
+    reports (none).
