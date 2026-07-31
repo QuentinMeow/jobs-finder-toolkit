@@ -944,3 +944,18 @@
     config.example.yaml. No person, employer, school, company, posting URL,
     application slug, salary, date beyond process metadata, or absolute home path
     appears. The advisory company detector reports (none).
+
+- commit: 99319933
+  reviewed_by: agent
+  date: 2026-07-30
+  files: 4
+  digest: sha256:89faf896661211ee
+  finding: >-
+    Read the full 4-file diff. It replaces the budget script's fixed AGENTS.md
+    glob with a pruned tree walk, adds a leaf tier (100 lines and 4096 bytes),
+    adds the script's first unit tests, and wires that suite into CI. The walk
+    skips the private overlay, scratch trees and dot-directories, and does not
+    follow symlinks, so nothing outside the public tree can be measured or
+    printed. Test fixtures are throwaway temp trees. No person, employer, school,
+    company, posting URL, application slug, salary, date beyond process metadata,
+    or absolute home path appears. The advisory company detector reports (none).

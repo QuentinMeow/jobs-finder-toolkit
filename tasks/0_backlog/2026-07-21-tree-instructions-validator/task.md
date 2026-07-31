@@ -69,3 +69,18 @@ leaf should not).
 - [ ] Export of a tree with a leaf shim contains a working symlink (or
       regenerated equivalent), not a duplicated file.
 - [ ] Gardener stale-leaf report runs dry-run on the real tree.
+
+## Update — 2026-07-30 (partial: budgets only)
+
+The `instruction_budget.py` half landed with the CI-gates fix
+(`tasks/3_in-review/2026-07-30-ci-runs-the-promised-gates/`), because the
+script's docstring claimed to measure "every `AGENTS.md`" while its glob saw
+only the root file and `skills/*/` — `docs/designs/AGENTS.md` was unmeasured.
+What is in now: an `AGENTS.md (leaf)` tier at **100 lines AND 4096 bytes**
+(both hard, both reported separately), discovery by pruned tree walk, and unit
+tests in `automation/metrics/tests/`. The BYTES column already existed.
+
+Still open here, unchanged: leaf discovery from the **root router table** rather
+than a walk (the walk finds an unrouted leaf, the router table would not — the
+two disagree exactly where check 3 lives), the **AGENTS.md-chain ≤32 KiB**
+budget, and every other check above.
