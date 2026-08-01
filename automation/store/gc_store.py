@@ -11,7 +11,13 @@ store-core contract exactly (``docs/designs/raw-data-layer/01-store-core.md`` §
   source-derived facts are snapshotted to ``state/frozen-facts/`` so a later rebuild
   carries it forward (marked ``carried+frozen``) instead of leaving a data hole;
 - strict per-blob order frozen-facts → tombstone → delete, so a crash never destroys
-  data — the worst crash window is blob-present-plus-tombstone (re-sweepable).
+  data — the worst crash window is blob-present-plus-tombstone (re-sweepable);
+- every delete (candidates AND orphans) re-reads the manifests immediately before
+  it, because fetchers are lock-free and this command prints the plan for a human
+  in between;
+- a manifest that is present but UNREADABLE suspends the entire sweep and exits 4:
+  it is the only record that a blob is referenced, so treating it as absent would
+  destroy the payload it protects. Repair it (restore/re-sync) and re-run.
 
 ``--dry-run`` is the DEFAULT: it prints the full plan (candidate blobs, per-tier
 counts, bytes reclaimable, frozen-facts to write, why each candidate qualifies,
@@ -71,6 +77,19 @@ def _print_plan(plan: retention.SweepPlan, *, execute: bool, remove_orphans: boo
     if plan.config.is_opt_in_only:
         print("  note: no prunable tier configured — nothing is a candidate.")
 
+    if plan.damaged:
+        print(f"\n  DAMAGED manifests (present but UNREADABLE): {len(plan.damaged)}")
+        for d in plan.damaged:
+            print(f"    - {d.path}")
+            print(f"        {d.error}")
+        print("    A manifest is the only record that a blob is referenced, so an\n"
+              "    unreadable one makes its payload look unreferenced. THE WHOLE SWEEP\n"
+              "    IS SUSPENDED until every one is readable again: no candidates, no\n"
+              "    orphan removal, no debris removal, nothing deleted.\n"
+              "    Remedy: restore each file from a backup or re-sync it from the\n"
+              "    machine that captured it, then re-run. Nothing here removes it for\n"
+              "    you — a damaged manifest is still owner data.")
+
     print(f"\n  CANDIDATE blobs (deletable): {len(plan.candidates)}  "
           f"({_fmt_kb(plan.disk_bytes)} on disk reclaimable)")
     for tier, n in sorted(plan.tier_counts.items()):
@@ -91,9 +110,14 @@ def _print_plan(plan: retention.SweepPlan, *, execute: bool, remove_orphans: boo
     for d in plan.debris:
         print(f"    - {d.path}  ({d.age_hours:.1f}h old)")
 
-    print(f"\n  orphaned blobs (present, referenced by no manifest): "
-          f"{len(plan.orphans)}"
-          f"{'  (removed with --remove-orphans)' if plan.orphans else ''}")
+    if plan.damaged:
+        print("\n  orphaned blobs (present, referenced by no manifest): UNDETERMINED "
+              "— part of the reference set is unreadable, so nothing can be proven "
+              "unreferenced.")
+    else:
+        print(f"\n  orphaned blobs (present, referenced by no manifest): "
+              f"{len(plan.orphans)}"
+              f"{'  (removed with --remove-orphans)' if plan.orphans else ''}")
 
     if plan.pruned_pending:
         print(f"\n  pruned-pending (tombstone present, blob still here — crash "
@@ -105,6 +129,10 @@ def _print_plan(plan: retention.SweepPlan, *, execute: bool, remove_orphans: boo
 
 def _print_result(result: retention.ExecResult) -> None:
     print("\n  EXECUTED:")
+    if result.blocked_by_damaged:
+        print(f"    NOTHING DELETED — {result.blocked_by_damaged} damaged manifest(s) "
+              f"suspended the sweep (see above).")
+        return
     print(f"    frozen-facts written: {result.frozen_written}")
     print(f"    tombstones written:   {result.tombstoned}")
     print(f"    blobs deleted:        {result.deleted}  "
@@ -113,6 +141,9 @@ def _print_result(result: retention.ExecResult) -> None:
         print(f"    re-vetoed (mid-sweep capture; blob kept): {result.re_vetoed}")
     print(f"    debris dirs removed:  {result.debris_removed}")
     print(f"    orphan blobs removed: {result.orphans_removed}")
+    if result.orphans_re_vetoed:
+        print(f"    orphans re-vetoed (manifest committed mid-sweep; blob kept): "
+              f"{result.orphans_re_vetoed}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -126,8 +157,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--execute", action="store_true",
                         help="perform the sweep (frozen-facts → tombstone → delete)")
     parser.add_argument("--remove-orphans", action="store_true",
-                        help="also delete orphaned blobs (present, refcount 0); "
-                             "requires --execute")
+                        help="also delete orphaned blobs (present, refcount 0), "
+                             "re-checking the reference set and writing a tombstone "
+                             "first; requires --execute")
     args = parser.parse_args(argv)
 
     if args.dry_run and args.execute:
@@ -148,17 +180,24 @@ def main(argv: list[str] | None = None) -> int:
     cfg = retention.load_config(layout)
 
     # GC mutates derived/state/raw → take the builder lock, fail fast on contention.
+    damaged = 0
     try:
         with DomainLock(layout.lock_path()):
             plan = retention.plan_sweep(layout, blobstore, cfg)
+            damaged = len(plan.damaged)
             _print_plan(plan, execute=execute, remove_orphans=args.remove_orphans)
             if execute:
                 result = retention.execute_sweep(
                     plan, blobstore, remove_orphans=args.remove_orphans)
+                damaged = max(damaged, result.blocked_by_damaged)
                 _print_result(result)
     except LockContention as exc:
         print(f"gc_store: {exc}", file=sys.stderr)
         return 3
+    if damaged:
+        print(f"gc_store: {damaged} damaged manifest(s) — sweep suspended, nothing "
+              f"deleted. Repair them (restore/re-sync) and re-run.", file=sys.stderr)
+        return 4
     return 0
 
 

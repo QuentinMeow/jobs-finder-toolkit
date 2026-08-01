@@ -15,7 +15,11 @@ The store-core Retention contract (``docs/designs/raw-data-layer/01-store-core.m
 2. **A reference-counted sweep.** Manifests are NEVER pruned (they are the
    observation log). A payload blob is deletable only when EVERY manifest that
    references it is in a prunable tier AND past that tier's dates — any keep-class
-   reference vetoes. Reference counts are computed at sweep time, never cached.
+   reference vetoes. Reference counts are computed at sweep time, never cached,
+   and re-verified immediately before every delete (candidates AND orphans),
+   because fetchers are lock-free. A manifest that is present but UNREADABLE is
+   not an absent one: while any exists the whole sweep is suspended, since a blob
+   it references would otherwise look unreferenced and be destroyed.
 
 3. **Frozen facts.** Before a blob that feeds a materialized entity is pruned, that
    entity's source-derived facts are snapshotted to
@@ -38,7 +42,13 @@ from typing import Iterable
 from . import serialization
 from .atomic import atomic_write_text, read_jsonl
 from .blobs import BlobStore, PRESENT, PRUNED, ext_for_content_type
-from .manifest import audit_refcounts, is_group_manifest, iter_manifests
+from .manifest import (
+    DamagedManifest,
+    audit_refcounts,
+    find_damaged_manifests,
+    is_group_manifest,
+    iter_manifests,
+)
 from .paths import DomainLayout
 
 # ── config vocabulary ────────────────────────────────────────
@@ -371,6 +381,11 @@ class SweepPlan:
     orphans: list[str] = field(default_factory=list)
     debris: list[DebrisDir] = field(default_factory=list)
     pruned_pending: list[str] = field(default_factory=list)
+    # Present-but-unreadable manifests. NON-EMPTY SUSPENDS THE WHOLE SWEEP: part of
+    # the reference set is unknowable, so no blob can be proven unreferenced or
+    # un-vetoed. A blocked sweep costs disk that is not reclaimed; the alternative
+    # costs a payload nothing regenerates.
+    damaged: list[DamagedManifest] = field(default_factory=list)
     # The derived entity index at plan time. Derived cannot change between plan and
     # execute (the builder lock is held), so execute reuses this for freezing rather
     # than re-walking derived/ — only manifests (lock-free capture) are re-read.
@@ -456,11 +471,26 @@ def _evaluate_blob(refs: BlobRefs, fetch_to_entities: dict[str, set[str]],
 
 def plan_sweep(layout: DomainLayout, blobstore: BlobStore,
                config: RetentionConfig, *, now: datetime | None = None) -> SweepPlan:
-    """Compute the full sweep plan (pure read — mutates nothing)."""
+    """Compute the full sweep plan (pure read — mutates nothing).
+
+    A damaged (present-but-unreadable) manifest suspends the plan: no candidates,
+    no orphans. Debris and pruned-pending are still REPORTED so the dry-run stays
+    informative, but :func:`execute_sweep` deletes nothing while damage exists.
+    """
     now = now or datetime.now(timezone.utc)
     plan = SweepPlan(layout=layout, config=config, now=now)
 
+    # Reference audit FIRST: it is also where damage is detected, and damage
+    # invalidates every "nothing references this" conclusion below.
+    audit = audit_refcounts(layout, blobstore)
+    plan.damaged = list(audit["damaged"])
+    plan.orphans = list(audit["orphans"])  # already [] when damaged
+    plan.debris = find_debris_dirs(layout, now=now)
+
     entities = build_entity_index(layout)
+    plan.entities = entities  # reused by execute_sweep (derived is lock-frozen)
+    if plan.damaged:
+        return plan  # suspended: candidate + orphan computation is not trustworthy
     fetch_to_entities = _fetch_to_entities(entities)
 
     blob_index = build_blob_index(layout)
@@ -486,10 +516,6 @@ def plan_sweep(layout: DomainLayout, blobstore: BlobStore,
             fed_entity_keys=fed, reason=reason))
         plan.tier_counts[tier] = plan.tier_counts.get(tier, 0) + 1
 
-    # Orphans (present blobs referenced by no manifest) — reported; removal is gated.
-    plan.orphans = list(audit_refcounts(layout, blobstore)["orphans"])
-    plan.debris = find_debris_dirs(layout, now=now)
-    plan.entities = entities  # reused by execute_sweep (derived is lock-frozen)
     return plan
 
 
@@ -567,6 +593,8 @@ class ExecResult:
     debris_removed: int = 0
     orphans_removed: int = 0
     re_vetoed: int = 0  # candidates a mid-sweep capture newly vetoed (skipped, safe)
+    orphans_re_vetoed: int = 0  # orphans a mid-sweep manifest commit re-referenced
+    blocked_by_damaged: int = 0  # unreadable manifests that suspended the sweep
 
 
 def execute_sweep(plan: SweepPlan, blobstore: BlobStore, *,
@@ -577,14 +605,33 @@ def execute_sweep(plan: SweepPlan, blobstore: BlobStore, *,
     without its frozen facts, nor a tombstone without a still-safe present blob).
     Debris removal is scoped to ``raw/<source>/``; orphan removal is opt-in.
 
-    Fetchers are lock-free by design, so a capture can add a reference to a candidate
-    blob between plan and execute. As cheap defense-in-depth, the plan-time veto is
-    RE-VERIFIED against the manifests on disk immediately before each delete (the
-    store is re-read here); a blob that gained a keep-class reference or a newer
-    last-observed since the plan is skipped this sweep and counted in ``re_vetoed``.
+    Fetchers are lock-free by design, so a capture can add a reference to a blob
+    between plan and execute — and ``gc_store`` prints the whole plan in between,
+    widening that window to human-review scale. Every deletion path therefore
+    re-reads the manifests on disk immediately before deleting:
+
+    * a CANDIDATE that gained a keep-class reference or a newer last-observed is
+      skipped and counted in ``re_vetoed``;
+    * an ORPHAN whose manifest committed since the plan is skipped and counted in
+      ``orphans_re_vetoed`` (capture writes the blob BEFORE its manifest, so an
+      in-flight fetch presents to the planner as exactly an orphan);
+    * ANY damaged manifest suspends the whole sweep — the reference set is
+      incomplete, so nothing here can be proven safe to delete.
+
+    An orphan is tombstoned before it is deleted, like every other delete, so a
+    blob this GC removed never reports as ``not-synced-here`` (which tells the owner
+    to go re-sync a file that no longer exists anywhere).
     """
     layout = plan.layout
     result = ExecResult()
+
+    # Damage is re-checked HERE, not just at plan time: gc_store prints the plan for
+    # a human between the two, and a manifest can be half-rsynced in that window.
+    damaged = {d.path: d for d in plan.damaged}
+    damaged.update({d.path: d for d in find_damaged_manifests(layout)})
+    if damaged:
+        result.blocked_by_damaged = len(damaged)
+        return result  # nothing frozen, nothing tombstoned, nothing deleted
     # Derived is lock-frozen (the builder lock is held), so reuse the plan's entity
     # index for freezing + posting dates. Only the MANIFESTS are re-read here, so a
     # mid-sweep lock-free capture (a new keep-class reference or a newer last-observed)
@@ -635,7 +682,21 @@ def execute_sweep(plan: SweepPlan, blobstore: BlobStore, *,
             result.debris_removed += 1
 
     if remove_orphans:
+        # Re-read the reference set: capture writes the blob BEFORE the manifest, so
+        # a fetch in flight during plan_sweep looks exactly like an orphan. Anything
+        # referenced now is NOT an orphan, whatever the plan said.
+        live = audit_refcounts(layout, blobstore)
+        if live["damaged"]:
+            # Damage that appeared DURING the sweep — the reference set is no longer
+            # complete, so no orphan can be proven unreferenced.
+            result.blocked_by_damaged = len(live["damaged"])
+            return result
+        live_refs = set(live["refcounts"])
         for sha in plan.orphans:
+            if sha in live_refs:
+                result.orphans_re_vetoed += 1  # a manifest committed since the plan
+                continue
+            blobstore.write_tombstone(sha, reason="retention:orphan")
             if blobstore.delete(sha):
                 result.orphans_removed += 1
 

@@ -43,10 +43,13 @@ from .identifiers import IdentifierRegistry
 from .keyregistry import KeyRegistry
 from .ledger import BuildLedger, pending_manifests
 from .locking import DomainLock, LockContention
+from .manifest import DamagedManifest, find_damaged_manifests
 from .paths import DomainLayout, SlugError, domain_layout, validate_identifier, validate_slug
 
 __all__ = [
     "CaptureSession",
+    "DamagedManifest",
+    "find_damaged_manifests",
     "BlobStore",
     "BlobRef",
     "BlobCorrupt",

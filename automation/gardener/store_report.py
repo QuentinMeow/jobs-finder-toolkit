@@ -171,6 +171,8 @@ def report_domain(layout: DomainLayout) -> dict:
         "blob_count": len(blobstore.present_shas()),
         "blob_states": blob_states,
         "orphans": audit["orphans"],
+        "orphans_undetermined": audit["orphans_undetermined"],
+        "damaged_manifests": audit["damaged"],
         "debris": debris,
         "torn": torn,
         "builder_lock_age": builder_lock_age,
@@ -192,7 +194,17 @@ def _print_domain(r: dict) -> None:
     if r["blob_states"]:
         print("    blob states: " + ", ".join(
             f"{k}={v}" for k, v in sorted(r["blob_states"].items())))
-    print(f"    orphaned blobs (refcount 0): {len(r['orphans'])}")
+    if r.get("damaged_manifests"):
+        print(f"    DAMAGED manifests (present but unreadable): "
+              f"{len(r['damaged_manifests'])} — the retention GC is SUSPENDED until "
+              f"each is restored or re-synced (never removed)")
+        for d in r["damaged_manifests"]:
+            print(f"      - {d.path}  ({d.error})")
+    if r.get("orphans_undetermined"):
+        print("    orphaned blobs (refcount 0): UNDETERMINED (part of the reference "
+              "set is unreadable)")
+    else:
+        print(f"    orphaned blobs (refcount 0): {len(r['orphans'])}")
     print(f"    manifest-less debris dirs (>24h): {len(r['debris'])}")
     for d in r["debris"]:
         print(f"      - {d.path}  ({d.age_hours:.1f}h)")

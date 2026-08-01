@@ -8,9 +8,17 @@ crash debris, and audits blob reference counts.
 The blob is written before the manifest and **manifest presence is the commit
 marker** — a fetch directory without a ``manifest.json`` is debris from a crash
 and is skipped here (swept later by the Stage-4 retention job, not now).
+
+**Unreadable is never absent.** A manifest that exists but cannot be parsed (half
+rsynced, truncated by a crash, bit-rotted) is reported through
+:func:`find_damaged_manifests` / the ``damaged`` key of :func:`audit_refcounts`,
+never silently dropped: the manifest is the ONLY record that a blob is referenced,
+so a dropped one turns a referenced blob into an apparent orphan and the GC would
+delete the very payload that manifest protects.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
@@ -164,38 +172,97 @@ def is_group_manifest(envelope: dict) -> bool:
 
 
 # ── raw-zone traversal + reference audit ─────────────────────
-def iter_manifests(layout: DomainLayout) -> Iterator[tuple[Path, dict]]:
-    """Yield ``(path, envelope)`` for every committed manifest under ``raw/``.
+@dataclass(frozen=True)
+class DamagedManifest:
+    """A ``manifest.json`` that is present on disk but could not be read.
 
-    Debris (a fetch dir with no ``manifest.json``) is skipped by construction —
-    we only look for the commit marker. The ``_blobs`` tree is not a source.
+    Distinct from an ABSENT manifest (crash debris, which is a legitimate skip).
+    A damaged manifest's references are unknowable, so every consumer that deletes
+    on the strength of "nothing references this" must refuse to run while any exist.
     """
+
+    path: Path
+    error: str
+
+
+def _iter_manifest_paths(layout: DomainLayout) -> Iterator[Path]:
+    """Every committed-manifest path under ``raw/`` (``_blobs`` is never a source)."""
     raw = layout.raw
     if not raw.is_dir():
         return
     for path in sorted(raw.glob("*/**/manifest.json")):
-        # Never treat anything under _blobs as a manifest source.
         if "_blobs" in path.parts:
             continue
-        try:
-            envelope = serialization.loads_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if isinstance(envelope, dict):
+        yield path
+
+
+def _read_manifest(path: Path) -> tuple[dict | None, str | None]:
+    """Read one manifest: ``(envelope, None)``, ``(None, error)``, or ``(None, None)``.
+
+    ``(None, None)`` means the file genuinely is not there any more (it vanished
+    between the glob and the read — an rsync mid-scan, say); anything else that
+    fails while the file IS on disk is DAMAGE, reported so callers cannot mistake
+    it for "this manifest references nothing".
+    """
+    try:
+        envelope = serialization.loads_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, FileNotFoundError) and not path.exists():
+            return None, None  # truly absent now — not damage
+        return None, f"{type(exc).__name__}: {exc}"
+    if not isinstance(envelope, dict):
+        return None, (f"parsed as {type(envelope).__name__}, not a manifest object")
+    return envelope, None
+
+
+def iter_manifests(layout: DomainLayout) -> Iterator[tuple[Path, dict]]:
+    """Yield ``(path, envelope)`` for every READABLE committed manifest under ``raw/``.
+
+    Debris (a fetch dir with no ``manifest.json``) is skipped by construction —
+    we only look for the commit marker. The ``_blobs`` tree is not a source.
+    An unreadable manifest is skipped here too, so this is a partial view whenever
+    :func:`find_damaged_manifests` is non-empty — every caller that DELETES on the
+    absence of a reference must consult that list first.
+    """
+    for path in _iter_manifest_paths(layout):
+        envelope, _error = _read_manifest(path)
+        if envelope is not None:
             yield path, envelope
+
+
+def find_damaged_manifests(layout: DomainLayout) -> list[DamagedManifest]:
+    """Every present-but-unreadable ``manifest.json`` under ``raw/``."""
+    out: list[DamagedManifest] = []
+    for path in _iter_manifest_paths(layout):
+        _envelope, error = _read_manifest(path)
+        if error is not None:
+            out.append(DamagedManifest(path=path, error=error))
+    return out
 
 
 def audit_refcounts(layout: DomainLayout, blobstore: _blobs.BlobStore) -> dict:
     """Compute blob reference counts and availability across the raw zone.
 
     Returns a report with per-sha reference counts, the set of present blobs,
-    orphans (present but referenced by no live manifest), and referenced blobs
-    that are absent (each classified ``pruned`` vs. informational
-    ``not-synced-here``). Reference counts are computed here, never cached.
+    orphans (present but referenced by no live manifest), referenced blobs that are
+    absent (each classified ``pruned`` vs. informational ``not-synced-here``), and
+    any ``damaged`` manifests. Reference counts are computed here, never cached.
+
+    **When any manifest is damaged, ``orphans`` is ``[]`` and
+    ``orphans_undetermined`` is ``True``** — with part of the reference set
+    unreadable, nothing can be PROVEN unreferenced, and an orphan list is exactly a
+    list of things a caller may delete. Empty is the only honest answer.
     """
     refs: dict[str, int] = {}
     ref_ext: dict[str, str] = {}
-    for _path, env in iter_manifests(layout):
+    damaged: list[DamagedManifest] = []
+    for path in _iter_manifest_paths(layout):
+        env, error = _read_manifest(path)
+        if error is not None:
+            damaged.append(DamagedManifest(path=path, error=error))
+            continue
+        if env is None:
+            continue
         payload = env.get("payload")
         if isinstance(payload, dict) and payload.get("blob"):
             sha = payload["blob"]
@@ -205,7 +272,7 @@ def audit_refcounts(layout: DomainLayout, blobstore: _blobs.BlobStore) -> dict:
 
     present = blobstore.present_shas()
     referenced = set(refs)
-    orphans = sorted(present - referenced)
+    orphans = [] if damaged else sorted(present - referenced)
     absent = {}
     for sha in sorted(referenced - present):
         absent[sha] = blobstore.state(sha, ref_ext.get(sha))
@@ -213,5 +280,7 @@ def audit_refcounts(layout: DomainLayout, blobstore: _blobs.BlobStore) -> dict:
         "refcounts": refs,
         "present": sorted(present),
         "orphans": orphans,
+        "orphans_undetermined": bool(damaged),
+        "damaged": damaged,
         "absent": absent,  # sha -> "pruned" | "not-synced-here" | "corrupt"
     }
