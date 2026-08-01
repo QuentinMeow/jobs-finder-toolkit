@@ -53,6 +53,16 @@ So the fold has exactly one carried state: the immediately preceding
 observation's snapshot of the eight tracked fields, plus the JD text that
 snapshot referred to. Persist that and the fold continues correctly.
 
+**Read it back as bytes.** The carried JD is read from `jd.md`, which was written
+as `text.encode("utf-8")`, so the only read that round-trips it is a byte read —
+`Path.read_text()` applies universal-newline translation and silently turns a CRLF
+the payload really contains into LF. Ashby's and Lever's `descriptionPlain` reach
+`jd.md` without passing through `strip_html`, so a CR in derived is a real payload
+shape. The `content_hash` is blind to it (the normalizer collapses whitespace) and
+so was the `only_if_changed` comparison — which is why the visible damage was the
+archived `jd-<hash>.md` prior version, holding LF where raw holds CRLF. Every read
+of a derived text file, and the change comparison, are byte-exact.
+
 **The one condition.** A left fold can only be *continued*; it cannot absorb an
 observation that belongs earlier in the order. If a fetch arrives with an
 earlier `fetched_at` than something already folded — a backfill, or a clock
@@ -96,6 +106,33 @@ annotation file appearing (or disappearing) changes an entity with no new fetch,
 so annotation targets — and any key that was a target on the previous run — join
 the working set on every build. There are tens of these, not thousands.
 
+**The invariant is about the working set, not about how an entity entered it.**
+That distinction was got wrong once and it cost a silent corruption. Every entity
+in the working set arrives *without* its hints: one this run re-folded never had
+them, and one it merely loaded had them stripped on purpose so they could be
+re-derived. So a bucket that is only half present does not merely fail to gain a
+hint — the half that is present has its existing hint **deleted**, leaving an
+asymmetric pair (or a lost `migrated_from`) that only a `--rebuild` repairs. The
+first implementation closed buckets for the *folded* entities only, so annotating
+one half of a duplicate pair — a first-class documented workflow, no crash, no
+exotic input — silently unlinked it. The fix states the invariant directly: the
+working set is closed under bucket membership, applied to the assembled reach
+rather than to any one source of it, so a future third way in is covered by
+construction. One pass reaches the fixed point, because buckets are equivalence
+classes on the triple.
+
+**What bounds the working set.** It is `O((folded + annotated) × B)`, where `B` is
+the widest exact-duplicate bucket — postings under one company that share a
+normalized title *and* a byte-identical JD. Entities with no JD hash have no
+triple and form no bucket at all. `B` is 2–3 in practice (one posting cross-listed
+on two ATSes, or an ATS migration); a store where `B` approached the store size
+would be a store holding one posting duplicated N times. Measured on a synthetic
+200-entity store containing a deliberately degenerate 20-wide bucket: a build with
+one new posting has a working set of 1; annotating one member of the 20-wide
+bucket has a working set of 20 — the whole bucket and nothing else — which is the
+same 20 that *re-observing* one member of that bucket already cost before this
+change. The closure widens an existing bound; it does not add a new one.
+
 One subtlety worth writing down because it was got wrong once: an entity pulled
 in this way is *loaded*, not *folded*, so it has no accumulator. Its cache entry
 must be carried over unchanged rather than rebuilt from what was loaded —
@@ -112,14 +149,18 @@ flowchart TD
     B -- no, pending --> D[parse -> observations]
     D --> E[group by entity key]
     E --> F[resume each entity's fold<br/>from state/ + its own derived files]
-    F --> G[whole affected duplicate buckets<br/>+ annotation targets]
+    F --> G[whole affected duplicate buckets<br/>+ annotation targets<br/>+ THEIR buckets]
     G --> H[write changed entities only]
     H --> I[patch index/ from persisted rows]
     I --> J[replace state/postings-fold-cache.jsonl<br/>LAST write of the build]
+    M[write state/postings-build-incomplete.json<br/>FIRST write of the build] --> D
+    J --> N[remove the incomplete marker]
 ```
 
 ```
 Same picture, plain text:
+
+  state/postings-build-incomplete.json  ← ALWAYS the first write
 
   raw/ manifests ─┬─ already in ledger ──▶ never opened this run
                   └─ pending ──▶ parse ──▶ group by entity key
@@ -130,13 +171,16 @@ Same picture, plain text:
                      ← derived/<entity>/{posting.yaml, events.jsonl, jd.md}
                        │
                        ├─▶ pull in whole duplicate buckets + annotation targets
+                       │     …and the buckets of those, so the set is bucket-closed
                        ├─▶ write only entities whose bytes changed
                        ├─▶ patch index/ from the persisted rows
-                       └─▶ replace the fold cache  ← ALWAYS the last write
+                       ├─▶ replace the fold cache  ← ALWAYS the last write
+                       └─▶ remove the incomplete marker
 ```
 
-Takeaway: the only new durable artifact is one file in `state/`; everything
-else the resumed fold needs is read back from the entity's own derived files.
+Takeaway: the durable artifacts are one cache file in `state/` plus a marker that
+exists only while a build is in flight; everything else the resumed fold needs is
+read back from the entity's own derived files.
 
 **The cache holds as little as possible.** Per entity: the partition, the
 carried snapshot, one boolean recording whether the JD text ended in a newline
@@ -157,6 +201,7 @@ Nothing in this list can make a build *wrong*; it can only make one *slow*.
 
 | Signal | Why it must refuse |
 |---|---|
+| A `state/postings-build-incomplete.json` marker survives | A build mutated `derived/` and never reached its cache write (see crash safety) — the only signal that catches a killed zero-pending build |
 | No cache, or a cache that fails its own line-count check | Nothing to resume from |
 | A module fingerprint changed (`build_postings.py`, the visa / job-metadata / location classifiers, the parsers, the identity canonicalizer, the registry module, the schema and normalizer versions, or the company registry content) | Code that decides an entity's bytes moved, so every historical posting must be re-derived — this is how a classifier fix still reaches the whole store |
 | The ledger's processed-fetch set does not match the cache's | A previous build got further than its cache did (see crash safety) |
@@ -224,13 +269,50 @@ declared entity count against the number of lines actually present and rejects
 any file that disagrees — a truncation that somehow survived the rename is
 discarded rather than trusted.
 
-**It is the last write of the build.** Derived and index land first. If the
-process dies anywhere before the cache is replaced, the surviving cache
-describes a store generation that has already moved on — and the header records
-a digest of the ledger's processed-fetch set as of the build that wrote it. The
-next run recomputes that digest, sees the mismatch, and performs a full fold.
-The failure mode is one slow build, which is the correct answer, because a
-partially-written derived zone genuinely does need re-deriving.
+**It is the last write of the build, and the build says so before it starts.**
+Derived and index land first. If the process dies anywhere before the cache is
+replaced, the surviving cache describes a store generation that has already moved
+on, and the next run must answer with a full fold.
+
+The first implementation rested that entirely on the ledger digest in the header,
+and the guarantee was narrower than the claim. Sort the header's fields by *who
+writes the state each one describes*:
+
+| Header field | Describes | Written by this build? |
+|---|---|---|
+| `fingerprint` | the builder's own code + the company registry | no |
+| `manifest_digest`, `max_manifest` | the raw zone's fetch set | no — capture writes it |
+| `absent_digest` | referenced-but-absent blobs | no — retention writes it |
+| `frozen_digest` | the frozen-facts snapshots | no — retention writes it |
+| `ledger_digest` | the ledger's processed-fetch set | **yes, but BEFORE the derived writes** |
+| `ann_keys` | which entities carry a human overlay in `derived/` | **yes, and AFTER them** |
+
+Only the last two describe state the build itself produces. `ledger_digest` works
+as a crash detector precisely because `_record_pending` advances the ledger before
+the first derived write, so a crash always leaves the ledger ahead of the cache.
+But it only moves when there is something to record — and **a build with zero
+pending manifests is a normal operation: it is exactly what you run to apply a
+human annotation.** Such a build rewrites derived while every digest in the list
+stays put, so `ann_keys` is the only thing that moves, and it is the one field
+whose baseline is written *after* the thing it describes. Killed in between, the
+next run computed its annotation-undo reach from a record that predated the
+derived zone it was supposed to correct: a removed annotation was never undone,
+and the index kept serving a human fact that existed nowhere in the store.
+
+The rule the ledger digest satisfied by accident is now stated directly: **the
+store's description of the derived zone must be durable before the derived zone
+moves.** Every build that can mutate `derived/` — incremental (either path),
+`--rebuild`, and `--opinions-only` — writes `state/postings-build-incomplete.json`
+first and removes it only after the cache has landed. `_fast_plan` checks for it
+before anything else and refuses. The window is closed for every field at once,
+including any added later, and the cost of a crash is one slow build — the
+failure mode this design already accepts everywhere else.
+
+(Digesting `annotations/` into the header instead would have been narrower *and*
+insufficient: it turns every annotation edit into a full fold — the thing the
+annotation reach exists to avoid — and it still misses the reported case, because
+after annotate → crash → un-annotate the digest is back to the value the cache
+already holds.)
 
 **A rebuild deletes it up front.** `--rebuild` replaces the derived and index
 zones wholesale, so the old fold state describes a generation being discarded.

@@ -15,9 +15,11 @@ Three properties make trusting it safe:
 * **It is written last and atomically.** The builder writes derived + index
   first and replaces this file (temp-then-rename, whole file) only after they
   land. A crash therefore leaves the PREVIOUS complete cache next to a store that
-  has already moved on — and the ledger digest below detects exactly that,
-  forcing a full fold. A half-written cache is impossible (rename is atomic); a
-  truncated one fails :func:`load`'s count check and is discarded.
+  has already moved on — which :func:`read_incomplete`'s write-ahead marker
+  detects unconditionally (and the ledger digest also detects whenever the build
+  ingested a manifest), forcing a full fold. A half-written cache is impossible
+  (rename is atomic); a truncated one fails :func:`load`'s count check and is
+  discarded.
 * **It invalidates on anything it does not model.** The fingerprint covers every
   module whose code decides an entity's bytes, and the store digests cover the
   raw manifest set, blob presence, and the frozen-facts snapshots. A change to
@@ -37,11 +39,17 @@ from pathlib import Path
 
 CACHE_SCHEMA = 1
 CACHE_NAME = "postings-fold-cache.jsonl"
+INCOMPLETE_NAME = "postings-build-incomplete.json"
 
 
 def cache_path(layout) -> Path:
     """``state/postings-fold-cache.jsonl`` for a domain layout."""
     return layout.state / CACHE_NAME
+
+
+def incomplete_path(layout) -> Path:
+    """``state/postings-build-incomplete.json`` for a domain layout."""
+    return layout.state / INCOMPLETE_NAME
 
 
 # ── digests (every one of these is an invalidation signal) ───────────────────
@@ -129,6 +137,60 @@ def save(path: Path, header: dict, entries: dict) -> None:
 
 def discard(path: Path) -> None:
     """Remove the cache (used when a build cannot leave a trustworthy one)."""
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
+
+
+# ── the write-ahead marker (crash detection that does not need the ledger) ────
+# Every OTHER invalidation signal in the header describes state the build did not
+# write — code, the raw zone, blob presence, frozen facts — so comparing it next
+# run is enough. Two do not: `ledger_digest` describes the ledger, and `ann_keys`
+# describes the DERIVED zone, both of which this build writes itself.
+#
+# `ledger_digest` gets away with it because `_record_pending` advances the ledger
+# BEFORE the first derived write, so a crash always leaves ledger > cache. But it
+# only moves when there is something to record, and a build with zero pending
+# manifests — exactly what applying a human annotation is — records nothing while
+# still rewriting derived. `ann_keys` is then the only thing that moved, and it is
+# written LAST, so the next run computes its annotation-undo reach from a record
+# that predates the derived zone it is supposed to correct.
+#
+# The general rule the ledger digest satisfies by accident is: *the store's
+# description of the derived zone must be written before the derived zone moves.*
+# This marker states it directly. Every build that can mutate `derived/` writes it
+# first and removes it only after the cache (the description) has landed, so any
+# interruption in between is visible next run and answered with a full fold — one
+# slow build, the design's own stated failure mode.
+def mark_incomplete(path: Path, mode: str) -> None:
+    """Record — BEFORE the first derived write — that derived is about to move."""
+    from _vendor.store import serialization  # local: skill vendoring
+    from _vendor.store.atomic import atomic_write_text  # local: skill vendoring
+
+    atomic_write_text(Path(path), json.dumps(
+        {"mode": mode, "started_at": serialization.now_z()},
+        sort_keys=True, ensure_ascii=False) + "\n")
+
+
+def read_incomplete(path: Path) -> dict | None:
+    """The surviving marker of a build that never finished, or ``None``.
+
+    Any unreadable/unparseable marker still counts as "a build did not finish" —
+    the file's presence is the signal; its contents only name the culprit.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def clear_incomplete(path: Path) -> None:
+    """Drop the marker — the cache now describes the derived zone again."""
     try:
         Path(path).unlink()
     except OSError:

@@ -1,8 +1,10 @@
 """Builder tests: determinism, incremental==rebuild, orphan hard-fail, suppression,
 weak identity, changed events, opinions-only diff, ATS-migration links, key pinning.
 
-Every test isolates the store to a throwaway ``JOBHUNT_DATA_ROOT`` and asserts
-containment — no test writes into the real ``private/data`` store.
+Every test isolates the store to a throwaway ``JOBHUNT_DATA_ROOT`` **and** pins
+``JOBHUNT_CONFIG`` to a throwaway config — no test writes into, or reads from, the
+real ``private/`` tree. Pinning only the data root is not enough: every build calls
+``_pin_referenced_keys``, which walks ``config.applications_root()``.
 """
 from __future__ import annotations
 
@@ -23,6 +25,8 @@ for _p in (str(_SCRIPTS_DIR), str(_SCRIPTS_DIR / "_vendor")):
         sys.path.insert(0, _p)
 
 import build_postings as bp  # noqa: E402
+import config  # vendored toolkit config loader  # noqa: E402
+import postings_fold_state as fold_state  # noqa: E402
 from _vendor.store import serialization  # noqa: E402
 from _vendor.store.atomic import atomic_write_text  # noqa: E402
 from _vendor.store.capture import CaptureSession  # noqa: E402
@@ -45,15 +49,34 @@ def _dt(day, hour=9):
 class _StoreCase(unittest.TestCase):
     def setUp(self):
         self._prior = os.environ.get("JOBHUNT_DATA_ROOT")
+        self._prior_config = os.environ.get(config.ENV_VAR)
         self.data_root = Path(tempfile.mkdtemp(prefix="build-test-"))
         os.environ["JOBHUNT_DATA_ROOT"] = str(self.data_root)
+        # Pin the CONFIG too, not just the store. `_pin_referenced_keys` runs on
+        # every build path and rglobs `config.applications_root()` for `store_key`
+        # references — so on a configured machine a suite that pinned only the data
+        # root would walk the owner's real applications tree on every build. It is
+        # read-only, but a test suite must not touch the private tree at all.
+        apps = self.data_root / "applications"
+        apps.mkdir(parents=True, exist_ok=True)
+        cfg = self.data_root / "config.yaml"
+        cfg.write_text('candidate:\n  name: "Jordan Rivers"\n'
+                       f'paths:\n  applications_root: "{apps}"\n'
+                       f'  discoveries_dir: "{apps}/1_discoveries"\n', encoding="utf-8")
+        os.environ[config.ENV_VAR] = str(cfg)
+        config._load.cache_clear()  # the loader caches for the process lifetime
+        self.assertEqual(config.applications_root(), apps,
+                         "test config not pinned — builds would read the real tree")
         self.layout = domain_layout(self.data_root, "jobs")
 
     def tearDown(self):
-        if self._prior is None:
-            os.environ.pop("JOBHUNT_DATA_ROOT", None)
-        else:
-            os.environ["JOBHUNT_DATA_ROOT"] = self._prior
+        for var, prior in (("JOBHUNT_DATA_ROOT", self._prior),
+                           (config.ENV_VAR, self._prior_config)):
+            if prior is None:
+                os.environ.pop(var, None)
+            else:
+                os.environ[var] = prior
+        config._load.cache_clear()
         shutil.rmtree(self.data_root, ignore_errors=True)
 
     def _session(self):
@@ -165,6 +188,11 @@ class MaterializeTests(_StoreCase):
         self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
         self._build([])
         self.assertEqual(_files(), before)
+        # …and nothing is READ from it either: the key-pinning walk follows the
+        # pinned config's applications root, which must live in the temp store.
+        for path in (config.applications_root(), config.discoveries_dir()):
+            self.assertFalse(str(path).startswith(str(_REPO_ROOT / "private")), path)
+            self.assertTrue(str(path).startswith(str(self.data_root)), path)
 
 
 class SuppressionAndWeakTests(_StoreCase):
@@ -358,6 +386,63 @@ class IncrementalFoldTests(_StoreCase):
         ashby = self._posting("examplecorp", "ashby-ay-1")
         self.assertEqual(gh.get("possible_duplicate"), ["ashby-ay-1"])
         self.assertEqual(ashby.get("possible_duplicate"), ["gh-900"])
+        self._assert_matches_rebuild()
+
+    def _capture_dup_pair(self):
+        """One posting cross-listed on greenhouse and ashby — one duplicate bucket."""
+        self._session().capture_fetch(
+            source="greenhouse", operation="board",
+            request={"url": "https://boards-api.greenhouse.io/v1/boards/examplecorp/jobs"},
+            status=200,
+            payload_bytes=_gh_board([_job(900, "Staff Engineer", "Remote, US",
+                                          content=self.DUP_JD)]),
+            content_type="application/json", fetched_at=_dt(14),
+            context={"company": "examplecorp", "profile": "profile-01"})
+        self._capture_ashby("examplecorp", "ay-1", "Staff Engineer", _dt(15),
+                            self.DUP_JD)
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._posting("examplecorp", "gh-900")["possible_duplicate"],
+                         ["ashby-ay-1"])
+        self.assertEqual(self._posting("examplecorp", "ashby-ay-1")["possible_duplicate"],
+                         ["gh-900"])
+
+    def _annotate(self, key, facts):
+        self.layout.annotations.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(self.layout.annotations / f"{key}.yaml",
+                          serialization.dumps_yaml(
+                              {"schema_version": 1, "key": key,
+                               "verified_by": "human", "facts": facts}))
+
+    def test_annotating_half_a_duplicate_pair_keeps_both_hints(self):
+        """The two reach mechanisms INTERSECTING — each is fine alone.
+
+        ``gh-900`` joins the working set only because it is an annotation target:
+        no manifest mentions it, and it is not a duplicate participant of anything
+        this run folded. It is loaded with its hints STRIPPED so they can be
+        re-derived — but ``_post_pass`` only re-derives from whole buckets, and its
+        bucket mate is not in the working set. Without `_bucket_closure` the hint is
+        not re-stamped, it is silently DELETED, leaving an asymmetric pair only a
+        ``--rebuild`` repairs.
+        """
+        self._capture_dup_pair()
+        self._annotate("gh-900", {"workplace": "onsite"})
+        self.assertIn("fold=pending-only", self._summary())   # zero-pending fast path
+        self.assertEqual(self._posting("examplecorp", "gh-900")["possible_duplicate"],
+                         ["ashby-ay-1"])
+        self.assertEqual(self._posting("examplecorp", "ashby-ay-1")["possible_duplicate"],
+                         ["gh-900"])
+        self._assert_matches_rebuild()
+
+    def test_removing_an_annotation_from_half_a_pair_keeps_both_hints(self):
+        """The same intersection down the OTHER reach: the ``ann_keys`` undo path."""
+        self._capture_dup_pair()
+        self._annotate("gh-900", {"workplace": "onsite"})
+        self.assertEqual(self._build([]), 0)
+        (self.layout.annotations / "gh-900.yaml").unlink()
+        self.assertIn("fold=pending-only", self._summary())
+        gh = self._posting("examplecorp", "gh-900")
+        self.assertNotIn("human", gh)                          # the undo happened…
+        self.assertEqual(gh["possible_duplicate"], ["ashby-ay-1"])  # …and only that
         self._assert_matches_rebuild()
 
     def test_departing_entity_clears_a_stale_duplicate_hint(self):
@@ -576,6 +661,84 @@ class IncrementalFoldTests(_StoreCase):
         self._cache().write_text(stale)          # cache rolled back, store did not
         self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(16))
         self.assertIn("fold=full", self._summary())
+        self._assert_matches_rebuild()
+
+    def test_a_killed_zero_pending_build_is_detected(self):
+        """The crash window no header digest can see.
+
+        The ledger only moves when a manifest is recorded, so a build with ZERO
+        pending manifests — exactly what applying a human annotation is — leaves
+        every digest in the header unchanged. Killed between the derived writes and
+        the cache write, it would otherwise be invisible, and the next run would
+        compute its annotation-undo reach from a record that predates the derived
+        zone it is supposed to correct: the removed annotation is never undone, and
+        the index keeps serving a human fact that exists nowhere in the store.
+        """
+        self._capture_gh([_job(111, "SWE", "Remote, US")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._annotate("gh-111", {"workplace": "onsite"})
+
+        class _Killed(Exception):
+            """Stands in for SIGKILL: the cache is the build's last write."""
+
+        real_save = fold_state.save
+        fold_state.save = lambda *a, **k: (_ for _ in ()).throw(_Killed())
+        try:
+            with self.assertRaises(_Killed):
+                self._build([])
+        finally:
+            fold_state.save = real_save
+        # derived moved; the cache still describes the generation before it
+        self.assertEqual(self._posting("examplecorp", "gh-111")
+                         ["opinions"]["workplace"]["effective"], "onsite")
+
+        (self.layout.annotations / "gh-111.yaml").unlink()
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            self.assertEqual(self._build([]), 0)
+        self.assertIn("fold=full", out.getvalue())
+        self.assertIn("did not finish", err.getvalue())
+        p = self._posting("examplecorp", "gh-111")
+        self.assertNotIn("human", p)
+        self.assertNotIn("effective", p["opinions"]["workplace"])
+        self.assertEqual([r for r in self._index_rows()
+                          if r["key"] == "gh-111"][0]["workplace"], "remote")
+        self._assert_matches_rebuild()
+
+    def test_a_finished_build_leaves_no_incomplete_marker(self):
+        """The marker must not survive a clean build, or every later build is slow."""
+        marker = fold_state.incomplete_path(self.layout)
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self.assertFalse(marker.exists())
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertIn("fold=pending-only", self._summary())
+        self.assertFalse(marker.exists())
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        self.assertFalse(marker.exists())
+        self.assertEqual(self._build(["--opinions-only"]), 0)
+        self.assertFalse(marker.exists())
+
+    def test_a_crlf_jd_survives_the_resumed_fold(self):
+        """``jd.md`` is written as BYTES; reading it back as text translates them.
+
+        Ashby's ``descriptionPlain`` reaches ``jd.md`` without passing through
+        ``strip_html``, so a CRLF in the payload is a real shape rather than a
+        hypothetical. The resumed fold carries the previous JD forward to archive it
+        as ``jd-<hash>.md`` at a change point — read as text, that snapshot holds LF
+        where raw holds CRLF, and only the archive diverges (the content hash
+        normalizes whitespace away).
+        """
+        crlf = "Own the ingestion pipeline.\r\nKafka, Flink, Iceberg.\r\nShip it."
+        self._capture_ashby("examplecorp", "ay-1", "Staff Engineer", _dt(14), crlf)
+        self.assertEqual(self._build([]), 0)
+        self._capture_ashby("examplecorp", "ay-1", "Staff Engineer", _dt(16),
+                            "Completely different role: run the billing platform.")
+        self.assertIn("fold=pending-only", self._summary())
+        entity = self.layout.derived / "postings" / "examplecorp" / "ashby-ay-1"
+        archived = sorted(entity.glob("jd-*.md"))
+        self.assertEqual(len(archived), 1, archived)
+        self.assertIn(b"\r\n", archived[0].read_bytes())
         self._assert_matches_rebuild()
 
     def test_pruned_blob_falls_back(self):

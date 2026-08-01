@@ -537,6 +537,19 @@ def _post_pass(entities: dict, registry: Registry) -> None:
 
 
 # ── serialization + writing ──────────────────────────────────
+def _read_derived_text(path: Path) -> str:
+    """Read a derived text file EXACTLY as it was written (no newline translation).
+
+    `atomic_write_text` writes `text.encode("utf-8")`, so the only read that can
+    round-trip it is a byte read. `Path.read_text()` applies universal-newline
+    translation, which silently rewrites a CRLF the payload really contains — a
+    difference the contract "an incremental build produces the rebuild's bytes"
+    cannot tolerate anywhere derived is read back and re-serialized.
+    """
+    path = Path(path)
+    return path.read_bytes().decode("utf-8") if path.exists() else ""
+
+
 def _entity_files(eb: EntityBuild) -> dict[str, str]:
     """Map of ``relative-path -> text`` for an entity's derived files."""
     files = {
@@ -584,8 +597,11 @@ def _write_entity(derived_root: Path, eb: EntityBuild, *, only_if_changed: bool)
     wrote = False
     for rel, text in files.items():
         target = entity_dir / rel
+        # Byte comparison, not text: a text compare is newline-blind, so a JD that
+        # changed only from CRLF to LF would be judged unchanged and left stale —
+        # while a rebuild (writing into a fresh dir) would write the new bytes.
         if only_if_changed and target.exists() and \
-                target.read_text(encoding="utf-8") == text:
+                target.read_bytes() == text.encode("utf-8"):
             continue
         atomic_write_text(target, text)
         wrote = True
@@ -775,11 +791,10 @@ def _load_existing_entity(entity_dir: Path, key: str):
     posting = serialization.loads_yaml(
         (entity_dir / "posting.yaml").read_text(encoding="utf-8")) or {}
     posting.setdefault("provenance", {})["carried"] = True  # idempotent
-    jd_path = entity_dir / "jd.md"
-    jd_text = jd_path.read_text(encoding="utf-8") if jd_path.exists() else ""
+    jd_text = _read_derived_text(entity_dir / "jd.md")  # bytes: see `_read_derived_text`
     jd_versions = {}
     for f in sorted(entity_dir.glob("jd-*.md")):
-        jd_versions[f.name[len("jd-"):-len(".md")]] = f.read_text(encoding="utf-8")
+        jd_versions[f.name[len("jd-"):-len(".md")]] = _read_derived_text(f)
     events = read_jsonl(entity_dir / "events.jsonl")
     seq = next((int(e.get("seq", 0)) for e in events
                 if e.get("type") == "first_seen"), 0)
@@ -1291,6 +1306,15 @@ def _fast_plan(layout, registry, ledger, manifests, pending, blobstore):
     costs exactly one full fold — the behaviour that shipped before this cache
     existed. Nothing here can make a build wrong; it can only make it slow.
     """
+    # Checked FIRST and unconditionally: every other signal below is a comparison
+    # against state the build did not write, so it can only detect a crash that
+    # happened to move one of them. The marker detects the crash itself — including
+    # a zero-pending build (applying an annotation), which moves nothing else at all.
+    stale = fold_state.read_incomplete(fold_state.incomplete_path(layout))
+    if stale is not None:
+        return _refuse(f"a previous {stale.get('mode') or 'build'} did not finish"
+                       + (f" (started {stale['started_at']})"
+                          if stale.get("started_at") else ""))
     loaded = fold_state.load(fold_state.cache_path(layout))
     if loaded is None:
         return _refuse("no usable fold cache")
@@ -1336,12 +1360,20 @@ def build_incremental(layout, registry) -> dict:
     pending = sorted((pe for pe in manifests if pe[1].get("fetch_id") not in done),
                      key=lambda pe: pe[1].get("fetch_id", ""))
     plan = _fast_plan(layout, registry, ledger, manifests, pending, blobstore)
+    # Write-ahead, AFTER `_fast_plan` has read the previous run's marker: from here
+    # until the cache lands, derived may be a generation ahead of the cache that
+    # describes it. Anything that stops the process in that window leaves the
+    # marker, and the next build answers it with a full fold.
+    fold_state.mark_incomplete(fold_state.incomplete_path(layout), "incremental build")
     newly = _record_pending(layout, ledger, pending)
     if plan is None:
-        return _build_incremental_full(layout, registry, stamps, ledger, newly,
-                                       manifests, blobstore)
-    return _build_incremental_fast(layout, registry, stamps, ledger, newly, pending,
-                                   plan, blobstore, manifests)
+        summary = _build_incremental_full(layout, registry, stamps, ledger, newly,
+                                          manifests, blobstore)
+    else:
+        summary = _build_incremental_fast(layout, registry, stamps, ledger, newly,
+                                          pending, plan, blobstore, manifests)
+    fold_state.clear_incomplete(fold_state.incomplete_path(layout))
+    return summary
 
 
 def _build_incremental_full(layout, registry, stamps, ledger, newly, manifests,
@@ -1380,8 +1412,12 @@ def _resume_fold(key: str, entry: dict, entity_dir: Path) -> _Fold:
     """
     posting = serialization.loads_yaml(
         (entity_dir / "posting.yaml").read_text(encoding="utf-8")) or {}
-    jd_path = entity_dir / "jd.md"
-    jd_text = jd_path.read_text(encoding="utf-8") if jd_path.exists() else ""
+    # BYTES, not `read_text`: universal-newline translation would turn a CRLF the
+    # JD really contains into LF, and the resumed fold would then archive a
+    # `jd-<hash>.md` prior version that raw never held. Ashby's and Lever's
+    # `descriptionPlain` reach `jd.md` without passing through `strip_html`, so a
+    # CR in derived is a real payload shape, not a hypothetical.
+    jd_text = _read_derived_text(entity_dir / "jd.md")
     if jd_text and entry["f"].get("n") is False:
         jd_text = jd_text[:-1]  # `_entity_files` appended the newline; undo it
     fold = _Fold(key)
@@ -1417,8 +1453,7 @@ def _load_derived_entity(derived_root: Path, partition: str, key: str) -> Entity
         if isinstance(op, dict):
             for field in ("human", "effective", "source"):
                 op.pop(field, None)
-    jd_path = entity_dir / "jd.md"
-    jd_text = jd_path.read_text(encoding="utf-8") if jd_path.exists() else ""
+    jd_text = _read_derived_text(entity_dir / "jd.md")  # bytes: see `_resume_fold`
     return EntityBuild(key, partition, posting, jd_text, {},
                        read_jsonl(entity_dir / "events.jsonl"), None)
 
@@ -1431,6 +1466,9 @@ def _duplicate_participants(entries: dict, touched: dict) -> set:
     multi-member bucket. A newly folded entity can therefore change an entity it
     never observed — and a departure can leave a stale hint behind. Both bucket
     memberships (before and after) are pulled in so the pass sees whole buckets.
+
+    This covers the entities this run FOLDED. An entity that joins the working set
+    some other way needs its bucket closed too — see :func:`_bucket_closure`.
     """
     buckets: dict[tuple, set] = {}
     for k, entry in entries.items():
@@ -1455,6 +1493,39 @@ def _duplicate_participants(entries: dict, touched: dict) -> set:
             if max(len(before_members), len(after_members)) >= 2:
                 affected |= before_members | after_members
     return affected - set(touched)
+
+
+def _bucket_closure(entries: dict, reached: set) -> set:
+    """Complete every duplicate bucket the working set touches.
+
+    EVERY entity in the working set arrives WITHOUT its `_post_pass` hints: one
+    this run re-folded never had them, and one it merely loaded had them stripped
+    on purpose (:func:`_load_derived_entity`) so they can be re-derived. So the
+    pass does not just fail to *add* a hint when a bucket is only half present —
+    it silently DELETES the hint that was there, and only a `--rebuild` restores
+    it. The invariant is therefore about the working set as a whole, not about how
+    an entity got into it: **it must be closed under bucket membership.**
+
+    :func:`_duplicate_participants` closes the buckets of the entities this run
+    FOLDED. This closes the buckets of the ones it merely REACHED — annotation
+    targets, the previous run's annotation targets, and anything a future reach
+    adds — so the invariant holds for every entry point rather than for the two
+    that were thought of.
+
+    One pass is the fixed point: buckets are equivalence classes on the
+    (company, title, JD-hash) triple, so a bucket mate's bucket mates are the same
+    bucket. Entities with no JD hash have no triple and form no bucket at all.
+    """
+    buckets: dict[tuple, set] = {}
+    for key, entry in entries.items():
+        if entry.get("t"):
+            buckets.setdefault(tuple(entry["t"]), set()).add(key)
+    out: set = set()
+    for key in reached:
+        triple = entries.get(key, {}).get("t")
+        if triple:
+            out |= buckets.get(tuple(triple), set())
+    return out
 
 
 def _check_case_collisions_incremental(entries: dict, touched: dict) -> None:
@@ -1536,6 +1607,11 @@ def _build_incremental_fast(layout, registry, stamps, ledger, newly, pending, pl
     reach = _duplicate_participants(entries, touched)
     reach |= set(ann_targets) - set(touched)
     reach |= (set(plan["header"].get("ann_keys") or []) & set(entries)) - set(touched)
+    # Whatever pulled an entity in, its whole duplicate bucket comes with it: the
+    # working set must be closed under bucket membership or `_post_pass` sees a
+    # partial bucket and DELETES a hint instead of re-stamping it. Applied to the
+    # assembled reach (not to one source of it) so a future reach is covered too.
+    reach |= _bucket_closure(entries, reach) - set(touched)
     for key in sorted(reach):
         entry = entries.get(key)
         if entry is not None:
@@ -1732,6 +1808,7 @@ def build_rebuild(layout, registry) -> dict:
     # the rebuild reaches the end. A crashed rebuild therefore leaves no cache at
     # all — the next build re-derives from raw.
     fold_state.discard(fold_state.cache_path(layout))
+    fold_state.mark_incomplete(fold_state.incomplete_path(layout), "rebuild")
     entities, suppressed, entity_seq, groups, seq_of, index_survivors = _build_entities(
         layout, registry, stamps, manifests=manifests, blobstore=blobstore)
 
@@ -1763,6 +1840,7 @@ def build_rebuild(layout, registry) -> dict:
     _write_readme(layout.root.parent, layout, stamps)
     _write_cache(layout, entities, _store_state(manifests, blobstore, registry),
                  ledger, _frozen_digest(layout))
+    fold_state.clear_incomplete(fold_state.incomplete_path(layout))
     return {"mode": "rebuild", "entities": len(entities),
             "suppressed": len(suppressed),
             "events": sum(len(e.events) for e in entities.values()),
@@ -1815,13 +1893,18 @@ def build_opinions_only(layout, registry) -> dict:
     ledger = BuildLedger(layout.build_ledger)
     seq_of = _seq_map(ledger)
     conflicts_path = layout.state / "annotation-conflicts.jsonl"
+    # This rewrites `posting.yaml` in place without touching the fold cache. On
+    # success that is sound (nothing it rewrites is cached), but a half-finished
+    # run leaves entities no later incremental build would visit — so it takes the
+    # same write-ahead marker, and an interruption costs one full fold that repairs
+    # them from raw.
+    fold_state.mark_incomplete(fold_state.incomplete_path(layout), "opinions-only build")
     if postings_root.is_dir():
         for pyaml in sorted(postings_root.rglob("posting.yaml")):
             data = serialization.loads_yaml(pyaml.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 continue
-            jd_path = pyaml.parent / "jd.md"
-            jd_text = jd_path.read_text(encoding="utf-8") if jd_path.exists() else ""
+            jd_text = _read_derived_text(pyaml.parent / "jd.md")  # bytes, as the fold
             old = data.get("opinions") or {}
             from_id = (data.get("provenance") or {}).get("fetch_ids", [""])[-1]
             new = _opinions(data.get("title", ""), data.get("location", ""),
@@ -1853,6 +1936,7 @@ def build_opinions_only(layout, registry) -> dict:
     built_at = _index_built_at(ledger)
     if entities_for_index:
         _write_index(layout.index, entities_for_index, entity_seq, built_at)
+    fold_state.clear_incomplete(fold_state.incomplete_path(layout))
     _print_opinion_diff(diffs, changed_entities)
     return {"mode": "opinions-only", "changed": changed_entities, "diffs": diffs}
 
