@@ -61,11 +61,22 @@ For each resulting folder the tool:
    rule "for a multi-role company, keep only the postings that match the policy";
    ``--allow-location-mismatch`` keeps them all.
 
+6. Append each created posting to the append-only applications skip-log
+   (``applications-log.jsonl``, honouring ``--applications-root``) as the LAST
+   step, through the shared ``skip_log.posting_rows`` flattening the tracker's
+   ``--sync-log`` uses. Creation is the one event every application has, and
+   before this the log only ever saw status TRANSITIONS — so a folder scaffolded
+   and deleted before any sync left no trace and the posting resurfaced as fresh.
+   ``_record_created_postings`` carries the ordering, idempotency and concurrency
+   argument.
+
 Stdout is exactly two lines: the folder path and the meta.yaml validation status.
-Everything else (fetch notes, gap diagnostics, the location verdict) goes to stderr.
+Everything else (fetch notes, gap diagnostics, the location verdict, the skip-log
+append) goes to stderr.
 
 Self-contained: this script imports only its own sibling ``fetch_jd`` and the
-vendored ``job_metadata`` / ``metadata_editor`` / ``location`` / ``config`` modules.
+vendored ``job_metadata`` / ``metadata_editor`` / ``location`` / ``skip_log`` /
+``layout`` / ``config`` modules.
 It never subprocesses another skill's scripts; the tracker's ``--enrich-metadata`` /
 ``--check-metadata`` / ``--check-locations`` remain agent-invoked follow-ups.
 """
@@ -100,7 +111,8 @@ from job_metadata import (  # noqa: E402
     validate_meta,
 )
 from metadata_editor import plan_metadata_edit  # noqa: E402
-import skip_log  # noqa: E402  (vendored: folds the append-only applications skip-log)
+import skip_log  # noqa: E402  (vendored: folds AND appends the applications skip-log)
+from layout import status_label_for_dir  # noqa: E402  (vendored: status dir -> label)
 from location import (  # noqa: E402  (vendored shared location policy)
     classify_location,
     classify_locations,
@@ -672,6 +684,98 @@ def row_location_verdict(row: dict) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------- #
+# Creation-time skip-log append
+# --------------------------------------------------------------------------- #
+def _record_created_postings(
+    meta: dict,
+    folder: Path,
+    root: Path,
+    args: argparse.Namespace,
+    code: int,
+) -> int:
+    """Append this folder's postings to the append-only skip-log; return how many.
+
+    **Why this exists.** Until it did, a posting could be worked on and then vanish
+    from the log entirely: scaffold it here, decide against it the same day, delete
+    the folder, and the log had never seen it — so the next search re-surfaced it
+    as fresh. The status writers cover every status TRANSITION; nothing covered
+    creation, which is the one event every application has.
+
+    **Ordering: the folder is created first, this append is last.** The two crash
+    residues are not symmetric. Crash after the append and before the folder, and
+    the log claims a posting that was never scaffolded: job-search skips it
+    forever, the symptom is a posting that silently never appears, and the only
+    repair is an owner who somehow notices and runs ``--forget-log``. Crash after
+    the folder and before the append, and the residue is a scaffolded folder with
+    no row — visible in ``6_drafted``, still caught by the live-folder half of
+    ``_posting_keys``, listed by ``status.py``, and turned into a row by the next
+    ``--sync-log``. One residue is silent and permanent; the other is loud and
+    self-healing. The append also states a fact ("an application folder exists for
+    this posting") that is only true once the folder exists.
+
+    **Idempotency.** A second run over the same posting never reaches this
+    function — a same-day rerun hits the refuse-to-overwrite branch, and a bulk
+    rerun is stopped by the duplicate preflight, which now sees this very row.
+    Under ``--research-date`` a later re-scaffold does reach it, and appends one
+    line because slug and date genuinely changed; the fold is last-wins, so the
+    fresher row is the one every reader sees. Beyond that,
+    ``skip_log.record_postings`` appends only what differs from the fold, so
+    repeated identical calls write nothing.
+
+    **Concurrency** is whatever ``skip_log.append_event`` already provides for the
+    tracker: one fsync'd ``O_APPEND`` write per event, no lock. Nothing new is
+    invented here — a second writer taking a lock the first one does not is not
+    mutual exclusion.
+
+    ``code`` is the exit this scaffold is about to return. Every created folder is
+    recorded regardless of it (see the note below); a non-zero code additionally
+    prints the un-skip command, because the remedy those paths already print
+    ("delete the folder") no longer un-skips the posting on its own.
+    """
+    # Must equal what ``load_application`` derives from the same slug, or the next
+    # --sync-log sees a differing row and appends a redundant line for every
+    # posting, forever. Same parse: <company>-<role>-YYYYMMDD.
+    slug = folder.name
+    stamp = slug.rsplit("-", 1)[-1]
+    date = (f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:]}"
+            if len(stamp) == 8 and stamp.isdigit() else "")
+    rows = skip_log.posting_rows({
+        "company": meta.get("company") or "",
+        "slug": slug,
+        "date": date,
+        # The folder's derived rollup, used only for a posting with no status of
+        # its own; a scaffold always writes one ("drafted").
+        "status": status_label_for_dir(args.status_dir) or "",
+        "jobs": meta.get("jobs") or [],
+    })
+    log_path = _applications_jsonl(root, args.applications_root)
+    appended = skip_log.record_postings(log_path, rows, source="handoff")
+    if not appended:
+        return 0
+    print(f"handoff: recorded {appended} posting event(s) -> {log_path}",
+          file=sys.stderr)
+    if code == 0:
+        return appended
+    # A folder the tool just told you not to draft (location mismatch, missing JD,
+    # incomplete metadata) is still a considered posting, and it is the folder
+    # MOST likely to be deleted — so recording it is the whole point rather than an
+    # edge case. The cost is that deleting it no longer un-skips the posting, so
+    # name the repair here, with the argument already filled in.
+    print(
+        "handoff: this scaffold is not clean, but its postings are recorded — the "
+        "skip-log tracks what was CONSIDERED and the folder exists. Deleting the "
+        "folder does NOT un-skip them; to surface a posting again, append a "
+        "tombstone:",
+        file=sys.stderr,
+    )
+    for row in rows:
+        target = (f'"{row["url"]}"' if row["url"]
+                  else f'"{row["company"]}" "{row["role"]}"')
+        print(f"  status.py --forget-log {target}", file=sys.stderr)
+    return appended
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
 def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
@@ -828,9 +932,17 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
         loc_verdict, loc_cat, loc_locs, loc_offending, folder,
         allow_mismatch=args.allow_location_mismatch,
     )
-    if location_blocked:
-        return 3, folder
-    return (0 if (errors == [] and jd_ok) else 1), folder
+    code = 3 if location_blocked else (0 if (errors == [] and jd_ok) else 1)
+
+    # LAST, and only now that the folder is really on disk — see
+    # ``_record_created_postings`` for why the append trails folder creation
+    # rather than leading it. Every early return above this line leaves the tree
+    # untouched (refuse-to-overwrite, an all-mismatch group, a slug-less row), and
+    # each of them returns before this call, so nothing is recorded that was not
+    # built. This is also the single funnel: ``run`` and ``_run_groups`` both
+    # scaffold through ``_run_group``, so one call covers every path.
+    _record_created_postings(meta, folder, root, args, code)
+    return code, folder
 
 
 # Exit codes _run_group returns, mapped to a bulk-report status. A location

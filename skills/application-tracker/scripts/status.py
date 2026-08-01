@@ -1059,7 +1059,9 @@ def _record_log_events(slug: str) -> None:
     lagging projection of whatever the folders looked like the last time somebody
     remembered to sync; appending at the moment of the status write makes it an
     event log. The rows are built through ``build_log`` — the same call
-    ``--sync-log`` makes — so the two writers cannot drift apart in shape.
+    ``--sync-log`` makes, over the same ``skip_log.posting_rows`` flattening that
+    job-search's ``handoff.py`` uses when it scaffolds a folder — so no writer can
+    drift apart in shape from the others.
 
     Called unconditionally rather than only when something changed: the upsert
     appends nothing when the posting already matches the fold, and the FIRST
@@ -1963,32 +1965,17 @@ def build_log(apps: list[dict]) -> dict:
     job-search reads this to skip postings we've already generated or considered
     (dedup by URL, else by company+role). New roles at the same company still
     surface because each posting is listed individually.
+
+    The per-application flattening itself lives in ``skip_log.posting_rows``, not
+    here, because this is no longer the only writer: job-search's ``handoff.py``
+    appends the same rows when it scaffolds a folder, and a skill may not import
+    another skill's ``scripts/``. All this wrapper adds is the (company, slug)
+    ordering — which ``_upsert_log_rows`` relies on to collapse a re-application
+    onto the fresher slug — and the two header fields.
     """
     postings = []
     for a in sorted(apps, key=lambda x: (x.get("company", ""), x.get("slug", ""))):
-        folder_status = a.get("status", "")
-        common = {
-            "company": a.get("company", ""),
-            "slug": a.get("slug", ""),
-            "date": a.get("date", ""),
-        }
-        jobs = a.get("jobs")
-        if isinstance(jobs, list) and jobs:
-            for j in jobs:
-                if not isinstance(j, dict):
-                    continue
-                # Each posting carries its OWN per-job status (not the folder's
-                # derived rollup), falling back to the folder only if unset.
-                postings.append({**common,
-                                 "status": str(j.get("status") or "").strip()
-                                 or folder_status,
-                                 "role": j.get("role", ""),
-                                 "url": j.get("url", "")})
-        else:
-            postings.append({**common,
-                             "status": folder_status,
-                             "role": a.get("role", ""),
-                             "url": a.get("url", "")})
+        postings.extend(skip_log.posting_rows(a))
     return {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "count": len(postings),
@@ -2152,67 +2139,16 @@ def log_company_search(
     return write_company_search_log(raw)
 
 
-def _log_row(row: dict) -> dict:
-    """Project a ``build_log`` posting onto exactly what ``skip_log`` stores for it.
-
-    Two coercions, both load-bearing rather than cosmetic:
-
-    * ``None`` becomes ``""`` because ``skip_log.append_event`` stores it that
-      way. Comparing an unnormalized ``None`` against a stored ``""`` reads as a
-      difference on EVERY run — one appended line per such posting per sync,
-      forever. A ``meta.yaml`` carrying ``url:`` with no value produces exactly
-      that.
-    * A non-string scalar becomes its string form because an unquoted
-      ``research_date:`` in ``meta.yaml`` loads as a ``datetime.date``, which
-      ``json.dumps`` refuses outright — the sync would crash instead of writing.
-      The old YAML writer never hit this, because ``yaml.safe_dump`` serializes
-      dates natively.
-    """
-    projected = {}
-    for key in skip_log.POSTING_KEYS:
-        value = row.get(key)
-        if value is None:
-            projected[key] = ""
-        else:
-            projected[key] = value if isinstance(value, str) else str(value)
-    return projected
-
-
 def _upsert_log_rows(rows: list[dict], *, source: str) -> int:
     """Append the postings that differ from the folded skip-log; return how many.
 
-    The only write is an append, so **a key in the fold with no matching folder is
-    left alone** — that is the entire point of the format. Deleting an application
-    folder no longer un-skips its posting.
-
-    Two folder rows can share one identity key: a re-application carries the same
-    URL under a new slug and a new date, and a multi-role folder can list one URL
-    twice. The fold holds one event per key, so if both rows reached the loop at
-    least one of them would differ from whatever the fold currently says and
-    append — on every run, forever, with the fold's answer alternating between the
-    two. Refreshing ``fold[key]`` in the loop is not enough on its own (it makes
-    BOTH rows append instead of one), so colliding rows are collapsed first,
-    last-wins: ``build_log`` orders by (company, slug) and a re-application's slug
-    carries the later date, so the surviving row is the fresher one.
-
-    ``fold[key] = row`` still runs in the loop, and still matters: it keeps the
-    fold consistent with what has already been written during this call, so the
-    function stays correct for any caller that hands it rows it did not collapse.
+    A one-line binding of this module's log path to ``skip_log.record_postings``,
+    which owns the comparison, the collision collapse and the append. The policy
+    is shared rather than local because ``handoff.py`` performs the same append at
+    creation time; the collapse's last-wins tie-break relies on ``build_log``'s
+    (company, slug) ordering, so a re-application's later slug is the survivor.
     """
-    by_key: dict[tuple, dict] = {}
-    for raw in rows:
-        row = _log_row(raw)
-        by_key[skip_log.fold_key(row)] = row
-
-    fold = skip_log.fold(APPLICATIONS_JSONL)
-    appended = 0
-    for key, row in by_key.items():
-        prev = fold.get(key)
-        if prev is None or any(prev.get(f) != row[f] for f in skip_log.POSTING_KEYS):
-            skip_log.append_event(APPLICATIONS_JSONL, row, source=source)
-            fold[key] = row
-            appended += 1
-    return appended
+    return skip_log.record_postings(APPLICATIONS_JSONL, rows, source=source)
 
 
 def sync_log() -> tuple[Path, int, Path]:
@@ -2273,7 +2209,7 @@ def backfill_log(force: bool = False) -> tuple[Path, int, int]:
     merged: dict[tuple, dict] = {}
     for source_rows in (_yaml_log_postings(), build_log(collect_apps())["postings"]):
         for raw in source_rows:
-            row = _log_row(raw)
+            row = skip_log.posting_row(raw)
             merged[skip_log.fold_key(row)] = row
 
     # A re-seed must not reverse a decision the owner made by hand. The retired YAML
@@ -2356,7 +2292,7 @@ def forget_log(values: list[str]) -> None:
     # is the folder, not the log. Same principle as refusing an unfolded key — an
     # un-skip that quietly does nothing is worse than an error.
     backing = next(
-        (r for r in (_log_row(x) for x in build_log(collect_apps())["postings"])
+        (r for r in build_log(collect_apps())["postings"]
          if skip_log.fold_key(r) == key), None)
     if backing is not None:
         print(f"Error: {target} is still backed by a live application folder "
