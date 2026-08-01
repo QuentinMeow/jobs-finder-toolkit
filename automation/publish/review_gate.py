@@ -27,6 +27,22 @@ its own. Off-chain rows are skipped for digest verification and reported by name
 (``RowChain``); they are never dropped, because the ledger is append-only and an
 orphaned row records a review that did happen.
 
+A ROW'S OWN BASE
+----------------
+``base_index`` derives a row's range from its POSITION in the list, so a row's
+meaning depends on the rows around it rather than on the commit it names. Two
+branches cut from one base each append their rows at the END of that list;
+merging both CONCATENATES them, which silently re-parents the second branch's
+first row onto the first branch's last commit. Its recorded digest then covers a
+range that never existed, and the gate fails on the trunk — green at pre-commit
+time on each branch, red only once the merge commit exists, and unclearable by
+appending anything.
+
+A row therefore records its own range start in an optional ``base:`` key, and the
+range is ``<base>..<commit>`` verbatim. The key is ADDITIVE: a row without it
+falls back to ``base_index`` and verifies exactly as it always has. New rows are
+emitted with it, so a re-parented range cannot happen to them.
+
 The decision is on the FILE LIST, not the commit list. A commit that touches only
 the ledger still shows up in ``git log``, so gating on "is the commit range empty"
 would never converge: acknowledging a change would itself be an unacknowledged
@@ -129,6 +145,10 @@ HINT_EXCLUDE = [":!examples", ":!skills/job-search/companies.yaml", ":!private"]
 EXPORT_ABSENT_ROOTS = ("tasks", "memory", "message-queue", "history", "docs/roadmap")
 
 REQUIRED_KEYS = ("commit", "reviewed_by", "date", "files", "digest", "finding")
+# ``base`` is OPTIONAL and additive: a row without it is read exactly as before
+# (its range starts at ``RowChain.base_index``). See A ROW'S OWN BASE above.
+OPTIONAL_KEYS = ("base",)
+ALLOWED_KEYS = REQUIRED_KEYS + OPTIONAL_KEYS
 REVIEWERS = ("agent", "human")
 DIGEST_SCHEME = "sha256:"
 DIGEST_MIN_HEX = 16          # 64 bits of the sha256; the spec's rows print 16 hex chars
@@ -263,14 +283,21 @@ def validate_row(raw: object, index: int) -> dict:
     missing = [k for k in REQUIRED_KEYS if k not in raw]
     if missing:
         raise _row_error(index, "missing required key(s): " + ", ".join(missing))
-    unknown = sorted(set(raw) - set(REQUIRED_KEYS))
+    unknown = sorted(set(raw) - set(ALLOWED_KEYS))
     if unknown:
         raise _row_error(index, "unknown key(s): " + ", ".join(unknown)
-                         + f" (allowed: {', '.join(REQUIRED_KEYS)})")
+                         + f" (allowed: {', '.join(ALLOWED_KEYS)})")
 
     commit = raw["commit"]
     if not isinstance(commit, str) or not HEX_RE.match(commit.lower()) or len(commit) < 7:
         raise _row_error(index, f"commit must be >= 7 hex characters, got {commit!r}")
+
+    # Optional, and validated only when the key is actually there: a row written
+    # before this key existed must keep parsing to the identical dict it always did.
+    base = raw.get("base")
+    if "base" in raw and (not isinstance(base, str) or not HEX_RE.match(str(base).lower())
+                          or len(str(base)) < 7):
+        raise _row_error(index, f"base must be >= 7 hex characters, got {base!r}")
 
     reviewer = raw["reviewed_by"]
     if reviewer not in REVIEWERS:
@@ -307,7 +334,7 @@ def validate_row(raw: object, index: int) -> dict:
         raise _row_error(index, "finding is required and must not be empty "
                                 "(use `none` when the diff was clean)")
 
-    return {
+    row = {
         "index": index,
         "commit": commit,
         "reviewed_by": reviewer,
@@ -316,6 +343,11 @@ def validate_row(raw: object, index: int) -> dict:
         "digest": hexpart.lower(),
         "finding": finding_text,
     }
+    # Added only when the row carries it, so `row.get("base")` is exactly the
+    # "did the author record a base?" question and a legacy row's dict is unchanged.
+    if "base" in raw:
+        row["base"] = base
+    return row
 
 
 def parse_ledger(text: str) -> list[dict]:
@@ -584,11 +616,16 @@ def review_required_message(repo: Path, base: str, head: str, files: list[str],
         f"Then append to {LEDGER_REL}:",
         "",
         f"    - commit: {head_s}",
+        f"      base: {base_s}",
         f"      reviewed_by: {reviewer_note}",
         f"      date: {today}",
         f"      files: {len(files)}",
         f"      digest: {DIGEST_SCHEME}{digest[:DIGEST_MIN_HEX]}",
         "      finding: none               # or a description of what you found and fixed",
+        "",
+        "Keep `base:` as printed — it pins this row to the range you just read, so a",
+        "later merge that appends other rows around it cannot re-point it at a diff you",
+        "never saw. Do not guess it; it is the left side of the git diff above.",
         "",
         "Stage that row ALONGSIDE your next change and commit once. The gate reads the",
         "ledger from your WORKING TREE, so the row you just added acknowledges HEAD and",
@@ -733,7 +770,8 @@ def _no_resolvable_row_message(n_rows: int) -> str:
 def _digest_mismatch_message(repo: Path, row: dict, base: str, head: str,
                              recomputed: str) -> str:
     base_s, head_s = short(repo, base), short(repo, head)
-    return "\n".join([
+    declared = row.get("base")
+    lines = [
         f"PUBLIC REVIEW GATE — ledger row {row['index']} does not match the repository.",
         "",
         f"Row {row['index']} (commit {row['commit']}, reviewed_by: {row['reviewed_by']}) records",
@@ -743,10 +781,71 @@ def _digest_mismatch_message(repo: Path, row: dict, base: str, head: str,
         "",
         f"    git diff {base_s}..{head_s} -- . ':!{LEDGER_REL}' | shasum -a 256",
         "",
-        "Either the row was written without fetching the real diff, or a historical row",
-        "was rewritten. The ledger is append-only: a changed row is itself a finding.",
-        "Correct the digest ONLY if you have actually reviewed that diff; otherwise",
-        "append a new row recording what happened.",
+    ]
+
+    if declared is not None:
+        lines += [
+            f"This row names its own base ({declared}), so the range above is the one its",
+            "author wrote down — it cannot have been re-parented by later rows. The row was",
+            "written without fetching the real diff, or it was rewritten afterwards.",
+        ]
+    else:
+        lines += [
+            "This row records no `base:`, so the range above was DERIVED from its position",
+            "in the list: it starts at the nearest preceding row that is an ancestor of HEAD.",
+            "That derivation is not stable across a merge. Two branches cut from one base",
+            "each append rows at the END of the list; merging both concatenates them and",
+            "re-points the second branch's first row at the first branch's last commit — a",
+            "range that never existed. Tell the two causes apart before you touch anything:",
+            "",
+            f"    git merge-base {row['commit']} {base_s}      # the branch point B",
+            f"    git diff B..{row['commit']} -- . ':!{LEDGER_REL}' | shasum -a 256",
+            "",
+            "  * The digest matches over B..this row  ->  RE-PARENTED RANGE. The review was",
+            "    real and the diff was read; only the derived start is wrong. Recover by",
+            "    redoing the convergence, not the ledger: with the merge still unpushed,",
+            "",
+            "        git reset --hard ORIG_HEAD          # drop the merge",
+            "        git checkout <second branch>        # add `base:` to ITS OWN rows,",
+            "                                            # which are not yet on the trunk",
+            "        git checkout <trunk> && git merge --no-ff <second branch>",
+            "",
+            "    A row that names its own base cannot be re-parented, so the merge lands",
+            "    green. If the merge is already pushed, the row stays and is unverifiable:",
+            "    append a row for HEAD carrying `base:` whose `finding:` names this row and",
+            "    the re-parenting, and raise it — a permanently red trunk is a finding, not",
+            "    a formatting problem.",
+            "",
+            "  * The digest matches over NO base  ->  the row was written without fetching",
+            "    the real diff, or a historical row was rewritten.",
+        ]
+
+    lines += [
+        "",
+        "Never restate a row's evidence to make this pass. The ledger is append-only and a",
+        "changed row is itself the finding; `digest:`, `commit:`, `files:` and `finding:`",
+        "on a landed row are not editable. Recover the original text with",
+        "",
+        f"    git log -p -- {LEDGER_REL}",
+    ]
+    return "\n".join(lines)
+
+
+def _unknown_base_message(repo: Path, row: dict, this_rev: str) -> str:
+    return "\n".join([
+        f"PUBLIC REVIEW GATE — ledger row {row['index']} names a base this checkout does "
+        f"not have.",
+        "",
+        f"Row {row['index']} (commit {row['commit']}) records base: {row['base']}, which is not a",
+        f"known commit here — yet {short(repo, this_rev)} IS an ancestor of HEAD, so the row "
+        f"describes",
+        "this history and its base should be reachable too.",
+        "",
+        "    git cat-file -t " + str(row["base"]) + "        # does the object exist at all?",
+        "",
+        "Usual cause: the base was copied from another branch, or the row was written by",
+        "hand rather than from the range the gate printed. The gate refuses to guess a",
+        "different base — that is exactly the re-parenting `base:` exists to prevent.",
     ])
 
 
@@ -765,14 +864,35 @@ def _files_mismatch_message(repo: Path, row: dict, base: str, head: str,
 
 # ── the check ────────────────────────────────────────────────────────────────
 
+def row_base_rev(repo: Path, chain: RowChain, row: dict, this_rev: str) -> str:
+    """The commit a row's digest range STARTS from.
+
+    ``base:`` when the row records one — a row that names its own base cannot be
+    re-parented by rows appended around it (see A ROW'S OWN BASE). Otherwise the
+    positional fallback every row written before that key relies on: the most
+    recent preceding ANCESTOR row, or the row's own commit when it opens the chain
+    (the seed's zero-width range).
+    """
+    declared = row.get("base")
+    if declared is None:
+        base_index = chain.base_index(row["index"])
+        return this_rev if base_index is None else chain.rev(base_index)
+
+    base_rev = resolve(repo, declared)
+    if base_rev is None:
+        raise GateError(_unknown_base_message(repo, row, this_rev))
+    return base_rev
+
+
 def verify_rows(repo: Path, chain: RowChain, to_verify: list[dict],
                 check_files: set[int]) -> None:
     """Recompute each row's digest from the range it claims. Raises ``GateError``.
 
-    A row's range is ``<most recent preceding ANCESTOR row's commit>..<this row's
-    commit>``; a row with no preceding ancestor row opens the chain and gets a
-    zero-width range (the seed), so its digest is the sha256 of an empty diff.
-    Off-chain rows are skipped here and reported by the caller (``RowChain``).
+    A row's range is ``<base>..<this row's commit>``, where ``base`` is the row's
+    own ``base:`` key when it has one and the most recent preceding ANCESTOR row's
+    commit when it does not (``row_base_rev``); a row with neither opens the chain
+    and gets a zero-width range (the seed), so its digest is the sha256 of an empty
+    diff. Off-chain rows are skipped here and reported by the caller (``RowChain``).
     ``check_files`` names the row indices whose ``files:`` count is also cross-checked
     — that costs a second git call per row, so a default run only pays it for the
     boundary row and ``--verify-all`` pays it for all of them.
@@ -781,8 +901,7 @@ def verify_rows(repo: Path, chain: RowChain, to_verify: list[dict],
         status, this_rev = chain.classify(row["index"])
         if status != ANCESTOR:
             continue                      # not in this history; the caller reports it
-        base_index = chain.base_index(row["index"])
-        base_rev = this_rev if base_index is None else chain.rev(base_index)
+        base_rev = row_base_rev(repo, chain, row, this_rev)
 
         recomputed = range_digest(repo, base_rev, this_rev)
         if not recomputed.startswith(row["digest"]):
