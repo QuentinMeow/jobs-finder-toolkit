@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -136,6 +137,65 @@ class FixtureSizeTests(unittest.TestCase):
                 rc = cli.main([str(root), "--check-fixture-size"])
             self.assertEqual(rc, 0)  # soft threshold: WARN, never fail
             self.assertIn("WARNING", err.getvalue())
+
+
+class FixtureFreshnessTests(unittest.TestCase):
+    """The tracked example store must equal what the documented generator writes.
+
+    ``generate_fixture_store.py``'s stated contract is that ``derived/`` and
+    ``index/`` "are produced by RUNNING THE REAL BUILDER … so the fixture can never
+    drift from builder output". Nothing enforced it: the fixture stamps the content
+    hash of every builder module plus ``NORMALIZER_VERSION``, so ANY edit to the
+    build path silently invalidates it, and ``validate_store.py`` still exits 0
+    because the stale files are internally consistent. The tracked fixture has now
+    drifted twice — once on ``main`` (normalizer 1 against code at 2) and once
+    inside a single stack, where one PR regenerated it and three later ones
+    re-broke it.
+
+    A defect that recurs is a missing gate, so this is the gate: regenerate into a
+    tmpdir and compare. One generator run costs about a second.
+
+    Blob BYTES are deliberately exempt. They are zstd-compressed, so their bytes
+    depend on the installed zstandard build, while their NAMES are the sha256 of
+    the uncompressed payload and are portable — the path-set assertion below is
+    what carries that meaning. Everything else — manifests, ``derived/``,
+    ``index/``, ``state/``, raw payload text — is byte-compared.
+    """
+
+    IGNORED = {".DS_Store"}
+
+    def _tree(self, root: Path) -> dict[str, Path]:
+        return {p.relative_to(root).as_posix(): p
+                for p in sorted(root.rglob("*"))
+                if p.is_file() and p.name not in self.IGNORED
+                and "__pycache__" not in p.parts}
+
+    def test_tracked_fixture_matches_a_fresh_generator_run(self):
+        gen = REPO_ROOT / "automation" / "store" / "generate_fixture_store.py"
+        self.assertTrue(gen.is_file(), gen)
+        with tempfile.TemporaryDirectory() as td:
+            fresh_root = Path(td) / "data"
+            proc = subprocess.run(
+                [sys.executable, str(gen), "--root", str(fresh_root)],
+                capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0,
+                             f"generator failed:\n{proc.stdout}\n{proc.stderr}")
+            tracked, fresh = self._tree(FIXTURE), self._tree(fresh_root)
+
+            howto = ("re-run  .venv/bin/python "
+                     "automation/store/generate_fixture_store.py  and commit the "
+                     "result (the tracked fixture is generator output, not "
+                     "hand-maintained)")
+            self.assertEqual(sorted(fresh), sorted(tracked),
+                             f"example-store file set differs from a fresh "
+                             f"generator run — {howto}")
+
+            drifted = [rel for rel in sorted(tracked)
+                       if "_blobs/" not in rel
+                       and tracked[rel].read_bytes() != fresh[rel].read_bytes()]
+            self.assertEqual(drifted, [],
+                             f"tracked example-store files are stale against the "
+                             f"builder that writes them — {howto}")
 
 
 if __name__ == "__main__":

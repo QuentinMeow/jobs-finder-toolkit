@@ -44,6 +44,39 @@ DEFAULT_BIGTECH_TERMS = [
 # every one of them a title `scoring.assess_title` matches, dropped before it
 # could be scored.
 #
+# TWO entries keep a LEADING/TRAILING SPACE, and it is load-bearing — not stray
+# formatting. ``common.bounded_phrase_re`` asserts its ``(?<![a-z0-9])`` /
+# ``(?![a-z0-9])`` boundary only on an edge that is itself alphanumeric, so a
+# space on the phrase's edge means "require literal whitespace here" — a
+# STRICTER boundary than ``\b``, because it also refuses a match glued to
+# punctuation. ``_title_prefilter`` pads the title so start/end of string count
+# as that whitespace.
+#
+# "manager" and "vp" need it because each is a seniority word in one position and
+# a qualifier in another, and punctuation is what tells them apart:
+#
+#   drop   Engineering Manager · Manager, Software Engineering · VP Engineering
+#   keep   Software Engineer (Manager Tools)   ← a product, inside a parenthetical
+#   keep   Lead Software Engineer/Manager      ← a hybrid IC row
+#   keep   Software Engineer (VP)              ← the bank IC level, not an officer
+#   keep   VP, Engineering                     ← "vp" is not a whitespace-delimited
+#                                                token, so the real title gate rules
+#
+# The right edge still carries the word boundary + inflection, so "manager" does
+# NOT match *managerial* the way the old bare substring did — the padding restores
+# only the left-hand rule the substring version happened to encode. Every other
+# entry is unaffected by the padding (their own edges are alphanumeric).
+#
+# The rule is positional, not semantic, and one shape stays on the drop side:
+# *Software Engineer, Manager Tools* (comma-space) drops while the parenthesised
+# form is kept. That was equally true before the word-anchoring; separating them
+# needs a head-noun rule, not a boundary tweak, so it is left alone rather than
+# guessed at.
+#
+# Keeping a title here costs one detail fetch; dropping one costs the posting.
+# ``scoring.assess_title`` still gates everything that survives, so on an
+# ambiguous title the recall-safe answer is KEEP.
+#
 # KNOWN, DELIBERATE EXCEPTION to "never drops a title the title gate would keep":
 # the seniority/discipline words below (principal, distinguished, fellow, data
 # scientist, research scientist) are hardcoded here rather than read from the
@@ -60,8 +93,11 @@ DEFAULT_BIGTECH_TERMS = [
 # The real title/location/visa gating still runs in scoring.py after fetch.
 _BIGTECH_TITLE_SKIP = (
     "intern", "internship", "co-op", "new grad", "graduate program", "apprentice",
-    "manager", "director", "principal", "distinguished", "fellow",
-    "vice president", "vp", "sales", "marketing", "recruit", "designer",
+    " manager",  # padded ON PURPOSE — see above; do not "tidy" the spaces away
+    "director", "principal", "distinguished", "fellow",
+    "vice president",
+    " vp ",      # padded ON PURPOSE — see above
+    "sales", "marketing", "recruit", "designer",
     "data scientist", "research scientist", "account executive", "customer success",
 )
 
@@ -335,8 +371,17 @@ def fetch_smartrecruiters(company: str, token: str) -> list[JobPosting]:
 
 
 def _title_prefilter(title: str) -> bool:
-    """True if the title is worth a detail fetch (drops only obvious non-matches)."""
-    return not bounded_phrase_hit(title.lower(), _BIGTECH_TITLE_SKIP)
+    """True if the title is worth a detail fetch (drops only obvious non-matches).
+
+    The title is whitespace-normalised and padded before matching so that the two
+    space-padded entries in ``_BIGTECH_TITLE_SKIP`` (see the comment there) read
+    "delimited by whitespace" at the ends of the string too, and so a board that
+    emits a tab or a non-breaking space is matched like one that emits a space.
+    Padding is a no-op for every other entry: their edges are alphanumeric, so
+    they carry ``bounded_phrase_re``'s own boundary assertion instead.
+    """
+    padded = " %s " % re.sub(r"\s+", " ", title.lower()).strip()
+    return not bounded_phrase_hit(padded, _BIGTECH_TITLE_SKIP)
 
 
 def fetch_workday(company: str, token: str, host: str, site: str,

@@ -14,10 +14,15 @@
 
 ## The design, in one screen
 
-The private repo becomes the working root. Public content is reached through
-`private/public/` — one directory whose **name is the instruction**, carrying its own
-`AGENTS.md` ("everything below is published; no real names, employers, dates, or salaries")
-that loads automatically on first read there.
+The private repo becomes the working root. Public content is reached through one
+directory inside it whose **name is the instruction**:
+
+```text
+private/public/          # PROPOSED — nothing exists at this path today
+```
+
+It carries its own `AGENTS.md` ("everything below is published; no real names, employers,
+dates, or salaries") that loads automatically on first read there.
 
 Below the root, three lifetimes get three homes: `me/` (permanent, role-agnostic — profile,
 resumes, story bank, practice), `companies/<key>/` (permanent per company — research,
@@ -170,8 +175,14 @@ This is your earlier "history local only", now placed under `private/` so even a
 lands in the private repo. Consequence: the reconciler's `handover-present` check — which
 `AGENTS.md` calls a backstop — fires only on the machine doing the work and is vacuous in CI,
 and a handover written on one machine is invisible on the other.
-**Default: local-only as you asked.** Alternative: `private/memory/history/`, tracked in the
-overlay, which keeps the gate real everywhere and survives machine loss.
+**Default: local-only as you asked.** The alternative is to track them in the overlay
+instead, at the proposed path below — that keeps the gate real everywhere and survives
+machine loss.
+
+```text
+private/memory/history/  # PROPOSED alternative — nothing exists at this path today
+```
+
 **Your answer:** ______
 
 ---
@@ -198,3 +209,17 @@ Recording why, so the next pass does not re-litigate it:
 
 **What is now left for you: one line.** If the fold above looks right, say so and this file can be
 deleted. Nothing else in it is open.
+
+---
+
+## 2026-07-31 (agent) — two proposed paths moved into fenced blocks
+
+Formatting only; no wording above was changed or removed. `verify_links.py` now treats
+`message-queue/needs-human/reviews/` as a fail-closed tier (a review item points AT real
+artifacts, so a dead pointer in one is rot). This item is the exception in that folder: it
+*summarises a proposal*, and two of its backticked paths — the public directory in the
+design summary and Q6's tracked-handovers alternative — name places that deliberately do
+not exist. On a checkout with the overlay mounted, both were reported as broken references
+and the documented manual gate exited 1; CI and pre-commit never saw it because both run
+`--no-overlay`. Fencing them says "quoted proposal, not a pointer" in the way the checker
+already understands, without demoting the tier that catches genuine rot.

@@ -16,11 +16,23 @@ fetched at all.
 ```python
 _BIGTECH_TITLE_SKIP = (
     "intern", "internship", "co-op", "new grad", "graduate program", "apprentice",
-    "manager", "director", "principal", "distinguished", "fellow",
-    "vice president", "vp", "sales", "marketing", "recruit", "designer",
+    " manager",  # padded ON PURPOSE — see above; do not "tidy" the spaces away
+    "director", "principal", "distinguished", "fellow",
+    "vice president",
+    " vp ",      # padded ON PURPOSE — see above
+    "sales", "marketing", "recruit", "designer",
     "data scientist", "research scientist", "account executive", "customer success",
 )
 ```
+
+> **2026-07-31 (agent) — the quoted list above was refreshed; the question is
+> unchanged.** `manager` and `vp` regained their space padding, which asks for a
+> whitespace boundary instead of a word boundary, because bare word-anchoring newly
+> dropped `Software Engineer (Manager Tools)`, `Software Engineer (VP)`,
+> `Lead Software Engineer/Manager` and `VP, Engineering`. That is a strictly narrower
+> skip and it does not touch the five words this decision is about — `principal`,
+> `distinguished`, `fellow`, `data scientist`, `research scientist` are matched exactly
+> as before, and the default path (keep them) still holds.
 
 `skills/job-search/scripts/sources.py`, called at the four big-tech fetchers.
 The comment above it claims: *"This never drops a title the pipeline's title gate
