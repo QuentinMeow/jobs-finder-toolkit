@@ -5,7 +5,7 @@
 - **Source**: adversarial review of the O(new) incremental store build, 2026-07-31 —
   found while attacking `build_postings.py`; **pre-existing**, `_swap_dir` predates the
   incremental-build change, and it was ruled out of scope for that fix
-- **Claimed-by**:
+- **Claimed-by**: agent, 2026-07-31 (branch `wip/33-store-p0-data-loss`; work complete, in review)
 
 ## Goal
 

@@ -5,7 +5,7 @@
 - **Source**: adversarial review of the O(new) incremental store build, 2026-07-31 —
   **pre-existing**, introduced by `27021b6` (which added the durable index floor but did
   not thread it into `build_opinions_only`); out of scope for that fix
-- **Claimed-by**:
+- **Claimed-by**: agent, 2026-07-31 (branch `wip/33-store-p0-data-loss`; work complete, in review)
 
 ## Goal
 

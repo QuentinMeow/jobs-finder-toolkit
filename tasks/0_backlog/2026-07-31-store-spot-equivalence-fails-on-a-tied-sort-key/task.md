@@ -61,3 +61,13 @@ saying out loud in the change.
 - [ ] A test builds the tie shape (two aggregator rows, no ids, same weak key) and asserts
       the agreement
 - [ ] `.venv/bin/python -m unittest discover -s skills/job-search/scripts/tests -t skills/job-search/scripts/tests` passes
+
+## Status
+
+**2026-07-31** — the `wip/33-store-p0-data-loss` session considered this alongside the
+`--opinions-only` P0 and did NOT implement it. Option 1 changes the canonical fold
+order, which moves the builder fingerprint and re-derives the whole store once; that
+is a real cost on the owner's store and not a session's call to make unilaterally.
+The options + a recommendation are filed at
+[`message-queue/needs-human/decisions/store-tied-fold-sort-key-re-derives-the-whole-store.md`](../../../message-queue/needs-human/decisions/store-tied-fold-sort-key-re-derives-the-whole-store.md),
+which satisfies the first checkbox. The remaining checkboxes wait on the answer.
