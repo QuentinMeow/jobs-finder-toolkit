@@ -5,7 +5,7 @@
 - **Source**: [<descriptive source>](<relative path to the durable file that created the question>)
 - **Blocking**: <what work (if any) is blocked until decided; "nothing" otherwise>
 - **Default path**: <what agents do (or deliberately not do) while this is pending>
-- **Revisit when**: <(parked items only) the concrete condition that reopens this>
+- **Revisit when**: <(optional; parked items only) the concrete condition that reopens this>
 
 ## Background
 

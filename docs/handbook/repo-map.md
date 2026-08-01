@@ -30,7 +30,6 @@ are support folders, not applications. The tailoring card has its own key
 | `config.applications_jsonl_path()` | Append-only event log of postings already generated/considered — job-search skips them (new roles at the same company still surface). `handoff.py` appends at folder creation, `status.py --sync-log` and every `--update` append after; all three flatten through the shared `skip_log.posting_rows` (`automation/shared/skip_log.py`), and nothing rewrites it, so deleting an application does not un-skip its posting |
 | `config.company_search_log_path()` | Last successful full-company search per employer — job-search skips within 7 days (`skip_within_days`); upserted by `--sync-log` (`created`) or `--log-search` (`no_suitable`) |
 | `config.company_levels_path()` | Reusable, sourced company level/YOE/base-salary/total-compensation mappings used as a fallback when a live JD omits those facts; real dated research defaults beside the private profile, while the public toolkit ships only `examples/profile/company-levels.example.yaml` |
-| `<profile-dir>/resumes/` | The candidate's approved master resume file(s) |
 | `config.discoveries_dir()` | Ad-hoc research findings during the job search (job-search output, target-company lists) |
 | `config.applications_root()/6_drafted/<slug>/` | Generated applications land here first — for the user to review the resume + JD and decide the next move |
 | `config.applications_root()/5_applied/<slug>/` | Applications the user has submitted (user moves the folder here manually) |

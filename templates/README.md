@@ -18,7 +18,7 @@ summarize *rules*, but the schema lives in the template).
 | `templates/memory/known-issue.md` | `memory/known-issues/<slug>.md` |
 | `templates/memory/fact.md` | `memory/facts/<slug>.md` |
 | `templates/memory/lesson.md` | `memory/lessons/<area>/<slug>.md` |
-| `templates/handover.md` | `history/conversations/<timestamp>-<slug>/handover.md` |
+| `templates/handover.md` | `history/conversations/<YYYY-MM-DD>-<slug>/handover.md` |
 
 Conventions: placeholders look like `<this>`; every `- **Key**: ` line is
 required unless marked `(optional)`. `needs-agent/requests/` has no template

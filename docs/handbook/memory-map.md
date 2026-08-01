@@ -21,7 +21,7 @@ writer. Promotion (MEMORY→LESSONS→SKILL) exists; **forgetting**
 | `config.applications_jsonl_path()` | (c) durable memory | permanent, append-only; **not regenerable** — nothing rewrites it, so a deleted application keeps its row and recovery is overlay git history, never a rebuild. Repair a wrong row by appending a tombstone (`status.py --forget-log`), never by hand-editing | `status.py` |
 | `config.company_search_log_path()` | (d) TTL state | read-side skip `skip_within_days: 7`; rows >90d pruned | `status.py` / gardener |
 | `config.company_levels_path()` | (d) TTL cache | comp facts 365d (`last_verified`); level maps re-verified, not expired | agent / `import_company_levels.py` |
-| `config.discoveries_dir()` `current/` + `archive/` | (d) working memory | 30d hard TTL; raw scans >14d → `archive/` (move, never delete) | job-search; gardener |
+| `config.discoveries_dir()` `current/` + `archive/` | (d) working memory | 30d hard TTL → moved to `archive/` on `--apply` (move, never delete); raw scans >14d but inside the TTL are only FLAGGED for human review — `expire_discoveries.py` never auto-moves them, and neither should you | job-search; gardener |
 | `private/` overlay (real products; `examples/` is the public mirror) | (e)/(f) products | user-owned, kept; never auto-deleted | human (private) |
 
 The queues (`message-queue/`, `tasks/`) are coordination state, not memory —

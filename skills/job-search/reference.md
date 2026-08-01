@@ -641,7 +641,7 @@ The active cache is `config.company_levels_path()` (by default
 
 This reference cache is a **separate, richer** database from the flat application
 `meta.yaml`: it keeps `schema_version: 2` (the company-levels cache file format — a different
-file from `meta.yaml`, whose only supported schema is v3) with per-fact provenance so its
+file from `meta.yaml`, whose only supported schema is v5) with per-fact provenance so its
 sourced facts stay auditable. Application enrichment consumes it only for **level/YOE** (the normalized
 seniority word and approximate Google-equivalent float range) when a posting omits them;
 the flat `meta.yaml` salary always comes from the posting itself (USD/year). Resolution
