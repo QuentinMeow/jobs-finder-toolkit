@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: job-search
 - **Source**: workspace phase 6 implementation, 2026-07-30 (assessed and deliberately deferred)
-- **Claimed-by**:
+- **Claimed-by**: agent, 2026-07-31 (branch `wip/02-handoff-skiplog`)
 
 ## Goal
 
@@ -49,11 +49,13 @@ instead of doing it:
 
 ## Definition of done
 
-- [ ] The per-posting flattening lives once in `automation/shared/`, vendored into both
+- [x] The per-posting flattening lives once in `automation/shared/`, vendored into both
       job-search and application-tracker, with `sync_vendored.py --check` clean
-- [ ] `handoff.py` appends the creation event through that shared shape, honouring
+- [x] `handoff.py` appends the creation event through that shared shape, honouring
       `--applications-root`
-- [ ] The exit-3 / exit-1 recording question is decided (queue item with a default path),
+- [x] The exit-3 / exit-1 recording question is decided (queue item with a default path),
       not assumed
-- [ ] A test: scaffold a folder via handoff against a temp tree, delete it, run
+- [x] A test: scaffold a folder via handoff against a temp tree, delete it, run
       `--sync-log`, assert the posting is still skipped
+
+Evidence: `verification.md` beside this file.

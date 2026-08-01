@@ -389,6 +389,140 @@ class AppendEventTests(unittest.TestCase):
             self.assertTrue(path.read_bytes().startswith(before))
 
 
+class PostingRowsTests(unittest.TestCase):
+    """The flattening every writer shares: one application -> its posting rows.
+
+    This lived inside ``status.py``'s ``build_log`` while the tracker was the only
+    writer. It moved here when ``handoff.py`` became the second one: a skill may
+    not import another skill's ``scripts/``, so the alternative was job-search
+    hand-building rows out of ITS field names (``title``, not ``role``) — the way
+    two writers of one never-rewritten file start disagreeing without anything
+    failing.
+    """
+
+    def _app(self, **over) -> dict:
+        app = {"company": "Examplecorp", "slug": "examplecorp-swe-20260101",
+               "date": "2026-01-01", "status": "drafted"}
+        app.update(over)
+        return app
+
+    def test_one_row_per_job_carrying_the_folder_wide_fields(self):
+        rows = skip_log.posting_rows(self._app(jobs=[
+            {"role": "Software Engineer", "url": "https://fakejobs.test/jobs/1"},
+            {"role": "Platform Engineer", "url": "https://fakejobs.test/jobs/2"},
+        ]))
+        self.assertEqual([r["role"] for r in rows],
+                         ["Software Engineer", "Platform Engineer"])
+        for row in rows:
+            self.assertEqual(row["company"], "Examplecorp")
+            self.assertEqual(row["slug"], "examplecorp-swe-20260101")
+            self.assertEqual(row["date"], "2026-01-01")
+
+    def test_a_posting_keeps_its_own_status_over_the_folder_rollup(self):
+        # The whole reason per-job status exists: one role rejected while another
+        # is still live must not be logged as live.
+        rows = skip_log.posting_rows(self._app(status="in_progress", jobs=[
+            {"role": "A", "url": "u1", "status": "rejected"},
+            {"role": "B", "url": "u2"},
+        ]))
+        self.assertEqual([r["status"] for r in rows], ["rejected", "in_progress"])
+
+    def test_a_blank_job_status_falls_back_to_the_folder(self):
+        rows = skip_log.posting_rows(self._app(status="applied", jobs=[
+            {"role": "A", "url": "u1", "status": "   "},
+        ]))
+        self.assertEqual(rows[0]["status"], "applied")
+
+    def test_a_jobs_less_application_falls_back_to_the_flat_role_and_url(self):
+        rows = skip_log.posting_rows(self._app(
+            role="Software Engineer", url="https://fakejobs.test/jobs/1"))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["role"], "Software Engineer")
+        self.assertEqual(rows[0]["url"], "https://fakejobs.test/jobs/1")
+
+    def test_non_dict_job_entries_are_skipped(self):
+        rows = skip_log.posting_rows(self._app(jobs=["not a job", {"role": "A"}]))
+        self.assertEqual([r["role"] for r in rows], ["A"])
+
+    def test_rows_carry_exactly_the_stored_keys(self):
+        rows = skip_log.posting_rows(self._app(jobs=[
+            {"role": "A", "url": "u1", "jd_file": "JD-a.md", "workplace": "remote"},
+        ]))
+        self.assertEqual(set(rows[0]), set(skip_log.POSTING_KEYS))
+
+    def test_a_none_url_becomes_blank_not_none(self):
+        # `url:` with no value in meta.yaml. Left as None it differs from the
+        # stored "" on every comparison, so every sync appends another line.
+        rows = skip_log.posting_rows(self._app(jobs=[{"role": "A", "url": None}]))
+        self.assertEqual(rows[0]["url"], "")
+
+    def test_a_non_string_scalar_is_stringified(self):
+        # An unquoted research_date: in meta.yaml loads as datetime.date, which
+        # json.dumps refuses outright — the append would crash instead of write.
+        import datetime as _dt
+        rows = skip_log.posting_rows(self._app(date=_dt.date(2026, 1, 1),
+                                               jobs=[{"role": "A", "url": "u"}]))
+        self.assertEqual(rows[0]["date"], "2026-01-01")
+        json.dumps(rows[0])   # must not raise
+
+
+class RecordPostingsTests(unittest.TestCase):
+    """The append policy every writer shares: append only what differs."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "applications-log.jsonl"
+
+    def _lines(self) -> list[str]:
+        return (self.path.read_text().splitlines()
+                if self.path.exists() else [])
+
+    def test_a_first_row_appends(self):
+        self.assertEqual(
+            skip_log.record_postings(self.path, [_row()], source="handoff"), 1)
+        self.assertEqual(len(self._lines()), 1)
+
+    def test_an_identical_row_appends_nothing(self):
+        skip_log.record_postings(self.path, [_row()], source="handoff")
+        self.assertEqual(
+            skip_log.record_postings(self.path, [_row()], source="sync"), 0)
+        self.assertEqual(len(self._lines()), 1)
+
+    def test_a_changed_field_appends_one_more(self):
+        skip_log.record_postings(self.path, [_row()], source="handoff")
+        self.assertEqual(
+            skip_log.record_postings(self.path, [_row(status="rejected")],
+                                     source="update"), 1)
+        self.assertEqual(skip_log.read_postings(self.path)[0]["status"], "rejected")
+
+    def test_rows_sharing_one_key_collapse_last_wins_before_the_append(self):
+        # A re-application: same URL, newer slug/date. Both reaching the loop would
+        # make every future run append, with the fold alternating between them.
+        appended = skip_log.record_postings(self.path, [
+            _row(slug="examplecorp-swe-20260101", date="2026-01-01"),
+            _row(slug="examplecorp-swe-20260601", date="2026-06-01"),
+        ], source="sync")
+        self.assertEqual(appended, 1)
+        self.assertEqual(skip_log.read_postings(self.path)[0]["slug"],
+                         "examplecorp-swe-20260601")
+
+    def test_the_source_is_written_verbatim(self):
+        skip_log.record_postings(self.path, [_row()], source="handoff")
+        self.assertEqual(skip_log.read_events(self.path)[0]["source"], "handoff")
+        self.assertIn("handoff", skip_log.SOURCES)
+
+    def test_a_row_whose_folder_is_gone_is_never_removed(self):
+        # The property the whole format exists for, asserted at the writer: a
+        # later call that does NOT mention a key leaves that key folded.
+        skip_log.record_postings(self.path, [_row()], source="handoff")
+        skip_log.record_postings(
+            self.path, [_row(url="https://fakejobs.test/jobs/2", role="Other")],
+            source="sync")
+        urls = {r["url"] for r in skip_log.read_postings(self.path)}
+        self.assertIn("https://fakejobs.test/jobs/1", urls)
+
+
 class VendoringTests(unittest.TestCase):
     """The canonical module and both vendored copies must be byte-identical.
 

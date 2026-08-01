@@ -452,8 +452,11 @@ their normalized name, so aggregator-only employers still match.
   `ats`/`token`).
 - **`applications-log.jsonl`** (`config.applications_jsonl_path()`) — postings already
   generated/considered are dropped, matched by URL, else by `(company, role)`. It is an
-  **append-only** event log, folded last-wins: `status.py --update`/`--update-job` append as
-  the status changes and `--sync-log` is the reconciliation backstop. Nothing rewrites it, so
+  **append-only** event log, folded last-wins: `handoff.py` appends each posting as it
+  scaffolds the folder (so a folder deleted before any sync still leaves the skip behind),
+  `status.py --update`/`--update-job` append as the status changes, and `--sync-log` is the
+  reconciliation backstop. Every writer flattens through the same shared
+  `skip_log.posting_rows`, so their rows cannot drift apart. Nothing rewrites it, so
   deleting an application does **not** un-skip its posting — repair a wrong row by appending
   a tombstone with `--forget-log`. A *new* role at an already-applied company still surfaces
   (only the exact posting is skipped).

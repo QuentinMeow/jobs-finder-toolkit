@@ -27,6 +27,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 import handoff  # noqa: E402
 from job_metadata import validate_meta  # noqa: E402
+import skip_log  # noqa: E402  (importable because handoff puts _vendor/ on the path)
 
 import shutil  # noqa: E402
 import yaml  # noqa: E402
@@ -832,6 +833,216 @@ class ScaffoldedCompanyKeyTests(unittest.TestCase):
         self.assertEqual(report["unkeyed"], [folder.name])
         self.assertEqual(report["malformed"], [])
         self.assertEqual(report["unresolved"], [])
+
+
+class CreationTimeSkipLogTests(unittest.TestCase):
+    """handoff records every posting it scaffolds, at the moment it scaffolds it.
+
+    The window this closes: the tracker's writers cover every status TRANSITION,
+    and nothing covered CREATION. So "scaffold a posting -> decide against it the
+    same day -> delete the folder -> run ``--sync-log``" left the log with no
+    trace of the posting at all, and the next search re-surfaced it as fresh. The
+    reproduction is ``test_a_deleted_folder_no_longer_un_skips_its_posting``; the
+    rest pin the properties that make the append safe to add on this path.
+
+    Fixtures are borrowed from ``HandoffTests`` (a temp applications root, a
+    ``file://`` JD) rather than inherited, so its whole suite does not re-run
+    under a second name.
+    """
+
+    setUp = HandoffTests.setUp
+    _write_json = HandoffTests._write_json
+    _run = HandoffTests._run
+    _run_all = HandoffTests._run_all
+    _run_raw = HandoffTests._run_raw
+    _pin_policy = HandoffTests._pin_policy
+
+    # -- helpers ---------------------------------------------------------- #
+    def _log_path(self) -> Path:
+        return self.root / "0_profile" / "applications-log.jsonl"
+
+    def _events(self) -> list[dict]:
+        return skip_log.read_events(self._log_path())
+
+    def _urls(self) -> set[str]:
+        return {r["url"] for r in skip_log.read_postings(self._log_path())}
+
+    def _sync_log(self):
+        """Subprocess the tracker's ``--sync-log`` against this temp tree."""
+        config_yaml = self.tmp / "sync-config.yaml"
+        config_yaml.write_text(
+            f"paths:\n  applications_root: {json.dumps(str(self.root))}\n",
+            encoding="utf-8")
+        env = dict(os.environ, JOBHUNT_CONFIG=str(config_yaml))
+        return subprocess.run([sys.executable, str(_STATUS_PY), "--sync-log"],
+                              capture_output=True, text=True, env=env)
+
+    # -- the gap ---------------------------------------------------------- #
+    def test_a_deleted_folder_no_longer_un_skips_its_posting(self):
+        """Scaffold -> delete the folder -> --sync-log -> still skipped."""
+        code, folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code, 0, err)
+        self.assertIn(self.jd_url, self._urls())
+
+        # The owner changes their mind and removes the folder before any sync.
+        shutil.rmtree(folder)
+        self.assertFalse(list((self.root / "6_drafted").glob("*/meta.yaml")))
+
+        proc = self._sync_log()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        # The sync scans folders and finds nothing; the row is left alone,
+        # because the only write this format has is an append.
+        self.assertIn(self.jd_url, self._urls())
+
+        # The real consequence: job-search still treats the posting as handled.
+        # Nothing but the log can say so now — the folder is gone.
+        code, report, _stdout, err = self._run_all([_row(url=self.jd_url)])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report["counts"]["duplicate"], 1)
+        self.assertEqual(report["counts"]["created"], 0)
+
+    # -- shape parity with the tracker's writer --------------------------- #
+    def test_sync_log_finds_nothing_to_add_after_a_handoff(self):
+        """The anti-drift assertion, made against the other writer itself.
+
+        Both writers now flatten through ``skip_log.posting_rows``. If handoff's
+        row disagreed with the tracker's in ANY of the six stored fields — a
+        differently derived date, a missing slug, a per-job status read from the
+        wrong place — the very next ``--sync-log`` over the same untouched folder
+        would see a difference and append a second line. "Zero appended" is the
+        only cheap statement of "the two writers agree".
+        """
+        code, _folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code, 0, err)
+        before = self._events()
+        self.assertEqual(len(before), 1)
+
+        proc = self._sync_log()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("No posting changes", proc.stdout)
+        self.assertEqual(len(self._events()), 1)
+
+        stored = before[0]
+        self.assertEqual(stored["source"], "handoff")
+        self.assertEqual(stored["company"], "Nimbus Robotics")
+        self.assertEqual(stored["role"], "Senior Platform Engineer")
+        self.assertEqual(stored["status"], "drafted")
+        self.assertRegex(stored["slug"],
+                         r"^nimbus-robotics-senior-platform-engineer-\d{8}$")
+        self.assertRegex(stored["date"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertEqual(stored["slug"], f"nimbus-robotics-senior-platform-engineer-"
+                                         f"{stored['date'].replace('-', '')}")
+
+    def test_a_grouped_folder_records_every_posting_not_just_the_lead(self):
+        url2 = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
+        rows = [_row(url=self.jd_url),
+                _row(title="Staff Platform Engineer", url=url2)]
+        code, _out, err = self._run_raw(rows, "--select", "Nimbus Robotics")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(self._events()), 2)
+        self.assertEqual(self._urls(), {self.jd_url, url2})
+        # One folder, two rows — the slug is shared, the roles are not.
+        rows = skip_log.read_postings(self._log_path())
+        self.assertEqual(len({r["slug"] for r in rows}), 1)
+        self.assertEqual({r["role"] for r in rows},
+                         {"Senior Platform Engineer", "Staff Platform Engineer"})
+
+    # -- idempotency ------------------------------------------------------ #
+    def test_a_second_run_on_the_same_posting_adds_no_second_line(self):
+        code, _folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code, 0, err)
+        # Same day -> same slug -> the refuse-to-overwrite branch, which returns
+        # before the folder (and therefore before the append) is touched.
+        code2, _folder2, _out2, err2 = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code2, 2, err2)
+        self.assertIn("refusing to overwrite", err2)
+        self.assertEqual(len(self._events()), 1)
+
+    def test_a_bulk_rerun_is_stopped_by_the_row_the_first_run_wrote(self):
+        # The log the first run wrote is the ONLY thing that can stop the second
+        # here, once the folder is gone.
+        code, report, _out, err = self._run_all([_row(url=self.jd_url)])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report["counts"]["created"], 1)
+        for folder in (self.root / "6_drafted").iterdir():
+            shutil.rmtree(folder)
+        code, report, _out, err = self._run_all([_row(url=self.jd_url)])
+        self.assertEqual(report["counts"]["duplicate"], 1)
+        self.assertEqual(len(self._events()), 1)
+
+    # -- nothing is recorded that was not built --------------------------- #
+    def test_a_group_dropped_entirely_by_the_location_gate_records_nothing(self):
+        # Every posting fails the policy -> exit 3 BEFORE any mkdir. No folder,
+        # so no row: the append must never claim a scaffold that does not exist.
+        self._pin_policy(metro=("springfield",))
+        url2 = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
+        rows = [_row(url=self.jd_url, location="London, United Kingdom", remote=""),
+                _row(title="Staff Platform Engineer", url=url2,
+                     location="Berlin, Germany", remote="")]
+        code, _out, err = self._run_raw(rows, "--select", "Nimbus Robotics")
+        self.assertNotEqual(code, 0)
+        self.assertIn("nothing scaffolded", err)
+        self.assertFalse(list((self.root / "6_drafted").glob("*")))
+        self.assertFalse(self._log_path().exists())
+
+    def test_a_row_with_no_company_records_nothing(self):
+        code, _out, err = self._run_raw([_row(company="", url=self.jd_url)],
+                                        "--all")
+        self.assertIn("no company", err)
+        self.assertFalse(self._log_path().exists())
+
+    # -- the decided policy: a folder on disk is recorded, clean or not ---- #
+    def test_a_location_mismatch_folder_is_recorded_with_the_un_skip_command(self):
+        """Exit 3 leaves the folder on disk, so its posting IS recorded.
+
+        Decided in ``message-queue/needs-human/decisions/
+        handoff-records-non-clean-scaffolds.md``. Recording matches what the rest
+        of the pipeline already does with these folders (``_register_row`` and the
+        live-folder half of ``_posting_keys`` both ignore the exit code), and the
+        alternative would drop the skip for exactly the folders MOST likely to be
+        deleted. The cost is that "delete the folder" stops being a complete
+        remedy, so the un-skip command is printed with its argument filled in.
+        """
+        self._pin_policy(metro=("springfield",))
+        row = _row(url=self.jd_url, location="Austin, TX (Hybrid)", remote="hybrid")
+        code, folder, stdout, err = self._run([row], "rank 1")
+        self.assertEqual(code, 3, err)
+        self.assertTrue(folder.is_dir())
+        self.assertIn(self.jd_url, self._urls())
+        self.assertIn("--forget-log", err)
+        self.assertIn(self.jd_url, err.split("--forget-log", 1)[1])
+        # Stdout keeps its two-line contract.
+        self.assertNotIn("forget-log", stdout)
+        self.assertNotIn("recorded", stdout)
+
+    def test_a_scaffold_with_no_fresh_jd_is_recorded_with_the_un_skip_command(self):
+        # --skip-jd-fetch exits 1 with the folder on disk. Same policy, same
+        # remedy line — this is the case the decision file weighs explicitly.
+        code, folder, _out, err = self._run(
+            [_row(url=self.jd_url)], "rank 1", "--skip-jd-fetch")
+        self.assertEqual(code, 1, err)
+        self.assertTrue(folder.is_dir())
+        self.assertIn(self.jd_url, self._urls())
+        self.assertIn("--forget-log", err)
+
+    def test_a_clean_scaffold_does_not_print_the_un_skip_command(self):
+        code, _folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code, 0, err)
+        self.assertIn("recorded 1 posting event", err)
+        self.assertNotIn("--forget-log", err)
+
+    # -- the path override ------------------------------------------------ #
+    def test_the_append_honours_applications_root(self):
+        # The write must land in the tree --applications-root names, not in
+        # whatever config discovery would resolve. Composed from string literals
+        # for the same reason ``_seed_log`` is: build it from the constant the
+        # code uses and the test agrees with any typo the code makes.
+        code, _folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
+        self.assertEqual(code, 0, err)
+        self.assertTrue((self.root / "0_profile" / "applications-log.jsonl").is_file())
+        self.assertIn(str(self.root / "0_profile" / "applications-log.jsonl"), err)
 
 
 if __name__ == "__main__":

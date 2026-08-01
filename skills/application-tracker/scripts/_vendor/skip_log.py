@@ -57,7 +57,9 @@ POSTING_KEYS = ("company", "slug", "date", "status", "role", "url")
 
 # Provenance of an appended event. Kept as a documented tuple rather than an
 # enum because the value is written into the file verbatim and read by humans.
-SOURCES = ("backfill", "sync", "update")
+# ``handoff`` is the creation-time append: job-search scaffolded the application
+# folder, which is a strictly earlier moment than any status transition.
+SOURCES = ("backfill", "handoff", "sync", "update")
 
 _RECORDED_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _WHITESPACE = re.compile(r"\s+")
@@ -298,3 +300,135 @@ def forget_row(url: str | None = None, company: str | None = None,
     row = {key: "" for key in POSTING_KEYS}
     row.update({"url": url, "company": company, "role": role, "forget": True})
     return row
+
+
+# --------------------------------------------------------------------------- #
+# Applications -> posting rows -> appended events (the WRITER side)
+#
+# This is the sole producer of the row shape declared above, and it lives here,
+# beside ``POSTING_KEYS``, because there is more than one writer. The tracker
+# appends on every status transition and on ``--sync-log``; job-search's
+# ``handoff.py`` appends the moment it scaffolds an application folder. Neither
+# skill may import the other's ``scripts/``
+# (``docs/handbook/skills-and-vendoring.md``), so the second writer's only other
+# option was to hand-build rows out of its own field names — search JSON calls
+# them ``title``/``company``/``url``, not ``role``/``slug``/``date``. That is
+# precisely how two writers of one authoritative, never-rewritten file start
+# disagreeing silently. One flattening, one append policy, vendored into both.
+# --------------------------------------------------------------------------- #
+
+
+def posting_row(row: dict) -> dict:
+    """Project one flattened row onto exactly the keys this file stores.
+
+    Two coercions, both load-bearing rather than cosmetic:
+
+    * ``None`` becomes ``""`` because :func:`append_event` stores it that way.
+      Comparing an unnormalized ``None`` against a stored ``""`` reads as a
+      difference on EVERY run — one appended line per such posting per sync,
+      forever. A ``meta.yaml`` carrying ``url:`` with no value produces exactly
+      that.
+    * A non-string scalar becomes its string form because an unquoted
+      ``research_date:`` in ``meta.yaml`` loads as a ``datetime.date``, which
+      ``json.dumps`` refuses outright — the append would crash instead of write.
+      A YAML writer never hit this, because ``safe_dump`` serializes dates.
+    """
+    projected = {}
+    for key in POSTING_KEYS:
+        value = row.get(key)
+        if value is None:
+            projected[key] = ""
+        else:
+            projected[key] = value if isinstance(value, str) else str(value)
+    return projected
+
+
+def posting_rows(app: dict) -> list[dict]:
+    """Flatten ONE application into its skip-log rows — one row per posting.
+
+    ``app`` is the application-folder view both writers already hold:
+    ``company`` / ``slug`` / ``date`` / ``status`` (the folder's derived rollup)
+    plus a ``jobs`` list of per-posting dicts, or — for a pre-``jobs`` folder —
+    the flat ``role`` / ``url`` pair.
+
+    **Each posting keeps its OWN status**, falling back to the folder's rollup
+    only when it has none: a rejected role at a company whose other role is still
+    live must not inherit the live status. Listing every posting individually is
+    also what lets a NEW role at an already-applied company surface — only the
+    exact posting is skipped, never the employer.
+
+    Rows come back already projected through :func:`posting_row`, so a caller can
+    hand them straight to :func:`record_postings`.
+    """
+    common = {
+        "company": app.get("company", ""),
+        "slug": app.get("slug", ""),
+        "date": app.get("date", ""),
+    }
+    folder_status = app.get("status", "")
+    jobs = app.get("jobs")
+    rows: list[dict] = []
+    if isinstance(jobs, list) and jobs:
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            rows.append({**common,
+                         "status": str(job.get("status") or "").strip()
+                         or folder_status,
+                         "role": job.get("role", ""),
+                         "url": job.get("url", "")})
+    else:
+        rows.append({**common,
+                     "status": folder_status,
+                     "role": app.get("role", ""),
+                     "url": app.get("url", "")})
+    return [posting_row(row) for row in rows]
+
+
+def record_postings(path, rows: list[dict], *, source: str) -> int:
+    """Append the postings that differ from the folded log; return how many.
+
+    The only write is an append, so **a key in the fold with no matching folder
+    is left alone** — that is the entire point of the format. Deleting an
+    application folder does not un-skip its posting.
+
+    **Idempotent by comparison, not by lock.** A row identical to what the fold
+    already holds appends nothing, so a writer may call this unconditionally —
+    which is what both writers do, because "did anything change?" guards are how
+    the FIRST event for a posting gets skipped.
+
+    Two rows can share one identity key: a re-application carries the same URL
+    under a new slug and a new date, and a multi-role folder can list one URL
+    twice. The fold holds one event per key, so if both rows reached the loop at
+    least one of them would differ from whatever the fold currently says and
+    append — on every run, forever, with the fold's answer alternating between
+    the two. Refreshing ``state[key]`` in the loop is not enough on its own (it
+    makes BOTH rows append instead of one), so colliding rows are collapsed
+    first, last-wins.
+
+    ``state[key] = row`` still runs in the loop, and still matters: it keeps the
+    fold consistent with what has already been written during this call, so the
+    function stays correct for any caller that hands it rows it did not collapse.
+
+    **Concurrency is the file format's, not this function's.** Two writers racing
+    can both read the fold before either appends, and both then append; the
+    result is two lines that fold to one, which is the tolerance an append-only
+    log is built on. There is deliberately no lock here — a second writer holding
+    a lock the first one does not is not mutual exclusion, and
+    :func:`append_event`'s single fsync'd ``O_APPEND`` write is the whole
+    interlock every appender shares.
+    """
+    by_key: dict[tuple, dict] = {}
+    for raw in rows:
+        row = posting_row(raw)
+        by_key[fold_key(row)] = row
+
+    state = fold(path)
+    appended = 0
+    for key, row in by_key.items():
+        prev = state.get(key)
+        if prev is None or any(prev.get(f) != row[f] for f in POSTING_KEYS):
+            append_event(path, row, source=source)
+            state[key] = row
+            appended += 1
+    return appended
