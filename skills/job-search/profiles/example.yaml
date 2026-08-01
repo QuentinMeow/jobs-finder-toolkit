@@ -42,7 +42,11 @@ titles:
     - data scientist
     - research scientist
   exclude_neutralize:      # phrases stripped BEFORE applying exclude, so their words
-    - member of technical staff   # don't trip a rule (MTS is an IC title, not "staff" level)
+    - member of technical staff   # don't trip a rule (MTS is an IC title, not "staff" level).
+    # Listing any one "Member of <X> Staff" spelling declares the whole family:
+    # Data / Research / Applied Research / "the Technical" are the same IC title
+    # and are neutralized too. A real level word in front ("Senior…", "Principal…")
+    # still classifies and still excludes on its own.
   # occupation_review_cap: 300   # optional bounded-rollout guard (default 300): caps
     # how many "plausible/technical but unknown occupation" titles (e.g. generalist
     # MTS-style titles that are neither a clean include match nor a definite non-

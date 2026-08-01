@@ -230,6 +230,33 @@ list that is checked **first** so it wins over remote/abbreviation false positiv
 Set `us_only: false` to allow global results, or `require_match: true` for a hard
 preferred-cities/remote filter.
 
+### When a remote signal does NOT grant US scope (`assess_location`)
+
+A remote statement says how the work is done, not where. Three narrowings apply once the
+workplace reads `remote`; each has a fictional regression in `filter_variants/corpus.yaml`:
+
+| Shape | Verdict | Evidence / review id |
+|-------|---------|----------------------|
+| JD grants remote, then requires residence in a metro the policy does not prefer (`this is a remote role but the location requirement is that you reside in <Metro>`) | `no_match` / `other_us` (or `foreign`) | `jd_remote_bound_to_residency` |
+| Same, but the named metro IS preferred | `match` / `metro` | `jd_residency_preferred_metro` |
+| Same, but the named place cannot be parsed | `review` | `residency_restriction_unparsed` |
+| Location field is nothing but workplace words and no US signal appears in location, title or JD | `review` | `remote_without_us_scope` |
+| Location field is a workplace word (`Hybrid`, `In-Office`, `Distributed`) and the JD names no cities either | `review` | `workplace_tag_without_geography` |
+
+The residency rule needs a requirement word (`must`, `required`, `requirement`, …) within a
+tight span of the residency verb, so a sentence about where colleagues happen to live cannot
+rewrite a posting's geography. It can only NARROW a grant — it is never the sole grounds for
+granting one.
+
+Two guardrails on the bare-remote rule, both deliberate:
+
+- `Anywhere` / `Worldwide` / `Global` keep their US reading. They assert UNRESTRICTED
+  geography, which includes the US; only mode-only words (`remote`, `remotely`, `wfh`,
+  `work from home`) lost their free pass.
+- A field that names a place these token lists happen not to carry — `Remote (Indianapolis)` —
+  did state geography and is untouched. Demoting it would trade a false positive for a worse
+  false negative.
+
 ## Recency filter
 
 `posted_at` is normalized to UTC from each source's timestamp
@@ -249,6 +276,29 @@ and flagged (rare) rather than dropped.
   "visa sponsorship available", "green card sponsorship", "PERM process", "cap-exempt").
 - **`unclear`** — neither; most postings. Under `policy: exclude_negative` these are
   kept; under `require_positive` they are dropped.
+
+### How polarity is decided (`assess_sponsorship`)
+
+A phrase list can never enumerate every way an employer writes "no", so polarity is decided
+structurally and the label is then graded on OFFER STRENGTH. The rules, in the order they
+apply — each has a fictional regression in `filter_variants/corpus.yaml`:
+
+| Shape | Rule | Result |
+|-------|------|--------|
+| Offer phrase inside a bounded negation scope | `does not currently offer visa sponsorship` — a denial of that offer, whatever route the sentence took. Scope is a NegEx-style look-back cut at the nearest clause boundary, max ~8 tokens from the cue. | `no` |
+| Negation of a universal | `not (for EVERY x)` entails that some x ARE sponsored, so it LIMITS scope rather than refusing (`sponsorship.scope_limit.*`). Cues: `every / each / all / guarantee`. | neither denial nor offer |
+| Scope limit with no offer beside it | The limit can only REMOVE a denial, never create an offer. | `unclear` |
+| `at all` | Intensifies a denial instead of bounding it, so it is excluded from the quantifier cues. | `no` |
+| Quantifier BEFORE the negation cue | It is the subject of an eligibility rule, not a quantifier over what is sponsored (`all roles require work authorization without sponsorship`). A backward quantifier only counts INSIDE the negation it bounds. | `no` |
+| Offer under a possibility modal, discretion clause or quantity hedge | `limited … may be available`, `case-by-case`, `at our discretion` — a hedged offer (`sponsorship.hedged_offer.*`), adjacent to the phrase within a clause and not across a coordinator. | `unclear` |
+| Negation of a negation | `it is not true that we cannot sponsor` — read neither way. | `unclear` |
+| Denial beside an offer of any strength | Contradictory evidence goes to a human rather than the reject pile, because a denial is dropped under BOTH policies. | `unclear` (review) |
+| Export-control sense of "sponsorship" | US export licensing (ITAR/EAR, `without sponsorship for an export license`) says nothing about immigration. Ignored only when the sentence carries an export-control cue AND no immigration word at all, so a JD discussing both keeps its immigration evidence. | no evidence either way |
+
+Net ordering: **unhedged offer > hedged offer > silence**, a scope limit moves nothing, and a
+flat denial beats everything. The asymmetry is deliberate: a false offer sends someone who
+needs sponsorship to an employer that said no in writing, while `unclear` costs nothing
+because it keeps the posting and flags it.
 
 Soft tags (`visa_tags`): `h1b_transfer_friendly` (mentions transfer / cap-exempt),
 `green_card_mentioned`. These add scoring boosts, not filters.

@@ -695,6 +695,193 @@ class SponsorshipNegationScopeTests(unittest.TestCase):
         self.assertFalse(assessment["signal_present"])
 
 
+class SponsorshipScopeLimitTests(unittest.TestCase):
+    """An offer plus a limit ON that offer is a sponsor, not a refusal.
+
+    Reading negation structurally was right and stays. It over-reached on the one
+    shape that matters most to the person using ``--visa-policy require_positive``:
+    an employer who says it sponsors and then bounds the promise. The hedge
+    sentence carries its own negated offer phrase, denial beat offer, and the
+    clearest sponsorship language in a whole market scan graded ``unknown`` — so
+    the strict policy returned nothing where a real sponsor existed.
+
+    The rule is logical rather than lexical: ``not (for every X)`` denies the
+    UNIVERSAL and entails that some X ARE sponsored, while ``does not sponsor`` is
+    the universal negation. Only the second is a denial. Every wording below is
+    fictional.
+    """
+
+    OFFER_WITH_SCOPE_LIMIT = (
+        "Visa sponsorship: we do sponsor visas. That said, we are not able to "
+        "sponsor visas for every role and every candidate. If we make you an "
+        "offer we will make every reasonable effort to obtain one for you."
+    )
+
+    def test_offer_followed_by_a_scope_limit_is_still_an_offer(self):
+        assessment = assess_sponsorship(self.OFFER_WITH_SCOPE_LIMIT)
+        self.assertEqual(assessment["verdict"], "likely")
+        self.assertEqual(assessment["decision"], "match")
+        self.assertTrue(any(rule.startswith("sponsorship.scope_limit.")
+                            for rule in assessment["rule_ids"]),
+                        assessment["rule_ids"])
+        self.assertFalse(any(rule.startswith("sponsorship.negated_offer.")
+                             or rule.startswith("sponsorship.negative.")
+                             for rule in assessment["rule_ids"]),
+                         assessment["rule_ids"])
+
+    def test_a_scope_limit_alone_never_manufactures_an_offer(self):
+        # The asymmetry that keeps the safety posture: a scope limit can only
+        # REMOVE a denial. With no unhedged offer beside it the answer is unknown,
+        # which keeps the posting and flags it — never `likely`.
+        assessment = assess_sponsorship(
+            "We are not able to sponsor every candidate who applies.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+        self.assertIn("sponsorship.scope_limit.not able to sponsor",
+                      assessment["rule_ids"])
+
+    def test_cannot_guarantee_is_not_a_denial(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We cannot guarantee that we will sponsor visas for this role."),
+            "unknown",
+        )
+
+    def test_flat_denial_is_still_a_denial(self):
+        for text in (
+            "We do not offer visa sponsorship for this position.",
+            "This role does not currently offer visa sponsorship.",
+            "We do not sponsor visas for any role.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(classify_sponsorship(text), "unlikely")
+
+    def test_at_all_intensifies_a_denial_rather_than_bounding_it(self):
+        # The one place the bare word "all" runs the other way.
+        self.assertEqual(
+            classify_sponsorship("We cannot sponsor visas at all for this role."),
+            "unlikely",
+        )
+
+    def test_all_as_a_requirement_subject_does_not_soften_a_denial(self):
+        # "All" here is the subject of an eligibility rule, not a quantifier over
+        # what is sponsored. A backward quantifier only counts inside the negation
+        # it bounds.
+        for text in (
+            "All roles require work authorization without sponsorship.",
+            "Every applicant must be authorized to work in the United States "
+            "without sponsorship.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(classify_sponsorship(text), "unlikely")
+
+    def test_offer_then_an_unrelated_negation_stays_an_offer(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We sponsor visas for this role. We do not offer relocation "
+                "assistance."),
+            "likely",
+        )
+
+    def test_silence_is_still_unknown(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "Build backend services in Go. Competitive salary and equity."),
+            "unknown",
+        )
+
+
+class SponsorshipHedgedOfferTests(unittest.TestCase):
+    """A discretionary maybe is ``unknown``, the way LESSONS.md already says.
+
+    The mirror of the case above, and observed in the same scan: a vague "limited
+    sponsorship may be available" graded ``likely`` while the unambiguous offer
+    graded ``unknown``, so the two labels were swapped. Grading on offer STRENGTH
+    puts them back in order — unhedged offer > hedged offer > silence.
+    """
+
+    def test_limited_and_may_be_available_is_unknown(self):
+        assessment = assess_sponsorship(
+            "Limited immigration sponsorship may be available for this role.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+        self.assertIn("sponsorship.hedged_offer.immigration sponsorship",
+                      assessment["rule_ids"])
+
+    def test_case_by_case_offer_is_unknown(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "Visa sponsorship is available on a case-by-case basis."),
+            "unknown",
+        )
+
+    def test_an_unhedged_offer_outranks_a_hedged_one(self):
+        # Both shapes in one posting: the plain statement decides.
+        self.assertEqual(
+            classify_sponsorship(
+                "We sponsor work visas. Green card sponsorship may follow later."),
+            "likely",
+        )
+
+    def test_a_hedge_across_a_coordinator_does_not_reach_the_offer(self):
+        # "may" belongs to the relocation conjunct, not to the sponsorship offer.
+        self.assertEqual(
+            classify_sponsorship(
+                "We sponsor H-1B visas, and relocation may be discussed "
+                "separately."),
+            "likely",
+        )
+
+    def test_a_denial_beside_a_hedged_offer_is_a_conflict_not_a_drop(self):
+        # A denial silently DROPS the posting under both policies, so contradictory
+        # evidence goes to a human rather than to the reject pile.
+        assessment = assess_sponsorship(
+            "This role does not offer sponsorship, though limited immigration "
+            "sponsorship may be available on other teams.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+    def test_a_caveat_outside_the_clause_leaves_the_offer_alone(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "Visa sponsorship is available for this role, though sponsorship "
+                "is not guaranteed."),
+            "likely",
+        )
+
+
+class MemberOfStaffTitleFamilyTests(unittest.TestCase):
+    """"Member of <X> Staff" is an IC title family, not one spelling of one.
+
+    ``Member of Technical Staff`` was neutralized by name, so ``Member of Data
+    Staff`` — the same family, seen on a real board — read as Staff level and was
+    dropped by a ``staff`` exclude.
+    """
+
+    def test_every_qualifier_in_the_family_is_neutralized(self):
+        for title in (
+            "Member of Technical Staff",
+            "Member of Data Staff",
+            "Member of Research Staff",
+            "Member of the Technical Staff",
+            "Members of Applied Research Staff",
+        ):
+            with self.subTest(title=title):
+                self.assertEqual(classify_level(title)[0], "unknown")
+
+    def test_a_real_seniority_prefix_still_resolves(self):
+        self.assertEqual(
+            classify_level("Senior Member of Data Staff")[0], "senior")
+        self.assertEqual(
+            classify_level("Principal Member of Technical Staff")[0], "principal")
+
+    def test_genuine_staff_titles_are_untouched(self):
+        for title in ("Staff Software Engineer", "Senior Staff Engineer",
+                      "Chief of Staff"):
+            with self.subTest(title=title):
+                self.assertNotEqual(classify_level(title)[0], "unknown")
+
+
 class SponsorshipExportControlSenseTests(unittest.TestCase):
     """"Sponsorship" in export-licensing boilerplate is not an immigration denial.
 

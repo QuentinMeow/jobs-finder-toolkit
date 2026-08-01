@@ -259,6 +259,105 @@ variants:
       verdict: likely
       confidence: high
 
+  - id: sponsorship-offer-then-scope-limit-is-an-offer
+    domain: sponsorship
+    # The regression this corpus exists to prevent. Reading negation structurally
+    # was right, but the hedge sentence of an offer-plus-limit carries its own
+    # negated offer phrase — denial beat offer and the clearest sponsorship
+    # language in a whole market scan graded `unknown`, invisible to the one
+    # policy a candidate who NEEDS sponsorship uses. "not for EVERY role" negates
+    # a universal and therefore entails that some roles ARE sponsored; only a
+    # universal negation ("does not sponsor") is a denial.
+    input:
+      text: >-
+        Visa sponsorship: we do sponsor visas. That said, we are not able to
+        sponsor visas for every role and every candidate. If we make you an
+        offer we will make every reasonable effort to obtain one for you.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-scope-limit-alone-is-not-an-offer
+    domain: sponsorship
+    # The asymmetry that keeps the safety posture: a scope limit can only REMOVE a
+    # denial, never create an offer. With no unhedged offer beside it the answer is
+    # unknown — kept and flagged, never asserted.
+    input:
+      text: We are not able to sponsor every candidate who applies.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-at-all-is-still-a-flat-denial
+    domain: sponsorship
+    # The one place the bare word "all" runs the other way: "at all" INTENSIFIES a
+    # denial instead of bounding it.
+    input:
+      text: We cannot sponsor visas at all for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-all-as-requirement-subject-stays-a-denial
+    domain: sponsorship
+    # "All" here is the SUBJECT of an eligibility rule, not a quantifier over what
+    # is sponsored. A backward quantifier only counts inside the negation it
+    # bounds, or a real denial would stop being one.
+    input:
+      text: All roles require work authorization without sponsorship.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-hedged-offer-is-unclear
+    domain: sponsorship
+    # The inverse error found in the same scan: a vague discretionary maybe graded
+    # `likely` while the unambiguous offer above graded `unknown`, so the two
+    # labels were swapped relative to the documented rule. Grading on offer
+    # STRENGTH puts them back in order — unhedged offer > hedged offer > silence.
+    input:
+      text: Limited immigration sponsorship may be available for this role.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-hedge-across-a-coordinator-leaves-the-offer
+    domain: sponsorship
+    # Guardrail on the hedge scope: "may" belongs to the relocation conjunct, not
+    # to the sponsorship offer, so the offer stands.
+    input:
+      text: We sponsor H-1B visas, and relocation may be discussed separately.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-offer-then-unrelated-negation-stays-an-offer
+    domain: sponsorship
+    # A later negation about something else entirely must not reach the offer.
+    input:
+      text: >-
+        We sponsor visas for this role. We do not offer relocation assistance.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-silence-is-unknown
+    domain: sponsorship
+    # The baseline the two shapes above are graded against.
+    input:
+      text: Build backend services in Go. Competitive salary and equity.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
   - id: title-member-of-technical-staff
     domain: title
     input:
@@ -285,6 +384,53 @@ variants:
       decision: no_match
       accepted: false
       level: staff
+
+  - id: title-member-of-data-staff-same-family
+    domain: title
+    # "Member of <X> Staff" is one IC title FAMILY, not one spelling of one. The
+    # profile neutralized the Technical spelling by name, so a real board's Data
+    # spelling read as Staff level and the `staff` exclude deleted it. The
+    # neutralization now covers the family the profile already declared.
+    input:
+      title: Member of Data Staff, Software Engineer
+      profile:
+        titles:
+          include: [software engineer]
+          exclude: [staff, principal]
+          exclude_neutralize: [member of technical staff]
+    expect:
+      decision: match
+      accepted: true
+
+  - id: title-member-of-the-technical-staff-article
+    domain: title
+    # Same family with the definite article, which the literal phrase also missed.
+    input:
+      title: Member of the Technical Staff, Software Engineer
+      profile:
+        titles:
+          include: [software engineer]
+          exclude: [staff, principal]
+          exclude_neutralize: [member of technical staff]
+    expect:
+      decision: match
+      accepted: true
+
+  - id: title-principal-member-of-staff-keeps-its-level
+    domain: title
+    # Neutralizing the family strips only the embedded "staff": a real seniority
+    # word in front of it still classifies and is still excluded on its own.
+    input:
+      title: Principal Member of Technical Staff, Software Engineer
+      profile:
+        titles:
+          include: [software engineer]
+          exclude: [staff, principal]
+          exclude_neutralize: [member of technical staff]
+    expect:
+      decision: no_match
+      accepted: false
+      level: principal
 
   - id: title-broad-domain-finance-rejected
     domain: title
@@ -909,3 +1055,121 @@ variants:
       decision: no_match
       category: other_us
       workplace: onsite
+
+  - id: location-remote-grant-bound-to-a-non-preferred-metro
+    domain: location
+    # A remote GRANT is not a statement of geography. The JD grants remote work and
+    # then requires residence in one metro; nothing read the restriction, so the
+    # posting came back a CONFIDENT us_remote match the caller had no reason to
+    # re-read. Three of four confident matches in one live re-check were this shape.
+    input:
+      title: Software Engineer
+      location: Remote
+      workplace_hint: unknown
+      description: >-
+        This is a remote role but the location requirement is that you reside in
+        the Dallas Fort Worth Area.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: other_us
+      evidence_contains: [jd_remote_bound_to_residency]
+
+  - id: location-remote-grant-bound-to-a-preferred-metro
+    domain: location
+    # The same rule reading the other way: the named metro IS preferred, so the
+    # posting still matches — the rule narrows a grant, it never invents one.
+    input:
+      title: Software Engineer
+      location: Remote
+      workplace_hint: unknown
+      description: >-
+        This is a remote role but you must reside in the Springfield area.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: metro
+
+  - id: location-remote-grant-with-unreadable-residency-place
+    domain: location
+    # Never fall back to us_remote: the JD said the grant is bounded, and a place
+    # this module cannot parse is a human's call, not a match.
+    input:
+      title: Software Engineer
+      location: Remote
+      workplace_hint: unknown
+      description: >-
+        This is a remote role but you must reside in the Tri-Valley corridor.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [residency_restriction_unparsed]
+
+  - id: location-remote-grant-without-a-residency-clause-is-unchanged
+    domain: location
+    # The guardrail on the rule above: an ordinary US-remote posting is untouched.
+    input:
+      title: Software Engineer
+      location: Remote - US
+      workplace_hint: unknown
+      description: This is a fully remote role.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      evidence_contains: [remote_eligible]
+
+  - id: location-bare-remote-word-without-any-us-signal
+    domain: location
+    # A foreign employer's posting scored us_remote because its entire location
+    # field was the word "remote". "Remote" is a work MODE — it asserts no country,
+    # and a foreign board writes it exactly as a US one does.
+    input:
+      title: Travel Consultant
+      location: remote
+      workplace_hint: unknown
+      description: Join our agency team; we are growing fast.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [remote_without_us_scope]
+
+  - id: location-bare-remote-with-us-scope-in-the-jd-body
+    domain: location
+    # The US signal may come from anywhere. Here the location field has none and
+    # the JD supplies it, so the posting keeps its match.
+    input:
+      title: Software Engineer
+      location: Remote
+      workplace_hint: unknown
+      description: >-
+        This is a fully remote role open to candidates anywhere in the United
+        States.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote

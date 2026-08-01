@@ -26,30 +26,32 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 - Keep the negative phrase list specific. Generic "must be authorized to work in the US"
   is boilerplate used even by sponsoring employers — matching it would wrongly reject
   almost everything. Only explicit denials should yield `no`.
-- Most postings are `unclear`. Default `exclude_negative` keeps them; use
-  `require_positive` only when the user wants a hard sponsorship guarantee (few results).
-- `unclear` is the safe answer and the classifier is built to fall back to it: a `no` is
-  dropped under BOTH policies (it hides a job), a `yes` is handed to someone making an
-  immigration decision. Ambiguous text — a double negative, a discretionary "we will
-  consider sponsorship" — must land `unclear`, which keeps the posting and flags it.
-- "Sponsorship" has a second legal sense: US export-control licensing (ITAR/EAR,
-  "without sponsorship for an export license"). That sentence says nothing about
-  immigration; a whole export-controlled board used to vanish under the default policy
-  because it read as a denial. The classifier now ignores a sponsorship phrase whose
-  sentence is export-control language with no immigration word in it.
+- `unclear` is the safe fallback and where most postings land: a `no` is dropped under BOTH
+  policies (it hides a job), a `yes` goes to someone making an immigration decision. Default
+  `exclude_negative` keeps `unclear`; `require_positive` is for a hard guarantee only (few
+  results). Treat any `yes` as a claim to verify against the JD wording — the gate is advisory.
+- "Sponsorship" has a second legal sense: US export-control licensing (ITAR/EAR, "without
+  sponsorship for an export license"). That sentence is not an immigration denial and is
+  ignored — a whole export-controlled board used to vanish under `exclude_negative` because it
+  read as one. Mechanism: reference.md, "How polarity is decided".
 
 ## Visa heuristic false-positives
 <!-- added: 2026-07-20 · last_confirmed: 2026-07-31 · status: active -->
-- The sponsorship heuristic used to score `yes` on a negation: a posting whose text said
-  it does *not* sponsor still contained sponsorship keywords and was tagged `yes`. It no
-  longer does — a bounded negation scope means an offer phrase inside a negated clause
-  ("does not currently offer visa sponsorship") counts as a denial. The residual gap is
-  narrower but real: a denial that matches NEITHER an offer phrase nor a denial phrase
-  ("we do not offer relocation or visa sponsorship") still reads `unclear`, and a
-  negation more than ~8 words from the phrase it governs is out of scope.
-- Still treat a heuristic `yes` as a claim to verify against the actual JD wording before
-  relying on it for a policy decision. The gate is advisory and the user is making an
-  immigration decision on it.
+- Polarity is structural, not lexical: an offer phrase inside a bounded negation scope ("does
+  not currently offer visa sponsorship") is a denial, which stopped the heuristic scoring `yes`
+  on a negation. Two gaps stay live: a denial matching NEITHER list ("we do not offer
+  relocation or visa sponsorship") reads `unclear`, and a negation >~8 words away is out of scope.
+- **An offer and a LIMIT ON that offer are not a denial.** `not (for EVERY x)` negates a
+  universal and entails that some x ARE sponsored; `does not sponsor` is the universal negation.
+  "We do sponsor visas… however not for every role" is a sponsor, and grading it `unclear` made
+  `require_positive` return zero against the clearest sponsor in an 11.7k-posting scan. A scope
+  limit only REMOVES a denial, never creates an offer, so "we can't sponsor everyone" alone
+  stays `unclear`. Two shapes it must NOT catch, both still `no`: `at all` intensifies a denial,
+  and a quantifier BEFORE the cue is a requirement subject ("ALL roles require work auth…").
+- Grading is by OFFER STRENGTH: unhedged offer > hedged offer > silence, a scope limit moves
+  nothing, a flat denial beats everything. So a hedged offer ("limited sponsorship may be
+  available", "case-by-case", "at our discretion") and a double negative both land `unclear`,
+  and a denial beside an offer of either strength is a conflict (review), never a silent drop.
 
 ## Filtering / scoring
 <!-- added: 2026-07-13 · last_confirmed: 2026-07-31 · status: active -->
@@ -79,10 +81,13 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 
 ## Title exclusions
 <!-- added: 2026-07-13 · last_confirmed: 2026-07-19 · status: active -->
-- Excluding the bare word "staff" would wrongly drop "Member of Technical Staff" — the
-  IC title OpenAI/Anthropic/Perplexity use (NOT staff-level). Use `titles.exclude_neutralize`
-  to strip such phrases before the exclude check runs. Verified: MTS kept, "Staff/Staff+/
-  Senior Staff/Principal/Distinguished Engineer" dropped.
+- Excluding the bare word "staff" would wrongly drop `Member of <X> Staff` — the IC title
+  family OpenAI/Anthropic/Perplexity use, which is NOT staff-level. `titles.exclude_neutralize`
+  strips it BEFORE the exclude check, and listing any ONE spelling declares the whole family:
+  boards write Technical / Data / Research / Applied Research / "the Technical" for the same
+  title, and a live "Member of Data Staff" was hard-dropped while Technical sailed through. A
+  level word in front still classifies and still excludes on its own, so
+  Staff/Staff+/Senior Staff/Principal/Distinguished Engineer all stay dropped.
 - Multi-city postings that include a wanted city pass a strict location filter; surface the
   matched segment in output (e.g. "Austin, TX (+4)") so it isn't mistaken for a non-match.
 
@@ -93,18 +98,22 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   check false-matches Canada (`CA`) and India (`IN`) country codes. Foreign-first wins.
 - Dropped "ontario"/kept-narrow foreign tokens to avoid nuking US "Ontario, CA" /
   "Vancouver, WA"; Toronto/Montreal/Canada still catch Canadian roles.
-- Some boards publish only `Distributed` as the location and put the real country
-  in the title (`..., Canada`, `..., Canberra`, `..., Nordics`). Include the title
-  in foreign detection before treating a generic distributed/remote marker as US.
-- The title's geography REJECTS only, never grants. A region in a title
-  (`..., Americas`, `..., NAmer`) is a coverage/market descriptor — it once carried
-  a role that is hybrid across four non-preferred US cities through as a US-remote
-  match. Positive US scope must come from the location field.
-- A whole board can put a workplace WORD (`Hybrid`, `In-Office`, `Distributed`)
-  where the location belongs and name the cities only inside the JD. Such a tag
-  carries no geography (verdict `review` / `workplace_tag_without_geography`) and
-  cannot contradict an explicit JD remote grant — the JD is the only statement of
-  record. Read those postings; never relay `review` as "no match".
+- The title's geography REJECTS only, never grants. Some boards publish only `Distributed` as
+  the location and put the real country in the title (`..., Canada`, `..., Canberra`,
+  `..., Nordics`), so read the title for foreign scope before treating a generic
+  distributed/remote marker as US. But a region in a title (`..., Americas`, `..., NAmer`) is a
+  coverage/market descriptor — it once carried a role hybrid across four non-preferred US
+  cities through as a US-remote match. Positive US scope must come from the location field.
+- A remote signal says how the work is done, never where. A location field can hold a workplace
+  WORD instead of a place (`Hybrid`, `In-Office`, `Distributed`, bare `remote`) with the cities
+  only inside the JD; such a field carries no geography, cannot contradict an explicit JD remote
+  grant (the JD is then the only statement of record), and a bare mode word is no US signal — a
+  foreign agency's posting scored `us_remote` on the single word `remote`. Nor is a JD grant
+  geography: "this is a remote role BUT you must reside in <Metro>" was a confident `us_remote`
+  match, three of four confident matches in one live re-check. Both now resolve to `review` or
+  to the metro the JD actually named. Verdict table + the two deliberate guardrails
+  (`Anywhere`/`Worldwide`, `Remote (Indianapolis)`): reference.md, "When a remote signal does
+  NOT grant US scope". Read those postings; never relay `review` as "no match".
 
 ## Aggregators, JobSpy & LinkedIn/Indeed
 <!-- added: 2026-07-13 · last_confirmed: 2026-07-19 · status: active -->

@@ -83,6 +83,15 @@ REMOTE_TOKENS = (
     "worldwide", "global",
 )
 
+# Of those, the ones that assert UNRESTRICTED geography rather than a work MODE.
+# "Anywhere" / "Worldwide" / "Global" name a scope that necessarily includes the
+# US; "Remote" / "WFH" name how the work is done and say nothing about where. A
+# board that puts the bare word "remote" in the location field has stated no
+# country at all — a foreign employer's posting scored a confident US-remote match
+# on exactly that. So mode-only remoteness needs a US signal from somewhere before
+# it can be read as US-remote; unrestricted scope already carries one.
+_UNRESTRICTED_SCOPE_TOKENS = ("anywhere", "worldwide", "global")
+
 # Broad regions that imply remote across North America (include the US).
 US_REMOTE_REGIONS = (
     "united states", "usa", "u.s.", "u.s.a", "us remote", "remote us",
@@ -314,6 +323,26 @@ _OPTIONAL_HYBRID_RE = re.compile(
     r"can\s+(?:also\s+)?(?:work|choose|opt)|welcome\s+to)\b[^.\n]{0,40}\bhybrid\b"
     r"|\bhybrid\b[^.\n]{0,40}\b(?:option(?:al)?|available|encouraged|welcome|"
     r"if\s+you\s+(?:prefer|want|choose)|is\s+not\s+required|not\s+required)\b",
+    re.I,
+)
+
+
+# A remote grant that names its own residency metro. Boards routinely write
+# "this is a remote role BUT you must reside in <Metro>" — the grant satisfies
+# `_REMOTE_JD_RULES`, the restriction was invisible, and the posting became a
+# confident us_remote MATCH tied to a metro the candidate never asked for. Three
+# of four confident matches in one live company re-check were this shape.
+#
+# The requirement word is mandatory and the span between it and the residency verb
+# is tight, the way `jd_role_can_be_remote` binds "remote" to THIS role: without
+# it, "many of our engineers live in Austin" describes somebody else's address and
+# would rewrite the posting's geography.
+_JD_RESIDENCY_RE = re.compile(
+    r"\b(?:must|required?|requirement|need\s+to|expected\s+to|have\s+to)\b"
+    r"[^.;:!?\n]{0,60}?"
+    r"\b(?:resid(?:e|es|ing|ency)|live|living|located|based)\b\s+"
+    r"(?:in|within|near)\s+(?:the\s+)?"
+    r"(?P<place>[^.;:!?\n]{2,60})",
     re.I,
 )
 
@@ -565,6 +594,47 @@ def _is_workplace_word_only(nloc: str) -> bool:
     return bool(words) and all(word in _WORKPLACE_MARKER_WORDS for word in words)
 
 
+def _residency_category(description: str, metro) -> str | None:
+    """Geography a JD's residency requirement pins a remote grant to.
+
+    Returns ``"metro"`` / ``"other_us"`` / ``"foreign"`` for a place this module
+    can read, ``"unknown"`` when a residency requirement is stated but its place is
+    unreadable, and ``None`` when the JD states no residency requirement at all.
+
+    Deliberately asymmetric: it exists to NARROW an already-remote posting, never
+    to grant one. The place it names replaces the absent geography of a bare
+    remote/workplace-tag location field — it is the only place the JD says.
+    """
+    match = _JD_RESIDENCY_RE.search(description or "")
+    if match is None:
+        return None
+    place = match.group("place")
+    nplace = _normalize(place)
+    if _foreign_matches(nplace) or _FOREIGN_ABBR_RE.search(nplace):
+        return "foreign"
+    if _has(metro, nplace):
+        return "metro"
+    state_abbr, _contested = _resolve_state_abbrs(place, _foreign_matches(nplace))
+    if _has_us_state(nplace) or _has(_US_HUBS, nplace) or state_abbr:
+        return "other_us"
+    return "unknown"
+
+
+def _jd_names_us_scope(description: str) -> bool:
+    """Whether the JD body itself names US geography.
+
+    Used ONLY to corroborate a mode-only remote grant whose location field carries
+    no country. Deliberately permissive — any US region, state or hub counts —
+    because the failure it guards is the total ABSENCE of a US signal. The bare
+    pronoun "us" is excluded: "join us" appears in nearly every JD written.
+    """
+    ndesc = _normalize(description)
+    if not ndesc:
+        return False
+    return bool(_has(US_REMOTE_REGIONS, ndesc) or _has_us_state(ndesc)
+                or _has(_US_HUBS, ndesc))
+
+
 def _rule_hits(text: str, rules) -> list[str]:
     return [rule_id for rule_id, pattern in rules if pattern.search(text or "")]
 
@@ -741,8 +811,36 @@ def assess_location(
         category = "foreign"
         evidence.append("foreign_scope")
     elif workplace == "remote":
-        category = "us_remote"
-        evidence.append("remote_eligible")
+        # A remote GRANT is not a statement of geography. Two things can still take
+        # this posting out of "open US-remote", and neither was being read:
+        # a residency requirement in the JD that pins the grant to one metro, and a
+        # location field that names a work MODE with no country anywhere behind it.
+        residency = _residency_category(description, metro)
+        if residency == "metro":
+            category = "metro"
+            evidence.append("jd_residency_preferred_metro")
+        elif residency in {"other_us", "foreign"}:
+            category = residency
+            evidence.append("jd_remote_bound_to_residency")
+        elif residency == "unknown":
+            category = "unknown"
+            review.append("residency_restriction_unparsed")
+        elif (_is_workplace_word_only(nloc) and not us
+                and not _has(_UNRESTRICTED_SCOPE_TOKENS, nloc)
+                and not _jd_names_us_scope(description)):
+            # Nothing — not the location field, not the title, not the JD — has
+            # said this role is in the US. "Remote" alone is a work mode, and a
+            # foreign employer writes it the same way a US one does.
+            #
+            # Scoped to a field that is NOTHING BUT workplace words. A field that
+            # names a place this module's lists happen not to carry ("Remote
+            # (Indianapolis)") did state geography, and demoting it would trade
+            # this false positive for a worse false negative.
+            category = "unknown"
+            review.append("remote_without_us_scope")
+        else:
+            category = "us_remote"
+            evidence.append("remote_eligible")
     elif has_specific_us_office:
         category = "other_us"
         evidence.append("specific_us_office")

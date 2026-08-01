@@ -17,6 +17,7 @@
 - `memory/decisions/process-folders-layout.md` — Process folders: tasks/, memory/known-issues/, memory/decisions/, unresolved-decisions/
 - `memory/decisions/process-folders-v2-todo-queue.md` — Process folders v2: the message-queue/ queue family
 - `memory/decisions/raw-data-layer-decisions.md` — Raw-data-layer design family: owner decisions
+- `memory/decisions/sponsorship-offer-versus-denial.md` — Sponsorship: an offer plus a limit on that offer is not a denial
 - `memory/decisions/tree-instruction-growth-policy.md` — Grow folder-scoped instructions reactively
 - `memory/decisions/workspace-layout-public-root-plus-review-gate.md` — Workspace layout: keep the public repo as the working root; defend by naming + a review gate
 
