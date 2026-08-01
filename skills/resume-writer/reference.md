@@ -477,7 +477,7 @@ Handle the whole set as a **single application folder** — not one folder per r
 2. **`meta.yaml`** — use the `jobs:` list form (see Step 1). One entry per posting with
    `role`, `jd_file` (the `JD-<job title>.md` name), `status: "drafted"`, `url`, `posted_date`,
    the four structured job metadata fields, and an optional `fit` note. Keep company-wide fields
-   (`company`, `research_date`, `source`, `notes`) at the top level. Run
+   (`company`, `research_date`, `channel`, `notes`) at the top level. Run
    `status.py --enrich-metadata <folder>` after every JD is saved.
 3. **Analyze + gap-analyze every JD** (Steps 2-3), then tailor the **one resume** to the
    **shared, honest theme** across all of them. Order projects and skills by what the roles

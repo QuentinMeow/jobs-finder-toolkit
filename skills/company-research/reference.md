@@ -26,7 +26,7 @@ but **never scrape it or schedule public-page collection**. Automated benchmark 
 access, with the license/access method recorded in provenance.
 
 When role research contributes reusable leveling or compensation facts, keep them in the schema-v2 company-level cache (the company-levels cache file format —
-a different file from application `meta.yaml`, whose only supported schema is v3) rather than the `research/` folder: employer postings first, employer-authored
+a different file from application `meta.yaml`, whose only supported schema is v5) rather than the `research/` folder: employer postings first, employer-authored
 ladders second, licensed market benchmarks last. Record provenance per fact (provider, URL, retrieved date, geography, confidence, method, sample
 size/statistic, and access/license). Keep base, stock, bonus, and total compensation separate, preserve location-specific bands, and never infer total
 compensation.

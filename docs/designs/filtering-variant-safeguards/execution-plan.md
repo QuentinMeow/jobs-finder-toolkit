@@ -5,6 +5,15 @@ staged plan and verification contract. Companion to [README.md](README.md),
 which defines the assessment contract, evidence architecture, harness split,
 and privacy model.
 
+> **Retired paths, noted 2026-07-31 (the plan text below is unchanged).** The
+> workspace restructure retired two roots this plan was written against, so the
+> Stage 5 and Stage 6 gate blocks name directories that no longer exist. Read
+> them with these substitutions: `automation/maintenance/gardener/gardener.py`
+> → `automation/gardener/gardener.py`, and the root `scripts/` (in Stage 6's
+> `compileall`) → `automation/`. The commands are recorded as they were run at
+> the time; re-pointing them in place would erase what the tree looked like when
+> the gates passed, which is the whole value of a verification record.
+
 ## Ground rules
 
 - Keep each change focused and preserve unrelated working-tree edits.
