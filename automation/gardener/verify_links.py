@@ -18,6 +18,15 @@ runs over the whole document rather than line by line. Destinations that are
 placeholders (``[x](<relative path>)``), external URLs, or under a runtime/data tree
 are counted, never resolved.
 
+A fence is masked for LINKS and READ for COMMANDS. Masking put the most executable
+text in the repo — the command a doc tells a maintainer to paste — in no bucket at
+all, and two shipped broken. The fourth pass reads shell fences on their own terms
+and checks one shape, ``<python> <script>.py [argv…]``, for exactly two claims: the
+SCRIPT PATH exists, and every ``--long-flag`` is one the script's own
+``add_argument`` calls define (read statically, never executed). ARGUMENTS are
+deliberately not checked — ``--update <slug> applied`` names a slug that must not
+exist. Detail and the fail-open rules: the "Fenced commands" section below.
+
 **A break's fate is decided by what its SOURCE document is for, never by its target:**
 
   * **reference** — states where something is NOW (``AGENTS.md``, the READMEs,
@@ -75,9 +84,11 @@ description or commit message.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import posixpath
 import re
+import shlex
 import subprocess
 import sys
 import urllib.parse
@@ -291,6 +302,292 @@ def _mask_fences(text: str) -> str:
 def _mask_code(text: str) -> str:
     """Fences, HTML comments AND inline code spans — the link-extraction view."""
     return _SPAN_RE.sub(_blank, _mask_fences(text))
+
+
+# --- Fenced commands ------------------------------------------------------------
+# ``_mask_fences`` above blanks every fence before the link passes run, and that is
+# right: an illustrative directory tree is not a hyperlink, and reading it as one
+# produces noise in a hard-fail tier. But the same blanking left fenced content the
+# ONE surface in this repo with no counter at all — not broken, not advisory, not
+# unrecognised — and the most executable text in the tree lives there. Two commands
+# shipped broken on ``main`` under that cover: a stage gate calling a script whose
+# root had been retired, and a skill documenting two flags its subparser does not
+# define. Neither was a link, so neither was ever read.
+#
+# This pass does not un-mask anything. Un-masking would drag every tree, YAML sample
+# and prose fragment back into the link passes, which is what the mask exists to
+# prevent. It reads fences on their own terms, and checks ONE shape:
+#
+#     <python interpreter>  <script>.py  [argv…]
+#
+# and, of that shape, exactly two claims:
+#
+#   * the SCRIPT PATH exists. That single token decides whether the command runs at
+#     all or dies with "No such file or directory", and it is the token a rename
+#     breaks.
+#   * every ``--long-flag`` in argv is one the script's own ``add_argument`` calls
+#     define. Same defect class, other half: without it a doc may invent any flag it
+#     likes and the line dies at argparse instead.
+#
+# ARGUMENTS ARE DELIBERATELY NOT CHECKED, and that is the whole reason this is a
+# gate rather than a nuisance. ``status.py --update <slug> applied`` names a slug
+# that MUST not exist, ``render.py applications/6_drafted/…`` names a runtime tree,
+# and a flag's value is routinely a URL, a count or a scratch path. Checking argv
+# would report every one of them, and a checker that cries wolf gets switched off —
+# after which it protects nothing. ``python -m module`` and ``python -c '…'`` name
+# no script at all and are skipped whole.
+#
+# Which fences: shell tags PLUS untagged, excluding every EXPLICIT non-shell tag
+# (```python, ```yaml, ```json, ```text, ```mermaid — each says "this is not
+# something you paste"). Untagged is in rather than out because this repo's own
+# verification records fence their transcripts with no info string, and twelve
+# documented commands live in one. The filter doing the real work is the command
+# SHAPE, not the tag: no directory tree, YAML sample or prose fragment matches
+# "<python> <path>.py", which is why admitting 311 untagged fences costs nothing.
+_SHELL_FENCE_TAGS = frozenset({
+    "", "bash", "sh", "shell", "zsh", "console", "shell-session", "sh-session",
+    "shellsession", "terminal",
+})
+_FENCE_OPEN_RE = re.compile(r"^\s*(?P<marker>```+|~~~+)(?P<info>.*)$")
+_INTERPRETER_RE = re.compile(r"^[\w./+-]*python[0-9.]*$")
+_ENVVAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_COMMAND_PREFIX_WORDS = frozenset({"sudo", "time", "env", "exec", "nohup", "xargs"})
+# Split a logical line into command segments: pipes, ``;``, ``&&``, ``||``.
+_SEGMENT_RE = re.compile(r"\s*(?:\|\||&&|[;|])\s*")
+
+
+def _iter_fences(text: str):
+    """Yield ``(info_string, [(lineno, line), …])`` for every fenced block."""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        m = _FENCE_OPEN_RE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        marker, info = m.group("marker")[:3], m.group("info").strip()
+        body: list[tuple[int, str]] = []
+        i += 1
+        while i < len(lines):
+            closing = _FENCE_OPEN_RE.match(lines[i])
+            if closing and closing.group("marker").startswith(marker):
+                break
+            body.append((i + 1, lines[i]))
+            i += 1
+        i += 1
+        yield info, body
+
+
+def _logical_lines(body: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """Join backslash continuations, reporting at the FIRST line of each command.
+
+    ``.venv/bin/python \\`` with the script on the next line is this repo's house
+    style for anything long — one execution plan has nine — so a line-at-a-time
+    reader sees an interpreter with no script and skips every one of them.
+    """
+    out: list[tuple[int, str]] = []
+    buf, start = "", None
+    for lineno, line in body:
+        stripped = line.rstrip()
+        if start is None:
+            start = lineno
+        if stripped.endswith("\\"):
+            buf += stripped[:-1] + " "
+            continue
+        out.append((start, buf + stripped))
+        buf, start = "", None
+    if buf:
+        out.append((start or 1, buf))
+    return out
+
+
+def _parse_invocation(segment: str) -> tuple[str, list[str], str | None] | None:
+    """``(script, long_flags, subcommand)`` for a python invocation, else None."""
+    s = segment.strip()
+    if s.startswith("$ "):                     # a ```console transcript's prompt
+        s = s[2:]
+    try:
+        toks = shlex.split(s, comments=True)
+    except ValueError:                         # unbalanced quote — not our business
+        return None
+    while toks and (_ENVVAR_RE.match(toks[0]) or toks[0] in _COMMAND_PREFIX_WORDS):
+        toks.pop(0)
+    if not toks or not _INTERPRETER_RE.match(toks[0]):
+        return None
+    rest, i = toks[1:], 0
+    while i < len(rest) and rest[i].startswith("-") and rest[i] != "-":
+        if rest[i] in ("-m", "-c"):            # a module / an inline program
+            return None
+        i += 2 if rest[i] in ("-X", "-W") else 1
+    if i >= len(rest):
+        return None
+    script, argv = rest[i], rest[i + 1:]
+    if "--" in argv:                           # the rest is data, not options
+        argv = argv[:argv.index("--")]
+    flags = [t.split("=", 1)[0] for t in argv if t.startswith("--") and len(t) > 2]
+    # A subcommand is argparse-positional and must come FIRST to be recognised here.
+    # Anything else (a path, a URL, a flag's value) leaves ``sub`` None, which drops
+    # the flag check back to its unattributed form rather than guessing.
+    sub = argv[0] if argv and not argv[0].startswith("-") else None
+    return script, flags, sub
+
+
+def _is_command_script(token: str) -> bool:
+    """True for a token claiming "this .py file is at this path, run it".
+
+    Narrower than ``_is_checkable`` on purpose. A bare ``mdlinks.py`` names no
+    location, and ``<scratchpad>/probe.py`` names a directory the reader invents;
+    requiring BOTH a slash and a ``.py`` suffix leaves exactly the tokens whose
+    absence is a "No such file or directory" waiting to happen.
+    """
+    if "/" not in token or not token.endswith(".py"):
+        return False
+    if any(c in token for c in _PLACEHOLDER_CHARS):
+        return False
+    if not re.fullmatch(r"[A-Za-z0-9._/-]+", token):
+        return False
+    return not token.startswith(SKIP_PREFIXES)
+
+
+def _script_path(token: str) -> Path | None:
+    """The on-disk file a resolved command script names, public tree or overlay."""
+    if token.startswith(OVERLAY_PREFIX):
+        overlay = _overlay_root()
+        return None if overlay is None else overlay / token[len(OVERLAY_PREFIX):]
+    return C.REPO_ROOT / token
+
+
+# --- What a script's argparse actually accepts ----------------------------------
+# Read STATICALLY, with ``ast``. Running ``<script> --help`` in a subprocess is the
+# obvious alternative and it is worse on every axis that matters here: it executes
+# ~40 repo scripts inside a pre-commit hook, it needs one subprocess per SUBCOMMAND
+# (43 pairs in this tree) because a subparser's options are not in the top-level
+# help, and it turns any import-time failure in a config-less checkout — which is
+# exactly what CI is — into a phantom "that flag does not exist". Parsing costs
+# nothing and cannot have a side effect.
+#
+# The price is that attribution is best-effort, so the pass FAILS OPEN on doubt.
+# Two questions, in order:
+#
+#   1. Is the flag defined ANYWHERE in the file? If not, report it. ``--id`` in the
+#      search-recall-audit skill appeared in no ``add_argument`` call at all.
+#   2. Only when every ``add_argument`` receiver in the file traced to a named
+#      parser: is it defined on the SUBCOMMAND the doc names, or on the root parser?
+#      ``--source`` is defined on ``sample`` and was documented under ``check`` —
+#      the same broken line, and only attribution catches that half.
+#
+# ONE unattributable ``add_argument`` anywhere in the file drops the whole file back
+# to question 1. Two of this repo's own scripts build subparsers in a loop and land
+# there; neither produces a finding, which is the point.
+_ARGPARSE_BUILTIN_FLAGS = frozenset({"--help"})
+_ROOT_PARSER = ""                    # the by-parser key for top-level options
+_GROUP_CALLS = ("add_mutually_exclusive_group", "add_argument_group")
+_ARGPARSE_CACHE: dict[str, tuple[dict[str, set[str]], set[str], bool] | None] = {}
+
+
+def _call_name(call: ast.Call) -> str:
+    f = call.func
+    if isinstance(f, ast.Attribute):
+        return f.attr
+    return f.id if isinstance(f, ast.Name) else ""
+
+
+def _receiver(call: ast.Call) -> str | None:
+    """The variable a method was called ON (``ap`` in ``ap.add_argument(…)``)."""
+    f = call.func
+    if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
+        return f.value.id
+    return None
+
+
+def _argparse_flags(path: Path):
+    """``(flags_by_parser, all_flags, attributed)``, or None when unreadable.
+
+    None means "this script's options could not be determined" — no argparse, a
+    syntax error, an unreadable file — and the caller counts it rather than
+    reporting anything. ``attributed`` False means only ``all_flags`` may be
+    trusted.
+    """
+    key = str(path)
+    if key in _ARGPARSE_CACHE:
+        return _ARGPARSE_CACHE[key]
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError, UnicodeDecodeError):
+        _ARGPARSE_CACHE[key] = None
+        return None
+
+    assigns: list[tuple[list[str], ast.Call]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if names:
+                assigns.append((names, node.value))
+
+    parsers: dict[str, str] = {}
+    groups: list[tuple[list[str], str | None]] = []
+    attributed = True
+    for names, call in assigns:
+        kind = _call_name(call)
+        if any(k.arg == "parents" for k in call.keywords):
+            attributed = False       # inherited options are defined in another tree
+        if kind == "ArgumentParser":
+            for n in names:
+                parsers[n] = _ROOT_PARSER
+        elif kind == "add_parser":
+            if call.args and isinstance(call.args[0], ast.Constant):
+                for n in names:
+                    parsers[n] = str(call.args[0].value)
+            else:
+                attributed = False   # add_parser(name) built in a loop
+        elif kind in _GROUP_CALLS:
+            groups.append((names, _receiver(call)))
+    # A group forwards ``add_argument`` to the parser it was made from, and groups
+    # can nest; ``ast.walk`` is not source order, so converge instead of assuming it.
+    for _ in range(len(groups) + 1):
+        for names, recv in groups:
+            if recv in parsers:
+                for n in names:
+                    parsers.setdefault(n, parsers[recv])
+    if any(recv not in parsers for _, recv in groups):
+        attributed = False
+
+    by_parser: dict[str, set[str]] = {}
+    all_flags: set[str] = set()
+    saw_add_argument = False
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_argument"):
+            continue
+        saw_add_argument = True
+        opts = {a.value for a in node.args
+                if isinstance(a, ast.Constant) and isinstance(a.value, str)
+                and a.value.startswith("--")}
+        all_flags |= opts
+        owner = parsers.get(_receiver(node))
+        if owner is None:
+            attributed = False
+        else:
+            by_parser.setdefault(owner, set()).update(opts)
+    if not saw_add_argument:
+        # No argparse in this file — it may read ``sys.argv`` itself, or take its
+        # options from a library this module knows nothing about. Silence, counted.
+        _ARGPARSE_CACHE[key] = None
+        return None
+    result = (by_parser, all_flags, attributed)
+    _ARGPARSE_CACHE[key] = result
+    return result
+
+
+def _flag_defined(flag: str, defined: set[str]) -> bool:
+    """argparse's own rule: an exact match, or an unambiguous prefix.
+
+    ``--enrich`` for ``--enrich-metadata`` is a command argparse accepts and this
+    repo's docs use, so exact-match-only would report working lines as broken.
+    """
+    if flag in defined or flag in _ARGPARSE_BUILTIN_FLAGS:
+        return True
+    return len([d for d in defined if d.startswith(flag)]) == 1
 
 
 # --- Markdown links -------------------------------------------------------------
@@ -617,20 +914,27 @@ def _suggest(target: str, tracked: set[str], renames: dict[str, str]) -> str | N
 
 # --- The check ------------------------------------------------------------------
 VERIFIED_KEY = "verified"
+# How many ``<python> <script>.py`` invocations pass 4 READ. Like ``verified`` and
+# unlike every other key here it is not a skip class: it is a denominator, so that
+# "0 broken commands" can be told apart from "the fence reader stopped working".
+COMMANDS_KEY = "commands-read"
+_NOT_SKIP_CLASSES = (VERIFIED_KEY, COMMANDS_KEY)
 
 
 def _new_skipped() -> dict[str, int]:
     """Every counter the reference pass keeps.
 
-    All keys but ``verified`` are SKIP classes and have a label in
-    ``_SKIP_LABELS``. ``verified`` is the opposite number — how many references
+    All keys but the two in ``_NOT_SKIP_CLASSES`` are SKIP classes and have a label
+    in ``_SKIP_LABELS``. ``verified`` is the opposite number — how many references
     were actually resolved against this tree — and it exists because without it a
     run over zero refs is indistinguishable from a run where every ref resolved.
     Both used to print "references: all resolve".
     """
     return {"overlay": 0, "absent-root": 0, "git-ignored": 0,
             "unrecognised-root": 0, "external": 0, "placeholder": 0,
-            "skip-tree": 0, "anchor-only": 0, VERIFIED_KEY: 0}
+            "skip-tree": 0, "anchor-only": 0,
+            "command-uncheckable": 0, "command-flags-unknown": 0,
+            COMMANDS_KEY: 0, VERIFIED_KEY: 0}
 
 
 def check_references(check_anchors: bool = True):
@@ -801,6 +1105,66 @@ def check_references(check_anchors: bool = True):
                 if frag not in anchors_by_rel[norm]:
                     sink.append({**hit, "kind": "anchor", "ref": dest, "target": norm,
                                  "why": "no heading with that slug in the target"})
+
+    # Pass 4 — the commands inside fenced blocks (see "Fenced commands" above).
+    # Same tier rule as every other pass: a dead command in a doc that states where
+    # things are NOW is fatal, the same line in a plan is advisory, and in a dated
+    # record it is permitted — a verification transcript records what was run that
+    # day, and rewriting it would falsify the record.
+    for f in files:
+        rel = _rel(f)
+        if rel not in texts:
+            continue
+        tier = _tier(rel)
+        sink = sink_for(tier)
+        for info, body in _iter_fences(texts[rel]):
+            tag = info.split()[0].lower() if info else ""
+            if tag not in _SHELL_FENCE_TAGS:
+                continue
+            for lineno, joined in _logical_lines(body):
+                if joined.lstrip().startswith("#"):
+                    continue
+                for segment in _SEGMENT_RE.split(joined):
+                    parsed = _parse_invocation(segment)
+                    if parsed is None:
+                        continue
+                    script, flags, sub = parsed
+                    hit = {"file": rel, "line": lineno, "kind": "command",
+                           "tier": tier, "ref": script, "target": script}
+                    if not _is_command_script(script):
+                        skipped["command-uncheckable"] += 1
+                        continue
+                    skipped[COMMANDS_KEY] += 1
+                    resolved = target_resolves(script)
+                    if resolved is None:          # overlay absent / runtime tree
+                        continue
+                    skipped[VERIFIED_KEY] += 1
+                    if not resolved:
+                        sink.append({**hit,
+                                     "successor": _retired_successor(script),
+                                     "why": "a documented command names a script "
+                                            "that does not exist"})
+                        continue
+                    if not flags:
+                        continue
+                    spath = _script_path(script)
+                    parsed_flags = _argparse_flags(spath) if spath else None
+                    if parsed_flags is None:
+                        skipped["command-flags-unknown"] += len(flags)
+                        continue
+                    by_parser, all_flags, attributed = parsed_flags
+                    allowed, scope = all_flags, "anywhere in that script"
+                    if attributed and sub is not None and sub in by_parser:
+                        allowed = by_parser[sub] | by_parser.get(_ROOT_PARSER, set())
+                        scope = f"on its '{sub}' subcommand"
+                    for flag in flags:
+                        skipped[VERIFIED_KEY] += 1
+                        if _flag_defined(flag, allowed):
+                            continue
+                        sink.append({**hit, "kind": "command-flag",
+                                     "ref": f"{script} … {flag}",
+                                     "why": f"no add_argument defines {flag} "
+                                            f"{scope}"})
 
     return broken, advisory, permitted, skipped, unrecognised
 
@@ -1013,6 +1377,10 @@ _SKIP_LABELS = {
     "placeholder": "placeholder destination, not a path",
     "skip-tree": "runtime/data tree",
     "anchor-only": "same-document anchor",
+    "command-uncheckable": ("fenced command whose script names no repo path "
+                            "(bare name, <placeholder>/ dir, scratch tree)"),
+    "command-flags-unknown": ("fenced command flag whose script defines no "
+                              "argparse options this module could read"),
 }
 
 
@@ -1069,8 +1437,14 @@ def run(check_anchors: bool = True, require_roots: bool = False,
         by_root.setdefault(u["ref"].split("/", 1)[0] + "/", []).append(u)
     ordered = sorted(by_root.items(), key=lambda kv: (-len(kv[1]), kv[0]))
 
+    # Printed unconditionally, zero included: a run that read no command at all
+    # means the fence reader stopped working, and that is exactly the silence this
+    # pass exists to end.
+    print(f"  documented commands read from fenced code blocks: "
+          f"{skipped[COMMANDS_KEY]}")
+
     for key, count in skipped.items():
-        if count and key != VERIFIED_KEY:
+        if count and key not in _NOT_SKIP_CLASSES:
             extra = f", of which {len(filey)} name a file" \
                 if key == "unrecognised-root" else ""
             print(f"  skipped refs — {_SKIP_LABELS[key]}: {count}{extra}")
@@ -1106,7 +1480,7 @@ def run(check_anchors: bool = True, require_roots: bool = False,
     # listed above it in the advisory and permitted tiers. Both numbers are now in
     # the sentence, so nobody has to know that "references" meant "the broken tier".
     verified = skipped[VERIFIED_KEY]
-    unverified = sum(v for k, v in skipped.items() if k != VERIFIED_KEY)
+    unverified = sum(v for k, v in skipped.items() if k not in _NOT_SKIP_CLASSES)
     if broken:
         _print_findings("BROKEN references", broken, tracked_pub, retired_renames)
     no_coverage = verified == 0
@@ -1169,7 +1543,7 @@ def run(check_anchors: bool = True, require_roots: bool = False,
               f"new {summary['new']} · unchanged {summary['unchanged']} · "
               f"matched-loosely {summary['matched_loosely']}")
         for key in ("broken", "advisory", "permitted", "unrecognised-root",
-                    VERIFIED_KEY):
+                    COMMANDS_KEY, VERIFIED_KEY):
             before, after = old["counts"].get(key, 0), snapshot["counts"].get(key, 0)
             if before != after:
                 print(f"    {key}: {before} -> {after} ({after - before:+d})")
