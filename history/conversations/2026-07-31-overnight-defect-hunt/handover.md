@@ -7,12 +7,11 @@
 An overnight session that went looking for defects rather than building features. Three
 adversarial audits read the code, five live job searches ran against real boards as canary
 runs, and one agent spent its whole run trying to break the largest change in the stack.
-Between them they found more than sixty confirmed defects. Twenty-six PRs fix or record
-them. Nothing is merged.
+Between them they found more than sixty confirmed defects. Thirty-one PRs fix or record them. Nothing is merged.
 
 ## What happened
 
-- **A 27-PR public stack, `#135`–`#161`**, each branch on the one below, bottom PR on `main`.
+- **A 31-PR public stack, `#135`–`#165`**, each branch on the one below, bottom PR on `main`.
   Roughly a third are gates that reported success without inspecting anything; a third are
   silent false negatives in the job pipeline — a registered company board that had been
   returning 404, a location gate printing confident rejections for postings it had actually
@@ -39,32 +38,35 @@ them. Nothing is merged.
 
 ## Where things stand
 
-- **All 27 PRs are open and green, none merged.** Merge bottom-up, `#135` first, one at a
+- **All 31 PRs are open and green, none merged.** Merge bottom-up, `#135` first, one at a
   time. Expect `main`'s CI to go red after each merge until a reconciliation row is
   appended — that is the documented cost of stacking here, not a regression, and
   `skills/github-workflow/SKILL.md` has the recovery.
-- **Four PRs have an unmet eval gate and say so in their bodies** rather than recording a
-  skip they could not justify. The job-search canaries need one run at the final stack head,
-  which discharges three of them at once — `evals/README.md` says a run at head covers the
-  accumulated state, not just its own triggering diff.
-- **`#161` must not merge until `examples-reshape-seven-calls.md` D5 is answered.** It
+- **The eval gate is discharged for the job-search PRs below `#163`** — the full canary set
+  was run at that head and recorded. **Two PRs still owe a run and say so:** `#162`, which
+  needs the behavioural-prep canaries, and `#165`, which changed job-search instruction files
+  *after* the run. Neither records a skip it could not justify.
+- **`#162` must not merge until `examples-reshape-seven-calls.md` D5 is answered.** It
   implements D5's own recommendation, whose default path is "this piece is dropped". If the
   answer is no, close it.
-- **Trust the PR bodies only from `#160` onward.** Every Verification block below that was
-  measured in its authoring agent's isolated worktree and not re-run after integration; a
-  correction pass rewrote them against the real branch heads, and the mechanical fix is filed
-  as `tasks/0_backlog/2026-07-31-pr-verification-blocks-are-measured-off-the-stack/`.
+- **Every PR body was re-measured and rewritten**, and so were the tracked records. Each was
+  originally measured in its authoring agent's isolated worktree and never re-run after
+  integration; **all 25 were wrong, and seven of eight tracked `verification.md` files carried
+  a figure that was false at the commit that published it.** The mechanical fix is filed as
+  `tasks/0_backlog/2026-07-31-pr-verification-blocks-are-measured-off-the-stack/`.
 - Three findings were **accepted rather than fixed**, each with the reason in the code and a
   task filed. One of them, sweeping the blob store, would have re-added exactly the
   unattended delete path the PR below it had just hardened against.
 
 ## Needs your attention
 
-Twenty-three decision items are open, ten of them filed tonight. All carry a default path,
+Twenty-four decision items are open, eleven of them filed tonight (one of those
+arrived already answered — the sponsorship fix settled it, and it is marked
+`resolved-by-implementation` with an ADR). All carry a default path,
 so nothing is blocked. The ones that actually change what happens next:
 
 - [`examples-reshape-seven-calls.md`](../../../message-queue/needs-human/decisions/examples-reshape-seven-calls.md)
-  — D5 gates `#160` specifically. Seven calls, answer all or none.
+  — D5 gates `#162` specifically. Seven calls, answer all or none.
 - [`title-prefilter-hardcoded-seniority-words.md`](../../../message-queue/needs-human/decisions/title-prefilter-hardcoded-seniority-words.md)
   — needs you to open your overlay search profile; no agent here could read it. If
   `titles.exclude` already covers Principal/Distinguished/Fellow/scientist titles, the
@@ -81,4 +83,4 @@ so nothing is blocked. The ones that actually change what happens next:
   — the lock-identity fix closed the third-writer case; the stale window itself is a
   liveness-versus-safety trade nobody has measured.
 
-The remaining eighteen are lower stakes and each states its own default.
+The remaining nineteen are lower stakes and each states its own default.
