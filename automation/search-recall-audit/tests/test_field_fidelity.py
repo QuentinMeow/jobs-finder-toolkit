@@ -275,8 +275,11 @@ class _StoreCase(unittest.TestCase):
                          "config not pinned — the build would walk the real tree")
         self.layout = domain_layout(self.data_root, "jobs")
         # The containment guard is under test elsewhere; honour it here.
-        self.out = Path(tempfile.mkdtemp(prefix="ff-out-",
-                                         dir=str(ff.REPO_ROOT / "local")))
+        # `local/` is gitignored, so a fresh clone does not have it — on a
+        # developer machine it always exists and this passed, in CI it did not.
+        scratch = ff.REPO_ROOT / "local"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.out = Path(tempfile.mkdtemp(prefix="ff-out-", dir=str(scratch)))
         self.addCleanup(shutil.rmtree, self.out, True)
         self.addCleanup(self._restore)
 
