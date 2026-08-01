@@ -435,5 +435,60 @@ class ReductionTests(_RecordedBoard):
         self.assertLess(len(digested.encode()), len(full.encode()) // 2)
 
 
+class EmptyDescriptionOutTests(_RecordedBoard):
+    """A failed detail fetch must never truncate an already-recovered JD.
+
+    ``--out`` wrote ``p.description or ""`` unconditionally. The documented
+    recovery recipe points it at ``source/JD-<role>.md`` inside an application
+    folder — owner-owned product content — and the natural response to a partial
+    outage is to re-run it. So the second run overwrote a JD the first run had
+    recovered with ZERO bytes and printed ``VERBATIM JD SAVED … (0 bytes)`` at
+    rc 0.
+    """
+
+    def _serve_without_a_description(self):
+        board = json.loads(json.dumps(ASHBY_BOARD))
+        for job in board["jobs"]:
+            if job["id"] == "ax-short":       # the Data Analyst posting
+                job["descriptionPlain"] = ""
+        body = json.dumps(board).encode()
+        sources.http_get_full = lambda *a, **k: _result(body)
+
+    def test_an_existing_jd_survives_a_posting_that_came_back_empty(self):
+        self._serve_without_a_description()
+        dest = self.tmp / "source" / "JD-Data-Analyst.md"
+        dest.parent.mkdir(parents=True)
+        recovered = "A JD an earlier run recovered.\n"
+        dest.write_text(recovered, encoding="utf-8")
+        code, stdout, stderr = self._dump("Data Analyst", out=dest)
+        self.assertEqual(code, 1)
+        self.assertEqual(dest.read_text(encoding="utf-8"), recovered)
+        self.assertIn("refusing to write", stderr)
+        self.assertNotIn("VERBATIM JD SAVED", stdout)
+
+    def test_nothing_at_all_is_created_when_the_target_is_new(self):
+        self._serve_without_a_description()
+        dest = self.tmp / "fresh" / "JD-Data-Analyst.md"
+        code, _stdout, _stderr = self._dump("Data Analyst", out=dest)
+        self.assertEqual(code, 1)
+        self.assertFalse(dest.exists())
+        self.assertFalse(dest.parent.exists(), "the parent dir was created anyway")
+
+    def test_a_posting_that_still_has_its_jd_is_unaffected(self):
+        self._serve_without_a_description()
+        dest = self.tmp / "JD-Senior-Platform-Engineer.md"
+        code, _stdout, _stderr = self._dump("Senior Platform", out=dest)
+        self.assertEqual(code, 0)
+        self.assertTrue(dest.read_text(encoding="utf-8").strip())
+
+    def test_the_stdout_path_still_reports_the_sentinel_at_rc_zero(self):
+        # Only the WRITE is refused: printing "(no description returned…)" costs
+        # nothing and is the existing contract.
+        self._serve_without_a_description()
+        code, stdout, _stderr = self._dump("Data Analyst")
+        self.assertEqual(code, 0)
+        self.assertIn(company_roles._NO_DESCRIPTION, stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -157,6 +157,57 @@ def raw_location_view(source: str, job: dict) -> dict:
     return {k: val for k, val in v.items() if val not in (None, [], {}, "")}
 
 
+# ── raw-job resolution (ONE implementation, shared by `corpus` and `check`) ───
+# Sources whose ``native_id`` is DERIVED from the payload rather than read from a
+# single field. The value is the PARSER'S OWN derivation, imported rather than
+# re-implemented: the audit's key and the builder's key then cannot drift, and a
+# rename in ``posting_parsers`` breaks this at import time instead of silently
+# returning ``None`` for every job of that source.
+_DERIVED_NATIVE_ID = {"workday": parsers._workday_req}
+
+
+def _job_native_id(source: str, job: dict) -> str | None:
+    """The identity the parser keys on — matches ``parse_*``'s ``native_id``.
+
+    Workday's locator carries no ``id`` field because its requisition token is
+    derived (``bulletFields[0]``, else the ``externalPath`` tail). That is still
+    an identity, and a STABLE one: both candidates are properties of the
+    requisition, not of the fetch, and it is the very token the store already
+    assigned the entity (``source_ids[].id``). Returning ``None`` here left every
+    id-less posting unresolvable against its own raw payload.
+    """
+    derive = _DERIVED_NATIVE_ID.get(source)
+    if derive is not None:
+        val = derive(job)
+        return str(val) if val not in (None, "") else None
+    _list, id_field = _RAW_LOCATORS.get(source, ((), None))
+    if id_field is None:
+        return None
+    val = job.get(id_field)
+    return str(val) if val not in (None, "") else None
+
+
+def _jobs_in_payload(source: str, data) -> list[dict]:
+    """Every raw job object in one decoded payload, per the source's list path."""
+    if data is None or source not in _RAW_LOCATORS:
+        return []
+    list_path, _id_field = _RAW_LOCATORS[source]
+    node = data
+    for k in list_path:
+        node = node.get(k, {}) if isinstance(node, dict) else {}
+    return [j for j in (node if isinstance(node, list) else []) if isinstance(j, dict)]
+
+
+def _raw_jobs_by_id(source: str, data) -> dict[str, dict]:
+    """``native_id`` -> raw job object, keyed exactly as the parser keys its rows."""
+    out: dict[str, dict] = {}
+    for j in _jobs_in_payload(source, data):
+        nid = _job_native_id(source, j)
+        if nid is not None:
+            out[nid] = j
+    return out
+
+
 # location tokens (lowercased words/phrases) that the gate cares about, used for a
 # deterministic "did the generated field drop a raw token?" heuristic.
 def _loc_tokens(text: str) -> set[str]:
@@ -189,8 +240,34 @@ def _flatten_raw_tokens(view: dict) -> set[str]:
                                                       r"hybrid|united states)", t)}
 
 
-def _gate_decision(location: str, policy: dict, jd: str = "") -> dict:
-    a = location_mod.assess_location(location, policy, description=jd)
+def _assess(location: str, policy: dict, *, title: str = "", jd: str = "",
+            workplace_hint: str = "", source: str = ""):
+    """THE gate call — the exact evidence set ``scoring.location_ok`` passes.
+
+    **Every command in this file routes through here.** A caller that omits an
+    argument does not get a weaker version of the gate's decision, it gets a
+    DIFFERENT one, and wrong in both directions: ``assess_location`` reads the
+    title in the rejecting direction (a foreign city in the title drops a
+    "Remote" posting → reported kept when the gate drops it), and the workplace
+    hint is what carries a non-metro US office to ``us_remote`` (a board that
+    parks "Remote" in its own field → reported dropped when the gate keeps it).
+    An audit whose "gate decision" is not the gate's decision selects its own
+    sample by a decision the pipeline never made, so this signature is the whole
+    contract: pass what the pipeline passes.
+    """
+    return location_mod.assess_location(
+        location,
+        policy,
+        title=title or "",
+        description=jd or "",
+        workplace_hint=str(workplace_hint or ""),
+        hint_trusted=not str(source or "").startswith("jobspy:"),
+    )
+
+
+def _gate_decision(location: str, policy: dict, **evidence) -> dict:
+    """The summary triple of :func:`_assess`, for corpus rows and ``check``."""
+    a = _assess(location, policy, **evidence)
     return {"category": a.category, "decision": a.decision, "workplace": a.workplace}
 
 
@@ -225,18 +302,16 @@ class _RawStore:
         data = self._cache[key]
         if data is None or source not in _RAW_LOCATORS:
             return source, None
-        list_path, id_field = _RAW_LOCATORS[source]
-        node = data
-        for k in list_path:
-            node = node.get(k, {}) if isinstance(node, dict) else {}
-        jobs = node if isinstance(node, list) else []
-        for j in jobs:
-            if not isinstance(j, dict):
-                continue
-            if id_field is None:  # workday: match by url tail
-                if url and (j.get("externalPath") or "") in url:
-                    return source, j
-            elif str(j.get(id_field)) == str(native_id):
+        # Same key `corpus` builds its index with — one resolution, no drift.
+        job = _raw_jobs_by_id(source, data).get(str(native_id))
+        if job is not None:
+            return source, job
+        # Fallback for an entity whose stored id predates a parser change: match
+        # the posting page by its site-relative path. An EMPTY externalPath must
+        # not match (``"" in url`` is always true, which returned the first job).
+        for j in _jobs_in_payload(source, data):
+            ext = j.get("externalPath") or ""
+            if ext and url and ext in url:
                 return source, j
         return source, None
 
@@ -263,40 +338,85 @@ def _jd_location_lines(entity_dir: Path) -> list[str]:
 
 
 # ── corpus ───────────────────────────────────────────────────────────────────
-def _iter_index(layout) -> list[dict]:
-    """Tolerant JSONL read: a few legacy index rows carry an embedded newline in a
-    scraped company name, so accumulate continuation lines until a row parses."""
+_MAX_CONTINUATION_LINES = 4   # a real row spans a few physical lines at most
+
+
+def _iter_index(layout) -> tuple[list[dict], int]:
+    """Tolerant JSONL read -> ``(rows, skipped)``. **Never truncates.**
+
+    A few legacy index rows carry an embedded newline in a scraped company name,
+    so continuation lines are folded in until the buffer parses. Two rules keep
+    that tolerance from eating the file:
+
+    * A buffer is GIVEN UP on — counted, not silently swallowed — as soon as it
+      cannot be a row: the next physical line opens a new object (a continuation
+      never starts with ``{``), or it has absorbed more lines than any real row
+      spans. Without this, one torn write glued every following line onto a
+      buffer that could never parse, so ``todo`` reported a confident count over
+      a truncated index and exited 0.
+    * The accumulated buffer is parsed with ``strict=False``. A RAW newline
+      inside a JSON string — exactly the legacy shape this reader documents — is
+      a control character that ``json.loads`` rejects in its default strict mode,
+      so those rows could never have parsed however many lines were folded in.
+
+    Callers report ``skipped``: an audit tool must state that it read less than
+    the whole index rather than let the reader decide silently.
+    """
     rows: list[dict] = []
+    skipped = 0
     buf = ""
     for ln in (layout.index / "postings.jsonl").read_text(
             encoding="utf-8", errors="replace").splitlines():
+        if buf and ln.lstrip().startswith("{"):
+            skipped += 1        # the pending buffer can never complete
+            buf = ""
         if not ln.strip() and not buf:
             continue
         buf = f"{buf}\n{ln}" if buf else ln
         try:
-            r = json.loads(buf)
+            r = json.loads(buf, strict=False)
         except json.JSONDecodeError:
+            if buf.count("\n") >= _MAX_CONTINUATION_LINES:
+                skipped += 1
+                buf = ""
             continue  # incomplete row — fold in the next physical line
         buf = ""
         if isinstance(r, dict) and r.get("key"):
             rows.append(r)
-    return rows
+    if buf.strip():
+        skipped += 1
+    return rows, skipped
+
+
+def _resolve_out(args) -> Path:
+    """The scratch dir for ANY writing command, containment-checked.
+
+    The module docstring states an absolute — "writes ONLY to a gitignored
+    scratch dir" — and every artifact here (corpus rows, per-case Markdown, the
+    todo queue) carries posting URLs and company-derived location fields out of
+    the owner's store. Pointed at a tracked folder that lands in the public tree,
+    and company names are not identity tokens, so the leak guard would not stop
+    it. One helper, so a command cannot be added without the guard.
+    """
+    out = Path(args.out).expanduser().resolve()
+    local_root = (REPO_ROOT / "local").resolve()
+    if not out.is_relative_to(local_root):
+        sys.exit(f"`{args.cmd}` output must stay under {local_root}")
+    out.mkdir(parents=True, exist_ok=True)
+    return out
 
 
 def cmd_todo(args) -> None:
     """Write weird/unresolvable location reviews for later AI investigation."""
-    out = Path(args.out).expanduser().resolve()
-    local_root = (REPO_ROOT / "local").resolve()
-    if not out.is_relative_to(local_root):
-        sys.exit(f"`todo` output must stay under {local_root}")
-    out.mkdir(parents=True, exist_ok=True)
+    out = _resolve_out(args)
 
     layout = domain_layout(config.data_root(), DOMAIN)
     policy = config.location_policy()
     todos: list[dict] = []
     by_source: dict[str, int] = {}
 
-    for index_row in _iter_index(layout):
+    index_rows, skipped_rows = _iter_index(layout)
+    for index_row in index_rows:
         location = index_row.get("location", "") or ""
         title = index_row.get("title", "") or ""
         # Adding the raw hint/JD below can only supply a resolving signal, so use
@@ -329,14 +449,8 @@ def cmd_todo(args) -> None:
                 description = jd_path.read_text(
                     encoding="utf-8", errors="replace")
 
-        assessment = location_mod.assess_location(
-            location,
-            policy,
-            title=title,
-            description=description,
-            workplace_hint=str(workplace_hint),
-            hint_trusted=not str(source).startswith("jobspy:"),
-        )
+        assessment = _assess(location, policy, title=title, jd=description,
+                             workplace_hint=workplace_hint, source=source)
         if "weird_location_format" not in assessment.review_reasons:
             continue
 
@@ -364,17 +478,12 @@ def cmd_todo(args) -> None:
     )
     source_summary = ", ".join(
         f"{source}={count}" for source, count in sorted(by_source.items()))
+    if skipped_rows:
+        print(f"todo: WARNING — {skipped_rows} unparseable index row(s) skipped; "
+              f"the counts below cover the rest of the index.", file=sys.stderr)
     print(f"todo: {len(todos)} weird-location postings "
-          f"[{source_summary or 'none'}] -> {todo_path}")
-
-
-def _job_native_id(source: str, job: dict) -> str | None:
-    """The identity the parser keys on — matches ``parse_*``'s ``native_id``."""
-    _list, id_field = _RAW_LOCATORS.get(source, ((), None))
-    if id_field is None:
-        return None
-    val = job.get(id_field)
-    return str(val) if val not in (None, "") else None
+          f"[{source_summary or 'none'}] from {len(index_rows)} index rows "
+          f"({skipped_rows} unparseable) -> {todo_path}")
 
 
 def _flags_for(gen_loc: str, dropped: list[str], flip: bool) -> list[str]:
@@ -395,8 +504,7 @@ def cmd_corpus(args) -> None:
     """Iterate the raw zone directly (dedup by blob sha), re-run the SAME parser the
     builder uses, and compare its generated ``location`` against every raw location
     field of the same job. Fast + full-scale: no per-entity glob resolution."""
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
+    out = _resolve_out(args)
     layout = domain_layout(config.data_root(), DOMAIN)
     policy = config.location_policy()
     bs = _blobs.BlobStore(layout.blobs)
@@ -431,18 +539,9 @@ def cmd_corpus(args) -> None:
             raw_json = json.loads(data.decode("utf-8", "replace"))
         except ValueError:
             raw_json = None
-        # id -> raw job object (for the raw_location_view)
-        job_by_id: dict[str, dict] = {}
-        if raw_json is not None:
-            list_path, _idf = _RAW_LOCATORS[source]
-            node = raw_json
-            for k in list_path:
-                node = node.get(k, {}) if isinstance(node, dict) else {}
-            for j in (node if isinstance(node, list) else []):
-                if isinstance(j, dict):
-                    nid = _job_native_id(source, j)
-                    if nid is not None:
-                        job_by_id[nid] = j
+        # native_id -> raw job object (for the raw_location_view), keyed by the
+        # SAME helper `check` resolves with.
+        job_by_id = _raw_jobs_by_id(source, raw_json)
         fetched_at = env.get("fetched_at") or ""
         for row in parsers.parse_manifest(env, data):
             n_rows += 1
@@ -462,9 +561,15 @@ def cmd_corpus(args) -> None:
         raw_toks = _flatten_raw_tokens(view)
         gen_toks = _loc_tokens(gen_loc)
         dropped = sorted(t for t in raw_toks - gen_toks if len(t) > 2)
-        g_dec = _gate_decision(gen_loc, policy)
+        # The gate reads the title, the JD and the workplace hint too, and this
+        # row already carries all three — so pass them (see `_assess`).
+        evidence = {"title": row.get("title", "") or "",
+                    "jd": row.get("description", "") or "",
+                    "workplace_hint": row.get("workplace_raw") or "",
+                    "source": source}
+        g_dec = _gate_decision(gen_loc, policy, **evidence)
         union = gen_loc + "".join(" / " + t for t in dropped)
-        u_dec = _gate_decision(union, policy)
+        u_dec = _gate_decision(union, policy, **evidence)
         flip = bool(dropped) and (g_dec["decision"] != u_dec["decision"])
         flags = _flags_for(gen_loc, dropped, flip)
         corpus.append({
@@ -492,6 +597,18 @@ def cmd_corpus(args) -> None:
     print(f"corpus: {len(corpus)} unique postings from {n_blobs} blobs "
           f"({n_manifests} manifests, {n_rows} rows); {n_resolved} raw-resolved; "
           f"{len(flagged)} flagged -> {out}/corpus.jsonl")
+    # Per-source resolution, STATED rather than inferred from a total: an
+    # unresolved posting can never be flagged and `sample` filters it out, so a
+    # source sitting at 0 of N is the tool reporting a whole ATS clean without
+    # ever having looked at it.
+    per_source: dict[str, list[int]] = {}
+    for c in corpus:
+        tally = per_source.setdefault(c["source"], [0, 0])
+        tally[0] += 1 if c["raw_resolved"] else 0
+        tally[1] += 1
+    for src, (ok, total) in sorted(per_source.items()):
+        note = "   <- resolves NONE of its postings" if ok == 0 and total else ""
+        print(f"  raw-resolved  {src:16} {ok:5}/{total}{note}")
     for f, n in sorted(by_flag.items(), key=lambda kv: -kv[1]):
         srcs = ", ".join(f"{s}={c}" for (ff, s), c in
                          sorted(by_flag_src.items(), key=lambda kv: -kv[1])
@@ -501,7 +618,7 @@ def cmd_corpus(args) -> None:
 
 # ── sample (write per-entity comparison files for composer subagents) ────────
 def cmd_sample(args) -> None:
-    out = Path(args.out)
+    out = _resolve_out(args)
     corpus_path = out / "corpus.jsonl"
     if not corpus_path.exists():
         sys.exit(f"missing {corpus_path} — run `corpus` first.")
@@ -579,7 +696,13 @@ def cmd_check(args) -> None:
             print("    RAW: not resolvable (blob not-synced / id not found)")
         jd = (yaml_path.parent / "jd.md")
         jd_text = jd.read_text(errors="replace") if jd.exists() else ""
-        print(f"    gate(stored): {_gate_decision(stored, policy, jd_text)}")
+        gate = _gate_decision(
+            stored, policy,
+            title=entity.get("title", "") or "",
+            jd=jd_text,
+            workplace_hint=(entity.get("facts") or {}).get("workplace_raw") or "",
+            source=source or "")
+        print(f"    gate(stored): {gate}")
         print(f"    jd location lines: {_jd_location_lines(yaml_path.parent)}")
 
 

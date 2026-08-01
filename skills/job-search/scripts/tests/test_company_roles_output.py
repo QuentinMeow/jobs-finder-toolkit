@@ -28,6 +28,7 @@ for _p in (str(_SCRIPTS), str(_SCRIPTS / "_vendor")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import common  # noqa: E402  (the partial-fetch warning sink)
 import company_roles  # noqa: E402
 from common import JobPosting  # noqa: E402
 
@@ -148,6 +149,116 @@ class CompanyRolesVerdictExposureTests(unittest.TestCase):
         self.assertEqual(payload["matches"], 1)
         self.assertEqual(payload["roles"][0]["decision"], "match")
         self.assertEqual(payload["roles"][0]["workplace"], "remote")
+
+
+# The two postings below are identical except for the JD the detail fetch failed
+# to return — which is the whole point: the location string alone cannot reach
+# `us_remote`, so the uninspected one is reported as a definite rejection.
+_JD_GRANTS_REMOTE = (
+    "About the role\n\n"
+    "This position is fully remote within the United States; you may also work\n"
+    "from our Seattle office.\n"
+)
+
+
+class PartialFetchWarningTests(unittest.TestCase):
+    """An UNINSPECTED posting must not read as a clean `no`, silently.
+
+    `sources.py` records "N of M detail fetches failed; those postings were not
+    inspected" into a module-level sink. Only `search_jobs.py` drained it, so
+    this script printed a confident three-way tally and exited 0 with an empty
+    stderr while a posting whose JD never arrived was judged on its office
+    location alone.
+    """
+
+    def setUp(self):
+        self._fetch = company_roles.fetch_company
+        self._policy = company_roles._location_policy
+        company_roles._location_policy = lambda: dict(_POLICY)
+        common.drain_source_warnings()          # a clean sink per test
+        self.addCleanup(common.drain_source_warnings)
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        company_roles.fetch_company = self._fetch
+        company_roles._location_policy = self._policy
+
+    def _serve_partial_outage(self):
+        def _fetch(_entry):
+            common.record_source_warning(
+                "workday:Example Board Co: 1 of 2 detail fetches failed "
+                "(first: HTTP 503); those postings were not inspected")
+            return [
+                _posting("Data Engineer", "Seattle, WA",
+                         description=_JD_GRANTS_REMOTE),
+                _posting("Staff Data Engineer", "Seattle, WA", description=""),
+            ]
+
+        company_roles.fetch_company = _fetch
+
+    def _main(self, *argv):
+        out, err = io.StringIO(), io.StringIO()
+        old = sys.argv
+        sys.argv = ["company_roles.py", "--ats", "workday", "--token", "example",
+                    *argv]
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = company_roles.main()
+        finally:
+            sys.argv = old
+        return code, out.getvalue(), err.getvalue()
+
+    def test_the_missing_jd_is_what_flips_the_verdict(self):
+        # Establishes the stake: this is a real match reported as a rejection.
+        self._serve_partial_outage()
+        with contextlib.redirect_stderr(io.StringIO()):
+            rows = {r["title"]: r for r in company_roles.gather({"name": "X"})}
+        self.assertEqual(rows["Data Engineer"]["decision"], "match")
+        self.assertEqual(rows["Data Engineer"]["category"], "us_remote")
+        self.assertEqual(rows["Staff Data Engineer"]["decision"], "no_match")
+        self.assertEqual(rows["Staff Data Engineer"]["category"], "other_us")
+
+    def test_the_partial_fetch_warning_reaches_stderr(self):
+        self._serve_partial_outage()
+        code, _out, err = self._main()
+        self.assertEqual(code, 0)
+        self.assertIn("company_roles: WARNING", err)
+        self.assertIn("were not inspected", err)
+
+    def test_the_sink_is_drained_so_a_second_run_does_not_re_report(self):
+        self._serve_partial_outage()
+        self._main()
+        self.assertEqual(common.drain_source_warnings(), [],
+                         "the warning sink was left full for the next caller")
+
+    def test_the_jd_less_row_is_marked_in_the_table(self):
+        # A drained warning names a COUNT; the table has to say which row.
+        self._serve_partial_outage()
+        _code, out, _err = self._main()
+        marked = [ln for ln in out.splitlines() if "no-JD" in ln]
+        self.assertEqual(len(marked), 1, out)
+        self.assertIn("Staff Data Engineer", marked[0])
+        self.assertTrue(marked[0].startswith("no "), marked[0])
+
+    def test_json_states_per_row_whether_the_posting_was_inspected(self):
+        self._serve_partial_outage()
+        _code, out, _err = self._main("--json")
+        rows = {r["title"]: r for r in json.loads(out)["roles"]}
+        self.assertTrue(rows["Data Engineer"]["has_description"])
+        self.assertFalse(rows["Staff Data Engineer"]["has_description"])
+
+    def test_a_clean_fetch_prints_no_warning(self):
+        company_roles.fetch_company = lambda entry: [
+            _posting("Data Engineer", "Springfield, ST", description="A JD.")]
+        code, _out, err = self._main()
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+
+    def test_the_jd_dump_path_drains_the_warnings_too(self):
+        self._serve_partial_outage()
+        code, _out, err = self._main("--jd", "Data Engineer", "--digest")
+        self.assertEqual(code, 0)
+        self.assertIn("company_roles: WARNING", err)
 
 
 if __name__ == "__main__":

@@ -57,6 +57,7 @@ for _p in (SKILL_SCRIPTS, SKILL_SCRIPTS / "_vendor"):
         sys.path.insert(0, str(_p))
 
 from _vendor.location import assess_location  # noqa: E402
+from common import drain_source_warnings  # noqa: E402  (the partial-fetch sink)
 from fetch_jd import build_digest  # noqa: E402  (sibling script: the ONE digest builder)
 from registry import load_registry  # noqa: E402
 from sources import fetch_company  # noqa: E402
@@ -123,10 +124,29 @@ def _verdict(posting):
 _DECISION_ORDER = {"match": 0, "review": 1, "no_match": 2}
 
 
+def _report_source_warnings() -> None:
+    """Drain and print the fetchers' "I could not inspect all of this" lines.
+
+    ``sources.py`` records a partial detail outage ("N of M detail fetches
+    failed; those postings were not inspected", a truncated listing) into a
+    module-level sink. Until this call existed only ``search_jobs.py`` drained
+    it, so this script printed a confident three-way tally and exited 0 with an
+    empty stderr while the postings whose JD never arrived were judged on their
+    office location alone — and a JD-borne US-remote grant cannot fire without
+    the JD, so a genuine match reads as a definite ``no``. Call this at EVERY
+    ``fetch_company`` site, immediately after the fetch, so no return path can
+    skip it.
+    """
+    for w in drain_source_warnings():
+        print(f"company_roles: WARNING — {w}", file=sys.stderr)
+
+
 def gather(entry: dict) -> list[dict]:
     """Fetch every open posting and attach a location verdict (no filtering)."""
     rows = []
-    for p in fetch_company(entry):
+    postings = fetch_company(entry)
+    _report_source_warnings()
+    for p in postings:
         a = _verdict(p)
         rows.append({
             # `match` is the narrow boolean (decision == "match") and is NOT the
@@ -142,6 +162,11 @@ def gather(entry: dict) -> list[dict]:
             "title": p.title,
             "location": p.location,
             "remote": p.remote,
+            # A posting whose detail fetch failed carries no JD, so the JD-borne
+            # remote grants cannot fire and its verdict rests on the office
+            # location alone. That is a NOT-INSPECTED posting, not a clean `no` —
+            # say so per row, since a drained warning names only a count.
+            "has_description": bool((p.description or "").strip()),
             "posted_at": p.posted_at.date().isoformat() if p.posted_at else "",
             "url": p.url,
         })
@@ -167,7 +192,9 @@ def dump_jd(entry: dict, needle: str, *, digest: bool = False,
 
     - ``out`` writes the VERBATIM description to that path (requires exactly one
       matching posting) and prints the saved path instead of the body, so the JD
-      never has to travel through a reader's context to reach the file.
+      never has to travel through a reader's context to reach the file. An empty
+      description is REFUSED (rc 1), never written: a failed detail fetch must
+      not truncate a JD the previous run recovered.
     - ``digest`` prints the deterministic gate locator from ``fetch_jd`` — the SAME
       builder, so both JD-recovery paths emit one format — in place of the body.
     - A description the digest would not SHRINK is passed through VERBATIM even
@@ -179,7 +206,9 @@ def dump_jd(entry: dict, needle: str, *, digest: bool = False,
     for any posting you intend to keep.
     """
     needle_l = needle.lower()
-    hits = [p for p in fetch_company(entry) if needle_l in (p.title or "").lower()]
+    postings = fetch_company(entry)
+    _report_source_warnings()
+    hits = [p for p in postings if needle_l in (p.title or "").lower()]
     if not hits:
         print(f"# no posting title contains {needle!r}", file=sys.stderr)
         return 1
@@ -195,6 +224,16 @@ def dump_jd(entry: dict, needle: str, *, digest: bool = False,
         reasons = f" [{', '.join(a.review_reasons)}]" if a.review_reasons else ""
         text = p.description or ""
         n = len(text.encode("utf-8"))
+        if out is not None and not text.strip():
+            # Nothing is written until there is something to write. `out` names a
+            # JD inside an application folder — owner-owned product content — and
+            # the documented recovery recipe is re-run after a failed fetch, so
+            # writing "" here TRUNCATES a JD that was already recovered and
+            # reports it as a save. Refuse, before mkdir and before the header.
+            print(f"ERROR: {p.title!r} returned no description "
+                  f"{_NO_DESCRIPTION} — refusing to write {out} "
+                  f"(an existing JD there is left untouched).", file=sys.stderr)
+            return 1
         digest_text, note = None, ""
         if digest:
             if n < _DIGEST_MIN_BYTES:
@@ -276,7 +315,8 @@ def main() -> int:
     ap.add_argument("--out", metavar="PATH",
                     help="With --jd: write the VERBATIM recovered JD to PATH instead "
                          "of printing it (parent dirs created; requires exactly one "
-                         "matching posting).")
+                         "matching posting). A posting the ATS returned no "
+                         "description for is refused, not written as 0 bytes.")
     ap.add_argument("--digest", action="store_true",
                     help="With --jd: print the deterministic gate LOCATOR "
                          "(title/level, required YOE, workplace/location, "
@@ -350,7 +390,8 @@ def main() -> int:
     for r in shown:
         flag = {"match": "MATCH ", "review": "REVIEW"}.get(r["decision"], "no    ")
         posted = f" [{r['posted_at']}]" if r["posted_at"] else ""
-        print(f"{flag} {r['category']:<13} | {r['title']}{posted}")
+        no_jd = "" if r["has_description"] else "  [no-JD: verdict is location-only]"
+        print(f"{flag} {r['category']:<13} | {r['title']}{posted}{no_jd}")
         print(f"      loc={r['location']!r} remote={r['remote']} "
               f"workplace={r['workplace']}")
         if r["review_reasons"]:
