@@ -4,6 +4,8 @@
 - **Area**: job-search
 - **Source**: contradiction audit 2026-07-31, mechanical finding A1 — the remainder left
   unfixed by the four-site repair (branch `wip/13-blacklist-doc-routing`)
+- **Claimed-by**: the doc edits landed in `8a1321a`; the record was corrected and
+  re-verified on `wip/28-verification-regressions`, 2026-07-31
 
 ## Goal
 
@@ -27,9 +29,14 @@ The 2026-07-31 audit named four sites; they were fixed on `wip/13-blacklist-doc-
 sentence in `skills/job-search/scripts/registry.py`'s docstring). The canonical wording to
 match is `skills/resume-writer/SKILL.md:89-92`.
 
-**These five were NOT fixed**, because at the time all three files were being edited
-concurrently by `wip/02-handoff-skiplog`, `wip/04-job-search-scratch-paths` and
-`wip/07-company-roles-jd-digest`, and an edit here would have collided:
+**These five are FIXED — in `8a1321a`, the same commit that filed this task.** The task was
+written while all three files were being edited concurrently by `wip/02-handoff-skiplog`,
+`wip/04-job-search-scratch-paths` and `wip/07-company-roles-jd-digest`, so it was filed as
+"not fixed"; once those branches landed, the same commit made the edits and the task text
+was never updated to match. An independent verification of the stack caught the
+contradiction (`8a1321a`'s own diff shows `SKILL.md` +3/-3 and `reference.md` +20/-9), and
+corrected it here on 2026-07-31. **Nothing in the table below is still open** — it is kept
+as the record of what was wrong and where:
 
 | Site | What it says | Why it is wrong |
 |---|---|---|
@@ -57,14 +64,22 @@ the gate-list work on `wip/15-roadmap-and-gate-lists`:
 
 ## Definition of done
 
-- All five sites above name the merged registry / `config.blacklist_path()`, matching
-  `skills/resume-writer/SKILL.md:89-92`.
-- § Managing target companies tells the reader to add a blacklist row to the OVERLAY, and
-  says the reconciler rejects one added to `companies.yaml`.
-- `grep -rn 'blacklist' skills/job-search/SKILL.md skills/job-search/reference.md` shows no
-  remaining sentence that places blacklist rows in `companies.yaml`.
-- `.venv/bin/python automation/reconcile/reconcile.py --check` → OK.
-- `.venv/bin/python automation/gardener/verify_links.py` → OK.
-- `.venv/bin/python automation/metrics/instruction_budget.py --strict` → OK.
-- Eval gate judged per `evals/README.md` for the `SKILL.md`/`reference.md` edits, with a
-  recorded run or a one-line skip rationale.
+All met by `8a1321a`; re-verified 2026-07-31 on the stack tip — output in
+`verification.md`.
+
+- [x] All five sites above name the merged registry / `config.blacklist_path()`, matching
+      `skills/resume-writer/SKILL.md:89-92`.
+- [x] § Managing target companies tells the reader to add a blacklist row to the OVERLAY, and
+      says the reconciler rejects one added to `companies.yaml`.
+- [x] `grep -rn 'blacklist' skills/job-search/SKILL.md skills/job-search/reference.md` shows no
+      remaining sentence that places blacklist rows in `companies.yaml`.
+- [x] `.venv/bin/python automation/reconcile/reconcile.py --check` → OK.
+- [x] `.venv/bin/python automation/gardener/verify_links.py` → OK.
+- [x] `.venv/bin/python automation/metrics/instruction_budget.py --strict` → OK.
+- [ ] Eval gate judged per `evals/README.md` for the `SKILL.md`/`reference.md` edits, with a
+      recorded run or a one-line skip rationale. **Still open, and it is why this task is in
+      review rather than done**: `8a1321a` recorded a skip rationale that understates its own
+      diff (it claims 7 changed instruction lines across 2 files; `git show 8a1321a --numstat`
+      gives 49 changed lines across 4 instruction files, 35 of them in `job-search` alone,
+      over `evals/README.md`'s ~20-line MUST-run trigger). Either
+      re-record the rationale against the real diff or run the `job-search` canaries.

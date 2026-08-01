@@ -55,9 +55,25 @@ class TitlePrefilterTests(unittest.TestCase):
         "Software Engineer, Salesforce Platform",
         "Software Engineer, Co-operative Caching",
     )
+    # A seniority word sitting inside a QUALIFIER — a parenthetical, a hybrid
+    # "engineer/manager" row, an appositive after a comma — is not the title's
+    # head noun, and the two space-padded entries in _BIGTECH_TITLE_SKIP exist to
+    # keep these. Word-anchoring alone (no padding) drops all four, which is a
+    # silent recall loss: a title dropped here is never fetched, so it leaves no
+    # filtered row and no snapshot trace.
+    QUALIFIER_POSITION = (
+        "Software Engineer (Manager Tools)",     # a product, not a report line
+        "Software Engineer (VP)",                # the investment-bank IC level
+        "Lead Software Engineer/Manager",        # hybrid IC row
+        "VP, Engineering",                       # "vp" is not whitespace-delimited
+    )
     # Genuinely non-matching occupations must still be dropped before the fetch.
     STILL_SKIPPED = (
         "Software Engineering Intern",
+        "Engineering Manager",
+        "Manager, Software Engineering",
+        "Senior Manager, Software Engineering",
+        "VP Engineering",
         "Engineering Manager, Platform",
         "Director of Engineering",
         "Enterprise Sales Executive",
@@ -83,6 +99,25 @@ class TitlePrefilterTests(unittest.TestCase):
         for title in self.GLUED:
             with self.subTest(title=title):
                 self.assertTrue(sources._title_prefilter(title))
+
+    def test_a_seniority_word_inside_a_qualifier_is_not_a_skip(self):
+        for title in self.QUALIFIER_POSITION:
+            with self.subTest(title=title):
+                self.assertTrue(
+                    sources._title_prefilter(title),
+                    f"prefilter drops {title!r}; 'manager'/'vp' need a WHITESPACE "
+                    f"boundary, not just a word boundary")
+
+    def test_the_padded_entries_keep_their_padding(self):
+        """Pin the encoding itself — the spaces are the rule, not formatting."""
+        self.assertIn(" manager", sources._BIGTECH_TITLE_SKIP)
+        self.assertIn(" vp ", sources._BIGTECH_TITLE_SKIP)
+
+    def test_odd_board_whitespace_does_not_smuggle_a_title_past_the_skip(self):
+        for title in ("VP\tEngineering", "Engineering  Manager",
+                      "VP Engineering", " Engineering Manager "):
+            with self.subTest(title=title):
+                self.assertFalse(sources._title_prefilter(title))
 
     def test_real_non_matching_occupations_are_still_skipped(self):
         for title in self.STILL_SKIPPED:

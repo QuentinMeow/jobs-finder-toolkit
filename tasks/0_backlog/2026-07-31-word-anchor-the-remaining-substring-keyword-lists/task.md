@@ -27,7 +27,7 @@ each was demonstrated live by the audit:
 | `automation/shared/mail/reconciliation.py:337` (`_contains`) | `"confirmed"` matches inside "un**confirmed**" — an explicitly unconfirmed hold becomes a tracker-ready confirmed interview | OPEN |
 | `automation/shared/mail/reconciliation.py:445` | bare `"opportunity"` matches the EEO footer, so every no-op status email becomes a reply TODO | DONE 2026-07-31 |
 | `skills/email-assistant/scripts/application_context.py:191` | a company name inside a longer word scores +40 (threshold 20) — "**Meta**data", "Drop**box**" | OPEN |
-| `skills/job-search/scripts/sources.py:285` (`_title_prefilter`) | `"intern"` matches inside "**Intern**al", dropping titles the real title gate would keep | OPEN |
+| `skills/job-search/scripts/sources.py:285` (`_title_prefilter`) | `"intern"` matches inside "**Intern**al", dropping titles the real title gate would keep | DONE 2026-07-31 |
 | `skills/job-search/scripts/scoring.py:673` (`_norm_company`) | substring replace, so the sponsor boost never fires for a legal name | DONE 2026-07-31 |
 | `skills/job-search/scripts/common.py:169` | the two-letter keyword `"go"` matches "**go**-to-market" / "**go** live" | ACCEPTED — split to `tasks/0_backlog/2026-07-31-ambiguous-short-keywords-rank-on-english-prose` |
 
@@ -43,6 +43,19 @@ word "remote" sits between "base salary" and the figure, an UNCONFIRMED hold sti
 classifies `schedule_confirmed`, `find_application_matches` still adds +40 for
 `"Box"` inside "Drop**box**", and `_title_prefilter` still drops
 "Software Engineer, Internal Developer Platform". They stay this task's scope.
+
+**2026-07-31 correction (verification-regressions branch).** The `_title_prefilter`
+clause in the paragraph above was **already false when it was written**: `6bec7a3`
+word-anchored that list, and `6bec7a3` is an ancestor of `8699726`, the commit that
+wrote the paragraph (`git show 8699726:skills/job-search/scripts/sources.py` line 339
+is already `bounded_phrase_hit(...)`). It is the same defect this stack has elsewhere —
+a claim measured in a `main`-based worktree and published against the stack — and it is
+filed as `tasks/0_backlog/2026-07-31-pr-verification-blocks-are-measured-off-the-stack`.
+The row is now DONE, with one refinement this branch adds: `manager` and `vp` keep a
+space-padded entry, i.e. a WHITESPACE boundary rather than a word boundary, because bare
+word-anchoring newly dropped `Software Engineer (Manager Tools)`, `Software Engineer (VP)`,
+`Lead Software Engineer/Manager` and `VP, Engineering`. Three rows stay open:
+`_TOTAL_TERMS`, `_contains`'s "confirmed", and `application_context`'s company match.
 
 A fourth instance is already recorded separately in
 `memory/known-issues/check-py-never-skill-hyphen-substring-false-positive.md`
