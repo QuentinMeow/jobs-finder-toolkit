@@ -403,5 +403,59 @@ class ManagerProductSuffixTests(unittest.TestCase):
             "title_manager_product_suffix_ambiguous", posting.review_reasons)
 
 
+class MemberOfStaffNeutralizeFamilyTests(unittest.TestCase):
+    """``exclude_neutralize`` names an IC title FAMILY, not one spelling of it.
+
+    The profile listed "member of technical staff", so "Member of Technical Staff,
+    Software Engineer" survived the ``staff`` exclude while a real board's "Member
+    of Data Staff" — the same non-Staff-level IC title — was hard-dropped. A
+    literal list is always one spelling short, so the declared intent now covers
+    the family (the same move the ``new grad`` expansion already makes).
+    """
+
+    TITLES = {
+        "include": ["software engineer", "data engineer"],
+        "exclude": ["staff", "principal", "manager", "director"],
+        "exclude_neutralize": ["member of technical staff"],
+    }
+    UNDECLARED = {**TITLES, "exclude_neutralize": []}
+
+    def _decision(self, title, cfg=None):
+        return assess_title(title, cfg or self.TITLES)["decision"]
+
+    def test_other_spellings_of_the_family_survive(self):
+        for title in (
+            "Member of Technical Staff, Software Engineer",
+            "Member of Data Staff, Software Engineer",
+            "Member of Research Staff, Software Engineer",
+            "Member of the Technical Staff, Software Engineer",
+            "Members of Applied Research Staff, Software Engineer",
+        ):
+            with self.subTest(title=title):
+                self.assertEqual(self._decision(title), "match")
+
+    def test_genuine_staff_and_principal_titles_still_drop(self):
+        for title in ("Staff Software Engineer", "Principal Software Engineer",
+                      "Senior Staff Data Engineer",
+                      "Principal Member of Technical Staff, Software Engineer"):
+            with self.subTest(title=title):
+                self.assertEqual(self._decision(title), "no_match")
+
+    def test_a_seniority_prefix_inside_the_family_still_reads(self):
+        assessment = assess_title(
+            "Senior Member of Data Staff, Software Engineer", self.TITLES)
+        self.assertEqual(assessment["decision"], "match")
+        self.assertEqual(assessment["level"], "senior")
+
+    def test_the_expansion_is_gated_on_the_profile_declaring_it(self):
+        # A profile that never asked to neutralize the family keeps the plain
+        # `staff` exclude; the generalization honors intent, it does not impose it.
+        for title in ("Member of Technical Staff, Software Engineer",
+                      "Member of Data Staff, Software Engineer"):
+            with self.subTest(title=title):
+                self.assertEqual(
+                    self._decision(title, self.UNDECLARED), "no_match")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -498,12 +498,24 @@ _SALARY_TERMS = (
     "base compensation",
 )
 
-# "Member of Technical Staff" (MTS) is a role-family name, not a Staff-level (L6)
-# signal — the trailing "Staff" must not trip the bare ``\bstaff\b`` rule below.
-# Neutralized before the level rules run, so "Member of Technical Staff" reads as
-# unknown while "Senior Member of Technical Staff" still resolves via "senior".
-_MTS_NEUTRALIZE_RE = re.compile(
-    r"\bmembers?\s+of\s+(?:the\s+)?technical\s+staff\b", re.I)
+# "Member of <X> Staff" is a role-family name, not a Staff-level (L6) signal — the
+# trailing "Staff" must not trip the bare ``\bstaff\b`` rule below. Neutralized
+# before the level rules run, so "Member of Technical Staff" reads as unknown while
+# "Senior Member of Technical Staff" still resolves via "senior".
+#
+# The qualifier is a WILDCARD, not a literal. "Technical" is the best-known
+# spelling but it is one of many the same family uses on real boards — Data,
+# Research, Engineering, Product, Deployment, Go-To-Market — and a live scan hit
+# "Member of Data Staff", which the single-spelling pattern graded Staff-level and
+# a `staff` exclude then deleted. Bounded at two qualifier words and blocked on
+# connectives so the span cannot run past the head noun it belongs to.
+MEMBER_OF_STAFF_TITLE_RE = re.compile(
+    r"\bmembers?\s+of\s+(?:the\s+)?"
+    r"(?:(?!of\b|and\b|for\b|to\b|at\b|in\b)[a-z][a-z0-9&/'-]*\s+){0,2}"
+    r"staff\b",
+    re.I,
+)
+_MTS_NEUTRALIZE_RE = MEMBER_OF_STAFF_TITLE_RE
 
 _LEVEL_RULES = [
     ("distinguished", re.compile(r"\b(distinguished|fellow)\b", re.I)),
@@ -1406,6 +1418,62 @@ _SPONSOR_NEGATION_MAX_GAP_TOKENS = 8
 # are two denials, not a double negative.
 _SPONSOR_DOUBLE_NEGATION_MAX_GAP_TOKENS = 4
 
+# --- scope limits: negating a UNIVERSAL is not a denial ----------------------
+# Reading negation structurally fixed a real false-offer rate, but it over-reached
+# on the single clearest offer shape a board writes: an offer, then a limit ON that
+# offer. "we do sponsor visas … however we aren't able to sponsor visas for every
+# role and every candidate" is a SPONSOR. The hedge sentence carries its own
+# negated offer phrase, the negation scope read it as a denial, denial beat offer,
+# and the whole employer graded `unknown` — invisible under `require_positive`,
+# which is the one policy used by a candidate who NEEDS sponsorship. Returning zero
+# where a real sponsor exists is the worst answer that filter can give.
+#
+# The distinction is logical, not lexical. ``not (for every X)`` denies the
+# UNIVERSAL and therefore entails that SOME X are sponsored; ``does not sponsor``
+# is the universal negation. Only the second is a denial. So a negation whose own
+# clause quantifies over "every / each / all" — or hedges on a guarantee — limits
+# the SCOPE of sponsorship and is not evidence of refusal.
+#
+# The asymmetry of the original design is preserved exactly: a scope limit can only
+# REMOVE a denial, never create an offer. "We cannot sponsor every candidate" on
+# its own therefore yields `unknown` (kept and flagged), not `likely` — the `likely`
+# in the shape above comes from the separate, unhedged "we do sponsor visas".
+#
+# "at all" is deliberately excluded: "we cannot sponsor visas at all" INTENSIFIES
+# the denial rather than bounding it, and is the one place the bare word "all" runs
+# the other way.
+_SPONSOR_SCOPE_LIMIT_RE = re.compile(
+    r"\b(?:every(?:one|body)?|each|(?<!at )all|guarantee(?:s|d|ing)?)\b",
+    re.I,
+)
+# Only a denial ABOUT SPONSORING can be scope-limited. A categorical eligibility
+# statement ("us citizens only", "green card required") states who may hold the
+# job at all; a nearby "all" does not soften it into a partial offer.
+_SPONSOR_ACT_RE = re.compile(r"\bsponsor", re.I)
+# How far the quantifier may sit from the phrase it bounds ("sponsor visas for
+# every role" is 1; "cannot guarantee that we will sponsor visas" is 4).
+_SPONSOR_SCOPE_LIMIT_MAX_GAP_TOKENS = 6
+
+# --- hedged offers: modality is not a guarantee ------------------------------
+# The mirror error the same canary found: "limited immigration sponsorship may be
+# available" graded `likely` while the unhedged offer above graded `unknown`, so
+# the two labels were swapped relative to LESSONS.md ("a discretionary … must land
+# unclear"). An offer stated only under a possibility modal, a discretion clause or
+# a quantity hedge is not an unhedged offer; it is `unknown`, which keeps the
+# posting and flags it. With both rules in place the grading is monotone in offer
+# strength: unhedged offer > hedged offer > silence, and a scope limit moves
+# nothing.
+_SPONSOR_HEDGE_RE = re.compile(
+    r"\b(?:may|might|could|possibl[ey]|potentially|limited|"
+    r"discretion(?:ary)?|consider(?:s|ed|ation)?)\b"
+    r"|\bcase[- ]by[- ]case\b",
+    re.I,
+)
+# A hedge governs an offer only when it is adjacent to it inside the same clause;
+# beyond that it is a different statement ("we sponsor H-1B visas, and relocation
+# may be discussed").
+_SPONSOR_HEDGE_MAX_GAP_TOKENS = 3
+
 
 def _sponsor_clause_scope(source: str, start: int) -> str:
     """The negation-carrying text that runs up to ``start``.
@@ -1491,6 +1559,78 @@ def _sponsor_denial_is_negated(source: str, start: int) -> bool:
     return cue is not None and _sponsor_gap_is_bare(scope[cue.end():])
 
 
+def _sponsor_clause_tail(source: str, end: int) -> str:
+    """The clause text that runs FORWARD from ``end`` to the next clause break.
+
+    The mirror of ``_sponsor_clause_scope``: a qualifier usually FOLLOWS the phrase
+    it bounds ("sponsor visas for every role"), so both directions are needed.
+    """
+    probe = source[end:end + _SPONSOR_LOOKBACK_CHARS]
+    stop = _SPONSOR_CLAUSE_BREAK_RE.search(probe)
+    return probe[:stop.start()] if stop else probe
+
+
+def _sponsor_cue_within(text: str, pattern, budget: int, *, backward: bool) -> bool:
+    """Whether ``pattern`` fires inside ``text`` close enough to govern the phrase.
+
+    ``text`` is the clause on one side of the phrase; ``backward`` says which end
+    of it abuts the phrase. A cue governs only when few tokens and no coordinator
+    separate the two — the same adjacency test the double-negation check uses, so a
+    coordinated second statement ("…, and relocation may be discussed") cannot
+    reach back across the comma.
+    """
+    for cue in pattern.finditer(text):
+        gap = text[cue.end():] if backward else text[:cue.start()]
+        if (len(_SPONSOR_TOKEN_RE.findall(gap)) <= budget
+                and not _SPONSOR_COORDINATOR_RE.search(gap)):
+            return True
+    return False
+
+
+def _sponsor_scope_limited(source: str, start: int, end: int) -> bool:
+    """True when the negation around a sponsorship phrase bounds it, not denies it.
+
+    ``not … for every role`` negates a UNIVERSAL and so entails that some roles are
+    sponsored; ``does not sponsor`` is the universal negation. Only the second is a
+    denial. Applies to phrases about the ACT of sponsoring — a categorical
+    eligibility rule ("us citizens only") is never a scope limit.
+    """
+    if not _SPONSOR_ACT_RE.search(source[start:end]):
+        return False
+    if _sponsor_cue_within(
+            _sponsor_clause_tail(source, end), _SPONSOR_SCOPE_LIMIT_RE,
+            _SPONSOR_SCOPE_LIMIT_MAX_GAP_TOKENS, backward=False):
+        return True
+    # Backward, the quantifier only counts INSIDE the negation it bounds — it has
+    # to sit after the cue. Otherwise a plain requirement whose subject happens to
+    # be "all" ("all roles require work authorization without sponsorship") would
+    # read as a partial offer and a real denial would stop being one.
+    scope = _sponsor_clause_scope(source, start)
+    cue = _sponsor_last_cue(scope)
+    if cue is None:
+        return False
+    return _sponsor_cue_within(
+        scope[cue.end():], _SPONSOR_SCOPE_LIMIT_RE,
+        _SPONSOR_SCOPE_LIMIT_MAX_GAP_TOKENS, backward=True)
+
+
+def _sponsor_offer_is_hedged(source: str, start: int, end: int) -> bool:
+    """True when an OFFER phrase is stated only under a hedge.
+
+    A possibility modal, a discretion clause or a quantity hedge ("limited …",
+    "… may be available", "at our discretion", "case-by-case") makes the offer a
+    maybe rather than a statement. LESSONS.md requires those to land ``unknown``.
+    """
+    return (
+        _sponsor_cue_within(
+            _sponsor_clause_scope(source, start), _SPONSOR_HEDGE_RE,
+            _SPONSOR_HEDGE_MAX_GAP_TOKENS, backward=True)
+        or _sponsor_cue_within(
+            _sponsor_clause_tail(source, end), _SPONSOR_HEDGE_RE,
+            _SPONSOR_HEDGE_MAX_GAP_TOKENS, backward=False)
+    )
+
+
 def _bounded_phrase_matches(text: str, phrases):
     hits = []
     for phrase in phrases:
@@ -1526,6 +1666,19 @@ def assess_sponsorship(text: str | None) -> dict:
     never anticipated cannot be reported as an explicit offer. Text that negates a
     negation is read neither way: it returns ``unknown``, which is kept and
     flagged rather than acted on.
+
+    Two refinements keep that structural read from swallowing real offers, and
+    grade the result on OFFER STRENGTH rather than on whichever polarity appeared
+    last:
+
+    * a negation that quantifies over "every / each / all" (or hedges a guarantee)
+      LIMITS the scope of sponsorship instead of refusing it, so it neither denies
+      nor offers — "we do sponsor visas, but not for every role" is a sponsor;
+    * an offer stated only under a possibility modal, a discretion clause or a
+      quantity hedge is a HEDGED offer and lands ``unknown``, not ``likely``.
+
+    So an unhedged offer outranks a hedged one, a hedged one outranks silence, and
+    a scope limit moves nothing — while a flat denial still wins over everything.
     """
     source = _clean(_source_text(text))
     export_control = False
@@ -1543,14 +1696,21 @@ def assess_sponsorship(text: str | None) -> dict:
         if _immigration_sense(match)
     ]
     negative: list[str] = []
+    scope_limited: list[str] = []
     ambiguous = False
     for phrase, negative_match in negative_matches:
         if _sponsor_denial_is_negated(source, negative_match.start()):
             ambiguous = True
             continue
+        if _sponsor_scope_limited(
+                source, negative_match.start(), negative_match.end()):
+            if phrase not in scope_limited:
+                scope_limited.append(phrase)
+            continue
         if phrase not in negative:
             negative.append(phrase)
     positive: list[str] = []
+    hedged_offer: list[str] = []
     negated_offer: list[str] = []
     for phrase, positive_match in _bounded_phrase_matches(source, _SPONSOR_POSITIVE):
         if not _immigration_sense(positive_match):
@@ -1572,14 +1732,23 @@ def assess_sponsorship(text: str | None) -> dict:
             scope, cue = negation
             if _sponsor_double_negated(scope, cue):
                 ambiguous = True
+            elif _sponsor_scope_limited(
+                    source, positive_match.start(), positive_match.end()):
+                if phrase not in scope_limited:
+                    scope_limited.append(phrase)
             elif phrase not in negated_offer:
                 negated_offer.append(phrase)
+            continue
+        if _sponsor_offer_is_hedged(
+                source, positive_match.start(), positive_match.end()):
+            if phrase not in hedged_offer:
+                hedged_offer.append(phrase)
             continue
         if phrase not in positive:
             positive.append(phrase)
 
     denial = [*negative, *negated_offer]
-    if denial and positive:
+    if denial and (positive or hedged_offer):
         decision, verdict, confidence = "review", "unknown", "low"
         reason = "Conflicting sponsorship offer and denial language."
     elif denial:
@@ -1595,6 +1764,14 @@ def assess_sponsorship(text: str | None) -> dict:
     elif positive:
         decision, verdict, confidence = "match", "likely", "high"
         reason = "The posting explicitly offers immigration sponsorship."
+    elif hedged_offer:
+        decision, verdict, confidence = "review", "unknown", "low"
+        reason = ("The posting's only sponsorship offer is hedged (discretionary "
+                  "or limited), so it is not read as an offer.")
+    elif scope_limited:
+        decision, verdict, confidence = "review", "unknown", "low"
+        reason = ("The posting limits the SCOPE of sponsorship without saying "
+                  "whether it sponsors at all.")
     elif export_control:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = ("The posting's only sponsorship wording is export-control "
@@ -1605,8 +1782,10 @@ def assess_sponsorship(text: str | None) -> dict:
     rule_ids = [
         *(f"sponsorship.negative.{phrase}" for phrase in negative),
         *(f"sponsorship.negated_offer.{phrase}" for phrase in negated_offer),
+        *(f"sponsorship.scope_limit.{phrase}" for phrase in scope_limited),
         *(["sponsorship.ambiguous.double_negation"] if ambiguous else []),
         *(["sponsorship.non_immigration.export_control"] if export_control else []),
+        *(f"sponsorship.hedged_offer.{phrase}" for phrase in hedged_offer),
         *(f"sponsorship.positive.{phrase}" for phrase in positive),
     ]
     # The structural signature groups by rule FAMILY (polarity/conflict), not the
@@ -1627,6 +1806,8 @@ def assess_sponsorship(text: str | None) -> dict:
         "evidence": [
             *negative,
             *(f"negated: {phrase}" for phrase in negated_offer),
+            *(f"scope-limited: {phrase}" for phrase in scope_limited),
+            *(f"hedged: {phrase}" for phrase in hedged_offer),
             *positive,
         ],
         "signal_present": bool(_SPONSOR_SIGNAL_RE.search(source)),

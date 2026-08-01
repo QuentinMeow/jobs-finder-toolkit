@@ -6,6 +6,7 @@ from collections import Counter
 
 from common import JobPosting, normalize, term_matches
 from job_metadata import (
+    MEMBER_OF_STAFF_TITLE_RE,
     assess_required_yoe,
     assess_sponsorship,
     classify_level,
@@ -184,8 +185,19 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
     # Strip known non-level phrases before applying excludes, so their words don't
     # trip a rule — e.g. "Member of Technical Staff" must survive the "staff" exclude.
     ntitle_excl = ntitle
-    for phrase in titles_cfg.get("exclude_neutralize") or []:
+    neutralize = titles_cfg.get("exclude_neutralize") or []
+    for phrase in neutralize:
         ntitle_excl = ntitle_excl.replace(normalize(phrase), " ")
+    # A profile that neutralizes ONE spelling of "Member of <X> Staff" means the
+    # IC title FAMILY, not that string. Boards write Technical / Data / Research /
+    # Product staff for the same non-Staff-level role, so a literal list is always
+    # one spelling short — a live board's "Member of Data Staff" was hard-dropped
+    # by the `staff` exclude while "Member of Technical Staff" sailed through. Same
+    # move the `new grad` expansion below makes: honor the intent the profile
+    # already declared instead of demanding brittle phrase duplication.
+    if any(MEMBER_OF_STAFF_TITLE_RE.search(normalize(phrase))
+           for phrase in neutralize):
+        ntitle_excl = MEMBER_OF_STAFF_TITLE_RE.sub(" ", ntitle_excl)
 
     level, level_signal = classify_level(title)
 

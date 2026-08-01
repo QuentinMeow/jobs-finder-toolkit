@@ -191,9 +191,21 @@ class DistributedTagTests(unittest.TestCase):
 class RemoteRegressionTests(unittest.TestCase):
     """Genuine remote / US signals must keep matching after the fix."""
 
-    def test_explicit_remote_still_us_remote(self):
-        self.assertEqual(classify_location("Remote", _POLICY), "us_remote")
+    def test_remote_with_a_us_signal_is_still_us_remote(self):
         self.assertEqual(classify_location("Remote (US)", _POLICY), "us_remote")
+        self.assertEqual(classify_location("Remote - US", _POLICY), "us_remote")
+        self.assertEqual(
+            classify_location("Remote, United States", _POLICY), "us_remote")
+
+    def test_bare_remote_alone_is_not_a_us_signal(self):
+        # Reversal of an earlier assertion here. "Remote" is a work MODE, not a
+        # place: a foreign employer writes the bare word exactly as a US one does,
+        # and one did — a European agency's posting scored a confident US-remote
+        # match on a location field whose entire content was "remote". With no
+        # country in the location, the title or the JD, the honest answer is
+        # review, which preserves the posting for a human read.
+        self.assertEqual(classify_location("Remote", _POLICY), "unknown")
+        self.assertEqual(classify_location("remote", _POLICY), "unknown")
 
     def test_country_level_us_still_us_remote(self):
         self.assertEqual(classify_location("United States", _POLICY), "us_remote")
@@ -390,6 +402,118 @@ class WorkplaceWordLocationTests(unittest.TestCase):
                     "workplace_tag_without_geography", result.review_reasons)
                 self.assertNotIn(
                     "unclassified_location", result.review_reasons)
+
+
+class ResidencyRestrictedRemoteTests(unittest.TestCase):
+    """A remote grant that names its own residency metro is not open US-remote.
+
+    A JD grants remote work and then, in the same breath, requires the candidate
+    to live in one metro. The grant fired ``jd_remote_role``, the restriction was
+    read by nothing, and the posting came back a CONFIDENT us_remote match the
+    caller had no reason to re-read. In one live single-company re-check three of
+    the four confident matches were this shape, each pinned to a different
+    non-preferred metro.
+    """
+
+    POLICY = {"metro": ["springfield", "fairview"], "allow_us_remote": True,
+              "us_only": True, "require_match": True}
+
+    def _assess(self, description, location="Remote"):
+        return assess_location(
+            location, self.POLICY, title="Software Engineer",
+            description=description, workplace_hint="")
+
+    def test_non_preferred_residency_metro_is_no_match(self):
+        result = self._assess(
+            "This is a remote role but the location requirement is that you "
+            "reside in the Dallas Fort Worth Area.")
+        self.assertEqual(result.decision, "no_match")
+        self.assertEqual(result.category, "other_us")
+        self.assertIn("jd_remote_bound_to_residency", result.evidence)
+
+    def test_preferred_residency_metro_still_matches(self):
+        result = self._assess(
+            "This is a remote role but you must reside in the Springfield area.")
+        self.assertEqual(result.decision, "match")
+        self.assertEqual(result.category, "metro")
+        self.assertIn("jd_residency_preferred_metro", result.evidence)
+
+    def test_foreign_residency_requirement_is_no_match(self):
+        result = self._assess(
+            "This is a remote role; you must reside in Warsaw.")
+        self.assertEqual(result.decision, "no_match")
+        self.assertEqual(result.category, "foreign")
+
+    def test_unreadable_residency_place_goes_to_review_not_us_remote(self):
+        # Never fall back to us_remote: the JD said the grant is bounded, and a
+        # place this module cannot parse is a human's call.
+        result = self._assess(
+            "This is a remote role but you must reside in the Tri-Valley "
+            "corridor.")
+        self.assertEqual(result.decision, "review")
+        self.assertIn("residency_restriction_unparsed", result.review_reasons)
+
+    def test_somebody_elses_address_does_not_narrow_the_grant(self):
+        # The requirement word is mandatory: a sentence about where colleagues
+        # happen to live is not a restriction on this role.
+        result = self._assess(
+            "This is a fully remote role in the United States. Many of our "
+            "engineers live in Austin and meet up monthly.",
+            location="Remote - US")
+        self.assertEqual(result.decision, "match")
+        self.assertEqual(result.category, "us_remote")
+
+    def test_a_remote_grant_with_no_residency_clause_is_unchanged(self):
+        result = self._assess("This is a fully remote role.",
+                              location="Remote - US")
+        self.assertEqual(result.decision, "match")
+        self.assertEqual(result.category, "us_remote")
+        self.assertIn("remote_eligible", result.evidence)
+
+
+class BareRemoteWithoutUsScopeTests(unittest.TestCase):
+    """A work MODE with no country behind it is not a US-remote match.
+
+    A European employer's posting scored us_remote because its entire location
+    field was the word "remote". "Remote" says how the work is done; it asserts no
+    geography, and a foreign board writes it exactly as a US one does.
+    """
+
+    POLICY = {"metro": ["springfield"], "allow_us_remote": True,
+              "us_only": True, "require_match": True}
+
+    def test_bare_remote_with_no_us_signal_anywhere_is_review(self):
+        result = assess_location(
+            "remote", self.POLICY, title="Travel Consultant",
+            description="Join our agency team; we are growing fast.")
+        self.assertEqual(result.decision, "review")
+        self.assertIn("remote_without_us_scope", result.review_reasons)
+        self.assertNotEqual(result.category, "us_remote")
+
+    def test_a_us_signal_in_the_location_still_matches(self):
+        for raw in ("Remote - US", "Remote (US)", "Remote, United States",
+                    "Remote - Texas"):
+            with self.subTest(raw=raw):
+                result = assess_location(raw, self.POLICY,
+                                         description="This is a remote role.")
+                self.assertEqual(result.decision, "match")
+                self.assertEqual(result.category, "us_remote")
+
+    def test_a_us_signal_in_the_jd_body_still_matches(self):
+        result = assess_location(
+            "Remote", self.POLICY,
+            description="This is a fully remote role open to candidates "
+                        "anywhere in the United States.")
+        self.assertEqual(result.decision, "match")
+        self.assertEqual(result.category, "us_remote")
+
+    def test_unrestricted_scope_words_keep_their_us_reading(self):
+        # "Anywhere" / "Worldwide" name a scope that necessarily includes the US;
+        # only the mode-only words lost their free pass.
+        for raw in ("Anywhere", "Worldwide"):
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    assess_location(raw, self.POLICY).category, "us_remote")
 
 
 if __name__ == "__main__":
