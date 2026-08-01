@@ -24,17 +24,38 @@ roles path — use it when a company's roles are too different for one honest
 resume). A single ``--select "rank N"`` / ``--select "Company/Title"`` always
 produces exactly one single-role folder.
 
+**A posting's identity is its URL, else its ``(company, title)`` pair** —
+``posting_key``, the rule ``skip_log.fold_key`` already states. Two requisitions
+at one employer routinely share a title, so the title alone is not an identity;
+every place that has to tell two postings apart (the duplicate preflight, the
+in-run register, the ``jobs[].role`` label that names each cover letter, the JD
+filename, and the folder slug) resolves through that one rule.
+
+**The duplicate preflight runs on every path**, single-``--select`` included, per
+the AGENTS.md blacklist/log guardrail. A bulk run skips a duplicate and carries
+on; a single explicit selection creates nothing and exits 2, naming the
+``--forget-log`` tombstone that is the only real undo for a skip-log row.
+
 For each resulting folder the tool:
 
 1. Creates ``<applications_root>/<status-dir>/<slug>/`` per the AGENTS.md
    Application Folder Convention (``<company>-<lead role>-<YYYYMMDD>`` slug; the
-   lead role is the highest-ranked posting in a grouped folder). The tool
-   REFUSES to overwrite an existing folder.
+   lead role is the highest-ranked posting in a grouped folder). An application
+   folder is ALWAYS exactly two levels under the root — every consumer globs one
+   level, so anything deeper is invisible to every tracker command. The tool
+   REFUSES to overwrite an existing folder; under ``--split`` two same-title
+   requisitions get distinct slugs rather than colliding with each other.
 2. Saves ``source/JD-<job title>.md`` VERBATIM via the sibling ``fetch_jd`` module
    (imported, never subprocessed; exactly one fetch per posting). If a fetch fails
    the folder is still scaffolded, but the tool exits non-zero telling the agent to
    save that JD manually.
-3. Writes ``meta.yaml`` (schema v5) with one ``jobs:`` entry per posting, carrying
+3. Writes ``meta.yaml`` (schema v5) with one ``jobs:`` entry per posting, each
+   with its OWN ``role`` label: two postings that share a title get the second
+   one's location appended (``Software Engineer (Austin, TX)``), because ``role``
+   is the key for both per-JD artifacts — ``<COVER_STEM>_<role>`` and
+   ``<APPLICATION_STEM>_<role>`` — and one cover letter per JD is a hard
+   guardrail. ``validate_meta`` rejects a duplicate role, so the collision can no
+   longer reach render time. Each entry carries
    over every structured fact each search row already computed — level, YOE,
    salary, workplace, sponsorship, location, URL, posted date, source channel —
    using the vendored ``metadata_editor`` (the same formatting-preserving editor
@@ -46,20 +67,27 @@ For each resulting folder the tool:
    explicit empty line says "unassigned" where a missing field said nothing at all.
 4. Validate with the vendored ``job_metadata`` validator before exit. On failure
    the tool exits non-zero and lists what is missing.
-5. Run the SAME location-policy check the tracker's ``status.py --check-locations``
-   uses (via the vendored ``location`` module + ``config.location_policy``). A
-   definite mismatch (a foreign posting or a non-preferred US office) LEAVES a
-   single-role folder on disk, prints the verdict + the offending location string
-   + a one-line remedy to stderr, and exits non-zero (code 3) unless
-   ``--allow-location-mismatch`` is passed. This catches a wrong-metro / foreign
-   posting at handoff — before the drafting leg pays for it — instead of only when
-   the tracker gate runs later. A blank / unrecognized location is surfaced for
-   manual review but does NOT block (identical to the tracker's ``review`` vs
-   ``mismatch`` split). When GROUPING several postings into one company folder,
-   definite-mismatch postings are instead dropped from that folder (each reported
-   to stderr) so only policy-matching roles are kept — matching the resume-writer
-   rule "for a multi-role company, keep only the postings that match the policy";
-   ``--allow-location-mismatch`` keeps them all.
+5. Run the location-policy check against ``config.location_policy()`` (via the
+   vendored ``location`` module), PER POSTING and worst-wins. The policy governs
+   a posting, not a folder, so each ``jobs:`` entry is classified from its own
+   ``location`` falling back to its own ``jd_file``'s ``Location:`` lines, and a
+   folder holding one US and one foreign posting is a mismatch — not "OK" because
+   some posting in it matched. A definite mismatch (a foreign posting or a
+   non-preferred US office) LEAVES the folder on disk, prints the offending
+   posting(s) BY ROLE + a remedy to stderr, and exits non-zero (code 3 on the
+   single-posting path, 1 in a bulk run) unless ``--allow-location-mismatch`` is
+   passed — which still REPORTS the mismatch, then proceeds. This catches a
+   wrong-metro / foreign posting at handoff, before the drafting leg pays for it.
+   A blank / unrecognized location is surfaced for manual review but does NOT
+   block (identical to the tracker's ``review`` vs ``mismatch`` split). When
+   GROUPING several postings into one company folder, postings whose SEARCH ROW
+   already fails the policy are instead dropped from that folder (each reported)
+   so only policy-matching roles are kept — matching the resume-writer rule "for a
+   multi-role company, keep only the postings that match the policy";
+   ``--allow-location-mismatch`` keeps them all. A posting the pre-filter could
+   not judge (blank row location, foreign JD) blocks rather than being dropped
+   after the fact: a drop is only honest when the evidence was already visible to
+   the caller in the search table.
 
 6. Append each created posting to the append-only applications skip-log
    (``applications-log.jsonl``, honouring ``--applications-root``) as the LAST
@@ -90,6 +118,7 @@ import sys
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 import yaml
 
@@ -112,7 +141,10 @@ from job_metadata import (  # noqa: E402
 )
 from metadata_editor import plan_metadata_edit  # noqa: E402
 import skip_log  # noqa: E402  (vendored: folds AND appends the applications skip-log)
-from layout import status_label_for_dir  # noqa: E402  (vendored: status dir -> label)
+from layout import (  # noqa: E402  (vendored)
+    slugify_label,          # role label -> the cover-letter / bundle filename suffix
+    status_label_for_dir,   # status dir -> label
+)
 from location import (  # noqa: E402  (vendored shared location policy)
     classify_location,
     classify_locations,
@@ -234,6 +266,27 @@ def group_by_company(rows: list[dict], *, split: bool = False) -> list[list[dict
     return [buckets[key] for key in order]
 
 
+def posting_key(company: object, title: object, url: object) -> tuple:
+    """The ONE identity a posting has: its URL, else its ``(company, title)`` pair.
+
+    This is ``skip_log.fold_key``'s rule (``skip_log.py``: "URL when there is one,
+    else the ``(company, role)`` pair… the two branches are tagged so they can
+    never collide"), spelled the same way here for the same reason. A URL names
+    ONE requisition; a ``(company, title)`` pair names a CLASS of them — two
+    requisitions at one employer routinely share a title (one role posted in two
+    metros, two teams hiring the same ladder title). So the pair is a stand-in for
+    the rows an ATS gave no URL, never a second identity to check alongside the
+    first: treating it as one merges two distinct postings into one, silently.
+
+    The branches are tagged (``"url"`` / ``"pair"``) so a URL-bearing row and a
+    URL-less row for the same company+title can never collapse onto each other.
+    """
+    normalized = _norm(url).rstrip("/")
+    if normalized:
+        return ("url", normalized)
+    return ("pair", _norm(company), _norm(title))
+
+
 def _posting_keys(root: Path, log_path: Path) -> tuple[set[str], set[tuple[str, str]]]:
     """Collect URL and company/role duplicate keys from the skip-log and live folders.
 
@@ -242,6 +295,15 @@ def _posting_keys(root: Path, log_path: Path) -> tuple[set[str], set[tuple[str, 
     url}`` shape the old YAML ``postings`` list carried. This function's own ``_norm``
     and ``.rstrip("/")`` are what decide identity here and are unchanged; ``skip_log``'s
     wider normalizer dedupes lines inside the file and is never a match key.
+
+    **Why this registers BOTH keys for a URL-bearing row and ``_register_row``
+    does not.** These rows are HISTORY. A pair key off a historical row is a
+    deliberate re-list heuristic: an ATS that re-posts a requisition under a new
+    URL is caught by ``(company, role)`` and nothing else
+    (``test_log_row_suppresses_a_re_listed_posting_by_company_and_role``). Two
+    rows inside ONE search snapshot cannot be a re-list of each other — the
+    snapshot holds both at once — so the in-run register has no such case to catch
+    and follows ``posting_key`` exactly.
     """
     urls: set[str] = set()
     pairs: set[tuple[str, str]] = set()
@@ -295,6 +357,35 @@ def _duplicate_reason(
     return None
 
 
+def _report_explicit_duplicate(row: dict, reason: str) -> None:
+    """Refuse an explicitly-selected posting the preflight already knows about.
+
+    The bulk path SKIPS a duplicate and moves on, which is right when the caller
+    asked for everything on the list. An explicit ``--select`` asked for THIS
+    posting, so silently doing nothing and exiting 0 is the wrong answer twice
+    over: the caller is told nothing, and the preflight it just failed is the
+    AGENTS.md blacklist/log guardrail, not a suggestion.
+
+    "Delete the folder" is not the undo here — the applications skip-log is
+    append-only and authoritative, and nothing regenerates it — so the remedy
+    printed is the tombstone, with its argument already filled in.
+    """
+    url = str(row.get("url") or "").strip()
+    target = f'"{url}"' if url else f'"{row.get("company")}" "{row.get("title")}"'
+    print(
+        f"handoff: REFUSING to scaffold {row.get('company')} / {row.get('title')} "
+        f"— skipped as a duplicate ({reason}). Nothing was created.",
+        file=sys.stderr,
+    )
+    print(
+        "handoff: if this posting really is new (a stale or wrong log row, or a "
+        "different requisition that happens to share a title), append a tombstone "
+        "first:",
+        file=sys.stderr,
+    )
+    print(f"  status.py --forget-log {target}", file=sys.stderr)
+
+
 # --------------------------------------------------------------------------- #
 # Slugs and paths
 # --------------------------------------------------------------------------- #
@@ -333,6 +424,115 @@ def unique_jd_filename(role: str, used: set[str]) -> str:
     name = f"{stem}-{index}.md"
     used.add(name)
     return name
+
+
+def role_discriminator(row: dict) -> str:
+    """What tells two same-title postings at one employer apart, in words.
+
+    The posting's own location: it is the fact that actually differs between two
+    requisitions sharing a title, it is true, and it is READABLE. This string ends
+    up in the cover-letter filename and in the letter's target-position line, so a
+    mechanical ``-2`` would put a meaningless token in front of a hiring manager.
+    Empty when the row has no location, and the caller falls back to a number.
+    """
+    return re.sub(r"\s+", " ", str(row.get("location") or "")).strip()
+
+
+def _label_key(label: str) -> str:
+    """The collision domain of a role label: its cover-letter filename slug.
+
+    ``slugify_label`` is what ``config.cover_stem`` / ``config.application_stem``
+    turn a role into, so two labels collide exactly when their slugs do —
+    ``check.check_role_filename_collisions`` compares the same thing at render
+    time. Casefolded on top, because the filesystems this ships on are
+    case-insensitive.
+    """
+    return slugify_label(label).casefold()
+
+
+def unique_role_label(title: str, discriminator: str, used: set[str]) -> str:
+    """A ``jobs[].role`` label unique within one folder; ``used`` is mutated.
+
+    ``role`` is the key for BOTH per-JD artifacts — ``<COVER_STEM>_<role>.docx``
+    / ``.pdf`` and the bundled ``<APPLICATION_STEM>_<role>.txt`` — so two postings
+    sharing a label collapse two JDs onto ONE cover letter. That is the AGENTS.md
+    guardrail "One cover letter per JD — no shared/boilerplate letter" broken at
+    the seam that creates the folder, and it used to surface only much later, in
+    ``check.check_role_filename_collisions`` during render, after the drafting
+    agent had already paid for the tailoring.
+
+    ``used`` holds ``_label_key`` values, not raw labels: the constraint is on the
+    FILENAME, so ``Software Engineer`` and ``software engineer`` collide.
+    """
+    base = str(title or "").strip()
+    for candidate in (base, f"{base} ({discriminator})".strip() if discriminator else ""):
+        if candidate and _label_key(candidate) not in used:
+            used.add(_label_key(candidate))
+            return candidate
+    index = 2
+    while _label_key(f"{base} ({index})".strip()) in used:
+        index += 1
+    label = f"{base} ({index})".strip()
+    used.add(_label_key(label))
+    return label
+
+
+def unique_folder_slug(
+    company: str,
+    role: str,
+    date_str: str,
+    discriminator: str,
+    taken: set[str],
+) -> str:
+    """A folder slug this RUN has not already used; ``taken`` is not mutated.
+
+    Only slugs this run created are consulted. A slug that exists on disk from an
+    EARLIER run is refuse-to-overwrite's business and stays that way — the
+    same-day rerun must keep refusing. What this fixes is ``--split``, the
+    documented divergent-roles escape: two same-title requisitions both slugified
+    to ``<company>-<title>-<date>``, so the second collided with a folder this
+    very run had just created, and the divergent-roles path was a no-op for
+    exactly the case it exists to handle. Same discriminator as the role label, so
+    a folder and its cover letters agree on which requisition they are about.
+    """
+    base = folder_slug(company, role, date_str)
+    if base not in taken:
+        return base
+    if discriminator:
+        candidate = folder_slug(company, f"{role} {discriminator}", date_str)
+        if candidate and candidate not in taken:
+            return candidate
+    index = 2
+    while folder_slug(company, f"{role} {index}", date_str) in taken:
+        index += 1
+    return folder_slug(company, f"{role} {index}", date_str)
+
+
+def _require_folder_under_root(folder: Path, root: Path, status_dir: str) -> None:
+    """An application folder is ALWAYS exactly two levels under the root.
+
+    Every consumer globs exactly one level — ``_posting_keys``'s
+    ``status_dir.glob("*/meta.yaml")``, the tracker's folder walk — so a folder
+    any deeper is invisible to ``status.py``, ``--check-locations``,
+    ``--check-metadata``, ``--sync-log`` and this tool's own duplicate preflight,
+    while ``mkdir(parents=True)`` creates it happily. It also poisons the
+    append-only log, which nothing regenerates: ``_record_created_postings``
+    derives its row from ``folder.name``, and for
+    ``.../acme-backend-engineer-2026/07/31`` that is ``"31"``.
+
+    Checking the RESULT rather than enumerating the inputs is deliberate. A
+    ``--research-date`` typo is the documented way in (argparse now rejects it at
+    the boundary too) and ``--status-dir`` is the other, but the invariant is the
+    thing worth stating, and it holds for any future caller of ``_run_group``.
+    """
+    resolved = folder.resolve()
+    if resolved.parent.parent != root.resolve() or not resolved.name:
+        raise ValueError(
+            f"refusing to create {folder}: an application folder must be exactly "
+            f"<applications root>/<status dir>/<slug>, and this resolves outside "
+            f"{root / status_dir} — check --research-date and --status-dir for a "
+            "path separator"
+        )
 
 
 def _applications_root(override: str | None) -> Path:
@@ -465,13 +665,17 @@ def _posted_date(row: dict) -> str:
 
 
 def build_meta_bytes(
-    rows: list[dict], *, jd_files: list[str], research_date: str
+    rows: list[dict], *, roles: list[str], jd_files: list[str], research_date: str
 ) -> tuple[bytes, list[str]]:
     """Build meta.yaml bytes for one folder; return (bytes, editor_errors).
 
     ``rows`` is one folder's posting(s) — a single row for a single-role folder or
-    several same-company rows for a grouped multi-role folder; ``jd_files`` is the
-    parallel list of per-posting ``JD-<title>.md`` names. Company-scope fields come
+    several same-company rows for a grouped multi-role folder; ``roles`` and
+    ``jd_files`` are the parallel lists of per-posting labels allocated by
+    ``unique_role_label`` and ``unique_jd_filename``. ``roles`` is NOT
+    ``row["title"]`` verbatim: a title is not an identity, and two postings that
+    share one need distinct labels or they share a cover letter.
+    Company-scope fields come
     from the lead (first) row. A scaffold (company scope + one job entry of
     descriptive fields per posting) is rendered first, then the vendored
     ``plan_metadata_edit`` inserts the five metadata fields carried from each row —
@@ -482,9 +686,9 @@ def build_meta_bytes(
     """
     lead = rows[0]
     job_entries: list[dict] = []
-    for row, jd_file in zip(rows, jd_files):
+    for row, role, jd_file in zip(rows, roles, jd_files):
         job_entry = {
-            "role": str(row.get("title") or ""),
+            "role": role,
             "jd_file": jd_file,
             # Handoff always creates a fresh DRAFTED application; schema v5 pairs
             # that with the deterministic drafted progress summary.
@@ -585,67 +789,152 @@ def gather_locations(meta: dict, folder: Path) -> list[str]:
     return locs
 
 
-def check_location_policy(meta: dict, folder: Path) -> tuple[str, str, list[str], list[tuple[str, str]]]:
-    """Classify the folder's location(s) against ``config.location_policy()``.
+def job_locations(job: dict, folder: Path) -> list[str]:
+    """ONE posting's location string(s): its own ``location``, else its own JD's.
 
-    Returns ``(verdict, category, locations, offending)`` where ``verdict`` is
-    ``"match"`` (a preferred-metro or US-remote posting), ``"mismatch"`` (a definite
-    policy violation — foreign or non-preferred US office) or ``"review"`` (blank /
-    unrecognized location). This is the exact split the tracker's
-    ``status.py --check-locations`` uses: only a definite ``mismatch`` is a hard
-    failure; ``review`` rows are surfaced but do not block. ``offending`` lists the
-    ``(location, category)`` pairs that fail the policy (populated for a mismatch).
+    ``jobs[].jd_file`` is the exact one-to-one mapping from a posting to the
+    verbatim JD saved for it, and by the time the gate runs that file is on disk.
+    The fallback is what catches a blank-``location`` search row: the row said
+    nothing, so the pre-filter read it as ``review`` and kept it, and nothing ever
+    read the ``Location: London, United Kingdom`` line sitting in the folder.
+    """
+    loc = str(job.get("location") or "").strip()
+    if loc:
+        return [loc]
+    name = str(job.get("jd_file") or "").strip()
+    if not name or Path(name).name != name:
+        return []
+    for directory in (folder / "source", folder):
+        try:
+            text = (directory / name).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        return extract_jd_locations(text)
+    return []
+
+
+class LocationReport(NamedTuple):
+    """One folder's location verdict, and the postings that decided it."""
+    verdict: str                              # "match" | "review" | "mismatch"
+    category: str
+    locations: list[str]
+    offending: list[tuple[str, str, str]]     # (role, location, category)
+    unclassified: list[tuple[str, str]]       # (role, location or "(none recorded)")
+
+
+def check_location_policy(meta: dict, folder: Path) -> LocationReport:
+    """Classify EVERY posting in the folder against ``config.location_policy()``.
+
+    **Per posting, worst-wins.** The AGENTS.md policy governs a POSTING ("only
+    draft a role whose ``location`` matches"); a folder is just the container one
+    resume covers. The old rollup asked ``classify_locations`` — an ANY-matches
+    rule — over the folder's POOLED location strings, which answers "could I take
+    some job at this employer?" That is the right question for a single-role
+    folder and the wrong one for the multi-role folder this tool now builds by
+    default: one Seattle sibling made a London requisition in the same folder
+    print ``location OK``, and the drafting agent then wrote a cover letter for a
+    role the owner cannot take. handoff's own multi-role pre-filter already says
+    per-posting is the rule ("keep only the postings that match the policy"); this
+    makes the gate agree with it.
+
+    Each posting is classified from its own ``location``, falling back to its own
+    ``jd_file`` (see ``job_locations``). The folder's verdict is the WORST posting
+    verdict: any definite mismatch makes the folder a mismatch, and every
+    offending posting is named. ``review`` still never blocks — a genuinely
+    unknown location must not stop legitimate work, which is the same
+    false-positive/false-negative split the tracker draws and which
+    ``test_location_unknown_is_review_not_block`` pins.
+
+    A meta with no ``jobs:`` list at all (a legacy top-level shape) keeps the
+    folder rollup: there is no posting to attribute a location to.
     """
     import config  # vendored toolkit loader (location policy)
     policy = config.location_policy()
-    locs = gather_locations(meta, folder)
-    category, matched = classify_locations(locs, policy)
-    if matched:
-        return "match", category, locs, []
-    if category == "unknown":
-        return "review", category, locs, []
-    offending = [
-        (loc, classify_location(loc, policy))
-        for loc in locs
-        if not is_match(classify_location(loc, policy))
-    ]
-    return "mismatch", category, locs, offending
+    jobs = [job for job in (meta.get("jobs") or []) if isinstance(job, dict)]
+    if not jobs:
+        locs = gather_locations(meta, folder)
+        category, matched = classify_locations(locs, policy)
+        if matched:
+            return LocationReport("match", category, locs, [], [])
+        shown = " | ".join(locs) or "(none recorded)"
+        if category == "unknown":
+            return LocationReport("review", category, locs, [], [("", shown)])
+        offending = [("", loc, classify_location(loc, policy)) for loc in locs
+                     if not is_match(classify_location(loc, policy))]
+        return LocationReport("mismatch", category, locs, offending, [])
+
+    all_locs: list[str] = []
+    offending: list[tuple[str, str, str]] = []
+    unclassified: list[tuple[str, str]] = []
+    matched_categories: list[str] = []
+    mismatch_categories: list[str] = []
+    for job in jobs:
+        role = str(job.get("role") or "").strip() or "(unnamed posting)"
+        locs = job_locations(job, folder)
+        all_locs.extend(locs)
+        category, matched = classify_locations(locs, policy)
+        if matched:
+            matched_categories.append(category)
+        elif category == "unknown":
+            unclassified.append((role, " | ".join(locs) or "(none recorded)"))
+        else:
+            mismatch_categories.append(category)
+            for loc in locs:
+                loc_category = classify_location(loc, policy)
+                if not is_match(loc_category):
+                    offending.append((role, loc, loc_category))
+
+    if mismatch_categories:
+        return LocationReport(
+            "mismatch", mismatch_categories[0], all_locs, offending, unclassified)
+    if unclassified:
+        return LocationReport("review", "unknown", all_locs, [], unclassified)
+    category = ("metro" if "metro" in matched_categories
+                else matched_categories[0] if matched_categories else "unknown")
+    return LocationReport("match", category, all_locs, [], [])
 
 
 def report_location(
-    verdict: str,
-    category: str,
-    locs: list[str],
-    offending: list[tuple[str, str]],
-    folder: Path,
-    *,
-    allow_mismatch: bool,
+    report: LocationReport, folder: Path, *, allow_mismatch: bool
 ) -> bool:
     """Emit the location verdict to stderr; return True iff drafting is blocked.
 
     Keeps handoff's two-line stdout contract intact — every location message goes
-    to stderr alongside the other diagnostics. ``match`` and ``review`` are one
-    confirmation line each and never block; a ``mismatch`` blocks (returns True)
-    unless ``allow_mismatch`` overrides it.
+    to stderr alongside the other diagnostics. ``match`` and ``review`` never
+    block; a ``mismatch`` blocks (returns True) unless ``allow_mismatch``
+    overrides it — and under that flag the mismatch is still REPORTED, because the
+    flag's own help promises a warning and then proceeding, not silence.
     """
-    shown = " | ".join(locs) if locs else "(none recorded)"
-    if verdict == "match":
-        print(f"handoff: location OK [{category}]: {shown}", file=sys.stderr)
+    shown = " | ".join(report.locations) if report.locations else "(none recorded)"
+    if report.verdict == "match":
+        print(f"handoff: location OK [{report.category}]: {shown}", file=sys.stderr)
         return False
-    if verdict == "review":
+    if report.verdict == "review":
+        detail = " | ".join(
+            f"{role}: {loc}" if role else loc
+            for role, loc in report.unclassified) or shown
         print(
-            f"handoff: location NOT classifiable [{category}]: {shown} — review "
-            "it against the location policy manually before drafting.",
+            f"handoff: location NOT classifiable [{report.category}]: {detail} — "
+            "review it against the location policy manually before drafting.",
             file=sys.stderr,
         )
         return False
-    # Definite mismatch (foreign / non-preferred US office).
-    detail = " | ".join(f"{loc} [{cat}]" for loc, cat in offending) or shown
+    # Definite mismatch (foreign / non-preferred US office), named per posting.
+    detail = " | ".join(
+        f"{role}: {loc} [{cat}]" if role else f"{loc} [{cat}]"
+        for role, loc, cat in report.offending) or shown
     print(
-        f"handoff: LOCATION POLICY MISMATCH [{category}] — this posting is outside "
-        f"the configured location policy: {detail}",
+        f"handoff: LOCATION POLICY MISMATCH [{report.category}] — "
+        f"{len(report.offending) or 1} posting(s) in this folder are outside the "
+        f"configured location policy: {detail}",
         file=sys.stderr,
     )
+    for role, loc in report.unclassified:
+        print(
+            f"handoff: location NOT classifiable: {role}: {loc} — review it "
+            "against the location policy manually.",
+            file=sys.stderr,
+        )
     if allow_mismatch:
         print(
             "handoff: --allow-location-mismatch set; keeping the folder and "
@@ -654,8 +943,9 @@ def report_location(
         )
         return False
     print(
-        f"handoff: remedy — delete the folder ({folder}), or rerun with "
-        "--allow-location-mismatch if this location is intentional.",
+        f"handoff: remedy — delete the folder ({folder}), re-run the selection "
+        "without the offending posting(s), or rerun with "
+        "--allow-location-mismatch if these locations are intentional.",
         file=sys.stderr,
     )
     return True
@@ -778,7 +1068,12 @@ def _record_created_postings(
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
-def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
+def _run_group(
+    group: list[dict],
+    args: argparse.Namespace,
+    *,
+    taken_slugs: set[str] | None = None,
+) -> tuple[int, Path]:
     """Scaffold ONE application folder from a group of same-company posting(s).
 
     A single-element group is a single-role folder (unchanged behavior, including
@@ -787,6 +1082,10 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
     mismatches are dropped from it (each reported) unless
     ``--allow-location-mismatch`` is set, and the folder slug uses the lead
     (highest-ranked) posting's role.
+
+    ``taken_slugs`` is the set of slugs THIS RUN has already built; it is mutated.
+    Under ``--split`` two same-title requisitions would otherwise produce the same
+    slug and the second would hit refuse-to-overwrite against its own sibling.
     """
     company = str(group[0].get("company") or "").strip()
     lead_role = str(group[0].get("title") or "").strip()
@@ -797,8 +1096,12 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
 
     research_date = args.research_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     root = _applications_root(args.applications_root)
-    slug = folder_slug(company, lead_role, research_date)
+    if taken_slugs is None:
+        taken_slugs = set()
+    slug = unique_folder_slug(company, lead_role, research_date,
+                              role_discriminator(group[0]), taken_slugs)
     folder = root / args.status_dir / slug
+    _require_folder_under_root(folder, root, args.status_dir)
 
     if folder.exists():
         print(
@@ -839,6 +1142,27 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
 
     source_dir = folder / "source"
     source_dir.mkdir(parents=True, exist_ok=False)
+    taken_slugs.add(slug)
+
+    # --- per-JD labels ---------------------------------------------------- #
+    # ONE allocation, then everything per-posting is derived from it: the
+    # cover-letter / bundle stem (``jobs[].role``) and the verbatim JD filename.
+    # Deriving them separately is what let a folder hold two disambiguated JD
+    # files under one shared cover-letter stem.
+    used_labels: set[str] = set()
+    roles = [unique_role_label(str(row.get("title") or ""),
+                               role_discriminator(row), used_labels)
+             for row in rows]
+    for row, role in zip(rows, roles):
+        if role != str(row.get("title") or "").strip():
+            print(
+                f"handoff: another {company} posting in this folder already has "
+                f"the title {str(row.get('title') or '')!r}; this one is labelled "
+                f"{role!r} so it keeps its own cover letter and bundle (one cover "
+                "letter per JD). Rename it in meta.yaml if you prefer different "
+                "wording — it goes in the letter's target-position line.",
+                file=sys.stderr,
+            )
 
     # --- JD (verbatim, exactly one fetch per posting) --------------------- #
     # Fresh-JD refusal (store-is-never-verification): scaffolding without a
@@ -848,8 +1172,8 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
     jd_ok = True
     used_jd_names: set[str] = set()
     jd_files: list[str] = []
-    for row in rows:
-        jd_file = unique_jd_filename(str(row.get("title") or ""), used_jd_names)
+    for row, role in zip(rows, roles):
+        jd_file = unique_jd_filename(role, used_jd_names)
         jd_files.append(jd_file)
         if args.skip_jd_fetch:
             jd_ok = False
@@ -880,7 +1204,7 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
 
     # --- meta.yaml (schema v5, facts carried from every row) -------------- #
     meta_bytes, editor_errors = build_meta_bytes(
-        rows, jd_files=jd_files, research_date=research_date)
+        rows, roles=roles, jd_files=jd_files, research_date=research_date)
     (folder / "meta.yaml").write_bytes(meta_bytes)
     for message in editor_errors:
         print(f"handoff: metadata not carried: {message}", file=sys.stderr)
@@ -901,8 +1225,8 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
     meta = yaml.safe_load(meta_bytes.decode("utf-8"))
     errors = validate_meta(meta, app_dir=folder)
 
-    # --- location policy gate (same verdict as status.py --check-locations)  #
-    loc_verdict, loc_cat, loc_locs, loc_offending = check_location_policy(meta, folder)
+    # --- location policy gate (per posting, worst-wins) ------------------- #
+    location = check_location_policy(meta, folder)
 
     print(folder)
     print(f"meta.yaml: {'valid' if not errors else 'INVALID'}")
@@ -926,12 +1250,13 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
     # Location policy gate. A definite mismatch is the highest-priority failure
     # ("do not draft this posting at all"), so it wins over an incomplete-metadata
     # / missing-JD exit; ``--allow-location-mismatch`` downgrades it to a warning.
-    # For a multi-role folder the pre-filter above already removed mismatches, so
-    # this only fires for a single-role folder or under --allow-location-mismatch.
+    # For a multi-role folder the pre-filter above removed the mismatches VISIBLE
+    # IN THE SEARCH ROW; this fires for a single-role folder, under
+    # --allow-location-mismatch, and for a posting whose row carried no location
+    # and whose fetched JD turns out to name a place outside the policy — the one
+    # case the pre-filter cannot see, and the one it must not silently drop.
     location_blocked = report_location(
-        loc_verdict, loc_cat, loc_locs, loc_offending, folder,
-        allow_mismatch=args.allow_location_mismatch,
-    )
+        location, folder, allow_mismatch=args.allow_location_mismatch)
     code = 3 if location_blocked else (0 if (errors == [] and jd_ok) else 1)
 
     # LAST, and only now that the folder is really on disk — see
@@ -947,39 +1272,63 @@ def _run_group(group: list[dict], args: argparse.Namespace) -> tuple[int, Path]:
 
 # Exit codes _run_group returns, mapped to a bulk-report status. A location
 # mismatch is auditable as its own status/count (distinct from an incomplete
-# scaffold) so a run's report shows exactly why each folder is not clean.
-_BULK_STATUS_BY_CODE = {0: "created", 3: "location_mismatch"}
+# scaffold) so a run's report shows exactly why each folder is not clean. Exit 2
+# (refuse-to-overwrite) has its own bucket for the same reason and a sharper one:
+# it created NOTHING, so calling it an "incomplete" scaffold overstates how many
+# folders exist and aims a follow-up agent at another posting's complete one.
+_BULK_STATUS_BY_CODE = {0: "created", 2: "refused", 3: "location_mismatch"}
 
 
 def _register_row(row: dict, urls: set[str], pairs: set[tuple[str, str]]) -> None:
-    """Mark a row's URL + (company, role) live so a later group can't duplicate it."""
-    url = _norm(row.get("url")).rstrip("/")
-    pair = (_norm(row.get("company")), _norm(row.get("title")))
-    if url:
-        urls.add(url)
-    if all(pair):
-        pairs.add(pair)
+    """Mark the posting this run just scaffolded — by its identity, and only that.
+
+    ``posting_key`` decides which set the row lands in: a URL-bearing row
+    registers its URL, a URL-less row registers its ``(company, title)`` pair.
+    Registering BOTH — what this did before — claimed that EVERY posting at that
+    company with that title was now handled, so the next group's genuinely
+    distinct requisition (different URL, different city) matched the pair and was
+    dropped as a "duplicate" of its own sibling: nothing scaffolded, nothing
+    appended to the skip-log, exit 0, and one stderr line saying it "already
+    exists in the log or a live application folder" when it existed in neither.
+
+    ``_posting_keys`` deliberately keeps registering both keys off log and
+    live-folder rows; that asymmetry is argued in its docstring.
+    """
+    key = posting_key(row.get("company"), row.get("title"), row.get("url"))
+    if key[0] == "url":
+        urls.add(key[1])
+    elif all(key[1:]):
+        pairs.add((key[1], key[2]))
 
 
-def _run_groups(groups: list[list[dict]], args: argparse.Namespace) -> int:
+def _run_groups(
+    groups: list[list[dict]],
+    args: argparse.Namespace,
+    *,
+    keys: tuple[set[str], set[tuple[str, str]]] | None = None,
+) -> int:
     """Scaffold one folder per group (one folder per company by default).
 
     Duplicate preflight runs per POSTING within each group (a posting already in a
     log/live folder is skipped, never re-drafted); a group whose postings are all
     duplicates creates nothing. Each created folder's postings are then registered
-    so a later group can't re-draft them.
+    so a later group can't re-draft them. ``keys`` lets ``run`` hand over the
+    preflight sets it already built for the single-posting path, so both paths
+    read the log and the live folders exactly once, from the same snapshot.
     """
     root = _applications_root(args.applications_root)
-    urls, pairs = _posting_keys(
+    urls, pairs = keys if keys is not None else _posting_keys(
         root, _applications_jsonl(root, args.applications_root))
     report: list[dict] = []
     counts = {
         "created": 0,
         "incomplete": 0,
         "location_mismatch": 0,
+        "refused": 0,
         "duplicate": 0,
         "failed": 0,
     }
+    taken_slugs: set[str] = set()
 
     for group in groups:
         company = group[0].get("company")
@@ -1007,7 +1356,7 @@ def _run_groups(groups: list[list[dict]], args: argparse.Namespace) -> int:
             continue
 
         try:
-            code, folder = _run_group(fresh, args)
+            code, folder = _run_group(fresh, args, taken_slugs=taken_slugs)
         except ValueError as exc:
             counts["failed"] += 1
             report.append({
@@ -1021,13 +1370,24 @@ def _run_groups(groups: list[list[dict]], args: argparse.Namespace) -> int:
 
         status = _BULK_STATUS_BY_CODE.get(code, "incomplete")
         counts[status] += 1
-        report.append({
+        entry = {
             "company": company,
             "titles": [row.get("title") for row in fresh],
             "status": status,
-            "folder": str(folder),
             "exit_code": code,
-        })
+        }
+        # A refusal created NOTHING; ``folder`` is the PRE-EXISTING application
+        # that already owns the slug, and it belongs to a different posting.
+        # Reporting it under the same key every other row uses for "the folder
+        # this run built" is what aims an agent working the report at the wrong
+        # folder, so name it as the conflict it is.
+        entry["conflicting_folder" if status == "refused" else "folder"] = str(folder)
+        report.append(entry)
+        if status == "refused":
+            # Nothing was built and nothing was logged: this posting is still
+            # unhandled, so registering it would mark it done and hide it from the
+            # next run's preflight.
+            continue
         # A partial scaffold (or a mismatch folder left for review) is still a live
         # folder; register its postings so a later group cannot duplicate them.
         for row in fresh:
@@ -1044,10 +1404,11 @@ def _run_groups(groups: list[list[dict]], args: argparse.Namespace) -> int:
         "Bulk handoff: "
         + " | ".join(f"{key}={value}" for key, value in counts.items())
     )
-    # Any non-clean outcome (incomplete scaffold, location mismatch, or a hard
-    # failure) makes the run exit non-zero.
+    # Any non-clean outcome (incomplete scaffold, location mismatch, a refusal
+    # that built nothing, or a hard failure) makes the run exit non-zero.
     return 1 if (
-        counts["incomplete"] or counts["location_mismatch"] or counts["failed"]
+        counts["incomplete"] or counts["location_mismatch"]
+        or counts["refused"] or counts["failed"]
     ) else 0
 
 
@@ -1055,12 +1416,50 @@ def run(args: argparse.Namespace) -> int:
     rows = load_rows(Path(args.json).expanduser())
     selected = rows if args.select_all else select_rows(rows, args.select)
     groups = group_by_company(selected, split=args.split)
+    # The duplicate preflight is hoisted here so EVERY path runs it. It used to
+    # live only in ``_run_groups``, which left the three commonest single-posting
+    # invocations — ``--select "rank N"`` (SKILL.md's first example),
+    # ``--select "Company/Title"`` and ``--select "Company"`` for a company with
+    # one posting — with no preflight at all. AGENTS.md's blacklist/log guardrail
+    # is not scoped to bulk runs, and ``search_jobs.load_considered`` is only half
+    # a backstop: it reads the log, never the live folders, so an application
+    # folder with no log row (created before creation-time logging, or left by a
+    # crash before the trailing append) re-surfaced as fresh and was drafted a
+    # second time.
+    root = _applications_root(args.applications_root)
+    urls, pairs = _posting_keys(
+        root, _applications_jsonl(root, args.applications_root))
     # A single explicitly-selected posting keeps the simple two-line stdout path
     # (folder + validation) and the loud single-role location block.
     if not args.select_all and len(selected) == 1 and len(groups) == 1:
-        code, _folder = _run_group(groups[0], args)
+        reason = _duplicate_reason(selected[0], urls, pairs)
+        if reason:
+            _report_explicit_duplicate(selected[0], reason)
+            return 2
+        code, _folder = _run_group(groups[0], args, taken_slugs=set())
         return code
-    return _run_groups(groups, args)
+    return _run_groups(groups, args, keys=(urls, pairs))
+
+
+def _iso_date(value: str) -> str:
+    """argparse ``type`` for ``--research-date``: a real ``YYYY-MM-DD``, nothing else.
+
+    The value is joined into the folder slug WITHOUT slugifying (``slugify`` runs
+    over the company and the role, never the stamp), so a separator in it becomes
+    a path separator. ``2026/07/31`` — an ordinary typo for the documented format
+    — buried the application two levels below where every tool globs and wrote a
+    permanent skip-log row reading ``slug: "31", date: ""``. Rejecting it at the
+    boundary is the cheapest place; ``_require_folder_under_root`` is the backstop.
+    """
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"must be YYYY-MM-DD (got {value!r}); it is also the folder-slug date "
+            "stamp, so anything else lands the application where no tracker "
+            "command can see it"
+        ) from None
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1088,9 +1487,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="Status subfolder to create the application under "
                          "(default: %(default)s — new applications are always "
                          "created in 6_drafted per the Folder Convention).")
-    ap.add_argument("--research-date", default=None,
+    ap.add_argument("--research-date", default=None, type=_iso_date,
                     help="Search/handoff date YYYY-MM-DD (default: today, UTC); "
-                         "also the folder-slug date stamp.")
+                         "also the folder-slug date stamp, so the format is "
+                         "enforced.")
     ap.add_argument("--skip-jd-fetch", action="store_true",
                     help="Do not fetch the JD (offline/testing); the folder is "
                          "scaffolded but exits non-zero so the JD is saved manually.")
@@ -1101,7 +1501,9 @@ def main(argv: list[str] | None = None) -> int:
                          "folder on disk and exits non-zero (code 3).")
     ap.add_argument("--report", default=None,
                     help="Optional JSON report path for --all results (counts + "
-                         "per-row status, including location_mismatch).")
+                         "per-row status: created, incomplete, location_mismatch, "
+                         "refused, duplicate, failed). A `refused` row carries "
+                         "`conflicting_folder`, not `folder` — it built nothing.")
     args = ap.parse_args(argv)
 
     try:
