@@ -87,3 +87,50 @@ Option C is the right eventual answer and is filed separately; it should not rid
 inside the migration.
 
 **Your answer:** ______
+
+---
+
+## 2026-07-31 — agent note: the Background's premise no longer holds
+
+The Background above says (`:21-23`) that *"the design README and the execution plan both
+spell the destinations `me/interviews/{stories,questions,replies}/`"*, and Option A's cost
+line (`:59-61`) says those two documents *"need one word changed in three places"*.
+
+**Neither is true any more.** Re-checked today:
+
+```
+$ grep -rn "interviews/stories\|interviews/questions\|interviews/replies" docs/
+(no output, exit 1)
+```
+
+Both documents already use the default path's spelling:
+
+- `docs/designs/workspace-restructure/README.md:123-125` — `story-bank/`,
+  `question-bank/`, `common-message-replies/`;
+- `docs/designs/workspace-restructure/execution-plan.md:404, 410, 412` — the same leaf
+  names in the move table, and again in the file-count table at `:486-488`.
+
+The execution plan goes further and records the reasoning at `:514-522`: *"the leaf names
+are kept, which is what makes the 33 sibling-relative `../../story-bank/` references inside
+the YAML sources keep resolving. The table above already assumed this, so no step
+changes."*
+
+**What that changes for your answer.** The question is no longer "which of two conflicting
+documents wins" — there is no conflict left to adjudicate. Option A is what both documents
+now say and what phase 5 (`tasks/3_in-review/2026-07-28-workspace-phase-5-lifetime-taxonomy/`)
+has been built on. So an answer of "A" is a confirmation with no work attached, and an
+answer of "B" is now a *reversal*: it would mean editing two design
+docs back to the other spelling **and** rewriting the 33 `source_stories:` references,
+where at the time of filing it meant only the second.
+
+Everything else in the item still reproduces and still matters — the 33 references, the
+hard validation error in `skills/behavioral-interview-prep/scripts/answer_bank.py`, and
+the fixture-shaped blind spot in `test_answer_bank.py` are unchanged. **The item stays
+open** because it is your call whether to ratify A (and record it in `memory/decisions/`)
+or to reverse it; nothing here answers it for you. The default path is unchanged and is
+what the tree already reflects.
+
+Option C — resolving story paths through a config accessor instead of sibling-relative —
+is still unfiled as a task; it is named here only so it is not lost when this item closes.
+
+*Nothing above the `**Your answer:**` line was edited.*
