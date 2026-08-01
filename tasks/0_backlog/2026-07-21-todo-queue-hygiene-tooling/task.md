@@ -19,6 +19,11 @@ the repo: a format lint, a leak scan, and a gardener hygiene routine.
 are recorded below rather than deleted, because a task that describes work already done sends the
 next reader to build it twice. What remains is real and is stated first.
 
+**Updated 2026-07-31 (second pass): gap B has now shipped too.** Only gap A is left, and it is
+waiting on an owner answer — see the new
+[company-plus-date screen decision](../../../message-queue/needs-human/decisions/company-plus-date-structural-screen.md).
+Do not start gap A before that is answered; its default path is "no screen is added".
+
 **Verify-with**:
 
 ```bash
@@ -42,18 +47,41 @@ real-company-plus-date rule, which is the one shape the identity guard structura
 dates constantly. Decide the shape (allowlist of vendor names? advisory-only hint like the review
 gate's detector, rather than a blocker?) before writing the regex.
 
-### Gap B — no gardener routine (old gap 3, unchanged and still true)
+**Filed 2026-07-31** as
+`message-queue/needs-human/decisions/company-plus-date-structural-screen.md` — four options
+(do nothing / advisory hint off the existing `companies.yaml` registry / blocking regex with a
+vendor allowlist / blocking but scoped to `message-queue/` + `tasks/` only), recommending the
+advisory hint. It notes the overlap with `process-weight-what-to-cut.md` D6, also unanswered.
+
+### Gap B — ~~no gardener routine~~ SHIPPED 2026-07-31 (old gap 3)
 
 The gardener has 8 routines — `expire-discoveries`, `compact-logs`, `lessons-report`,
 `card-staleness`, `skill-drift`, `store-report`, `verify-links`, `self-measure` — and **none of
-them touches `message-queue/`, `tasks/`, or `memory/known-issues/`**. Add `todo-hygiene`
+them touches `message-queue/`, `tasks/`, or `memory/known-issues/`**. Add `queue-hygiene`
 (dry-run, exit 0 always, like everything there): `reviews/` items past 30 days, tasks dwelling in
 `1_in-progress`/`3_in-review`, `decisions/` items pending longer than N weeks, and parked items
 whose revisit condition references a shipped stage.
 
+**Name (2026-07-31, owner call): the routine shipped as `queue-hygiene`, not the `todo-hygiene`
+this task asked for** — this task was written on 2026-07-21, when the folder family was still
+`todo/`; `message-queue/README.md` records the rename, so the old name pointed at a folder that no
+longer exists. This task's title is stale for the same reason; its id never changes.
+
 Note that this overlaps a proposal now in front of the owner
 ([process-weight](../../../message-queue/needs-human/decisions/process-weight-what-to-cut.md),
 D6b) — check the answer before building, so the routine is not built twice under two names.
+
+**It did overlap: D6b proposes this exact routine under the name "the age flag".** They were
+reconciled into ONE routine rather than two — `queue-hygiene`
+(`automation/gardener/queue_hygiene.py`, tests in
+`automation/gardener/tests/test_queue_hygiene.py`), registered in `gardener.py`'s `ROUTINES` and
+`ALL_ORDER`. A dated note in D6b records that its gardener half is built and narrows what is still
+open there to the reconciler-`ADVISORY`-tier fallback. Two departures from D6b's sketch: it
+excludes `0_backlog` (D3 of that same document argues an old backlog item is not a defect) and it
+prefers the newest dated `worklog.md` heading over the id's filed date, which is only an upper
+bound on dwell. It also adds the two dimensions D6b did not name — `reviews/` past 30 days and
+parked items whose revisit condition has shipped — and prints **counts only** for the `private/`
+mirrors, so a run is safe to paste into a public PR.
 
 ### Shipped since filing — do NOT rebuild
 
@@ -69,6 +97,9 @@ D6b) — check the answer before building, so the routine is not built twice und
 
 - [ ] The company-plus-date screen exists in whatever shape the owner's decision settles, and a
       planted real-company+date line in `message-queue/needs-human/reviews/` is caught by it
-- [ ] `gardener` offers `todo-hygiene` (dry-run, never gating), reporting the aging dimensions
+      — **blocked on `company-plus-date-structural-screen.md`**; note that under the recommended
+      advisory option "caught" means *surfaced as a hint*, not *fails the commit*, so this line
+      needs re-wording once the shape is settled
+- [x] `gardener` offers `queue-hygiene` (dry-run, never gating), reporting the aging dimensions
       above, and no-opping cleanly when `message-queue/` and `tasks/` are absent (the exported
       public tree ships neither)

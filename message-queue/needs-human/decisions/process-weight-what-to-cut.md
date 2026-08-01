@@ -326,6 +326,29 @@ that tier.
 
 **Default path while unanswered:** neither is added. No check is weakened or removed meanwhile.
 
+**Agent note, 2026-07-31 — D6b's gardener half is now built; only its reconciler alternative is
+still open.** `tasks/0_backlog/2026-07-21-todo-queue-hygiene-tooling` independently specified the
+same routine, and it shipped as `queue-hygiene`: a dry-run entry in `gardener.py`'s
+`ROUTINES`, exit 0 always, reporting old `reviews/`, long-pending `decisions/`, tasks dwelling in
+`1_in-progress`/`3_in-review`, and parked decisions whose revisit condition names a stage its
+design's `execution-plan.md` marks SHIPPED. Two deliberate departures from the shape sketched
+above, both recorded in `automation/gardener/queue_hygiene.py`: `0_backlog` is **excluded** (D3 of
+this same document argues an old backlog item is a backlog, not a defect), and a task's age is
+read from its newest dated `worklog.md` heading when it has one, falling back to the id's filed
+date — the id date is an upper bound on dwell, so using it alone over-reports. Building it did
+not pre-empt anything reversible: the routine gates nothing and deleting it costs one file.
+
+**So the part of D6b still needing your answer is the fallback paragraph** — whether the
+reconciler should also grow an `ADVISORY`/`hints:` tier. Nothing needs it today. D6a is untouched.
+The related question of a company-plus-date screen for the leak guard is now its own item,
+`company-plus-date-structural-screen.md`, which points back here.
+
+**Agent note, 2026-07-31 (same day) — the routine is named `queue-hygiene`, not `todo-hygiene`.**
+Its task file still says `todo-hygiene` because that name was written on 2026-07-21, when the
+folder family was still `todo/`; `message-queue/README.md` records the rename. A routine named
+after a folder that no longer exists is the drift this repo's naming rules exist to prevent, so
+the name follows reality and the task file is the stale side.
+
 **Your answer:** ______
 
 ---
