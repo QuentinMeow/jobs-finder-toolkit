@@ -8,13 +8,13 @@ jd:
   content_hash: bc842381ce74fdf151dd4df56faafda7d24f8f4b36bd06e910b7105e205de91f
   fetched_verbatim: true
   file: jd.md
-  normalizer_version: 1
+  normalizer_version: 2
 key: ck-53ef9a5b59d7
 last_seen: '2026-07-14T09:40:00Z'
 location: United States
 opinions:
   level:
-    by: job_metadata.py@3aebb9ea
+    by: job_metadata.py@28172df3
     from: 20260714T094000Z-000003-c3d4e5
     value: unknown
   visa:
@@ -23,17 +23,17 @@ opinions:
     hits: []
     label: unclear
   workplace:
-    by: job_metadata.py@3aebb9ea
+    by: job_metadata.py@28172df3
     from: 20260714T094000Z-000003-c3d4e5
     value: remote
 profiles:
 - profile-01
 provenance:
-  built_by: build_postings.py@e0b4788a
+  built_by: build_postings.py@e15dea50
   canonicalizer_version: 1
   fetch_ids:
   - 20260714T094000Z-000003-c3d4e5
-  normalizer_version: 1
+  normalizer_version: 2
 schema_version: 1
 source_ids:
 - id: '502'

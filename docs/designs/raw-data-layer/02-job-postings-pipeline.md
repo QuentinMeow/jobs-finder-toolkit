@@ -9,8 +9,10 @@ suppressed sweep rows get a review queue; log consolidation is deferred to
 the todo queue. Record:
 [memory/decisions/raw-data-layer-decisions.md](../../../memory/decisions/raw-data-layer-decisions.md);
 summary in [Decisions (resolved)](#11-decisions-resolved). The remaining
-follow-ups are the multi-day capture measurement and the O(new) incremental
-build optimization. Writing follows [docs/handbook/doc-style.md](../../handbook/doc-style.md).
+follow-up is the multi-day capture measurement; the O(new) incremental build
+optimization this doc called for is now implemented and documented in
+[05 — Incremental builds](05-incremental-build.md).
+Writing follows [docs/handbook/doc-style.md](../../handbook/doc-style.md).
 
 Builds on [the store core](01-store-core.md); implementation steps in
 [the execution plan](execution-plan.md).
