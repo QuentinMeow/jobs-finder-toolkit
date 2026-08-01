@@ -273,7 +273,7 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 | Skip logic (blacklist / already-considered / recently-searched), registry identity resolution | `reference.md` § Skip logic |
 | Stage-2 setup (LinkedIn/Glassdoor via JobSpy; Adzuna/JSearch keys) | `reference.md` § Stage 2 setup |
 | AI-native two-signal scoring; when to add the `ai-native` tag | `reference.md` § AI-native company tagging |
-| Managing `companies.yaml` (add a board token, validate, blacklist) | `reference.md` § Managing target companies |
+| Managing `companies.yaml` (add a board token, validate) and where blacklist rows go | `reference.md` § Managing target companies |
 | Reusable company leveling + compensation cache (`config.company_levels_path()`) | `reference.md` § Leveling cache |
 | Optional DOL sponsorship enrichment (`build_sponsor_index.py`) | `reference.md` § Optional DOL sponsorship enrichment |
 | Visa / US-location / recency heuristics; scoring weights | `reference.md` (Visa, US/location, Recency, Scoring) |
@@ -285,7 +285,7 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 |------|---------|
 | `config.search_profiles_dir()/<label>.yaml` | Where the candidate's OWN search profiles live (overlay, resolved first): roles, keywords, location + radius, visa, recency, `ai_company`, `sources`/stage config; default label = `config.job_search.default_profile`. Two useful styles: an **evergreen company-board sweep** and a **widened two-stage market scan** (see `profiles/_TEMPLATE.yaml`) |
 | `profiles/` | The PUBLIC fallback folder — `example.yaml` (generic general-software-engineer profile, copy + tune), `_TEMPLATE.yaml`, and its README. Nothing else may ever be written here |
-| `companies.yaml` | Canonical company registry — identity, ATS poll config, tags (incl. the `ai-lab`/`ai-infra`/`ai-native` family), blacklist |
+| `companies.yaml` | Canonical company registry — identity, ATS poll config, tags (incl. the `ai-lab`/`ai-infra`/`ai-native` family). Blacklist rows live in the overlay at `config.blacklist_path()`, never here |
 | `config.company_levels_path()` | Dated reusable company level/YOE/base/total-comp reference; separate from the identity registry (see reference.md § Leveling cache) |
 | `scripts/search_jobs.py` | Main pipeline (two-stage fetch → filter → score → rank → output); `--stage`, `--ai-native-only`, `--no-jobspy`, `--max-per-company`, `--top-k`, `--max-age-days`, `--visa-policy`, `--refilter latest`, `--print-full` |
 | `scripts/company_roles.py` | Re-check ONE company's live board with a location-policy verdict (single-company re-search + JD dump) |
@@ -295,7 +295,7 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 | `scripts/validate_filter_variants.py` | Check the deterministic corpus and strictly audit a private pre-filter snapshot; exits nonzero with label stubs for new/conflicting high-stakes variants |
 | `filter_variants/corpus.yaml` | Public-safe fictional regressions for location/workplace, sponsorship, title/seniority, and required YOE |
 | `scripts/build_sponsor_index.py` | Optional DOL sponsorship enrichment (see reference.md) |
-| `scripts/registry.py` | Registry loader + resolver (canonical name, blacklist, poll targets, `tagged_keys` for the AI-native set) |
+| `scripts/registry.py` | Registry loader + resolver — merges `companies.yaml` with the overlay blacklist (canonical name, poll targets, `tagged_keys` for the AI-native set) |
 | `scripts/_vendor/*.py` | **Generated** byte-identical copies of `automation/shared/*.py` (keep this skill self-contained). Do not edit — regenerate with `automation/vendoring/sync_vendored.py`; see `scripts/_vendor/README.md` |
 | `reference.md` | Pipeline internals, data-source endpoints, field notes, visa/scoring rationale, company management |
 | `config.company_search_log_path()` | Last successful full-company search per employer (config-derived; 7-day default skip — see Step 1) |

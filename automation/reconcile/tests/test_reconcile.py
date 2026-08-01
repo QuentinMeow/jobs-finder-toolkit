@@ -485,5 +485,93 @@ class TestCompanyIndexCheck(TempRepo):
         self.assertEqual(R.company_index_findings(self.index_at(self.INDEX), apps), [])
 
 
+class TestPublicRegistryBlacklist(TempRepo):
+    """A `blacklist:` row in the PUBLISHED registry is a leak no other gate sees.
+
+    The overlay and the public registry share one entry schema, so such a row WORKS
+    — ``registry.lint_entries`` even requires a blacklist reason on identity-only
+    rows — and the leak guard matches identity tokens, which an employer's name is
+    not. Four documents used to route agents here to write one, so the routing fix
+    needs a gate behind it.
+
+    Every test drives a temp tree; the last one is the only place the real file is
+    read, and it is the assertion that the shipped registry is clean today.
+    """
+
+    HEADER = (
+        "# The blacklist: key is OVERLAY-ONLY — documented here, never used here.\n"
+        "companies:\n"
+    )
+    POLLED = "  - {name: Acme Boards, ats: greenhouse, token: acme, tags: [saas]}\n"
+
+    def registry_at(self, body: str):
+        path = self.root / R.PUBLIC_REGISTRY_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_a_clean_registry_reports_nothing(self) -> None:
+        self.registry_at(self.HEADER + self.POLLED)
+        self.assertEqual(R.check_public_registry_blacklist(), [])
+
+    def test_a_planted_flow_style_row_is_caught(self) -> None:
+        """The shape every row in the real file uses."""
+        self.registry_at(self.HEADER + self.POLLED +
+                         '  - {name: Planted Skip Co, blacklist: "no sponsorship"}\n')
+        findings = R.check_public_registry_blacklist()
+        self.assertEqual(len(findings), 1, findings)
+        self.assertEqual(findings[0].check, "public-registry-blacklist")
+        self.assertIn("line 4", findings[0].message)
+
+    def test_a_planted_block_style_row_is_caught(self) -> None:
+        self.registry_at(self.HEADER + self.POLLED +
+                         "  - name: Planted Skip Co\n"
+                         '    blacklist: "current employer"\n')
+        self.assertEqual(len(R.check_public_registry_blacklist()), 1)
+
+    def test_the_finding_never_quotes_the_employer(self) -> None:
+        """``file_retries`` writes the message into a TRACKED file."""
+        self.registry_at(self.HEADER + self.POLLED +
+                         '  - {name: Planted Skip Co, blacklist: "no sponsorship"}\n')
+        message = R.check_public_registry_blacklist()[0].message
+        self.assertNotIn("Planted Skip Co", message)
+        self.assertNotIn("no sponsorship", message)
+
+    def test_comments_about_the_key_are_not_findings(self) -> None:
+        """Guards the guard: the real file DOCUMENTS the key it must not carry."""
+        self.registry_at(
+            "#   blacklist: \"...\"  OVERLAY-ONLY — never add this key to THIS file.\n"
+            "companies:\n"
+            + self.POLLED
+            + "  # ---- Blacklist ----\n"
+            "  # Candidate rows carry a `blacklist:` reason and live in the overlay.\n")
+        self.assertEqual(R.check_public_registry_blacklist(), [])
+
+    def test_a_trailing_comment_does_not_hide_a_row(self) -> None:
+        """Fail-closed: the key is read from the CODE half of the line, not the whole."""
+        self.registry_at(self.HEADER + self.POLLED +
+                         '  - {name: Planted Skip Co, blacklist: "x"}  # see overlay\n')
+        self.assertEqual(len(R.check_public_registry_blacklist()), 1)
+
+    def test_an_absent_registry_no_ops(self) -> None:
+        """The exported tree and a bare clone must not go red on a missing file."""
+        self.assertEqual(R.check_public_registry_blacklist(), [])
+
+    def test_an_unreadable_registry_is_a_finding_not_a_traceback(self) -> None:
+        self.registry_at(self.HEADER).write_bytes(b"\xff\xfe not utf-8")
+        findings = R.check_public_registry_blacklist()
+        self.assertEqual(len(findings), 1)
+        self.assertIn("unreadable", findings[0].message)
+
+    def test_the_shipped_registry_is_clean(self) -> None:
+        """The only test that reads the real file — and the reason this check ships."""
+        saved = R.REPO_ROOT
+        R.REPO_ROOT = Path(__file__).resolve().parents[3]
+        self.addCleanup(lambda: setattr(R, "REPO_ROOT", saved))
+        self.assertTrue((R.REPO_ROOT / R.PUBLIC_REGISTRY_REL).is_file(),
+                        "the registry moved; this check now silently no-ops")
+        self.assertEqual(R.check_public_registry_blacklist(), [])
+
+
 if __name__ == "__main__":
     unittest.main()

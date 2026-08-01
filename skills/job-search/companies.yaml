@@ -1,5 +1,10 @@
 # Canonical company registry for the job-search skill — the single source of truth
-# for company IDENTITY, poll config, and the blacklist.
+# for company IDENTITY and poll config. It ships NO personal skip rules: every
+# `blacklist:` row lives in the git-ignored overlay at `config.blacklist_path()`
+# (`private/market/blacklist.yaml`), which scripts/registry.py merges into this
+# registry at load time. See "---- Blacklist ----" at the end of this file; the
+# reconciler's `public-registry-blacklist` check fails any commit that adds a
+# `blacklist:` key here.
 #
 # Each POLLED entry: name, ats (greenhouse | ashby | lever | smartrecruiters |
 # workday | amazon | apple | meta), token (the board slug), and tags used by
@@ -19,15 +24,19 @@
 #                     already derives match keys from `name` + `token`, so most
 #                     entries need none; add when a board name != aggregator name,
 #                     e.g. Arize / "Arize AI").
-#   blacklist: "..."  presence means NEVER consider this company; the string is the
-#                     reason (for your own records). Applies everywhere (company
-#                     boards AND aggregator hits), matched via name/aliases/token.
+#   blacklist: "..."  OVERLAY-ONLY — never add this key to THIS file. Presence means
+#                     NEVER consider this company; the string is the reason (for your
+#                     own records). Applies everywhere (company boards AND aggregator
+#                     hits), matched via name/aliases/token. registry.py reads the key
+#                     from the merged entry list, so it works identically from the
+#                     overlay — and a row here would publish a personal skip rule.
 #   poll_batch: "..."  opt-in board cohort for large registry expansions. Batched
 #                     rows are polled only with search_jobs.py --company-batches;
 #                     ordinary profile runs keep the unbatched registry footprint.
 #
 # IDENTITY-ONLY rows carry name + aliases + blacklist and OMIT ats/token: companies
 # we never poll but still want to exclude (e.g. aggregator-surfaced employers).
+# They are exactly the shape the overlay ships, so they belong in the overlay, not here.
 # validate_companies.py and the fetch pipeline skip any row without `ats`.
 #
 # NOTE: company boards are ONE source. For market-wide coverage the skill also

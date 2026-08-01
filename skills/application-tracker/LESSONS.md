@@ -46,6 +46,10 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 - The applications skip-log (`config.applications_jsonl_path()`) is **append-only** —
   `--update`/`--update-job` record the event as it happens and `--sync-log` is the backstop.
   Nothing rewrites it, so deleting an application no longer un-skips its posting; a wrong row
-  is repaired by appending a tombstone (`--forget-log`), never by editing the file. The canonical
-  `skills/job-search/companies.yaml` registry carries the blacklist (`blacklist:`
-  reason per entry) of employers job-search should never surface.
+  is repaired by appending a tombstone (`--forget-log`), never by editing the file. The blacklist of
+  employers job-search must never surface is the MERGED registry, not `companies.yaml` alone:
+  `registry.load_registry()` merges the public `skills/job-search/companies.yaml` with the
+  git-ignored overlay at `config.blacklist_path()` (`private/market/blacklist.yaml`) at load time.
+  Every `blacklist:` reason lives in that overlay — the public registry ships none, and writing one
+  there would publish a personal skip rule (the reconciler's `public-registry-blacklist` check
+  fails the commit).

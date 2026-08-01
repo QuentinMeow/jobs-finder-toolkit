@@ -166,7 +166,7 @@ the leak guard on push.
 | `config.example.yaml` (tracked) / `config.yaml` (git-ignored) | Candidate identity, paths, filename stems; the example doubles as the no-config fallback |
 | `examples/` | The fictional "Jordan Rivers" dataset: profile, baseline, reference DOCX, a worked drafted application, screenshots, and the public resume/JD fixture matrix under `examples/fixtures/resume-writer/` |
 | `skills/<skill>/` | The skills — `SKILL.md` instructions + self-contained `scripts/` + `_vendor/` copies |
-| `skills/job-search/companies.yaml` | Canonical company registry: identity, ATS poll config, tags, blacklist — never dated postings |
+| `skills/job-search/companies.yaml` | Canonical company registry: identity, ATS poll config, tags — never dated postings, and never personal skip rules. Every `blacklist:` row lives in the git-ignored overlay at `config.blacklist_path()` (`private/market/blacklist.yaml`), which `registry.load_registry()` merges into this registry at load time |
 | `automation/shared/` | Canonical shared modules, vendored into skills |
 | `automation/vendoring/` | `sync_vendored.py` — regenerates `_vendor/` copies, checks drift |
 | `automation/gardener/` | The gardener's memory-hygiene routines (dry-run by default; move, never delete) |

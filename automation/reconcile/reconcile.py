@@ -4,9 +4,13 @@
 Validates the message-queue/, tasks/, memory/, history/, and docs/roadmap/
 structures against their schemas (single source of truth: ``templates/``), and
 the derived skill manifests against ``skills/*/SKILL.md`` frontmatter (single
-source of truth for visibility). Instructions are wishes; this check is the
-guarantee — it runs from the pre-commit hook and CI, and violations can be filed
-as repair items the next session picks up.
+source of truth for visibility). It also holds ONE privacy invariant the leak
+guard structurally cannot hold — that the published company registry carries no
+personal ``blacklist:`` row (``check_public_registry_blacklist``) — because the
+leak guard matches identity tokens and an employer's name is not one.
+Instructions are wishes; this check is the guarantee — it runs from the
+pre-commit hook and CI, and violations can be filed as repair items the next
+session picks up.
 
 Usage:
     reconcile.py --check                  # exit 1 on findings, print them
@@ -65,6 +69,15 @@ _LAST_UPDATED_RE = re.compile(
 # check names; ``company_index.DEFAULT_REL`` is the single source for the file path
 # itself, and a test pins this to be its parent.
 COMPANY_INDEX_ROOT = "private/companies"
+
+# The tracked PUBLIC company registry. It and the git-ignored blacklist overlay
+# share ONE entry schema, so a personal skip rule written here works exactly as if
+# it were in the overlay — which is precisely why nothing downstream ever notices.
+PUBLIC_REGISTRY_REL = "skills/job-search/companies.yaml"
+
+# ``blacklist`` used as a YAML key: block style (``  blacklist: reason``) and the
+# flow style every row of that file actually uses (``{name: X, blacklist: reason}``).
+_BLACKLIST_KEY_RE = re.compile(r"(?:^|[\s{,])blacklist\s*:")
 
 # ``automation/shared`` resolved from THIS FILE rather than from REPO_ROOT: the tests
 # point REPO_ROOT at a throwaway tree, but the sibling package's location is a
@@ -489,6 +502,65 @@ def check_company_index() -> list[Finding]:
                                   applications_root)
 
 
+def _strip_yaml_comment(line: str) -> str:
+    """The code half of a YAML line — everything before its first unquoted ``#``.
+
+    Quote-aware on purpose: the registry's own header comments discuss ``blacklist:``
+    at length, and a naive scan would flag the documentation that exists to prevent
+    the very thing being checked.
+    """
+    quote = ""
+    for index, char in enumerate(line):
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+        elif char == "#" and (index == 0 or line[index - 1] in " \t"):
+            return line[:index]
+    return line
+
+
+def check_public_registry_blacklist() -> list[Finding]:
+    """The PUBLIC company registry carries no ``blacklist:`` row.
+
+    A blacklist row names an employer the candidate personally refuses — their own
+    current employer, a company that will not sponsor. ``skills/job-search/companies.yaml``
+    is published, so such a row is a leak, and it is a leak NEITHER armed gate can
+    see: the leak guard derives its tokens from the candidate's identity and a
+    company name is not one, while ``registry.lint_entries`` deliberately REQUIRES a
+    blacklist reason on every identity-only row (the overlay's rows use that exact
+    schema), so the file lints clean either way. Four documents used to route agents
+    here to write one; this check is what makes that routing fix stick.
+
+    Lexical, not a parse: ``yaml`` is not stdlib (module "Design rules"), and a raw
+    line scan cannot be talked out of a hit by an anchor, a merge key or an odd
+    quoting style the way a loader's normalisation can.
+
+    The finding names the LINE NUMBER and never the row — ``file_retries`` writes a
+    finding's message into a TRACKED retry item, so quoting it would publish the
+    employer this check exists to keep out.
+    """
+    registry = REPO_ROOT / PUBLIC_REGISTRY_REL
+    if not registry.is_file():
+        return []
+    try:
+        text = registry.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return [Finding("public-registry-blacklist", PUBLIC_REGISTRY_REL,
+                        f"unreadable ({type(exc).__name__}) — cannot verify that it "
+                        f"carries no personal skip rules")]
+    return [
+        Finding("public-registry-blacklist", PUBLIC_REGISTRY_REL,
+                f"line {number} carries a `blacklist:` key. Personal skip rules "
+                f"belong in the git-ignored overlay at config.blacklist_path() "
+                f"(private/market/blacklist.yaml), which registry.load_registry() "
+                f"merges in at load time — never in the published registry")
+        for number, line in enumerate(text.splitlines(), start=1)
+        if _BLACKLIST_KEY_RE.search(_strip_yaml_comment(line))
+    ]
+
+
 CHECKS = {
     "queue-schema": check_queue_schema,
     "task-structure": check_task_structure,
@@ -498,6 +570,7 @@ CHECKS = {
     "roadmap-dated": check_roadmap_dated,
     "skill-manifests": check_skill_manifests,
     "company-index": check_company_index,
+    "public-registry-blacklist": check_public_registry_blacklist,
 }
 
 # The folder whose absence makes each check no-op (see the module docstring: that
@@ -515,6 +588,7 @@ CHECK_ROOTS = {
     "roadmap-dated": "docs/roadmap",
     "skill-manifests": "skills",
     "company-index": COMPANY_INDEX_ROOT,
+    "public-registry-blacklist": "skills",
 }
 
 # Checks whose findings name PRIVATE subjects — an application slug, a company key.

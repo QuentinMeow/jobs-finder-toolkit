@@ -446,10 +446,12 @@ canonical name matches a log/blacklist entry written under an alias or ATS token
 `Arize` == `Arize AI` == `arizeai`). Companies absent from the registry fall back to
 their normalized name, so aggregator-only employers still match.
 
-- **Blacklist (in `companies.yaml`)** — every posting from a registry entry carrying a
-  `blacklist:` reason (matched on the company's name, aliases, or ATS token) is dropped.
-  Always applied. Blacklisted companies we never poll are identity-only rows (no
-  `ats`/`token`).
+- **Blacklist (in the MERGED registry)** — every entry carrying a `blacklist:` reason
+  (matched on the company's name, aliases, or ATS token) has its postings dropped.
+  Always applied. The rows live in the git-ignored overlay at `config.blacklist_path()`
+  (`private/market/blacklist.yaml`), which `registry.load_registry()` merges with
+  `companies.yaml` at load time; blacklisted companies we never poll are identity-only
+  rows there (no `ats`/`token`).
 - **`applications-log.jsonl`** (`config.applications_jsonl_path()`) — postings already
   generated/considered are dropped, matched by URL, else by `(company, role)`. It is an
   **append-only** event log, folded last-wins: `handoff.py` appends each posting as it
@@ -524,7 +526,8 @@ AI-transitioning employers only, pass `--ai-native-only` (or set
 ## Managing target companies
 
 `companies.yaml` is the canonical company registry — the single source of truth for
-company identity, ATS poll config, `tags`, and the blacklist. To add a company to poll,
+company identity, ATS poll config, and `tags`. Blacklist rows are NOT kept here; they
+live in the overlay (below). To add a company to poll,
 find its ATS board slug (the path segment in its careers URL, e.g.
 `boards.greenhouse.io/<slug>`, `jobs.ashbyhq.com/<slug>`, `jobs.lever.co/<slug>`),
 add an entry with `tags`, then validate:
@@ -535,10 +538,18 @@ add an entry with `tags`, then validate:
 
 Fix or remove any `FAIL`/`EMPTY` entries. Re-run periodically since boards move.
 
-**To blacklist a company** (never consider it), add a `blacklist: "<reason>"` key to its
-entry. If you don't poll it, add an identity-only row with just `name`, `aliases`, and
-`blacklist:` (omit `ats`/`token`); `validate_companies.py` and the fetch pipeline skip
-rows without `ats`. Add `aliases` only where an aggregator's company name differs from
+**To blacklist a company** (never consider it), add the row to the git-ignored overlay at
+`config.blacklist_path()` (`private/market/blacklist.yaml`) — **never to `companies.yaml`,
+which is published.** A blacklist row is a personal skip rule naming a real employer;
+company names are not identity tokens, so the leak guard's token scan cannot catch one
+here. `registry.load_registry()` merges the overlay rows with `companies.yaml` before
+anything reads the registry, so an overlay row behaves identically to a local one. If you
+don't poll the company, an identity-only row with just `name`, `aliases`, and `blacklist:`
+is enough (omit `ats`/`token`); `validate_companies.py` and the fetch pipeline skip rows
+without `ats`. A `blacklist:` key committed to `companies.yaml` now fails the reconciler
+(`public-registry-blacklist`) in pre-commit and CI.
+
+Add `aliases` only where an aggregator's company name differs from
 the board name (the resolver already derives match keys from `name` + `token`).
 
 ## Leveling cache — reusable company leveling + compensation
