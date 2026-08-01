@@ -68,7 +68,7 @@ from _vendor.store import serialization  # noqa: E402
 from _vendor.store.annotations import (AnnotationOrphanError, assert_no_orphans,  # noqa: E402
                                        load_annotations)
 from _vendor.store.atomic import append_line, atomic_write_text, read_jsonl  # noqa: E402
-from _vendor.store.blobs import BlobStore, ext_for_content_type  # noqa: E402
+from _vendor.store.blobs import BlobCorrupt, BlobStore, ext_for_content_type  # noqa: E402
 from _vendor.store.keyregistry import KeyRegistry  # noqa: E402
 from _vendor.store.ledger import BuildLedger, check_clock_monotonic, pending_manifests  # noqa: E402
 from _vendor.store.locking import DomainLock, LockContention  # noqa: E402
@@ -197,11 +197,29 @@ def _is_structurally_foreign(location: str) -> bool:
 def _collect(layout, blobstore, manifests, registry):
     """Parse every member manifest into observations; collect suppressed scrape rows.
 
-    Returns ``(observations, suppressed)``. A group manifest or an absent/unparseable
-    blob yields nothing (missing-raw tolerance: never an error).
+    Returns ``(observations, suppressed, notes)``. A group manifest or an absent,
+    CORRUPT or unparseable blob yields nothing (missing-raw tolerance: never an
+    error) — but never silently: ``notes`` carries what this run could not use, and
+    :func:`_report_collect_notes` states it on stderr and in the build summary.
+
+    **Why a corrupt blob degrades rather than fails.** This store is documented as
+    living on a manually-rsynced multi-laptop setup, where a half-copied ``.zst`` is
+    the ordinary shape of "the sync is still running", not an exotic event — the
+    same condition as ``not-synced-here`` observed a moment earlier, and it repairs
+    itself on the next sync. Raising is not the loud alternative it looks like:
+    ``search_jobs.py`` catches a failed store build in one stderr line and reports
+    success, and ``build_incremental`` advances the ledger and leaves its
+    incomplete marker before the fold — so one torn frame would wedge the fast
+    path, the full fold AND ``--rebuild`` on every future run while the pipeline
+    still looked healthy. Degrading keeps an already-materialized entity alive
+    through carry-forward and loses only a posting the next sync brings back.
+    Recovery for one that is genuinely bit-rotted is: re-sync (or delete) the
+    blob, then ``--rebuild`` — which re-reads every manifest regardless of the
+    ledger. ``automation/store/validate_store.py`` names every corrupt blob.
     """
     observations: list[Observation] = []
     suppressed: list[dict] = []
+    notes: dict[str, list] = {"corrupt": [], "no_rows": []}
     for path, env in manifests:
         # Store a domain-root-RELATIVE manifest path: portable across machines and
         # never an absolute home path in the (tracked) example fixture.
@@ -218,7 +236,27 @@ def _collect(layout, blobstore, manifests, registry):
             data = blobstore.read(sha, ext)
         except FileNotFoundError:
             continue  # not-synced-here / pruned — never an error
+        except BlobCorrupt as exc:
+            # A torn frame is transient on a synced store; degrade like an absent
+            # blob, but COUNT it (see this function's docstring).
+            notes["corrupt"].append({"manifest": rel_path, "sha": sha,
+                                     "source": env.get("source") or "",
+                                     "error": str(exc)})
+            continue
         rows = parsers.parse_manifest(env, data)
+        if not rows and env.get("operation") not in ("group",) \
+                and env.get("kind") != "group" \
+                and env.get("source") in parsers.SUPPORTED_SOURCES:
+            # An implemented parser read a present payload and produced nothing.
+            # `parse_manifest` swallows deliberately (one bad payload is not
+            # build-fatal), but a source-wide envelope change looks exactly like an
+            # empty board — same success line, same processed ledger entry, and a
+            # `last_seen` that quietly stops advancing. The store cannot tell the
+            # two apart from the payload alone, so it reports the count instead of
+            # guessing, and the operator re-checks the live board.
+            notes["no_rows"].append({"manifest": rel_path,
+                                     "source": env.get("source") or "",
+                                     "company": (env.get("context") or {}).get("company") or ""})
         fetch_id = env.get("fetch_id")
         fetched_at = env.get("fetched_at")
         profile = (env.get("context") or {}).get("profile")
@@ -243,7 +281,42 @@ def _collect(layout, blobstore, manifests, registry):
                 key=key, strength=strength, row=row, fetch_id=fetch_id,
                 fetched_at=fetched_at, company=company, company_slug=company_slug,
                 manifest_path=rel_path, profile=profile))
-    return observations, suppressed
+    return observations, suppressed, notes
+
+
+def _sources_of(rows: list[dict]) -> str:
+    """``source[:company]`` labels for a note list, deduped and bounded."""
+    labels = sorted({f"{r.get('source') or '?'}"
+                     + (f":{r['company']}" if r.get("company") else "")
+                     for r in rows})
+    head = ", ".join(labels[:5])
+    return head + (f", +{len(labels) - 5} more" if len(labels) > 5 else "")
+
+
+def _report_collect_notes(notes: dict) -> dict:
+    """State what this run could not use; return the counters for the summary.
+
+    Reporting only — it changes no byte of derived or index. Both counters are
+    omitted when zero so a healthy build's summary line is unchanged and a
+    non-zero one is unmissable.
+    """
+    out: dict[str, int] = {}
+    corrupt = (notes or {}).get("corrupt") or []
+    if corrupt:
+        out["corrupt"] = len(corrupt)
+        print(f"store: {len(corrupt)} manifest(s) skipped — corrupt blob "
+              f"[{_sources_of(corrupt)}]; the postings they carry are NOT in this "
+              f"build. Re-sync raw and run --rebuild; "
+              f"automation/store/validate_store.py names every corrupt blob.",
+              file=sys.stderr)
+    no_rows = (notes or {}).get("no_rows") or []
+    if no_rows:
+        out["no_rows"] = len(no_rows)
+        print(f"store: {len(no_rows)} manifest(s) produced no rows "
+              f"[{_sources_of(no_rows)}] — an empty board, or a parser that no "
+              f"longer matches the payload; re-check the live board.",
+              file=sys.stderr)
+    return out
 
 
 # ── opinions ─────────────────────────────────────────────────
@@ -345,14 +418,21 @@ class _Fold:
 
     # ── rehydration (incremental path only) ──
     def resume(self, *, source_ids, profiles, fetch_ids, events, jd_text, prior,
-               first_at) -> None:
-        """Restore the accumulator to the end of a previously folded history."""
+               first_at, jd_versions=None) -> None:
+        """Restore the accumulator to the end of a previously folded history.
+
+        ``jd_versions`` stays empty for the derived-backed resume (the prior
+        ``jd-*.md`` siblings are already on disk and ``_write_entity`` never
+        deletes). A frozen-snapshot resume passes them, because a ``--rebuild``
+        writes into a fresh dir and the snapshot is the only copy left.
+        """
         self.source_ids = [dict(s) for s in source_ids]
         self._seen_sid = {(s.get("source"), s.get("id"), s.get("url", ""))
                           for s in self.source_ids}
         self.profiles = set(profiles)
         self.fetch_ids = set(fetch_ids)
         self.events = list(events)
+        self.jd_versions = dict(jd_versions or {})
         self.jd_text = jd_text
         self.prior = dict(prior)
         self.first_at = first_at
@@ -479,11 +559,34 @@ def _finish(fold: _Fold, stamps: dict) -> EntityBuild:
                        fold.events, fold.carried_state())
 
 
-def _reduce(key, obs_list, seq_of, stamps) -> EntityBuild:
+def _reduce(key, obs_list, seq_of, stamps, frozen=None) -> EntityBuild | None:
+    """Fold one entity's observations, optionally SEEDED from a frozen snapshot.
+
+    Returns ``None`` when a frozen snapshot already accounts for every present
+    observation — the entity then *is* its snapshot, and the caller reconstructs it
+    with :func:`_reconstruct_from_frozen`.
+    """
     fold = _Fold(key)
-    for o in sorted(obs_list, key=_obs_sort_key):
+    obs = sorted(obs_list, key=_obs_sort_key)
+    resumed = False
+    if frozen is not None:
+        already = _resume_from_frozen(fold, frozen, {o.fetch_id for o in obs})
+        if already is not None:
+            resumed = True
+            obs = [o for o in obs if o.fetch_id not in already]
+    for o in obs:
         fold.add(o, seq_of)
-    return _finish(fold, stamps)
+    if fold.last is None:
+        return None
+    eb = _finish(fold, stamps)
+    if resumed:
+        prov = eb.posting.setdefault("provenance", {})
+        prov["carried"] = True
+        prov["frozen"] = True
+        # Its history reaches outside the raw this machine holds, so a later
+        # incremental build may not continue this fold.
+        eb.fold = None
+    return eb
 
 
 # ── migration + duplicate post-pass ──────────────────────────
@@ -822,16 +925,50 @@ def _seq_map(ledger: BuildLedger) -> dict:
             if "fetch_id" in ln}
 
 
+# ── post-fold overlays: stripped on EVERY load path ──────────
+def _strip_post_fold_overlays(posting: dict) -> dict:
+    """Remove every overlay a post-fold pass stamps, so the pass can re-derive it.
+
+    ``_post_pass`` and the annotation overlay only ever SET values — neither has a
+    "and otherwise remove it" branch, because for a freshly folded entity there is
+    nothing to remove. So an entity that enters the working set still carrying last
+    generation's overlays can GAIN a hint but never LOSE one: a
+    ``possible_duplicate`` whose bucket has since emptied survives forever, and an
+    annotation the owner DELETED keeps overriding ``index/postings.jsonl`` through
+    ``_effective``.
+
+    The invariant is therefore about the working set, not about how an entity got
+    into it: **every posting handed to those passes arrives bare.** One this run
+    re-folded never had the overlays; one it LOADED — from derived
+    (:func:`_load_derived_entity`, :func:`_load_existing_entity`) or from a frozen
+    snapshot (:func:`_reconstruct_from_frozen`) — must have them stripped here.
+    Stripping on only some load paths inverts the store's own promise, leaving
+    ``--rebuild`` (the authoritative path) unable to repair what the O(new) fast
+    path repairs routinely.
+    """
+    posting.pop("migrated_from", None)
+    posting.pop("possible_duplicate", None)
+    posting.pop("human", None)
+    for op in (posting.get("opinions") or {}).values():
+        if isinstance(op, dict):
+            for field in ("human", "effective", "source"):
+                op.pop(field, None)
+    return posting
+
+
 # ── carry-forward (missing-raw tolerance, owner's multi-laptop contract) ──
 def _load_existing_entity(entity_dir: Path, key: str):
     """Reconstruct an :class:`EntityBuild` from an existing derived entity dir.
 
     Used to CARRY FORWARD an entity whose raw blob is absent this build (marked
     ``provenance.carried``). JD prior-version siblings are carried too so a rebuild
-    does not drop them.
+    does not drop them. The post-fold overlays are stripped before
+    ``provenance.carried`` is stamped, so ``_post_pass`` and the annotation overlay
+    re-derive them exactly as they do for a fresh entity — see
+    :func:`_strip_post_fold_overlays`.
     """
-    posting = serialization.loads_yaml(
-        (entity_dir / "posting.yaml").read_text(encoding="utf-8")) or {}
+    posting = _strip_post_fold_overlays(serialization.loads_yaml(
+        (entity_dir / "posting.yaml").read_text(encoding="utf-8")) or {})
     posting.setdefault("provenance", {})["carried"] = True  # idempotent
     jd_text = _read_derived_text(entity_dir / "jd.md")  # bytes: see `_read_derived_text`
     jd_versions = {}
@@ -923,7 +1060,12 @@ def _reconstruct_from_frozen(frozen: dict, key: str):
     entity = frozen.get("entity")
     if not isinstance(entity, dict) or not entity.get("key"):
         return None
-    posting = dict(entity)
+    # The snapshot is the entity YAML verbatim, overlays included. They are derived
+    # (`_post_pass` recomputes a hint on every build from whole buckets, and the
+    # annotation overlay from the annotation that still exists), so they are
+    # stripped here like on every other load path — otherwise a pruned entity's
+    # human fact could never be taken back by any build path at all.
+    posting = _strip_post_fold_overlays(dict(entity))
     prov = dict(posting.get("provenance") or {})
     prov["carried"] = True
     prov["frozen"] = True
@@ -952,53 +1094,83 @@ def _event_sort_key(e: dict):
             _EVENT_TYPE_ORDER.get(e.get("type"), 9))
 
 
-def _merge_frozen_into_fresh(eb: EntityBuild, frozen: dict) -> bool:
-    """Fold a frozen snapshot's pre-prune timeline into a freshly materialized entity.
+def _frozen_prior(fentity: dict, jd_text: str) -> dict:
+    """The fold snapshot of the last observation a frozen entity recorded.
 
-    MAJOR-1 fix. An entity fed by SEVERAL blobs where only SOME were pruned
-    materializes fresh from the surviving blobs alone — silently losing the pruned
-    observations and, with them, an accurate ``first_seen`` (store-core §5: a pruned
-    blob's manifest still proves it was observed, so the timeline stays re-derivable).
-    The frozen snapshot is the authoritative full-history record written at prune
-    time, so we restore the pruned observations from it: ``first_seen`` = min,
-    ``last_seen`` = max, the pruned fetches' events (frozen's classification wins for
-    any shared fetch — it saw the full history), the JD prior-versions the fresh
-    build lacks, and the union of ``fetch_ids``. Fresh keeps its current-state fields
-    (retention prunes OLD blobs, so the newest observation is a surviving one).
+    The inverse of :func:`_finish`: ``title``/``location`` are last-observation-wins
+    and the ``facts`` block IS the last row's tracked payload (each key omitted
+    exactly when the row's value was falsy, which reads back as ``None`` — the value
+    ``_Fold.add`` compares against), so seven of the eight ``_TRACKED`` fields come
+    back exactly. The eighth, ``url``, is not stored per observation — ``source_ids``
+    is a first-appearance dedup — so the most recently ADDED source id is the closest
+    the snapshot can prove; it differs from the true last url only for an entity
+    whose observations alternate between two urls across the freeze boundary.
+    """
+    facts = fentity.get("facts") or {}
+    src = (fentity.get("source_ids") or [{}])[-1]
+    prior = {
+        "title": fentity.get("title", ""),
+        "location": fentity.get("location", ""),
+        "url": src.get("url", "") or "",
+        "workplace_raw": facts.get("workplace_raw"),
+        "salary_text": facts.get("salary_text"),
+        "salary_range": facts.get("salary_range"),
+        "posted_at": facts.get("posted_at"),
+        "jd_hash": (fentity.get("jd") or {}).get("content_hash"),
+    }
+    # `_jd_text` is read only when the previous observation carried a JD, and in
+    # exactly that case it is the snapshot's own `jd.md` (as in `_resume_fold`).
+    prior["_jd_text"] = jd_text if prior["jd_hash"] else ""
+    return prior
 
-    Returns ``True`` iff frozen contributed an observation the present raw lacks
-    (then marks ``provenance.carried`` + ``provenance.frozen``). Deterministic — a
-    pure function of ``eb`` + ``frozen`` — so incremental == rebuild == rebuild-twice.
+
+def _resume_from_frozen(fold: _Fold, frozen: dict, fresh_fetches: set) -> set | None:
+    """Seed ``fold`` with a frozen snapshot's pre-prune history; return its fetches.
+
+    MAJOR-1: an entity fed by several blobs where only SOME survive materializes
+    from the survivors alone — losing the pruned observations and, with them, an
+    accurate ``first_seen`` (store-core §5: a pruned blob's manifest still proves it
+    was observed). The retention GC writes the snapshot *before* pruning, so it —
+    not the surviving raw — is the authority for every fetch it recorded.
+
+    SEEDING the accumulator rather than merging into the finished entity is what
+    makes the result ONE timeline instead of two spliced halves. A from-scratch
+    fold that is then merged starts ``unstarted`` and priorless, so it stamps its
+    earliest surviving observation ``first_seen`` — leaving TWO ``first_seen``
+    events on one entity (two ``index/by-day/`` days claiming discovery, against a
+    ``posting.first_seen`` that names only one) — and it has nothing to diff that
+    observation against, so the ``changed`` event at the freeze boundary is never
+    emitted at all. A seeded fold is already ``started`` and already holds
+    ``prior``, so both fall out of the ordinary fold: the boundary observation is a
+    ``seen`` + ``changed`` against the pre-prune state.
+
+    Returns the set of fetch ids frozen accounts for — the caller drops those
+    observations, since frozen already folded them and saw the fuller history — or
+    ``None`` when the snapshot is malformed or holds nothing the present raw lacks
+    (then the fresh fold stands exactly as it did before).
     """
     fentity = frozen.get("entity")
-    if not isinstance(fentity, dict):
-        return False
-    frozen_events = list(frozen.get("events") or [])
-    frozen_fetches = {e.get("fetch") for e in frozen_events}
-    fresh_fetches = {e.get("fetch") for e in eb.events}
-    if not (frozen_fetches - fresh_fetches):
-        return False  # frozen holds no observation the present raw lacks — no-op
-    # Frozen's classification wins for shared fetches; fresh adds only NEW fetches.
-    merged = list(frozen_events) + [e for e in eb.events
-                                    if e.get("fetch") not in frozen_fetches]
-    merged.sort(key=_event_sort_key)
-    eb.events = merged
-    for name, text in (frozen.get("files") or {}).items():
-        if name.startswith("jd-") and name.endswith(".md"):
-            eb.jd_versions.setdefault(name[len("jd-"):-len(".md")], text)
-    ff, fl = fentity.get("first_seen"), fentity.get("last_seen")
-    cur_first, cur_last = eb.posting.get("first_seen"), eb.posting.get("last_seen")
-    if ff:
-        eb.posting["first_seen"] = min(cur_first, ff) if cur_first else ff
-    if fl:
-        eb.posting["last_seen"] = max(cur_last, fl) if cur_last else fl
-    prov = eb.posting.setdefault("provenance", {})
-    fresh_fids = set(prov.get("fetch_ids") or [])
-    frozen_fids = set((fentity.get("provenance") or {}).get("fetch_ids") or [])
-    prov["fetch_ids"] = sorted(fresh_fids | frozen_fids)
-    prov["carried"] = True
-    prov["frozen"] = True
-    return True
+    if not isinstance(fentity, dict) or not fentity.get("key"):
+        return None
+    events = sorted((e for e in (frozen.get("events") or []) if isinstance(e, dict)),
+                    key=_event_sort_key)
+    fetches = {e.get("fetch") for e in events}
+    if not (fetches - fresh_fetches):
+        return None  # frozen holds no observation the present raw lacks — no-op
+    files = frozen.get("files") or {}
+    jd_text = files.get("jd.md", "") or ""
+    fold.resume(
+        source_ids=fentity.get("source_ids") or [],
+        profiles=fentity.get("profiles") or [],
+        fetch_ids=(fentity.get("provenance") or {}).get("fetch_ids") or [],
+        events=events,
+        jd_text=jd_text,
+        prior=_frozen_prior(fentity, jd_text),
+        first_at=fentity.get("first_seen") or "",
+        jd_versions={name[len("jd-"):-len(".md")]: text
+                     for name, text in files.items()
+                     if name.startswith("jd-") and name.endswith(".md")})
+    return fetches
 
 
 # ── annotation merge + conflict queue (store-core §1) ────────
@@ -1072,39 +1244,40 @@ def _build_entities(layout, registry, stamps, manifests=None, blobstore=None):
     hints and the annotation merge — a pure function of the processed set + the
     existing generation, so incremental and rebuild produce identical entities.
     Returns ``(entities, suppressed, entity_seq, groups, seq_of, index_survivors,
-    frozen_keys)`` — ``groups`` and ``seq_of`` let the spot-equivalence check
+    frozen_keys, notes)`` — ``groups`` and ``seq_of`` let the spot-equivalence check
     re-reduce sampled keys cheaply; ``index_survivors`` is the durable-floor set from
     :func:`_carry_forward_from_index` (never merged into ``entities`` — index-only
     survivors stay honestly derived-absent, never fabricated as derived artifacts),
     pre-computed here so a rebuild can schema-verify those rows BEFORE its swap;
-    ``frozen_keys`` is the tombstone set the index writer needs.
+    ``frozen_keys`` is the tombstone set the index writer needs; ``notes`` is what
+    :func:`_collect` could not use this run.
     """
     blobstore = BlobStore(layout.blobs) if blobstore is None else blobstore
     manifests = list(iter_manifests(layout)) if manifests is None else manifests
     ledger = BuildLedger(layout.build_ledger)
     seq_of = _seq_map(ledger)
-    observations, suppressed = _collect(layout, blobstore, manifests, registry)
+    observations, suppressed, notes = _collect(layout, blobstore, manifests, registry)
     groups: dict[str, list[Observation]] = {}
     for o in observations:
         groups.setdefault(o.key, []).append(o)
-    entities = {key: _reduce(key, obs, seq_of, stamps) for key, obs in groups.items()}
-    entity_seq = {key: min(seq_of.get(o.fetch_id, 0) for o in obs)
-                  for key, obs in groups.items()}
-    fresh_keys = set(entities)
     frozen_all = load_frozen_facts(layout)
-    # MAJOR-1: an entity fed by several blobs where only SOME were pruned materializes
-    # fresh from the survivors alone — merge the frozen full-history timeline back in
-    # (first_seen/events/jd-versions restored) and recompute its sequence over the
-    # union of fetches so a cursor still surfaces it correctly.
-    for key in fresh_keys:
-        frozen = frozen_all.get(key)
-        if frozen and _merge_frozen_into_fresh(entities[key], frozen):
-            fids = (entities[key].posting.get("provenance") or {}).get("fetch_ids") or []
-            entity_seq[key] = min((seq_of.get(f, 0) for f in fids),
-                                  default=entity_seq.get(key, 0))
-            # Mutated after the fold — the accumulator no longer describes it, so a
-            # later incremental build must not try to continue it.
-            entities[key].fold = None
+    # MAJOR-1: an entity fed by several blobs where only SOME were pruned would
+    # materialize from the survivors alone, so its fold is SEEDED from the frozen
+    # snapshot (see `_resume_from_frozen`) and its sequence recomputed over the union
+    # of fetches, so a cursor still surfaces it correctly.
+    entities: dict[str, EntityBuild] = {}
+    entity_seq: dict[str, int] = {}
+    for key, obs in groups.items():
+        eb = _reduce(key, obs, seq_of, stamps, frozen=frozen_all.get(key))
+        if eb is None:
+            continue  # frozen accounts for every present observation — see below
+        entities[key] = eb
+        prov = eb.posting.get("provenance") or {}
+        entity_seq[key] = (
+            min((seq_of.get(f, 0) for f in prov.get("fetch_ids") or []), default=0)
+            if prov.get("frozen")
+            else min(seq_of.get(o.fetch_id, 0) for o in obs))
+    fresh_keys = set(entities)
     # Reconstruct entities that materialized NO fresh observation (all their blobs
     # pruned). Sourced from frozen facts REGARDLESS of whether derived is on disk, so
     # a derived-present build and a derived-wiped build agree byte-for-byte (MINOR-1).
@@ -1127,7 +1300,7 @@ def _build_entities(layout, registry, stamps, manifests=None, blobstore=None):
     index_survivors = _carry_forward_from_index(
         layout.index, set(entities), set(frozen_all))
     return (entities, suppressed, entity_seq, groups, seq_of, index_survivors,
-            set(frozen_all))
+            set(frozen_all), notes)
 
 
 def _verify_schemas(entities: dict, entity_seq: dict,
@@ -1425,8 +1598,8 @@ def build_incremental(layout, registry) -> dict:
 def _build_incremental_full(layout, registry, stamps, ledger, newly, manifests,
                             blobstore) -> dict:
     """The unchanged whole-raw-zone fold — still the fallback and the safety net."""
-    (entities, suppressed, entity_seq, _groups, _seq, _survivors,
-     frozen_keys) = _build_entities(
+    (entities, suppressed, entity_seq, _groups, _seq, _survivors, frozen_keys,
+     notes) = _build_entities(
         layout, registry, stamps, manifests=manifests, blobstore=blobstore)
 
     _check_case_collisions(layout.derived, entities)
@@ -1446,7 +1619,8 @@ def _build_incremental_full(layout, registry, stamps, ledger, newly, manifests,
     return {"mode": "incremental", "fold": "full", "pending": len(newly),
             "entities": len(entities), "changed": changed,
             "suppressed": len(suppressed),
-            "carried_from_index": len(index_survivors)}
+            "carried_from_index": len(index_survivors),
+            **_report_collect_notes(notes)}
 
 
 # ── the fast path ────────────────────────────────────────────
@@ -1491,15 +1665,8 @@ def _load_derived_entity(derived_root: Path, partition: str, key: str) -> Entity
     or a human fact that no longer applies.
     """
     entity_dir = Path(derived_root) / "postings" / partition / key
-    posting = serialization.loads_yaml(
-        (entity_dir / "posting.yaml").read_text(encoding="utf-8")) or {}
-    posting.pop("migrated_from", None)
-    posting.pop("possible_duplicate", None)
-    posting.pop("human", None)
-    for op in (posting.get("opinions") or {}).values():
-        if isinstance(op, dict):
-            for field in ("human", "effective", "source"):
-                op.pop(field, None)
+    posting = _strip_post_fold_overlays(serialization.loads_yaml(
+        (entity_dir / "posting.yaml").read_text(encoding="utf-8")) or {})
     jd_text = _read_derived_text(entity_dir / "jd.md")  # bytes: see `_resume_fold`
     return EntityBuild(key, partition, posting, jd_text, {},
                        read_jsonl(entity_dir / "events.jsonl"), None)
@@ -1605,7 +1772,7 @@ def _build_incremental_fast(layout, registry, stamps, ledger, newly, pending, pl
     """Fold ONLY the pending manifests into the persisted prior state."""
     entries = plan["entries"]
     seq_of = _seq_map(ledger)
-    observations, suppressed = _collect(layout, blobstore, pending, registry)
+    observations, suppressed, notes = _collect(layout, blobstore, pending, registry)
     groups: dict[str, list[Observation]] = {}
     for o in observations:
         groups.setdefault(o.key, []).append(o)
@@ -1718,7 +1885,8 @@ def _build_incremental_fast(layout, registry, stamps, ledger, newly, pending, pl
     fold_state.save(fold_state.cache_path(layout), header, merged)
     return {"mode": "incremental", "fold": "pending-only", "pending": len(newly),
             "entities": len(all_keys), "folded": len(touched), "changed": changed,
-            "suppressed": len(suppressed), "carried_from_index": len(survivors)}
+            "suppressed": len(suppressed), "carried_from_index": len(survivors),
+            **_report_collect_notes(notes)}
 
 
 def _rel_manifest(layout, path) -> str:
@@ -1855,8 +2023,8 @@ def build_rebuild(layout, registry) -> dict:
     # all — the next build re-derives from raw.
     fold_state.discard(fold_state.cache_path(layout))
     fold_state.mark_incomplete(fold_state.incomplete_path(layout), "rebuild")
-    (entities, suppressed, entity_seq, groups, seq_of, index_survivors,
-     frozen_keys) = _build_entities(
+    (entities, suppressed, entity_seq, groups, seq_of, index_survivors, frozen_keys,
+     notes) = _build_entities(
         layout, registry, stamps, manifests=manifests, blobstore=blobstore)
 
     _check_case_collisions(layout.derived, entities)
@@ -1902,7 +2070,8 @@ def build_rebuild(layout, registry) -> dict:
     return {"mode": "rebuild", "entities": len(entities),
             "suppressed": len(suppressed),
             "events": sum(len(e.events) for e in entities.values()),
-            "carried_from_index": len(index_survivors)}
+            "carried_from_index": len(index_survivors),
+            **_report_collect_notes(notes)}
 
 
 def _spot_equivalence(entities, groups, seq_of, stamps) -> None:
@@ -1912,8 +2081,12 @@ def _spot_equivalence(entities, groups, seq_of, stamps) -> None:
     order and once shuffled — and requires byte-identical results. This is the
     determinism property incremental==rebuild depends on (a delta reorders which
     manifests arrive first), checked cheaply without a second full raw re-parse.
+
+    Sampled from ``entities``: a key whose every present observation is already
+    accounted for by a frozen snapshot materializes from that snapshot instead, and
+    has no unseeded reduction to compare.
     """
-    for key in sorted(k for k in groups)[:5]:
+    for key in sorted(k for k in groups if k in entities)[:5]:
         forward = serialization.dumps_yaml(_reduce(key, groups[key], seq_of, stamps).posting)
         shuffled = serialization.dumps_yaml(
             _reduce(key, list(reversed(groups[key])), seq_of, stamps).posting)

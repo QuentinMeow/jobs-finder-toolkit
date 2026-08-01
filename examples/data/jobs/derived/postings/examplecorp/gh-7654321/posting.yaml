@@ -28,7 +28,7 @@ opinions:
 profiles:
 - profile-01
 provenance:
-  built_by: build_postings.py@232b8019
+  built_by: build_postings.py@370e547e
   canonicalizer_version: 1
   fetch_ids:
   - 20260714T093000Z-000001-a1b2c3
