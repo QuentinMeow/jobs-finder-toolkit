@@ -4,7 +4,8 @@
 The format (see ``skills/github-workflow/SKILL.md``): a PR description OPENS with
 a section written for the person who will use the thing, in plain English, before
 any technical detail. Three mechanical properties of that rule are checkable, and
-this script checks exactly those three:
+this script checks exactly those three (plus a fourth property, below, that is only
+evaluated when the caller supplies the diff):
 
   1. ``human-first-section`` — the FIRST level-2 (``##``) heading is the
      human-facing one ("## What changes for you"). A body that opens with
@@ -15,6 +16,27 @@ this script checks exactly those three:
   3. ``marketing-words`` — no word from ``BANNED_TERMS`` appears anywhere in the
      body. Those words describe how the author feels about the change instead of
      what it does.
+
+The fourth property needs to know what the PR changed, so it runs only when
+``--changed-files`` names a file holding the diff's paths (``git diff --name-only``):
+
+  4. ``eval-gate`` — a PR whose diff touches ``skills/*/{SKILL,LESSONS,reference}.md``
+     must DISCHARGE the risk-based eval gate (``AGENTS.md`` → Guardrails,
+     ``evals/README.md``) in its body, in one of three ways:
+       * **ran** — the body names a recorded run under ``evals/results/``, or carries
+         an ``Eval gate: ran — …`` line that says what ran and how it went;
+       * **skipped** — an ``Eval gate: skipped — <intention + size>`` line whose
+         rationale is actually written. The unfilled template placeholder (the
+         angle-bracket text itself) does not count as a rationale;
+       * **debt** — an ``Eval gate: debt — …`` line PLUS a ``tasks/0_backlog/`` item
+         named in the body and added by this same diff. Pre-merge canary discharge
+         is not always reachable at batch size (one measured canary run cost a whole
+         session), so the gate accepts TRACKED debt — but only tracked: a debt line
+         with no backlog item in the diff is the undischarged case, not a third way
+         of saying "skipped".
+     Anything else is a finding. The gate was already a hard rule in ``AGENTS.md``
+     and in ``evals/README.md``; nothing read the body, so a behavioral edit could
+     merge with the gate neither run, skipped, nor owed.
 
 Everything else the format asks for ("say plainly when something gets slower",
 short sentences, naming the real command) is a judgment call and is deliberately
@@ -32,6 +54,10 @@ Usage:
     .venv/bin/python skills/github-workflow/scripts/check_pr_body.py body.md
     gh pr view 42 --json body --jq .body | \
         .venv/bin/python skills/github-workflow/scripts/check_pr_body.py
+    # the eval-gate property alone, the way CI runs it:
+    git diff --name-only "$(git merge-base BASE HEAD)" HEAD > changed.txt
+    .venv/bin/python skills/github-workflow/scripts/check_pr_body.py body.md \
+        --changed-files changed.txt --eval-gate-only
 
 Exit codes:
     0  the body satisfies the format
@@ -81,6 +107,43 @@ FENCE_RE = re.compile(r"^\s*(```|~~~)")
 # ``code`` / `code` — quoted text, not the author's prose. Removed before the
 # marketing scan so a body may name a banned word by backticking it.
 INLINE_CODE_RE = re.compile(r"``[^`]+``|`[^`]+`")
+
+
+# ── the eval gate (property 4) ───────────────────────────────────────────────
+# The three instruction files AGENTS.md's risk-based eval gate names. A diff that
+# touches one of them is a harness edit, and the PR body has to say what happened
+# to the gate.
+SKILL_INSTRUCTION_RE = re.compile(r"^skills/[^/]+/(?:SKILL|LESSONS|reference)\.md$")
+
+# ``Eval gate: <verdict> …`` anywhere on a line. Bold, a list bullet, or a table
+# cell around it are all tolerated — the line is evidence, not prose to police.
+# The remainder is truncated at the first backtick so the CHECKLIST ITEM in
+# .github/pull_request_template.md, which quotes the line format inside backticks
+# and then keeps writing ("… — see `evals/README.md`"), cannot read as a filled-in
+# rationale. Quoting the form is not discharging the gate.
+EVAL_GATE_RE = re.compile(r"Eval\s+gate\s*\**\s*:\s*\**\s*([^`\n]*)", re.IGNORECASE)
+
+# A recorded run (evals/README.md: "A run is recorded … in `evals/results/`").
+EVAL_RECORD_RE = re.compile(r"evals/results/[\w.@+-]+\.md")
+
+_RAN_RE = re.compile(r"^(?:ran|run|pass(?:ed|es)?)\b", re.IGNORECASE)
+_SKIPPED_RE = re.compile(r"^skip(?:ped)?\b", re.IGNORECASE)
+_DEBT_RE = re.compile(r"^debt\b", re.IGNORECASE)
+
+# A backlog item named in the body. The gate then checks the DIFF for it.
+BACKLOG_ITEM_RE = re.compile(r"tasks/0_backlog/[\w.@+/-]+")
+
+# ``<intention + size>`` and friends — an unfilled placeholder is not a rationale.
+PLACEHOLDER_RE = re.compile(r"<[^>\n]*>")
+MIN_RATIONALE_WORDS = 3
+
+_ACCEPTED_FORMS = (
+    "either paste/name a canary run (a path under `evals/results/`, or "
+    "`Eval gate: ran — <what ran, how it went>`), or write "
+    "`Eval gate: skipped — <intention + size>` with the rationale actually filled "
+    "in, or declare tracked debt (`Eval gate: debt — …`) and add the "
+    "`tasks/0_backlog/` item you name in the SAME diff"
+)
 
 
 def _term_pattern(term: str) -> re.Pattern:
@@ -142,8 +205,95 @@ def _first_section(lines: list[tuple[int, str]]):
     return lines[start][0], heading, body_lines
 
 
-def check(body: str) -> list[tuple[str, str]]:
-    """Return ``(location, message)`` findings. Empty means the body passes."""
+def _verdict_rest(text: str) -> str:
+    """What follows the verdict word: ``skipped — a typo`` -> ``a typo``."""
+    rest = re.sub(r"^[A-Za-z]+", "", text.strip(), count=1)
+    return rest.lstrip(" \t—–-:.").strip()
+
+
+def _has_substance(text: str) -> bool:
+    """True when real words remain after the `<placeholder>` spans are removed.
+
+    ``<intention + size>`` collapses to nothing; so do ``N/A`` and ``TBD``, which
+    are the other two ways of writing "I did not answer this".
+    """
+    words = [w for w in re.split(r"[^\w']+", PLACEHOLDER_RE.sub(" ", text)) if w]
+    return len(words) >= MIN_RATIONALE_WORDS
+
+
+def _named_backlog_items(body: str, changed_files: list[str]):
+    """``(named_in_body, present_in_diff)`` for ``tasks/0_backlog/`` paths.
+
+    A body may name the item's folder or its ``task.md``; both count, as long as
+    the diff adds something under the path that was named.
+    """
+    named = [token.rstrip("/.,;:)`") for token in BACKLOG_ITEM_RE.findall(body)]
+    present = [path for path in changed_files
+               for token in named
+               if path == token or path.startswith(token + "/")]
+    return named, present
+
+
+def check_eval_gate(body: str, changed_files: list[str]) -> list[tuple[str, str]]:
+    """Findings for the risk-based eval gate. Empty when it does not apply.
+
+    Reads the WHOLE body, fences included: a pasted canary table is evidence, and
+    the format's fence exemption exists to protect quoted output from the PROSE
+    checks, not to hide the one line this property is looking for.
+    """
+    touched = sorted({p for p in changed_files if SKILL_INSTRUCTION_RE.match(p)})
+    if not touched:
+        return []
+
+    shown = ", ".join(touched[:3])
+    if len(touched) > 3:
+        shown += f" (+{len(touched) - 3} more)"
+    location = "eval gate"
+
+    verdicts = [match.group(1).strip() for match in EVAL_GATE_RE.finditer(body)]
+    ran = [_verdict_rest(v) for v in verdicts if _RAN_RE.match(v)]
+    skipped = [_verdict_rest(v) for v in verdicts if _SKIPPED_RE.match(v)]
+    debts = [_verdict_rest(v) for v in verdicts if _DEBT_RE.match(v)]
+
+    # 1. a run: a recorded result file, or a line that says what ran.
+    if EVAL_RECORD_RE.search(body) or any(_has_substance(r) for r in ran):
+        return []
+    # 2. a skip whose rationale is written, not the template's placeholder.
+    if any(_has_substance(s) for s in skipped):
+        return []
+    # 3. tracked debt: the declaration AND the backlog item, in this diff.
+    named, present = _named_backlog_items(body, changed_files)
+    if debts and present:
+        return []
+
+    head = (f"this diff touches {shown}, so the risk-based eval gate "
+            f"(AGENTS.md → Guardrails, evals/README.md) has to be discharged in "
+            f"the body — ")
+    if debts and named:
+        return [(location, head + "the `Eval gate: debt` line names "
+                 f"{named[0]}, but this diff adds nothing under it. Tracked debt "
+                 "means the backlog item lands with the PR that owes it")]
+    if debts:
+        return [(location, head + "the `Eval gate: debt` line names no "
+                 "`tasks/0_backlog/` item. Debt that is not filed is a skip "
+                 "without a rationale")]
+    if skipped:
+        return [(location, head + "the `Eval gate: skipped` rationale is empty or "
+                 "still the template placeholder. Say what the edit was and how "
+                 "big it was")]
+    if ran:
+        return [(location, head + "the `Eval gate: ran` line does not say what ran "
+                 "or how it went, and no `evals/results/` record is named")]
+    return [(location, head + _ACCEPTED_FORMS)]
+
+
+def check(body: str, changed_files: list[str] | None = None) -> list[tuple[str, str]]:
+    """Return ``(location, message)`` findings. Empty means the body passes.
+
+    ``changed_files`` is the diff's paths (``git diff --name-only``). Without it
+    the eval-gate property cannot be evaluated and is skipped — a body checked on
+    its own is checked for the three format properties, exactly as before.
+    """
     findings: list[tuple[str, str]] = []
     lines = prose_lines(body)
     section = _first_section(lines)
@@ -185,6 +335,9 @@ def check(body: str) -> list[tuple[str, str]]:
                     f"marketing word {found.group(0)!r} — name the actual command, "
                     f"file, or behaviour instead",
                 ))
+
+    if changed_files is not None:
+        findings.extend(check_eval_gate(body, changed_files))
     return findings
 
 
@@ -193,7 +346,11 @@ def main(argv: list[str] | None = None) -> int:
         description=("Validate a PR body against the human-facing PR-description "
                      "format: the first `##` heading is the human-facing one, it "
                      "carries at least one **Before.** and one **After.**, and the "
-                     "body uses no marketing words."),
+                     "body uses no marketing words. With --changed-files it also "
+                     "checks that a diff touching "
+                     "skills/*/{SKILL,LESSONS,reference}.md discharges the "
+                     "risk-based eval gate (ran / skipped-with-rationale / tracked "
+                     "debt)."),
         epilog=("Reads FILE, or stdin when FILE is omitted or `-`. "
                 "Exit 0 = passes, 1 = findings, 2 = usage/IO problem."),
     )
@@ -205,12 +362,36 @@ def main(argv: list[str] | None = None) -> int:
         "--list-banned", action="store_true",
         help="print the banned marketing words and exit",
     )
+    parser.add_argument(
+        "--changed-files", metavar="PATH", default=None,
+        help="file holding the diff's paths, one per line (`git diff --name-only`). "
+             "Enables the eval-gate property; without it that property is skipped",
+    )
+    parser.add_argument(
+        "--eval-gate-only", action="store_true",
+        help="check ONLY the eval-gate property, not the three format properties "
+             "(what CI runs against a PR body). Requires --changed-files",
+    )
     args = parser.parse_args(argv)
 
     if args.list_banned:
         for term in BANNED_TERMS:
             print(term)
         return 0
+
+    if args.eval_gate_only and args.changed_files is None:
+        parser.error("--eval-gate-only needs --changed-files: the eval gate is "
+                     "decided by what the diff touched, not by the body alone")
+
+    changed: list[str] | None = None
+    if args.changed_files is not None:
+        try:
+            with open(args.changed_files, encoding="utf-8") as handle:
+                changed = [line.strip() for line in handle if line.strip()]
+        except OSError as exc:
+            print(f"check_pr_body.py: cannot read {args.changed_files}: {exc}",
+                  file=sys.stderr)
+            return 2
 
     if args.file == "-":
         body = sys.stdin.read()
@@ -224,13 +405,23 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         source = args.file
 
-    if not body.strip():
+    # An empty body is a usage problem when the body is all there is to judge. Once
+    # the DIFF is known it is a verdict instead: an empty body discharges no eval
+    # gate, and it passes when the diff touched no skill-instruction file.
+    if not body.strip() and changed is None:
         print(f"check_pr_body.py: {source} is empty — nothing to check", file=sys.stderr)
         return 2
 
-    findings = check(body)
+    if args.eval_gate_only:
+        findings = check_eval_gate(body, changed)
+        scope = "discharges the eval gate"
+    else:
+        findings = check(body, changed)
+        scope = "follows the human-facing PR format"
+        if changed is not None:
+            scope += " and discharges the eval gate"
     if not findings:
-        print(f"check_pr_body.py: OK — {source} follows the human-facing PR format")
+        print(f"check_pr_body.py: OK — {source} {scope}")
         return 0
 
     print(f"check_pr_body.py: FAIL — {len(findings)} finding(s) in {source}",

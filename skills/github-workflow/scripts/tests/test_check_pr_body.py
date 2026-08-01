@@ -134,12 +134,141 @@ class CheckFunctionTests(unittest.TestCase):
         self.assertTrue(any("no `##` heading" in m for _, m in findings), findings)
 
 
+SKILL_EDIT = ["skills/job-search/SKILL.md", "automation/shared/config.py"]
+NO_SKILL_EDIT = ["automation/shared/config.py", "docs/handbook/repo-map.md"]
+
+# The checklist item in .github/pull_request_template.md quotes the skip line's
+# FORM inside backticks and keeps writing after it. Quoting a form is not
+# discharging a gate, so this text must never satisfy the property.
+TEMPLATE_CHECKLIST_LINE = (
+    "- [ ] If any `skills/*/SKILL.md` / `LESSONS.md` / `reference.md` changed: per "
+    "the risk-based gate, either ran that skill's canaries in "
+    "`evals/canaries/<skill>.yaml` and pasted results below, or recorded a one-line "
+    "skip rationale (`Eval gate: skipped — <intention + size>`) — see "
+    "`evals/README.md`\n"
+)
+
+
+class EvalGateTests(unittest.TestCase):
+    """Property 4 — a harness edit must discharge the risk-based eval gate."""
+
+    def test_inert_without_a_diff(self):
+        """A body checked on its own is checked for the three format properties."""
+        self.assertEqual(check_pr_body.check(GOOD_BODY), [])
+        self.assertEqual(check_pr_body.check(GOOD_BODY + "\nEval gate: nothing\n"), [])
+
+    def test_diff_without_skill_instruction_files_does_not_trigger(self):
+        self.assertEqual(check_pr_body.check(GOOD_BODY, NO_SKILL_EDIT), [])
+
+    def test_skill_edit_with_no_discharge_fails(self):
+        findings = check_pr_body.check(GOOD_BODY, SKILL_EDIT)
+        self.assertEqual(len(findings), 1, findings)
+        location, message = findings[0]
+        self.assertEqual(location, "eval gate")
+        self.assertIn("skills/job-search/SKILL.md", message)
+
+    def test_named_eval_record_discharges(self):
+        body = GOOD_BODY + "\nCanaries ran: `evals/results/job-search-abc1234-20260801.md`.\n"
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_ran_line_with_a_result_discharges(self):
+        body = GOOD_BODY + "\nEval gate: ran — job-search canaries, 4 of 4 PASS, no\nregression.\n"
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_bare_ran_line_without_evidence_fails(self):
+        body = GOOD_BODY + "\nEval gate: ran\n"
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("does not say what ran" in m for m in messages), messages)
+
+    def test_written_skip_rationale_discharges(self):
+        body = GOOD_BODY + ("\nEval gate: skipped — one path corrected to match the "
+                            "script's real flag; no step semantics changed.\n")
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_placeholder_skip_rationale_fails(self):
+        body = GOOD_BODY + "\nEval gate: skipped — <intention + size>\n"
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("template placeholder" in m for m in messages), messages)
+
+    def test_template_checklist_line_is_not_a_discharge(self):
+        body = GOOD_BODY + "\n" + TEMPLATE_CHECKLIST_LINE
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("template placeholder" in m for m in messages), messages)
+
+    def test_debt_with_a_backlog_item_in_the_same_diff_discharges(self):
+        body = GOOD_BODY + ("\nEval gate: debt — canaries cost a full session at this "
+                            "batch size; filed\n"
+                            "`tasks/0_backlog/2026-08-01-run-job-search-canaries/task.md`.\n")
+        changed = SKILL_EDIT + ["tasks/0_backlog/2026-08-01-run-job-search-canaries/task.md"]
+        self.assertEqual(check_pr_body.check(body, changed), [])
+
+    def test_debt_may_name_the_task_folder(self):
+        body = GOOD_BODY + ("\nEval gate: debt — filed "
+                            "tasks/0_backlog/2026-08-01-run-job-search-canaries\n")
+        changed = SKILL_EDIT + ["tasks/0_backlog/2026-08-01-run-job-search-canaries/task.md"]
+        self.assertEqual(check_pr_body.check(body, changed), [])
+
+    def test_debt_whose_backlog_item_is_not_in_the_diff_fails(self):
+        """Tracked debt means the item lands with the PR that owes it."""
+        body = GOOD_BODY + ("\nEval gate: debt — filed "
+                            "`tasks/0_backlog/2026-08-01-run-job-search-canaries/task.md`.\n")
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("adds nothing under it" in m for m in messages), messages)
+
+    def test_debt_naming_no_item_fails(self):
+        body = GOOD_BODY + "\nEval gate: debt — will run these later.\n"
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("names no `tasks/0_backlog/` item" in m for m in messages),
+                        messages)
+
+    def test_a_near_prefix_backlog_path_does_not_count(self):
+        body = GOOD_BODY + "\nEval gate: debt — filed tasks/0_backlog/2026-08-01-run\n"
+        changed = SKILL_EDIT + ["tasks/0_backlog/2026-08-01-runner-unrelated/task.md"]
+        messages = [m for _, m in check_pr_body.check(body, changed)]
+        self.assertTrue(any("adds nothing under it" in m for m in messages), messages)
+
+    def test_lessons_and_reference_files_also_trigger(self):
+        for path in ("skills/job-search/LESSONS.md", "skills/job-search/reference.md"):
+            with self.subTest(path=path):
+                self.assertTrue(check_pr_body.check(GOOD_BODY, [path]))
+
+    def test_a_skill_script_or_canary_file_does_not_trigger(self):
+        for path in ("skills/job-search/scripts/search.py",
+                     "evals/canaries/job-search.yaml",
+                     "skills/job-search/agents-references/notes.md"):
+            with self.subTest(path=path):
+                self.assertEqual(check_pr_body.check(GOOD_BODY, [path]), [])
+
+    def test_discharge_inside_a_fence_still_counts(self):
+        """Pasted results are evidence; the fence exemption protects prose checks."""
+        body = GOOD_BODY + textwrap.dedent("""\
+
+            ```
+            Eval gate: ran — job-search canaries, 4 of 4 PASS
+            ```
+            """)
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_format_findings_and_the_eval_finding_are_both_reported(self):
+        body = GOOD_BODY.replace("## What changes for you", "## Summary", 1)
+        findings = check_pr_body.check(body, SKILL_EDIT)
+        locations = [location for location, _ in findings]
+        self.assertIn("eval gate", locations)
+        self.assertTrue(any(location != "eval gate" for location in locations),
+                        findings)
+
+
 class CliTests(unittest.TestCase):
     def _run(self, argv, stdin=""):
         return subprocess.run(
             [sys.executable, str(SCRIPT), *argv],
             input=stdin, capture_output=True, text=True,
         )
+
+    def _changed_files(self, tmp, paths, name="changed.txt"):
+        path = Path(tmp) / name
+        path.write_text("\n".join(paths) + "\n", encoding="utf-8")
+        return str(path)
 
     def test_reads_from_stdin(self):
         result = self._run([], stdin=GOOD_BODY)
@@ -166,6 +295,43 @@ class CliTests(unittest.TestCase):
     def test_missing_file_exits_2(self):
         result = self._run(["/nonexistent/pr-body.md"])
         self.assertEqual(result.returncode, 2)
+
+    def test_eval_gate_only_needs_changed_files(self):
+        result = self._run(["--eval-gate-only"], stdin=GOOD_BODY)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--changed-files", result.stderr)
+
+    def test_missing_changed_files_list_exits_2(self):
+        result = self._run(["--changed-files", "/nonexistent/changed.txt"],
+                           stdin=GOOD_BODY)
+        self.assertEqual(result.returncode, 2)
+
+    def test_eval_gate_only_ignores_the_format_properties(self):
+        """CI gates the eval gate alone — a `## Summary` opener is not its business."""
+        with tempfile.TemporaryDirectory() as tmp:
+            changed = self._changed_files(tmp, NO_SKILL_EDIT)
+            result = self._run(["--changed-files", changed, "--eval-gate-only"],
+                               stdin="## Summary\n\nA body in the wrong shape.\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_eval_gate_only_fails_an_undischarged_skill_edit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            changed = self._changed_files(tmp, SKILL_EDIT)
+            result = self._run(["--changed-files", changed, "--eval-gate-only"],
+                               stdin=GOOD_BODY)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("eval gate", result.stderr)
+
+    def test_empty_body_with_a_diff_is_a_verdict_not_a_usage_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skill = self._changed_files(tmp, SKILL_EDIT, "skill.txt")
+            other = self._changed_files(tmp, NO_SKILL_EDIT, "other.txt")
+            failing = self._run(["--changed-files", skill, "--eval-gate-only"],
+                                stdin="   \n")
+            passing = self._run(["--changed-files", other, "--eval-gate-only"],
+                                stdin="   \n")
+        self.assertEqual(failing.returncode, 1, failing.stderr)
+        self.assertEqual(passing.returncode, 0, passing.stderr)
 
 
 if __name__ == "__main__":
