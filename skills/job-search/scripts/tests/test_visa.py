@@ -162,6 +162,36 @@ class VisaPolicyBindingTests(unittest.TestCase):
         self.assertFalse(visa_ok(denial, profile))
         self.assertEqual(denial.visa_label, "no")
 
+    def test_require_positive_never_presents_a_quantified_denial_as_an_offer(self):
+        # The regression this pins, end to end. A quantifier inside the DENIAL
+        # ("for all new hires") was read as a limit on an offer, which deleted the
+        # denial; the JD's unrelated positive phrase was then unopposed, so the
+        # posting came back `yes`/likely with no review flag — an employer that
+        # refuses sponsorship in writing, recommended to the one candidate who
+        # cannot take the job. Fictional wording.
+        profile = {"visa": {"needs_sponsorship": True, "policy": "require_positive"}}
+        posting = self._posting(
+            "We offer green card sponsorship to existing employees after two "
+            "years. We are unable to sponsor visas for all new hires.")
+        visa_ok(posting, profile)
+        self.assertNotEqual(posting.visa_label, "yes")
+        self.assertEqual(posting.sponsorship, "unknown")
+        self.assertIn("sponsorship_requires_review", posting.review_reasons)
+        # The same sentence with nothing positive beside it is simply a denial.
+        alone = self._posting("We are unable to sponsor visas for all new hires.")
+        self.assertFalse(visa_ok(alone, profile))
+        self.assertEqual(alone.visa_label, "no")
+
+    def test_require_positive_still_keeps_an_offer_with_a_distributive_limit(self):
+        # The counterpart: an employer that sponsors but not universally is still
+        # a sponsor, and the strict policy must still surface it.
+        profile = {"visa": {"needs_sponsorship": True, "policy": "require_positive"}}
+        posting = self._posting(
+            "Visa sponsorship: we do sponsor visas. That said, we are not able "
+            "to sponsor visas for every role and every candidate.")
+        self.assertTrue(visa_ok(posting, profile))
+        self.assertEqual(posting.visa_label, "yes")
+
     def test_default_policy_keeps_an_export_control_posting(self):
         # exclude_negative drops denials, so mislabelling export-licensing
         # boilerplate as a denial removed these postings entirely.

@@ -290,6 +290,50 @@ variants:
       verdict: unknown
       confidence: low
 
+  - id: sponsorship-quantified-denial-beside-an-offer-is-not-an-offer
+    domain: sponsorship
+    # The regression the scope-limit rule introduced, and the reason it is now
+    # restricted to DISTRIBUTIVE quantifiers. "for all new hires" bounds the
+    # DENIAL's own domain, not an offer: read collectively it is "for the new
+    # hires, as a class", i.e. a flat refusal that names who it covers. Reading it
+    # as a scope limit DELETED the denial, which dissolved the denial+offer
+    # conflict and graded the whole posting `likely`/high — an employer that
+    # refuses in writing, shortlisted for the one candidate who needs sponsorship.
+    input:
+      text: >-
+        We offer green card sponsorship to existing employees after two years.
+        We are unable to sponsor visas for all new hires.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-quantified-denial-alone-is-a-denial
+    domain: sponsorship
+    # The same sentence with nothing positive beside it. A quantifier that admits
+    # a collective reading cannot weaken a refusal, so this stays a denial.
+    input:
+      text: We are unable to sponsor visas for all new hires.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-do-not-sponsor-all-candidates-is-a-denial
+    domain: sponsorship
+    # Second wording of the same shape, with the offer covering a population the
+    # applicant is not in. "all candidates" is not "every candidate": only the
+    # distributive form forces the `not-(for every)` reading that entails some
+    # candidates ARE sponsored.
+    input:
+      text: >-
+        H-1B sponsorship is part of our benefits package for tenured staff.
+        We do not sponsor all candidates.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
   - id: sponsorship-at-all-is-still-a-flat-denial
     domain: sponsorship
     # The one place the bare word "all" runs the other way: "at all" INTENSIFIES a

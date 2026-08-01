@@ -48,6 +48,10 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   limit only REMOVES a denial, never creates an offer, so "we can't sponsor everyone" alone
   stays `unclear`. Two shapes it must NOT catch, both still `no`: `at all` intensifies a denial,
   and a quantifier BEFORE the cue is a requirement subject ("ALL roles require work auth…").
+  Only DISTRIBUTIVE quantifiers count (`every`/`each`/`guarantee`): bare `all` reads
+  collectively too, so "…sponsor visas for ALL new hires" is a flat denial — read as a limit it
+  DELETED the denial and an unrelated positive graded the row `yes`/high. "Only removes a denial"
+  is true of the evidence lists, NOT the verdict. Ambiguous quantifier => keep the denial.
 - Grading is by OFFER STRENGTH: unhedged offer > hedged offer > silence, a scope limit moves
   nothing, a flat denial beats everything. So a hedged offer ("limited sponsorship may be
   available", "case-by-case", "at our discretion") and a double negative both land `unclear`,
