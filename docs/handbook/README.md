@@ -10,7 +10,7 @@ folder. Active design programs live in `docs/designs/`, not here.
 | `docs/handbook/configuration.md` | The config system: discovery order, path functions, output stems |
 | `docs/handbook/public-private-split.md` | The two-repo model: what ships, skill visibility, products, leak guard |
 | `docs/handbook/repo-map.md` | The complete per-path directory table |
-| `docs/handbook/command-cookbook.md` | Every toolkit command, copy-paste ready |
+| `docs/handbook/command-cookbook.md` | The `AGENTS.md` "Handy Commands" set expanded, copy-paste ready (resume/tracker/config/publishing; a skill's own commands live in its `SKILL.md`) |
 | `docs/handbook/memory-map.md` | Agent-memory zones, retention windows, writers |
 | `docs/handbook/skills-and-vendoring.md` | Skill directory layout + how code is shared across self-contained skills |
 | `docs/handbook/file-organization.md` | Purpose-named folders, tree-first file placement, scratch/tmp rules |

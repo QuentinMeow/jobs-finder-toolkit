@@ -30,8 +30,11 @@ status field to drift out of sync. Move a task between status folders with
 
 ## Rules
 
-- **Claim before working**: set `**Claimed-by:**` in `task.md` and commit
-  before starting. One agent per task.
+- **Claim before working**: set `- **Claimed-by**: <who>` in `task.md` and
+  commit before starting. One agent per task. The colon sits OUTSIDE the
+  bold and the line is a `- ` bullet — that exact shape is what
+  `automation/reconcile/reconcile.py` matches, and a task in any folder but
+  `0_backlog` fails the gate without it.
 - **Public tree ⇒ leak-guard rules apply**: no real names, employers,
   applied-to companies, or dated personal facts. A task tied to the owner's
   real pipeline goes in `private/tasks/` instead (same layout).
@@ -39,7 +42,7 @@ status field to drift out of sync. Move a task between status folders with
   that spawned it or in `memory/known-issues/` — so a later session reading
   that doc doesn't re-file it.
 - A task too big to plan in ~10 steps is split; child tasks link the parent
-  via `**Parent:**`.
+  via `- **Parent**: <task-id>`.
 
 ## task.md format
 
