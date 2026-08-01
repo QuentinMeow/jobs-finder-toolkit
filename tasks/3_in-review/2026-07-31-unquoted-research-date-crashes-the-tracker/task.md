@@ -5,7 +5,7 @@
 - **Source**: found while building fixtures for the corrupt-`meta.yaml` fix (PR "the
   tracker stops guessing at a `meta.yaml` it could not read"); reproduced at `47a15d4`,
   so it predates that PR and is out of its scope.
-- **Claimed-by**:
+- **Claimed-by**: agent (branch `wip/35-pipeline-parse-defects`)
 
 ## Goal
 

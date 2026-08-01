@@ -16,6 +16,7 @@ from job_metadata import (  # noqa: E402
     APPLICATION_SCHEMA_VERSION,
     STATUS_VALUES,
     _compensation_range,
+    _salary_envelope,
     analyze_job_metadata,
     assess_required_yoe,
     assess_sponsorship,
@@ -294,6 +295,90 @@ class SalaryExtractionTests(unittest.TestCase):
         self.assertEqual((total["min"], total["max"]), (150000, 200000))
         self.assertIsNone(extract_salary_range(
             "OTE for this role is $150,000 - $200,000 per year."))
+
+
+class ImplausibleSalaryBandTests(unittest.TestCase):
+    """A band whose two ends were never a pair must be dropped, not reported.
+
+    A live sweep printed "$240 - $175,000" for one posting — a three-digit low
+    against a six-digit high, which no employer states. Two independent routes
+    reach that shape, so each gets its own case below; the last two cases pin
+    that the guards do not eat a band that is merely UNUSUAL.
+    """
+
+    def test_stipend_range_beside_the_salary_range_does_not_garble_the_band(self):
+        # ROUTE 1 — two individually well-formed matches in one paragraph. The
+        # nearest preceding keyword to BOTH is "base salary", so both were kept,
+        # and _salary_envelope collapsed them to (min of mins, max of maxs) =
+        # (240, 175000). Only the stipend band is wrong; the salary band survives.
+        salary = extract_salary_range(
+            "Compensation. The base salary range for this role is "
+            "$140,000 - $175,000 per year. We also offer an annual wellness "
+            "stipend of $240 - $300."
+        )
+        self.assertEqual((salary["min"], salary["max"]), (140000, 175000))
+        self.assertNotIn("bands", salary)
+
+    def test_a_digit_fragment_of_a_longer_figure_is_not_a_salary_bound(self):
+        # ROUTE 2 — one match, one fabricated end. The bare 2-3 digit alternative
+        # was unanchored, so the scan slid past the leading "3" of "$3240" and
+        # read "240" as the low bound of a real $175,000 high.
+        self.assertIsNone(extract_salary_range(
+            "The annual base salary is $3240 - $175,000 per year."))
+
+    def test_stitched_envelope_orders_of_magnitude_apart_reports_nothing(self):
+        # The backstop, unit-tested directly: even when every band is individually
+        # credible, the collapse can hand back a pair no posting stated. There is
+        # no way to tell which end is the salary, so neither is reported.
+        fact = {
+            "bands": [
+                {"min": 15_000, "max": 24_000, "period": "year"},
+                {"min": 180_000, "max": 220_000, "period": "year"},
+            ],
+            "source": "job_description",
+        }
+        self.assertEqual(_salary_envelope(fact), (None, None))
+
+    def test_ordinary_annual_bands_still_parse(self):
+        for text, expected in (
+            ("The base salary range is $176,000 - $230,000 per year.",
+             (176000, 230000)),
+            ("The base salary range is $176k - $230k per year.",
+             (176000, 230000)),
+        ):
+            with self.subTest(text=text):
+                salary = extract_salary_range(text)
+                self.assertEqual((salary["min"], salary["max"]), expected)
+
+    def test_correct_but_unusual_bands_survive(self):
+        # A three-digit low is only implausible AGAINST a six-digit high. Hourly
+        # rates and part-time monthly bands are real, and each is judged against
+        # its own period's floor rather than an annual one.
+        hourly = extract_salary_range(
+            "The base pay range for this role is $48 - $62 per hour.")
+        self.assertEqual(
+            (hourly["min"], hourly["max"], hourly["period"]), (48, 62, "hour"))
+        monthly = extract_salary_range(
+            "The base salary for this part-time role is $3,000 - $4,000 per month.")
+        self.assertEqual(
+            (monthly["min"], monthly["max"], monthly["period"]),
+            (3000, 4000, "month"))
+
+    def test_the_garbled_band_never_reaches_meta_yaml(self):
+        # The field this defect is judged on: salary_range is written into
+        # meta.yaml by --enrich-metadata and shown in the shortlist as fact.
+        metadata = analyze_job_metadata(
+            company="ExampleCorp",
+            title="Senior Backend Engineer",
+            description=(
+                "The base salary range for this role is $140,000 - $175,000 per "
+                "year, plus an annual wellness stipend of $240 - $300."
+            ),
+        )
+        self.assertEqual(
+            (metadata["salary_range"]["min"], metadata["salary_range"]["max"]),
+            (140000, 175000),
+        )
 
 
 class AnalyzeTests(unittest.TestCase):

@@ -466,9 +466,17 @@ _NEXT_YOE_CLAUSE_RE = re.compile(
     re.I,
 )
 
+# The NUMBER is digit-anchored at both ends. Unanchored, the bare 2-3 digit
+# alternative reads a FRAGMENT of a longer figure: in "$3240 - $175,000" the scan
+# slid past "3" and matched "240", then paired that fragment with a real salary,
+# so the shortlist printed a band no employer states. This is the same class of
+# miss as the unanchored "ote" substring documented in ``_compensation_range``,
+# one level down — there the boundary that was missing was a word, here it is a
+# digit. ``(?![.,]\d)`` covers the same slide across a thousands/decimal
+# separator ("$1.240" -> "240").
 _AMOUNT = (
     r"(?:(USD|CAD|EUR|GBP)\s*)?([$€£])?\s*"
-    r"(\d{1,3}(?:,\d{3})+|\d{2,3}(?:\.\d+)?)\s*([kK])?"
+    r"((?<![\d.,])(?:\d{1,3}(?:,\d{3})+|\d{2,3}(?:\.\d+)?)(?!\d|[.,]\d))\s*([kK])?"
 )
 _PER_AMOUNT_PERIOD = (
     r"(?:\s*(per\s+(?:year|month|week|day|hour)|"
@@ -497,6 +505,34 @@ _SALARY_TERMS = (
     "annual base",
     "base compensation",
 )
+
+# A pay band's two ends describe ONE figure, so they sit within an order of
+# magnitude of each other AND each end is a credible rate for its own period.
+# Both bounds exist because this extractor can pair numbers that were never a
+# pair: a live sweep of 11,638 postings printed "$240 - $175,000" for one role.
+# Two independent routes produce that shape, and each needs its own guard —
+#
+#   * one match, one bad end: an unanchored fragment read out of a longer figure
+#     (fixed at the match site by ``_AMOUNT``'s digit guards, but the spread
+#     limit is the cheap backstop if another fragment route is ever found);
+#   * two GOOD matches stitched together: a real "$140,000 - $175,000" salary
+#     line and a "$240 - $300" annual stipend a few words later, both kept
+#     because the nearest preceding keyword to each was "base salary", then
+#     collapsed by ``_salary_envelope`` to (min of mins, max of maxs). Neither
+#     band is malformed; the PAIR is.
+#
+# The thresholds are deliberately generous, because the two errors are not
+# symmetric: a dropped band is recoverable (the JD is on disk and the row reads
+# "none parsed"), a wrong band is shown to the user as fact and written into
+# meta.yaml. A band that is merely UNUSUAL must survive — every floor sits below
+# any real posted rate, so hourly contract bands, part-time monthly bands and
+# annualised intern bands all clear them, and the 10x spread is far wider than
+# the widest real all-levels annual band (~6x).
+_PERIOD_PAY_FLOOR = {"year": 10_000, "month": 500, "week": 100, "day": 50, "hour": 5}
+# Kept as a map for symmetry with the floor; an hourly rate above this is an
+# annual figure that was mislabeled by nearby "per hour" boilerplate.
+_PERIOD_PAY_CEILING = {"hour": 100_000}
+_BAND_SPREAD_LIMIT = 10
 
 # "Member of <X> Staff" is a role-family name, not a Staff-level (L6) signal — the
 # trailing "Staff" must not trip the bare ``\bstaff\b`` rule below. Neutralized
@@ -1042,6 +1078,23 @@ def _compensation_period(match: re.Match, context: str) -> str | None:
     return next(iter(cues)) if len(cues) == 1 else None
 
 
+def _is_pay_band(low: float, high: float, period: str | None) -> bool:
+    """Whether ``low``-``high`` is credible as ONE pay band stated for ``period``.
+
+    See ``_PERIOD_PAY_FLOOR`` for why both a per-period floor and a spread limit
+    are needed and why they are set where they are.
+    """
+    if low <= 0 or high < low:
+        return False
+    ceiling = _PERIOD_PAY_CEILING.get(period or "")
+    if ceiling is not None and high > ceiling:
+        return False
+    floor = _PERIOD_PAY_FLOOR.get(period or "")
+    if floor is not None and high < floor:
+        return False
+    return high <= low * _BAND_SPREAD_LIMIT
+
+
 def _compensation_geography(before: str) -> str:
     """Best-effort label for a location-specific band, without inventing scope."""
     tail = before[-120:]
@@ -1101,7 +1154,10 @@ def _compensation_range(text: str | None, *, total: bool) -> dict | None:
         period = _compensation_period(match, context + " " + match.group(0))
         if not period:
             continue
-        if period == "hour" and high > 100_000:
+        # Drop the BAND, not the whole fact: a compensation paragraph that also
+        # states a small non-salary range (a stipend, an allowance) still has a
+        # real salary band in it, and dropping only the implausible one keeps it.
+        if not _is_pay_band(low, high, period):
             continue
         matches.append({
             "min": low,
@@ -1853,7 +1909,16 @@ def _google_range(normalized: str, level_entry: dict | None) -> tuple[float | No
 
 
 def _salary_envelope(fact: dict) -> tuple[int | float | None, int | float | None]:
-    """Collapse a rich salary fact (possibly multi-band) to one min/max."""
+    """Collapse a rich salary fact (possibly multi-band) to one min/max.
+
+    The collapse stitches the LOW of one band to the HIGH of another, so the pair
+    it hands back is one no posting ever stated. Per-band plausibility cannot
+    see that — two individually sane bands still collapse to a nonsense pair when
+    they describe different things. When the stitched ends land more than an
+    order of magnitude apart there is no way to tell which end is the salary, so
+    report NEITHER: the row then reads "none parsed", which the reader can
+    resolve from the JD, instead of a band the posting does not contain.
+    """
     bands = fact.get("bands")
     if isinstance(bands, list) and bands:
         # Prefer annual bands so a stray hourly band cannot shrink the envelope.
@@ -1861,7 +1926,12 @@ def _salary_envelope(fact: dict) -> tuple[int | float | None, int | float | None
         chosen = annual or [b for b in bands if isinstance(b, dict)]
         mins = [b["min"] for b in chosen if b.get("min") is not None]
         maxs = [b["max"] for b in chosen if b.get("max") is not None]
-        return (min(mins) if mins else None, max(maxs) if maxs else None)
+        low = min(mins) if mins else None
+        high = max(maxs) if maxs else None
+        if (low is not None and high is not None
+                and low > 0 and high > low * _BAND_SPREAD_LIMIT):
+            return None, None
+        return low, high
     return fact.get("min"), fact.get("max")
 
 

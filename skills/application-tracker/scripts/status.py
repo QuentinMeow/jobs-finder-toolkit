@@ -59,6 +59,7 @@ import shutil
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 import yaml
 
@@ -197,6 +198,34 @@ def _read_failure(filename: str, exc: BaseException) -> str:
     return f"{filename}: {' '.join(message.split())}"
 
 
+#: meta.yaml keys whose value is a calendar day. `yaml.safe_load` resolves an
+#: UNQUOTED `research_date: 2026-07-02` to a `datetime.date`, not a string — the
+#: file is valid YAML and says exactly the right day, but the loaded TYPE differs
+#: from every other application's (theirs comes from the slug parse, or from a
+#: quoted value). Every consumer in this module assumes `str`.
+_DAY_FIELDS = ("research_date", "posted_date")
+
+
+def _iso_day(value: object) -> str:
+    """One meta.yaml day field as a ``YYYY-MM-DD`` string, whatever YAML made of it.
+
+    ``skip_log.posting_row`` already stringifies non-string scalars for exactly
+    this reason (its docstring names the unquoted ``research_date:``), which is
+    why the skip-log write survives the value while the table and the company
+    search log do not. Normalizing at the READ point instead means the coercion
+    happens once, before anything derives from it, rather than once per consumer
+    that remembers to. ``datetime`` is checked first because it subclasses
+    ``date``.
+    """
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value
+    return "" if value is None else str(value)
+
+
 def load_application(app_dir: Path, status: str) -> dict | None:
     """Load application metadata from a folder; status comes from the parent folder.
 
@@ -272,7 +301,8 @@ def load_application(app_dir: Path, status: str) -> dict | None:
                         "recruiter_email", "comp_notes", "url", "jobs",
                         "job_metadata_schema_version"]:
                 if meta_data.get(key):
-                    info[key] = meta_data[key]
+                    info[key] = (_iso_day(meta_data[key]) if key in _DAY_FIELDS
+                                 else meta_data[key])
 
     # An application is "mixed" when its postings do not all share one per-job
     # status (e.g. one role rejected while another is still in progress). The
@@ -287,7 +317,11 @@ def load_application(app_dir: Path, status: str) -> dict | None:
         info["mixed"] = len(job_statuses) > 1
 
     # research_date is the canonical creation date; fall back to the
-    # slug-derived date (parsed above).
+    # slug-derived date (parsed above). Already normalized to a `YYYY-MM-DD`
+    # string by `_iso_day`, so `info["date"]` is a `str` for EVERY application —
+    # the invariant `print_table`'s sort key and `build_created_search_entries`'
+    # `.strip()` both assume, and which an unquoted YAML date used to break for
+    # one row out of forty.
     if info.get("research_date"):
         info["date"] = info["research_date"]
 
@@ -327,24 +361,58 @@ def load_application(app_dir: Path, status: str) -> dict | None:
     return info
 
 
-def app_locations(info: dict, app_dir: Path) -> list[str]:
-    """Gather every posting-location string for an application.
+def job_location_strings(job: dict, app_dir: Path) -> list[str]:
+    """ONE posting's location string(s): its own ``location``, else its own JD's.
 
-    Prefers the `location` recorded in meta.yaml (top-level for a single role,
-    per-entry under `jobs:` for a multi-role application). Falls back to the
-    `Location:` line(s) in the JD file(s) when meta.yaml has none recorded yet.
+    The tracker's copy of ``handoff.job_locations``, and deliberately the same
+    two-step chain rather than a wider one. ``jobs[].jd_file`` is the exact
+    one-to-one mapping from a posting to the verbatim JD saved for it, so a
+    posting that recorded no ``location`` is still assessed from the
+    ``Location:`` line sitting in its own JD — not skipped because a SIBLING
+    posting in the same folder happened to record one.
+
+    There is no fall-back to the folder's top-level ``location``: for a posting
+    that says nothing about where it is, the folder's summary line is a guess,
+    and a guess here is what this whole change exists to stop. An unlocatable
+    posting comes back with no strings, is classified ``unknown``, and lands in
+    ``review`` — which never fails the check.
     """
-    locs: list[str] = []
+    loc = str(job.get("location") or "").strip()
+    if loc:
+        return [loc]
+    name = str(job.get("jd_file") or "").strip()
+    # Reject a path, not just a missing name: `jd_file` is a bare filename by
+    # schema, and joining an arbitrary one would read outside the application.
+    if not name or Path(name).name != name:
+        return []
+    for directory in (source_dir(app_dir), app_dir):
+        try:
+            return extract_jd_locations((directory / name).read_text())
+        except OSError:
+            continue
+    return []
+
+
+def app_locations(info: dict, app_dir: Path) -> list[str]:
+    """Every posting-location string for an application, in ``jobs:`` order.
+
+    For a ``jobs:`` application this is the per-posting gather above, so a
+    blank-``location`` posting contributes its own JD's location instead of
+    being invisible in the LOCATIONS column. The pre-``jobs`` shape (a top-level
+    ``location``, else the pooled ``Location:`` lines of whatever JD files are in
+    the folder) is unchanged — there is no posting to attribute a location to.
+    """
+    jobs = info.get("jobs")
+    if isinstance(jobs, list) and jobs:
+        locs: list[str] = []
+        for job in jobs:
+            if isinstance(job, dict):
+                locs.extend(job_location_strings(job, app_dir))
+        return locs
     top = str(info.get("location") or "").strip()
     if top:
-        locs.append(top)
-    jobs = info.get("jobs")
-    if isinstance(jobs, list):
-        for j in jobs:
-            if isinstance(j, dict) and str(j.get("location") or "").strip():
-                locs.append(str(j["location"]).strip())
-    if locs:
-        return locs
+        return [top]
+    locs = []
     for jd in find_jd_files(app_dir):
         try:
             locs.extend(extract_jd_locations(jd.read_text()))
@@ -353,9 +421,55 @@ def app_locations(info: dict, app_dir: Path) -> list[str]:
     return locs
 
 
-def app_location_assessment(info: dict, app_dir: Path):
-    """Assess every posting with its exact JD/workplace evidence; best match wins."""
-    assessments = []
+#: Worst-first ordering of a posting's location decision. `no_match` is a
+#: definite policy violation, `review` is "we could not tell", `match` clears.
+_LOCATION_DECISION_RANK = {"no_match": 0, "review": 1, "match": 2}
+
+
+class AppLocationRollup(NamedTuple):
+    """One application's location verdict, and the postings that decided it."""
+
+    #: The WORST posting's assessment — the folder's verdict.
+    assessment: object
+    #: ``(role, locations, assessment)`` per posting, in ``jobs:`` order.
+    postings: tuple
+
+    def _by_decision(self, decision: str) -> list[tuple]:
+        return [(role, locs) for role, locs, a in self.postings
+                if a.decision == decision]
+
+    @property
+    def offending(self) -> list[tuple]:
+        """``(role, locations)`` for each posting outside the location policy."""
+        return self._by_decision("no_match")
+
+    @property
+    def unclassified(self) -> list[tuple]:
+        """``(role, locations)`` for each posting whose location could not be read."""
+        return self._by_decision("review")
+
+
+def app_location_assessment(info: dict, app_dir: Path) -> AppLocationRollup:
+    """Assess EVERY posting with its own evidence; the WORST verdict wins.
+
+    This used to roll the per-posting assessments up best-match-wins — the first
+    ``match`` returned, then the first ``review``. That answers "could I take
+    SOME job at this employer?", which is the right question for a single-role
+    folder and the wrong one for the multi-role folder ``handoff.py`` now builds
+    by default: one Springfield posting made a London sibling in the same folder
+    report ``ok / metro``, and ``--check-locations`` — the command AGENTS.md names
+    as the way to verify the location guardrail — exited 0 over it.
+
+    AGENTS.md's policy governs a POSTING ("only draft a role whose ``location``
+    matches"); a folder is just the container one resume covers. So each posting
+    is assessed from its own ``location``/``jd_file``/``workplace`` and the
+    folder takes the worst verdict, mirroring ``handoff.check_location_policy``,
+    which settled this rule at creation time. ``review`` still ranks above
+    ``no_match`` and still does not fail the check — a genuinely unknown location
+    blocking legitimate work is the expensive direction.
+    """
+    policy = config.location_policy()
+    postings: list[tuple] = []
     jobs = info.get("jobs")
     if isinstance(jobs, list) and jobs:
         for job in jobs:
@@ -363,18 +477,25 @@ def app_location_assessment(info: dict, app_dir: Path):
                 continue
             jd_text = ""
             jd_file = str(job.get("jd_file") or "").strip()
-            if jd_file:
-                jd_path = source_dir(app_dir) / jd_file
+            if jd_file and Path(jd_file).name == jd_file:
                 try:
-                    jd_text = jd_path.read_text()
+                    jd_text = (source_dir(app_dir) / jd_file).read_text()
                 except OSError:
                     pass
-            assessments.append(assess_location(
-                job.get("location"),
-                config.location_policy(),
-                title=job.get("role"),
-                description=jd_text,
-                workplace_hint=job.get("workplace"),
+            locs = job_location_strings(job, app_dir)
+            postings.append((
+                str(job.get("role") or "").strip() or "(unnamed posting)",
+                locs,
+                assess_location(
+                    # A posting with no `location` of its own is assessed from
+                    # the location line in its OWN JD, the same string
+                    # `job_location_strings` reports in the table.
+                    job.get("location") or (locs[0] if locs else ""),
+                    policy,
+                    title=job.get("role"),
+                    description=jd_text,
+                    workplace_hint=job.get("workplace"),
+                ),
             ))
     else:
         jd_texts = []
@@ -383,21 +504,22 @@ def app_location_assessment(info: dict, app_dir: Path):
                 jd_texts.append(jd_path.read_text())
             except OSError:
                 continue
-        assessments.append(assess_location(
-            info.get("location"),
-            config.location_policy(),
-            title=info.get("role"),
-            description="\n".join(jd_texts),
+        postings.append((
+            str(info.get("role") or "").strip() or "(unnamed posting)",
+            app_locations(info, app_dir),
+            assess_location(
+                info.get("location"),
+                policy,
+                title=info.get("role"),
+                description="\n".join(jd_texts),
+            ),
         ))
 
-    for assessment in assessments:
-        if assessment.decision == "match":
-            return assessment
-    for assessment in assessments:
-        if assessment.decision == "review":
-            return assessment
-    return assessments[0] if assessments else assess_location(
-        "", config.location_policy())
+    if not postings:
+        return AppLocationRollup(assess_location("", policy), ())
+    worst = min(postings,
+                key=lambda p: _LOCATION_DECISION_RANK.get(p[2].decision, 0))[2]
+    return AppLocationRollup(worst, tuple(postings))
 
 
 def _resolve_application_target(target: str | Path) -> Path | None:
@@ -687,10 +809,13 @@ def company_keys_report(statuses: list[str], *, strict: bool = False,
 def check_locations(statuses: list[str], as_json: bool = False) -> bool:
     """Flag applications whose posting location is outside the configured location policy.
 
-    A row is a *mismatch* (hard failure) only when its location is a definite place
-    outside the policy — a foreign location or a non-preferred US office. An
-    *unknown* row (blank or unrecognized location) is surfaced for manual review
-    but is NOT a policy violation, so it does not fail the check.
+    **Scored per POSTING, worst-wins** (see ``app_location_assessment``): a folder
+    holding one in-policy and one foreign posting is a mismatch, and the offending
+    posting is named by role. A row is a *mismatch* (hard failure) only when a
+    posting's location is a definite place outside the policy — a foreign location
+    or a non-preferred US office. An *unknown* row (blank or unrecognized location)
+    is surfaced for manual review but is NOT a policy violation, so it does not
+    fail the check.
 
     An **unreadable** row is a third bucket and a hard failure. `AGENTS.md` names
     this command as the way to verify the location guardrail, so a row whose
@@ -711,8 +836,8 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
             if not app_dir.is_dir() or app_dir.name.startswith("."):
                 continue
             info = load_application(app_dir, status)
-            locs = app_locations(info, app_dir)
-            assessment = app_location_assessment(info, app_dir)
+            rollup = app_location_assessment(info, app_dir)
+            assessment = rollup.assessment
             rows.append({
                 "slug": app_dir.name,
                 "company": info.get("company", ""),
@@ -723,7 +848,19 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
                 "workplace": assessment.workplace,
                 "evidence": list(assessment.evidence),
                 "review_reasons": list(assessment.review_reasons),
-                "locations": locs,
+                "locations": [loc for _role, locs, _a in rollup.postings
+                              for loc in locs],
+                # Per posting, so a mismatch names the ROLE that caused it rather
+                # than collapsing the folder to one category and one location list.
+                "postings": [
+                    {"role": role, "locations": locs, "category": a.category,
+                     "decision": a.decision, "workplace": a.workplace}
+                    for role, locs, a in rollup.postings
+                ],
+                "offending": [{"role": role, "locations": locs}
+                              for role, locs in rollup.offending],
+                "unclassified": [{"role": role, "locations": locs}
+                                 for role, locs in rollup.unclassified],
                 "meta_error": info.get("meta_error", ""),
             })
 
@@ -779,11 +916,20 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
         for r in mismatches:
             print(f"  - {r['slug']}  [{r['category']}]  "
                   f"{' | '.join(r['locations']) or '(none recorded)'}")
+            # The folder verdict is the worst POSTING's, so say which posting.
+            # Without this a mixed folder reads as wholly out of policy, and the
+            # owner cannot tell which cover letter to stop writing.
+            for p in r["offending"]:
+                print(f"      offending posting: {p['role']}: "
+                      f"{' | '.join(p['locations']) or '(none recorded)'}")
     if review:
         print("\nReview (blank / unrecognized location \u2014 not a policy failure):")
         for r in review:
             print(f"  - {r['slug']}  [{r['category']}]  "
                   f"{' | '.join(r['locations']) or '(none recorded)'}")
+            for p in r["unclassified"]:
+                print(f"      not classifiable: {p['role']}: "
+                      f"{' | '.join(p['locations']) or '(none recorded)'}")
     return ok
 
 
@@ -2240,13 +2386,22 @@ def write_company_search_log(data: dict) -> Path:
     return COMPANY_SEARCH_LOG
 
 
+def plan_company_search_log(apps: list[dict]) -> dict:
+    """The company-search-log document this sync WOULD write. Reads; never writes.
+
+    Split out of :func:`sync_company_search_log` so ``--sync-log`` can do all of
+    its fallible work — parsing the existing log, flattening the folders — BEFORE
+    it touches the append-only skip-log. See :func:`sync_log`.
+    """
+    raw = _load_company_search_log_raw()
+    raw["companies"] = merge_company_search_log(
+        raw.get("companies") or [], build_created_search_entries(apps))
+    return raw
+
+
 def sync_company_search_log(apps: list[dict]) -> Path:
     """Upsert `created` entries from application folders into company-search-log.yaml."""
-    raw = _load_company_search_log_raw()
-    merged = merge_company_search_log(
-        raw.get("companies") or [], build_created_search_entries(apps))
-    raw["companies"] = merged
-    return write_company_search_log(raw)
+    return write_company_search_log(plan_company_search_log(apps))
 
 
 def log_company_search(
@@ -2327,11 +2482,30 @@ def sync_log() -> tuple[Path, int, Path, list[dict]]:
 
     The retired ``applications-log.yaml`` is NOT written here any more — see
     ``backfill_log`` for the one-time seed and for what happens to the old file.
+
+    **Derive everything, then write; permanent write LAST.** This used to append
+    to the skip-log and only then build the company search log, so any failure in
+    the second half landed after a write that nothing can take back: one
+    ``meta.yaml`` carrying an unquoted ``research_date:`` raised deep inside
+    ``build_created_search_entries`` and killed the run with the skip-log already
+    appended and the search log never updated. The same window is reachable
+    without a crash at all — ``_load_company_search_log_raw`` deliberately
+    ``sys.exit``s on a company search log that will not parse, which was also
+    happening after the append.
+
+    So both fallible reads (the folder walk, the existing search log) and both
+    derivations happen first, and the two writes are ordered by how expensive
+    they are to undo: the company search log is rewritten wholesale from the
+    folders on every run and therefore fully recoverable, while the skip-log is
+    append-only and authoritative — a spurious row is repaired only by appending
+    a ``--forget-log`` tombstone. Anything that raises now leaves the permanent
+    file untouched and the run repeatable.
     """
     apps = collect_apps()
     log = build_log(apps)
+    planned_search_log = plan_company_search_log(apps)
+    search_path = write_company_search_log(planned_search_log)
     appended = _upsert_log_rows(log["postings"], source="sync")
-    search_path = sync_company_search_log(apps)
     return APPLICATIONS_JSONL, appended, search_path, log["unreadable"]
 
 
