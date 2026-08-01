@@ -17,7 +17,18 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from answer_bank import load_and_validate, render_markdown, run  # noqa: E402
+from answer_bank import (  # noqa: E402
+    UnroutableOutput,
+    load_and_validate,
+    output_targets_for,
+    render_markdown,
+    run,
+)
+
+
+def _files_under(root: Path) -> set[Path]:
+    """Every file in a fixture tree — used to prove a run wrote nothing else."""
+    return {path for path in root.rglob("*") if path.is_file()}
 
 
 def _valid_answer(project_title: str = "Registry capacity recovery") -> dict:
@@ -234,9 +245,19 @@ class AnswerBankTests(unittest.TestCase):
         )
         return source
 
+    def _write_companies(self, root: Path, *keys: str) -> Path:
+        """A company tree with one folder per key; returns the tree root."""
+        companies = root / "companies"
+        companies.mkdir(parents=True, exist_ok=True)
+        for key in keys:
+            (companies / key).mkdir()
+        return companies
+
     def test_valid_source_renders_and_checks_deterministically(self):
         with tempfile.TemporaryDirectory() as tmp:
-            source = self._write_fixture(Path(tmp))
+            root = Path(tmp).resolve()
+            companies = self._write_companies(root, "amazon")
+            source = self._write_fixture(root)
             result = load_and_validate(source)
             self.assertEqual(result.errors, [])
             self.assertIsNotNone(result.data)
@@ -253,14 +274,99 @@ class AnswerBankTests(unittest.TestCase):
             self.assertNotIn("### Situation", rendered)
             self.assertIn("<em>Reference</em> · timeline", rendered)
             self.assertIn("<em>Reference</em> · isolated problem / action / impact", rendered)
-            self.assertEqual(run("render", source), 0)
-            self.assertEqual(run("check", source), 0)
+            self.assertEqual(run("render", source, companies), 0)
+            self.assertEqual(run("check", source, companies), 0)
             answer_bank = source.parent.parent
             self.assertTrue(
                 (answer_bank / "_general_03_example-deliver-results.md").is_file()
             )
-            company_output = (answer_bank / "amazon-deliver-results.md").read_text(encoding="utf-8")
+            self.assertFalse((answer_bank / "amazon-deliver-results.md").exists())
+            company_output = (
+                companies / "amazon" / "derived" / "amazon-deliver-results.md"
+            ).read_text(encoding="utf-8")
             self.assertIn("# Amazon — Deliver Results", company_output)
+
+    def test_output_targets_split_general_and_company_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            companies = self._write_companies(root, "amazon")
+            source = self._write_fixture(root)
+            data = load_and_validate(source).data
+            targets = [path for path, _ in output_targets_for(source, data, companies)]
+            self.assertEqual(
+                targets,
+                [
+                    source.parent.parent / "_general_03_example-deliver-results.md",
+                    companies / "amazon" / "derived" / "amazon-deliver-results.md",
+                ],
+            )
+
+    def test_render_writes_only_its_resolved_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            companies = self._write_companies(root, "amazon")
+            source = self._write_fixture(root)
+            before = _files_under(root)
+            self.assertEqual(run("render", source, companies), 0)
+            self.assertEqual(
+                _files_under(root) - before,
+                {
+                    source.parent.parent / "_general_03_example-deliver-results.md",
+                    companies / "amazon" / "derived" / "amazon-deliver-results.md",
+                },
+            )
+
+    def test_unknown_company_prefix_fails_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            companies = self._write_companies(root)  # tree exists, no company folders
+            source = self._write_fixture(root)
+            before = _files_under(root)
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                exit_code = run("render", source, companies)
+            self.assertEqual(exit_code, 1)
+            self.assertIn("there is no 'amazon' folder in", stderr.getvalue())
+            # All or nothing: the _general_ alias of the same source is not written either.
+            self.assertEqual(_files_under(root), before)
+            self.assertFalse((companies / "amazon").exists())
+
+    def test_missing_company_tree_fails_without_creating_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            companies = root / "companies"  # never created (a config-less checkout)
+            source = self._write_fixture(root)
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                exit_code = run("render", source, companies)
+            self.assertEqual(exit_code, 1)
+            self.assertIn("the company tree does not exist", stderr.getvalue())
+            self.assertFalse(companies.exists())
+
+    def test_company_folder_must_match_the_key_case_exactly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            companies = self._write_companies(root, "Amazon")
+            source = self._write_fixture(root)
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                exit_code = run("render", source, companies)
+            self.assertEqual(exit_code, 1)
+            self.assertIn("there is no 'amazon' folder in", stderr.getvalue())
+            self.assertFalse((companies / "Amazon" / "derived").exists())
+
+    def test_alias_without_a_hyphen_is_unroutable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            companies = self._write_companies(root, "amazon")
+            data = _valid_data()
+            data["outputs"][1]["slug"] = "amazon"
+            source = self._write_fixture(root, data)
+            # The schema rejects it first; the router refuses it independently.
+            result = load_and_validate(source)
+            self.assertTrue(any("outputs[1].slug" in error for error in result.errors))
+            with self.assertRaises(UnroutableOutput):
+                output_targets_for(source, data, companies)
 
     def test_more_than_two_project_answers_are_supported(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -299,9 +405,14 @@ class AnswerBankTests(unittest.TestCase):
             result = load_and_validate(source)
             self.assertTrue(any("outputs[0].slug" in error for error in result.errors))
 
-    def test_directory_run_rejects_output_alias_collisions(self):
+    def test_directory_run_rejects_cross_tree_output_alias_collisions(self):
+        # Two sources in the question bank, distinct _general_ aliases, but the
+        # same company alias: the collision only exists in the OTHER tree, so it
+        # is visible only if the owner check compares resolved targets.
         with tempfile.TemporaryDirectory() as tmp:
-            source = self._write_fixture(Path(tmp))
+            root = Path(tmp).resolve()
+            companies = self._write_companies(root, "amazon")
+            source = self._write_fixture(root)
             second_data = _valid_data()
             second_data["slug"] = "second-results"
             second_data["outputs"][0]["slug"] = "_general_03_second-results"
@@ -310,11 +421,18 @@ class AnswerBankTests(unittest.TestCase):
                 yaml.safe_dump(second_data, sort_keys=False, allow_unicode=True),
                 encoding="utf-8",
             )
+            before = _files_under(root)
             stderr = io.StringIO()
             with redirect_stderr(stderr):
-                exit_code = run("validate", source.parent)
+                exit_code = run("render", source.parent, companies)
             self.assertEqual(exit_code, 1)
-            self.assertIn("is also declared by", stderr.getvalue())
+            report = stderr.getvalue()
+            self.assertIn("is also declared by", report)
+            self.assertIn(
+                str(companies / "amazon" / "derived" / "amazon-deliver-results.md"), report
+            )
+            # Both colliding sources are skipped, so nothing is rendered at all.
+            self.assertEqual(_files_under(root), before)
 
     def test_quick_answer_enforces_75_to_130_second_window(self):
         with tempfile.TemporaryDirectory() as tmp:

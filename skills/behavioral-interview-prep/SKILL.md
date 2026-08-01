@@ -194,11 +194,10 @@ company-prefixed answer files live under `config.companies_root()/<key>/derived/
 question bank** — the question bank holds only the `_general_*` files. Company-specific material
 belongs to its company folder (`memory/decisions/interview-material-moves-by-company-only.md`).
 
-**Known gap, do not paper over it:** `answer_bank.py --render` still writes every output beside
-its source's parent, i.e. back into `question-bank/<slug>.md`. So a rendered company answer lands
-in the wrong tree today and must be moved to the company's `derived/` folder afterwards. Fixing
-the generator is filed as `tasks/0_backlog/2026-07-31-answer-bank-renders-company-answers-into-the-question-bank/`;
-never "fix" it by moving the real files back.
+`answer_bank.py render` files each alias in its own tree: `_general_*` beside the source's parent,
+a company-prefixed alias in `config.companies_root()/<key>/derived/`. The company folder must
+already exist — a missing one is a FAIL naming the key, never an invented folder. Nothing moves
+after a render.
 
 ## Story Bank Coverage
 
@@ -446,7 +445,6 @@ questions. Keep one principle per company-prefixed file, with at least two title
 If the user wants prep saved for a specific application:
 - save reusable company-specific answers in `config.companies_root()/<key>/derived/` with a
   company-prefixed output alias backed by a neutral shared source in `question-bank/sources/`
-  (`--render` still emits into the question bank — move the file; see § File Location)
 - change `private/me/interviews/story-bank/` only when the user explicitly asks
 - update `config.applications_root()/<status>/<slug>/notes.md` only when the note is tied to one application record
 - add a `## Behavioral Prep` section rather than editing the base profile
