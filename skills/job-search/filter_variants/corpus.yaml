@@ -1200,6 +1200,50 @@ variants:
       decision: review
       review_contains: [residency_restriction_unparsed]
 
+  - id: location-remote-grant-with-a-us-country-residency-requirement
+    domain: location
+    # The residency reader could name preferred metros, US states, US hubs and
+    # foreign places — and not the United States. So the commonest sentence in
+    # US-remote boilerplate read as an unreadable restriction and sent the
+    # posting to manual review. A country-wide rule narrows nothing: the whole
+    # country satisfies it, which IS the us_remote category.
+    input:
+      title: Software Engineer
+      location: Remote
+      workplace_hint: unknown
+      description: >-
+        This is a fully remote role. You must reside in the United States.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      evidence_contains: [jd_residency_us_scope]
+
+  - id: location-remote-grant-with-a-negated-us-residency-clause
+    domain: location
+    # The guardrail on the rule above. A NEGATED clause states no requirement and
+    # says nothing about whether the role is open in the US, so it keeps its
+    # review rather than reading the country name as a grant.
+    input:
+      title: Software Engineer
+      location: Remote
+      workplace_hint: unknown
+      description: >-
+        This is a fully remote role. You do not need to reside in the
+        United States.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [residency_restriction_unparsed]
+
   - id: location-remote-grant-without-a-residency-clause-is-unchanged
     domain: location
     # The guardrail on the rule above: an ordinary US-remote posting is untouched.

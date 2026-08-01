@@ -337,14 +337,32 @@ _OPTIONAL_HYBRID_RE = re.compile(
 # is tight, the way `jd_role_can_be_remote` binds "remote" to THIS role: without
 # it, "many of our engineers live in Austin" describes somebody else's address and
 # would rewrite the posting's geography.
+# ``gap`` and ``prep`` are named only so ``_residency_names_us_country`` can read
+# them; they do not change what the pattern matches.
 _JD_RESIDENCY_RE = re.compile(
     r"\b(?:must|required?|requirement|need\s+to|expected\s+to|have\s+to)\b"
-    r"[^.;:!?\n]{0,60}?"
+    r"(?P<gap>[^.;:!?\n]{0,60}?)"
     r"\b(?:resid(?:e|es|ing|ency)|live|living|located|based)\b\s+"
-    r"(?:in|within|near)\s+(?:the\s+)?"
+    r"(?P<prep>in|within|near)\s+(?:the\s+)?"
     r"(?P<place>[^.;:!?\n]{2,60})",
     re.I,
 )
+
+# A residency clause that is NEGATED states no requirement: "you do not need to
+# reside in the United States", "there is no requirement to live in the US". It
+# is checked only where a negation would flip the answer (see
+# ``_residency_names_us_country``), so its worst case is leaving a posting at
+# review — never a confident wrong verdict.
+#
+# The window is short and anchored to the requirement word on purpose. A negative
+# clause EARLIER in the same sentence usually negates something else entirely
+# ("we are not able to sponsor visas; you must reside in the United States"), and
+# a sentence-wide search reads that as "residency not required" and throws the
+# posting away. Both real shapes put the negation adjacent to the requirement
+# word — before it ("do NOT need to", "there is NO requirement", "are NOT
+# required") or inside the gap that follows it ("must NOT reside in").
+_RESIDENCY_NEGATION_RE = re.compile(r"(?:\b(?:no|nor|not|never)\b|n't)", re.I)
+_RESIDENCY_NEGATION_WINDOW = 16
 
 
 @dataclass(frozen=True)
@@ -594,16 +612,63 @@ def _is_workplace_word_only(nloc: str) -> bool:
     return bool(words) and all(word in _WORKPLACE_MARKER_WORDS for word in words)
 
 
-def _residency_category(description: str, metro) -> str | None:
+def _residency_names_us_country(match, nplace: str, us_remote_regions) -> bool:
+    """Whether a residency clause pins the role to the US as a COUNTRY.
+
+    "You must reside in the United States" is the most common sentence in
+    US-remote boilerplate, and it is a residency requirement that the whole
+    country satisfies — the narrowest reading of it is still open US-remote. It
+    was reaching ``unknown`` because this function did not exist: the residency
+    reader knew preferred metros, US states, US hubs and foreign places, and the
+    one shape it could not name was the country itself.
+
+    Bare ``us`` is accepted separately from the region list, which carries
+    ``usa`` / ``u.s.`` / ``united states`` but not the two bare letters, and only
+    after ``in``/``within``. After ``near`` the word is the pronoun — "you must
+    live near us" is an office, not a country — and that reading must not become
+    a confident US match.
+    """
+    if _residency_is_negated(match):
+        return False
+    if _has(us_remote_regions, nplace):
+        return True
+    return (match.group("prep").lower() in {"in", "within"}
+            and re.search(r"\bus\b", nplace) is not None)
+
+
+def _residency_is_negated(match) -> bool:
+    """Whether the matched residency requirement is negated.
+
+    See ``_RESIDENCY_NEGATION_RE``: only the short window immediately before the
+    requirement word and the gap between it and the residency verb are read, so
+    an unrelated negative clause earlier in the same sentence cannot cancel a
+    real requirement.
+    """
+    text = match.string
+    start = max(0, match.start() - _RESIDENCY_NEGATION_WINDOW)
+    return bool(_RESIDENCY_NEGATION_RE.search(text[start:match.start()])
+                or _RESIDENCY_NEGATION_RE.search(match.group("gap") or ""))
+
+
+def _residency_category(description: str, metro, us_remote_regions) -> str | None:
     """Geography a JD's residency requirement pins a remote grant to.
 
-    Returns ``"metro"`` / ``"other_us"`` / ``"foreign"`` for a place this module
-    can read, ``"unknown"`` when a residency requirement is stated but its place is
-    unreadable, and ``None`` when the JD states no residency requirement at all.
+    Returns ``"metro"`` / ``"other_us"`` / ``"foreign"`` / ``"us_remote"`` for a
+    place this module can read, ``"unknown"`` when a residency requirement is
+    stated but its place is unreadable, and ``None`` when the JD states no
+    residency requirement at all.
 
     Deliberately asymmetric: it exists to NARROW an already-remote posting, never
     to grant one. The place it names replaces the absent geography of a bare
     remote/workplace-tag location field — it is the only place the JD says.
+    ``us_remote`` is the widest thing it can return, and only because a
+    country-wide residency rule narrows an open remote grant to exactly the
+    US-remote category the caller already accepts.
+
+    Order matters and is the safe direction: foreign, then preferred metro, then
+    a specific US state/hub, and only then the country. A clause that names both
+    ("the United States or Canada", "the United States, preferably California")
+    keeps the narrower, more rejecting reading it has always had.
     """
     match = _JD_RESIDENCY_RE.search(description or "")
     if match is None:
@@ -617,6 +682,8 @@ def _residency_category(description: str, metro) -> str | None:
     state_abbr, _contested = _resolve_state_abbrs(place, _foreign_matches(nplace))
     if _has_us_state(nplace) or _has(_US_HUBS, nplace) or state_abbr:
         return "other_us"
+    if _residency_names_us_country(match, nplace, us_remote_regions):
+        return "us_remote"
     return "unknown"
 
 
@@ -815,10 +882,17 @@ def assess_location(
         # this posting out of "open US-remote", and neither was being read:
         # a residency requirement in the JD that pins the grant to one metro, and a
         # location field that names a work MODE with no country anywhere behind it.
-        residency = _residency_category(description, metro)
+        residency = _residency_category(description, metro, us_remote_regions)
         if residency == "metro":
             category = "metro"
             evidence.append("jd_residency_preferred_metro")
+        elif residency == "us_remote":
+            # The JD requires residence in the US and says nothing narrower. That
+            # is a restriction the whole country satisfies, so it CONFIRMS open
+            # US-remote instead of bounding it — and it is the country signal the
+            # bare-remote check below would otherwise go looking for.
+            category = "us_remote"
+            evidence.append("jd_residency_us_scope")
         elif residency in {"other_us", "foreign"}:
             category = residency
             evidence.append("jd_remote_bound_to_residency")
