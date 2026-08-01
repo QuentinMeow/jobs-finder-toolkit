@@ -4,7 +4,7 @@
 - **Area**: tracker
 - **Source**: adversarial audit #3 finding 3, the half deliberately left out of
   branch `wip/26-handoff-defects` (see that PR's Design section).
-- **Claimed-by**:
+- **Claimed-by**: agent (branch `wip/35-pipeline-parse-defects`)
 
 ## Goal
 

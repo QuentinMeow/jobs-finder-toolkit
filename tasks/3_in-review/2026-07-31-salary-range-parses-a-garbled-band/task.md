@@ -4,7 +4,7 @@
 - **Area**: job-search
 - **Source**: observed in a live stage-1 canary run, 2026-07-31 — one of five job-search
   canaries run against real ATS boards for the eval gate
-- **Claimed-by**:
+- **Claimed-by**: agent (branch `wip/35-pipeline-parse-defects`)
 
 ## Goal
 
