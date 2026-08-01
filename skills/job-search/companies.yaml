@@ -85,7 +85,7 @@ companies:
   - {name: CoreWeave, ats: greenhouse, token: coreweave, tags: [ai-infra]}
   - {name: Nebius, ats: greenhouse, token: nebius, tags: [ai-infra]}
   - {name: Together AI, ats: greenhouse, token: togetherai, tags: [ai-infra]}
-  - {name: Fireworks AI, ats: greenhouse, token: fireworksai, tags: [ai-infra]}
+  - {name: Fireworks AI, ats: ashby, token: fireworksai, tags: [ai-infra]}
   - {name: Modal, ats: ashby, token: modal, tags: [ai-infra, dev-tools]}
   - {name: Baseten, ats: ashby, token: baseten, tags: [ai-infra]}
   - {name: Anyscale, ats: ashby, token: anyscale, tags: [ai-infra]}
