@@ -1931,3 +1931,9 @@
   files: 2
   digest: sha256:bbf5f1929f6d0b7a
   finding: Corrected the overnight-defect-hunt handover's wrong CI-goes-red claim (a merge-only ledger commit exits the review gate clean) and recorded the merge-commit-plus-retarget recipe in skills/github-workflow/SKILL.md so future sessions do not rebase the 45-PR stack again.
+- commit: 92966c1a
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 2
+  digest: sha256:eab0f8b68d95ad91
+  finding: Filed post-merge decision-triage worklist (23 ranked queue items + known-open defects + visa-policy caveat) and PR #161's undischarged behavioral-interview-prep canary-gate debt; doc/task files only, additive.
