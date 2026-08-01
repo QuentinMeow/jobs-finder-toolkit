@@ -51,6 +51,22 @@ def _tokens(value: str) -> set[str]:
     return {token for token in TOKEN_RE.findall(value.casefold()) if token not in STOPWORDS}
 
 
+def _company_mentioned(company: str, query_folded: str) -> bool:
+    """True if the company name appears in the query as a bounded phrase.
+
+    Same bounded-phrase rule the mail reconciler and the job-search title
+    prefilter use: a match glued to a surrounding letter or digit is not a
+    mention.  A trailing inflection is fine ("Acme's", "Acmes"); "Dropbox" is
+    not a mention of "Box".
+    """
+    name = company.casefold().strip()
+    if not name:
+        return False
+    prefix = r"(?<![a-z0-9])" if name[:1].isalnum() else ""
+    suffix = r"(?:s|es)?(?![a-z0-9])" if name[-1:].isalnum() else ""
+    return re.search(prefix + re.escape(name) + suffix, query_folded) is not None
+
+
 def _context_files(app_dir: Path) -> tuple[Path, ...]:
     candidates: list[Path] = []
     for fixed in (app_dir / "meta.yaml", app_dir / "notes.md", app_dir / "source/tailored.yaml"):
@@ -188,7 +204,12 @@ def find_application_matches(
         searchable = " ".join((company, *roles, record["slug"]))
         overlap = query_tokens & _tokens(searchable)
         score = len(overlap) * 5
-        if company and company.casefold() in query_folded:
+        # Bounded, not a bare substring: `"box" in "your dropbox file share"` and
+        # `"meta" in "the metadata for your onboarding packet"` each scored the
+        # full 40-point company bonus — twice `min_score` on their own — so
+        # `match-application` aimed the agent at the wrong application folder
+        # before any status transition was proposed.
+        if company and _company_mentioned(company, query_folded):
             score += 40
         if sender_folded and recruiter and sender_folded == recruiter.casefold():
             score += 100

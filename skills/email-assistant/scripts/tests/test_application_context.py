@@ -103,6 +103,43 @@ jobs:
             )
             self.assertEqual(matches, [])
 
+    def _short_company_root(self, tmp: str, company: str) -> Path:
+        root = Path(tmp)
+        app = root / "5_applied" / "short-company-backend-20260720"
+        app.mkdir(parents=True)
+        (app / "meta.yaml").write_text(
+            "job_metadata_schema_version: 5\n"
+            f"company: {company}\n"
+            "jobs:\n"
+            "  - role: Backend Engineer\n"
+            "    status: applied\n",
+            encoding="utf-8",
+        )
+        return root
+
+    def test_company_name_inside_a_longer_word_is_not_a_company_match(self):
+        # The company bonus is 40 points and min_score is 20, so a bare substring
+        # hit alone made an unrelated email an "unambiguous" match and aimed
+        # match-application at the wrong folder before any status proposal.
+        for company, query in (
+            ("Box", "Your Dropbox file share is ready"),
+            ("Box", "Re: boxing tournament sponsorship"),
+            ("Meta", "Please send the metadata for your onboarding packet"),
+        ):
+            with self.subTest(company=company, query=query):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = self._short_company_root(tmp, company)
+                    self.assertEqual(
+                        find_application_matches(root, query=query), [])
+
+    def test_real_company_mention_still_scores(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._short_company_root(tmp, "Box")
+            matches = find_application_matches(
+                root, query="Your Box interview loop is being scheduled")
+            self.assertEqual([match.company for match in matches], ["Box"])
+            self.assertGreaterEqual(matches[0].score, 40)
+
     def test_mixed_status_jobs_report_per_job_status_and_progress(self):
         with tempfile.TemporaryDirectory() as tmp:
             recruiter = "recruiter" + chr(64) + "example.invalid"

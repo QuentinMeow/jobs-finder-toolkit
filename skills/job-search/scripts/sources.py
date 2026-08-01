@@ -15,10 +15,10 @@ import urllib.request
 from datetime import datetime, timezone
 
 import capture_hooks
-from common import (USER_AGENT, JobPosting, ashby_salary_range, http_get,
-                    http_get_full, http_get_json, http_post_json,
-                    http_post_json_full, parse_dt, provided_salary_range,
-                    strip_html)
+from common import (USER_AGENT, JobPosting, ashby_salary_range,
+                    bounded_phrase_hit, http_get, http_get_full, http_get_json,
+                    http_post_json, http_post_json_full, parse_dt,
+                    provided_salary_range, record_source_warning, strip_html)
 
 # Default search terms used by big-tech fetchers (Workday / Amazon) so we query a
 # few relevant slices of a huge board instead of pulling every posting. Companies
@@ -33,14 +33,36 @@ DEFAULT_BIGTECH_TERMS = [
 ]
 
 # Coarse title prefilter: only skip clearly-excluded titles before the (expensive)
-# per-posting detail fetch. This never drops a title the pipeline's title gate would
-# keep — it only avoids detailing obvious non-matches. The real title/location/visa
-# gating still runs in scoring.py after fetch.
+# per-posting detail fetch. A dropped title never gets a detail fetch, so it never
+# enters the pipeline and appears in NO count — which makes this list the one place
+# in the search path where a mistake is invisible.
+#
+# Matching is BOUNDED, never a bare substring (``_title_prefilter``). The old
+# ``skip in f" {title.lower()} "`` read "intern" inside *Internal Developer
+# Platform* and *Internationalization*, "director" inside *Active Directory*,
+# "sales" inside *Salesforce Platform*, "co-op" inside *Co-operative Caching* —
+# every one of them a title `scoring.assess_title` matches, dropped before it
+# could be scored.
+#
+# KNOWN, DELIBERATE EXCEPTION to "never drops a title the title gate would keep":
+# the seniority/discipline words below (principal, distinguished, fellow, data
+# scientist, research scientist) are hardcoded here rather than read from the
+# profile's `titles.exclude`, so a profile that TARGETS Principal+ or
+# applied-scientist roles still gets none of them from Workday/Amazon/Apple/Meta.
+# Removing them is an owner decision, not an agent one, because it trades one
+# silent loss for another: these boards have hard candidate budgets (60 Workday,
+# 80 the others), so widening the fetch can displace wanted roles out of the fetch
+# entirely — and a role that is never fetched leaves no filtered row and no
+# snapshot trace. Filed as
+# `message-queue/needs-human/decisions/title-prefilter-hardcoded-seniority-words.md`;
+# the default path is to KEEP the list.
+#
+# The real title/location/visa gating still runs in scoring.py after fetch.
 _BIGTECH_TITLE_SKIP = (
     "intern", "internship", "co-op", "new grad", "graduate program", "apprentice",
-    " manager", "director", "principal", "distinguished", "fellow", "vice president",
-    " vp ", "sales", "marketing", "recruit", "designer", "data scientist",
-    "research scientist", "account executive", "customer success",
+    "manager", "director", "principal", "distinguished", "fellow",
+    "vice president", "vp", "sales", "marketing", "recruit", "designer",
+    "data scientist", "research scientist", "account executive", "customer success",
 )
 
 
@@ -98,7 +120,10 @@ def fetch_greenhouse(company: str, token: str) -> list[JobPosting]:
     out = []
     for j in data.get("jobs", []):
         loc = (j.get("location") or {}).get("name", "") or ""
-        desc = strip_html(j.get("content"))
+        # Greenhouse `content=true` is the toolkit's ONE double-entity-encoded
+        # source (reference.md / LESSONS.md); every other source is single-encoded
+        # and must NOT get the extra decode.
+        desc = strip_html(j.get("content"), entity_encoded=True)
         out.append(JobPosting(
             source="greenhouse",
             company=company,
@@ -253,6 +278,8 @@ def fetch_smartrecruiters(company: str, token: str) -> list[JobPosting]:
         raise RuntimeError(f"GET failed for {list_url}: {resp.error}")
     data = json.loads(resp.body.decode("utf-8", "replace"))
     out = []
+    attempted = 0
+    failures: list[str] = []
     for j in data.get("content", []):
         loc = j.get("location") or {}
         loc_str = ", ".join(x for x in [loc.get("city"), loc.get("region"),
@@ -260,6 +287,7 @@ def fetch_smartrecruiters(company: str, token: str) -> list[JobPosting]:
         remote = "remote" if loc.get("remote") else ("hybrid" if loc.get("hybrid")
                                                       else "unknown")
         desc = ""
+        attempted += 1
         try:
             detail = http_get_json(f"{base}/{j.get('id')}")
             sections = ((detail.get("jobAd") or {}).get("sections") or {})
@@ -267,8 +295,13 @@ def fetch_smartrecruiters(company: str, token: str) -> list[JobPosting]:
                 (sections.get(k) or {}).get("text", "")
                 for k in ("jobDescription", "qualifications", "additionalInformation")
             ))
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # A swallowed JD fetch used to emit the posting with description="",
+            # which is indistinguishable from "this JD really is empty": the visa
+            # gate reads `unclear` and keeps it, the YOE gate has nothing to read,
+            # and the keyword score collapses, so the row survives ranked below
+            # top_k and is never seen. Count it and say so instead.
+            failures.append(f"{j.get('id')}: {exc}")
         out.append(JobPosting(
             source="smartrecruiters",
             company=company,
@@ -279,13 +312,31 @@ def fetch_smartrecruiters(company: str, token: str) -> list[JobPosting]:
             posted_at=parse_dt(j.get("releasedDate")),
             description=desc,
         ))
+    if failures and len(failures) == attempted:
+        # Total JD outage: every posting would carry an empty description. That is
+        # a failed fetch, not a board of contentless jobs — raise so run_tasks
+        # records it as a source error rather than reporting a clean result.
+        raise RuntimeError(
+            f"smartrecruiters {company}: all {attempted} JD detail fetches failed "
+            f"(first: {failures[0]})")
+    if failures:
+        record_source_warning(
+            f"smartrecruiters:{company}: {len(failures)} of {attempted} JD detail "
+            f"fetches failed (first: {failures[0]}); those postings carry an empty "
+            f"description")
+    if truncated and total_found is not None and returned is not None:
+        # The truncation was already computed for the store attestation and told
+        # the live search nothing. Say it out loud: the rest of this board is
+        # invisible to this run.
+        record_source_warning(
+            f"smartrecruiters:{company}: listing truncated at {returned} of "
+            f"{total_found} postings (limit=100); the remainder was not inspected")
     return out
 
 
 def _title_prefilter(title: str) -> bool:
     """True if the title is worth a detail fetch (drops only obvious non-matches)."""
-    t = f" {title.lower()} "
-    return not any(skip in t for skip in _BIGTECH_TITLE_SKIP)
+    return not bounded_phrase_hit(title.lower(), _BIGTECH_TITLE_SKIP)
 
 
 def fetch_workday(company: str, token: str, host: str, site: str,
@@ -355,10 +406,17 @@ def fetch_workday(company: str, token: str, host: str, site: str,
                 break
         g.attest(complete=False)
 
+    detail_failures: list[str] = []
+
     def _detail(path: str) -> JobPosting | None:
         try:
             detail = http_get_json(f"{base}{path}")
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            # Record before dropping. A per-posting failure returning a bare None
+            # meant a TOTAL detail outage (503, rate limit, expired session) came
+            # back as zero postings and zero errors — "this company has no
+            # matching jobs" — from a fetch that inspected nothing.
+            detail_failures.append(f"{path}: {exc}")
             return None
         jp = detail.get("jobPostingInfo") or {}
         title = (jp.get("title") or "").strip()
@@ -388,6 +446,18 @@ def fetch_workday(company: str, token: str, host: str, site: str,
         for res in ex.map(_detail, paths):
             if res is not None:
                 out.append(res)
+    if paths and len(detail_failures) == len(paths):
+        # Nothing was inspected. Raise so search_jobs.run_tasks records
+        # `board:<company>: ...` and the run summary reports a source error,
+        # instead of the board reporting cleanly that it has no matching jobs.
+        raise RuntimeError(
+            f"workday {company}: all {len(paths)} detail fetches failed "
+            f"(first: {detail_failures[0]})")
+    if detail_failures:
+        record_source_warning(
+            f"workday:{company}: {len(detail_failures)} of {len(paths)} detail "
+            f"fetches failed (first: {detail_failures[0]}); those postings were "
+            f"not inspected")
     return out
 
 

@@ -9,12 +9,14 @@ import html
 import json
 import math
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from functools import lru_cache
 
 USER_AGENT = "jobs-finder-skill/1.0 (personal job search; +https://github.com/)"
 
@@ -141,15 +143,69 @@ def http_post_json(url: str, payload: dict, timeout: int = 25,
 
 
 # --------------------------------------------------------------------------- #
+# Partial-fetch reporting
+#
+# A fetcher that could not inspect part of what it set out to inspect must SAY SO
+# rather than return a quietly shorter list. A total outage raises (the caller's
+# error path already reports that); a PARTIAL outage still has real rows worth
+# returning, so it records a one-line warning here and the run summary prints it
+# alongside the source errors. Without this channel, "20 of 20 JD fetches got a
+# 503" and "this employer has no matching jobs" are the same observation.
+#
+# Fetchers run on a thread pool, so the sink is lock-protected. Draining empties
+# it, so a long-lived process (tests, --refilter) never re-reports a stale line.
+# --------------------------------------------------------------------------- #
+_SOURCE_WARNINGS: list[str] = []
+_SOURCE_WARNINGS_LOCK = threading.Lock()
+_SOURCE_WARNINGS_CAP = 500      # a caller that never drains cannot grow unbounded
+
+
+def record_source_warning(message: str) -> None:
+    """Record one 'I could not inspect all of this' line from inside a fetcher."""
+    if not message:
+        return
+    with _SOURCE_WARNINGS_LOCK:
+        if len(_SOURCE_WARNINGS) < _SOURCE_WARNINGS_CAP:
+            _SOURCE_WARNINGS.append(message)
+
+
+def drain_source_warnings() -> list[str]:
+    """Return and clear the recorded partial-fetch warnings."""
+    with _SOURCE_WARNINGS_LOCK:
+        drained = list(_SOURCE_WARNINGS)
+        _SOURCE_WARNINGS.clear()
+    return drained
+
+
+# --------------------------------------------------------------------------- #
 # Text
 # --------------------------------------------------------------------------- #
-def strip_html(raw: str | None) -> str:
-    """Turn (possibly entity-encoded) HTML into readable plain text."""
+def strip_html(raw: str | None, *, entity_encoded: bool = False) -> str:
+    """Turn HTML into readable plain text. Tags are stripped BEFORE entities decode.
+
+    ORDER MATTERS, and it is per-source. Every ATS/aggregator this skill reads
+    hands us SINGLE-encoded HTML — real tags, with `<` inside prose written as
+    the entity `&lt;` ("teams of &lt; 12", "p99 &lt; 200ms"). Unescaping first
+    turns that prose entity into a real `<`, and ``_TAG_RE`` (``<[^>]+>``) then
+    eats everything up to the next `>` — i.e. to the end of the enclosing
+    element. A sponsorship denial sitting in that span disappears and the
+    posting reads as visa-"unclear" instead of "no". So: strip tags on the
+    markup as it arrived, then decode entities once, when nothing can eat them.
+
+    ``entity_encoded=True`` is the ONE documented exception: Greenhouse
+    ``content=true`` bodies arrive DOUBLE entity-encoded (``&lt;p&gt;...``), so
+    that caller — and only that caller — asks for one extra decode up front to
+    recover the real markup before the tags are stripped. Turning that decode on
+    for a single-encoded source re-creates the bug; leaving it off for Greenhouse
+    leaves literal ``<p>`` markup in the text.
+    """
     if not raw:
         return ""
-    text = html.unescape(raw)          # decode &lt; -> <  (Greenhouse double-encodes)
-    text = _TAG_RE.sub(" ", text)      # drop tags
-    text = html.unescape(text)         # decode remaining &amp; etc.
+    text = raw
+    if entity_encoded:
+        text = html.unescape(text)     # &lt;p&gt; -> <p>  (Greenhouse only)
+    text = _TAG_RE.sub(" ", text)      # drop tags while entities are still escaped
+    text = html.unescape(text)         # now decode &lt; / &amp; in the prose
     text = _WS_RE.sub(" ", text)
     text = _MULTINL_RE.sub("\n\n", text)
     return text.strip()
@@ -174,6 +230,40 @@ def term_matches(term: str, normalized_text: str) -> bool:
     if re.fullmatch(r"[a-z0-9]+", term):
         return re.search(rf"\b{re.escape(term)}\b", normalized_text) is not None
     return term in normalized_text
+
+
+# A lexicon phrase is matched BOUNDED — never as a bare substring. An unanchored
+# ``phrase in text`` reads "intern" inside *Internal*, "director" inside *Active
+# Directory*, "sales" inside *Salesforce*, "ote" inside "rem-ote-", "confirmed"
+# inside "unconfirmed". The boundary is the toolkit's established bounded-phrase
+# idiom (``job_metadata._bounded_phrase_matches``): refuse a match glued to a
+# surrounding letter or digit.
+#
+# One deliberate allowance: a trailing English inflection. Substring matching got
+# plurals and gerunds for free, and a strict boundary would silently lose them —
+# "recruit" would stop matching *Recruiter* / *Recruiting Coordinator*, which is
+# the entire reason "recruit" is in the skip list. So the right edge accepts a
+# short inflectional suffix, which is still nothing like "-al" (*Internal*),
+# "-y" (*Directory*) or "-force" (*Salesforce*).
+#
+# The boundary is asserted only where the phrase's own edge is alphanumeric, so a
+# phrase such as ".ics" still matches inside "invite.ics".
+_INFLECTION = r"(?:s|es|d|ed|ing|er|ers)?"
+
+
+@lru_cache(maxsize=4096)
+def bounded_phrase_re(phrase: str) -> re.Pattern:
+    """Compile (and cache) the bounded pattern for one lexicon phrase."""
+    prefix = r"(?<![a-z0-9])" if phrase[:1].isalnum() else ""
+    suffix = _INFLECTION + r"(?![a-z0-9])" if phrase[-1:].isalnum() else ""
+    return re.compile(prefix + re.escape(phrase) + suffix, re.I)
+
+
+def bounded_phrase_hit(text: str, phrases) -> bool:
+    """True if any phrase occurs in ``text`` as a bounded phrase, not a substring."""
+    if not text:
+        return False
+    return any(bounded_phrase_re(p).search(text) for p in phrases if p)
 
 
 # --------------------------------------------------------------------------- #

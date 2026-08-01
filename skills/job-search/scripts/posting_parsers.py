@@ -22,9 +22,14 @@ The normalizer is **versioned** (``NORMALIZER_VERSION``): the semantic
 ``content_hash`` used for JD change-detection is computed over normalized text
 only, so a normalizer improvement is treated like a schema bump (recorded in the
 entity; hashes are recomputed on rebuild by construction, never retroactively
-"changed"). Greenhouse ``content=true`` bodies arrive HTML-entity-ESCAPED, so the
-normalizer (like ``common.strip_html``) unescapes twice before hashing — else
-every poll would look "changed".
+"changed"). Entity decoding happens once, at PARSE time, where the source's
+encoding is known: Greenhouse ``content=true`` bodies arrive DOUBLE
+entity-encoded and are parsed with ``strip_html(..., entity_encoded=True)``;
+every other source is single-encoded and is not. The normalizer therefore
+receives text that is already flattened and already decoded, and only folds
+whitespace/case — it must not re-run a tag strip over prose that legitimately
+contains "&lt;" ("teams of < 12"), which would delete the rest of the line from
+the hash and hide a real JD edit inside it.
 """
 from __future__ import annotations
 
@@ -53,26 +58,29 @@ def _flex_date(value) -> str | None:
 # ── versioned JD-text normalizer ─────────────────────────────
 # Bump = schema-change treatment (recorded per entity; a bump invalidates nothing
 # retroactively because hashes are recomputed on every rebuild).
-NORMALIZER_VERSION = 2
+# v3: entity decoding moved to parse time (per-source), and the normalizer no
+# longer re-strips tags over already-flattened text — see the module docstring.
+NORMALIZER_VERSION = 3
 
 _WS_RE = re.compile(r"\s+")
 
 
-def normalize_text(raw: str | None) -> str:
-    """Normalize JD text for hashing: entity-unescape (twice), tag-strip, collapse.
+def normalize_text(text: str | None) -> str:
+    """Normalize already-flattened JD text for hashing: collapse whitespace, lowercase.
 
-    Reuses ``common.strip_html`` (double ``html.unescape`` + tag strip) so the
-    normalizer can never drift from the live plain-text extraction, then lowercases
-    and collapses ALL whitespace (including newlines) so trivial reflowing does not
-    read as a content change.
+    The input is a parser ``description`` — ``common.strip_html`` output, so tags
+    are gone and entities are decoded. This lowercases and collapses ALL
+    whitespace (including newlines) so trivial reflowing does not read as a
+    content change, and does nothing else: a second tag strip here would eat from
+    a literal "<" in JD prose to the next ">", so an edit inside that span would
+    not change the hash.
     """
-    text = strip_html(raw)
-    return _WS_RE.sub(" ", text).strip().lower()
+    return _WS_RE.sub(" ", text or "").strip().lower()
 
 
-def content_hash(raw: str | None) -> str:
-    """Semantic content hash of JD text — sha256 over the *normalized* text."""
-    return hashlib.sha256(normalize_text(raw).encode("utf-8")).hexdigest()
+def content_hash(text: str | None) -> str:
+    """Semantic content hash of flattened JD text — sha256 over the normalized text."""
+    return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
 
 
 # ── row helper ───────────────────────────────────────────────
@@ -128,7 +136,8 @@ def parse_greenhouse(payload_bytes: bytes, env: dict | None = None) -> list[dict
             location=loc,
             posted_at=(j.get("first_published") or j.get("updated_at")),
             company_name=j.get("company_name"),
-            description=strip_html(j.get("content")),
+            # The one double-entity-encoded source in the toolkit (see strip_html).
+            description=strip_html(j.get("content"), entity_encoded=True),
             salary_text=salary,
         ))
     return out

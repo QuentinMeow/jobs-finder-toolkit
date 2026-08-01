@@ -8,7 +8,11 @@ debugging fetchers, or tuning visa detection. Endpoints verified 2026-07-10.
 ### Greenhouse
 - List + descriptions: `https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true`
 - Fields used: `title`, `location.name`, `absolute_url`, `first_published`,
-  `updated_at`, `content` (HTML, **double entity-encoded** — `strip_html` decodes twice).
+  `updated_at`, `content` (HTML, **double entity-encoded** — the only such source;
+  it is read with `strip_html(..., entity_encoded=True)`, which decodes the outer
+  layer before stripping tags. Every other source is single-encoded and must NOT
+  get that opt-in: decoding before the tag strip turns a `&lt;` in JD prose into a
+  real `<` and deletes the rest of the element).
 - Posted date: prefer `first_published`, fall back to `updated_at`.
 
 ### Ashby
