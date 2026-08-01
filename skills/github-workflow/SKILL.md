@@ -113,7 +113,48 @@ the human-facing one, that section carries at least one `**Before.**` and one
 entirely; backticking a word lets you name it). Exit 1 lists every
 finding with its line. **A pass is not a review** — whether the downsides are
 actually stated is a judgment the checker cannot make, so re-read the draft for
-that yourself.
+that yourself. It does **not** check your numbers; that is the next section.
+
+### Every number in a body belongs to one commit — name it
+
+Three separate correction passes over the same stack rewrote the same class of
+false number, and the second pass published new false numbers while fixing the
+first pass's. The cause is the same every time, and it is mechanical, not
+carelessness:
+
+**A count is a property of a commit, not of a change.** `verify_links` counts
+references across the whole tracked tree; `Ran N tests` counts the whole suite.
+Neither describes your diff — both describe the tree your diff happens to sit on.
+**Every stacked PR changes that tree.** You author in an isolated worktree off
+`main`, measure there, then rebase into stack position, where every PR below you
+has added files. So a body written before integration reports a tree that was
+never merged, and — when a rebase reorders anything — often a tree that never
+existed at all. The numbers were true where they were measured and false where
+they were published.
+
+So, when you write a `## Verification` block:
+
+- **Measure after your last rebase, on the commit you are actually publishing.**
+  Not the branch you wrote on. Re-running the four fast gates costs about four
+  seconds (`reconcile --check`, `verify_links.py`,
+  `instruction_budget.py --strict`, `sync_vendored.py --check`).
+- **Put the SHA next to the number.** `0 broken of 2580 verified (at 71de852)`.
+  A bare count with no commit beside it is not evidence of anything, and a
+  reader cannot tell a stale paste from a fresh one without it.
+- **Never combine two runs into one line.** Copying half a transcript from one
+  tree and half from another produces a line that matches no commit in the
+  history — which is harder to spot, and worse, than a plainly stale number.
+- **Compare against your parent — it is a free self-check that needs no oracle.**
+  Most PRs only add, so these counts usually rise. Two shapes are suspicious and
+  cost nothing to spot: a count **below** your parent's, and a count **exactly
+  equal** to it (any PR that touches a tracked `.md` normally moves the reference
+  count, so equality usually means you pasted the parent's value). Neither is
+  proof — a PR that deletes or rewrites documentation can genuinely lower the
+  count — but if yours is below or equal, you must be able to say *which* it is.
+  Re-measure before you publish it.
+- **If you genuinely cannot re-measure** (it needs the private overlay, another
+  machine, a live board), say what it was measured on and that it was not
+  reproduced. Do not publish a number you did not take.
 
 ## 2. Stacked PRs — GitHub detects the pattern, no tool required
 

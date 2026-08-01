@@ -43,26 +43,44 @@ Between them they found more than sixty confirmed defects. Thirty-eight PRs fix 
   appended — that is the documented cost of stacking here, not a regression, and
   `skills/github-workflow/SKILL.md` has the recovery.
 - **The eval gate is discharged for the job-search PRs below `#163`** — the full canary set
-  was run at that head and recorded. **Two PRs still owe a run and say so:** `#162`, which
+  was run at that head and recorded. **Two PRs still owe a run and say so:** `#161`, which
   needs the behavioural-prep canaries, and `#165`, which changed job-search instruction files
   *after* the run. Neither records a skip it could not justify.
-- **`#162` must not merge until `examples-reshape-seven-calls.md` D5 is answered.** It
+- **`#161` must not merge until `examples-reshape-seven-calls.md` D5 is answered.** It
   implements D5's own recommendation, whose default path is "this piece is dropped". If the
-  answer is no, close it.
-- **Every PR body was re-measured and rewritten**, and so were the tracked records. Each was
-  originally measured in its authoring agent's isolated worktree and never re-run after
-  integration; **all 25 were wrong, and seven of eight tracked `verification.md` files carried
-  a figure that was false at the commit that published it.** The mechanical fix is filed as
+  answer is no, close it. `#161` is the PR whose own title ends "(BLOCKED on D5)" and whose
+  commit `ac34371` changes five `.py` files; `#162` (`9d31abe`) changes one markdown file —
+  this handover — and gates nothing. **Corrected 2026-08-01:** all three D5 references in
+  this file said `#162`, which would have put the decision gate and the owed canary run on a
+  documentation-only PR and merged the actually-blocked one unexamined.
+- **The PR bodies for `#135`–`#159` were re-measured and rewritten**, and so were eight
+  tracked records. Each was originally measured in its authoring agent's isolated worktree and
+  never re-run after integration; **all 25 were wrong, and seven of eight tracked
+  `verification.md` files carried a figure that was false at the commit that published it.**
+  The mechanical fix is filed as
   `tasks/0_backlog/2026-07-31-pr-verification-blocks-are-measured-off-the-stack/`.
+- **That corrections pass did not hold, and a third pass on 2026-08-01 was needed.** Two
+  things went wrong. The pass **published new false numbers of its own** — `#164`'s
+  Verification block pairs `#163`'s reference count with `#162`'s "refs NOT verified" figure,
+  so the line it published matches no commit in this history, and it wrote a reference count
+  into `tasks/3_in-review/2026-07-31-gate-documented-commands/verification.md` that no commit
+  reports. And it **did not cover the thirteen PRs above it**: re-measured at each PR's own
+  substantive commit in a config-less clone, **nine of `#160`–`#172` publish a false
+  `verify_links` count** and only `#167` is right, with four more carrying stale suite counts.
+  All are corrected in the bodies as of 2026-08-01. Why this recurs, and the one rule that
+  ends it, is written once in `skills/github-workflow/SKILL.md` §1 — not repeated here.
 - Three findings were **accepted rather than fixed**, each with the reason in the code and a
   task filed. One of them, sweeping the blob store, would have re-added exactly the
   unattended delete path the PR below it had just hardened against.
 - **The canaries were run twice — before the stack and at its head — and the second run is why
-  `#171` exists.** It caught a regression the stack itself introduced: the sponsorship fix
+  `#165` exists.** It caught a regression the stack itself introduced: the sponsorship fix
   over-corrected and made the strict `require_positive` filter return zero roles where it had
   returned dozens. Fixed, then re-run: 59 roles, all 59 labels verified against their own JD
   text. That loop is the single best argument for running canaries at head rather than trusting
-  unit tests.
+  unit tests. **Corrected 2026-08-01:** this bullet credited `#171`. `#165` (`bfd3e11`) is the
+  only commit in the range that touches `job_metadata.py`, `scoring.py` and the sponsorship
+  corpus; `#171` (`c416c2d`) changes `build_postings.py` and its test and contains no
+  sponsorship code.
 - **The store's byte-identity contract was unproven.** Its equivalence test rebuilt in place, so
   for every carried entity it compared a value to itself. Repaired, it catches nothing on its
   own — because no fixture ever built the class it had stopped covering — so a fixture where the
@@ -70,13 +88,18 @@ Between them they found more than sixty confirmed defects. Thirty-eight PRs fix 
 
 ## Needs your attention
 
-Twenty-four decision items are open, eleven of them filed tonight (one of those
+Twenty-five decision items are open, twelve of them filed tonight (one of those
 arrived already answered — the sponsorship fix settled it, and it is marked
 `resolved-by-implementation` with an ADR). All carry a default path,
-so nothing is blocked. The ones that actually change what happens next:
+so nothing is blocked. (**Corrected 2026-08-01** — this read 24 / 11 / nineteen. Counted at
+`d1fdba6`: `git ls-tree` gives 26 entries under
+`message-queue/needs-human/decisions/`, of which one is the folder `README.md`, so **25**
+items; `git diff --diff-filter=A origin/main d1fdba6` over that folder gives **12** filed
+this session. `#171` added the twelfth after the count was taken and it was never re-run.)
+The ones that actually change what happens next:
 
 - [`examples-reshape-seven-calls.md`](../../../message-queue/needs-human/decisions/examples-reshape-seven-calls.md)
-  — D5 gates `#162` specifically. Seven calls, answer all or none.
+  — D5 gates `#161` specifically. Seven calls, answer all or none.
 - [`title-prefilter-hardcoded-seniority-words.md`](../../../message-queue/needs-human/decisions/title-prefilter-hardcoded-seniority-words.md)
   — needs you to open your overlay search profile; no agent here could read it. If
   `titles.exclude` already covers Principal/Distinguished/Fellow/scientist titles, the
@@ -93,4 +116,4 @@ so nothing is blocked. The ones that actually change what happens next:
   — the lock-identity fix closed the third-writer case; the stale window itself is a
   liveness-versus-safety trade nobody has measured.
 
-The remaining nineteen are lower stakes and each states its own default.
+The remaining twenty are lower stakes and each states its own default.
