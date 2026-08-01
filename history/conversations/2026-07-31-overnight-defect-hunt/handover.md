@@ -48,7 +48,26 @@ remaining counts below are true of this file's own commit and say so where it ma
 - **Every PR in the stack is open and green, none merged.** Merge bottom-up, `#135` first, one at a
   time. Expect `main`'s CI to go red after each merge until a reconciliation row is
   appended — that is the documented cost of stacking here, not a regression, and
-  `skills/github-workflow/SKILL.md` has the recovery.
+  `skills/github-workflow/SKILL.md` has the recovery. **Corrected 2026-08-01: the
+  "expect CI to go red" claim above is wrong — CI does not have to go red at all.**
+  Verified two ways. First, `git log --oneline` on the stack shows every branch tip
+  is a ledger-only `Acknowledge …` commit, one after every content commit. Second,
+  `automation/publish/review_gate.py`'s `WATCHED_PATHSPEC` (`LEDGER_EXCLUDE`)
+  excludes the ledger file from the diff the gate checks, so a merge whose only new
+  content is such a row touches no watched file and the gate exits 0 — the module's
+  own docstring says so under "THE ONE-COMMIT LAG". The actual trap is silent, not
+  red: this repo's GitHub settings (checked via `gh api`) keep `delete_branch_on_merge`
+  `false` and leave squash and rebase merges enabled, so merging bottom-up with
+  `gh pr merge <N> --merge` and then retargeting the next PR with
+  `gh pr edit <N+1> --base main` — never `--squash`, never `--rebase`, never
+  GitHub's "Update branch" button, all three of which rewrite SHAs the ledger rows
+  are keyed to — keeps every step green with nothing to reconcile. Skip the
+  retarget and each PR merges into the *previous* branch instead, never touching
+  `main`, and nothing in the UI flags it. Recipe recorded in
+  `skills/github-workflow/SKILL.md` §2. The stack is now **45 PRs, `#135`–`#179`**
+  (measured via `gh pr list --state open`); this section already avoids stating a
+  fixed PR count for the reason given two bullets up, so that is the only figure
+  refreshed here.
 - **The eval gate is discharged for the job-search PRs below `#163`** — the full canary set
   was run at that head and recorded. **Two PRs still owe a run and say so:** `#161`, which
   needs the behavioural-prep canaries, and `#165`, which changed job-search instruction files
