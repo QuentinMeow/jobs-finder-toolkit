@@ -44,6 +44,10 @@ example config) — substitute the resolved path, never a literal folder at the 
 # skips) and upsert company-search-log.yaml created entries. Never rewrites the log,
 # so deleting an application does not un-skip its posting. --update/--update-job
 # already append as they go; this is the reconciliation backstop.
+# Exits 1 when an application's meta.yaml would not parse: every other application
+# is still written, but no row is DERIVED from a file the tool could not read (the
+# log is append-only, so a wrong row needs a --forget-log tombstone). Fix the file
+# and re-run. --backfill-log below behaves the same way.
 .venv/bin/python skills/application-tracker/scripts/status.py --sync-log
 
 # One-time seed of the append-only skip-log from the retired applications-log.yaml
