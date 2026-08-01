@@ -1,13 +1,15 @@
 # PR Verification blocks are measured off the stack, and nothing compares them to the tree
 
 - **Priority**: P0 (raised from P1 on 2026-08-01 — the defect recurred twice more after this
-  task was filed, once inside the pass written to fix it)
+  task was filed, once inside the pass written to fix it, and twice again after the pass that
+  wrote the rule against it; see "Round three")
 - **Area**: harness
 - **Source**: independent verification of the 25-PR stack #135–#157, 2026-07-31 (report
   written to this session's scratchpad, not tracked — every number it relies on is
   reproduced inline below so this task stands alone). **Extended 2026-08-01** by a second
   verification of #160–#172 — see "Round two" below, which is why the scope of this task
-  changed.
+  changed — and again the same day by a fourth pass over #173–#175, which is "Round three"
+  and is the evidence that the instruction-shaped fix is finished failing.
 - **Claimed-by**: <(set when work starts, before the first change)>
 
 ## Goal
@@ -173,6 +175,66 @@ ignore it.
 it named four below-parent PRs, #163, #164, #165 and #168, but #163 and #164 are *equal* to
 their parents rather than below, and #169 — which is below — was left out.)
 
+### Round three — the rule was written, and did not survive two commits
+
+On 2026-08-01 the third correction pass (#173) wrote the rule *"Every number in a body belongs
+to one commit — name it"* into `skills/github-workflow/SKILL.md` §1. The class recurred in the
+two commits stacked directly on top of it, and in #173's own body. Re-measured 2026-08-01
+across **all 93 commits** in `main..bbaf13bd` (the 41 PR tips, their substantive commits, the
+ten intermediate rebase commits, and the merge-base), `verify_links --require-roots
+--no-overlay` in a config-less worktree with no overlay:
+
+| PR | own commit | published | measured | |
+|---|---|---|---|---|
+| #174 | `5f1ebc98` | `2658 … 1244` | **2668 … 1247** | matches no commit; `1244` is #171/#172's |
+| #175 | `10479ae8` | `2670` | **2668** | matches no commit; commit **was** correctly named |
+
+**The decisive datum is #175.** It obeyed the rule's most-cited bullet — it named the commit
+its figure belongs to — and published a false figure anyway. Naming the SHA made the claim
+checkable; it did not make it true. An instruction can specify the *shape* of a claim. Nothing
+in a body's shape distinguishes a measured number from an unmeasured one.
+
+**The parent comparison is anti-correlated on this round, on the one case it was needed for.**
+The rule offers it as "a free self-check that needs no oracle", and flags a count *equal* to
+the parent's as "the signature of pasting the base's value". At #175 the **true** count (2668)
+is exactly equal to its parent `70e7192e`'s, so the rule would have flagged the correct answer;
+the **false** count (2670) sits +2 above the parent and passes the heuristic cleanly. It does
+fire correctly on #174 (2658 is below its parent `b1f01a75`'s 2664). So the check is worth
+running and worth keeping — but it must be reported as a prompt to re-measure, never as
+evidence either way, and the checker must not treat "above parent" as a pass.
+
+**Two claim classes this round adds, both currently listed as out of scope, both mechanically
+checkable.** They are not timings and not prose behavioural claims — they come straight out of
+`git`:
+
+1. **Diff-size claims.** #173's eval-gate rationale states its `SKILL.md` edit "gained 37 lines
+   (32 non-blank instruction lines)". Measured at `a0365ec..f22b0067`: `--numstat` gives
+   **42 added / 1 removed**, `wc -l` goes 340 → 381 (**+41 net**), and **37** of the added
+   lines are non-blank. `32` corresponds to no natural measure of the edit; the only
+   construction that yields it is non-blank added lines *excluding those that open a bullet* —
+   which drops the five lines carrying the rule itself. This figure decides whether the eval
+   gate MUST run (the trigger is ~20 changed instruction lines), so it is a gate input, not
+   decoration. `git diff --numstat <base>..<head> -- <path>` answers it exactly.
+2. **Staged/changed file counts.** #173's checklist says "(4 staged files, 0 non-markdown)"
+   while its own Verification block says "5 files, all markdown" three paragraphs earlier.
+   `git diff --name-only a0365ec f22b0067` gives **5**. One body, two numbers, no run.
+
+**An implementation trap for the count-only suite mode, measured 2026-08-01 at `5f1ebc98`.**
+`TestLoader().discover(s, top_level_dir=s).countTestCases()` must run **one process per
+suite**. Counting all thirteen suites in a single process reports
+`skills/email-assistant/scripts/tests` as **15** where the suite actually runs **79** — test
+modules of the same basename in earlier-discovered suites are already in `sys.modules`, so
+discovery silently drops them. In separate processes it reports 79, matching the run. A
+checker that batches for speed would publish a false number of its own, which is the entire
+defect this task exists to stop.
+
+**Conclusion: instruction is exhausted; stop trying to word it.** Three passes have now
+written prose against this class — #164's "Repeating the defect being fixed would be a poor
+joke", #173's §1 rule, and #175's own hedge — and the class recurred immediately after each,
+including inside the pass that wrote the rule and inside the hedge written to prevent a fifth
+recurrence. Nothing in this task should be closed by adding a fourth exhortation to
+`SKILL.md`, `CONTRIBUTING.md`, or a template. The remaining fix is the mechanical one below.
+
 ### Where it lives — the PR body is not in the repo at push time
 
 This is the hard part, and it rules out the obvious answer.
@@ -231,7 +293,9 @@ it as its own decision item rather than editing the ledger's contract inside thi
 - [ ] **Suite counts are covered**, via `TestLoader().discover(...).countTestCases()` rather
       than by running the suites (measured 2026-08-01: four suites in 1.5 s, collected total
       equal to the run total in all four). A `Ran N tests` claim that contradicts the
-      collected count for that suite path is a finding.
+      collected count for that suite path is a finding. **One subprocess per suite** — see
+      Round three: batching all thirteen into one process reports `email-assistant` as 15
+      against a real 79. Pinned by a test that counts two suites sharing a module basename.
 - [ ] **The whole body is scanned, not only fenced code blocks.** A count asserted in prose
       ("this PR itself adds 14 references to the tree") is checked exactly like one inside a
       transcript. Pinned by a test built from #164's real prose line.
@@ -241,8 +305,17 @@ it as its own decision item rather than editing the ledger's contract inside thi
       #164's real published line (`2566` + `1201`, a pair no commit produces).
 - [ ] **A parent comparison runs with no oracle**: for each parseable count, compare against
       the same count on the merge-base of the branch, and flag any claimed value *below* the
-      parent's as impossible on an additive stack. This must work when the gate cannot be run
-      at all, and it must name the parent SHA in the finding.
+      parent's as worth a re-measure on an additive stack. This must work when the gate cannot
+      be run at all, and it must name the parent SHA in the finding. **It is a prompt, never a
+      verdict, and "above parent" is never a pass** — Round three measured it firing on the
+      correct answer (#175's true 2668 equals its parent's) while the fabricated 2670 sailed
+      through. Pinned by a test built from #175's real pair.
+- [ ] **Diff-size and changed-file-count claims are covered**, from `git diff --numstat` and
+      `--name-only` against the branch's merge-base. Round three: #173's eval-gate rationale
+      claims "gained 37 lines (32 non-blank)" for a `+42/−1`, net `+41` edit whose non-blank
+      added count is 37, and its checklist says "4 staged files" where its own Verification
+      block and `git` both say 5. The diff size decides whether the eval gate MUST run, so it
+      is a gate input. Pinned by tests built from both real lines.
 - [ ] **Tracked records are covered too.** A `verification.md` under `tasks/` carrying a gate
       count is checkable by the same code path — either `check_pr_body.py <path>` accepts it
       or the reconciler grows the check. Decide which, and record the choice in the task's
@@ -259,11 +332,18 @@ it as its own decision item rather than editing the ledger's contract inside thi
       `check_pr_body.py` invocation and next to the "Every number in a body belongs to one
       commit" rule added there on 2026-08-01; `CONTRIBUTING.md` unchanged unless the CI
       backstop lands with it.
-- [ ] The scope limit is written down where an author will read it: timings, diff sizes and
-      prose *behavioural* claims are NOT covered. (Test counts were moved out of this list on
-      2026-08-01 — they are covered.)
+- [ ] The scope limit is written down where an author will read it: timings and prose
+      *behavioural* claims are NOT covered. (Test counts were moved out of this list on
+      2026-08-01 — they are covered. Diff sizes were moved out on 2026-08-01 by Round three —
+      they come from `git` and are covered.)
+- [ ] **Nothing in this task is closed by new wording.** Round three measured three separate
+      written warnings failing, one of them inside the pass that wrote it. A `SKILL.md` /
+      `CONTRIBUTING.md` / template edit may accompany the checker but never substitutes for it,
+      and "the rule is now clearer" is not a Definition-of-done item.
 - [ ] Decided and recorded, either way: whether the CI backstop (`gh pr view` + `edited`
       trigger) is in this task or a follow-up.
-- [ ] Re-checked against the round-two table above: the finished checker flags all nine false
-      `verify_links` counts, #161's reconcile count, and all four stale suite counts. A fix
-      that does not catch the round it was written for is not done.
+- [ ] Re-checked against the round-two **and round-three** tables above: the finished checker
+      flags all nine false `verify_links` counts, #161's reconcile count, all four stale suite
+      counts, #174's `2658 … 1244`, #175's `2670` at a correctly-named commit, and #173's two
+      diff-size/file-count claims. A fix that does not catch the rounds it was written for is
+      not done.
