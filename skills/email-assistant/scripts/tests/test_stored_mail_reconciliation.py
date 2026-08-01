@@ -131,6 +131,52 @@ class StoredMailCategorizationTests(unittest.TestCase):
                              for item in propose_reconciliation(message, link, APPS)))
 
 
+class StoredMailNoiseTests(unittest.TestCase):
+    """Boilerplate every US recruiting mail carries must not manufacture a TODO."""
+
+    def _needs_reply(self, body: str) -> bool:
+        result = reconcile_messages(
+            [incoming("acct-01/eeo", body, subject="Application update")],
+            APPS, DOMAINS)
+        return bool(result["projections"]["needs_reply"])
+
+    def test_equal_opportunity_footer_does_not_make_a_status_update_actionable(self):
+        status = ("Application update: your application is still under consideration. "
+                  "No action is needed from you.")
+        self.assertFalse(self._needs_reply(status))
+        self.assertFalse(self._needs_reply(
+            status + " Example Corp is an equal opportunity employer."))
+        self.assertFalse(self._needs_reply(
+            status + " We are an Equal Employment Opportunity/Affirmative Action "
+                     "employer."))
+
+    def test_a_real_opportunity_pitch_still_reads_as_outreach(self):
+        message = normalize_stored_message(incoming(
+            "acct-01/outreach",
+            "I wanted to share an opportunity on our platform team — would you be "
+            "open to a chat?"))
+        self.assertIn("inbound_recruiter_outreach",
+                      categorize_message(message)["categories"])
+
+
+class StoredMailTimestampTests(unittest.TestCase):
+    def test_a_draft_uses_its_stored_modified_at_rather_than_sorting_first(self):
+        # store_sync writes Graph's lastModifiedDateTime under the key `modified_at`;
+        # drafts are the one folder with neither received_at nor sent_at. Missing
+        # that key leaves timestamp="" — which sorts BEFORE every dated message, so
+        # a draft written today opens the application's timeline.
+        draft = normalize_stored_message({
+            "message_key": "acct-01/draft",
+            "folder": "drafts",
+            "direction": "draft",
+            "received_at": None,
+            "sent_at": None,
+            "modified_at": "2026-07-30T18:00:00Z",
+            "body_text": "Draft reply.",
+        })
+        self.assertEqual(draft["timestamp"], "2026-07-30T18:00:00Z")
+
+
 class StoredMailLinkingTests(unittest.TestCase):
     def test_company_gated_structured_tokens_are_exact_but_bare_numbers_are_not(self):
         exact = normalize_stored_message(incoming(

@@ -154,6 +154,12 @@ FETCH_AFFECTING_FLAGS = (
     "--no-aggregators",
     "--no-companies", "--jobspy", "--no-jobspy",
 )
+# Flag -> argparse dest. The guard tests the parsed VALUE against the parser's own
+# default, so an abbreviation (`--company-tag`) or an `=`-joined form is caught by
+# construction rather than by string matching what the user typed.
+_FETCH_AFFECTING_DESTS = {
+    flag: flag.lstrip("-").replace("-", "_") for flag in FETCH_AFFECTING_FLAGS
+}
 
 
 def _applications_jsonl() -> Path:
@@ -306,13 +312,30 @@ def run_tasks(tasks, workers: int = 12):
 
 
 def dedupe(postings):
-    """Keep the highest-scoring row for each canonical company/title pair."""
-    best: dict[tuple[str, str], object] = {}
-    order: list[tuple[str, str]] = []
+    """Keep the highest-scoring row per (company, title, LOCATION).
+
+    What this collapses is the same opening reached from two sources — which is
+    why the key cannot be the URL: the two sources are exactly the case where the
+    URLs differ. But ``(company, title)`` alone cannot tell that apart from two
+    genuinely different openings, and big-tech Workday / Amazon boards routinely
+    publish one title as many per-location requisitions. Every one but the first
+    vanished from the discoveries table, counted nowhere.
+
+    Location is the cheapest field that separates those two cases. The residual
+    cost is the reverse direction: two sources that spell the same city
+    differently ("Seattle, WA" vs "Seattle, Washington, United States") now leave
+    two rows. A visible duplicate is the better failure — the per-employer cap in
+    ``select_diverse`` already bounds it, and the alternative silently deletes a
+    real requisition.
+    """
+    best: dict[tuple[str, str, str], object] = {}
+    order: list[tuple[str, str, str]] = []
     for p in postings:
-        key = (p.company.casefold().strip(), p.title.casefold().strip())
-        if not key[1]:
+        title = p.title.casefold().strip()
+        if not title:
             continue
+        key = (p.company.casefold().strip(), title,
+               (p.location or "").casefold().strip())
         if key not in best:
             best[key] = p
             order.append(key)
@@ -596,7 +619,8 @@ def render_markdown(kept, profile, meta) -> str:
              f"- Scanned {meta['n_raw']} postings \u2192 {len(kept)} matches "
              f"(skipped {meta.get('n_blacklisted', 0)} blacklisted + "
              f"{meta.get('n_considered', 0)} already-considered + "
-             f"{meta.get('n_recently_searched', 0)} recently-searched; "
+             f"{meta.get('n_recently_searched', 0)} recently-searched + "
+             f"{meta.get('n_low_quality', 0)} unfilled-template; "
              f"{meta.get('n_review', 0)} preserved for filter review)",
              ""]
     if meta["errors"]:
@@ -818,6 +842,10 @@ def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
         "n_blacklisted": counts["n_blacklisted"],
         "n_considered": counts["n_considered"],
         "n_recently_searched": counts["n_recently_searched"],
+        # Gate 0 is the FIRST hard drop in the pipeline and was the only one with
+        # no visibility anywhere, so a false positive in assess_posting_quality
+        # removed a posting leaving no trace in the meta, the markdown, or stderr.
+        "n_low_quality": counts.get("n_low_quality", 0),
         "n_review": counts.get("n_review", 0),
         "n_occupation_ambiguous_overflow": counts.get(
             "n_occupation_ambiguous_overflow", 0),
@@ -1162,8 +1190,13 @@ def main() -> int:
                 "Freshness is the product — run a fresh search, or pass --allow-stale "
                 "to refilter this stale cache anyway.")
 
-        provided = {a.split("=", 1)[0] for a in sys.argv[1:] if a.startswith("--")}
-        bad = [f for f in FETCH_AFFECTING_FLAGS if f in provided]
+        # Compare the PARSED namespace against the parser's own defaults, never
+        # sys.argv text: argparse accepts any unambiguous prefix, so `--company-tag`
+        # sets args.company_tags while a textual guard sees a flag it does not
+        # know. The refilter branch never reads those values, so the run would
+        # return the whole snapshot as though the selector had been applied.
+        bad = [flag for flag, dest in _FETCH_AFFECTING_DESTS.items()
+               if getattr(args, dest, None) != ap.get_default(dest)]
         if bad:
             sys.exit(
                 "Fresh fetch required: these flags change what is FETCHED, which a "
@@ -1330,8 +1363,11 @@ def main() -> int:
         )
 
     if (counts["n_blacklisted"] or counts["n_considered"]
-            or counts["n_recently_searched"] or counts["n_non_ai"]):
+            or counts["n_recently_searched"] or counts["n_non_ai"]
+            or counts.get("n_low_quality")):
         extra = f" + {counts['n_non_ai']} non-AI-native" if counts["n_non_ai"] else ""
+        if counts.get("n_low_quality"):
+            extra += f" + {counts['n_low_quality']} unfilled-template"
         print(f"Skipped {counts['n_blacklisted']} blacklisted + "
               f"{counts['n_considered']} already-considered + "
               f"{counts['n_recently_searched']} recently-searched{extra} postings.",

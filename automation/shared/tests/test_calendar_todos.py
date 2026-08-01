@@ -380,6 +380,51 @@ class RescheduleTests(unittest.TestCase):
         },))
 
 
+class ScheduledOrderTests(unittest.TestCase):
+    """`## Interview schedule` is the owner's agenda: its top row is the next one."""
+
+    def _scheduled(self, suffix, starts_at):
+        return _fields(id=f"cal-examplecorp-{suffix}", state="scheduled",
+                       starts_at=starts_at, timezone="America/Los_Angeles")
+
+    def _calendar(self, *fields_list):
+        block = "".join("".join(render_entry(f, checked=False, text=f["id"]))
+                        for f in fields_list)
+        return CALENDAR_TEMPLATE.replace(
+            f"{SECTION_SCHEDULED}\n", f"{SECTION_SCHEDULED}\n\n{block}", 1)
+
+    def _order(self, text):
+        doc = parse_calendar(text)
+        self.assertEqual(doc.errors, [])
+        scheduled = [e for e in doc.entries.values()
+                     if e.section == SECTION_SCHEDULED]
+        return [e.starts_at for e in sorted(scheduled, key=lambda e: e.start_line)]
+
+    def test_a_middle_interview_lands_between_the_two_around_it(self):
+        base = self._calendar(self._scheduled("a-01", "2026-08-10T10:00:00"),
+                              self._scheduled("c-01", "2026-08-20T10:00:00"))
+        middle = self._scheduled("b-01", "2026-08-15T10:00:00")
+        plan = plan_calendar_update(base.encode(), {middle["id"]: middle},
+                                    create_missing=True)
+        self.assertEqual(plan.errors, ())
+        self.assertEqual(
+            self._order(plan.output_bytes.decode()),
+            ["2026-08-10T10:00:00", "2026-08-15T10:00:00", "2026-08-20T10:00:00"])
+
+    def test_the_earliest_and_the_latest_still_land_at_the_ends(self):
+        base = self._calendar(self._scheduled("a-01", "2026-08-10T10:00:00"),
+                              self._scheduled("c-01", "2026-08-20T10:00:00"))
+        for suffix, when, expected_index in (("b-01", "2026-08-01T10:00:00", 0),
+                                             ("d-01", "2026-08-25T10:00:00", 2)):
+            with self.subTest(when=when):
+                new = self._scheduled(suffix, when)
+                plan = plan_calendar_update(base.encode(), {new["id"]: new},
+                                            create_missing=True)
+                self.assertEqual(plan.errors, ())
+                order = self._order(plan.output_bytes.decode())
+                self.assertEqual(order.index(when), expected_index)
+
+
 class IdTests(unittest.TestCase):
     def test_generate_entry_id_is_stable_and_collision_free(self):
         slug = "example-corp-senior-software-engineer-20260416"

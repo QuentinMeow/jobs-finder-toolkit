@@ -323,6 +323,48 @@ variants:
       accepted: true
       level: senior
 
+  # An ML/applied/research SCIENTIST title whose trailing segment names the
+  # application VERTICAL, not an occupation. The lexicon's hard drop is gated on
+  # "no engineering role noun", and `scientist` is not one, so these three were
+  # hard-dropped by `clinical` / `marketing` / `legal` naming the product area.
+  - id: title-ml-scientist-clinical-vertical-not-dropped
+    domain: title
+    input:
+      title: Machine Learning Scientist, Clinical Imaging
+      profile:
+        titles:
+          include: [machine learning, ml, applied scientist, research scientist]
+          exclude: [manager, director]
+    expect:
+      decision: review
+      accepted: true
+
+  - id: title-applied-scientist-marketing-vertical-accepted
+    domain: title
+    input:
+      title: Applied Scientist, Marketing Science
+      profile:
+        titles:
+          include: [machine learning, ml, applied scientist, research scientist]
+          exclude: [manager, director]
+    expect:
+      decision: match
+      accepted: true
+
+  # The guard is scoped to research occupation heads: a coordinator in the same
+  # vertical is still a definite non-technical occupation and a hard drop.
+  - id: title-clinical-coordinator-still-rejected
+    domain: title
+    input:
+      title: Clinical Research Coordinator
+      profile:
+        titles:
+          include: [machine learning, ml, applied scientist, research scientist]
+          exclude: [manager, director]
+    expect:
+      decision: no_match
+      accepted: false
+
   - id: title-engineering-leader-review
     domain: title
     input:

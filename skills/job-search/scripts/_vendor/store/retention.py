@@ -277,6 +277,54 @@ def _entity_posted_at(entity: dict) -> datetime | None:
     return parse_dt(facts.get("posted_at") or entity.get("posted_at"))
 
 
+@dataclass(frozen=True)
+class DamagedEntity:
+    """A derived entity YAML that is present on disk but could not be parsed.
+
+    The same shape as :class:`~store.manifest.DamagedManifest`, one layer down.
+    :func:`build_entity_index` is where a blob learns which entities it feeds —
+    and therefore where its keep-class veto and its posting date come from — so an
+    unreadable ``posting.yaml`` makes its blob look like it feeds nothing. Damage
+    suspends the sweep; it is never treated as an absent entity.
+    """
+
+    path: Path
+    error: str
+
+
+def _load_entity_yaml(path: Path) -> tuple[dict | None, str | None]:
+    """Read one derived YAML: ``(data, None)``, ``(None, error)``, or ``(None, None)``.
+
+    ``(None, None)`` means the file vanished between the glob and the read (an
+    rsync mid-scan) or holds something that is simply not an entity. Anything that
+    fails while the file IS on disk is DAMAGE. ``yaml.YAMLError`` is NOT a
+    ``ValueError``, so a plain ``except (OSError, ValueError)`` here would cover
+    the read and never the parse — the one realistic failure mode.
+    """
+    try:
+        data = serialization.loads_yaml(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        if isinstance(exc, FileNotFoundError) and not path.exists():
+            return None, None  # truly absent now — not damage
+        return None, f"{type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 — yaml.YAMLError and friends
+        return None, f"{type(exc).__name__}: {exc}"
+    return (data, None) if isinstance(data, dict) else (None, None)
+
+
+def find_damaged_entities(layout: DomainLayout) -> list[DamagedEntity]:
+    """Every present-but-unparseable entity YAML under ``derived/``."""
+    out: list[DamagedEntity] = []
+    derived = layout.derived
+    if not derived.is_dir():
+        return out
+    for yaml_path in sorted(derived.rglob("*.yaml")):
+        _data, error = _load_entity_yaml(yaml_path)
+        if error is not None:
+            out.append(DamagedEntity(path=yaml_path, error=error))
+    return out
+
+
 def build_entity_index(layout: DomainLayout) -> dict[str, EntityFacts]:
     """Scan ``derived/`` for materialized entities (a YAML with ``key`` + provenance).
 
@@ -284,17 +332,19 @@ def build_entity_index(layout: DomainLayout) -> dict[str, EntityFacts]:
     and a ``provenance.fetch_ids`` list is indexed (the jobs builder writes
     ``posting.yaml``). Used to map a blob to the entities it feeds and to their
     posting dates.
+
+    An unreadable file is skipped here so callers that only READ (the gardener's
+    store report, ``store_show``) still work; every caller that DELETES on the
+    strength of "this blob feeds nothing" must consult :func:`find_damaged_entities`
+    first — :func:`plan_sweep` does.
     """
     out: dict[str, EntityFacts] = {}
     derived = layout.derived
     if not derived.is_dir():
         return out
     for yaml_path in sorted(derived.rglob("*.yaml")):
-        try:
-            data = serialization.loads_yaml(yaml_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if not isinstance(data, dict):
+        data, _error = _load_entity_yaml(yaml_path)
+        if data is None:
             continue
         key = data.get("key")
         prov = data.get("provenance")
@@ -386,10 +436,19 @@ class SweepPlan:
     # un-vetoed. A blocked sweep costs disk that is not reclaimed; the alternative
     # costs a payload nothing regenerates.
     damaged: list[DamagedManifest] = field(default_factory=list)
+    # Present-but-unparseable derived entity YAML. Suspends the sweep for the same
+    # reason: an entity that cannot be read cannot veto, cannot date a blob, and
+    # cannot be frozen before that blob is deleted.
+    damaged_entities: list[DamagedEntity] = field(default_factory=list)
     # The derived entity index at plan time. Derived cannot change between plan and
     # execute (the builder lock is held), so execute reuses this for freezing rather
     # than re-walking derived/ — only manifests (lock-free capture) are re-read.
     entities: dict[str, EntityFacts] = field(default_factory=dict)
+
+    @property
+    def is_suspended(self) -> bool:
+        """True while any part of the store's reference map is unreadable."""
+        return bool(self.damaged or self.damaged_entities)
 
     @property
     def disk_bytes(self) -> int:
@@ -473,9 +532,10 @@ def plan_sweep(layout: DomainLayout, blobstore: BlobStore,
                config: RetentionConfig, *, now: datetime | None = None) -> SweepPlan:
     """Compute the full sweep plan (pure read — mutates nothing).
 
-    A damaged (present-but-unreadable) manifest suspends the plan: no candidates,
-    no orphans. Debris and pruned-pending are still REPORTED so the dry-run stays
-    informative, but :func:`execute_sweep` deletes nothing while damage exists.
+    A damaged (present-but-unreadable) manifest OR derived entity YAML suspends the
+    plan: no candidates, no orphans. Debris and pruned-pending are still REPORTED so
+    the dry-run stays informative, but :func:`execute_sweep` deletes nothing while
+    damage exists.
     """
     now = now or datetime.now(timezone.utc)
     plan = SweepPlan(layout=layout, config=config, now=now)
@@ -487,9 +547,13 @@ def plan_sweep(layout: DomainLayout, blobstore: BlobStore,
     plan.orphans = list(audit["orphans"])  # already [] when damaged
     plan.debris = find_debris_dirs(layout, now=now)
 
+    plan.damaged_entities = find_damaged_entities(layout)
     entities = build_entity_index(layout)
     plan.entities = entities  # reused by execute_sweep (derived is lock-frozen)
-    if plan.damaged:
+    if plan.is_suspended:
+        # An orphan list IS a delete list, so with any part of the store's map
+        # unreadable, empty is the only honest value.
+        plan.orphans = []
         return plan  # suspended: candidate + orphan computation is not trustworthy
     fetch_to_entities = _fetch_to_entities(entities)
 
@@ -615,8 +679,9 @@ def execute_sweep(plan: SweepPlan, blobstore: BlobStore, *,
     * an ORPHAN whose manifest committed since the plan is skipped and counted in
       ``orphans_re_vetoed`` (capture writes the blob BEFORE its manifest, so an
       in-flight fetch presents to the planner as exactly an orphan);
-    * ANY damaged manifest suspends the whole sweep — the reference set is
-      incomplete, so nothing here can be proven safe to delete.
+    * ANY damaged manifest — or damaged derived entity YAML — suspends the whole
+      sweep: the reference set is incomplete, so nothing here can be proven safe to
+      delete, and an entity that cannot be read cannot be frozen either.
 
     An orphan is tombstoned before it is deleted, like every other delete, so a
     blob this GC removed never reports as ``not-synced-here`` (which tells the owner
@@ -629,6 +694,9 @@ def execute_sweep(plan: SweepPlan, blobstore: BlobStore, *,
     # a human between the two, and a manifest can be half-rsynced in that window.
     damaged = {d.path: d for d in plan.damaged}
     damaged.update({d.path: d for d in find_damaged_manifests(layout)})
+    # Derived is lock-frozen (the builder lock is held across plan+execute), so the
+    # plan's entity damage is still current — no second walk of derived/ needed.
+    damaged.update({d.path: d for d in plan.damaged_entities})
     if damaged:
         result.blocked_by_damaged = len(damaged)
         return result  # nothing frozen, nothing tombstoned, nothing deleted

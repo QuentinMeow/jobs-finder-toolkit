@@ -300,6 +300,24 @@ class RefilterFetchFlagRejectionTests(unittest.TestCase):
                 self.assertIn("Fresh fetch required", code)
                 self.assertIn(flag[0], code)
 
+    def test_an_abbreviated_fetch_flag_is_rejected_too(self):
+        # argparse accepts any unambiguous PREFIX, so a guard that matches raw
+        # sys.argv text disagrees with the namespace it is protecting. The
+        # refilter branch never consults args.company_tags / args.no_companies,
+        # so the run silently returns the WHOLE snapshot as though the selector
+        # had been applied.
+        for flag, canonical in ((["--company-tag", "ai-lab"], "--company-tags"),
+                                (["--no-compan"], "--no-companies"),
+                                (["--company-batch", "b1"], "--company-batches")):
+            with self.subTest(flag=flag[0]), TemporaryDirectory() as tmp:
+                snap_path = self._snapshot(tmp)
+                code, _out, _err = _run_main([
+                    "--profile", "example", "--cache-dir", tmp,
+                    "--refilter", str(snap_path), *flag])
+                self.assertIsInstance(code, str)
+                self.assertIn("Fresh fetch required", code)
+                self.assertIn(canonical, code)
+
     def test_filter_flags_are_allowed(self):
         # Date/top-k/all-matches/visa are FILTER flags: refilter accepts them.
         with TemporaryDirectory() as tmp:
@@ -343,6 +361,42 @@ class RefilterFetchFlagRejectionTests(unittest.TestCase):
             self.assertIsInstance(code, str)
             self.assertIn("Fresh fetch required", code)
             self.assertIn("someone-else", code)
+
+
+class SnapshotPointerRobustnessTests(unittest.TestCase):
+    """One torn pointer must not take out `--refilter latest` for the profile."""
+
+    def _write(self, tmp, stage, minutes_ago):
+        fetched_at = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        return snapshot.write_snapshot(
+            Path(tmp), profile="example", stage=stage, fetched_at=fetched_at,
+            source_selection={"n_companies": 0, "aggregators": []},
+            postings=_synthetic_postings(fetched_at), errors=[])
+
+    def test_a_truncated_pointer_is_skipped_not_fatal(self):
+        with TemporaryDirectory() as tmp:
+            _snap1, good = self._write(tmp, 1, 10)
+            _snap2, torn = self._write(tmp, 2, 5)
+            torn.write_text(torn.read_text()[:200])   # crash / full disk mid-copy
+            resolved = snapshot.resolve_snapshot_path(Path(tmp), "example", "latest")
+            self.assertEqual(resolved, good)
+
+    def test_every_pointer_unreadable_is_a_clear_error(self):
+        with TemporaryDirectory() as tmp:
+            _snap, torn = self._write(tmp, 1, 5)
+            torn.write_text("{")
+            with self.assertRaises(FileNotFoundError) as ctx:
+                snapshot.resolve_snapshot_path(Path(tmp), "example", "latest")
+            self.assertIn("unreadable", str(ctx.exception))
+
+    def test_a_leftover_write_temp_is_never_resolved_as_a_pointer(self):
+        # The atomic write stages `<name>.tmp-*`; a crash between staging and
+        # os.replace leaves one behind, and it must not join the pointer glob.
+        with TemporaryDirectory() as tmp:
+            _snap, good = self._write(tmp, 1, 10)
+            (Path(tmp) / "example-stage2-latest.json.tmp-abc").write_text("{")
+            self.assertEqual(
+                snapshot.resolve_snapshot_path(Path(tmp), "example", "latest"), good)
 
 
 if __name__ == "__main__":

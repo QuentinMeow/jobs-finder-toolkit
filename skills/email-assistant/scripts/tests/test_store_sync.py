@@ -270,6 +270,53 @@ class EmailStoreSyncTests(unittest.TestCase):
         self.assertEqual(expired.mode, "full")
         self.assertTrue(expired.token_expired)
 
+    def _silently_drop(self, message_id: str, folder: str = "inbox") -> None:
+        """Delete provider-side with NO delta event — only a full snapshot sees it."""
+        self.mailbox.folders[folder] = [
+            item for item in self.mailbox.folders[folder] if item["id"] != message_id
+        ]
+        self.mailbox.by_id.pop(message_id, None)
+
+    def test_a_delta_cycle_does_not_disable_the_full_sync_inventory_diff(self):
+        # The inventory is what the full-mode absence diff compares against, and it
+        # is the only mechanism that tombstones a provider-side deletion. A delta
+        # reports only what CHANGED, so storing it as the inventory truncates the
+        # set — and `sync-store --full`, the documented repair path, then repairs
+        # nothing.
+        for index in (1, 2, 3):
+            self.mailbox.seed(at=self.recent, message_id=f"inbox-{index}")
+        syncer = self._syncer()
+        syncer.sync(days=None, force_full=True)
+        self.mailbox.seed(at=self.recent, message_id="inbox-4")
+        self.assertEqual(syncer.sync(days=None).mode, "delta")
+
+        for message_id in ("inbox-1", "inbox-3"):
+            self._silently_drop(message_id)
+        syncer.sync(days=None, force_full=True)
+
+        state = json.loads((self.root / "email/state/acct-01/sync.json").read_text())
+        tombstoned = sorted(record["provider_message_id"]
+                            for record in state["messages"].values()
+                            if record["tombstoned"])
+        self.assertEqual(tombstoned, ["inbox-1", "inbox-3"])
+        in_scope = sorted(record["provider_message_id"]
+                          for record in state["messages"].values()
+                          if record["in_scope"])
+        self.assertEqual(in_scope, ["inbox-2", "inbox-4"])
+
+    def test_a_delta_move_leaves_the_source_folder_inventory(self):
+        # The merge must not turn the inventory into an append-only list: a message
+        # that moved out in delta mode has to leave its old folder, or the next full
+        # sync compares against a folder set that never shrinks.
+        message_id = self.mailbox.seed(at=self.recent, message_id="inbox-1")
+        syncer = self._syncer()
+        syncer.sync(days=None, force_full=True)
+        self.mailbox.move(message_id, source="inbox", destination="deleteditems")
+        self.assertEqual(syncer.sync(days=None).mode, "delta")
+        state = json.loads((self.root / "email/state/acct-01/sync.json").read_text())
+        self.assertEqual(state["folders"]["inbox"]["inventory"], [])
+        self.assertEqual(len(state["folders"]["deleteditems"]["inventory"]), 1)
+
     def test_out_of_scope_move_is_retained_not_tombstoned_and_staleness_blocks_review(self):
         message_id = self.mailbox.seed(at=self.recent)
         syncer = self._syncer()

@@ -223,7 +223,17 @@ def normalize(text: str | None) -> str:
 
 
 def term_matches(term: str, normalized_text: str) -> bool:
-    """Word-boundary match for plain tokens, substring for multiword/symbol terms."""
+    """Word-boundary match for plain tokens, substring for multiword/symbol terms.
+
+    ACCEPTED, not fixed: a short profile keyword that is also an ordinary English
+    word matches ordinary prose — ``go`` scores on "go-to-market" / "go live" the
+    same as on the language. Nothing is dropped by it (keywords only rank), and
+    expressing "Go, the language" needs a new per-keyword profile field whose
+    review surface costs more than a +4 nudge on one row's score. Tracked in
+    ``tasks/0_backlog/2026-07-31-ambiguous-short-keywords-rank-on-english-prose``.
+    ``\\b`` already handles the cases that matter: ``java`` does not match
+    *javascript*, and ``ml``/``ai``/``api`` are fine.
+    """
     term = term.lower().strip()
     if not term:
         return False

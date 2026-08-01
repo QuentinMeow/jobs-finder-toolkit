@@ -14,8 +14,8 @@ the description for light JSON output; snapshots must not, or scoring would drif
 from __future__ import annotations
 
 import json
+import os
 import re
-import shutil
 from dataclasses import fields
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -67,6 +67,22 @@ def _stamp(fetched_at: datetime) -> str:
     return fetched_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    """Write via a same-directory temp + ``os.replace`` (never a partial file).
+
+    A plain ``write_text``/``shutil.copyfile`` truncates the destination first, so
+    an interrupted write (full disk, SIGKILL) leaves a torn pointer where a whole
+    previous one was.
+    """
+    tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}-{os.urandom(4).hex()}")
+    try:
+        tmp.write_text(text)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
 def write_snapshot(
     cache_dir: Path,
     *,
@@ -96,10 +112,11 @@ def write_snapshot(
         "n_postings": len(postings),
         "postings": [posting_to_dict(p) for p in postings],
     }
+    body = json.dumps(payload, indent=2)
     snap_path = cache_dir / f"{label}-stage{stage}-{_stamp(fetched_at)}.json"
-    snap_path.write_text(json.dumps(payload, indent=2))
+    _atomic_write(snap_path, body)
     latest_path = cache_dir / f"{label}-stage{stage}-latest.json"
-    shutil.copyfile(snap_path, latest_path)
+    _atomic_write(latest_path, body)
     return snap_path, latest_path
 
 
@@ -120,7 +137,22 @@ def resolve_snapshot_path(cache_dir: Path, profile: str, ref: str) -> Path:
                 f"No snapshot found for profile '{profile}' in {cache_dir}. "
                 "Run a fresh search first (a snapshot is written on every fetch)."
             )
-        return max(pointers, key=lambda p: load_snapshot(p).get("fetched_at") or "")
+        # Every pointer is loaded just to compare timestamps, so one unreadable
+        # file must not take out a profile whose other pointers are fine. The
+        # whole cache is disposable gitignored scratch: skip what will not parse,
+        # and say so only when nothing is left.
+        stamps: dict[Path, str] = {}
+        for pointer in pointers:
+            try:
+                stamps[pointer] = load_snapshot(pointer).get("fetched_at") or ""
+            except (OSError, ValueError):
+                continue
+        if not stamps:
+            raise FileNotFoundError(
+                f"Every snapshot pointer for profile '{profile}' in {cache_dir} is "
+                "unreadable (corrupt or truncated). Run a fresh search."
+            )
+        return max(stamps, key=lambda p: stamps[p])
     candidate = Path(ref)
     if candidate.exists():
         return candidate

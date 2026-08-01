@@ -236,6 +236,16 @@ def _validate_domain(domain_root: Path, report: StoreReport) -> None:
             f"it is NOT absent; restore or re-sync it (the retention GC stays "
             f"suspended while it is unreadable)")
 
+    # Same rule one layer down: a derived entity YAML that will not parse is where
+    # a blob's keep-class veto and posting date live, so it is an error too.
+    from .retention import find_damaged_entities
+
+    for damaged in find_damaged_entities(layout):
+        report.errors.append(
+            f"{damaged.path}: derived entity is present but UNPARSEABLE "
+            f"({damaged.error}) — restore/re-sync it or rebuild derived/ (the "
+            f"retention GC stays suspended while it is unparseable)")
+
     for path, env in iter_manifests(layout):
         schema_name = "group" if is_group_manifest(env) else "manifest"
         for err in validate(env, load_schema(schema_name), path.name):

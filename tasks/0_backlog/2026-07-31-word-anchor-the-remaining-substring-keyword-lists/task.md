@@ -21,15 +21,28 @@ implementation; this task applies the same shape to the lists it did not own.
 Each of these is a bare `in` / `rfind` / `str.replace` over a phrase list, and
 each was demonstrated live by the audit:
 
-| File | Symptom |
-|------|---------|
-| `automation/shared/job_metadata.py:454` (`_TOTAL_TERMS`, used by `_compensation_range`) | `"ote"` matches inside "rem**ote**", so a base-salary band next to the word "remote" is dropped or filed as total comp |
-| `automation/shared/mail/reconciliation.py:337` (`_contains`) | `"confirmed"` matches inside "un**confirmed**" — an explicitly unconfirmed hold becomes a tracker-ready confirmed interview |
-| `automation/shared/mail/reconciliation.py:445` | bare `"opportunity"` matches the EEO footer, so every no-op status email becomes a reply TODO |
-| `skills/email-assistant/scripts/application_context.py:191` | a company name inside a longer word scores +40 (threshold 20) — "**Meta**data", "Drop**box**" |
-| `skills/job-search/scripts/sources.py:285` (`_title_prefilter`) | `"intern"` matches inside "**Intern**al", dropping titles the real title gate would keep |
-| `skills/job-search/scripts/scoring.py:673` (`_norm_company`) | substring replace, so the sponsor boost never fires for a legal name |
-| `skills/job-search/scripts/common.py:169` | the two-letter keyword `"go"` matches "**go**-to-market" / "**go** live" |
+| File | Symptom | Status |
+|------|---------|--------|
+| `automation/shared/job_metadata.py:454` (`_TOTAL_TERMS`, used by `_compensation_range`) | `"ote"` matches inside "rem**ote**", so a base-salary band next to the word "remote" is dropped or filed as total comp | OPEN |
+| `automation/shared/mail/reconciliation.py:337` (`_contains`) | `"confirmed"` matches inside "un**confirmed**" — an explicitly unconfirmed hold becomes a tracker-ready confirmed interview | OPEN |
+| `automation/shared/mail/reconciliation.py:445` | bare `"opportunity"` matches the EEO footer, so every no-op status email becomes a reply TODO | DONE 2026-07-31 |
+| `skills/email-assistant/scripts/application_context.py:191` | a company name inside a longer word scores +40 (threshold 20) — "**Meta**data", "Drop**box**" | OPEN |
+| `skills/job-search/scripts/sources.py:285` (`_title_prefilter`) | `"intern"` matches inside "**Intern**al", dropping titles the real title gate would keep | OPEN |
+| `skills/job-search/scripts/scoring.py:673` (`_norm_company`) | substring replace, so the sponsor boost never fires for a legal name | DONE 2026-07-31 |
+| `skills/job-search/scripts/common.py:169` | the two-letter keyword `"go"` matches "**go**-to-market" / "**go** live" | ACCEPTED — split to `tasks/0_backlog/2026-07-31-ambiguous-short-keywords-rank-on-english-prose` |
+
+**2026-07-31 update (audit-tail branch).** Three rows are settled. The
+`"opportunity"` row is fixed by subtracting the equal-opportunity legal footer
+before that one cue is tested (a real "I have an opportunity for you" still
+counts); the `_norm_company` row is fixed by delegating to
+`registry.comparable_base`, which already strips trailing legal suffixes as whole
+tokens; the `go` row is ACCEPTED with the reason recorded in `common.term_matches`
+and its own backlog item. The other four were **re-verified against the current
+tree and still reproduce** — `extract_salary_range` still returns `None` when the
+word "remote" sits between "base salary" and the figure, an UNCONFIRMED hold still
+classifies `schedule_confirmed`, `find_application_matches` still adds +40 for
+`"Box"` inside "Drop**box**", and `_title_prefilter` still drops
+"Software Engineer, Internal Developer Platform". They stay this task's scope.
 
 A fourth instance is already recorded separately in
 `memory/known-issues/check-py-never-skill-hyphen-substring-false-positive.md`

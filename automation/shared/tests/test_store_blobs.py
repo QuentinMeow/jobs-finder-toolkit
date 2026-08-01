@@ -71,6 +71,19 @@ class VerifyOnReadTests(unittest.TestCase):
                 blobs.read(ref.sha256, "txt")
             self.assertEqual(blobs.state(ref.sha256, "txt"), _blobs.CORRUPT)
 
+    def test_damaged_frame_raises_blob_corrupt_not_a_codec_error(self):
+        # A truncated / bit-rotted zstd frame fails INSIDE the decompressor, i.e.
+        # before the hash check. read()'s documented failure type is BlobCorrupt;
+        # leaking zstandard.ZstdError makes every caller's except clause wrong.
+        with tempfile.TemporaryDirectory() as td:
+            blobs = BlobStore(Path(td))
+            ref = blobs.write(b"authentic payload", "text/plain")
+            path = blobs.path_for(ref.sha256, "txt")
+            path.write_bytes(path.read_bytes()[:6])  # half-synced frame
+            with self.assertRaises(BlobCorrupt):
+                blobs.read(ref.sha256, "txt")
+            self.assertEqual(blobs.state(ref.sha256, "txt"), _blobs.CORRUPT)
+
 
 class BlobStateTests(unittest.TestCase):
     def test_four_states(self):
@@ -99,6 +112,53 @@ class BlobStateTests(unittest.TestCase):
             self.assertEqual(blobs.state(ref.sha256, "md"), _blobs.PRESENT)
             self.assertEqual(blobs.state(ref.sha256, "txt"), _blobs.PRESENT)
             self.assertEqual(blobs.state(ref.sha256), _blobs.PRESENT)
+
+
+class MultiExtensionIdentityTests(unittest.TestCase):
+    """Identity is the sha; the ext is a storage detail, so BOTH copies are one blob."""
+
+    def test_delete_removes_every_extension_of_one_sha(self):
+        # Identical bytes captured twice, once with a content-type and once
+        # without, land as <sha>.json.zst AND <sha>.bin.zst. Deleting only the
+        # ext the manifest happened to record leaves the payload on disk, so the
+        # sweep re-lists and re-tombstones it forever and reclaims nothing.
+        with tempfile.TemporaryDirectory() as td:
+            blobs = BlobStore(Path(td))
+            data = b'{"same": "bytes"}'
+            a = blobs.write(data, "application/json")
+            b = blobs.write(data, None)
+            self.assertEqual(a.sha256, b.sha256)
+            self.assertEqual(len(list(Path(td).rglob("*.zst"))), 2)
+            self.assertTrue(blobs.delete(a.sha256, "json"))
+            self.assertEqual(list(Path(td).rglob("*.zst")), [])
+            self.assertEqual(blobs.state(a.sha256), _blobs.NOT_SYNCED_HERE)
+
+    def test_pruned_pending_sees_a_copy_under_another_ext(self):
+        # The crash-window detector must use the same any-extension lookup as
+        # state(), or a tombstoned blob whose bytes are still on disk under a
+        # second ext reads as fully pruned and is never re-swept.
+        with tempfile.TemporaryDirectory() as td:
+            blobs = BlobStore(Path(td))
+            data = b"payload"
+            ref = blobs.write(data, "application/json")
+            blobs.write(data, None)
+            blobs.write_tombstone(ref.sha256, reason="retention:test")
+            blobs.path_for(ref.sha256, "json").unlink()  # only the recorded ext went
+            self.assertEqual(blobs.state(ref.sha256, "json"), _blobs.PRESENT)
+            self.assertTrue(blobs.is_pruned_pending(ref.sha256, "json"))
+
+
+class TempFileDebrisTests(unittest.TestCase):
+    def test_crash_leftover_temp_file_is_not_a_phantom_sha(self):
+        # A SIGKILL mid-atomic_write leaves `.tmp-<rand>.zst` in the shard.
+        # Splitting the filename on the first dot yields '' — a nameless sha the
+        # GC then reports as an orphan.
+        with tempfile.TemporaryDirectory() as td:
+            blobs = BlobStore(Path(td))
+            ref = blobs.write(b"real payload", "text/plain")
+            shard = Path(td) / ref.sha256[:2]
+            (shard / ".tmp-abc123.zst").write_bytes(b"half-written")
+            self.assertEqual(blobs.present_shas(), {ref.sha256})
 
 
 class RefcountAuditTests(unittest.TestCase):
