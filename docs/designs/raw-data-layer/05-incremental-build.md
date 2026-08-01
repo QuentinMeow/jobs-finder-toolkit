@@ -240,6 +240,37 @@ and re-adds that entity's full event list — a remove-then-re-add shape that is
 idempotent, so a repeated run cannot double a row. `triage` does the same,
 keyed by the manifest that produced each suppressed row.
 
+**The floor is enforced at the write, not threaded through the callers.** It was
+threaded at first: each build path was handed the survivor set, and every path that
+existed at the time was handed it correctly. `--opinions-only` — which rebuilds the
+index from `derived/` alone, and is documented as a cheap re-classification pass —
+was not, so for 277 commits it destroyed every row whose raw *and* derived were both
+gone. Those rows are the only surviving record of their postings: nothing regenerates
+them, and `--rebuild` cannot bring them back because there is nothing left to rebuild
+from. The by-hand equivalence between incremental and rebuild did not catch it,
+because both paths agree perfectly on a store the rows have already been deleted
+from.
+
+So `index/postings.jsonl` now has exactly one writer. It takes the rows the caller
+accounts for, reads the live index itself (deriving the live path from the write
+destination, so a build-aside `.building` write still reads the committed
+generation), and re-adds anything the caller did not cover and no tombstone explains.
+A caller can forget an argument; it cannot forget the write it has to make. The
+tombstone set stays an optional argument for the mirror-image reason: omitting it
+keeps a row that perhaps should have gone, and between "a row survives that maybe
+should not have" and "a row that exists nowhere else is gone", only the second is
+unrecoverable. A test asserts the single writer stays single.
+
+The same asymmetry decides the aside directories. `--rebuild` creates
+`derived.building` / `index.building` up front instead of letting the first entity
+write create them, because a build that materializes **zero** entities wrote no file
+at all — and `_swap_dir`'s second rename then raised `FileNotFoundError` *after* the
+first had already moved the live `derived/` to `derived.old`, leaving the zone
+unavailable until a later build happened to recover the remnant. Zero entities is
+reachable three ways: an empty store, a sweep whose every row is suppressed, and a
+checkout holding only the committed index — which is precisely the machine the floor
+exists for.
+
 Measured on the 15,000-entity store, per incremental build:
 
 | Index-zone work | Bytes | Time |

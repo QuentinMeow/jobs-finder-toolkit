@@ -37,7 +37,10 @@ rows that have no current entity, no derived on disk, and no tombstone (see
 survivors are preserved verbatim at their original ``seq`` and marked
 ``carried``/``carried_from: index``; they are never materialized as fabricated
 derived artifacts, and ``by-day``/``triage`` stay event-derived from this run's
-entities only.
+entities only. **The floor is enforced at the single writer**
+(``_write_postings_index``), which every build path — incremental fast, incremental
+full, ``--rebuild``, ``--opinions-only`` — goes through, because those rows are the
+only surviving record of their postings and no path may forget them.
 """
 from __future__ import annotations
 
@@ -649,28 +652,66 @@ def _index_row(eb: EntityBuild, seq: int) -> dict:
     return row
 
 
+def _live_index(index_root: Path) -> Path:
+    """The LIVE index dir for a (possibly build-aside) index root.
+
+    ``--rebuild`` writes into ``index.building`` and swaps, but the durable floor is
+    always read from the COMMITTED generation. Deriving that from the write
+    destination — rather than taking it as an argument — means no caller can point
+    the floor read at the wrong file, or omit it.
+    """
+    p = Path(index_root)
+    aside = ".building"
+    return p.with_name(p.name[:-len(aside)]) if p.name.endswith(aside) else p
+
+
+def _write_postings_index(index_root: Path, rows: dict, header: dict,
+                          tombstoned=()) -> dict:
+    """THE one writer of ``index/postings.jsonl``. It applies the durable floor.
+
+    ``rows`` is ``{key: row}`` for every key the caller accounts for. Any key in the
+    LIVE index that ``rows`` does not cover and no tombstone explains (a frozen-facts
+    snapshot — ``tombstoned``) is re-added VERBATIM at its original ``seq``, marked
+    ``carried``/``carried_from: index`` by :func:`_carry_forward_from_index`.
+    Returns the survivor rows it added.
+
+    **Why the floor lives at the write and not in each caller.** It used to be
+    threaded through the build paths as an argument, and ``build_opinions_only`` —
+    which rebuilds the index from ``derived/`` alone — was never handed it. Every row
+    whose raw AND derived were both gone was therefore destroyed by a pass documented
+    as a cheap re-classification, and those rows are the only surviving record of
+    those postings: nothing regenerates them and ``--rebuild`` cannot, because there
+    is nothing left to rebuild from. A caller can forget an argument; it cannot
+    forget the write it has to make. ``tombstoned`` stays optional for the same
+    reason inverted — omitting it keeps a row that maybe should have gone, and only
+    the other direction is unrecoverable.
+    """
+    survivors = _carry_forward_from_index(_live_index(index_root),
+                                          set(rows), set(tombstoned))
+    merged = {**rows, **survivors}
+    lines = [serialization.dumps_jsonl_line(header)]
+    lines += [serialization.dumps_jsonl_line(merged[k]) for k in sorted(merged)]
+    atomic_write_text(Path(index_root) / "postings.jsonl", "".join(lines))
+    return survivors
+
+
 def _write_index(index_root: Path, entities: dict, entity_seq: dict, built_at: str,
-                 index_survivors: dict | None = None) -> None:
-    """Write ``index/postings.jsonl`` as a deterministic union by ``key``.
+                 tombstoned=()) -> dict:
+    """Write ``index/postings.jsonl`` + ``by-day/`` from this build's entities.
 
     ``entities`` (every entity built this run: fresh ∪ derived-carried ∪
-    frozen-reconstructed) always wins its own row; ``index_survivors`` (pre-existing
-    index-only rows from :func:`_carry_forward_from_index`, already marked
-    ``carried``/``carried_from``) fill in the rest verbatim, at their original
-    ``seq``. On a full-raw machine ``index_survivors`` is empty, so this is
-    byte-identical to a plain rewrite from ``entities`` (a pure superset guarantee).
-    ``by-day/`` stays event-derived from ``entities`` only — index-only survivors
-    have no events this build and are never fabricated one.
+    frozen-reconstructed) always wins its own row; :func:`_write_postings_index` then
+    fills the rest of the floor in. On a full-raw machine there are no survivors, so
+    this is byte-identical to a plain rewrite from ``entities`` (a pure superset
+    guarantee). ``by-day/`` stays event-derived from ``entities`` only — index-only
+    survivors have no events this build and are never fabricated one.
+    Returns the survivor rows the floor contributed.
     """
     header = {"_schema": INDEX_SCHEMA_VERSION, "built_at": built_at, "note": INDEX_NOTE}
-    survivors = index_survivors or {}
     # postings.jsonl — sorted by key for determinism; entities win by key.
-    lines = [serialization.dumps_jsonl_line(header)]
-    for key in sorted(set(entities) | set(survivors)):
-        row = (_index_row(entities[key], entity_seq.get(key, 0)) if key in entities
-               else survivors[key])
-        lines.append(serialization.dumps_jsonl_line(row))
-    atomic_write_text(index_root / "postings.jsonl", "".join(lines))
+    rows = {key: _index_row(eb, entity_seq.get(key, 0))
+            for key, eb in entities.items()}
+    survivors = _write_postings_index(index_root, rows, header, tombstoned)
 
     # by-day/<date>.jsonl — every observation event bucketed by UTC capture day
     by_day: dict[str, list[dict]] = {}
@@ -681,11 +722,12 @@ def _write_index(index_root: Path, entities: dict, entity_seq: dict, built_at: s
             by_day.setdefault(day, []).append(
                 {"entity": ev["entity"], "fetch": ev["fetch"], "type": ev["type"],
                  "at": ev.get("at"), "seq": ev.get("seq")})
-    for day, rows in by_day.items():
-        rows.sort(key=lambda r: (r.get("at") or "", r["entity"], r["type"]))
+    for day, day_rows in by_day.items():
+        day_rows.sort(key=lambda r: (r.get("at") or "", r["entity"], r["type"]))
         out = [serialization.dumps_jsonl_line(header)]
-        out += [serialization.dumps_jsonl_line(r) for r in rows]
-        atomic_write_text(index_root / "by-day" / f"{day}.jsonl", "".join(out))
+        out += [serialization.dumps_jsonl_line(r) for r in day_rows]
+        atomic_write_text(Path(index_root) / "by-day" / f"{day}.jsonl", "".join(out))
+    return survivors
 
 
 def _write_suppressed(index_root: Path, suppressed: list[dict], built_at: str) -> None:
@@ -1029,11 +1071,13 @@ def _build_entities(layout, registry, stamps, manifests=None, blobstore=None):
     reduces each, carries forward not-synced entities, then applies migration/dup
     hints and the annotation merge — a pure function of the processed set + the
     existing generation, so incremental and rebuild produce identical entities.
-    Returns ``(entities, suppressed, entity_seq, groups, seq_of, index_survivors)``
-    — ``groups`` and ``seq_of`` let the spot-equivalence check re-reduce sampled keys
-    cheaply; ``index_survivors`` is the durable-floor set from
+    Returns ``(entities, suppressed, entity_seq, groups, seq_of, index_survivors,
+    frozen_keys)`` — ``groups`` and ``seq_of`` let the spot-equivalence check
+    re-reduce sampled keys cheaply; ``index_survivors`` is the durable-floor set from
     :func:`_carry_forward_from_index` (never merged into ``entities`` — index-only
-    survivors stay honestly derived-absent, never fabricated as derived artifacts).
+    survivors stay honestly derived-absent, never fabricated as derived artifacts),
+    pre-computed here so a rebuild can schema-verify those rows BEFORE its swap;
+    ``frozen_keys`` is the tombstone set the index writer needs.
     """
     blobstore = BlobStore(layout.blobs) if blobstore is None else blobstore
     manifests = list(iter_manifests(layout)) if manifests is None else manifests
@@ -1082,7 +1126,8 @@ def _build_entities(layout, registry, stamps, manifests=None, blobstore=None):
     # and kept separate — never folded into `entities` (no fabricated derived facts).
     index_survivors = _carry_forward_from_index(
         layout.index, set(entities), set(frozen_all))
-    return entities, suppressed, entity_seq, groups, seq_of, index_survivors
+    return (entities, suppressed, entity_seq, groups, seq_of, index_survivors,
+            set(frozen_all))
 
 
 def _verify_schemas(entities: dict, entity_seq: dict,
@@ -1380,7 +1425,8 @@ def build_incremental(layout, registry) -> dict:
 def _build_incremental_full(layout, registry, stamps, ledger, newly, manifests,
                             blobstore) -> dict:
     """The unchanged whole-raw-zone fold — still the fallback and the safety net."""
-    entities, suppressed, entity_seq, _groups, _seq, index_survivors = _build_entities(
+    (entities, suppressed, entity_seq, _groups, _seq, _survivors,
+     frozen_keys) = _build_entities(
         layout, registry, stamps, manifests=manifests, blobstore=blobstore)
 
     _check_case_collisions(layout.derived, entities)
@@ -1391,8 +1437,8 @@ def _build_incremental_full(layout, registry, stamps, ledger, newly, manifests,
         if _write_entity(layout.derived, eb, only_if_changed=True):
             changed += 1
     built_at = _index_built_at(ledger)
-    _regen_index_zone(layout.index, entities, entity_seq, suppressed, built_at,
-                      index_survivors)
+    index_survivors = _regen_index_zone(layout.index, entities, entity_seq,
+                                        suppressed, built_at, frozen_keys)
     _pin_referenced_keys(layout, entities)
     _write_readme(layout.root.parent, layout, stamps)
     _write_cache(layout, entities, _store_state(manifests, blobstore, registry),
@@ -1697,27 +1743,20 @@ def _patch_index_zone(index_root: Path, working: dict, entity_seq: dict, all_key
     index_root = Path(index_root)
     header = {"_schema": INDEX_SCHEMA_VERSION, "built_at": built_at, "note": INDEX_NOTE}
 
-    # postings.jsonl — persisted rows, with this run's entities replacing their own.
-    rows = _read_index_rows(index_root)
-    survivors = {}
-    for key, row in rows.items():
-        if key in all_keys or key in frozen_keys:
-            continue
-        row = dict(row)
-        row["carried"] = True
-        row["carried_from"] = "index"
-        survivors[key] = row
+    # postings.jsonl — the persisted rows this build accounts for (``all_keys``),
+    # with this run's entities replacing their own. Every OTHER persisted row is
+    # left to `_write_postings_index`, which is what marks and preserves the floor;
+    # passing them through here would preserve them unmarked.
+    persisted = _read_index_rows(index_root)
+    rows = {key: row for key, row in persisted.items() if key in all_keys}
     for key, eb in working.items():
         seq = entity_seq[key] if key in entity_seq \
-            else int(rows.get(key, {}).get("seq") or 0)
+            else int(persisted.get(key, {}).get("seq") or 0)
         rows[key] = _index_row(eb, seq)
-    rows.update(survivors)
-    lines = [serialization.dumps_jsonl_line(header)]
-    lines += [serialization.dumps_jsonl_line(rows[k]) for k in sorted(rows)]
     for stale in index_root.glob("*.jsonl"):
         if stale.name != "postings.jsonl":
             stale.unlink()
-    atomic_write_text(index_root / "postings.jsonl", "".join(lines))
+    survivors = _write_postings_index(index_root, rows, header, frozen_keys)
 
     # by-day — drop every row belonging to a re-folded entity, re-add from its new
     # event list. Idempotent by construction: a rerun re-derives the same rows.
@@ -1779,22 +1818,27 @@ def _rewrite_bucketed(directory: Path, buckets: dict, header: dict, sort_key,
 
 
 def _regen_index_zone(index_root: Path, entities, entity_seq, suppressed, built_at,
-                      index_survivors: dict | None = None) -> None:
+                      tombstoned=()) -> dict:
     """Regenerate the whole index zone (postings + by-day + triage) wholesale.
 
-    "Wholesale" now means the postings-index union computed by :func:`_write_index`
-    (entities ∪ pre-existing index-only survivors), not a bare rewrite from
-    ``entities`` alone — the committed index is a durable floor, never dropped
-    merely because this build's derived/raw don't cover every historical key.
+    "Wholesale" means the postings-index union computed by :func:`_write_index`
+    (entities ∪ the pre-existing index-only survivors the floor contributes), not a
+    bare rewrite from ``entities`` alone — the committed index is a durable floor,
+    never dropped merely because this build's derived/raw don't cover every
+    historical key. ``postings.jsonl`` is deliberately NOT unlinked here: the floor
+    is read from the live file, and the write below replaces it wholesale anyway.
+    Returns the survivor rows the floor contributed.
     """
     for sub in ("by-day", "triage"):
         d = index_root / sub
         if d.is_dir():
             shutil.rmtree(d)
     for stale in index_root.glob("*.jsonl"):
-        stale.unlink()
-    _write_index(index_root, entities, entity_seq, built_at, index_survivors)
+        if stale.name != "postings.jsonl":
+            stale.unlink()
+    survivors = _write_index(index_root, entities, entity_seq, built_at, tombstoned)
     _write_suppressed(index_root, suppressed, built_at)
+    return survivors
 
 
 def build_rebuild(layout, registry) -> dict:
@@ -1811,7 +1855,8 @@ def build_rebuild(layout, registry) -> dict:
     # all — the next build re-derives from raw.
     fold_state.discard(fold_state.cache_path(layout))
     fold_state.mark_incomplete(fold_state.incomplete_path(layout), "rebuild")
-    entities, suppressed, entity_seq, groups, seq_of, index_survivors = _build_entities(
+    (entities, suppressed, entity_seq, groups, seq_of, index_survivors,
+     frozen_keys) = _build_entities(
         layout, registry, stamps, manifests=manifests, blobstore=blobstore)
 
     _check_case_collisions(layout.derived, entities)
@@ -1819,12 +1864,20 @@ def build_rebuild(layout, registry) -> dict:
     _verify_schemas(entities, entity_seq, index_survivors)  # schema + line counts
     _spot_equivalence(entities, groups, seq_of, stamps)
 
-    # Build ASIDE into fresh dirs, then atomically swap.
+    # Build ASIDE into fresh dirs, then atomically swap. The dirs are created up
+    # front, not left to the first write: a build that materializes ZERO entities
+    # writes no derived file, and `_swap_dir` would then raise FileNotFoundError on
+    # its second rename — after the first had already moved the live `derived/` to
+    # `derived.old`, leaving the zone unavailable until some later build recovered
+    # the remnant. Zero entities is reachable (an empty store; a sweep whose every
+    # row is suppressed; a checkout holding only the committed index), and a store
+    # with nothing to derive is not an error.
     derived_new = layout.derived.with_name(layout.derived.name + ".building")
     index_new = layout.index.with_name(layout.index.name + ".building")
     for d in (derived_new, index_new):
         if d.exists():
             shutil.rmtree(d)
+        d.mkdir(parents=True)
     for eb in entities.values():
         _write_entity(derived_new, eb, only_if_changed=False)
     # Entity-count check: exactly one derived posting per materialized entity.
@@ -1833,7 +1886,10 @@ def build_rebuild(layout, registry) -> dict:
         raise BuildError(f"entity count mismatch: wrote {written} posting.yaml "
                          f"file(s) for {len(entities)} entities")
     built_at = _index_built_at(ledger)
-    _write_index(index_new, entities, entity_seq, built_at, index_survivors)
+    # Writes into the ASIDE dir; `_write_postings_index` reads the floor from the
+    # live `index/` regardless, so the swap commits entities ∪ survivors.
+    index_survivors = _write_index(index_new, entities, entity_seq, built_at,
+                                   frozen_keys)
     _write_suppressed(index_new, suppressed, built_at)
 
     _swap_dir(layout.derived, derived_new)
@@ -1972,11 +2028,18 @@ def build_opinions_only(layout, registry) -> dict:
                 (seq_of.get(fid, 0) for fid in (data.get("provenance") or {}).get("fetch_ids", [])),
                 default=0)
     built_at = _index_built_at(ledger)
+    survivors = {}
     if entities_for_index:
-        _write_index(layout.index, entities_for_index, entity_seq, built_at)
+        # The rows come from `derived/` alone, so an entity whose raw AND derived are
+        # both gone contributes none — `_write_postings_index` is what keeps its index
+        # row alive. Same tombstone set as every other path, so the key set this
+        # leaves behind is the one a build would.
+        survivors = _write_index(layout.index, entities_for_index, entity_seq,
+                                 built_at, set(load_frozen_facts(layout)))
     fold_state.clear_incomplete(fold_state.incomplete_path(layout))
     _print_opinion_diff(diffs, changed_entities)
-    return {"mode": "opinions-only", "changed": changed_entities, "diffs": diffs}
+    return {"mode": "opinions-only", "changed": changed_entities,
+            "carried_from_index": len(survivors), "diffs": diffs}
 
 
 def _print_opinion_diff(diffs: dict, changed_entities: int) -> None:

@@ -8,6 +8,7 @@ real ``private/`` tree. Pinning only the data root is not enough: every build ca
 """
 from __future__ import annotations
 
+import ast
 import io
 import json
 import os
@@ -1030,6 +1031,74 @@ class IndexPreservationTests(_StoreCase):
             self.assertNotIn("carried", row)
             self.assertNotIn("carried_from", row)
 
+    def _zone_bytes(self, *subs):
+        out = {}
+        for sub in subs:
+            d = self.layout.index / sub
+            for p in sorted(d.rglob("*")) if d.is_dir() else []:
+                if p.is_file():
+                    out[f"{sub}/{p.relative_to(d)}"] = p.read_bytes()
+        return out
+
+    def test_opinions_only_preserves_index_only_survivors(self):
+        """`--opinions-only` must not destroy the rows that exist nowhere else.
+
+        It rewrites ``index/postings.jsonl`` from ``derived/`` alone, so a row whose
+        raw AND derived are both gone has no source to be rebuilt from and was simply
+        dropped. Nothing regenerates those rows and ``--rebuild`` cannot bring them
+        back — there is nothing left to rebuild from — so the loss is permanent, and
+        `--opinions-only` is documented as a cheap re-classification pass that warns
+        about nothing.
+        """
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        before = {r["key"]: r for r in self._index_rows()}
+
+        # New checkout: only the committed index/state are here. One fresh capture
+        # gives the store a live entity, so gh-111/gh-222 survive ONLY as index rows.
+        self._drop_raw_and_derived()
+        self._capture_gh([_job(333, "Data Engineer", "Seattle, WA")], _dt(20))
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-222", "gh-333"})
+        survivors = {r["key"]: r for r in self._index_rows()
+                     if r.get("carried_from") == "index"}
+        self.assertEqual(set(survivors), {"gh-111", "gh-222"})
+        bucketed = self._zone_bytes("by-day", "triage")
+
+        self.assertEqual(self._build(["--opinions-only"]), 0)
+
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-222", "gh-333"})
+        after = {r["key"]: r for r in self._index_rows()}
+        for key, row in survivors.items():
+            self.assertEqual(after[key], row)              # verbatim
+            self.assertEqual(after[key]["seq"], before[key]["seq"])  # original seq
+        self.assertNotIn("carried", after["gh-333"])       # the live entity is unmarked
+        # by-day / triage are event-derived and opinions-only writes no events;
+        # preserving the floor must not start writing (or emptying) them.
+        self.assertEqual(self._zone_bytes("by-day", "triage"), bucketed)
+
+    def test_the_postings_index_has_exactly_one_writer(self):
+        """The floor is enforced AT the write, so no build path can forget it.
+
+        ``--opinions-only`` destroyed survivor rows because the floor was threaded
+        through the callers and one caller was never handed it. A second writer of
+        ``index/postings.jsonl`` reopens exactly that hole, so this fails the moment
+        one appears.
+        """
+        src = Path(bp.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        writers = [n for n in ast.walk(tree)
+                   if isinstance(n, ast.Call)
+                   and getattr(n.func, "id", "") == "atomic_write_text"
+                   and n.args
+                   and "postings.jsonl" in (ast.get_source_segment(src, n.args[0]) or "")]
+        self.assertEqual(
+            len(writers), 1,
+            "index/postings.jsonl must have exactly ONE writer "
+            "(_write_postings_index), which applies the durable floor; found "
+            f"{len(writers)} at line(s) {[n.lineno for n in writers]}")
+
     def test_incremental_and_rebuild_agree_on_index_survivors(self):
         """Incremental and rebuild compute the identical union + survivor set."""
         self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
@@ -1068,6 +1137,61 @@ class IndexPreservationTests(_StoreCase):
         finally:
             shutil.rmtree(root_incr, ignore_errors=True)
             shutil.rmtree(root_rebuild, ignore_errors=True)
+
+
+class EmptyStoreRebuildTests(_StoreCase):
+    """A rebuild that materializes zero entities must still commit a store.
+
+    ``_write_entity`` is what creates ``derived.building``, so a build with nothing
+    to write left the aside dir absent and ``_swap_dir``'s second rename raised an
+    uncaught ``FileNotFoundError`` — *after* the first rename had already moved the
+    live ``derived/`` to ``derived.old``. The traceback is the visible half; the
+    data-availability half is that the derived zone is gone until some later build
+    happens to run ``_recover_swap_remnants``.
+    """
+
+    def _aside(self, zone, suffix):
+        return zone.with_name(zone.name + suffix)
+
+    def _assert_zones_committed(self):
+        for zone in (self.layout.derived, self.layout.index):
+            self.assertTrue(zone.is_dir(), f"{zone.name} was not committed")
+            for suffix in (".old", ".building"):
+                self.assertFalse(self._aside(zone, suffix).exists(),
+                                 f"{zone.name}{suffix} left behind")
+
+    def test_rebuild_of_an_empty_store_exits_cleanly(self):
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        self._assert_zones_committed()
+
+    def test_rebuild_when_every_captured_row_is_suppressed(self):
+        # One aggregator sweep whose only row is a non-US posting — the realistic
+        # shape: raw exists, every row is suppressed, zero entities materialize.
+        self._capture_scrape("jobicy", {"jobs": [
+            {"id": 2, "url": "https://jobicy.com/jobs/2-lon", "jobTitle": "UK Backend",
+             "companyName": "UkCo", "jobGeo": "London, United Kingdom",
+             "jobDescription": "d", "pubDate": "2026-07-12"}]}, _dt(14))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        self._assert_zones_committed()
+        triage = list((self.layout.index / "triage").glob("*.jsonl"))
+        self.assertEqual(len(triage), 1)
+
+    def test_rebuild_of_an_index_only_checkout_keeps_the_floor(self):
+        """The two defects meet: zero entities AND the index is the only record."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        floor = {r["key"]: r for r in self._index_rows()}
+        self.assertEqual(set(floor), {"gh-111", "gh-222"})
+
+        self._drop_raw_and_derived()
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        self._assert_zones_committed()
+        rows = {r["key"]: r for r in self._index_rows()}
+        self.assertEqual(set(rows), set(floor))
+        for key, row in rows.items():
+            self.assertEqual(row["carried_from"], "index")
+            self.assertEqual(row["seq"], floor[key]["seq"])
 
 
 class SwapCrashRecoveryTests(_StoreCase):

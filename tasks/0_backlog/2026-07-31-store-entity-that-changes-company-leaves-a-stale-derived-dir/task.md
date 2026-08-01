@@ -56,3 +56,16 @@ by itself refuse the fast path.
 - [ ] A test captures the same aggregator row twice under two `companyName` values and
       asserts the incremental result is byte-identical to `--rebuild`
 - [ ] `.venv/bin/python -m unittest discover -s skills/job-search/scripts/tests -t skills/job-search/scripts/tests` passes
+
+## Status
+
+**2026-07-31** — the `wip/33-store-p0-data-loss` session considered this alongside the
+`--opinions-only` P0 and left it deliberately. Two reasons. First, it is the
+*recoverable* side of the residue question: a stale derived directory is a copy that
+survives when it should not, whereas the P0 was a row that existed nowhere else being
+destroyed — only the second is unrecoverable, so only the second belonged in an urgent
+fix. Second, the fix is a genuinely different change: it needs the old partition
+(which the fold cache holds as `entry["p"]`) threaded through both incremental paths,
+and it introduces the builder's first *deletion* of a derived directory — which
+deserves its own review under the "agents never delete owner data" rule rather than
+riding along in a data-loss fix.
