@@ -155,6 +155,110 @@ variants:
       verdict: unknown
       confidence: low
 
+  - id: sponsorship-negated-offer-phrase
+    domain: sponsorship
+    # A denial the phrase list never anticipated: the sentence contains the OFFER
+    # substring "offer visa sponsorship" and used to be reported as an explicit
+    # offer with high confidence. The negation scope makes the offer phrase a
+    # denial of that offer instead.
+    input:
+      text: This role does not currently offer visa sponsorship.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-negated-offer-distant-cue
+    domain: sponsorship
+    # Same shape with four words between the cue and the offer phrase, which is
+    # what the bounded look-back has to tolerate.
+    input:
+      text: >-
+        We will not consider applicants for employment immigration sponsorship
+        or support for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-negated-offer-after-semicolon
+    domain: sponsorship
+    # The negation lives in its own clause after a semicolon; the eligibility
+    # boilerplate before it must not extend the scope, and "no" must still reach
+    # the offer phrase that follows it.
+    input:
+      text: >-
+        Must be eligible to work in the United States; no H1-B visa sponsorship
+        available.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-double-negation-is-ambiguous
+    domain: sponsorship
+    # A negated denial is not silently flipped to an offer and not left as a
+    # denial either — the posting is returned for a human read.
+    input:
+      text: It is not true that we cannot sponsor work visas.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-offer-after-clause-restart
+    domain: sponsorship
+    # Guardrail for the negation scope: the "no" belongs to the relocation
+    # clause, and the coordinated clause that follows starts its own subject, so
+    # the offer stands. Over-reaching here would hide a job that does sponsor.
+    input:
+      text: There is no relocation budget, and visa sponsorship is available for this role.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-export-control-is-not-a-denial
+    domain: sponsorship
+    # "Sponsorship" in US export-licensing boilerplate is a different legal
+    # sense of the word. It used to score as a high-confidence denial, and the
+    # default exclude_negative policy DROPS denials — so export-controlled
+    # postings disappeared without a trace.
+    input:
+      text: >-
+        Candidates must be eligible to obtain the required authorizations
+        without sponsorship for an export license.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-export-control-beside-a-real-denial
+    domain: sponsorship
+    # Guardrail: the export-control clause must not suppress an immigration
+    # denial sitting next to it.
+    input:
+      text: >-
+        Access to export-controlled data is required. We do not provide visa
+        sponsorship for this role.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-caveated-offer-stays-offer
+    domain: sponsorship
+    # A caveat AFTER the offer ("not guaranteed") qualifies the offer; it is not a
+    # denial, and the look-back never sees it.
+    input:
+      text: >-
+        Visa sponsorship is available for this role, though sponsorship is not
+        guaranteed.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
   - id: title-member-of-technical-staff
     domain: title
     input:
@@ -446,6 +550,58 @@ variants:
       decision: review
       min: 5
       confidence: medium
+      requirement_kind: required
+
+  - id: yoe-third-party-founder-experience
+    domain: yoe
+    # An About-us sentence. The years belong to the employer's founders, so they
+    # are not a requirement at all — they used to be read as a 25-year minimum
+    # and hard-dropped the posting under max_years_experience.
+    input:
+      text: Our founders bring 25 years of engineering experience.
+    expect:
+      decision: review
+      min: null
+      confidence: unknown
+      requirement_kind: not_stated
+
+  - id: yoe-third-party-combined-team-total
+    domain: yoe
+    # "combined" makes the number a team total by construction.
+    input:
+      text: Our team has 30 years of combined software engineering experience.
+    expect:
+      decision: review
+      min: null
+      confidence: unknown
+      requirement_kind: not_stated
+
+  - id: yoe-company-blurb-then-real-requirement
+    domain: yoe
+    # Both sentences state years. The company-history one must not outrank the
+    # applicant requirement, which is the number the gate is allowed to use.
+    input:
+      text: >-
+        Our founders bring 25 years of engineering experience. Requires 3+ years
+        of professional software engineering experience.
+    expect:
+      decision: match
+      min: 3
+      confidence: high
+      requirement_kind: required
+
+  - id: yoe-requirement-after-team-subject
+    domain: yoe
+    # Guardrail for the attribution guard: the sentence opens with a company
+    # subject but turns back to the applicant, so the requirement still counts.
+    input:
+      text: >-
+        Our engineering team is hiring an engineer with 6+ years of professional
+        experience.
+    expect:
+      decision: match
+      min: 6
+      confidence: high
       requirement_kind: required
 
   # --- Intentional, recurring LOCATION review families ------------------------

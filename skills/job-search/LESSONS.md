@@ -19,23 +19,37 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   postings should be skipped.
 
 ## Visa filtering
-<!-- added: 2026-07-13 · last_confirmed: 2026-07-19 · status: active -->
+<!-- added: 2026-07-13 · last_confirmed: 2026-07-31 · status: active -->
 - Keep the negative phrase list specific. Generic "must be authorized to work in the US"
   is boilerplate used even by sponsoring employers — matching it would wrongly reject
   almost everything. Only explicit denials should yield `no`.
 - Most postings are `unclear`. Default `exclude_negative` keeps them; use
   `require_positive` only when the user wants a hard sponsorship guarantee (few results).
+- `unclear` is the safe answer and the classifier is built to fall back to it: a `no` is
+  dropped under BOTH policies (it hides a job), a `yes` is handed to someone making an
+  immigration decision. Ambiguous text — a double negative, a discretionary "we will
+  consider sponsorship" — must land `unclear`, which keeps the posting and flags it.
+- "Sponsorship" has a second legal sense: US export-control licensing (ITAR/EAR,
+  "without sponsorship for an export license"). That sentence says nothing about
+  immigration; a whole export-controlled board used to vanish under the default policy
+  because it read as a denial. The classifier now ignores a sponsorship phrase whose
+  sentence is export-control language with no immigration word in it.
 
 ## Visa heuristic false-positives
-<!-- added: 2026-07-20 · last_confirmed: 2026-07-20 · status: active -->
-- The sponsorship heuristic can score `yes` on a negation: a posting whose text said it
-  does *not* sponsor still contained sponsorship keywords and was tagged `yes`. Treat a
-  heuristic `yes` as a claim to verify against the actual JD wording — especially negations
-  like "unable to sponsor" or "does not offer sponsorship" — before relying on it for a
-  policy decision.
+<!-- added: 2026-07-20 · last_confirmed: 2026-07-31 · status: active -->
+- The sponsorship heuristic used to score `yes` on a negation: a posting whose text said
+  it does *not* sponsor still contained sponsorship keywords and was tagged `yes`. It no
+  longer does — a bounded negation scope means an offer phrase inside a negated clause
+  ("does not currently offer visa sponsorship") counts as a denial. The residual gap is
+  narrower but real: a denial that matches NEITHER an offer phrase nor a denial phrase
+  ("we do not offer relocation or visa sponsorship") still reads `unclear`, and a
+  negation more than ~8 words from the phrase it governs is out of scope.
+- Still treat a heuristic `yes` as a claim to verify against the actual JD wording before
+  relying on it for a policy decision. The gate is advisory and the user is making an
+  immigration decision on it.
 
 ## Filtering / scoring
-<!-- added: 2026-07-13 · last_confirmed: 2026-07-19 · status: active -->
+<!-- added: 2026-07-13 · last_confirmed: 2026-07-31 · status: active -->
 - A 7-day window across 100+ boards + keyless aggregators scans ~11k postings in ~20s
   and yields a solid shortlist; narrow with `--max-age-days 3` or widen if too thin.
 - **`company-search-log.yaml`**: only log a company after a *successful* search — full board
@@ -50,6 +64,11 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   `config.company_levels_path()` with sources + `last_verified`; live posting values win.
 - Hard-filter on YOE only when the parser finds a high-confidence general requirement;
   preferred or tool-specific/contextual experience remains display-only.
+- A YOE number only counts when the sentence attributes the years to the APPLICANT.
+  "Our founders bring 25 years of engineering experience" is company history and reads
+  identically to a requirements bullet — it used to become a 25-year minimum and drop the
+  posting. A company/team/customer subject with no applicant vocabulary after it, or the
+  word "combined", means no requirement was stated at all.
 - Never combine hourly/annual, currencies, or geographic compensation bands. Never assume
   a missing currency, and never infer total compensation without an explicit total/OTE label.
 - Never scrape Levels.fyi. Automated benchmark ingestion is file-only and requires a

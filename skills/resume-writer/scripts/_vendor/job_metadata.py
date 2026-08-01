@@ -420,6 +420,41 @@ _GENERAL_EXPERIENCE_RE = re.compile(
     r"experience\b",
     re.I,
 )
+# A YOE number is a REQUIREMENT only when the years are attributed to the
+# applicant. "<N> years of engineering experience" reads identically whether the
+# sentence is a qualifications bullet or the About-us blurb above it, so the
+# subject is what separates them: a possessor phrase naming the employer, its
+# team, or its customers means the years belong to somebody else and constrain
+# nobody. Same posture as the sponsorship negation scope in this file — when the
+# sentence does not clearly attribute the years to the applicant, the honest
+# answer is that no requirement was found, not a number.
+_THIRD_PARTY_YOE_RE = re.compile(
+    r"\b(?:"
+    r"(?:our|the|a|an|its|their)\s+"
+    r"(?:teams?|founders?|co-?founders?|leadership|engineers|staff|employees|"
+    r"people|company|companies|group|advisors?|investors?|board|executives?|"
+    r"management|clients?|customers?|partners?|users?)"
+    r"|we\s+(?:have|had|bring|brings|combine|combines|share|shares|boast|boasts|"
+    r"carry|carries|average|averages|count|serve|serves)"
+    r"|(?:clients?|customers?|partners?|users?|founders?|advisors?|investors?|"
+    r"executives?)\s+(?:who|that|with)"
+    r"|founded"
+    r")\b",
+    re.I,
+)
+# Applicant-facing vocabulary. Anything on this list between a third-party
+# possessor and the number means the sentence turned back to the candidate
+# ("our team is hiring an engineer with 6+ years ..."), so the guard stands down
+# and the match is classified exactly as before.
+_CANDIDATE_YOE_RE = re.compile(
+    r"\b(?:you|your|candidates?|applicants?|ideal|successful|seeking|seeks?|"
+    r"looking\s+for|hiring|hire|join|opening|opportunit(?:y|ies)|roles?|"
+    r"positions?|vacancy|require[sd]?|requirements?|must|minimum|at\s+least|"
+    r"qualifications?|should\s+have|we\s+want|we\s+need|someone|somebody)\b",
+    re.I,
+)
+# "<N> years of combined experience" is a team total by construction.
+_COMBINED_YOE_RE = re.compile(r"\bcombined\b", re.I)
 # The start of the NEXT independent YOE clause (e.g. the "5+ years" in
 # "... experience with at least 5+ years in leadership"). Used to bound one
 # match's forward look-ahead so an adjacent, separately-classified clause cannot
@@ -819,9 +854,10 @@ def _yoe_match_context(blob: str, start: int, end: int) -> tuple[str, str, str]:
 def _yoe_candidate_confidence(blob: str, match: re.Match) -> tuple[str, str] | None:
     """Classify a YOE match as required/general or contextual.
 
-    Preferred/nice-to-have statements are excluded from ``required_yoe``. Tool- or
-    domain-specific experience is retained as medium-confidence context only, so it
-    can be displayed but cannot hard-filter a job-search result.
+    Preferred/nice-to-have statements are excluded from ``required_yoe``, as is
+    experience the sentence attributes to somebody other than the applicant. Tool-
+    or domain-specific experience is retained as medium-confidence context only, so
+    it can be displayed but cannot hard-filter a job-search result.
     """
     local, before, after = _yoe_match_context(blob, match.start(), match.end())
     # Scope the forward look-ahead to THIS clause only. A later independent YOE
@@ -835,6 +871,17 @@ def _yoe_candidate_confidence(blob: str, match: re.Match) -> tuple[str, str] | N
     if _PREFERRED_YOE_RE.search(preference_window):
         return None
     matched = match.group(0)
+    # Attribution guard. ``before`` never crosses a sentence/line boundary (see
+    # ``_yoe_match_context``), so this only ever reads the years' own sentence.
+    attribution = before[-80:]
+    possessor = None
+    for possessor in _THIRD_PARTY_YOE_RE.finditer(attribution):
+        pass
+    if possessor is not None and not _CANDIDATE_YOE_RE.search(
+            attribution[possessor.end():]):
+        return None
+    if _COMBINED_YOE_RE.search(f"{attribution[-40:]} {matched} {after[:40]}"):
+        return None
     match_context = f"{matched} {after[:80]}"
     contextual = bool(re.search(
         r"\byears?(?:\s+of\s+experience)?\s+"
@@ -1219,7 +1266,8 @@ def classify_workplace(
 
 # ---------------------------------------------------------------------------
 # Visa-sponsorship read (likely / unlikely / unknown) — a heuristic scan of the
-# JD text. Negatives (explicit denials) win over positives (explicit offers).
+# JD text. Negatives (explicit denials) win over positives (explicit offers), and
+# an offer phrase inside a negation scope counts as a denial, not an offer.
 # This is advisory only; the agent must confirm sponsorship with the employer.
 # ---------------------------------------------------------------------------
 _SPONSOR_NEGATIVE = (
@@ -1275,6 +1323,166 @@ _SPONSOR_STRONG_POSITIVE = {
     "immigration sponsorship", "cap-exempt", "cap exempt",
 }
 
+# --- negation scope --------------------------------------------------------
+# A phrase list can never enumerate every way an employer writes "no": the list
+# above will always be one wording short, and a denial it does not literally
+# contain used to fall through to the OFFER scan and be reported as an explicit
+# offer (``does not currently offer visa sponsorship`` -> ``offer visa
+# sponsorship``). Polarity is therefore decided STRUCTURALLY instead: an offer
+# phrase found inside the scope of a negation cue is read as a denial OF THAT
+# OFFER, whatever route the sentence took to get there.
+#
+# The scope is deliberately small — a NegEx-style bounded look-back, cut short at
+# the nearest clause boundary — because the two errors are not symmetric. A false
+# offer sends a candidate who needs sponsorship to an employer that said no in
+# writing; a false denial hides a real job. ``unknown`` costs neither (it is kept
+# and flagged for a human read), so every ambiguous read resolves there.
+_SPONSOR_NEGATION_CUE_RE = re.compile(
+    r"\b(?:not|no|never|none|cannot|unable|ineligible|without|nor|neither|"
+    r"lacks?|lacking|"
+    r"(?:do|does|did|is|are|was|were|has|have|had|ca|wo|would|could|should|must)"
+    r"n[’']t)\b",
+    re.I,
+)
+# Where a negation stops carrying. Sentence punctuation and contrastive
+# conjunctions always end it; a comma/and/or ends it only when what follows
+# starts a NEW clause (a subject, an auxiliary, or a sponsorship subject with its
+# own verb) — so "we are not, at this time, able to offer visa sponsorship" stays
+# one negated clause while "no relocation budget, and visa sponsorship is
+# available" does not.
+_SPONSOR_CLAUSE_BREAK_RE = re.compile(
+    r"[.;:!?•|]|--|—|–"
+    r"|\b(?:but|however|although|though|yet|whereas|while|nevertheless|"
+    r"nonetheless|unless|otherwise|instead)\b"
+    r"|(?:,|\band\b|\bor\b|\bplus\b)\s+(?:"
+    r"(?:we|they|it|you|he|she|i|this|these|those|that|our|your|their|the|a|an|"
+    r"candidates?|applicants?|employees?|employers?|positions?|roles?|"
+    r"is|are|was|were|will|can|may|might|would|should|must|do|does|did|"
+    r"has|have|had)\b"
+    r"|(?:visas?|sponsorship|immigration|h-?1b|green\s+card|perm)\b"
+    r"[^.;:!?]{0,40}?\b(?:is|are|will|can|may|would)\b)",
+    re.I,
+)
+# "Sponsorship" has a second, unrelated legal sense: US export-control licensing
+# (ITAR/EAR). "eligible to obtain the required authorizations without sponsorship
+# for an export license" says nothing about immigration, but it used to score as
+# an explicit denial — and because the default policy DROPS denials, a whole
+# board of export-controlled roles could disappear silently. A sponsorship phrase
+# whose sentence is export-control language AND carries no immigration word at
+# all is not evidence either way.
+_SPONSOR_EXPORT_CONTROL_RE = re.compile(
+    r"\b(?:export[\s-]+(?:licen[cs]e[sd]?|control(?:led|s)?|"
+    r"administration\s+regulations|compliance|classification|"
+    r"authoriz\w+|restrictions?)"
+    r"|itar|ear99|deemed\s+export|licen[cs]e\s+exception|"
+    r"international\s+traffic\s+in\s+arms|export[- ]controlled)\b",
+    re.I,
+)
+_SPONSOR_SENTENCE_BREAK_RE = re.compile(r"[.;:!?•|]")
+_SPONSOR_TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9'’./-]*", re.I)
+_SPONSOR_TOPIC_RE = re.compile(
+    r"\b(?:sponsor(?:s|ed|ing|ship)?|visas?|immigration|h-?1b|green\s+card|perm|"
+    r"work\s+authorization|citizens?(?:hip)?|relocation)\b",
+    re.I,
+)
+_SPONSOR_COORDINATOR_RE = re.compile(r"[,;]|\b(?:and|or|nor|plus)\b", re.I)
+# Raw slice taken before the token budget does the real bounding.
+_SPONSOR_LOOKBACK_CHARS = 160
+# How far past the phrase the clause-break scan may read to recognize a restart.
+_SPONSOR_LOOKAHEAD_CHARS = 60
+# Words allowed between a cue and the phrase it negates ("not currently in a
+# position to be able to offer visa sponsorship" is 8).
+_SPONSOR_NEGATION_MAX_GAP_TOKENS = 8
+# A negation of a negation is only read as such when the two cues are adjacent
+# and nothing of substance sits between them ("it is not true that we cannot
+# sponsor"). Two coordinated denials ("unable to sponsor ... and cannot sponsor")
+# are two denials, not a double negative.
+_SPONSOR_DOUBLE_NEGATION_MAX_GAP_TOKENS = 4
+
+
+def _sponsor_clause_scope(source: str, start: int) -> str:
+    """The negation-carrying text that runs up to ``start``.
+
+    The break scan reads a little PAST ``start`` (a clause restart such as
+    ", and visa sponsorship is available" is only recognizable once its verb is
+    visible) but only breaks that begin before ``start`` can end the scope.
+    """
+    window_start = max(0, start - _SPONSOR_LOOKBACK_CHARS)
+    offset = start - window_start
+    probe = source[window_start:start + _SPONSOR_LOOKAHEAD_CHARS]
+    cut = 0
+    for break_match in _SPONSOR_CLAUSE_BREAK_RE.finditer(probe):
+        if break_match.start() >= offset:
+            break
+        cut = min(break_match.end(), offset)
+    return probe[cut:offset]
+
+
+def _sponsor_last_cue(scope: str):
+    last = None
+    for last in _SPONSOR_NEGATION_CUE_RE.finditer(scope):
+        pass
+    return last
+
+
+def _sponsor_gap_is_bare(gap: str) -> bool:
+    """True when only a few function words separate two negation cues."""
+    return (
+        len(_SPONSOR_TOKEN_RE.findall(gap))
+        <= _SPONSOR_DOUBLE_NEGATION_MAX_GAP_TOKENS
+        and not _SPONSOR_TOPIC_RE.search(gap)
+        and not _SPONSOR_COORDINATOR_RE.search(gap)
+    )
+
+
+def _sponsor_negation(source: str, start: int):
+    """Return ``(scope, cue)`` for the negation governing ``start``, else None."""
+    scope = _sponsor_clause_scope(source, start)
+    cue = _sponsor_last_cue(scope)
+    if cue is None:
+        return None
+    gap = scope[cue.end():]
+    if len(_SPONSOR_TOKEN_RE.findall(gap)) > _SPONSOR_NEGATION_MAX_GAP_TOKENS:
+        return None
+    return scope, cue
+
+
+def _sponsor_double_negated(scope: str, cue) -> bool:
+    """True when ``cue`` is itself sitting inside another negation."""
+    before = scope[:cue.start()]
+    prior = _sponsor_last_cue(before)
+    return prior is not None and _sponsor_gap_is_bare(before[prior.end():])
+
+
+def _sponsor_sentence(source: str, start: int, end: int) -> str:
+    """The sentence a phrase match sits in."""
+    left = 0
+    for break_match in _SPONSOR_SENTENCE_BREAK_RE.finditer(source, 0, start):
+        left = break_match.end()
+    right = _SPONSOR_SENTENCE_BREAK_RE.search(source, end)
+    return source[left:right.start() if right else len(source)]
+
+
+def _sponsor_is_export_control(source: str, start: int, end: int) -> bool:
+    """True when this "sponsorship" word means export licensing, not immigration.
+
+    Requires BOTH an export-control cue and the complete absence of immigration
+    context in the same sentence, so a JD that discusses export licences and visa
+    sponsorship in one breath keeps its immigration evidence.
+    """
+    sentence = _sponsor_sentence(source, start, end)
+    return bool(
+        _SPONSOR_EXPORT_CONTROL_RE.search(sentence)
+        and not _SPONSOR_CONTEXT_RE.search(sentence)
+    )
+
+
+def _sponsor_denial_is_negated(source: str, start: int) -> bool:
+    """True when a DENIAL phrase at ``start`` is itself negated."""
+    scope = _sponsor_clause_scope(source, start)
+    cue = _sponsor_last_cue(scope)
+    return cue is not None and _sponsor_gap_is_bare(scope[cue.end():])
+
 
 def _bounded_phrase_matches(text: str, phrases):
     hits = []
@@ -1299,43 +1507,93 @@ def assess_sponsorship(text: str | None) -> dict:
     Generic words such as "we sponsor" are positive only when their surrounding
     sentence also contains immigration/work-authorization context. This prevents
     employee-program or event sponsorship copy from passing a hard visa gate.
+
+    An offer phrase inside a negation scope (see ``_sponsor_negation``) is counted
+    as a DENIAL of that offer rather than an offer, so a denial the phrase list
+    never anticipated cannot be reported as an explicit offer. Text that negates a
+    negation is read neither way: it returns ``unknown``, which is kept and
+    flagged rather than acted on.
     """
     source = _clean(_source_text(text))
-    negative_matches = _bounded_phrase_matches(source, _SPONSOR_NEGATIVE)
-    negative = list(dict.fromkeys(phrase for phrase, _ in negative_matches))
+    export_control = False
+
+    def _immigration_sense(match: re.Match) -> bool:
+        nonlocal export_control
+        if _sponsor_is_export_control(source, match.start(), match.end()):
+            export_control = True
+            return False
+        return True
+
+    negative_matches = [
+        (phrase, match)
+        for phrase, match in _bounded_phrase_matches(source, _SPONSOR_NEGATIVE)
+        if _immigration_sense(match)
+    ]
+    negative: list[str] = []
+    ambiguous = False
+    for phrase, negative_match in negative_matches:
+        if _sponsor_denial_is_negated(source, negative_match.start()):
+            ambiguous = True
+            continue
+        if phrase not in negative:
+            negative.append(phrase)
     positive: list[str] = []
+    negated_offer: list[str] = []
     for phrase, positive_match in _bounded_phrase_matches(source, _SPONSOR_POSITIVE):
+        if not _immigration_sense(positive_match):
+            continue
         if any(
             positive_match.start() < negative_match.end()
             and negative_match.start() < positive_match.end()
             for _negative_phrase, negative_match in negative_matches
         ):
             continue
-        if phrase in _SPONSOR_STRONG_POSITIVE:
-            if phrase not in positive:
-                positive.append(phrase)
+        if phrase not in _SPONSOR_STRONG_POSITIVE:
+            window = source[
+                max(0, positive_match.start() - 120):positive_match.end() + 120
+            ]
+            if not _SPONSOR_CONTEXT_RE.search(window):
+                continue
+        negation = _sponsor_negation(source, positive_match.start())
+        if negation is not None:
+            scope, cue = negation
+            if _sponsor_double_negated(scope, cue):
+                ambiguous = True
+            elif phrase not in negated_offer:
+                negated_offer.append(phrase)
             continue
-        window = source[
-            max(0, positive_match.start() - 120):positive_match.end() + 120
-        ]
-        if _SPONSOR_CONTEXT_RE.search(window):
-            if phrase not in positive:
-                positive.append(phrase)
+        if phrase not in positive:
+            positive.append(phrase)
 
-    if negative and positive:
+    denial = [*negative, *negated_offer]
+    if denial and positive:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = "Conflicting sponsorship offer and denial language."
-    elif negative:
+    elif denial:
         decision, verdict, confidence = "no_match", "unlikely", "high"
-        reason = "The posting explicitly denies sponsorship."
+        reason = (
+            "The posting explicitly denies sponsorship." if negative
+            else "The posting negates its own sponsorship offer language."
+        )
+    elif ambiguous:
+        decision, verdict, confidence = "review", "unknown", "low"
+        reason = ("Double-negated sponsorship language; the posting is not read "
+                  "either way.")
     elif positive:
         decision, verdict, confidence = "match", "likely", "high"
         reason = "The posting explicitly offers immigration sponsorship."
+    elif export_control:
+        decision, verdict, confidence = "review", "unknown", "low"
+        reason = ("The posting's only sponsorship wording is export-control "
+                  "licensing, not immigration.")
     else:
         decision, verdict, confidence = "review", "unknown", "unknown"
         reason = "The posting does not provide decisive sponsorship evidence."
     rule_ids = [
         *(f"sponsorship.negative.{phrase}" for phrase in negative),
+        *(f"sponsorship.negated_offer.{phrase}" for phrase in negated_offer),
+        *(["sponsorship.ambiguous.double_negation"] if ambiguous else []),
+        *(["sponsorship.non_immigration.export_control"] if export_control else []),
         *(f"sponsorship.positive.{phrase}" for phrase in positive),
     ]
     # The structural signature groups by rule FAMILY (polarity/conflict), not the
@@ -1353,7 +1611,11 @@ def assess_sponsorship(text: str | None) -> dict:
         "verdict": verdict,
         "confidence": confidence,
         "rule_ids": rule_ids,
-        "evidence": [*negative, *positive],
+        "evidence": [
+            *negative,
+            *(f"negated: {phrase}" for phrase in negated_offer),
+            *positive,
+        ],
         "signal_present": bool(_SPONSOR_SIGNAL_RE.search(source)),
         "reason": reason,
         "structural_signature": hashlib.sha256(
@@ -1371,8 +1633,9 @@ def classify_sponsorship(text: str | None) -> str:
     """Return ``likely`` | ``unlikely`` | ``unknown`` for visa sponsorship.
 
     Heuristic on free JD text: an explicit denial -> ``unlikely`` (it wins over any
-    offer), an explicit offer -> ``likely``, otherwise ``unknown``. Advisory only —
-    always confirm with the employer before relying on it.
+    offer, and a negated offer counts as a denial), an explicit offer -> ``likely``,
+    otherwise ``unknown``. Advisory only — always confirm with the employer before
+    relying on it.
     """
     return assess_sponsorship(text)["verdict"]
 
