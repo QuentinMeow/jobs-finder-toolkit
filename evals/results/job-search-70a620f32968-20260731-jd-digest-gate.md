@@ -41,6 +41,39 @@ board that exists"). The rubric-provenance claim below also holds: `9778181` is 
 commit between `70a620f32968` and the tip that touches `evals/canaries/job-search.yaml`,
 and it changes it by +4/−1.
 
+### Update — 2026-08-01, after the stack merged into `main`
+
+The note above was written at stack tip `40871e6`, which is now an ancestor of `main`
+(`a4e5b3d`). Re-verified against merged history; three things changed, one of them
+material.
+
+**1. The commit is no longer local-only.** `70a620f32968` is still **not** an ancestor
+of `main` — that part stands. But when the stack merged, every feature branch was
+removed from the remote, and this record's only evidence survived on a single
+unpushed local branch. It has been pushed and now exists at
+**`origin/wip/07-company-roles-jd-digest`**. Before that push, one `git branch -D` or
+one lost clone would have made this record permanently uncheckable.
+
+**2. The landed equivalent is confirmed in `main`.** `git merge-base --is-ancestor`
+now returns true for `1e4b7c1` (the landed equivalent, PR #152), `9778181` and
+`c055e3b` (the two downstream fixes this record credits). Every claim in the note
+above holds post-merge.
+
+**3. The drift this record warns about has more than doubled.** Recomputed against
+merged `main`:
+
+```
+git diff --stat 70a620f32968 main -- skills/job-search/{SKILL,LESSONS,reference}.md
+  3 files changed, 193 insertions(+), 52 deletions(-)
+```
+
+**245 changed lines**, against the **88** measured when the note was written. These are
+the instruction files the canaries route on. The note's conclusion — *treat this as
+evidence about `70a620f32968`'s behaviour only, not as a gate at head* — is now
+substantially stronger than when it was written, not weaker. A re-run at a commit that
+is actually in `main` is filed as
+`tasks/0_backlog/2026-08-01-re-run-job-search-canaries-at-a-merged-commit/`.
+
 ## Method
 
 Five live runs, one per canary, each a **fresh session with a clean context** in its own detached
