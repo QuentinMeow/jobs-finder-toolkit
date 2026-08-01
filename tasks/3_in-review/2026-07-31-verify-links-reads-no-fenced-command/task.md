@@ -4,7 +4,7 @@
 - **Area**: harness
 - **Source**: session 2026-07-31, split out of the retired-roots / message-queue tiering PR
   on `wip/08-stale-design-paths`
-- **Claimed-by**: <(set when work starts, before the first change)>
+- **Claimed-by**: agent session 2026-07-31 (fix/14-gate-documented-commands)
 
 ## Goal
 
@@ -58,13 +58,13 @@ is a record of what was run that day and must stay permitted.
 
 ## Definition of done
 
-- [ ] `.venv/bin/python automation/gardener/verify_links.py` reports the two
+- [x] `.venv/bin/python automation/gardener/verify_links.py` reports the two
       `filtering-variant-safeguards/execution-plan.md` stage-gate lines, in a named class,
       with `automation/gardener/gardener.py` suggested as the successor.
-- [ ] A fence whose content is illustrative rather than runnable (an untagged tree in
+- [x] A fence whose content is illustrative rather than runnable (an untagged tree in
       `templates/`, a ` ```text ` block) produces no finding — covered by a test.
-- [ ] The tier rule holds: a dead command in a reference doc is fatal, the same command in
+- [x] The tier rule holds: a dead command in a reference doc is fatal, the same command in
       `tasks/4_done/` is permitted. One test each.
-- [ ] `python -m unittest discover automation/gardener/tests` passes, and the repo run is
+- [x] `python -m unittest discover automation/gardener/tests` passes, and the repo run is
       still `0 broken` or every finding it newly surfaces is repaired in the same PR.
-- [ ] A decision recorded on whether `.py` docstrings join the source set.
+- [x] A decision recorded on whether `.py` docstrings join the source set.

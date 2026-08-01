@@ -1387,5 +1387,277 @@ class TestRenameFollowing(VerifyLinksTestCase):
         self.assertEqual([r["source"] for r in new], ["private/newdocs/renamed.md"])
 
 
+# --- Fenced commands ------------------------------------------------------------
+FLAT_SCRIPT = '''\
+import argparse
+ap = argparse.ArgumentParser()
+ap.add_argument("--enrich-metadata")
+ap.add_argument("--update", action="store_true")
+'''
+
+SUBCOMMAND_SCRIPT = '''\
+import argparse
+ap = argparse.ArgumentParser()
+ap.add_argument("--out")
+sub = ap.add_subparsers(dest="cmd", required=True)
+s = sub.add_parser("sample")
+s.add_argument("--source", action="append")
+t = sub.add_parser("check")
+t.add_argument("--key", action="append", required=True)
+'''
+
+# The fail-open shape: a parser built from a loop variable, so no ``add_parser``
+# literal exists to attribute against. This repo has two of these.
+LOOPED_SCRIPT = '''\
+import argparse
+ap = argparse.ArgumentParser()
+sub = ap.add_subparsers(dest="cmd")
+for name in ("inbox", "sent"):
+    command = sub.add_parser(name)
+    command.add_argument("--limit", type=int)
+'''
+
+
+class TestFencedCommands(VerifyLinksTestCase):
+    """Pass 4: the ``<python> <script>.py`` shape inside a fenced block.
+
+    The hole this closes: ``_mask_fences`` blanks every fence before the two link
+    passes run, so a bare path inside a ```` ```bash ```` block was in NO bucket —
+    not broken, not advisory, not counted. Two commands shipped broken on ``main``
+    under that cover, one naming a retired root and one naming two flags its
+    subparser does not define.
+
+    Every test here is also a false-positive guard: this pass reads prose and makes
+    a claim about executable behaviour, and a checker that cries wolf on legitimate
+    documentation gets switched off, after which it protects nothing.
+    """
+
+    def fence(self, rel: str, command: str, tag: str = "bash") -> None:
+        self.write(rel, f"# doc\n\n```{tag}\n{command}\n```\n")
+
+    def commands_in(self, *sinks: list[dict]) -> list[str]:
+        return [h["ref"] for s in sinks for h in s
+                if h["kind"] in ("command", "command-flag")]
+
+    # --- the catch, tiered by what the SOURCE document is for -------------------
+    def test_a_dead_command_in_a_reference_doc_is_fatal(self) -> None:
+        self.fence("docs/handbook/cookbook.md",
+                   ".venv/bin/python does/not/exist.py --check")
+        self.git_init()
+        broken, advisory, permitted, _, _ = V.check_references()
+        self.assertEqual((advisory, permitted), ([], []))
+        self.assertEqual([(b["file"], b["line"], b["kind"], b["ref"]) for b in broken],
+                         [("docs/handbook/cookbook.md", 4, "command",
+                           "does/not/exist.py")])
+
+    def test_the_same_command_in_a_dated_record_is_permitted(self) -> None:
+        """A verification transcript records what was run THAT DAY. Rewriting it
+        would falsify the record, so it is counted and listed, never fatal."""
+        self.fence("tasks/4_done/2026-01-01-x/verification.md",
+                   ".venv/bin/python does/not/exist.py --check")
+        self.git_init()
+        broken, advisory, permitted, _, _ = V.check_references()
+        self.assertEqual((broken, advisory), ([], []))
+        self.assertEqual(self.commands_in(permitted), ["does/not/exist.py"])
+
+    def test_the_same_command_in_a_plan_is_advisory(self) -> None:
+        """A design doc naming the script it PROPOSES to add is not a break."""
+        self.fence("docs/designs/thing/README.md",
+                   ".venv/bin/python automation/proposed/new.py")
+        self.git_init()
+        broken, advisory, permitted, _, _ = V.check_references()
+        self.assertEqual((broken, permitted), ([], []))
+        self.assertEqual(self.commands_in(advisory), ["automation/proposed/new.py"])
+
+    def test_a_retired_root_command_carries_its_successor(self) -> None:
+        """The live instance: a stage gate calling a root the restructure retired."""
+        self.write("automation/gardener/gardener.py", "x\n")
+        self.fence("docs/handbook/gates.md",
+                   ".venv/bin/python automation/maintenance/gardener/gardener.py "
+                   "verify-links")
+        self.git_init()
+        broken, _, _, _, _ = V.check_references()
+        self.assertEqual([b["successor"] for b in broken],
+                         ["automation/gardener/gardener.py"])
+
+    # --- what is deliberately NOT read ------------------------------------------
+    def test_an_untagged_fence_is_read(self) -> None:
+        """This repo's own verification records fence transcripts with no info
+        string, and twelve documented commands live in one."""
+        self.fence("docs/handbook/x.md", ".venv/bin/python does/not/exist.py", tag="")
+        self.git_init()
+        broken, _, _, _, _ = V.check_references()
+        self.assertEqual(self.commands_in(broken), ["does/not/exist.py"])
+
+    def test_a_non_shell_fence_is_not_read(self) -> None:
+        """An explicit non-shell tag says "this is not something you paste"."""
+        for tag in ("python", "yaml", "json", "text", "mermaid", "markdown"):
+            with self.subTest(tag=tag):
+                self.fence("docs/handbook/x.md",
+                           ".venv/bin/python does/not/exist.py", tag=tag)
+                self.git_init()
+                broken, advisory, permitted, skipped, _ = V.check_references()
+                self.assertEqual((broken, advisory, permitted), ([], [], []))
+                self.assertEqual(skipped[V.COMMANDS_KEY], 0)
+
+    def test_an_illustrative_directory_tree_produces_no_finding(self) -> None:
+        """The untagged fences in ``templates/`` are trees, not commands, and
+        several deliberately name paths that must not exist."""
+        self.write("templates/README.md",
+                   "# t\n\n```\napplications/6_drafted/<slug>/\n"
+                   "├── meta.yaml\n└── source/\n"
+                   "    └── tailored.yaml\n```\n")
+        self.git_init()
+        broken, advisory, permitted, skipped, _ = V.check_references()
+        self.assertEqual((broken, advisory, permitted), ([], [], []))
+        self.assertEqual(skipped[V.COMMANDS_KEY], 0)
+
+    def test_a_module_or_inline_program_names_no_script(self) -> None:
+        """``-m unittest`` and ``-c '…'`` name no path, so there is nothing to
+        assert; reading the next token as one would report ``unittest`` broken."""
+        for command in (".venv/bin/python -m unittest discover -s does/not/exist",
+                        ".venv/bin/python -c \"import does.not.exist\""):
+            with self.subTest(command=command):
+                self.fence("docs/handbook/x.md", command)
+                self.git_init()
+                broken, advisory, permitted, skipped, _ = V.check_references()
+                self.assertEqual((broken, advisory, permitted), ([], [], []))
+                self.assertEqual(skipped[V.COMMANDS_KEY], 0)
+
+    def test_a_placeholder_script_directory_is_counted_not_reported(self) -> None:
+        """``<scratchpad>/probe.py`` names a directory the reader invents."""
+        self.fence("docs/handbook/x.md", ".venv/bin/python <scratchpad>/probe.py")
+        self.git_init()
+        broken, advisory, permitted, skipped, _ = V.check_references()
+        self.assertEqual((broken, advisory, permitted), ([], [], []))
+        self.assertEqual(skipped["command-uncheckable"], 1)
+
+    def test_a_bare_script_name_names_no_location(self) -> None:
+        self.fence("docs/handbook/x.md", "python mdlinks.py")
+        self.git_init()
+        broken, _, _, skipped, _ = V.check_references()
+        self.assertEqual(broken, [])
+        self.assertEqual(skipped["command-uncheckable"], 1)
+
+    def test_placeholder_ARGUMENTS_do_not_make_a_real_command_a_finding(self) -> None:
+        """The whole reason this is a gate and not a nuisance: ``<slug>`` MUST not
+        exist, and ``applications/`` is a runtime tree. Only the SCRIPT is checked."""
+        self.write("skills/application-tracker/scripts/status.py", FLAT_SCRIPT)
+        self.fence("docs/handbook/x.md",
+                   ".venv/bin/python skills/application-tracker/scripts/status.py "
+                   "--update <slug> applied")
+        self.git_init()
+        broken, advisory, permitted, skipped, _ = V.check_references()
+        self.assertEqual((broken, advisory, permitted), ([], [], []))
+        self.assertEqual(skipped[V.COMMANDS_KEY], 1)
+
+    def test_a_backslash_continuation_is_joined(self) -> None:
+        """House style for anything long; one execution plan has nine. A
+        line-at-a-time reader sees an interpreter with no script and skips them."""
+        self.write("docs/handbook/x.md",
+                   "# d\n\n```bash\n.venv/bin/python \\\n"
+                   "    does/not/exist.py --check\n```\n")
+        self.git_init()
+        broken, _, _, _, _ = V.check_references()
+        self.assertEqual([(b["line"], b["ref"]) for b in broken],
+                         [(4, "does/not/exist.py")])
+
+    def test_a_console_prompt_and_a_shell_operator_are_handled(self) -> None:
+        self.write("docs/handbook/x.md",
+                   "# d\n\n```console\n$ cd /tmp && .venv/bin/python "
+                   "does/not/exist.py\n```\n")
+        self.git_init()
+        broken, _, _, _, _ = V.check_references()
+        self.assertEqual(self.commands_in(broken), ["does/not/exist.py"])
+
+    # --- flags -------------------------------------------------------------------
+    def test_a_flag_defined_nowhere_in_the_script_is_reported(self) -> None:
+        self.write("automation/x/tool.py", SUBCOMMAND_SCRIPT)
+        self.fence("docs/handbook/x.md",
+                   ".venv/bin/python automation/x/tool.py check --id 7")
+        self.git_init()
+        broken, _, _, _, _ = V.check_references()
+        self.assertEqual([(b["kind"], b["ref"]) for b in broken],
+                         [("command-flag", "automation/x/tool.py … --id")])
+
+    def test_a_flag_defined_on_a_DIFFERENT_subcommand_is_reported(self) -> None:
+        """The half only attribution catches: ``--source`` exists, on ``sample``."""
+        self.write("automation/x/tool.py", SUBCOMMAND_SCRIPT)
+        self.fence("docs/handbook/x.md",
+                   ".venv/bin/python automation/x/tool.py check --source lever")
+        self.git_init()
+        broken, _, _, _, _ = V.check_references()
+        self.assertEqual([b["ref"] for b in broken],
+                         ["automation/x/tool.py … --source"])
+        self.assertIn("on its 'check' subcommand", broken[0]["why"])
+
+    def test_a_flag_on_its_own_subcommand_or_the_root_parser_resolves(self) -> None:
+        self.write("automation/x/tool.py", SUBCOMMAND_SCRIPT)
+        self.fence("docs/handbook/x.md",
+                   ".venv/bin/python automation/x/tool.py check --key a --out b")
+        self.git_init()
+        broken, advisory, permitted, _, _ = V.check_references()
+        self.assertEqual((broken, advisory, permitted), ([], [], []))
+
+    def test_an_unambiguous_abbreviation_resolves(self) -> None:
+        """``--enrich`` for ``--enrich-metadata`` is a command argparse ACCEPTS, and
+        this repo's docs use it; exact-match-only reports working lines as broken."""
+        self.write("automation/x/tool.py", FLAT_SCRIPT)
+        self.fence("docs/handbook/x.md",
+                   ".venv/bin/python automation/x/tool.py --enrich=a --help")
+        self.git_init()
+        broken, advisory, permitted, _, _ = V.check_references()
+        self.assertEqual((broken, advisory, permitted), ([], [], []))
+
+    def test_a_subparser_built_in_a_loop_falls_back_to_the_loose_check(self) -> None:
+        """Fail open on doubt: one unattributable ``add_argument`` drops the whole
+        file to "defined anywhere?", so a real flag on a looped subcommand passes
+        and only an invented one is reported."""
+        self.write("automation/x/mail.py", LOOPED_SCRIPT)
+        self.write("docs/handbook/x.md",
+                   "# d\n\n```bash\n.venv/bin/python automation/x/mail.py inbox "
+                   "--limit 5\n.venv/bin/python automation/x/mail.py inbox "
+                   "--invented 5\n```\n")
+        self.git_init()
+        broken, _, _, _, _ = V.check_references()
+        self.assertEqual([b["ref"] for b in broken],
+                         ["automation/x/mail.py … --invented"])
+        self.assertIn("anywhere in that script", broken[0]["why"])
+
+    def test_a_script_with_no_argparse_is_counted_not_reported(self) -> None:
+        """It may read ``sys.argv`` itself, or use a library this module has never
+        heard of. Silence, with a counter."""
+        self.write("automation/x/plain.py", "import sys\nprint(sys.argv)\n")
+        self.fence("docs/handbook/x.md",
+                   ".venv/bin/python automation/x/plain.py --whatever --else")
+        self.git_init()
+        broken, advisory, permitted, skipped, _ = V.check_references()
+        self.assertEqual((broken, advisory, permitted), ([], [], []))
+        self.assertEqual(skipped["command-flags-unknown"], 2)
+
+    def test_flags_are_not_checked_when_the_script_is_missing(self) -> None:
+        """One finding per broken command, not two: the script is the repair."""
+        self.fence("docs/handbook/x.md",
+                   ".venv/bin/python does/not/exist.py --invented")
+        self.git_init()
+        broken, _, _, _, _ = V.check_references()
+        self.assertEqual([b["kind"] for b in broken], ["command"])
+
+    # --- the counter ------------------------------------------------------------
+    def test_commands_read_is_a_denominator_not_a_skip_class(self) -> None:
+        """A run that reads NO command means the fence reader stopped working —
+        the same rule ``verified`` already applies to references."""
+        self.write("automation/x/tool.py", FLAT_SCRIPT)
+        self.fence("docs/handbook/x.md",
+                   ".venv/bin/python automation/x/tool.py --update")
+        self.git_init()
+        _, _, _, skipped, _ = V.check_references()
+        self.assertEqual(skipped[V.COMMANDS_KEY], 1)
+        self.assertNotIn(V.COMMANDS_KEY, V._SKIP_LABELS)
+        for key in skipped:
+            if key not in V._NOT_SKIP_CLASSES:
+                self.assertIn(key, V._SKIP_LABELS)
+
+
 if __name__ == "__main__":
     unittest.main()

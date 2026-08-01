@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: harness
 - **Source**: contradiction audit 2026-07-31 (findings A2, A3; the mechanism is diagnosed in the audit's §C hole 3), and the PR that repaired those two commands by hand
-- **Claimed-by**:
+- **Claimed-by**: agent session 2026-07-31 (fix/14-gate-documented-commands)
 
 ## Goal
 
@@ -57,13 +57,13 @@ Constraints:
 
 ## Definition of done
 
-- [ ] A planted defect is caught: a fenced `.venv/bin/python does/not/exist.py`
+- [x] A planted defect is caught: a fenced `.venv/bin/python does/not/exist.py`
       in a non-record source is reported (tier argued in the PR body), and the
       same line in a `tasks/4_done/` or `history/` record is not a failure.
-- [ ] A planted bad flag on a real script is reported, and every command
+- [x] A planted bad flag on a real script is reported, and every command
       currently in the tree still passes — run the checker over `main` first and
       triage the backlog it finds before arming it.
-- [ ] `automation/gardener/verify_links.py --help` documents the new pass, and
+- [x] `automation/gardener/verify_links.py --help` documents the new pass, and
       its tests pin both the catch and the record exemption.
-- [ ] `.venv/bin/python automation/gardener/verify_links.py`,
+- [x] `.venv/bin/python automation/gardener/verify_links.py`,
       `automation/reconcile/reconcile.py --check` and the gardener suite stay green.
