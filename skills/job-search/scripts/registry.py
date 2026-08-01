@@ -1,15 +1,22 @@
 """Canonical company registry + resolver for the job-search skill.
 
-Single source of truth for company IDENTITY, poll config, and the blacklist:
-`companies.yaml` (this skill dir). Both the fetch pipeline and the skip/blacklist
+Single source of truth for company IDENTITY and poll config: `companies.yaml` (this
+skill dir). The BLACKLIST is not in that file — every `blacklist:` row lives in the
+git-ignored overlay at `config.blacklist_path()` (`private/market/blacklist.yaml`),
+which `load_registry()` merges into the entry list at load time, so personal skip
+rules never ship in the public tree. Both the fetch pipeline and the skip/blacklist
 matching resolve raw company strings (from boards AND aggregators) through this
 module so that name drift (e.g. registry "Arize" / token "arizeai" vs an
 aggregator's "Arize AI") no longer breaks matching.
 
-Entry shapes in companies.yaml:
+Entry shapes (both sources share one schema, which is why an overlay row needs no
+special handling — and why a `blacklist:` row in the public file would silently
+work, and silently leak; the reconciler's `public-registry-blacklist` check is what
+stops that):
   - POLLED       : name, ats, token, [host, site, search_terms], tags, [aliases],
-                   [poll_batch]
+                   [poll_batch]                            (companies.yaml only)
   - IDENTITY-ONLY: name, [aliases], blacklist    (no ats/token -> never polled)
+                                                            (overlay only)
 
 Match keys for an entry = normalized {name} + {aliases} + {token}. `canonical`
 maps any raw string to the entry's display `name`; unknown strings resolve to

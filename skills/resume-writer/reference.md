@@ -501,7 +501,9 @@ Use this only when a same-company cluster is too divergent to tailor honestly wi
 (see "One resume, multiple roles (same company)" above). Different companies always get their own folder.
 
 0. **Pre-flight (required before any folders):** complete the SKILL.md Quickstart → Preflight for
-   **each** planned role — the `blacklist:` field in `skills/job-search/companies.yaml`,
+   **each** planned role — the blacklist via the MERGED registry, not `companies.yaml` alone
+   (`registry.load_registry()` merges `skills/job-search/companies.yaml` with the git-ignored
+   overlay at `config.blacklist_path()`, which is where every `blacklist:` row lives),
    the append-only skip-log at `config.applications_jsonl_path()` (run `--sync-log` if stale), and live
    status folders via `meta.yaml` (same role or URL). Do not `mkdir` until checks pass.
    Each planned slug must be unused under all status folders.
