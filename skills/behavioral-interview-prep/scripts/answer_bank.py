@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
-"""Validate shared behavioral-answer sources and render deterministic aliases."""
+"""Validate shared behavioral-answer sources and render deterministic aliases.
+
+One YAML source under ``question-bank/sources/`` renders several Markdown
+aliases, and they do NOT all land in the same tree:
+
+* a ``_general_*`` alias is the question bank's own file and renders beside the
+  source's parent, as it always has;
+* every other alias is ``<company-key>-<name>`` and renders into that company's
+  folder — ``config.companies_root()/<key>/derived/<slug>.md`` — because
+  company-specific interview material is filed by company
+  (``memory/decisions/interview-material-moves-by-company-only.md``).
+
+The company folder must already exist. Nothing here invents one: the company
+tree is owner data, and a made-up ``<key>/`` folder would either litter it or
+hide the answer where the owner never looks.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +26,15 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import yaml
+
+# Self-contained skill: this script lives in the behavioral-interview-prep
+# skill's scripts/ folder alongside its _vendor/ copies of the pure toolkit
+# modules. Put both the script folder and its _vendor/ on sys.path and import
+# ONLY from those vendored copies — never from the repo root.
+_HERE = Path(__file__).resolve().parent
+for _p in (_HERE, _HERE / "_vendor"):
+    if str(_p) not in sys.path and _p.is_dir():
+        sys.path.insert(0, str(_p))
 
 
 SCHEMA_VERSION = 3
@@ -35,6 +59,11 @@ DEFAULT_BANNED_PHRASES = (
     "utilize",
 )
 PLACEHOLDER_RE = re.compile(r"\b(?:TODO|TBD|FIXME|PLACEHOLDER)\b|\[[^\]]+\]", re.IGNORECASE)
+# Output routing (see the module docstring): an alias with this prefix belongs to
+# the question bank; anything else is <company-key>-<name> and belongs to that
+# company's own generated-answers folder.
+GENERAL_SLUG_PREFIX = "_general_"
+COMPANY_DERIVED_DIRNAME = "derived"
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 OUTPUT_SLUG_RE = re.compile(
     r"^(?:_general_03_[a-z0-9]+(?:-[a-z0-9]+)*|[a-z]+-[a-z0-9]+(?:-[a-z0-9]+)*)$"
@@ -528,7 +557,7 @@ def load_and_validate(source: Path) -> ValidationResult:
                     result.errors.append(
                         f"outputs[0].slug must be '_general_03_{slug}' to match the source family"
                     )
-                if index > 0 and output_slug.startswith("_general_"):
+                if index > 0 and output_slug.startswith(GENERAL_SLUG_PREFIX):
                     result.errors.append(
                         "only outputs[0].slug may use a _general_03_ prefix"
                     )
@@ -644,14 +673,87 @@ def load_and_validate(source: Path) -> ValidationResult:
     return result
 
 
-def output_targets_for(
-    source: Path, data: dict[str, Any]
-) -> list[tuple[Path, dict[str, str]]]:
-    return [
-        (
-            source.parent.parent / f"{output['slug']}.md",
-            output,
+class UnroutableOutput(Exception):
+    """A declared output alias has no target folder on disk.
+
+    Raised instead of guessing. The alternative — creating
+    ``<companies_root>/<key>/`` on the fly — writes an invented folder into the
+    owner's private tree and files a real answer somewhere nobody looks.
+    """
+
+
+def _configured_companies_root() -> Path:
+    """``config.companies_root()``, imported lazily.
+
+    Only a company-prefixed alias needs it, so a question-bank-only run never
+    loads the config (and never prints its example-fallback notice).
+    """
+    import config  # vendored copy; see the sys.path bootstrap at the top
+
+    return config.companies_root()
+
+
+def _company_dir(companies_root: Path, key: str) -> Path | None:
+    """The existing company folder named exactly ``key``, else ``None``.
+
+    Matches by listing the tree rather than testing ``(root / key).is_dir()``:
+    on a case-insensitive filesystem that test passes for a folder whose real
+    name differs in case, and the render would then target a path that does not
+    exist on Linux. Company keys are lowercase by construction
+    (``OUTPUT_SLUG_RE``), so an exact match is the only safe one.
+    """
+    try:
+        entries = list(companies_root.iterdir())
+    except OSError:
+        return None
+    for entry in entries:
+        if entry.name == key and entry.is_dir():
+            return entry
+    return None
+
+
+def _target_for(slug: str, source: Path, companies_root: Path | None) -> Path:
+    """Resolve one output alias to the file it renders to."""
+    if slug.startswith(GENERAL_SLUG_PREFIX):
+        return source.parent.parent / f"{slug}.md"
+    key = slug.split("-", 1)[0] if "-" in slug else ""
+    if not key:
+        raise UnroutableOutput(
+            f"output {slug!r} is neither a {GENERAL_SLUG_PREFIX}* alias nor "
+            "'<company-key>-<name>', so no target folder can be derived"
         )
+    # Resolved like discover_sources() resolves a source: both trees must be
+    # canonical, or one file reached two ways would look like two targets to the
+    # duplicate-owner check.
+    root = (
+        companies_root if companies_root is not None else _configured_companies_root()
+    ).resolve()
+    company_dir = _company_dir(root, key)
+    if company_dir is None:
+        reason = (
+            f"the company tree does not exist: {root}"
+            if not root.is_dir()
+            else f"there is no {key!r} folder in {root}"
+        )
+        raise UnroutableOutput(
+            f"output {slug!r} files under company key {key!r}, but {reason}. "
+            "Create the folder, or fix the alias prefix — this never invents one"
+        )
+    return company_dir / COMPANY_DERIVED_DIRNAME / f"{slug}.md"
+
+
+def output_targets_for(
+    source: Path, data: dict[str, Any], companies_root: Path | None
+) -> list[tuple[Path, dict[str, str]]]:
+    """Every declared alias paired with the file it renders to.
+
+    ``companies_root`` is the company tree that company-prefixed aliases file
+    under; pass ``None`` to resolve it from ``config.companies_root()``. Raises
+    :class:`UnroutableOutput` if ANY alias of this source is unroutable, so a
+    source never half-renders.
+    """
+    return [
+        (_target_for(output["slug"], source, companies_root), output)
         for output in data["outputs"]
     ]
 
@@ -869,7 +971,7 @@ def _print_result(result: ValidationResult) -> None:
         print(f"FAIL {result.source}: {error}", file=sys.stderr)
 
 
-def run(command: str, path: Path) -> int:
+def run(command: str, path: Path, companies_root: Path | None = None) -> int:
     sources = discover_sources(path)
     if not sources:
         print(f"FAIL {path}: no YAML answer sources found", file=sys.stderr)
@@ -884,15 +986,28 @@ def run(command: str, path: Path) -> int:
             continue
         valid_results.append(result)
 
+    # Resolve every target ONCE: the duplicate-owner check below and the
+    # render/check loop must reason about the same paths, and after routing they
+    # can sit in different trees (question bank vs company folder).
+    resolved: list[tuple[ValidationResult, list[tuple[Path, dict[str, str]]]]] = []
     output_owners: dict[Path, Path] = {}
     colliding_sources: set[Path] = set()
     for result in valid_results:
         assert result.data is not None
-        for output_path, _ in output_targets_for(result.source, result.data):
+        try:
+            targets = output_targets_for(result.source, result.data, companies_root)
+        except UnroutableOutput as exc:
+            print(f"FAIL {result.source}: {exc}", file=sys.stderr)
+            failed = True
+            continue
+        resolved.append((result, targets))
+        for output_path, _ in targets:
             owner = output_owners.get(output_path)
             if owner is not None:
+                # The full path, not the name: two aliases can share a name in
+                # different trees, and only the resolved path says which one collided.
                 print(
-                    f"FAIL {result.source}: output {output_path.name} is also declared by {owner}",
+                    f"FAIL {result.source}: output {output_path} is also declared by {owner}",
                     file=sys.stderr,
                 )
                 colliding_sources.update((owner, result.source))
@@ -900,12 +1015,12 @@ def run(command: str, path: Path) -> int:
             else:
                 output_owners[output_path] = result.source
 
-    for result in valid_results:
+    for result, targets in resolved:
         if result.source in colliding_sources:
             continue
         assert result.data is not None
         source = result.source
-        for output_path, output in output_targets_for(source, result.data):
+        for output_path, output in targets:
             rendered = render_markdown(result.data, source, output)
             if command == "render":
                 output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -933,12 +1048,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("validate", "render", "check"))
     parser.add_argument("path", type=Path, help="YAML source file or question-bank/sources directory")
+    parser.add_argument(
+        "--companies-root",
+        type=Path,
+        default=None,
+        help="company tree that company-prefixed aliases file under "
+             "(default: config.companies_root())",
+    )
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    return run(args.command, args.path)
+    return run(args.command, args.path, args.companies_root)
 
 
 if __name__ == "__main__":

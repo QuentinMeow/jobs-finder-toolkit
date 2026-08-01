@@ -38,12 +38,16 @@ TARGETS: dict[str, list[str]] = {
         "skills/application-tracker/scripts/_vendor/config.py",
         "skills/job-search/scripts/_vendor/config.py",
         "skills/email-assistant/scripts/_vendor/config.py",
+        "skills/behavioral-interview-prep/scripts/_vendor/config.py",
     ],
+    # layout.py rides along with config.py everywhere: config imports it, so a
+    # skill that vendors one and not the other cannot import config at all.
     "automation/shared/layout.py": [
         "skills/resume-writer/scripts/_vendor/layout.py",
         "skills/application-tracker/scripts/_vendor/layout.py",
         "skills/job-search/scripts/_vendor/layout.py",
         "skills/email-assistant/scripts/_vendor/layout.py",
+        "skills/behavioral-interview-prep/scripts/_vendor/layout.py",
     ],
     "automation/shared/location.py": [
         "skills/resume-writer/scripts/_vendor/location.py",
