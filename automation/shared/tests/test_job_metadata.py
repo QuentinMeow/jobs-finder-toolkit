@@ -842,7 +842,10 @@ class SponsorshipScopeLimitTests(unittest.TestCase):
                 self.assertEqual(classify_sponsorship(text), "unlikely")
 
     def test_at_all_intensifies_a_denial_rather_than_bounding_it(self):
-        # The one place the bare word "all" runs the other way.
+        # "at all" INTENSIFIES a denial. It used to need a lookbehind to survive
+        # the quantifier rule; now that bare "all" bounds nothing (see
+        # QuantifiedDenialTests) it is covered by the general rule, and this case
+        # stays as the pin that it must never regrade.
         self.assertEqual(
             classify_sponsorship("We cannot sponsor visas at all for this role."),
             "unlikely",
@@ -873,6 +876,177 @@ class SponsorshipScopeLimitTests(unittest.TestCase):
             classify_sponsorship(
                 "Build backend services in Go. Competitive salary and equity."),
             "unknown",
+        )
+
+
+class QuantifiedDenialTests(unittest.TestCase):
+    """A denial that names its population is a denial, not a limit on an offer.
+
+    The scope-limit rule was right that ``not (for every role)`` negates a
+    UNIVERSAL and so entails that some roles ARE sponsored. It went one quantifier
+    too far by accepting the bare word "all": ``every``/``each`` are distributive
+    and force that ``¬∀`` reading, while ``all`` also has a collective reading
+    ("for all new hires" = "for the new hires, as a class") under which the
+    quantifier bounds the DENIAL's own domain — ``∀x. ¬sponsor(x)`` — and nothing
+    about sponsorship existing is entailed.
+
+    The consequence was not a missing demotion but a two-step PROMOTION. Deleting
+    the denial dissolves the ``denial and positive -> review`` conflict branch, so
+    a JD that refuses in writing graded ``match``/``likely``/**high** and
+    ``classify_visa`` returned "yes" — presented to a candidate who needs
+    sponsorship as a confident sponsor, with no review flag. That is the invariant
+    the earlier change asserted ("a scope limit can only REMOVE a denial, never
+    create an offer") and never enforced anywhere but in prose, so it is pinned at
+    the VERDICT level here, not just per phrase. Every wording below is fictional.
+    """
+
+    DENIAL = "We are unable to sponsor visas for all new hires."
+    # Offers that cover somebody OTHER than the reader, which is the shape that
+    # makes the promotion dangerous rather than merely contradictory.
+    OFFERS = (
+        "We offer green card sponsorship to existing employees after two years.",
+        "H-1B sponsorship is part of our benefits package for tenured staff.",
+    )
+    QUANTIFIED_DENIALS = (
+        "We are unable to sponsor visas for all new hires.",
+        "We do not sponsor all candidates.",
+        "We cannot sponsor all applicants for this opening.",
+    )
+
+    def test_a_quantified_denial_alone_is_a_denial(self):
+        assessment = assess_sponsorship(self.DENIAL)
+        self.assertEqual(assessment["verdict"], "unlikely")
+        self.assertEqual(assessment["confidence"], "high")
+        self.assertEqual(assessment["decision"], "no_match")
+        self.assertIn("sponsorship.negative.unable to sponsor",
+                      assessment["rule_ids"])
+
+    def test_a_quantified_denial_beside_an_offer_is_a_conflict(self):
+        assessment = assess_sponsorship(f"{self.OFFERS[0]} {self.DENIAL}")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+        self.assertEqual(assessment["confidence"], "low")
+
+    def test_no_quantified_denial_is_ever_promoted_to_a_confident_offer(self):
+        # The verdict-level invariant, over the whole class rather than the one
+        # reported sentence: a denial the JD states cannot come back as `likely`
+        # merely because the JD also praises its immigration benefits elsewhere.
+        for denial in self.QUANTIFIED_DENIALS:
+            for offer in self.OFFERS:
+                for text in (f"{offer} {denial}", f"{denial} {offer}"):
+                    with self.subTest(text=text):
+                        assessment = assess_sponsorship(text)
+                        self.assertNotEqual(assessment["verdict"], "likely", text)
+                        self.assertNotEqual(assessment["decision"], "match", text)
+
+    def test_a_distributive_quantifier_is_still_a_scope_limit(self):
+        # The behaviour the earlier change existed to produce is untouched: the
+        # narrowing is to `all`, not to the rule.
+        offer_then_limit = (
+            "Visa sponsorship: we do sponsor visas. That said, we are not able "
+            "to sponsor visas for every role and every candidate.")
+        assessment = assess_sponsorship(offer_then_limit)
+        self.assertEqual(assessment["verdict"], "likely")
+        self.assertEqual(assessment["confidence"], "high")
+        self.assertEqual(
+            assess_sponsorship(
+                "We are not able to sponsor every candidate who applies."
+            )["verdict"],
+            "unknown",
+        )
+
+
+class SalaryPeriodFidelityTests(unittest.TestCase):
+    """``salary_range`` is USD/year, so a band stated per hour is not a value.
+
+    The period-aware band floor removes an implausible ANNUAL band before the
+    envelope runs, and the envelope's "prefer annual" line then had no annual band
+    left to prefer and fell through to the hourly one. The result is a
+    plausible-looking number in the wrong unit — worse than the garbled band it
+    replaced, because nothing about ``$30 - $45`` looks wrong in a column the
+    reader is told holds annual pay.
+
+    Refusal, not conversion: annualising would have to invent an hours-per-year
+    figure the posting never stated, and the rich fact from
+    ``extract_salary_range`` still carries the band and its ``period`` for any
+    consumer that wants it.
+    """
+
+    GARBLED_ANNUAL_PLUS_HOURLY = (
+        "The annual base salary is $3240 - $175,000 per year. "
+        "Interns for this role are paid a base salary of $30 - $45 per hour."
+    )
+
+    def _salary(self, description: str):
+        metadata = analyze_job_metadata(
+            company="ExampleCorp",
+            title="Senior Backend Engineer",
+            description=description,
+        )
+        return metadata["salary_range"]
+
+    def test_a_rejected_annual_band_does_not_fall_back_to_an_hourly_one(self):
+        self.assertIsNone(self._salary(self.GARBLED_ANNUAL_PLUS_HOURLY))
+        # The band is not lost, only kept out of the annual field.
+        fact = extract_salary_range(self.GARBLED_ANNUAL_PLUS_HOURLY)
+        self.assertEqual((fact["min"], fact["max"], fact["period"]),
+                         (30, 45, "hour"))
+
+    def test_every_route_that_rejects_the_annual_band_reports_nothing(self):
+        for description in (
+            # annual band under the per-year floor, hourly band beside it
+            "The base salary range is $9,000 - $9,500 per year. "
+            "The base pay range for interns is $50 - $80 per hour.",
+            # annual band over the 10x spread limit, hourly band beside it
+            "The base salary range is $50,000 - $600,000 per year. "
+            "The base pay range for interns is $30 - $45 per hour.",
+        ):
+            with self.subTest(description=description):
+                self.assertIsNone(self._salary(description))
+
+    def test_a_lone_hourly_band_is_not_an_annual_salary(self):
+        self.assertIsNone(
+            self._salary("The base pay range for this role is $48 - $62 per hour."))
+
+    def test_the_envelope_refuses_a_fact_with_no_annual_band(self):
+        self.assertEqual(
+            _salary_envelope({
+                "bands": [
+                    {"min": 30, "max": 45, "period": "hour"},
+                    {"min": 3_000, "max": 4_000, "period": "month"},
+                ],
+            }),
+            (None, None),
+        )
+        self.assertEqual(
+            _salary_envelope({"min": 48, "max": 62, "period": "hour"}),
+            (None, None),
+        )
+
+    def test_annual_bands_are_untouched(self):
+        self.assertEqual(
+            (lambda s: (s["min"], s["max"]))(
+                self._salary("The base salary range is $140,000 - $175,000 per year.")),
+            (140000, 175000),
+        )
+        # An hourly band beside a GOOD annual band still loses to it, as before.
+        mixed = self._salary(
+            "The annual base salary range is $150,000-$200,000 per year. "
+            "The hourly base pay range is $70-$95 per hour.")
+        self.assertEqual((mixed["min"], mixed["max"]), (150000, 200000))
+
+    def test_the_aggregator_fallback_still_fills_the_field(self):
+        metadata = analyze_job_metadata(
+            company="ExampleCorp",
+            title="Senior Backend Engineer",
+            description="The base pay range for this role is $48 - $62 per hour.",
+            supplied_salary_range={"min": 150_000, "max": 190_000,
+                                   "source": "aggregator"},
+        )
+        self.assertEqual(
+            (metadata["salary_range"]["min"], metadata["salary_range"]["max"],
+             metadata["salary_range"]["confidence"]),
+            (150000, 190000, "medium"),
         )
 
 

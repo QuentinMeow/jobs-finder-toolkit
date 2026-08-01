@@ -1487,19 +1487,43 @@ _SPONSOR_DOUBLE_NEGATION_MAX_GAP_TOKENS = 4
 # The distinction is logical, not lexical. ``not (for every X)`` denies the
 # UNIVERSAL and therefore entails that SOME X are sponsored; ``does not sponsor``
 # is the universal negation. Only the second is a denial. So a negation whose own
-# clause quantifies over "every / each / all" — or hedges on a guarantee — limits
-# the SCOPE of sponsorship and is not evidence of refusal.
+# clause quantifies over "every / each" — or hedges on a guarantee — limits the
+# SCOPE of sponsorship and is not evidence of refusal.
 #
-# The asymmetry of the original design is preserved exactly: a scope limit can only
-# REMOVE a denial, never create an offer. "We cannot sponsor every candidate" on
-# its own therefore yields `unknown` (kept and flagged), not `likely` — the `likely`
-# in the shape above comes from the separate, unhedged "we do sponsor visas".
+# WHICH quantifier does that work is load-bearing, and the first cut of this rule
+# got it wrong by accepting the bare word "all" alongside "every".
 #
-# "at all" is deliberately excluded: "we cannot sponsor visas at all" INTENSIFIES
-# the denial rather than bounding it, and is the one place the bare word "all" runs
-# the other way.
+#   * "every" / "each" are DISTRIBUTIVE — they range over individuals one at a
+#     time, so a negation has to outscope them (``¬∀x. sponsor(x)``) and the
+#     sentence necessarily leaves individuals on BOTH sides. That is exactly what
+#     licenses the inference that some roles ARE sponsored, and it is a limit on
+#     an OFFER.
+#   * "all" is number-neutral and also admits a COLLECTIVE/definite reading, under
+#     which "for all new hires" means "for the new hires, as a class" and the
+#     sentence is ``∀x. ¬sponsor(x)``. There the quantifier bounds the DENIAL's
+#     own domain rather than an offer — a flat denial that happens to name the
+#     population it covers — and nothing about sponsorship existing is entailed.
+#     "We are unable to sponsor visas for all new hires" is that shape, and it is
+#     addressed to precisely the reader who needs sponsorship.
+#
+# A quantifier that admits both readings is ambiguous, and this module resolves
+# every ambiguity toward the cheaper error (see the negation-scope note above), so
+# bare "all" must not delete a denial. It never needed to: every wording this rule
+# was written for says "every". "at all" needs no special case any more — "we
+# cannot sponsor visas at all" is a denial because "all" now bounds nothing.
+#
+# The asymmetry of the original design — a scope limit can only REMOVE a denial,
+# never create an offer — holds of the EVIDENCE lists by construction: a
+# scope-limited phrase goes to its own list and is never counted as positive. It
+# does NOT hold of the VERDICT, and nothing enforces it there. Deleting a denial
+# dissolves the ``denial and positive -> review`` conflict branch in
+# ``assess_sponsorship``, so the posting moves from ``review``/``unknown``/low to
+# ``match``/``likely``/high and ``classify_visa`` returns "yes". One misread
+# quantifier is a two-step promotion in the unsafe direction with no backstop
+# under it, which is why this test is deliberately conservative and why
+# ``QuantifiedDenialTests`` pins the verdict-level property directly.
 _SPONSOR_SCOPE_LIMIT_RE = re.compile(
-    r"\b(?:every(?:one|body)?|each|(?<!at )all|guarantee(?:s|d|ing)?)\b",
+    r"\b(?:every(?:one|body)?|each|guarantee(?:s|d|ing)?)\b",
     re.I,
 )
 # Only a denial ABOUT SPONSORING can be scope-limited. A categorical eligibility
@@ -1650,6 +1674,11 @@ def _sponsor_scope_limited(source: str, start: int, end: int) -> bool:
     sponsored; ``does not sponsor`` is the universal negation. Only the second is a
     denial. Applies to phrases about the ACT of sponsoring — a categorical
     eligibility rule ("us citizens only") is never a scope limit.
+
+    Only DISTRIBUTIVE quantifiers count (``every``/``each``, plus an explicit
+    ``guarantee`` hedge). Bare ``all`` also has a collective reading under which
+    the quantifier bounds the denial's own domain rather than an offer — see
+    ``_SPONSOR_SCOPE_LIMIT_RE`` — so it is not a scope limit here.
     """
     if not _SPONSOR_ACT_RE.search(source[start:end]):
         return False
@@ -1727,9 +1756,11 @@ def assess_sponsorship(text: str | None) -> dict:
     grade the result on OFFER STRENGTH rather than on whichever polarity appeared
     last:
 
-    * a negation that quantifies over "every / each / all" (or hedges a guarantee)
-      LIMITS the scope of sponsorship instead of refusing it, so it neither denies
-      nor offers — "we do sponsor visas, but not for every role" is a sponsor;
+    * a negation that quantifies over a DISTRIBUTIVE "every / each" (or hedges a
+      guarantee) LIMITS the scope of sponsorship instead of refusing it, so it
+      neither denies nor offers — "we do sponsor visas, but not for every role" is
+      a sponsor. Bare "all" does not qualify: "unable to sponsor visas for all new
+      hires" is a flat denial that names its population, not a limit on an offer;
     * an offer stated only under a possibility modal, a discretion clause or a
       quantity hedge is a HEDGED offer and lands ``unknown``, not ``likely``.
 
@@ -1909,7 +1940,7 @@ def _google_range(normalized: str, level_entry: dict | None) -> tuple[float | No
 
 
 def _salary_envelope(fact: dict) -> tuple[int | float | None, int | float | None]:
-    """Collapse a rich salary fact (possibly multi-band) to one min/max.
+    """Collapse a rich salary fact (possibly multi-band) to one ANNUAL min/max.
 
     The collapse stitches the LOW of one band to the HIGH of another, so the pair
     it hands back is one no posting ever stated. Per-band plausibility cannot
@@ -1918,25 +1949,50 @@ def _salary_envelope(fact: dict) -> tuple[int | float | None, int | float | None
     order of magnitude apart there is no way to tell which end is the salary, so
     report NEITHER: the row then reads "none parsed", which the reader can
     resolve from the JD, instead of a band the posting does not contain.
+
+    The unit is part of the value. ``salary_range`` is defined as posted pay in
+    USD/**year** (``METADATA_FIELDS`` / the schema-v5 ``meta.yaml`` field), so a
+    band stated for any other period is not a value this field can carry, and the
+    only correct answer is REFUSAL — not the hourly number, and not an annualised
+    one. Annualising would have to invent an hours-per-year figure the posting
+    never stated (2080 h assumes full-time FTE, which is exactly wrong for the
+    intern, contract and part-time bands this path sees), and the result would be
+    stamped ``source: job_description`` / ``confidence: high`` and shown to the
+    user as posted pay. Nothing is lost by refusing: ``extract_salary_range``
+    still returns the band with its ``period``, so a consumer that wants hourly
+    pay can read it there.
+
+    This is why "prefer the annual band" is not enough: preference silently
+    degrades to the hourly band once ``_is_pay_band`` rejects every annual
+    candidate, which publishes e.g. an intern's ``$30 - $45`` as an annual salary
+    — a plausible-looking number in the wrong unit, which is worse than an
+    obviously garbled one because nothing about it looks wrong.
     """
     bands = fact.get("bands")
     if isinstance(bands, list) and bands:
-        # Prefer annual bands so a stray hourly band cannot shrink the envelope.
         annual = [b for b in bands if isinstance(b, dict) and b.get("period") == "year"]
-        chosen = annual or [b for b in bands if isinstance(b, dict)]
-        mins = [b["min"] for b in chosen if b.get("min") is not None]
-        maxs = [b["max"] for b in chosen if b.get("max") is not None]
+        if not annual:
+            return None, None
+        mins = [b["min"] for b in annual if b.get("min") is not None]
+        maxs = [b["max"] for b in annual if b.get("max") is not None]
         low = min(mins) if mins else None
         high = max(maxs) if maxs else None
         if (low is not None and high is not None
                 and low > 0 and high > low * _BAND_SPREAD_LIMIT):
             return None, None
         return low, high
+    if fact.get("period") != "year":
+        return None, None
     return fact.get("min"), fact.get("max")
 
 
 def _bare_salary(description: str, supplied: dict | None) -> dict | None:
-    """A flat ``{min, max, confidence, source}`` salary, or ``None``."""
+    """A flat ANNUAL ``{min, max, confidence, source}`` salary, or ``None``.
+
+    Only a band the posting stated per year reaches this field; see
+    ``_salary_envelope`` for why a non-annual band is refused rather than
+    converted. The aggregator fallback is unchanged and still gets its turn.
+    """
     fact = extract_salary_range(description)
     if fact:
         low, high = _salary_envelope(fact)

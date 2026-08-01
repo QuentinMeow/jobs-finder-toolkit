@@ -286,9 +286,10 @@ apply — each has a fictional regression in `filter_variants/corpus.yaml`:
 | Shape | Rule | Result |
 |-------|------|--------|
 | Offer phrase inside a bounded negation scope | `does not currently offer visa sponsorship` — a denial of that offer, whatever route the sentence took. Scope is a NegEx-style look-back cut at the nearest clause boundary, max ~8 tokens from the cue. | `no` |
-| Negation of a universal | `not (for EVERY x)` entails that some x ARE sponsored, so it LIMITS scope rather than refusing (`sponsorship.scope_limit.*`). Cues: `every / each / all / guarantee`. | neither denial nor offer |
+| Negation of a **distributive** universal | `not (for EVERY x)` entails that some x ARE sponsored, so it LIMITS scope rather than refusing (`sponsorship.scope_limit.*`). Cues: `every / each / guarantee` only. | neither denial nor offer |
+| Denial quantified with bare `all` | `unable to sponsor visas for ALL new hires` — `all` also reads collectively ("for the new hires, as a class"), so the quantifier bounds the denial's own domain, not an offer. Not a scope-limit cue. | `no` |
 | Scope limit with no offer beside it | The limit can only REMOVE a denial, never create an offer. | `unclear` |
-| `at all` | Intensifies a denial instead of bounding it, so it is excluded from the quantifier cues. | `no` |
+| `at all` | Intensifies a denial instead of bounding it; covered by the row above, since bare `all` is not a cue at all. | `no` |
 | Quantifier BEFORE the negation cue | It is the subject of an eligibility rule, not a quantifier over what is sponsored (`all roles require work authorization without sponsorship`). A backward quantifier only counts INSIDE the negation it bounds. | `no` |
 | Offer under a possibility modal, discretion clause or quantity hedge | `limited … may be available`, `case-by-case`, `at our discretion` — a hedged offer (`sponsorship.hedged_offer.*`), adjacent to the phrase within a clause and not across a coordinator. | `unclear` |
 | Negation of a negation | `it is not true that we cannot sponsor` — read neither way. | `unclear` |
