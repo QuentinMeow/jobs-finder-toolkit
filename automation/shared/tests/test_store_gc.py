@@ -575,5 +575,170 @@ class PartialPruneTests(unittest.TestCase):
         self.assertTrue((self._posting(present).get("provenance") or {}).get("frozen"))
 
 
+# ── an unreadable manifest is DAMAGE, never an absent one ────
+class DamagedManifestTests(unittest.TestCase):
+    """A present-but-unparseable ``manifest.json`` must never read as "no reference".
+
+    The manifest is the ONLY record that a blob is referenced. Silently skipping an
+    unreadable one turns its payload into an apparent orphan (deleted with no
+    tombstone, then reported as ``not-synced-here`` — "go re-sync a file that no
+    longer exists anywhere") and evaporates its keep-class veto. Residue trade:
+    a suspended sweep leaves reclaimable disk on the machine; a wrong delete
+    destroys bytes nothing regenerates.
+    """
+
+    def _damage(self, layout):
+        """Truncate the first manifest on disk to half its bytes (a half-rsync)."""
+        path = sorted(layout.raw.glob("*/**/manifest.json"))[0]
+        raw = path.read_bytes()
+        path.write_bytes(raw[:len(raw) // 2])
+        return path
+
+    def test_truncated_manifest_is_damage_and_its_blob_is_not_an_orphan(self):
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            blobs = BlobStore(layout.blobs)
+            ref = _write_fetch(layout, blobs, "20260701T000000Z-000001-aaaaaa",
+                               _days_ago(40), source="greenhouse", operation="board",
+                               payload=b'{"job": "only-copy"}')
+            damaged_path = self._damage(layout)
+
+            from store.manifest import audit_refcounts, find_damaged_manifests
+            found = find_damaged_manifests(layout)
+            self.assertEqual([d.path for d in found], [damaged_path])
+
+            audit = audit_refcounts(layout, blobs)
+            self.assertEqual(audit["orphans"], [])          # NOT [ref.sha256]
+            self.assertTrue(audit["orphans_undetermined"])
+            self.assertEqual(len(audit["damaged"]), 1)
+
+            # No retention.yaml at all — the documented "everything never" state.
+            plan = retention.plan_sweep(layout, blobs, retention.RetentionConfig(),
+                                        now=NOW)
+            self.assertEqual(len(plan.damaged), 1)
+            self.assertEqual(plan.orphans, [])
+            self.assertEqual(plan.candidates, [])
+
+            result = retention.execute_sweep(plan, blobs, remove_orphans=True)
+            self.assertEqual(result.blocked_by_damaged, 1)
+            self.assertEqual(result.orphans_removed, 0)
+            self.assertEqual(result.deleted, 0)
+            self.assertEqual(blobs.state(ref.sha256, "json"), PRESENT)
+
+    def test_damaged_keep_class_manifest_does_not_evaporate_its_veto(self):
+        # Same fixture as test_keep_class_reference_vetoes_shared_blob, with the
+        # keep-class (board) manifest damaged: the veto must survive its unreadability.
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            blobs = BlobStore(layout.blobs)
+            shared = b'{"shared": 1}'
+            _write_fetch(layout, blobs, "20260701T000000Z-000001-aaaaaa",
+                         _days_ago(40), source="jobicy", operation="scrape",
+                         payload=shared)
+            ref = _write_fetch(layout, blobs, "20260701T000000Z-000002-bbbbbb",
+                               _days_ago(40), source="greenhouse", operation="board",
+                               payload=shared)
+            board_manifest = sorted(layout.raw.glob("greenhouse/**/manifest.json"))[0]
+            board_manifest.write_text('{"envelope_schema": 1, "payl', encoding="utf-8")
+
+            cfg = retention.parse_config({"tiers": {
+                "aggregator_sweeps": {"prune_blobs_when": {"last_observed_older_than_days": 0}},
+                "boards_and_jds": {"prune_blobs_when": "never"}}})
+            plan = retention.plan_sweep(layout, blobs, cfg, now=NOW)
+            self.assertEqual(len(plan.candidates), 0)
+            result = retention.execute_sweep(plan, blobs)
+            self.assertEqual(result.deleted, 0)
+            self.assertEqual(blobs.state(ref.sha256, "json"), PRESENT)
+
+    def test_damage_appearing_after_the_plan_still_blocks_execute(self):
+        # gc_store prints the whole plan for a human between plan and execute, so a
+        # manifest can be half-rsynced in that window.
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            blobs = BlobStore(layout.blobs)
+            ref = _write_fetch(layout, blobs, "20260601T000000Z-000001-aaaaaa",
+                               _days_ago(40), source="jobicy", operation="scrape",
+                               payload=b'{"only": "scrape"}')
+            cfg = retention.parse_config({"tiers": {"aggregator_sweeps": {
+                "prune_blobs_when": {"last_observed_older_than_days": 0}}}})
+            plan = retention.plan_sweep(layout, blobs, cfg, now=NOW)
+            self.assertEqual(len(plan.candidates), 1)
+            self.assertEqual(plan.damaged, [])
+            self._damage(layout)  # ← the window
+            result = retention.execute_sweep(plan, blobs)
+            self.assertEqual(result.blocked_by_damaged, 1)
+            self.assertEqual(result.deleted, 0)
+            self.assertEqual(blobs.state(ref.sha256, "json"), PRESENT)
+
+    def test_validate_store_reports_damage_as_an_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            blobs = BlobStore(layout.blobs)
+            _write_fetch(layout, blobs, "20260701T000000Z-000001-aaaaaa",
+                         _days_ago(40), source="greenhouse", operation="board",
+                         payload=b'{"job": 1}')
+            self._damage(layout)
+            report = validation.validate_store(Path(td))
+            self.assertFalse(report.ok)
+            self.assertTrue(any("UNREADABLE" in e for e in report.errors), report.errors)
+
+    def test_gc_cli_exits_4_and_deletes_nothing(self):
+        import gc_store
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            layout.state.mkdir(parents=True, exist_ok=True)
+            blobs = BlobStore(layout.blobs)
+            ref = _write_fetch(layout, blobs, "20260701T000000Z-000001-aaaaaa",
+                               _days_ago(40), source="greenhouse", operation="board",
+                               payload=b'{"job": 1}')
+            self._damage(layout)
+            rc = gc_store.main(["--data-root", td, "--execute", "--remove-orphans"])
+            self.assertEqual(rc, 4)
+            self.assertEqual(blobs.state(ref.sha256, "json"), PRESENT)
+
+
+# ── orphan removal: re-check + tombstone (capture is lock-free) ──
+class OrphanRemovalTests(unittest.TestCase):
+    """Capture writes the blob BEFORE its manifest, so an in-flight fetch presents to
+    the planner as exactly an orphan. ``--remove-orphans`` must re-read the reference
+    set immediately before deleting, and tombstone what it does delete."""
+
+    def test_manifest_committed_between_plan_and_execute_saves_the_blob(self):
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            blobs = BlobStore(layout.blobs)
+            payload = b'{"fetch": "in-flight"}'
+            # t0: capture-before-parse — the blob is on disk, the manifest is not.
+            ref = blobs.write(payload, "application/json")
+            plan = retention.plan_sweep(layout, blobs, retention.RetentionConfig(),
+                                        now=NOW)
+            self.assertEqual(plan.orphans, [ref.sha256])
+            # t1: the fetch commits its manifest (blob write dedupes to a no-op).
+            _write_fetch(layout, blobs, "20260701T000000Z-000001-aaaaaa",
+                         _days_ago(1), source="greenhouse", operation="board",
+                         payload=payload)
+            # t2: execute — the plan says orphan, the store says referenced.
+            result = retention.execute_sweep(plan, blobs, remove_orphans=True)
+            self.assertEqual(result.orphans_removed, 0)
+            self.assertEqual(result.orphans_re_vetoed, 1)
+            self.assertEqual(blobs.state(ref.sha256, "json"), PRESENT)
+
+    def test_a_real_orphan_is_tombstoned_before_it_is_deleted(self):
+        # A deliberately removed blob must read `pruned`, never `not-synced-here`
+        # (which tells the owner to re-sync a file that no longer exists anywhere).
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            layout.raw.mkdir(parents=True, exist_ok=True)
+            blobs = BlobStore(layout.blobs)
+            ref = blobs.write(b'{"truly": "unreferenced"}', "application/json")
+            plan = retention.plan_sweep(layout, blobs, retention.RetentionConfig(),
+                                        now=NOW)
+            self.assertEqual(plan.orphans, [ref.sha256])
+            result = retention.execute_sweep(plan, blobs, remove_orphans=True)
+            self.assertEqual(result.orphans_removed, 1)
+            self.assertEqual(blobs.state(ref.sha256, "json"), PRUNED)
+            self.assertTrue(blobs.tombstone_path(ref.sha256).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -225,7 +225,16 @@ def _validate_domain(domain_root: Path, report: StoreReport) -> None:
 
     # raw manifests + blob states
     blobstore = _blobs.BlobStore(layout.blobs)
-    from .manifest import iter_manifests
+    from .manifest import find_damaged_manifests, iter_manifests
+
+    # A manifest present but unreadable is an ERROR, never a silent skip: it is the
+    # only record that a blob is referenced, so it has to be repaired (restored or
+    # re-synced) before anything reasons from the absence of a reference.
+    for damaged in find_damaged_manifests(layout):
+        report.errors.append(
+            f"{damaged.path}: manifest is present but UNREADABLE ({damaged.error}) — "
+            f"it is NOT absent; restore or re-sync it (the retention GC stays "
+            f"suspended while it is unreadable)")
 
     for path, env in iter_manifests(layout):
         schema_name = "group" if is_group_manifest(env) else "manifest"

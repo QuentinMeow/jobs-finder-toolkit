@@ -1070,5 +1070,69 @@ class IndexPreservationTests(_StoreCase):
             shutil.rmtree(root_rebuild, ignore_errors=True)
 
 
+class SwapCrashRecoveryTests(_StoreCase):
+    """A build killed inside ``_swap_dir`` leaves the zone only as ``<zone>.old``.
+
+    That backup is then the sole copy of the committed index — the durable floor
+    whose index-only rows exist nowhere else once their raw blobs are pruned and
+    their derived is gone. The next run must RESTORE it before reading the floor,
+    not delete it: ``_read_index_rows`` tolerates an absent index by returning
+    ``{}``, so a destroyed remnant reads as "there was never a floor" and the
+    following swap commits an index without those rows.
+    """
+
+    def _kill_mid_swap(self, zone: Path) -> Path:
+        """Reproduce the exact on-disk state of a SIGKILL between the two renames."""
+        backup = zone.with_name(zone.name + ".old")
+        zone.rename(backup)                     # window opened, process died here
+        (zone.with_name(zone.name + ".building")).mkdir(parents=True)
+        return backup
+
+    def test_recover_restores_only_when_the_live_zone_is_absent(self):
+        with tempfile.TemporaryDirectory() as td:
+            zone = Path(td) / "index"
+            (zone / "sub").mkdir(parents=True)
+            (zone / "postings.jsonl").write_text("row\n", encoding="utf-8")
+            backup = self._kill_mid_swap(zone)
+            self.assertFalse(zone.exists())
+
+            self.assertTrue(bp._recover_swap_remnant(zone))
+            self.assertTrue((zone / "postings.jsonl").exists())
+            self.assertFalse(backup.exists())
+            # Idempotent, and a stale backup beside a LIVE zone is not a remnant.
+            self.assertFalse(bp._recover_swap_remnant(zone))
+            backup.mkdir()
+            self.assertFalse(bp._recover_swap_remnant(zone))
+
+    def test_durable_floor_survives_a_build_killed_mid_swap(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX"),
+                          _job(222, "SRE", "Remote, US")], _dt(14))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        floor = self._index_keys()
+        self.assertEqual(floor, {"gh-111", "gh-222"})
+
+        # Index-only survivors: raw + derived are gone, the committed index is the
+        # only record of these rows — and then a build is killed mid-swap.
+        self._drop_raw_and_derived()
+        self._kill_mid_swap(self.layout.index)
+        self.assertFalse(self.layout.index.exists())
+
+        self._capture_gh([_job(333, "Data Engineer", "Seattle, WA")], _dt(20))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        self.assertEqual(self._index_keys(), floor | {"gh-333"})
+        for key in floor:
+            row = [r for r in self._index_rows() if r["key"] == key][0]
+            self.assertEqual(row["carried_from"], "index")
+
+    def test_incremental_path_recovers_the_same_remnant(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        self._drop_raw_and_derived()
+        self._kill_mid_swap(self.layout.index)
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(20))
+        self.assertEqual(self._build([]), 0)    # incremental (the default path)
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-222"})
+
+
 if __name__ == "__main__":
     unittest.main()

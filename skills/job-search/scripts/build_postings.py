@@ -1352,6 +1352,7 @@ def _fast_plan(layout, registry, ledger, manifests, pending, blobstore):
 
 
 def build_incremental(layout, registry) -> dict:
+    _recover_swap_remnants(layout)  # before ANY read of the live zones
     stamps = _stamps()
     ledger = BuildLedger(layout.build_ledger)
     blobstore = BlobStore(layout.blobs)
@@ -1797,6 +1798,7 @@ def _regen_index_zone(index_root: Path, entities, entity_seq, suppressed, built_
 
 
 def build_rebuild(layout, registry) -> dict:
+    _recover_swap_remnants(layout)  # before ANY read of the live zones
     stamps = _stamps()
     ledger = BuildLedger(layout.build_ledger)
     blobstore = BlobStore(layout.blobs)
@@ -1863,6 +1865,37 @@ def _spot_equivalence(entities, groups, seq_of, stamps) -> None:
             raise BuildError(f"non-deterministic reduce (order-dependent) for {key}")
 
 
+def _recover_swap_remnant(current: Path) -> bool:
+    """Restore a crashed swap: ``current`` absent + ``current.old`` present → rename back.
+
+    ``_swap_dir`` opens a sub-millisecond window between its two renames in which the
+    zone lives ONLY as ``<zone>.old``. A process killed there (SIGKILL, OOM, power)
+    leaves exactly that state, and ``<zone>.old`` is then the only copy of the
+    committed index — which is the store's durable floor (rows whose raw blobs were
+    pruned and whose derived is gone exist nowhere else).
+
+    ``current.exists()`` is the exact discriminator: a completed swap always leaves
+    ``current`` present, so a present backup beside an ABSENT current can only be a
+    crash remnant, and the correct action is to restore it, never to delete it. Call
+    this under the builder lock BEFORE anything reads the live zone — a build that
+    reads the floor as empty writes an index without it, and the swap that follows
+    would then discard the remnant that still held those rows.
+    """
+    backup = current.with_name(current.name + ".old")
+    if backup.exists() and not current.exists():
+        backup.rename(current)
+        return True
+    return False
+
+
+def _recover_swap_remnants(layout) -> None:
+    """Restore any crashed-swap remnant in the zones ``_swap_dir`` touches."""
+    for zone in (layout.derived, layout.index):
+        if _recover_swap_remnant(zone):
+            print(f"build_postings: recovered {zone.name} from {zone.name}.old "
+                  f"(a previous build was killed mid-swap)", file=sys.stderr)
+
+
 def _swap_dir(current: Path, new: Path) -> None:
     """Replace ``current`` with ``new`` (build-aside swap), smallest window possible.
 
@@ -1871,7 +1904,11 @@ def _swap_dir(current: Path, new: Path) -> None:
     stale backup is removed BEFORE the swap so the window is exactly two back-to-back
     renames; readers tolerate a momentary missing index per the degrade-don't-block
     rule (a cold read behaves as if the store were empty, never an error).
+
+    A crash remnant is restored first, so the up-front ``rmtree`` can only ever clear
+    a backup left beside a LIVE ``current`` — i.e. a genuinely stale one.
     """
+    _recover_swap_remnant(current)
     backup = current.with_name(current.name + ".old")
     if backup.exists():
         shutil.rmtree(backup)  # cleared up-front → swap is just two renames
@@ -1884,6 +1921,7 @@ def _swap_dir(current: Path, new: Path) -> None:
 
 def build_opinions_only(layout, registry) -> dict:
     """Re-run classifiers over STORED facts (no raw re-read); print the diff."""
+    _recover_swap_remnants(layout)  # before ANY read of the live zones
     stamps = _stamps()
     postings_root = layout.derived / "postings"
     diffs = {"visa": {}, "workplace": {}, "level": {}}
