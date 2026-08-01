@@ -63,6 +63,59 @@ class NegatedSponsorshipTests(unittest.TestCase):
         )
 
 
+class NegatedOfferTests(unittest.TestCase):
+    """A denial that contains an offer substring must not score 'yes'.
+
+    Every sentence is fictional. Each used to return ``yes`` because the denial
+    wording was not in the phrase list while an offer substring inside it was.
+    """
+
+    CASES = (
+        "This role does not currently offer visa sponsorship.",
+        "We will not consider applicants for employment immigration sponsorship "
+        "or support for this position.",
+        "Must be eligible to work in the United States; no H1-B visa "
+        "sponsorship available.",
+        "We are not able to offer visa sponsorship for this position at this time.",
+    )
+
+    def test_negated_offers_score_no(self):
+        for text in self.CASES:
+            with self.subTest(text=text):
+                self.assertEqual(classify_visa(text)[0], "no")
+
+    def test_double_negative_is_unclear(self):
+        self.assertEqual(
+            classify_visa("It is not true that we cannot sponsor work visas.")[0],
+            "unclear",
+        )
+
+    def test_export_control_boilerplate_is_unclear_not_no(self):
+        # Export-licensing language is not an immigration denial. Under the
+        # default exclude_negative policy a "no" here would drop the posting.
+        self.assertEqual(
+            classify_visa(
+                "Candidates must be eligible to obtain the required "
+                "authorizations without sponsorship for an export license.")[0],
+            "unclear",
+        )
+
+    def test_work_authorization_boilerplate_is_unclear(self):
+        self.assertEqual(
+            classify_visa(
+                "Applicants must be authorized to work in the United States.")[0],
+            "unclear",
+        )
+
+    def test_genuine_offer_after_an_unrelated_negation_is_yes(self):
+        self.assertEqual(
+            classify_visa(
+                "There is no relocation budget, and visa sponsorship is "
+                "available for this role.")[0],
+            "yes",
+        )
+
+
 class VisaPolicyBindingTests(unittest.TestCase):
     """--visa-policy must bind even when the profile ships needs_sponsorship: false."""
 
@@ -99,6 +152,26 @@ class VisaPolicyBindingTests(unittest.TestCase):
         # ...while keeping one that explicitly offers sponsorship.
         offer = self._posting("We provide visa sponsorship for this role.")
         self.assertTrue(visa_ok(offer, profile))
+
+    def test_require_positive_drops_a_negated_offer(self):
+        # The reported defect end to end: the strictest policy, chosen by someone
+        # who needs sponsorship, used to return this posting as an explicit offer.
+        profile = {"visa": {"needs_sponsorship": True, "policy": "require_positive"}}
+        denial = self._posting(
+            "This role does not currently offer visa sponsorship.")
+        self.assertFalse(visa_ok(denial, profile))
+        self.assertEqual(denial.visa_label, "no")
+
+    def test_default_policy_keeps_an_export_control_posting(self):
+        # exclude_negative drops denials, so mislabelling export-licensing
+        # boilerplate as a denial removed these postings entirely.
+        profile = {"visa": {"needs_sponsorship": True}}
+        posting = self._posting(
+            "Candidates must be eligible to obtain the required authorizations "
+            "without sponsorship for an export license.")
+        self.assertTrue(visa_ok(posting, profile))
+        self.assertEqual(posting.visa_label, "unclear")
+        self.assertIn("sponsorship_requires_review", posting.review_reasons)
 
 
 if __name__ == "__main__":

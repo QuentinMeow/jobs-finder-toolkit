@@ -28,7 +28,7 @@
 - `memory/known-issues/render-py-pdf-skipped-libreoffice-flake.md` — `render.py` "PDF: skipped" transient LibreOffice lock/first-run flake
 - `memory/known-issues/rw-tailor-single-posting-canary-fixture-conflict.md` — Canary fixture conflict: `rw-tailor-single-posting` is unsatisfiable against the shipped complete example folder
 - `memory/known-issues/skills-diff-provenance-noise.md` — skills_diff.py queues non-skills from provenance notes and degree phrases
-- `memory/known-issues/visa-sponsorship-negation-phrase-gap.md` — `classify_sponsorship()`'s negative-phrase list misses some real denial wordings
+- `memory/known-issues/visa-sponsorship-negation-phrase-gap.md` — `classify_sponsorship()` still misses denials that match no phrase at all
 
 ## facts
 

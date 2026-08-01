@@ -17,6 +17,7 @@ from job_metadata import (  # noqa: E402
     STATUS_VALUES,
     analyze_job_metadata,
     assess_required_yoe,
+    assess_sponsorship,
     classify_level,
     classify_sponsorship,
     classify_workplace,
@@ -156,6 +157,85 @@ class YoeExtractionTests(unittest.TestCase):
         self.assertEqual(result["min"], 8)
         self.assertEqual(result["confidence"], "medium")
         self.assertEqual(result["requirement_kind"], "contextual")
+
+
+class ThirdPartyYoeAttributionTests(unittest.TestCase):
+    """Years the JD attributes to somebody else are not the candidate's.
+
+    Each About-us sentence below is fictional. All of them used to be read as a
+    high-confidence minimum, which hard-dropped the posting under
+    ``max_years_experience`` and wrote a fabricated ``required_yoe`` +
+    ``job_level`` into tracking metadata.
+    """
+
+    def test_founders_experience_is_not_a_requirement(self):
+        details = extract_required_yoe_details(
+            "Our founders bring 25 years of engineering experience.")
+        self.assertIsNone(details["min"])
+        self.assertEqual(details["source"], "not_stated")
+        self.assertEqual(details["confidence"], "unknown")
+
+    def test_combined_team_total_is_not_a_requirement(self):
+        details = extract_required_yoe_details(
+            "Our team has 30 years of combined software engineering experience.")
+        self.assertIsNone(details["min"])
+        self.assertEqual(details["requirement_kind"], "not_stated")
+
+    def test_customer_experience_is_not_a_requirement(self):
+        details = extract_required_yoe_details(
+            "We serve customers who have 40 years of industry experience.")
+        self.assertIsNone(details["min"])
+
+    def test_company_blurb_does_not_outrank_the_real_requirement(self):
+        # The multi-sentence case: the wrong number must not win just because it
+        # is larger, in either order.
+        blurb = "Our founders bring 25 years of engineering experience."
+        requirement = ("Requires 3+ years of professional software engineering "
+                       "experience.")
+        for text in (f"{blurb} {requirement}", f"{requirement} {blurb}"):
+            with self.subTest(text=text):
+                details = extract_required_yoe_details(text)
+                self.assertEqual(details["min"], 3)
+                self.assertEqual(details["confidence"], "high")
+
+    def test_company_blurb_no_longer_hard_drops_the_posting(self):
+        text = ("Our founders bring 25 years of engineering experience. "
+                "Requires 3+ years of professional software engineering "
+                "experience.")
+        self.assertEqual(assess_required_yoe(text, cap=8)["decision"], "match")
+
+    def test_company_blurb_does_not_fabricate_metadata(self):
+        # The metadata cascade: no requirement, so no YOE-derived seniority.
+        metadata = analyze_job_metadata(
+            company="Unknown",
+            title="Software Engineer",
+            description="Our founders bring 25 years of engineering experience.",
+        )
+        self.assertIsNone(metadata["required_yoe"]["min"])
+        self.assertEqual(metadata["required_yoe"]["source"], "not_stated")
+        self.assertEqual(metadata["job_level"]["normalized"], "unknown")
+
+    # --- guardrails: the guard must not eat a real requirement --------------
+    def test_requirement_after_a_company_subject_still_counts(self):
+        details = extract_required_yoe_details(
+            "Our engineering team is hiring an engineer with 6+ years of "
+            "professional experience.")
+        self.assertEqual(details["min"], 6)
+        self.assertEqual(details["confidence"], "high")
+
+    def test_we_are_looking_for_still_counts(self):
+        details = extract_required_yoe_details(
+            "We are looking for an engineer with 6+ years of professional "
+            "experience.")
+        self.assertEqual(details["min"], 6)
+        self.assertEqual(details["confidence"], "high")
+
+    def test_we_have_an_opening_still_counts(self):
+        details = extract_required_yoe_details(
+            "We have an opening for an engineer with 6+ years of professional "
+            "experience.")
+        self.assertEqual(details["min"], 6)
+        self.assertEqual(details["confidence"], "high")
 
 
 class SalaryExtractionTests(unittest.TestCase):
@@ -458,6 +538,191 @@ class SponsorshipTests(unittest.TestCase):
             description="This position does not sponsor work visas.",
         )
         self.assertEqual(metadata["sponsorship"], "unlikely")
+
+
+class SponsorshipNegationScopeTests(unittest.TestCase):
+    """A denial that contains an OFFER substring must not read as an offer.
+
+    Every sentence here is fictional. Each one previously classified ``likely``
+    with ``decision: match`` and ``confidence: high`` because the denial wording
+    was not in the phrase list while a positive substring inside it was — so
+    ``--visa-policy require_positive`` returned postings that refuse sponsorship.
+    """
+
+    def test_negated_offer_with_adverb_is_unlikely(self):
+        assessment = assess_sponsorship(
+            "This role does not currently offer visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unlikely")
+        self.assertEqual(assessment["decision"], "no_match")
+        self.assertEqual(
+            assessment["rule_ids"],
+            ["sponsorship.negated_offer.offer visa sponsorship"],
+        )
+
+    def test_negated_offer_with_distant_cue_is_unlikely(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We will not consider applicants for employment immigration "
+                "sponsorship or support for this position."),
+            "unlikely",
+        )
+
+    def test_negated_offer_after_semicolon_is_unlikely(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "Must be eligible to work in the United States; no H1-B visa "
+                "sponsorship available."),
+            "unlikely",
+        )
+
+    def test_not_able_to_offer_is_unlikely(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We are not able to offer visa sponsorship for this position at "
+                "this time."),
+            "unlikely",
+        )
+
+    def test_parenthetical_aside_does_not_break_the_negation(self):
+        # A comma-delimited aside is not a new clause: the negation still reaches
+        # the offer phrase on the far side of it.
+        self.assertEqual(
+            classify_sponsorship(
+                "We are not, at this time, able to offer visa sponsorship."),
+            "unlikely",
+        )
+
+    def test_double_negated_denial_is_unknown_not_a_denial(self):
+        # Neither reading is guessed at: the posting is returned for a human read
+        # rather than dropped. It used to be a high-confidence denial.
+        assessment = assess_sponsorship(
+            "It is not true that we cannot sponsor work visas.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["confidence"], "low")
+        self.assertIn(
+            "sponsorship.ambiguous.double_negation", assessment["rule_ids"])
+
+    def test_coordinated_denials_are_not_a_double_negative(self):
+        # Two denials in one sentence are two denials. Only cues with nothing of
+        # substance between them are read as a double negative.
+        self.assertEqual(
+            classify_sponsorship(
+                "We are unable to provide visa sponsorship at this time and "
+                "cannot sponsor H-1B transfers."),
+            "unlikely",
+        )
+
+    # --- guardrails: the negation scope must not swallow a real offer --------
+    def test_offer_after_a_clause_restart_survives(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "There is no relocation budget, and visa sponsorship is "
+                "available for this role."),
+            "likely",
+        )
+
+    def test_offer_in_a_later_sentence_survives(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We do not require a degree. Visa sponsorship is available."),
+            "likely",
+        )
+
+    def test_caveat_after_the_offer_is_not_a_denial(self):
+        # "not guaranteed" qualifies an offer; it does not withdraw it.
+        self.assertEqual(
+            classify_sponsorship(
+                "Visa sponsorship is available for this role, though "
+                "sponsorship is not guaranteed."),
+            "likely",
+        )
+
+    def test_contrastive_conjunction_ends_the_negation(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We cannot guarantee an outcome, but we do provide visa "
+                "sponsorship for senior hires."),
+            "likely",
+        )
+
+    def test_conditional_offer_stays_unclear(self):
+        # A discretionary "we will consider" is not a guarantee. Unknown keeps the
+        # posting and flags it, instead of promising sponsorship that may not come.
+        self.assertEqual(
+            classify_sponsorship(
+                "We will consider visa sponsorship for exceptional candidates."),
+            "unknown",
+        )
+
+    def test_work_authorization_boilerplate_stays_unclear(self):
+        # Boilerplate used by sponsoring employers too — it must never become a
+        # denial, or the filter would hide most of the market.
+        self.assertEqual(
+            classify_sponsorship(
+                "Applicants must be authorized to work in the United States."),
+            "unknown",
+        )
+
+    def test_silent_posting_never_becomes_a_denial(self):
+        assessment = assess_sponsorship(
+            "Build and operate reliable distributed services.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertFalse(assessment["signal_present"])
+
+
+class SponsorshipExportControlSenseTests(unittest.TestCase):
+    """"Sponsorship" in export-licensing boilerplate is not an immigration denial.
+
+    The default ``exclude_negative`` policy DROPS denials, so reading this
+    boilerplate as a denial removed export-controlled postings from the results
+    without saying so. All wording below is fictional.
+    """
+
+    def test_export_license_boilerplate_is_not_a_denial(self):
+        assessment = assess_sponsorship(
+            "Candidates must be eligible to obtain the required authorizations "
+            "without sponsorship for an export license.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+        self.assertEqual(
+            assessment["rule_ids"],
+            ["sponsorship.non_immigration.export_control"],
+        )
+
+    def test_itar_clause_is_not_a_denial(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "This position requires access to export-controlled technology; "
+                "you must qualify without sponsorship for an export license."),
+            "unknown",
+        )
+
+    def test_export_clause_does_not_suppress_a_real_denial(self):
+        # Both topics in one posting: the immigration sentence still decides.
+        self.assertEqual(
+            classify_sponsorship(
+                "Access to export-controlled data is required. We do not "
+                "provide visa sponsorship for this role."),
+            "unlikely",
+        )
+
+    def test_export_clause_does_not_suppress_a_real_offer(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "Must be eligible for an export license. Visa sponsorship is "
+                "available for this role."),
+            "likely",
+        )
+
+    def test_immigration_word_in_the_same_sentence_keeps_the_denial(self):
+        # The guard needs the sentence to be export-control language AND carry no
+        # immigration word at all; one visa mention is enough to keep the denial.
+        self.assertEqual(
+            classify_sponsorship(
+                "You must be able to obtain an export license and to work in "
+                "the United States without visa sponsorship."),
+            "unlikely",
+        )
 
 
 class ReferenceCacheTests(unittest.TestCase):
