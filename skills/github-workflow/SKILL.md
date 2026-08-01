@@ -88,16 +88,16 @@ usable for one-off paths in tests.
 
 ## Verification
 
-Measured at `9c1f2ab`, this branch's tip after its last rebase — not the worktree
-it was written in.
+Run at `9c1f2ab`, this branch's tip after its last rebase — not the worktree it
+was written in.
 
 ```
-$ python -m unittest discover tests
-Ran 41 tests   OK                                                 exit 0
-$ .venv/bin/python automation/gardener/verify_links.py
-OK: 812 references, the skill symlinks and the vendored copies
-verified.                                                         exit 0
+$ python -m unittest discover tests                               exit 0
+$ .venv/bin/python automation/gardener/verify_links.py            exit 0
 ```
+
+Deltas this PR caused: +1 test file, +3 tests. No tree-wide totals here — those
+come from the post-merge canonical counts job on `main`.
 
 Ran the export twice in one day against a scratch directory and confirmed the
 second run exits 1 instead of overwriting.
@@ -125,59 +125,60 @@ finding with its line. **A pass is not a review** — whether the downsides are
 actually stated is a judgment the checker cannot make, so re-read the draft for
 that yourself. It does **not** check your numbers; that is the next section.
 
-### Every number in a body belongs to one commit — name it
+### A body states exit codes and deltas — never an absolute tree-wide count
 
-**Read this section as a description of the cause, not as the fix.** Four
-correction passes over one stack rewrote the same class of false number. The
-second published new false numbers while fixing the first's. The third wrote
-*this section* — and then published a wrong diff size and a wrong file count of
-its own, and the two commits stacked directly on top of it published fresh false
-reference counts, one of them under a correctly named commit. Prose has now
-failed three times, once inside the pass that wrote it. The fix is mechanical and
-is filed at P0:
+**The rule: an individual PR body never states an absolute tree-wide count** —
+"2669 references", "161 ledger rows", "43 records", "Ran 41 tests". It states each
+gate's **exit code** and the **deltas this PR caused** ("+2 ledger rows",
+"+1 canary"). Absolute counts have exactly one home: the **post-merge canonical
+counts job**, which measures `main` after the merge, where the number is finally a
+property of the tree it names.
+
+**Why, in one line:** a count is a property of a commit, not of a change, so a
+number measured on a branch is wrong by construction the moment the stack moves
+under it — you author off `main`, measure there, then rebase into stack position,
+where every PR below you has changed the very tree the count describes.
+
+Prose alone did not fix this. Four correction passes over one stack rewrote the
+same class of false number — 25 bodies, then 11 of 13, then 4 of 41 — and the last
+instance (`#177`, claiming 2669 where its real parent gave 2686) was published
+*after* three separate prose warnings, one of them written by a pass that then
+published wrong numbers of its own. So this is a ban, not a caution. The mechanical
+check is filed at P0:
 `tasks/0_backlog/2026-07-31-pr-verification-blocks-are-measured-off-the-stack/`.
-Do not add a fifth warning here. Until the checker lands, this is what goes wrong:
-
-**A count is a property of a commit, not of a change.** `verify_links` counts
-references across the whole tracked tree; `Ran N tests` counts the whole suite.
-Neither describes your diff — both describe the tree your diff happens to sit on.
-**Every stacked PR changes that tree.** You author in an isolated worktree off
-`main`, measure there, then rebase into stack position, where every PR below you
-has added files. So a body written before integration reports a tree that was
-never merged, and — when a rebase reorders anything — often a tree that never
-existed at all. The numbers were true where they were measured and false where
-they were published.
 
 So, when you write a `## Verification` block:
 
-- **Measure after your last rebase, on the commit you are actually publishing.**
-  Not the branch you wrote on. The four fast gates cost about four seconds
-  together; run them and the SHA in one go, and paste what it prints:
+- **Run the gates on the commit you are actually publishing** — after your last
+  rebase, not on the branch you wrote on. The four fast gates cost about four
+  seconds together; run them and the SHA in one go, and paste the exit codes:
 
   ```bash
-  git rev-parse --short HEAD    # the SHA that goes beside every number below
+  git rev-parse --short HEAD    # the SHA that goes beside every result below
   .venv/bin/python automation/reconcile/reconcile.py --check         ; echo "EXIT=$?"
   .venv/bin/python automation/gardener/verify_links.py               ; echo "EXIT=$?"
   .venv/bin/python automation/metrics/instruction_budget.py --strict ; echo "EXIT=$?"
   .venv/bin/python automation/vendoring/sync_vendored.py --check     ; echo "EXIT=$?"
   ```
-- **Put the SHA next to the number.** `0 broken of 2580 verified (at 71de852)`.
-  A bare count with no commit beside it is not evidence of anything, and a
-  reader cannot tell a stale paste from a fresh one without it.
+- **Put the SHA next to every result**, exit code or delta alike: `EXIT=0 (at
+  71de852)`. A bare result with no commit beside it is not evidence of anything,
+  and a reader cannot tell a stale paste from a fresh one without it.
 - **Never combine two runs into one line.** Copying half a transcript from one
   tree and half from another produces a line that matches no commit in the
   history — which is harder to spot, and worse, than a plainly stale number.
-- **Compare against your parent, and do not trust the comparison.** A count below
-  your parent's, or exactly equal to it, costs nothing to spot and is worth a
-  second look. It is evidence of nothing, and it never substitutes for
-  re-measuring. Measured on this stack: at `#175` the **correct** count (2668) was
-  exactly equal to its parent's, and the **fabricated** one (2670) sat cleanly
-  above it — so the check would have flagged the truth and passed the invention.
-  It did fire correctly at `#174` (2658, below its parent's 2664). A count above
-  your parent's tells you nothing at all.
-- **If you genuinely cannot re-measure** (it needs the private overlay, another
-  machine, a live board), say what it was measured on and that it was not
-  reproduced. Do not publish a number you did not take.
+- **A delta is a measurement too.** Take it from one run on the commit you are
+  publishing, as "`<at your parent>` → `<at your tip>`" — never as arithmetic on a
+  figure you read somewhere else.
+- **Do not treat "compare against your parent" as a substitute for the ban.**
+  Measured on this stack: at `#175` the **correct** count (2668) was exactly equal
+  to its parent's, and the **fabricated** one (2670) sat cleanly above it — so the
+  comparison would have flagged the truth and passed the invention. It did fire
+  correctly at `#174` (2658, below its parent's 2664), and a count above your
+  parent's tells you nothing at all. Spotting a suspicious count is free; it is
+  never evidence, and it never replaces re-running the gate.
+- **If you genuinely cannot re-run something** (it needs the private overlay,
+  another machine, a live board), say what it ran on and that it was not
+  reproduced. Do not publish a result you did not take.
 
 ## 2. Stacked PRs — GitHub detects the pattern, no tool required
 
@@ -208,33 +209,52 @@ branches you own in this repo.
 `feat/01-parser`, `feat/02-renderer`, `feat/03-cli`. The number is for humans
 scanning `gh pr list`; nothing reads it.
 
-**Merge order is bottom-up.** Merge the PR that targets `main` first, deleting its
-head branch on merge; GitHub then re-targets the next PR's base to `main`
-automatically. Merging out of order strands the content of the PRs below. Every
-update this causes rewrites SHAs, which orphans the review-ledger rows written on
-those branches — see "A stacked PR's row does not survive the merge" below.
+**Merge order is bottom-up, with a merge commit and an explicit retarget.** Merge
+the PR that targets `main` first (`gh pr merge <N> --merge`), then — only once it
+has actually merged — retarget the next one (`gh pr edit <N+1> --base main`).
+Merging out of order strands the content of the PRs below. **Never delete a head
+branch on merge:** deleting a stacked PR's base does not retarget that PR, it
+**closes** it. Any SHA rewrite here orphans the review-ledger rows written on those
+branches — see "A stacked PR's row does not survive the merge" below. Full recipe
+and the reasons: the next block.
 
-**Keeping every step green when `delete_branch_on_merge` is off.** Check the repo's
-setting before assuming GitHub's auto-retarget applies: `gh api repos/<owner>/<repo>
--q .delete_branch_on_merge`. When it is `false` (and squash/rebase merge are still
-enabled), merging without an explicit retarget lands each PR on the *previous*
-branch, not `main` — silent, not red, and nothing in the UI flags it. The safe
-recipe for a ledger-tracked stack (every branch tip here is a ledger-only
-`Acknowledge …` commit, and the review gate's `WATCHED_PATHSPEC` excludes the
-ledger file — see "The review gate and the one-commit lag" below) is a **merge
-commit**, which preserves every SHA, plus a manual retarget, repeated bottom-up:
+**The merge recipe, and why `delete_branch_on_merge` stays off.** Check the repo's
+setting rather than assuming GitHub's auto-retarget applies: `gh api
+repos/<owner>/<repo> -q .delete_branch_on_merge`. It is `false` here and stays
+that way. With it off (and squash/rebase merge still enabled), merging without an
+explicit retarget lands each PR on the *previous* branch, not `main` — silent, not
+red, and nothing in the UI flags it. The recipe for a ledger-tracked stack (every
+branch tip here is a ledger-only `Acknowledge …` commit, and the review gate's
+`WATCHED_PATHSPEC` excludes the ledger file — see "The review gate and the
+one-commit lag" below) is a **merge commit**, which preserves every SHA, plus a
+manual retarget, one PR at a time, bottom-up:
 
 ```bash
-gh pr merge <N>   --merge
-gh pr edit  <N+1> --base main
+gh pr merge <N>   --merge     # merge commit: every SHA on <N> survives
+gh pr edit  <N+1> --base main # only AFTER <N> has merged
 ```
+
+Do the two in that order. Retargeting `<N+1>` **before** `<N>` merges makes the
+child's diff include its parent's commits, so the PR under review is no longer the
+change you wrote.
 
 Never `--squash`, never `--rebase`, never GitHub's "Update branch" button on such a
 stack — each rewrites SHAs, and this repo's ledger rows are keyed to commit ranges,
 so rewriting orphans every row above it (the recovery for when that already
 happened is "A stacked PR's row does not survive the merge" below).
 
-**Rebasing the whole stack when the bottom changes.** The trap: a plain
+**And never `--delete-branch`.** Deleting the branch makes the rewritten commits
+*unreachable*, so the orphaned rows degrade from `EXISTS here but is NOT an
+ancestor` to `UNKNOWN OBJECT` in any fresh clone: the diff a row acknowledges is
+simply gone, and the review it records stops being merely unverifiable and becomes
+uninspectable. `--squash --delete-branch` on a stack is the likeliest single cause
+of this repo's currently orphaned ledger rows. It also closes the PR above it —
+deleting a base branch does **not** retarget the child, GitHub closes it, which is
+what happened to `#136`; reopening it required restoring the deleted branch first.
+
+**Rebasing the whole stack when the bottom changes.** The recipe above preserves
+SHAs, so this trap belongs to a bottom PR that was squash- or rebase-merged anyway
+(an older PR, or a merge you did not make). The trap: a plain
 `git rebase <new-base>` replays every commit not already in the new base *by
 SHA*. After the bottom PR is squash- or rebase-merged, its changes exist on `main`
 under **different SHAs**, so git replays them a second time and each one conflicts
@@ -249,9 +269,9 @@ git rebase --onto feat/02-renderer <old-tip-of-02> feat/03-cli
 ```
 
 Record each branch's old tip (`git rev-parse feat/01-parser`) **before** the merge
-that deletes it, or recover it from `git reflog`. Force-push each rebased branch
-in the same bottom-up order, and read the guardrail on force-pushing reviewed
-branches below.
+or branch deletion that loses it, or recover it from `git reflog`. Force-push each
+rebased branch in the same bottom-up order, and read the guardrail on force-pushing
+reviewed branches below.
 
 ## 3. Gates, in the order you meet them
 
@@ -373,8 +393,8 @@ check to make a commit pass.
 | Find the failing run | `gh run list --branch <branch> --limit 5` |
 | Read a failing run's log | `gh run view <id> --log-failed` |
 | Merge state | `gh pr view <n> --json state,mergeable,mergeStateStatus,baseRefName` |
-| Merge the bottom of a stack | `gh pr merge <n> --squash --delete-branch` |
-| Retarget a PR | `gh pr edit <n> --base main` |
+| Merge the bottom of a stack | `gh pr merge <n> --merge` — never `--squash`, `--rebase`, or `--delete-branch` on a stack |
+| Retarget the next PR up, **after** its base has merged | `gh pr edit <n+1> --base main` |
 
 **`gh pr list` and `gh pr view` disagree with reality in a useful way.** Both keep
 reporting `baseRefName: feat/01-parser` after that PR merged and its branch was
@@ -393,6 +413,10 @@ with `gh pr edit <n> --base main`.
   after the push. A silent force-push destroys the review's line anchors.
 - **Never merge your own stack out of order.** Bottom-up, one at a time,
   confirming each merge before the next.
+- **Never `--squash`, `--rebase`, or `--delete-branch` a stacked PR** — merge
+  commit plus an explicit retarget after the parent merges (§2).
+- **Never put an absolute tree-wide count in a PR body** — exit codes and this
+  PR's deltas only; totals come from the post-merge canonical counts job (§1).
 - **A PR whose CI is red is not ready, regardless of local results.** Do not ask
   for a merge, and do not explain the red away.
 - **Verify in a config-less checkout before claiming CI will pass.** A detached

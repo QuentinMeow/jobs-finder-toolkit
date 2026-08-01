@@ -111,7 +111,11 @@ audience decides: fork → this file, maintainer branch → the skill.
 4. **Open the PR against `main`** and fill in the pull-request template — it
    mirrors the gates: checks pass, eval canaries run or a recorded skip
    rationale per the risk-based gate if you touched skill instruction files,
-   no personal data.
+   no personal data. **Report gate results as exit codes plus the deltas your PR
+   caused — never an absolute tree-wide count** ("2669 references", "43
+   records"): a count measured on your branch is wrong the moment anything else
+   lands under it, so totals come from the post-merge canonical counts job that
+   measures `main` after the merge.
 5. **CI must be green.** Fork PRs run the leak guard tokenless (structural + path
    checks) — a clean tree passes; if the guard fires on your PR, it found
    something that looks personal and it must come out, not be excepted.
@@ -121,9 +125,14 @@ audience decides: fork → this file, maintainer branch → the skill.
    one the maintainer cannot rebase or retarget for you when the bottom merges.
    **This rule does not bind the maintainer**, who stacks branches inside this
    repo — the procedure is `skills/github-workflow/SKILL.md` §2, and `AGENTS.md`
-   routes "stacked PRs" there. (Either way, when stacked PRs are merged each head
-   branch must be deleted on merge so GitHub retargets the next one — merging out
-   of order strands content.)
+   routes "stacked PRs" there. (Either way, stacked PRs merge bottom-up with a
+   merge commit — `gh pr merge <n> --merge` — and the next PR is retargeted
+   explicitly with `gh pr edit <n+1> --base main` *after* its base has merged.
+   Head branches are **not** deleted on merge and `delete_branch_on_merge` stays
+   off: deleting a base branch closes the stacked PR above it instead of
+   retargeting it, and it makes the rewritten commits unreachable, which turns the
+   review-ledger rows written on that branch into unknown objects in a fresh
+   clone. Merging out of order strands content.)
 7. The maintainer reviews every PR; merged work arrives in the next
    `git pull` — there is no mirror or sync step.
 
