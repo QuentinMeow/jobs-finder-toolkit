@@ -32,13 +32,19 @@ grep -n 'def _read_text' -A 12 automation/publish/check_public.py
 
 ## Definition of done
 
-- [ ] An unreadable file (broken symlink / `OSError`) is a **finding**, not a silent skip — the
-      guard names the path and exits non-zero
-- [ ] A binary or non-UTF-8 file still skips quietly; that path is not regressed
-- [ ] A planted-defect test proves both directions: the broken symlink fails the guard, the
-      binary file does not
-- [ ] The summary line reports how many files were actually read, so "clean" can be distinguished
-      from "inspected nothing"
+All four were met by `b5b917b` and had simply never been marked. Ticked 2026-07-31 after
+re-running each on the stack tip `40871e6` — output in `verification.md`.
+
+- [x] An unreadable file (broken symlink / `OSError`) is a **finding**, not a silent skip — the
+      guard names the path and exits non-zero — re-planted at the tip: `FAIL: 1 violation(s)
+      found`, `BROKEN-SYMLINK docs/dangling-probe.md`, exit 1
+- [x] A binary or non-UTF-8 file still skips quietly; that path is not regressed — the clean
+      run still reports `not inspected: 7 (binary-sniff: 3, extract-failed: 1, guard-self: 1,
+      no-text-extractor: 2)` and exits 0
+- [x] A planted-defect test proves both directions: the broken symlink fails the guard, the
+      binary file does not — pinned in the publish suite (188 tests, OK at the tip)
+- [x] The summary line reports how many files were actually read, so "clean" can be distinguished
+      from "inspected nothing" — `content read: 914 of 921 file(s)` at the tip
 
 ## Why the rest of the tree-instructions validator was dropped
 

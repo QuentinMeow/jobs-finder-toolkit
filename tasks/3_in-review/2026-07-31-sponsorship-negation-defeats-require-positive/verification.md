@@ -6,6 +6,13 @@ scratch harness that loads `automation/shared/job_metadata.py` as of `git HEAD`
 reverted to produce them. Every fixture sentence is fictional — no employer is
 named anywhere.
 
+**Corrected 2026-07-31 on the stack tip `40871e6`.** The behavioural evidence in §§1–4
+all reproduces — the pre-fix corpus run in §4 was independently rebuilt and returns the
+same 23 failure lines, character for character. What was wrong is the arithmetic in §4
+and §5: the corpus size and two of the four suite totals were `main`-based, captured on
+the isolated authoring worktree and never re-run after the branch was stacked. Corrected
+in place, with the authoring-commit (`86a18e0`) and tip figures both given.
+
 ## 1. Sponsorship — the reported defect, before and after
 
 `assess_sponsorship(text)` -> `verdict / decision / confidence / rule_ids`.
@@ -88,6 +95,11 @@ Guardrails — identical BEFORE and AFTER:
 
 ## 3. New tests fail against the pre-fix module
 
+**Both runs below were reproduced 2026-07-31** in a rebuilt pre-fix tree (the tree at
+`86a18e0` with `automation/shared/job_metadata.py` and its job-search vendored copy
+replaced by `86a18e0^`'s). Same totals, same failure counts, same test names in the same
+order.
+
 Pre-fix run of `automation/shared/tests/test_job_metadata.py` (a scratch copy of
 `automation/shared/` + `automation/vendoring/` with `job_metadata.py` from `HEAD`):
 
@@ -128,14 +140,26 @@ Ran 17 tests in 0.076s
 FAILED (failures=8)
 ```
 
-The remaining new tests (13) are deliberate guardrails: they assert behaviour that
-must NOT change, so they pass both before and after.
+The commit adds **35** test methods (28 in `test_job_metadata.py`, 7 in `test_visa.py`;
+`git show 86a18e0 --numstat` shows both files pure-append). **20** of them fail pre-fix —
+15 above plus 5 in `test_visa.py` — so the remaining **15** are deliberate guardrails:
+they assert behaviour that must NOT change, so they pass both before and after. (This
+line originally said 13, which is the `test_job_metadata.py` guardrail count alone and
+drops `test_visa.py`'s two.)
 
 ## 4. New corpus cases fail against the pre-fix module
 
+**Reproduced 2026-07-31, independently of the original scratch harness.** The tree at
+`86a18e0` was extracted to a temp dir and `automation/shared/job_metadata.py` plus its
+job-search vendored copy were replaced with `86a18e0^`'s, then the *shipped* validator
+was run — no bespoke harness. It returns the same 23 lines in the same order, exit 1.
+The only wrong figure here is the corpus size: the corpus at `86a18e0` holds **57**
+cases, not 51.
+
 ```
-$ python <scratch>/prefix_corpus.py    # current corpus.yaml, HEAD's job_metadata.py
-pre-fix run of 51 corpus cases -> 23 failure line(s)
+$ python skills/job-search/scripts/validate_filter_variants.py --profile example
+      # tree at 86a18e0, job_metadata.py swapped back to 86a18e0^
+pre-fix run of 57 corpus cases -> 23 failure line(s)              exit 1
   CHECK sponsorship-negated-offer-phrase: decision: expected 'no_match', got 'match'
   CHECK sponsorship-negated-offer-phrase: verdict: expected 'unlikely', got 'likely'
   CHECK sponsorship-negated-offer-distant-cue: decision: expected 'no_match', got 'match'
@@ -167,30 +191,37 @@ pre-fix run of 51 corpus cases -> 23 failure line(s)
 
 ## 5. Corpus validator, vendoring drift, and the three suites (post-fix)
 
+Re-measured 2026-07-31 at this change's own commit `86a18e0`. Three figures were
+`main`-based and are corrected: the corpus was **57** cases (not 51), shared **541**
+(not 517), job-search **425** (not 363). Tracker 108 and resume 98 were already right.
+
 ```
 $ .venv/bin/python skills/job-search/scripts/validate_filter_variants.py --profile example
-filter variant corpus clean: 51 cases
+filter variant corpus clean: 57 cases
 
 $ .venv/bin/python automation/vendoring/sync_vendored.py --check
 vendored copies in sync
 
 $ .venv/bin/python -m unittest discover automation/shared/tests
-Ran 517 tests in 11.484s
+Ran 541 tests in 23.314s
 OK
 
 $ .venv/bin/python -m unittest discover -s skills/job-search/scripts/tests \
       -t skills/job-search/scripts/tests
-Ran 363 tests in 22.962s
+Ran 425 tests in 101.651s
 OK
 
 $ .venv/bin/python -m unittest discover -s skills/application-tracker/scripts/tests
-Ran 108 tests in 43.808s
+Ran 108 tests in 77.032s
 OK
 
 $ .venv/bin/python -m unittest discover -s skills/resume-writer/scripts/tests
-Ran 98 tests in 33.506s
+Ran 98 tests in 40.467s
 OK
 ```
+
+At the stack tip `40871e6` the same five give: corpus **60** cases, shared **559**,
+job-search **473**, tracker **108**, resume **98** — all clean, vendoring still in sync.
 
 No live fetches were made; every fixture is fictional text passed straight to the
 classifier.

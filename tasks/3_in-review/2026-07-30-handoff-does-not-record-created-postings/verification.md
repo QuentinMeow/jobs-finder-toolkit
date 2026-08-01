@@ -51,7 +51,17 @@ OK
 ```
 
 Baselines before the change: job-search 340, application-tracker 88, shared 455.
-New: 11 handoff tests, 16 shared tests (`PostingRowsTests`, `RecordPostingsTests`).
+All three suite figures and all three baselines re-measured 2026-07-31 at this change's
+own commit `a816a53` and its parent `a003c1c` — every one holds. This block is one of
+the few in the stack that was accurate as published.
+
+New: 11 handoff tests, **14** shared tests (`PostingRowsTests`, `RecordPostingsTests`).
+The "16" first written here is wrong, and the suite deltas prove it: 455 → 469 is +14,
+and `git show a816a53 -- automation/shared/tests/test_skip_log.py | grep -cE '^\+ *def test'`
+returns **14**. No tests were removed, so the delta and the count agree.
+
+At the stack tip `40871e6` the same three suites give job-search **473**,
+application-tracker **108**, shared **559**.
 
 ## Vendoring
 
@@ -62,10 +72,20 @@ vendored copies in sync
 
 ## Reconciler
 
+This block originally read `<see the PR body — run at staging time>` — a placeholder that
+records nothing, deferring to a PR body whose own gate figures were later found stale.
+Run 2026-07-31, at this change's own commit and at the stack tip:
+
 ```
-$ .venv/bin/python automation/reconcile/reconcile.py --check
-<see the PR body — run at staging time>
+$ git checkout a816a53 && .venv/bin/python automation/reconcile/reconcile.py --check
+reconcile: OK (8 checks clean)                                              exit 0
+
+$ git checkout 40871e6 && .venv/bin/python automation/reconcile/reconcile.py --check
+reconcile: OK (9 checks clean)                                              exit 0
 ```
+
+Eight at `a816a53` is correct, not stale: `public-registry-blacklist` is added by
+`8a1321a`, two commits **above** this one in the stack.
 
 ## Definition of done
 

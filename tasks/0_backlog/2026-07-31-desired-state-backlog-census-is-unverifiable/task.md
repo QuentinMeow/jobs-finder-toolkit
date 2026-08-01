@@ -20,11 +20,28 @@ the whole load-bearing argument of that section: the backlog is inverted relativ
 where damage reaches the user.
 
 The number cannot be checked from the public tree. `ls tasks/0_backlog | wc -l` was
-**15** on 2026-07-31, so 24 must be a public + `private/tasks/0_backlog/` total —
-and an agent working the public repo (or any reader of the published export, which
-ships no `tasks/` at all) has no way to confirm or refute it. The grooming pass that
-corrected `current-state.md` deliberately did not touch the number rather than guess
-at it, because the private half was out of reach by instruction.
+**15** on `main` (`47a15d4`) when this task was filed, which is where the inference
+"so 24 must be a public + `private/tasks/0_backlog/` total" came from — and an agent
+working the public repo (or any reader of the published export, which ships no `tasks/`
+at all) has no way to confirm or refute it. The grooming pass that corrected
+`current-state.md` deliberately did not touch the number rather than guess at it,
+because the private half was out of reach by instruction.
+
+**Correction, 2026-07-31 (measured on the stack tip `40871e6`).** The public count moves
+fast enough that the inference is already dead, and the 15 was stale before the paragraph
+was finished:
+
+```
+$ ls tasks/0_backlog | wc -l
+      15     # 47a15d4 (main)
+      18     # 0f7ce4d, the commit that filed this task — it adds three itself
+      38     # 40871e6, the stack tip
+```
+
+38 public backlog items alone now exceed the 24 the desired-state paragraph counts, so
+"24 must be a public + private total" no longer holds in either direction, and the
+19-vs-5 split it supports cannot be reconstructed from any tree. The fix below (derive
+the number, or drop it) is now the only way to make that paragraph true.
 
 Two shapes of fix, both fine:
 

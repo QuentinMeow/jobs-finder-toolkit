@@ -19,18 +19,26 @@ the two passes that exist — a fence full of illustrative markdown must not be 
 links — but it means **fenced content is the one surface with no counter at all**. A
 stale path there is not advisory, not permitted, not unrecognised: it is in no bucket.
 
-The live instance that prompted this. `docs/designs/filtering-variant-safeguards/execution-plan.md:339`
-and `:372` both carry a "Stage gate" block a maintainer is meant to paste:
+The live instance that prompted this. `docs/designs/filtering-variant-safeguards/execution-plan.md:348`
+and `:381` both carry a "Stage gate" block a maintainer is meant to paste:
 
 ```
 .venv/bin/python automation/maintenance/gardener/gardener.py verify-links
 ```
 
 `automation/maintenance/` was split into `automation/` by 031e05d, so that line has
-exited with `No such file or directory` since the split. Thirty tracked lines still
-name `automation/maintenance/`; the ones in prose are now visible (this session added
+exited with `No such file or directory` since the split. **57** tracked lines across 27
+files still name `automation/maintenance/` (`git grep -h 'automation/maintenance/' | wc -l`
+at `40871e6`; 38 on `main`); the ones in prose are now visible (this session added
 `RETIRED_ROOTS`, which tiers a retired root followed by a path), but the ones inside
 fences remain invisible, because no pass reaches them.
+
+**Corrected 2026-07-31 on the stack tip `40871e6`.** Two figures in the paragraph above
+were wrong. The `execution-plan.md` citations read `:339` and `:372` — correct when this
+task was filed, but the branch directly below (`35137fe`, a 9-line note) pushed them to
+`:348` and `:381`, and nobody re-checked. And "Thirty tracked lines" matches no tree:
+`git grep -h 'automation/maintenance/' | wc -l` gives 38 on `main` and 57 at both this
+change's own commit and the tip.
 
 Why it was split out rather than done in that PR:
 

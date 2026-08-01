@@ -46,6 +46,14 @@ print(classify_sponsorship('We do not sponsor community events.'))
 # prints 'unknown' (should be 'unlikely') and 'unlikely' (should be 'unknown')
 ```
 
+Re-run 2026-07-31 on the stack tip `40871e6`: prints `unknown` then `unlikely`, exactly as
+stated. Both open symptoms still reproduce.
+
+The one figure in this file that is **not** reproducible is "roughly 28 of 430 `likely`
+rows on the 2026-07-31 run" (and the 11,638 raw postings behind it). Those come from a
+live keyless board sweep whose postings have since moved on; they are recorded as what
+that run reported, not as a claim about any tree, and nothing here depends on them.
+
 ## Impact
 
 An unrecognized denial classifies `unknown`, and the default `exclude_negative` policy
