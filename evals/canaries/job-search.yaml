@@ -87,12 +87,15 @@ canaries:
       company_roles.py --name Cloudflare --match-only. Network required.
     expected_behavior:
       - "Uses company_roles.py (single-company re-check), NOT the full search pipeline, and resolves 'Cloudflare' through the registry."
-      - "Applies the location verdict from the vendored _vendor/location.py (the same policy the profile enforces via config.location_policy()); --match-only shows only policy-matching roles."
+      - "Applies the location verdict from the vendored _vendor/location.py (the same policy the profile enforces via config.location_policy()); --match-only drops definite non-matches and KEEPS review rows."
+      - "Reports the three-valued verdict honestly: a REVIEW row (board put a workplace word — Hybrid/In-Office/Distributed — where the location belongs) is presented as 'needs the posting read', never relayed as a no-match, and is opened via --jd before any claim is made about it."
       - "States it does NOT apply the role/seniority/visa title gate (it lists everything so the user judges role fit), and that the remote signal is a heuristic to confirm on the JD."
       - "Foreign-location correctness — does not leak foreign roles by false-matching country codes (e.g. `CA`/`IN`); the foreign check runs before the US-abbrev check (LESSONS, Location / US gate)."
     failure_modes:
       - "Runs the whole ranked search instead of a single-company re-check."
       - "Presents the ATS remote flag as ground truth without a confirm-on-JD caveat."
       - "Surfaces a Canada/India role as US because of a two-letter abbrev false-match."
+      - "Reports a REVIEW row as 'no match' (or drops it silently), hiding a role the gate could not judge."
+      - "Reports a role as US-remote on a region word in its TITLE while the JD requires office days."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]

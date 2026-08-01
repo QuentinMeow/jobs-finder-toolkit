@@ -12,8 +12,16 @@ drafted application.
 It does NOT apply the role/seniority/visa title gate — it lists everything so a
 human (or agent) can judge role fit against the active job-matching profile
 (``config.job_search.default_profile``). The location verdict combines the posting's
-location string with the ATS ``remote`` signal (a genuinely remote US/global role
-counts as US-remote; a remote role scoped to a foreign region does not).
+location string with the ATS ``remote`` signal and the JD text (a genuinely remote
+US/global role counts as US-remote; a remote role scoped to a foreign region does not).
+
+The verdict is THREE-valued, exactly as the gate itself is: ``match``, ``no_match``
+and ``review``. ``review`` means the posting's fields were silent or contradictory —
+most often a board that parks a workplace word ("Hybrid", "In-Office",
+"Distributed") in the location field — and the role has to be read by a human.
+Both the table and ``--json`` label it distinctly so it is never mistaken for a
+rejection, and ``--match-only`` keeps it (it hides only definite non-matches, the
+same rule ``scoring.location_ok`` applies inside the search pipeline).
 
 Examples:
     # Resolve a company already in the registry by its canonical name / alias / token
@@ -23,7 +31,7 @@ Examples:
     .venv/bin/python skills/job-search/scripts/company_roles.py \
         --company CodeRabbit --ats ashby --token coderabbit
 
-    # Only the postings that match the location rule, as JSON
+    # Drop only the definite non-matches (keeps match + review), as JSON
     .venv/bin/python skills/job-search/scripts/company_roles.py \
         --name Sentry --match-only --json
 """
@@ -70,34 +78,46 @@ def _entry_from_registry(name: str) -> dict | None:
     return None
 
 
-def _verdict(posting) -> tuple[str, bool]:
-    """Location category + match from the canonical full-evidence evaluator."""
-    assessment = assess_location(
+def _verdict(posting):
+    """The canonical full-evidence location assessment for one posting."""
+    return assess_location(
         posting.location,
         _location_policy(),
         title=posting.title,
         description=posting.description,
         workplace_hint=posting.remote,
     )
-    return assessment.category, assessment.matched
+
+
+# Sort key: confirmed matches, then the roles a human still has to read, then the
+# definite rejections.
+_DECISION_ORDER = {"match": 0, "review": 1, "no_match": 2}
 
 
 def gather(entry: dict) -> list[dict]:
     """Fetch every open posting and attach a location verdict (no filtering)."""
     rows = []
     for p in fetch_company(entry):
-        cat, matched = _verdict(p)
+        a = _verdict(p)
         rows.append({
-            "match": matched,
-            "category": cat,
+            # `match` is the narrow boolean (decision == "match") and is NOT the
+            # keep rule — read `decision` for the three-valued outcome, or a
+            # `review` posting looks identical to a rejected one.
+            "match": a.matched,
+            "decision": a.decision,
+            "category": a.category,
+            "workplace": a.workplace,
+            "confidence": a.confidence,
+            "evidence": list(a.evidence),
+            "review_reasons": list(a.review_reasons),
             "title": p.title,
             "location": p.location,
             "remote": p.remote,
             "posted_at": p.posted_at.date().isoformat() if p.posted_at else "",
             "url": p.url,
         })
-    # Matching roles first, then by title.
-    rows.sort(key=lambda r: (not r["match"], r["title"].lower()))
+    rows.sort(key=lambda r: (_DECISION_ORDER.get(r["decision"], 3),
+                             r["title"].lower()))
     return rows
 
 
@@ -113,11 +133,13 @@ def dump_jd(entry: dict, needle: str) -> int:
         print(f"# no posting title contains {needle!r}", file=sys.stderr)
         return 1
     for p in hits:
-        cat, matched = _verdict(p)
+        a = _verdict(p)
+        reasons = f" [{', '.join(a.review_reasons)}]" if a.review_reasons else ""
         print(f"===== {p.title} =====")
         print(f"Location: {p.location}")
         print(f"Remote: {p.remote}")
-        print(f"LocationVerdict: {cat} ({'MATCH' if matched else 'no match'})")
+        print(f"LocationVerdict: {a.category} / {a.workplace} "
+              f"({a.decision}){reasons}")
         print(f"Posted: {p.posted_at.date().isoformat() if p.posted_at else ''}")
         print(f"URL: {p.url}")
         print()
@@ -137,7 +159,9 @@ def main() -> int:
     ap.add_argument("--site", help="Workday external site (ad-hoc workday only)")
     ap.add_argument("--terms", help="Comma-separated Workday search terms override")
     ap.add_argument("--match-only", action="store_true",
-                    help="Only show postings that match the configured location policy")
+                    help="Hide only the definite non-matches; postings the policy "
+                         "matches AND postings it cannot decide (review) are kept, "
+                         "the same keep rule the search pipeline uses")
     ap.add_argument("--jd", metavar="TITLE_SUBSTR",
                     help="Dump the full JD text of postings whose title contains this "
                          "substring (for capturing a chosen role's JD)")
@@ -177,25 +201,35 @@ def main() -> int:
         return 1
 
     total = len(rows)
-    matches = sum(1 for r in rows if r["match"])
-    shown = [r for r in rows if r["match"]] if args.match_only else rows
+    matches = sum(1 for r in rows if r["decision"] == "match")
+    reviews = sum(1 for r in rows if r["decision"] == "review")
+    # --match-only drops definite non-matches only. A `review` posting is one the
+    # gate could not decide, so hiding it would silently bury a possible match.
+    shown = ([r for r in rows if r["decision"] != "no_match"]
+             if args.match_only else rows)
 
     if args.json:
         print(json.dumps({"company": entry.get("name"), "total": total,
-                          "matches": matches, "roles": shown}, indent=2))
+                          "matches": matches, "review": reviews,
+                          "roles": shown}, indent=2))
         return 0
 
     name = entry.get("name")
-    scope = " (matches only)" if args.match_only else ""
-    print(f"# {name}: {total} open role(s) fetched, {matches} match "
-          f"the location policy (heuristic){scope}")
+    scope = " (definite non-matches hidden)" if args.match_only else ""
+    rejected = total - matches - reviews
+    print(f"# {name}: {total} open role(s) fetched — location policy (heuristic): "
+          f"{matches} match, {reviews} review (the posting has to be read), "
+          f"{rejected} no{scope}")
     if total == 0:
         print("  (board returned 0 postings — verify the ATS token/board is reachable)")
     for r in shown:
-        flag = "MATCH" if r["match"] else "no   "
+        flag = {"match": "MATCH ", "review": "REVIEW"}.get(r["decision"], "no    ")
         posted = f" [{r['posted_at']}]" if r["posted_at"] else ""
         print(f"{flag} {r['category']:<13} | {r['title']}{posted}")
-        print(f"      loc={r['location']!r} remote={r['remote']}")
+        print(f"      loc={r['location']!r} remote={r['remote']} "
+              f"workplace={r['workplace']}")
+        if r["review_reasons"]:
+            print(f"      review: {', '.join(r['review_reasons'])}")
         print(f"      {r['url']}")
     return 0
 

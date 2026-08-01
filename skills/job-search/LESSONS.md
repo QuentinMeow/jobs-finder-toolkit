@@ -65,7 +65,7 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   matched segment in output (e.g. "Austin, TX (+4)") so it isn't mistaken for a non-match.
 
 ## Location / US gate
-<!-- added: 2026-07-13 · last_confirmed: 2026-07-19 · status: active -->
+<!-- added: 2026-07-13 · last_confirmed: 2026-07-31 · status: active -->
 - Check `is_foreign` BEFORE remote/preferred/US-abbrev, or foreign-remote roles leak:
   "remote" in `preferred` matches "Germany (Remote)", and the `\b[A-Z]{2}\b` abbrev
   check false-matches Canada (`CA`) and India (`IN`) country codes. Foreign-first wins.
@@ -74,6 +74,15 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 - Some boards publish only `Distributed` as the location and put the real country
   in the title (`..., Canada`, `..., Canberra`, `..., Nordics`). Include the title
   in foreign detection before treating a generic distributed/remote marker as US.
+- The title's geography REJECTS only, never grants. A region in a title
+  (`..., Americas`, `..., NAmer`) is a coverage/market descriptor — it once carried
+  a role that is hybrid across four non-preferred US cities through as a US-remote
+  match. Positive US scope must come from the location field.
+- A whole board can put a workplace WORD (`Hybrid`, `In-Office`, `Distributed`)
+  where the location belongs and name the cities only inside the JD. Such a tag
+  carries no geography (verdict `review` / `workplace_tag_without_geography`) and
+  cannot contradict an explicit JD remote grant — the JD is the only statement of
+  record. Read those postings; never relay `review` as "no match".
 
 ## Aggregators, JobSpy & LinkedIn/Indeed
 <!-- added: 2026-07-13 · last_confirmed: 2026-07-19 · status: active -->
