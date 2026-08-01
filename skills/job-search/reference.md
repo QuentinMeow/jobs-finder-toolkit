@@ -66,20 +66,31 @@ which returns the full description regardless of what the board page renders —
 ```bash
 # company already in companies.yaml (resolved by name / alias / token)
 .venv/bin/python skills/job-search/scripts/company_roles.py \
-    --name <Company> --jd "<title substring>"
+    --name <Company> --jd "<title substring>" \
+    --out <slug>/source/JD-<job title>.md --digest
 # ad-hoc board (derive ats+token from the careers URL)
 .venv/bin/python skills/job-search/scripts/company_roles.py \
     --company <Name> --ats <greenhouse|ashby|lever|smartrecruiters> \
-    --token <slug> --jd "<title substring>"
+    --token <slug> --jd "<title substring>" \
+    --out <slug>/source/JD-<job title>.md --digest
 ```
 
-`--jd` prints the full ATS-API description for every posting whose title contains
+`--jd` recovers the full ATS-API description for every posting whose title contains
 the substring. It recovers **verbatim** text and applies to the four public read
 APIs under *Supported ATS APIs* — **Greenhouse, Ashby, Lever, SmartRecruiters**
-(the same endpoints `company_roles.py` already polls). Save the recovered text to
-`source/JD-<job title>.md`: the verbatim-JD requirement is unchanged; the ATS API
-is just a cleaner fetch route than the JS page. In two benchmark rows this path
-recovered 100% of JS-rendered JD pages across both major ATSes.
+(the same endpoints `company_roles.py` already polls). The verbatim-JD requirement
+is unchanged; the ATS API is just a cleaner fetch route than the JS page. In two
+benchmark rows this path recovered 100% of JS-rendered JD pages across both major
+ATSes.
+
+**Use `--out` + `--digest` together** (the form above). `--out` writes the verbatim
+text straight to `source/JD-<job title>.md` — the JD never has to pass through your
+context to reach the file — and `--digest` prints the ~2 KB gate locator in place of
+the body, so verifying a candidate costs a digest instead of a 5–8 KB dump. Both are
+off by default: plain `--jd` still prints the whole description. `--out` takes one
+file, so narrow the substring to a single posting (it refuses an ambiguous match
+rather than guessing); with several matches, run it once per posting. A JD the
+digest would not actually shrink is printed verbatim with the reason stated.
 
 ### 2. No fetch succeeds at all → save scraper text WITH a provenance note
 **Symptom:** every fetch route fails — `fetch_jd.py` errors outright (e.g. the
@@ -102,22 +113,35 @@ when no fetch route works at all. Example header:
 
 ## JD digest (`--digest`): verify gates without reading the whole JD
 
-`fetch_jd.py --digest` saves the verbatim JD to disk exactly as before **and** prints a compact
-(~1–2 KB, roughly constant regardless of JD length) **deterministic locator** so the routine gate
-check in Step 4 does not require reading the full 10–26 KB file. It reuses this skill's vendored
-gate classifiers so it points at EXACTLY the signals the meta gates consume:
+**Both** JD-recovery paths carry it — `fetch_jd.py --digest` (page fetch) and
+`company_roles.py --jd --digest` (ATS API) — from the same builder, so the two print one format.
+Each saves the verbatim JD to disk exactly as before **and** prints a compact
+(~2 KB, roughly constant regardless of JD length) **deterministic locator** so the routine gate
+check in Step 4 does not require reading the full 5–26 KB file. It reuses this skill's vendored
+gate classifiers so it points at EXACTLY the signals the meta gates consume — one section per field
+the pipeline parses out of a JD body:
 
-- **Title + level** — the JD title and `job_metadata.classify_level`'s seniority read of it.
+- **Title + level** — the JD title and `job_metadata.classify_level`'s seniority read of it, plus
+  the `classify_level_from_jd_body` fallback line when the title is silent (what the enricher does).
+- **Required YOE** — the parsed `extract_required_yoe_details` value (min / max / confidence / kind)
+  plus every required-experience sentence, located with job_metadata's own YOE patterns. The
+  profile's YOE cap is applied by **you**: a high-confidence minimum above it is a hard drop.
 - **Workplace / location** — the parsed `location.extract_jd_locations` value(s) plus every
   workplace/location signal line (remote / hybrid / on-site / relocation / office / a `Location:`
   line), each with ±1 line of context and its line number in the saved file.
 - **Visa / sponsorship** — every sponsorship sentence, located via the SAME
   `classify_sponsorship` positive/negative phrase lists (plus a visa-keyword superset), printed
   **verbatim**.
+- **Compensation** — the parsed `extract_salary_range` band(s) plus every pay sentence, located with
+  job_metadata's own salary patterns, printed verbatim (never converted or averaged).
+
+**What it drops:** everything else — responsibilities, tech-stack prose, team/culture, benefits,
+the application process. Those feed drafting and the honesty gates, not the meta gates, so the
+verbatim JD on disk stays mandatory for anything past verification.
 
 **It is a locator, never a verdict** — it prints the sentences/lines and lets you judge (it never
 emits `likely`/`unlikely`, `remote`/`hybrid`, or a match/no-match call). Verify workplace / visa /
-location / title from the digest; **open the saved verbatim JD when the digest is ambiguous or a
+location / title / YOE / compensation from the digest; **open the saved verbatim JD when the digest is ambiguous or a
 gate signal is missing from it** (its tail line gives the full path + byte count + this escape
 hatch). The verbatim JD stays on disk and is still required for `handoff.py`, drafting, and the
 honesty gates — the digest only saves the re-read during verification. **Consume the digest at

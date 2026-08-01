@@ -22,8 +22,10 @@ JavaScript-rendered and suggests saving it manually.
 ``--digest`` additionally prints (after the saved path line, and whether the file
 was freshly fetched or kept) a compact, deterministic LOCATOR over the saved JD:
 it points a verifying agent at exactly the lines the hard gates read — title /
-level, workplace / location, and visa / sponsorship — so a routine gate check
-does not require reading the whole 10-26 KB file. The verbatim JD stays on disk
+level, required YOE, workplace / location, visa / sponsorship, and compensation —
+so a routine gate check does not require reading the whole 10-26 KB file. Those
+five families are every field the pipeline parses out of a JD body
+(``job_metadata.analyze_job_metadata`` plus ``status.py --check-locations``). The verbatim JD stays on disk
 unchanged and is still required for handoff / drafting / honesty gates; the digest
 is a locator, never a verdict (see ``build_digest``). Without ``--digest`` stdout
 and every side effect are byte-identical to before.
@@ -203,6 +205,8 @@ _DIGEST_LINE_WIDTH = 160         # per printed JD line (workplace/location conte
 _DIGEST_SENTENCE_WIDTH = 400     # per printed visa/sponsorship sentence
 _DIGEST_MAX_WORKPLACE_LINES = 40  # cap; overflow points to the full JD
 _DIGEST_MAX_VISA_SENTENCES = 20   # cap; overflow points to the full JD
+_DIGEST_MAX_YOE_SENTENCES = 8     # cap; overflow points to the full JD
+_DIGEST_MAX_COMP_SENTENCES = 6    # cap; overflow points to the full JD
 
 # Workplace / location signal keywords (the LESSONS gate: never trust the scraper
 # ``remote`` flag — read the JD's own words). ``reloc\w*`` catches relocate/
@@ -276,8 +280,16 @@ def _load_digest_helpers():
             sys.path.insert(0, candidate)
     from job_metadata import (  # noqa: E402  (vendored gate classifiers)
         classify_level,
+        classify_level_from_jd_body,
+        extract_required_yoe_details,
+        extract_salary_range,
+        _MONEY_RANGE_RE,
+        _SALARY_TERMS,
         _SPONSOR_NEGATIVE,
         _SPONSOR_POSITIVE,
+        _TOTAL_TERMS,
+        _YOE_MIN_PATTERNS,
+        _YOE_RANGE_RE,
         _source_text,
     )
     from location import (  # noqa: E402  (vendored location policy helpers)
@@ -303,12 +315,30 @@ def _load_digest_helpers():
         r"\b(" + "|".join(re.escape(w) for w in foreign_words) + r")\b", re.I)
     return {
         "classify_level": classify_level,
+        "classify_level_from_jd_body": classify_level_from_jd_body,
         "sponsor_phrases": tuple(_SPONSOR_NEGATIVE) + tuple(_SPONSOR_POSITIVE),
         "unescape": _source_text,
         "extract_jd_locations": extract_jd_locations,
         "jd_loc_re": _JD_LOC_RE,
         "foreign_re": foreign_re,
         "foreign_abbr_re": _FOREIGN_ABBR_RE,
+        # The YOE + compensation gates read the JD BODY (analyze_job_metadata ->
+        # required_yoe / salary_range), so the digest locates their lines with the
+        # extractors' OWN patterns — a superset of what each extractor consumes, so
+        # a line the gate would have used is never hidden by the digest.
+        "extract_required_yoe_details": extract_required_yoe_details,
+        "yoe_patterns": (_YOE_RANGE_RE,) + tuple(_YOE_MIN_PATTERNS),
+        "extract_salary_range": extract_salary_range,
+        "money_re": _MONEY_RANGE_RE,
+        # job_metadata substring-matches these against a ±120-char window around a
+        # money range; over whole JD lines a substring match false-fires ("ote", the
+        # on-target-earnings abbreviation, sits inside "Remote"), so the digest
+        # anchors them as whole words — the same rule the foreign-token scan uses.
+        "comp_terms_re": re.compile(
+            r"\b(" + "|".join(
+                re.escape(t) for t in
+                sorted(set(_SALARY_TERMS) | set(_TOTAL_TERMS), key=len, reverse=True)
+            ) + r")\b", re.I),
     }
 
 
@@ -436,39 +466,32 @@ def _workplace_signal_lines(lines, helpers) -> tuple[list[str], bool]:
     return rendered, truncated
 
 
-def _visa_sentences(lines, helpers) -> tuple[list[str], bool]:
-    """Every visa/sponsorship sentence, located (not classified), deduped.
+def _located_sentences(lines, unescape, is_signal, *, limit, drop=None):
+    """Every sentence matching ``is_signal``, located (not classified), deduped.
 
-    A line is a candidate when it carries a visa keyword OR a phrase from the reused
-    ``classify_sponsorship`` phrase lists; within it, only the matching sentence(s)
-    are kept so a long paragraph does not drag its whole body in. Verbatim, no
-    verdict — the agent judges offer vs denial. Returns (sentences, truncated).
+    Shared by the visa, required-YOE and compensation sections. A line is a
+    candidate when it carries the section's signal; within it, only the matching
+    sentence(s) are kept so a long paragraph does not drag its whole body in.
+    Verbatim, no verdict — the agent judges. ``drop`` optionally suppresses a
+    matched sentence (the visa section's EEO-boilerplate rule). Returns
+    (sentences, truncated).
     """
-    phrases = helpers["sponsor_phrases"]
-    unescape = helpers["unescape"]
-
-    def _is_signal(norm: str) -> bool:
-        return bool(_VISA_KW_RE.search(norm)) or any(p in norm for p in phrases)
-
     found: list[str] = []
     seen: set[str] = set()
     truncated = False
     for line in lines:
         text = unescape(line)
-        if not _is_signal(re.sub(r"\s+", " ", text).strip().lower()):
+        if not is_signal(re.sub(r"\s+", " ", text).strip().lower()):
             continue
         for sentence in _SENTENCE_SPLIT_RE.split(text):
             clean = sentence.strip().lstrip("#-*•> ").strip()
             norm = re.sub(r"\s+", " ", clean).strip().lower()
-            if not norm or not _is_signal(norm) or norm in seen:
+            if not norm or not is_signal(norm) or norm in seen:
                 continue
-            # Drop equal-opportunity boilerplate: "citizenship" as a protected class,
-            # not a sponsorship requirement (kept only if a real sponsorship term is
-            # also present, which EEO text never carries).
-            if _EEO_MARKER_RE.search(norm) and not _STRONG_VISA_RE.search(norm):
+            if drop is not None and drop(norm):
                 seen.add(norm)
                 continue
-            if len(found) >= _DIGEST_MAX_VISA_SENTENCES:
+            if len(found) >= limit:
                 truncated = True
                 break
             seen.add(norm)
@@ -476,6 +499,78 @@ def _visa_sentences(lines, helpers) -> tuple[list[str], bool]:
         if truncated:
             break
     return found, truncated
+
+
+def _visa_sentences(lines, helpers) -> tuple[list[str], bool]:
+    """Every visa/sponsorship sentence, located via the reused phrase lists.
+
+    A line is a candidate when it carries a visa keyword OR a phrase from the reused
+    ``classify_sponsorship`` phrase lists.
+    """
+    phrases = helpers["sponsor_phrases"]
+
+    def _is_signal(norm: str) -> bool:
+        return bool(_VISA_KW_RE.search(norm)) or any(p in norm for p in phrases)
+
+    def _is_eeo_boilerplate(norm: str) -> bool:
+        # "citizenship" as a protected class, not a sponsorship requirement (kept
+        # only if a real sponsorship term is also present, which EEO text never
+        # carries).
+        return bool(_EEO_MARKER_RE.search(norm)) and not _STRONG_VISA_RE.search(norm)
+
+    return _located_sentences(lines, helpers["unescape"], _is_signal,
+                              limit=_DIGEST_MAX_VISA_SENTENCES,
+                              drop=_is_eeo_boilerplate)
+
+
+def _yoe_sentences(lines, helpers) -> tuple[list[str], bool]:
+    """Every required-experience sentence, located with job_metadata's OWN patterns.
+
+    ``analyze_job_metadata`` fills ``required_yoe`` from the JD body and
+    ``assess_required_yoe`` turns a high-confidence minimum above the profile cap
+    into a hard ``no_match`` — so the sentences those patterns fire on are
+    gate-relevant and must survive into the digest.
+    """
+    patterns = helpers["yoe_patterns"]
+
+    def _is_signal(norm: str) -> bool:
+        return any(p.search(norm) for p in patterns)
+
+    return _located_sentences(lines, helpers["unescape"], _is_signal,
+                              limit=_DIGEST_MAX_YOE_SENTENCES)
+
+
+def _compensation_sentences(lines, helpers) -> tuple[list[str], bool]:
+    """Every compensation sentence, located with job_metadata's OWN salary patterns.
+
+    A line is a candidate when it carries a money RANGE or one of the base-salary /
+    total-comp terms ``_compensation_range`` looks for around a range — a superset of
+    what ``extract_salary_range`` consumes, so a line that would have produced
+    ``salary_range`` is never hidden by the digest.
+    """
+    money_re = helpers["money_re"]
+    terms_re = helpers["comp_terms_re"]
+
+    def _is_signal(norm: str) -> bool:
+        return bool(money_re.search(norm)) or bool(terms_re.search(norm))
+
+    return _located_sentences(lines, helpers["unescape"], _is_signal,
+                              limit=_DIGEST_MAX_COMP_SENTENCES)
+
+
+def _salary_summary(fact: dict | None) -> str:
+    """One-line rendering of ``extract_salary_range``'s rich fact (or a placeholder)."""
+    if not fact:
+        return ("PARSED SALARY (job_metadata.extract_salary_range): (none parsed — "
+                "read the compensation lines below)")
+    bands = fact.get("bands")
+    parts = bands if isinstance(bands, list) and bands else [fact]
+    rendered = " | ".join(
+        f"{b.get('min')}-{b.get('max')} {b.get('currency') or ''}"
+        f"/{b.get('period') or '?'}".strip()
+        for b in parts if isinstance(b, dict)
+    )
+    return f"PARSED SALARY (job_metadata.extract_salary_range): {rendered}"
 
 
 def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> str:
@@ -486,12 +581,25 @@ def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> s
     vendored-classifier bundle from ``_load_digest_helpers`` (loaded on demand when
     ``None``, so this is directly unit-testable). Output sections:
 
-      (a) title + ``job_metadata.classify_level`` level/seniority read;
-      (b) parsed ``Location:`` value(s) + every workplace/location signal line
+      (a) title + ``job_metadata.classify_level`` level/seniority read (plus the
+          ``classify_level_from_jd_body`` fallback the enricher uses when the
+          title is silent);
+      (b) parsed ``required_yoe`` + every required-experience sentence (the YOE
+          cap is a hard drop in ``assess_required_yoe``);
+      (c) parsed ``Location:`` value(s) + every workplace/location signal line
           (±1 context), the LESSON that the scraper ``remote`` flag is untrusted;
-      (c) every visa/sponsorship sentence located via the reused phrase lists +
+      (d) every visa/sponsorship sentence located via the reused phrase lists +
           keyword stems (printed, never classified);
-      (d) a tail line: full JD path + byte count + the LOCATOR/escape-hatch note.
+      (e) parsed ``salary_range`` + every compensation sentence;
+      (f) a tail line: full JD path + byte count + the LOCATOR/escape-hatch note.
+
+    Sections (a)-(e) between them cover EVERY field the pipeline reads out of a JD
+    body — ``analyze_job_metadata``'s ``job_level`` / ``required_yoe`` /
+    ``salary_range`` / ``workplace`` / ``sponsorship`` plus ``status.py
+    --check-locations``' ``extract_jd_locations`` — so a gate check can run off the
+    digest. The digest is still a LOCATOR, not the JD: it prints matching lines and
+    parsed values, never a match/no-match verdict, and prose the extractors do not
+    read (responsibilities, benefits, culture) is dropped.
     """
     helpers = helpers or _load_digest_helpers()
     lines = text.splitlines()
@@ -502,8 +610,28 @@ def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> s
     level_line = f"LEVEL (job_metadata.classify_level on title): {level}"
     if level != "unknown" and signal:
         level_line += f'  [signal: "{_clip(signal, 60)}"]'
+    body_level_line = ""
+    if level == "unknown":
+        # Mirror analyze_job_metadata: with a silent title it falls back to an
+        # explicit level phrase in the JD BODY, so surface that read too.
+        body_level, body_signal = helpers["classify_level_from_jd_body"](text)
+        if body_level != "unknown":
+            body_level_line = (
+                f"LEVEL FALLBACK (job_metadata.classify_level_from_jd_body): "
+                f"{body_level}")
+            if body_signal:
+                body_level_line += f'  [signal: "{_clip(body_signal, 60)}"]'
 
-    # (b) workplace / location -------------------------------------------- #
+    # (b) required years of experience ------------------------------------ #
+    yoe = helpers["extract_required_yoe_details"](f"{title}\n{text}")
+    yoe_line = (
+        "REQUIRED YOE (job_metadata.extract_required_yoe_details): "
+        f"min={yoe.get('min')} max={yoe.get('max')} "
+        f"[confidence: {yoe.get('confidence')}, kind: {yoe.get('requirement_kind')}]"
+    )
+    yoe_sentences, yoe_truncated = _yoe_sentences(lines, helpers)
+
+    # (c) workplace / location -------------------------------------------- #
     parsed = helpers["extract_jd_locations"](text)
     parsed_line = (
         "PARSED LOCATION(S) (location.extract_jd_locations): " + " | ".join(parsed)
@@ -512,13 +640,33 @@ def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> s
     )
     workplace_lines, wp_truncated = _workplace_signal_lines(lines, helpers)
 
-    # (c) visa / sponsorship ---------------------------------------------- #
+    # (d) visa / sponsorship ---------------------------------------------- #
     visa_lines, visa_truncated = _visa_sentences(lines, helpers)
+
+    # (e) compensation ----------------------------------------------------- #
+    salary_line = _salary_summary(helpers["extract_salary_range"](text))
+    comp_lines, comp_truncated = _compensation_sentences(lines, helpers)
 
     # ---- assemble -------------------------------------------------------- #
     out: list[str] = [_DIGEST_HEADER, ""]
     out.append(f"TITLE: {_clip(title, _DIGEST_LINE_WIDTH)}")
     out.append(level_line)
+    if body_level_line:
+        out.append(body_level_line)
+    out.append("")
+    out.append(yoe_line)
+    out.append(
+        "REQUIRED-EXPERIENCE SENTENCES (located with job_metadata's own YOE "
+        "patterns — VERBATIM; the profile's YOE cap is applied by you, not here):"
+    )
+    if yoe_sentences:
+        out.extend(f"  • {s}" for s in yoe_sentences)
+        if yoe_truncated:
+            out.append(
+                f"  … more than {_DIGEST_MAX_YOE_SENTENCES} sentences — open the "
+                "full JD for the rest.")
+    else:
+        out.append("  (no years-of-experience requirement stated)")
     out.append("")
     out.append(parsed_line)
     out.append(
@@ -549,10 +697,25 @@ def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> s
         out.append("  (no visa/sponsorship sentence found — sponsorship is 'unknown' "
                    "from text; confirm with the employer)")
     out.append("")
+    out.append(salary_line)
+    out.append(
+        "COMPENSATION SENTENCES (located with job_metadata's own salary patterns "
+        "— VERBATIM, never converted or averaged):"
+    )
+    if comp_lines:
+        out.extend(f"  • {s}" for s in comp_lines)
+        if comp_truncated:
+            out.append(
+                f"  … more than {_DIGEST_MAX_COMP_SENTENCES} sentences — open the "
+                "full JD for the rest.")
+    else:
+        out.append("  (no compensation sentence found — the posting states no pay range)")
+    out.append("")
     out.append(f"JD (verbatim, full): {jd_path} — {byte_count} bytes.")
     out.append(
         "NOTE: this digest only LOCATES gate-relevant lines; it is not a verdict and "
-        "may omit nuance. If any workplace / visa / location / title signal is "
+        "may omit nuance. If any workplace / visa / location / title / YOE / "
+        "compensation signal is "
         "ambiguous or missing here, open the JD above and read it verbatim before "
         "deciding. The verbatim JD is still required for handoff, drafting, and the "
         "honesty gates."
@@ -678,8 +841,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="Network timeout in seconds (default: %(default)s).")
     ap.add_argument("--digest", action="store_true",
                     help="Also print a compact, deterministic LOCATOR over the saved "
-                         "JD (title/level, workplace/location, visa/sponsorship "
-                         "signal lines) so gate verification does not require reading "
+                         "JD (title/level, required YOE, workplace/location, "
+                         "visa/sponsorship, compensation lines) so gate verification "
+                         "does not require reading "
                          "the whole file. The verbatim JD is saved unchanged either "
                          "way; without --digest stdout is byte-identical to before.")
     args = ap.parse_args(argv)

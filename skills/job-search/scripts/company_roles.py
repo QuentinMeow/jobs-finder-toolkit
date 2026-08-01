@@ -26,6 +26,12 @@ Examples:
     # Only the postings that match the location rule, as JSON
     .venv/bin/python skills/job-search/scripts/company_roles.py \
         --name Sentry --match-only --json
+
+    # Recover one JS-rendered posting's JD: save the VERBATIM text, print only the
+    # ~2 KB gate digest (the same locator fetch_jd.py --digest prints)
+    .venv/bin/python skills/job-search/scripts/company_roles.py \
+        --name Sentry --jd "Control Plane" \
+        --out applications/6_drafted/<slug>/source/JD-Control-Plane.md --digest
 """
 from __future__ import annotations
 
@@ -43,6 +49,7 @@ for _p in (SKILL_SCRIPTS, SKILL_SCRIPTS / "_vendor"):
         sys.path.insert(0, str(_p))
 
 from _vendor.location import assess_location  # noqa: E402
+from fetch_jd import build_digest  # noqa: E402  (sibling script: the ONE digest builder)
 from registry import load_registry  # noqa: E402
 from sources import fetch_company  # noqa: E402
 
@@ -51,9 +58,31 @@ try:
 except Exception:  # noqa: BLE001 — standalone use without a config layer
     config = None
 
+# ``--digest`` prints a locator only when the locator is actually SMALLER than the
+# JD it summarizes; otherwise the text is passed through VERBATIM with the reason
+# stated. Two checks serve that one rule: this cheap size pre-filter (the digest
+# runs ~1.5-2.5 KB, so a JD under this is always cheaper read whole and is not even
+# built), and a measured comparison for the dense JD — all requirements, no prose —
+# whose signal lines are most of its body.
+_DIGEST_MIN_BYTES = 2500
+
 
 def _location_policy() -> dict | None:
     return config.location_policy() if config is not None else None
+
+
+def _token_saving() -> bool:
+    """True when the toolkit's token-usage dial is in its default saving mode.
+
+    Only ever used to print a one-line discoverability HINT on stderr — the mode
+    never changes which bytes this script recovers (see ``dump_jd``).
+    """
+    if config is None:
+        return False
+    try:
+        return config.generation_mode() == "token_saving"
+    except Exception:  # noqa: BLE001 — a config-less run simply gets no hint
+        return False
 
 
 def _entry_from_registry(name: str) -> dict | None:
@@ -101,28 +130,107 @@ def gather(entry: dict) -> list[dict]:
     return rows
 
 
-def dump_jd(entry: dict, needle: str) -> int:
-    """Print the full description of every posting whose title contains `needle`.
+_NO_DESCRIPTION = "(no description returned by the ATS API)"
+_NOT_SAVED = "(NOT SAVED — re-run with --out <path> to save the verbatim JD)"
+
+
+def dump_jd(entry: dict, needle: str, *, digest: bool = False,
+            out: Path | None = None) -> int:
+    """Print the description of every posting whose title contains `needle`.
 
     Lets a caller capture the exact JD text for a chosen role deterministically
-    (for writing source/JD-<title>.md) instead of scraping the posting page.
+    (for writing source/JD-<title>.md) instead of scraping the posting page — the
+    documented fallback when a board page is JavaScript-rendered.
+
+    Three levers, all off by default (no flags => stdout is byte-identical to
+    before, the full verbatim description):
+
+    - ``out`` writes the VERBATIM description to that path (requires exactly one
+      matching posting) and prints the saved path instead of the body, so the JD
+      never has to travel through a reader's context to reach the file.
+    - ``digest`` prints the deterministic gate locator from ``fetch_jd`` — the SAME
+      builder, so both JD-recovery paths emit one format — in place of the body.
+    - A description the digest would not SHRINK is passed through VERBATIM even
+      with ``digest``, with the reason stated (see ``_DIGEST_MIN_BYTES``).
+
+    The digest is a locator, never the JD. It carries every field the pipeline
+    parses out of a JD body, but not the responsibilities/benefits/culture prose
+    that drafting and the honesty gates need — so pair ``--digest`` with ``--out``
+    for any posting you intend to keep.
     """
     needle_l = needle.lower()
     hits = [p for p in fetch_company(entry) if needle_l in (p.title or "").lower()]
     if not hits:
         print(f"# no posting title contains {needle!r}", file=sys.stderr)
         return 1
+    if out is not None and len(hits) > 1:
+        print(f"ERROR: --out names a single file but {len(hits)} postings match "
+              f"{needle!r}: " + "; ".join(p.title for p in hits) +
+              ". Narrow --jd to one posting.", file=sys.stderr)
+        return 2
+
+    dumped_bytes = 0
     for p in hits:
         cat, matched = _verdict(p)
-        print(f"===== {p.title} =====")
+        text = p.description or ""
+        n = len(text.encode("utf-8"))
+        digest_text, note = None, ""
+        if digest:
+            if n < _DIGEST_MIN_BYTES:
+                note = (f"# JD is {n} bytes (< {_DIGEST_MIN_BYTES}) — no digest "
+                        f"built; a digest of it would not be smaller.")
+            else:
+                try:
+                    built = build_digest(
+                        text, jd_path=str(out) if out else _NOT_SAVED, byte_count=n)
+                except Exception as exc:  # noqa: BLE001 — recovery outranks the digest
+                    # Same discipline as fetch_jd._emit_digest: a digest is a
+                    # best-effort add-on, so a failure degrades to the verbatim JD
+                    # rather than losing the recovery this path exists to perform.
+                    built, note = None, f"# could not build the digest ({exc})."
+                else:
+                    m = len(built.encode("utf-8"))
+                    if m < n:
+                        digest_text = built
+                    else:
+                        note = (f"# the digest ({m} bytes) is not smaller than this "
+                                f"{n}-byte JD — no digest built.")
+
+        label = "  [DIGEST: gate locator, NOT the full JD]" if digest_text else ""
+        print(f"===== {p.title} ====={label}")
         print(f"Location: {p.location}")
         print(f"Remote: {p.remote}")
         print(f"LocationVerdict: {cat} ({'MATCH' if matched else 'no match'})")
         print(f"Posted: {p.posted_at.date().isoformat() if p.posted_at else ''}")
         print(f"URL: {p.url}")
         print()
-        print(p.description or "(no description returned by the ATS API)")
+
+        if out is not None:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(text, encoding="utf-8")
+            print(f"VERBATIM JD SAVED: {out} ({n} bytes)")
+            print()
+
+        if digest_text is not None:
+            print(digest_text)
+        else:
+            if note:
+                print(note)
+            if out is None:                  # with --out the verbatim JD is on disk
+                print(text or _NO_DESCRIPTION)
+                if not digest:
+                    dumped_bytes += n
         print()
+
+    if dumped_bytes >= _DIGEST_MIN_BYTES and _token_saving():
+        # stderr only: stdout stays byte-identical to the pre-flag behavior. The
+        # generation-mode dial nudges the caller toward the cheaper lever; it never
+        # decides which bytes a JD-recovery path returns (see the module docstring).
+        print(f"company_roles: tip — generation mode is 'token_saving' and this dump "
+              f"was {dumped_bytes} bytes. `--digest` prints a ~2 KB gate locator "
+              f"instead (title/level, YOE, location, sponsorship, compensation); "
+              f"`--out PATH` saves the verbatim JD without printing it.",
+              file=sys.stderr)
     return 0
 
 
@@ -141,8 +249,24 @@ def main() -> int:
     ap.add_argument("--jd", metavar="TITLE_SUBSTR",
                     help="Dump the full JD text of postings whose title contains this "
                          "substring (for capturing a chosen role's JD)")
+    ap.add_argument("--out", metavar="PATH",
+                    help="With --jd: write the VERBATIM recovered JD to PATH instead "
+                         "of printing it (parent dirs created; requires exactly one "
+                         "matching posting).")
+    ap.add_argument("--digest", action="store_true",
+                    help="With --jd: print the deterministic gate LOCATOR "
+                         "(title/level, required YOE, workplace/location, "
+                         "visa/sponsorship, compensation) instead of the full "
+                         "description — the same digest fetch_jd.py --digest prints. "
+                         "A JD under "
+                         f"{_DIGEST_MIN_BYTES} bytes is printed verbatim anyway. Pair "
+                         "with --out: the digest is a locator, never the JD.")
     ap.add_argument("--json", action="store_true", help="Emit JSON instead of a table")
     args = ap.parse_args()
+
+    if (args.out or args.digest) and not args.jd:
+        print("ERROR: --out and --digest apply to --jd only.", file=sys.stderr)
+        return 2
 
     if args.name:
         entry = _entry_from_registry(args.name)
@@ -165,7 +289,8 @@ def main() -> int:
 
     if args.jd:
         try:
-            return dump_jd(entry, args.jd)
+            return dump_jd(entry, args.jd, digest=args.digest,
+                           out=Path(args.out).expanduser() if args.out else None)
         except Exception as exc:  # noqa: BLE001
             print(f"ERROR fetching {entry.get('name')}: {exc}", file=sys.stderr)
             return 1

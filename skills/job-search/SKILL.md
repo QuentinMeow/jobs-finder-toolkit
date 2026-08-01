@@ -171,8 +171,9 @@ text** — two LESSONS bind here:
 
 Fetch a candidate's JD text **verbatim** with `--digest` — the flag saves the full JD to disk
 exactly as before AND, **at fetch time**, prints a compact deterministic **digest** that LOCATES the
-gate-relevant lines (title/level, workplace/location signal lines, visa/sponsorship sentences). Verify
-the workplace/visa/location/title gates **from the printed digest**; open the saved verbatim JD only
+gate-relevant lines — one section per field the pipeline parses out of a JD body: title/level,
+required YOE, workplace/location signal lines, visa/sponsorship sentences, compensation. Verify
+those gates **from the printed digest**; open the saved verbatim JD only
 when the digest is ambiguous or a gate signal is missing from it — the digest is a locator, never a
 verdict (contract: `reference.md` § JD digest). **`--digest` is a fetch-time aid only: for a JD file
 already saved on disk (e.g. one `handoff.py` fetched), read the file directly — do not re-run
@@ -181,9 +182,14 @@ already saved on disk (e.g. one `handoff.py` fetched), read the file directly �
 .venv/bin/python skills/job-search/scripts/fetch_jd.py <URL> --out local/web_artifacts/jd.md --digest
 ```
 If that page is JS-rendered (fetch_jd warns "JavaScript-rendered" / tiny output), recover the verbatim
-JD from the ATS API via `company_roles.py --jd` instead of accepting a partial scrape; if no fetch works
-at all (e.g. HTTP 403), save the scraper-extracted text with a non-verbatim provenance note — see
-reference.md § "Recovering a JD when the page fetch is unusable".
+JD from the ATS API via `company_roles.py --jd` instead of accepting a partial scrape — **that path
+carries the same `--digest`, plus `--out` to write the verbatim JD without printing it**:
+```bash
+.venv/bin/python skills/job-search/scripts/company_roles.py --name <Company> \
+    --jd "<title substring>" --out local/web_artifacts/jd.md --digest
+```
+If no fetch works at all (e.g. HTTP 403), save the scraper-extracted text with a non-verbatim
+provenance note — see reference.md § "Recovering a JD when the page fetch is unusable".
 Only hand off postings that passed the location policy (`config.location_policy()`).
 
 **Group by company first — ONE application folder per company is the default.** Before scaffolding,
@@ -252,6 +258,9 @@ actual JD before acting.
 .venv/bin/python skills/job-search/scripts/company_roles.py --name Cloudflare --match-only
 # dump one posting's full JD text verbatim (for writing source/JD-<title>.md)
 .venv/bin/python skills/job-search/scripts/company_roles.py --name Sentry --jd "Control Plane"
+# same, token-cheap: write the verbatim JD to the file, print only the ~2 KB gate digest
+.venv/bin/python skills/job-search/scripts/company_roles.py --name Sentry --jd "Control Plane" \
+    --out <slug>/source/JD-Control-Plane.md --digest
 # ad-hoc company not in the registry (derive ats+token from its careers URL)
 .venv/bin/python skills/job-search/scripts/company_roles.py --company CodeRabbit --ats ashby --token coderabbit
 ```
