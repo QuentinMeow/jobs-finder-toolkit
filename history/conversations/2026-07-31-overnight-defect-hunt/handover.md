@@ -7,11 +7,11 @@
 An overnight session that went looking for defects rather than building features. Three
 adversarial audits read the code, five live job searches ran against real boards as canary
 runs, and one agent spent its whole run trying to break the largest change in the stack.
-Between them they found more than sixty confirmed defects. Thirty-eight PRs fix or record them. Nothing is merged.
+Between them they found more than sixty confirmed defects. Forty PRs fix or record them. Nothing is merged.
 
 ## What happened
 
-- **A 38-PR public stack, `#135`–`#172`**, each branch on the one below, bottom PR on `main`.
+- **A 40-PR public stack, `#135`–`#174`**, each branch on the one below, bottom PR on `main`.
   Roughly a third are gates that reported success without inspecting anything; a third are
   silent false negatives in the job pipeline — a registered company board that had been
   returning 404, a location gate printing confident rejections for postings it had actually
@@ -38,7 +38,11 @@ Between them they found more than sixty confirmed defects. Thirty-eight PRs fix 
 
 ## Where things stand
 
-- **All 38 PRs are open and green, none merged.** Merge bottom-up, `#135` first, one at a
+*Counts below are true of this file's own commit. This handover sits inside the stack it
+describes, so any PR added above it makes its numbers stale — which happened three times
+tonight. `gh pr list --state open` is the authority; this is orientation.*
+
+- **All 40 PRs are open and green, none merged.** Merge bottom-up, `#135` first, one at a
   time. Expect `main`'s CI to go red after each merge until a reconciliation row is
   appended — that is the documented cost of stacking here, not a regression, and
   `skills/github-workflow/SKILL.md` has the recovery.
