@@ -12,7 +12,7 @@ them. Nothing is merged.
 
 ## What happened
 
-- **A 26-PR public stack, `#135`–`#160`**, each branch on the one below, bottom PR on `main`.
+- **A 27-PR public stack, `#135`–`#161`**, each branch on the one below, bottom PR on `main`.
   Roughly a third are gates that reported success without inspecting anything; a third are
   silent false negatives in the job pipeline — a registered company board that had been
   returning 404, a location gate printing confident rejections for postings it had actually
@@ -39,15 +39,21 @@ them. Nothing is merged.
 
 ## Where things stand
 
-- **All 26 PRs are open and green, none merged.** Merge bottom-up, `#135` first, one at a
+- **All 27 PRs are open and green, none merged.** Merge bottom-up, `#135` first, one at a
   time. Expect `main`'s CI to go red after each merge until a reconciliation row is
   appended — that is the documented cost of stacking here, not a regression, and
   `skills/github-workflow/SKILL.md` has the recovery.
-- **Three PRs have an unmet eval gate and say so in their bodies.** The job-search canaries
-  need one run at the final stack head, which covers all three at once — `evals/README.md`
-  says a run at head covers the accumulated state.
-- **`#160` must not merge until `examples-reshape-seven-calls.md` D5 is answered.** It
-  implements D5's own recommendation, whose default path is "this piece is dropped".
+- **Four PRs have an unmet eval gate and say so in their bodies** rather than recording a
+  skip they could not justify. The job-search canaries need one run at the final stack head,
+  which discharges three of them at once — `evals/README.md` says a run at head covers the
+  accumulated state, not just its own triggering diff.
+- **`#161` must not merge until `examples-reshape-seven-calls.md` D5 is answered.** It
+  implements D5's own recommendation, whose default path is "this piece is dropped". If the
+  answer is no, close it.
+- **Trust the PR bodies only from `#160` onward.** Every Verification block below that was
+  measured in its authoring agent's isolated worktree and not re-run after integration; a
+  correction pass rewrote them against the real branch heads, and the mechanical fix is filed
+  as `tasks/0_backlog/2026-07-31-pr-verification-blocks-are-measured-off-the-stack/`.
 - Three findings were **accepted rather than fixed**, each with the reason in the code and a
   task filed. One of them, sweeping the blob store, would have re-added exactly the
   unattended delete path the PR below it had just hardened against.
