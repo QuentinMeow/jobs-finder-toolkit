@@ -110,6 +110,7 @@ from location import assess_location, extract_jd_locations
 from metadata_editor import (
     MetadataChecksumMismatchError,
     atomic_write_bytes,
+    atomic_write_text,
     plan_field_updates,
 )
 
@@ -181,8 +182,39 @@ COMPANY_SEARCH_LOG_HEADER = (
 )
 
 
+_YAML_STREAM_NAME_RE = re.compile(r'\s*in "[^"]*",')
+
+
+def _read_failure(filename: str, exc: BaseException) -> str:
+    """One-line ``<file>: <reason>`` for a metadata file that could not be read.
+
+    PyYAML's errors run to several lines (the offending snippet plus a caret) and
+    name the stream, which would break every line-per-application table this module
+    prints and repeat a path the row already carries. Collapse to one line, drop the
+    stream name, keep the reason and the line/column.
+    """
+    message = _YAML_STREAM_NAME_RE.sub(" at", str(exc))
+    return f"{filename}: {' '.join(message.split())}"
+
+
 def load_application(app_dir: Path, status: str) -> dict | None:
-    """Load application metadata from a folder; status comes from the parent folder."""
+    """Load application metadata from a folder; status comes from the parent folder.
+
+    A metadata file this function cannot parse is recorded as ``info["meta_error"]``
+    — **never** silently treated as an absent or empty one. That distinction is the
+    whole point: an unparseable ``meta.yaml`` still has a company, a location and a
+    posting URL in it, and every consumer that treats the file as empty answers a
+    question it has not actually looked at. The folder walk keeps going (one broken
+    file must not blind the operator to the rest of the pipeline), so the caller
+    decides what the error means:
+
+    * a gate that claims to have inspected the application FAILS on it
+      (``check_locations``);
+    * anything that would DERIVE A WRITE from it refuses (``build_log`` and
+      ``build_created_search_entries``, feeding the append-only skip-log and the
+      company search log);
+    * a read-only view marks the row and carries on (``print_table``).
+    """
     meta = app_dir / "meta.yaml"
 
     info = {
@@ -214,9 +246,19 @@ def load_application(app_dir: Path, status: str) -> dict | None:
         info["company"] = parts[0].replace("-", " ").title()
 
     if meta.exists():
+        meta_data = None
         try:
             with open(meta) as f:
                 meta_data = yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            info["meta_error"] = _read_failure("meta.yaml", exc)
+        if meta_data is not None and not isinstance(meta_data, dict):
+            # `.get` on a list/scalar used to raise AttributeError straight into the
+            # bare `except Exception`, so a meta.yaml holding a sequence looked
+            # exactly like one holding nothing. check_metadata already calls this a
+            # hard error; say the same thing here.
+            info["meta_error"] = "meta.yaml: must contain a mapping"
+        elif isinstance(meta_data, dict):
             # The folder is the derived overall status; pull everything else from
             # meta.yaml. Structured job facts (job_level/required_yoe/salary_range)
             # and the per-job status/stage/status_date live per posting under
@@ -231,8 +273,6 @@ def load_application(app_dir: Path, status: str) -> dict | None:
                         "job_metadata_schema_version"]:
                 if meta_data.get(key):
                     info[key] = meta_data[key]
-        except Exception:
-            pass
 
     # An application is "mixed" when its postings do not all share one per-job
     # status (e.g. one role rejected while another is still in progress). The
@@ -263,16 +303,26 @@ def load_application(app_dir: Path, status: str) -> dict | None:
         if not info.get("url"):
             info["url"] = first.get("url", "")
 
-    # Fallback: try to get role from tailored.yaml
-    if not info["role"]:
+    # Fallback: try to get role from tailored.yaml. Reached only when meta.yaml
+    # supplied neither a `jobs` list nor a top-level `role`, so the role this
+    # branch finds is the ONLY role the application has — and `build_log` folds a
+    # URL-less posting by (company, role), which makes it part of a skip-log
+    # identity. An unparseable file here is therefore recorded exactly like an
+    # unparseable meta.yaml rather than left as an empty role.
+    if not info["role"] and not info.get("meta_error"):
         tailored = tailored_path(app_dir)
         if tailored.exists():
             try:
                 with open(tailored) as f:
                     td = yaml.safe_load(f) or {}
-                info["role"] = td.get("title", td.get("name", ""))
-            except Exception:
-                pass
+            except (OSError, yaml.YAMLError) as exc:
+                info["meta_error"] = _read_failure("source/tailored.yaml", exc)
+            else:
+                if isinstance(td, dict):
+                    info["role"] = td.get("title", td.get("name", ""))
+                else:
+                    info["meta_error"] = (
+                        "source/tailored.yaml: must contain a mapping")
 
     return info
 
@@ -640,8 +690,17 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
     A row is a *mismatch* (hard failure) only when its location is a definite place
     outside the policy — a foreign location or a non-preferred US office. An
     *unknown* row (blank or unrecognized location) is surfaced for manual review
-    but is NOT a policy violation, so it does not fail the check. Returns True when
-    there are no mismatches (unknown/review rows do not flip the result).
+    but is NOT a policy violation, so it does not fail the check.
+
+    An **unreadable** row is a third bucket and a hard failure. `AGENTS.md` names
+    this command as the way to verify the location guardrail, so a row whose
+    metadata would not parse is one this command did not actually inspect — the
+    file can say ``location: London, UK`` in plain text while the assessment sees
+    none of it. It is not merely "unknown" either: with meta.yaml unreadable the
+    location falls back to whatever the JD file happens to say, which can come
+    back *matching*. Unreadable rows are therefore classified first and are never
+    scored as match, mismatch or review. Returns True when there are neither
+    mismatches nor unreadable rows.
     """
     rows = []
     for status in statuses:
@@ -665,14 +724,20 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
                 "evidence": list(assessment.evidence),
                 "review_reasons": list(assessment.review_reasons),
                 "locations": locs,
+                "meta_error": info.get("meta_error", ""),
             })
 
-    non_matching = [r for r in rows if not r["match"]]
+    # Unreadable first: such a row's assessment was built from an incomplete
+    # picture, so whatever decision it carries — including "match" — means nothing.
+    unreadable = [r for r in rows if r["meta_error"]]
+    inspected = [r for r in rows if not r["meta_error"]]
+    non_matching = [r for r in inspected if not r["match"]]
     # Split non-matching rows into definite policy violations (foreign / non-preferred
     # US office) and "unknown" rows (blank / unrecognized location). Only the former
     # fail the check; the latter are surfaced for manual review.
     mismatches = [r for r in non_matching if r["decision"] == "no_match"]
     review = [r for r in non_matching if r["decision"] == "review"]
+    ok = not mismatches and not unreadable
 
     if as_json:
         print(json.dumps({
@@ -680,8 +745,9 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
             "non_matching": non_matching,
             "mismatches": mismatches,
             "review": review,
+            "unreadable": unreadable,
         }, indent=2))
-        return not mismatches
+        return ok
 
     if not rows:
         print(f"No applications found under: {', '.join(statuses)}")
@@ -691,13 +757,23 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
     print("\u2500" * (width + 40))
     print(f"{'SLUG':<{width}}  {'MATCH':<5}  {'CATEGORY':<13}  LOCATIONS")
     print("\u2500" * (width + 40))
-    for r in sorted(rows, key=lambda x: (x["match"], x["slug"])):
-        mark = "ok" if r["match"] else "NO"
+    for r in sorted(rows, key=lambda x: (not x["meta_error"], x["match"], x["slug"])):
+        if r["meta_error"]:
+            mark, category = "ERR", "unreadable"
+        else:
+            mark, category = ("ok" if r["match"] else "NO"), r["category"]
         loc = " | ".join(r["locations"]) if r["locations"] else "(none recorded)"
-        print(f"{r['slug']:<{width}}  {mark:<5}  {r['category']:<13}  {loc}")
+        print(f"{r['slug']:<{width}}  {mark:<5}  {category:<13}  {loc}")
     print("\u2500" * (width + 40))
-    print(f"Total: {len(rows)}  |  match: {len(rows) - len(non_matching)}  "
-          f"|  mismatch: {len(mismatches)}  |  review: {len(review)}")
+    print(f"Total: {len(rows)}  |  match: {len(inspected) - len(non_matching)}  "
+          f"|  mismatch: {len(mismatches)}  |  review: {len(review)}  "
+          f"|  unreadable: {len(unreadable)}")
+    if unreadable:
+        print("\nUnreadable (metadata would not parse \u2014 location NOT inspected):")
+        for r in unreadable:
+            print(f"  - {r['slug']}  {r['meta_error']}")
+        print("  Fix each file (--check-metadata names the same errors), then "
+              "re-run. Until then this gate cannot clear these applications.")
     if mismatches:
         print("\nMismatches (outside the configured location policy):")
         for r in mismatches:
@@ -708,7 +784,7 @@ def check_locations(statuses: list[str], as_json: bool = False) -> bool:
         for r in review:
             print(f"  - {r['slug']}  [{r['category']}]  "
                   f"{' | '.join(r['locations']) or '(none recorded)'}")
-    return not mismatches
+    return ok
 
 
 def find_application(slug: str) -> Path | None:
@@ -1074,7 +1150,15 @@ def _record_log_events(slug: str) -> None:
     info = load_application(app_dir, status_label_for_dir(app_dir.parent.name) or "")
     if not info:
         return
-    appended = _upsert_log_rows(build_log([info])["postings"], source="update")
+    log = build_log([info])
+    if log["unreadable"]:
+        # Belt and braces: --update / --update-job already fail loud through
+        # _load_v5_meta, so an unparseable file cannot reach this point today. The
+        # guard stays because the cost of it being wrong is a permanent log row.
+        print(f"Warning: no skip-log row recorded for {slug} — "
+              f"{log['unreadable'][0]['error']}", file=sys.stderr)
+        return
+    appended = _upsert_log_rows(log["postings"], source="update")
     if appended:
         print(f"Recorded {appended} posting event(s) -> {APPLICATIONS_JSONL}")
 
@@ -1828,6 +1912,10 @@ def _list_job_candidates(jobs: list) -> None:
 
 def _role_cell(a: dict) -> str:
     """Role display cell; tag apps whose postings hold differing per-job statuses."""
+    if a.get("meta_error"):
+        # Never an empty cell: a blank role is what "no roles recorded yet" looks
+        # like, and this row is "the file would not parse" instead.
+        return "(metadata unreadable)"
     role = a.get("role", "")
     return f"{role} [mixed]" if a.get("mixed") else role
 
@@ -1900,6 +1988,17 @@ def print_table(apps: list[dict]):
         for line in overdue:
             print(f"  -> {line}")
 
+    # Deliberately a report, not an exit code. This table is a read-only fleet
+    # view, not a gate: one broken file must not hide the other forty rows. The
+    # gates that DO fail on these are --check-metadata and --check-locations, and
+    # --sync-log refuses to write a row for them.
+    unreadable = [a for a in apps if a.get("meta_error")]
+    if unreadable:
+        print(f"Unreadable metadata ({len(unreadable)}) — these rows show only "
+              "folder-derived facts, and no skip-log row is written for them:")
+        for a in unreadable:
+            print(f"  ! {a['slug']}: {a['meta_error']}")
+
 
 def _progress_attention(apps: list[dict]) -> tuple[list[str], list[str]]:
     """(action-needed lines, overdue-waiting lines) from per-job progress.
@@ -1971,15 +2070,31 @@ def build_log(apps: list[dict]) -> dict:
     appends the same rows when it scaffolds a folder, and a skill may not import
     another skill's ``scripts/``. All this wrapper adds is the (company, slug)
     ordering — which ``_upsert_log_rows`` relies on to collapse a re-application
-    onto the fresher slug — and the two header fields.
+    onto the fresher slug — the two header fields, and the unreadable guard below.
+
+    **An application whose metadata failed to parse produces no row at all.** It is
+    returned under ``unreadable`` instead, for the caller to report. This is the
+    single choke point where a folder becomes a skip-log identity, and the skip-log
+    is append-only and authoritative: nothing regenerates it, so a wrong row is
+    permanent until the owner appends a ``--forget-log`` tombstone. Derived from an
+    unparsed file the row is wrong in the way that matters most — the real posting
+    URL never reaches it, so ``fold_key`` stores a ``(company, role)`` pair built
+    from the folder name and the actual posting is never skipped. The two costs are
+    not symmetric: a row not written is recovered by fixing the YAML and re-running,
+    a row written wrong is not.
     """
     postings = []
+    unreadable = []
     for a in sorted(apps, key=lambda x: (x.get("company", ""), x.get("slug", ""))):
+        if a.get("meta_error"):
+            unreadable.append({"slug": a.get("slug", ""), "error": a["meta_error"]})
+            continue
         postings.extend(skip_log.posting_rows(a))
     return {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "count": len(postings),
         "postings": postings,
+        "unreadable": unreadable,
     }
 
 
@@ -1989,10 +2104,31 @@ def _default_aliases(name: str) -> list[str]:
 
 
 def _load_company_search_log_raw() -> dict:
+    """The parsed company search log, or a fresh skeleton when it does not exist.
+
+    Exits rather than returning a skeleton when the file exists but will not parse.
+    Every caller of this function goes on to REWRITE the file from what it returns,
+    so handing back an empty document would replace the owner's whole search log
+    with two keys and no companies — the same "unparseable read treated as an empty
+    file" failure this module now refuses everywhere else.
+    """
     if not COMPANY_SEARCH_LOG.exists():
         return {"skip_within_days": 7, "companies": []}
-    with open(COMPANY_SEARCH_LOG) as f:
-        return yaml.safe_load(f) or {"skip_within_days": 7, "companies": []}
+    try:
+        with open(COMPANY_SEARCH_LOG) as f:
+            data = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError) as exc:
+        print(f"Error: {_read_failure(str(COMPANY_SEARCH_LOG), exc)}\n"
+              "  Refusing to rewrite it, which would discard every row it holds. "
+              "Fix the file and re-run.", file=sys.stderr)
+        sys.exit(1)
+    if data is None:
+        return {"skip_within_days": 7, "companies": []}
+    if not isinstance(data, dict):
+        print(f"Error: {COMPANY_SEARCH_LOG} must contain a mapping; refusing to "
+              "rewrite it.", file=sys.stderr)
+        sys.exit(1)
+    return data
 
 
 def _company_entry_key(name: str) -> str:
@@ -2000,9 +2136,18 @@ def _company_entry_key(name: str) -> str:
 
 
 def build_created_search_entries(apps: list[dict]) -> list[dict]:
-    """One row per company with an application folder (latest folder date)."""
+    """One row per company with an application folder (latest folder date).
+
+    Skips an application whose metadata failed to parse, for the same reason
+    ``build_log`` does. Its ``company`` is then the slug run through ``.title()``
+    — "Acme Labs Ml Engineer" for ``acme-labs-ml-engineer-20260701`` — so the row
+    both invents a company that does not exist AND leaves the real one unrecorded,
+    which is the wrong half of a skip decision in both directions.
+    """
     latest: dict[str, str] = {}
     for a in apps:
+        if a.get("meta_error"):
+            continue
         company = (a.get("company") or "").strip()
         day = (a.get("date") or "").strip()
         if not company or not day:
@@ -2064,13 +2209,31 @@ def merge_company_search_log(existing: list[dict], created: list[dict]) -> list[
 
 
 def write_company_search_log(data: dict) -> Path:
-    COMPANY_SEARCH_LOG.parent.mkdir(parents=True, exist_ok=True)
+    """Rewrite the company search log atomically, keeping keys this writer does not own.
+
+    Two properties a bare ``Path.write_text`` of a freshly built dict does not have:
+
+    * **Atomic.** ``write_text`` truncates first and writes second, so an
+      interrupted rewrite leaves a half file where a complete search log used to
+      be — and this file is rewritten on every ``--sync-log`` and every
+      ``--log-search``. The temp-then-rename helper leaves either the old bytes or
+      the new bytes, never a truncation.
+    * **Lossless.** The three keys below are the only ones this writer manages;
+      anything else at the top level is carried through from the parsed document
+      instead of being dropped in silence. The managed keys are written first, in
+      their historical order, so a file with nothing extra comes out byte-shaped
+      exactly as before.
+    """
     out = {
         "skip_within_days": data.get("skip_within_days", 7),
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "companies": data.get("companies") or [],
     }
-    COMPANY_SEARCH_LOG.write_text(
+    for key, value in (data or {}).items():
+        if key not in out:
+            out[key] = value
+    atomic_write_text(
+        COMPANY_SEARCH_LOG,
         COMPANY_SEARCH_LOG_HEADER
         + yaml.safe_dump(out, sort_keys=False, allow_unicode=True, width=100))
     return COMPANY_SEARCH_LOG
@@ -2151,21 +2314,24 @@ def _upsert_log_rows(rows: list[dict], *, source: str) -> int:
     return skip_log.record_postings(APPLICATIONS_JSONL, rows, source=source)
 
 
-def sync_log() -> tuple[Path, int, Path]:
+def sync_log() -> tuple[Path, int, Path, list[dict]]:
     """Append changed postings to the skip-log; upsert company-search-log from folders.
 
     Union-only. The skip-log is never rewritten and never truncated, so an
     application folder the owner deleted keeps its row and job-search keeps
     skipping that posting. Returns the skip-log path, how many events were
-    appended, and the company-search-log path.
+    appended, the company-search-log path, and the applications whose metadata
+    would not parse — those contribute to neither file, and the caller turns them
+    into a non-zero exit so an incomplete sync is never mistaken for a clean one.
 
     The retired ``applications-log.yaml`` is NOT written here any more — see
     ``backfill_log`` for the one-time seed and for what happens to the old file.
     """
     apps = collect_apps()
-    appended = _upsert_log_rows(build_log(apps)["postings"], source="sync")
+    log = build_log(apps)
+    appended = _upsert_log_rows(log["postings"], source="sync")
     search_path = sync_company_search_log(apps)
-    return APPLICATIONS_JSONL, appended, search_path
+    return APPLICATIONS_JSONL, appended, search_path, log["unreadable"]
 
 
 def _yaml_log_postings() -> list[dict]:
@@ -2184,10 +2350,13 @@ def _yaml_log_postings() -> list[dict]:
     return [row for row in rows if isinstance(row, dict)]
 
 
-def backfill_log(force: bool = False) -> tuple[Path, int, int]:
+def backfill_log(force: bool = False) -> tuple[Path, int, int, list[dict]]:
     """Seed the append-only skip-log from the YAML log UNION the folder rows.
 
-    Returns (path, events appended, resulting fold size).
+    Returns (path, events appended, resulting fold size, unreadable applications).
+    An application whose metadata would not parse contributes no seed row — a bad
+    seed row is exactly as permanent as a bad sync row — and is handed back for the
+    caller to report and exit non-zero on.
 
     A key present in both sources takes the FOLDER row: the YAML was only ever a
     projection of the folders, refreshed on the last sync, so the folder is the
@@ -2206,8 +2375,9 @@ def backfill_log(force: bool = False) -> tuple[Path, int, int]:
               "line wins the fold; nothing is ever deleted).", file=sys.stderr)
         sys.exit(1)
 
+    folder_log = build_log(collect_apps())
     merged: dict[tuple, dict] = {}
-    for source_rows in (_yaml_log_postings(), build_log(collect_apps())["postings"]):
+    for source_rows in (_yaml_log_postings(), folder_log["postings"]):
         for raw in source_rows:
             row = skip_log.posting_row(raw)
             merged[skip_log.fold_key(row)] = row
@@ -2226,7 +2396,8 @@ def backfill_log(force: bool = False) -> tuple[Path, int, int]:
     if honored:
         print(f"  kept {len(honored)} earlier --forget-log tombstone(s); those "
               "postings were NOT re-seeded")
-    return APPLICATIONS_JSONL, len(merged), len(skip_log.fold(APPLICATIONS_JSONL))
+    return (APPLICATIONS_JSONL, len(merged),
+            len(skip_log.fold(APPLICATIONS_JSONL)), folder_log["unreadable"])
 
 
 def _near_log_matches(fold: dict, values: list[str], limit: int = 10) -> list[dict]:
@@ -2339,6 +2510,25 @@ _SCAN_FLAGS_TAKING_NO_PATH = (
     ("check_locations", "--check-locations", None),
     ("company_keys", "--company-keys", None),
 )
+
+
+def _report_unwritable(unreadable: list[dict], verb: str) -> None:
+    """Name the applications a log write was refused for, and how to clear them.
+
+    Printed to stderr and paired with a non-zero exit by the caller: the write that
+    DID happen covered every other application, so this is a partial success, and a
+    partial success that exits 0 is one nobody notices.
+    """
+    sys.stdout.flush()  # keep this block below the write summary it qualifies
+    print(f"\nRefused to {verb} a skip-log row for "
+          f"{len(unreadable)} application(s) whose metadata would not parse:",
+          file=sys.stderr)
+    for row in unreadable:
+        print(f"  - {row['slug']}: {row['error']}", file=sys.stderr)
+    print("  The skip-log is append-only and authoritative: a row derived from an "
+          "unparsed file loses the real posting URL, and only a --forget-log "
+          "tombstone can undo it. Fix each meta.yaml (--check-metadata reports the "
+          "same errors) and re-run.", file=sys.stderr)
 
 
 def _reject_extra_args(parser, args, extras):
@@ -2568,13 +2758,16 @@ def main():
         return
 
     if args.backfill_log:
-        path, appended, folded = backfill_log(force=args.force)
+        path, appended, folded, unreadable = backfill_log(force=args.force)
         print(f"Seeded the append-only skip-log -> {path}")
         print(f"  appended {appended} event(s); the fold now holds "
               f"{folded} posting(s)")
         print(f"  the old YAML log {APPLICATIONS_LOG} is no longer read or "
               "written by any tool. Remove it yourself once you are satisfied "
               "with the seed — agents never delete owner data.")
+        if unreadable:
+            _report_unwritable(unreadable, "seed")
+            sys.exit(1)
         return
 
     if args.forget_log:
@@ -2586,12 +2779,15 @@ def main():
         sys.exit(1)
 
     if args.sync_log:
-        app_path, appended, search_path = sync_log()
+        app_path, appended, search_path, unreadable = sync_log()
         if appended:
             print(f"Appended {appended} posting event(s) -> {app_path}")
         else:
             print(f"No posting changes — {app_path} unchanged")
         print(f"Updated company search log -> {search_path}")
+        if unreadable:
+            _report_unwritable(unreadable, "sync")
+            sys.exit(1)
         return
 
     if not APPLICATIONS_DIR.exists():

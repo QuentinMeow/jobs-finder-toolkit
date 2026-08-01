@@ -19,6 +19,7 @@ if str(SHARED_DIR) not in sys.path:
 from metadata_editor import (  # noqa: E402
     MetadataChecksumMismatchError,
     atomic_write_bytes,
+    atomic_write_text,
     plan_field_updates,
     plan_metadata_edit,
     plan_v4_to_v5_migration,
@@ -269,6 +270,58 @@ class MetadataEditorTests(unittest.TestCase):
                     )
 
             self.assertEqual(path.read_bytes(), concurrent)
+
+    def test_atomic_write_text_creates_a_missing_file(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "nested" / "search-log.yaml"
+
+            atomic_write_text(path, "skip_within_days: 7\n")
+
+            self.assertEqual(path.read_text(encoding="utf-8"),
+                             "skip_within_days: 7\n")
+
+    def test_atomic_write_text_replaces_an_existing_file(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "search-log.yaml"
+            path.write_text("companies: []\n", encoding="utf-8")
+
+            atomic_write_text(path, "companies: [Acme]\n")
+
+            self.assertEqual(path.read_text(encoding="utf-8"),
+                             "companies: [Acme]\n")
+
+    def test_interrupted_atomic_write_text_leaves_the_previous_file_whole(self):
+        """The property a bare ``Path.write_text`` cannot offer.
+
+        ``write_text`` truncates and then writes, so a crash between the two
+        leaves a half file where a complete one used to be. Here the failure is
+        injected at the rename — the last possible moment — and the old bytes must
+        still be all that is on disk, with no temp file left behind.
+        """
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            path = directory / "search-log.yaml"
+            original = "skip_within_days: 7\ncompanies: [Acme]\n"
+            path.write_text(original, encoding="utf-8")
+
+            with patch("metadata_editor.os.replace",
+                       side_effect=OSError("interrupted")):
+                with self.assertRaises(OSError):
+                    atomic_write_text(path, "truncated")
+
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+            self.assertEqual(sorted(p.name for p in directory.iterdir()),
+                             ["search-log.yaml"])
+
+    def test_atomic_write_text_keeps_the_existing_permission_bits(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "search-log.yaml"
+            path.write_text("companies: []\n", encoding="utf-8")
+            os.chmod(path, 0o600)
+
+            atomic_write_text(path, "companies: [Acme]\n")
+
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_second_run_is_idempotent(self):
         raw = (

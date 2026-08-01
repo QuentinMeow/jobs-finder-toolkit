@@ -9,7 +9,7 @@ import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
@@ -904,31 +904,42 @@ def plan_v4_to_v5_migration(raw: bytes) -> MetadataEditPlan:
     )
 
 
-def atomic_write_bytes(
-    path: str | os.PathLike[str],
+def _atomic_replace(
+    destination: Path,
     data: bytes,
-    expected_sha256: str,
+    *,
+    verify: Callable[[], None] | None = None,
 ) -> None:
-    """Atomically replace *path* only when its current SHA-256 still matches."""
-    destination = Path(path)
-    def assert_checksum() -> None:
-        actual_sha256 = hashlib.sha256(destination.read_bytes()).hexdigest()
-        if actual_sha256 != expected_sha256:
-            raise MetadataChecksumMismatchError(
-                f"checksum mismatch for {destination}: expected {expected_sha256}, "
-                f"found {actual_sha256}"
-            )
+    """Replace *destination* with *data* in one indivisible step.
 
-    assert_checksum()
+    Write a temp file in the destination's OWN directory, fsync it, ``os.replace``
+    it over the destination, then fsync the parent directory. The temp file must
+    be a sibling because ``rename`` is atomic only within one filesystem — a temp
+    dir on another volume silently downgrades the rename to a copy, which is the
+    very torn write this exists to prevent. A reader (or a crash) therefore sees
+    the whole old file or the whole new file, never a truncated one.
 
-    file_stat = destination.stat()
+    ``verify`` (when given) is called once more immediately before the rename, so
+    a caller's precondition still holds across the write window. The destination
+    need not exist; when it does, its permission bits are carried over.
+
+    Private: callers use :func:`atomic_write_bytes` (checksum-bound replacement of
+    a file that must already exist) or :func:`atomic_write_text` (unconditional
+    create-or-replace of a derived file).
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        existing_mode = stat.S_IMODE(destination.stat().st_mode)
+    except FileNotFoundError:
+        existing_mode = None
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{destination.name}.",
         suffix=".tmp",
         dir=str(destination.parent),
     )
     try:
-        os.fchmod(descriptor, stat.S_IMODE(file_stat.st_mode))
+        if existing_mode is not None:
+            os.fchmod(descriptor, existing_mode)
         with os.fdopen(descriptor, "wb") as temporary:
             descriptor = -1
             temporary.write(data)
@@ -936,7 +947,8 @@ def atomic_write_bytes(
             os.fsync(temporary.fileno())
         # Recheck after preparing and syncing the replacement. This catches edits
         # made during the write window before the atomic rename.
-        assert_checksum()
+        if verify is not None:
+            verify()
         os.replace(temporary_name, destination)
 
         directory_flags = os.O_RDONLY
@@ -955,3 +967,42 @@ def atomic_write_bytes(
         except FileNotFoundError:
             pass
         raise
+
+
+def atomic_write_bytes(
+    path: str | os.PathLike[str],
+    data: bytes,
+    expected_sha256: str,
+) -> None:
+    """Atomically replace *path* only when its current SHA-256 still matches."""
+    destination = Path(path)
+
+    def assert_checksum() -> None:
+        actual_sha256 = hashlib.sha256(destination.read_bytes()).hexdigest()
+        if actual_sha256 != expected_sha256:
+            raise MetadataChecksumMismatchError(
+                f"checksum mismatch for {destination}: expected {expected_sha256}, "
+                f"found {actual_sha256}"
+            )
+
+    assert_checksum()
+    _atomic_replace(destination, data, verify=assert_checksum)
+
+
+def atomic_write_text(
+    path: str | os.PathLike[str],
+    text: str,
+    *,
+    encoding: str = "utf-8",
+) -> None:
+    """Atomically create-or-replace *path* with *text*; no prior-content precondition.
+
+    The same write discipline as :func:`atomic_write_bytes` (see
+    :func:`_atomic_replace`) minus the checksum guard, for a file the caller
+    rebuilds wholesale and that may not exist yet — a derived index such as the
+    tracker's ``company-search-log.yaml``. There is no "expected" prior content to
+    bind to, but the atomicity still matters: a bare ``Path.write_text`` truncates
+    first and writes second, so an interrupted rewrite leaves a half file where a
+    complete one used to be.
+    """
+    _atomic_replace(Path(path), text.encode(encoding))
