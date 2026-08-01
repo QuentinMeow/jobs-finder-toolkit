@@ -1925,3 +1925,9 @@
   files: 11
   digest: sha256:811a1f566c308a51
   finding: US-country residency clause read as us_remote; 352-cell matrix shows 63 review->match moves and zero moves in any other direction
+- commit: fdb5aa8d
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 2
+  digest: sha256:bbf5f1929f6d0b7a
+  finding: Corrected the overnight-defect-hunt handover's wrong CI-goes-red claim (a merge-only ledger commit exits the review gate clean) and recorded the merge-commit-plus-retarget recipe in skills/github-workflow/SKILL.md so future sessions do not rebase the 45-PR stack again.

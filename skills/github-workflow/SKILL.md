@@ -214,6 +214,26 @@ automatically. Merging out of order strands the content of the PRs below. Every
 update this causes rewrites SHAs, which orphans the review-ledger rows written on
 those branches — see "A stacked PR's row does not survive the merge" below.
 
+**Keeping every step green when `delete_branch_on_merge` is off.** Check the repo's
+setting before assuming GitHub's auto-retarget applies: `gh api repos/<owner>/<repo>
+-q .delete_branch_on_merge`. When it is `false` (and squash/rebase merge are still
+enabled), merging without an explicit retarget lands each PR on the *previous*
+branch, not `main` — silent, not red, and nothing in the UI flags it. The safe
+recipe for a ledger-tracked stack (every branch tip here is a ledger-only
+`Acknowledge …` commit, and the review gate's `WATCHED_PATHSPEC` excludes the
+ledger file — see "The review gate and the one-commit lag" below) is a **merge
+commit**, which preserves every SHA, plus a manual retarget, repeated bottom-up:
+
+```bash
+gh pr merge <N>   --merge
+gh pr edit  <N+1> --base main
+```
+
+Never `--squash`, never `--rebase`, never GitHub's "Update branch" button on such a
+stack — each rewrites SHAs, and this repo's ledger rows are keyed to commit ranges,
+so rewriting orphans every row above it (the recovery for when that already
+happened is "A stacked PR's row does not survive the merge" below).
+
 **Rebasing the whole stack when the bottom changes.** The trap: a plain
 `git rebase <new-base>` replays every commit not already in the new base *by
 SHA*. After the bottom PR is squash- or rebase-merged, its changes exist on `main`
