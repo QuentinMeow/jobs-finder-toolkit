@@ -52,7 +52,8 @@ malformed, and unsupported-layout inputs with expected outputs.
 Works out of the box on a fresh clone — no config needed; every tool falls back to
 the fictional "Jordan Rivers" example candidate. Requires Python 3.11+
 (`python3 --version` first) and, for PDF output, LibreOffice
-(`brew install --cask libreoffice`; or add `--no-pdf` to skip).
+(`brew install --cask libreoffice`). Without a converter the render stops and says the
+one-page check could not run; add `--no-pdf` if you deliberately want a DOCX-only draft.
 
 ```bash
 git clone https://github.com/<owner>/jobs-finder-toolkit.git && cd jobs-finder-toolkit   # or your fork

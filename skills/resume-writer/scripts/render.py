@@ -392,7 +392,12 @@ def main():
         help="Reference DOCX for format-preserving render "
              "(default: config.paths.reference_docx)")
     parser.add_argument("--no-pdf", action="store_true",
-                        help="Skip PDF conversion")
+                        help="Skip PDF conversion. check.py still runs and still "
+                             "reports the PDF gates as NOT RUN, but they do not "
+                             "fail the render — this flag is how you declare a "
+                             "DOCX-only draft. WITHOUT it, a render that produces "
+                             "no PDF (no LibreOffice/docx2pdf installed) now FAILS "
+                             "instead of reporting success over an uninspected PDF.")
     parser.add_argument("--no-cover-letter", action="store_true",
                         help="Skip rendering the cover letter, even if a .txt exists")
     parser.add_argument("--label", "--position", dest="label", default=None,
@@ -539,19 +544,30 @@ def main():
         if pdf_path:
             print(f"  PDF:  {pdf_path}")
         else:
-            print("  PDF:  skipped (install LibreOffice or docx2pdf)")
-            print("        Open the DOCX in Word/Google Docs and export as PDF.")
+            # NOT a skip — the run asked for a PDF and no converter produced one,
+            # so check.py's mandatory one-page gate has nothing to inspect. It
+            # reports NOT INSPECTED and FAILs below (pdf_required stays True).
+            print("  PDF:  NOT PRODUCED — no DOCX->PDF converter found "
+                  "(install LibreOffice or docx2pdf).")
+            print("        Open the DOCX in Word/Google Docs and export as PDF, or "
+                  "re-run with --no-pdf for a DOCX-only draft.")
         for (role, _cl), cl_pdf in zip(renderable, pdfs[1:]):
             tag = f" [{role}]" if role else ""
             if cl_pdf:
                 print(f"  Cover PDF{tag}:  {cl_pdf}")
             else:
-                print(f"  Cover PDF{tag}:  skipped (install LibreOffice or docx2pdf)")
+                print(f"  Cover PDF{tag}:  NOT PRODUCED "
+                      "(install LibreOffice or docx2pdf)")
 
     if not args.skip_checks:
         import check
         print("Validating:")
-        if not check.run_checks(yaml_path, pdf_path):
+        # pdf_required distinguishes the two ways there can be no PDF. --no-pdf is
+        # a deliberate DOCX-only draft (gates reported NOT RUN, exit 0); anything
+        # else means the pipeline was asked for a PDF and did not get one, which
+        # leaves the mandatory one-page gate uninspected (FAIL, exit 1).
+        if not check.run_checks(yaml_path, pdf_path,
+                                pdf_required=not args.no_pdf):
             sys.exit(1)
 
 

@@ -323,6 +323,14 @@ the fix lands under budget). Expect 1–2 cycles; **after 3, stop and report to 
   profile / story bank.
 - **bullet too long/short** → rewrite within 45-215 chars.
 - **locked field / title / skill failures** → revert to the baseline value.
+- **`PDF NOT INSPECTED`** → no PDF reached the gate, so the one-page/text/fill checks did NOT
+  run. Install a converter (LibreOffice, or `JOBHUNT_SOFFICE`) and re-render; use `--no-pdf`
+  only for a deliberate DOCX-only draft, which downgrades it to a WARN and leaves the page
+  count unvalidated. Never report such a run as validated.
+- **`SKILL VOCABULARY NOT INSPECTED`** → the profile's `## Skills` section did not parse, so
+  the Approved/Weak gate and the Never blocklist did not run. It is a parse failure, not an
+  empty vocabulary — do NOT start asking the user to categorize skills; report the profile
+  section instead (the profile is user-owned; ask before editing it).
 
 Checks can also be run standalone:
 `.venv/bin/python skills/resume-writer/scripts/check.py applications/6_drafted/<slug>/`.

@@ -10,6 +10,7 @@ their local copy here instead of reaching into the repo-root toolkit.
 | `layout.py`   | `automation/shared/layout.py`   |
 | `location.py` | `automation/shared/location.py` |
 | `job_metadata.py` | `automation/shared/job_metadata.py` |
+| `profile_skills.py` | `automation/shared/profile_skills.py` |
 
 ## Rules
 
