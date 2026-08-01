@@ -1508,9 +1508,8 @@ _SPONSOR_DOUBLE_NEGATION_MAX_GAP_TOKENS = 4
 #
 # A quantifier that admits both readings is ambiguous, and this module resolves
 # every ambiguity toward the cheaper error (see the negation-scope note above), so
-# bare "all" must not delete a denial. It never needed to: every wording this rule
-# was written for says "every". "at all" needs no special case any more — "we
-# cannot sponsor visas at all" is a denial because "all" now bounds nothing.
+# bare "all" must not DELETE a denial. It never needed to: every wording the
+# scope-limit rule was written for says "every".
 #
 # The asymmetry of the original design — a scope limit can only REMOVE a denial,
 # never create an offer — holds of the EVIDENCE lists by construction: a
@@ -1533,6 +1532,39 @@ _SPONSOR_ACT_RE = re.compile(r"\bsponsor", re.I)
 # How far the quantifier may sit from the phrase it bounds ("sponsor visas for
 # every role" is 1; "cannot guarantee that we will sponsor visas" is 4).
 _SPONSOR_SCOPE_LIMIT_MAX_GAP_TOKENS = 6
+
+# --- the same ambiguity, out the other side: RECORD it, do not resolve it ------
+# "Not a scope limit" is not the same claim as "a settled refusal", and collapsing
+# the two put the ambiguity above straight back out the other side of the module.
+# With `all` simply absent from the pattern, an `all`-bounded denial fell through
+# to the ordinary denial path and graded ``no_match``/``unlikely``/HIGH with no
+# review flag — silently dropped under BOTH visa policies, on a sentence the
+# comment above calls ambiguous in so many words. "Our immigration team supports
+# H-1B and green card cases, but we do not sponsor all roles" was deleted; the same
+# sentence written with "every" was kept and flagged, and the quantifier was the
+# whole difference. It only drops when no ``_SPONSOR_POSITIVE`` phrase survives the
+# context gate, so the class is exactly "postings whose offer is phrased in words
+# the list does not contain" — which a phrase list can never enumerate.
+#
+# So the ambiguity is now RECORDED, in the two layers where it actually lives:
+#
+#   * EVIDENCE — an `all`-bounded denial stays a DENIAL. It is never moved to
+#     ``scope_limited``, never counted as positive, and never leaves the ``denial``
+#     list, so every branch that could reach ``match``/``likely`` is preempted
+#     exactly as before. No promotion is reachable through this pattern; that is
+#     the property the narrowing above exists to protect, and it is untouched.
+#   * VERDICT — the ``elif denial`` branch asserted ``high`` confidence from the
+#     mere presence of a denial, without asking whether that denial's reading was
+#     settled. That was the one place in this module where an ambiguity produced a
+#     confident answer. A denial whose ONLY reading rests on an ambiguous
+#     quantifier now lands ``review``/``unknown``/low — kept and flagged, where
+#     every other ambiguity here already lands.
+#
+# One settled denial anywhere in the posting still wins outright: "…for all new
+# hires. This role does not offer sponsorship." stays ``no_match``. And "at all"
+# is excluded explicitly, because there "all" INTENSIFIES the denial rather than
+# bounding it — "we cannot sponsor visas at all" is a flat refusal.
+_SPONSOR_AMBIGUOUS_SCOPE_RE = re.compile(r"(?<!\bat\s)\ball\b", re.I)
 
 # --- hedged offers: modality is not a guarantee ------------------------------
 # The mirror error the same canary found: "limited immigration sponsorship may be
@@ -1667,23 +1699,21 @@ def _sponsor_cue_within(text: str, pattern, budget: int, *, backward: bool) -> b
     return False
 
 
-def _sponsor_scope_limited(source: str, start: int, end: int) -> bool:
-    """True when the negation around a sponsorship phrase bounds it, not denies it.
+def _sponsor_quantifier_bounds(source: str, start: int, end: int, pattern) -> bool:
+    """True when ``pattern`` quantifies the negation around a sponsorship phrase.
 
-    ``not … for every role`` negates a UNIVERSAL and so entails that some roles are
-    sponsored; ``does not sponsor`` is the universal negation. Only the second is a
-    denial. Applies to phrases about the ACT of sponsoring — a categorical
-    eligibility rule ("us citizens only") is never a scope limit.
+    The reading machinery both quantifier questions share — "is this a limit on an
+    offer?" and "is this denial's own reading settled?" — differ only in WHICH
+    quantifier they look for, so the adjacency rules stay in one place.
 
-    Only DISTRIBUTIVE quantifiers count (``every``/``each``, plus an explicit
-    ``guarantee`` hedge). Bare ``all`` also has a collective reading under which
-    the quantifier bounds the denial's own domain rather than an offer — see
-    ``_SPONSOR_SCOPE_LIMIT_RE`` — so it is not a scope limit here.
+    Applies to phrases about the ACT of sponsoring: a categorical eligibility rule
+    ("us citizens only", "green card required") states who may hold the job at all,
+    and a nearby quantifier does not bound it.
     """
     if not _SPONSOR_ACT_RE.search(source[start:end]):
         return False
     if _sponsor_cue_within(
-            _sponsor_clause_tail(source, end), _SPONSOR_SCOPE_LIMIT_RE,
+            _sponsor_clause_tail(source, end), pattern,
             _SPONSOR_SCOPE_LIMIT_MAX_GAP_TOKENS, backward=False):
         return True
     # Backward, the quantifier only counts INSIDE the negation it bounds — it has
@@ -1695,8 +1725,36 @@ def _sponsor_scope_limited(source: str, start: int, end: int) -> bool:
     if cue is None:
         return False
     return _sponsor_cue_within(
-        scope[cue.end():], _SPONSOR_SCOPE_LIMIT_RE,
+        scope[cue.end():], pattern,
         _SPONSOR_SCOPE_LIMIT_MAX_GAP_TOKENS, backward=True)
+
+
+def _sponsor_scope_limited(source: str, start: int, end: int) -> bool:
+    """True when the negation around a sponsorship phrase bounds it, not denies it.
+
+    ``not … for every role`` negates a UNIVERSAL and so entails that some roles are
+    sponsored; ``does not sponsor`` is the universal negation. Only the second is a
+    denial.
+
+    Only DISTRIBUTIVE quantifiers count (``every``/``each``, plus an explicit
+    ``guarantee`` hedge). Bare ``all`` also has a collective reading under which
+    the quantifier bounds the denial's own domain rather than an offer — see
+    ``_SPONSOR_SCOPE_LIMIT_RE`` — so it is not a scope limit here.
+    """
+    return _sponsor_quantifier_bounds(source, start, end, _SPONSOR_SCOPE_LIMIT_RE)
+
+
+def _sponsor_scope_unsettled(source: str, start: int, end: int) -> bool:
+    """True when a denial's reading rests on a quantifier that means either thing.
+
+    ``all`` is number-neutral: "we do not sponsor all roles" is a limit on an offer
+    read distributively and a flat refusal read collectively, and the sentence does
+    not settle which. The phrase stays a DENIAL either way — this only says the
+    denial cannot support a CONFIDENT verdict on its own (see
+    ``_SPONSOR_AMBIGUOUS_SCOPE_RE``).
+    """
+    return _sponsor_quantifier_bounds(source, start, end,
+                                      _SPONSOR_AMBIGUOUS_SCOPE_RE)
 
 
 def _sponsor_offer_is_hedged(source: str, start: int, end: int) -> bool:
@@ -1759,13 +1817,17 @@ def assess_sponsorship(text: str | None) -> dict:
     * a negation that quantifies over a DISTRIBUTIVE "every / each" (or hedges a
       guarantee) LIMITS the scope of sponsorship instead of refusing it, so it
       neither denies nor offers — "we do sponsor visas, but not for every role" is
-      a sponsor. Bare "all" does not qualify: "unable to sponsor visas for all new
-      hires" is a flat denial that names its population, not a limit on an offer;
+      a sponsor. Bare "all" does not qualify: it is number-neutral, so "unable to
+      sponsor visas for all new hires" reads either as that limit or as a flat
+      denial naming its population. Such a denial is KEPT as a denial (it can never
+      be promoted to an offer) but cannot on its own carry a confident verdict, so
+      alone it lands ``review``/``unknown``/low rather than being dropped silently;
     * an offer stated only under a possibility modal, a discretion clause or a
       quantity hedge is a HEDGED offer and lands ``unknown``, not ``likely``.
 
     So an unhedged offer outranks a hedged one, a hedged one outranks silence, and
-    a scope limit moves nothing — while a flat denial still wins over everything.
+    a scope limit moves nothing — while a SETTLED denial still wins over
+    everything.
     """
     source = _clean(_source_text(text))
     export_control = False
@@ -1784,6 +1846,7 @@ def assess_sponsorship(text: str | None) -> dict:
     ]
     negative: list[str] = []
     scope_limited: list[str] = []
+    unsettled: list[str] = []
     ambiguous = False
     for phrase, negative_match in negative_matches:
         if _sponsor_denial_is_negated(source, negative_match.start()):
@@ -1793,6 +1856,11 @@ def assess_sponsorship(text: str | None) -> dict:
                 source, negative_match.start(), negative_match.end()):
             if phrase not in scope_limited:
                 scope_limited.append(phrase)
+            continue
+        if _sponsor_scope_unsettled(
+                source, negative_match.start(), negative_match.end()):
+            if phrase not in unsettled:
+                unsettled.append(phrase)
             continue
         if phrase not in negative:
             negative.append(phrase)
@@ -1823,6 +1891,10 @@ def assess_sponsorship(text: str | None) -> dict:
                     source, positive_match.start(), positive_match.end()):
                 if phrase not in scope_limited:
                     scope_limited.append(phrase)
+            elif _sponsor_scope_unsettled(
+                    source, positive_match.start(), positive_match.end()):
+                if phrase not in unsettled:
+                    unsettled.append(phrase)
             elif phrase not in negated_offer:
                 negated_offer.append(phrase)
             continue
@@ -1834,16 +1906,25 @@ def assess_sponsorship(text: str | None) -> dict:
         if phrase not in positive:
             positive.append(phrase)
 
-    denial = [*negative, *negated_offer]
+    # A phrase read as settled ANYWHERE outranks the same phrase read as bounded
+    # elsewhere: one flat refusal is enough, however many quantified ones surround it.
+    unsettled = [phrase for phrase in unsettled
+                 if phrase not in negative and phrase not in negated_offer]
+    settled = [*negative, *negated_offer]
+    denial = [*settled, *unsettled]
     if denial and (positive or hedged_offer):
         decision, verdict, confidence = "review", "unknown", "low"
         reason = "Conflicting sponsorship offer and denial language."
-    elif denial:
+    elif settled:
         decision, verdict, confidence = "no_match", "unlikely", "high"
         reason = (
             "The posting explicitly denies sponsorship." if negative
             else "The posting negates its own sponsorship offer language."
         )
+    elif unsettled:
+        decision, verdict, confidence = "review", "unknown", "low"
+        reason = ("The posting's only denial is bounded by a quantifier that reads "
+                  "either way, so it is not read as a settled refusal.")
     elif ambiguous:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = ("Double-negated sponsorship language; the posting is not read "
@@ -1869,6 +1950,7 @@ def assess_sponsorship(text: str | None) -> dict:
     rule_ids = [
         *(f"sponsorship.negative.{phrase}" for phrase in negative),
         *(f"sponsorship.negated_offer.{phrase}" for phrase in negated_offer),
+        *(f"sponsorship.unsettled_denial.{phrase}" for phrase in unsettled),
         *(f"sponsorship.scope_limit.{phrase}" for phrase in scope_limited),
         *(["sponsorship.ambiguous.double_negation"] if ambiguous else []),
         *(["sponsorship.non_immigration.export_control"] if export_control else []),
@@ -1893,6 +1975,7 @@ def assess_sponsorship(text: str | None) -> dict:
         "evidence": [
             *negative,
             *(f"negated: {phrase}" for phrase in negated_offer),
+            *(f"unsettled: {phrase}" for phrase in unsettled),
             *(f"scope-limited: {phrase}" for phrase in scope_limited),
             *(f"hedged: {phrase}" for phrase in hedged_offer),
             *positive,

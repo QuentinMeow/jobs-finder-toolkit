@@ -36,11 +36,11 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   read as one. Mechanism: reference.md, "How polarity is decided".
 
 ## Visa heuristic false-positives
-<!-- added: 2026-07-20 · last_confirmed: 2026-07-31 · status: active -->
+<!-- added: 2026-07-20 · last_confirmed: 2026-08-01 · status: active -->
 - Polarity is structural, not lexical: an offer phrase inside a bounded negation scope ("does
   not currently offer visa sponsorship") is a denial, which stopped the heuristic scoring `yes`
-  on a negation. Two gaps stay live: a denial matching NEITHER list ("we do not offer
-  relocation or visa sponsorship") reads `unclear`, and a negation >~8 words away is out of scope.
+  on a negation. Two gaps stay live: a denial matching NEITHER list ("we do not offer relocation
+  or visa sponsorship") reads `unclear`, and a cue dies past ~8 tokens OR at any clause break.
 - **An offer and a LIMIT ON that offer are not a denial.** `not (for EVERY x)` negates a
   universal and entails that some x ARE sponsored; `does not sponsor` is the universal negation.
   "We do sponsor visas… however not for every role" is a sponsor, and grading it `unclear` made
@@ -48,10 +48,10 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
   limit only REMOVES a denial, never creates an offer, so "we can't sponsor everyone" alone
   stays `unclear`. Two shapes it must NOT catch, both still `no`: `at all` intensifies a denial,
   and a quantifier BEFORE the cue is a requirement subject ("ALL roles require work auth…").
-  Only DISTRIBUTIVE quantifiers count (`every`/`each`/`guarantee`): bare `all` reads
-  collectively too, so "…sponsor visas for ALL new hires" is a flat denial — read as a limit it
-  DELETED the denial and an unrelated positive graded the row `yes`/high. "Only removes a denial"
-  is true of the evidence lists, NOT the verdict. Ambiguous quantifier => keep the denial.
+  Only DISTRIBUTIVE quantifiers (`every`/`each`/`guarantee`) count; bare `all` reads collectively
+  too, so it settles nothing: KEEP the denial (deleting it once let an unrelated positive grade
+  the row `yes`/high — "only removes a denial" holds of the evidence lists, NOT the verdict) but
+  grade it `unclear`+flagged, never a silent `no`. Any one SETTLED denial still wins outright.
 - Grading is by OFFER STRENGTH: unhedged offer > hedged offer > silence, a scope limit moves
   nothing, a flat denial beats everything. So a hedged offer ("limited sponsorship may be
   available", "case-by-case", "at our discretion") and a double negative both land `unclear`,

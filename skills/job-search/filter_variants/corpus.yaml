@@ -308,12 +308,50 @@ variants:
       verdict: unknown
       confidence: low
 
-  - id: sponsorship-quantified-denial-alone-is-a-denial
+  - id: sponsorship-quantified-denial-alone-is-not-a-confident-refusal
     domain: sponsorship
-    # The same sentence with nothing positive beside it. A quantifier that admits
-    # a collective reading cannot weaken a refusal, so this stays a denial.
+    # The same sentence with nothing positive beside it, and the other half of the
+    # trade. A quantifier that admits a collective reading cannot weaken a refusal
+    # — the phrase stays a DENIAL, which is why the row above is still `review`
+    # and not `match`. But it cannot SETTLE one either, and this branch used to
+    # answer `no_match`/`unlikely`/high with no review flag: the one ambiguity in
+    # this module that produced a confident answer, and a silent drop under both
+    # policies. Ambiguity is what `review` is for.
     input:
       text: We are unable to sponsor visas for all new hires.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-unsettled-denial-with-an-unlisted-offer-is-kept
+    domain: sponsorship
+    # Why the row above is a recall defect and not a technicality. A confident
+    # drop only happens when NO `_SPONSOR_POSITIVE` phrase survives the context
+    # gate, so the postings it swallowed were the ones whose offer is phrased in
+    # words the list does not contain — here an employer stating in writing that
+    # it runs an immigration practice handling H-1B and green card cases. "team
+    # supports H-1B ... cases" matches no offer phrase, so the `all` clause was
+    # the only evidence and the posting was deleted. The same sentence with
+    # "every" was kept and flagged; the quantifier was the whole difference.
+    input:
+      text: >-
+        Our immigration team supports H-1B and green card cases, but we do not
+        sponsor all roles.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-a-settled-denial-outranks-an-unsettled-one
+    domain: sponsorship
+    # The guard on the row above: unsettling a denial must not unsettle the
+    # POSTING. One flat refusal anywhere still decides it, however many quantified
+    # sentences surround it.
+    input:
+      text: >-
+        We are unable to sponsor visas for all new hires. This role does not
+        offer sponsorship.
     expect:
       decision: no_match
       verdict: unlikely
@@ -337,7 +375,8 @@ variants:
   - id: sponsorship-at-all-is-still-a-flat-denial
     domain: sponsorship
     # The one place the bare word "all" runs the other way: "at all" INTENSIFIES a
-    # denial instead of bounding it.
+    # denial instead of bounding it, so it is excluded from the ambiguous-
+    # quantifier cue by name rather than left to fall out of the pattern.
     input:
       text: We cannot sponsor visas at all for this position.
     expect:
