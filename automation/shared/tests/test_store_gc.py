@@ -740,5 +740,86 @@ class OrphanRemovalTests(unittest.TestCase):
             self.assertTrue(blobs.tombstone_path(ref.sha256).exists())
 
 
+class DamagedDerivedEntityTests(unittest.TestCase):
+    """A present-but-unparseable derived entity YAML is damage, not an absent entity.
+
+    ``build_entity_index`` is where a blob learns which entities it feeds, i.e.
+    where its keep-class veto and its posting date come from. An unreadable
+    ``posting.yaml`` makes its blob look like it feeds nothing — the same shape as
+    the damaged-manifest defect one class up. The sweep therefore suspends, and it
+    does so with a named report rather than a raw ``ScannerError`` traceback.
+    """
+
+    def _store_with_damaged_entity(self, td):
+        layout = domain_layout(Path(td), "jobs")
+        blobs = BlobStore(layout.blobs)
+        ref = _write_fetch(layout, blobs, "20260601T000000Z-000001-aaaaaa",
+                           _days_ago(40), source="jobicy", operation="scrape",
+                           payload=b'{"job": 1}')
+        entity_dir = _write_entity(layout, "url-abc123",
+                                   fetch_ids=["20260601T000000Z-000001-aaaaaa"],
+                                   posted_at=serialization.to_z(_days_ago(100)))
+        path = entity_dir / "posting.yaml"
+        path.write_text("key: url-abc123\nprovenance: {fetch_ids: [\n",
+                        encoding="utf-8")  # half-synced YAML
+        return layout, blobs, ref, path
+
+    def test_unparseable_entity_yaml_is_reported_not_raised(self):
+        with tempfile.TemporaryDirectory() as td:
+            layout, blobs, _ref, path = self._store_with_damaged_entity(td)
+            found = retention.find_damaged_entities(layout)
+            self.assertEqual([d.path for d in found], [path])
+            self.assertEqual(retention.build_entity_index(layout), {})
+
+    def test_damaged_entity_suspends_the_sweep(self):
+        with tempfile.TemporaryDirectory() as td:
+            layout, blobs, ref, _path = self._store_with_damaged_entity(td)
+            cfg = retention.parse_config({"tiers": {"aggregator_sweeps": {
+                "prune_blobs_when": {"last_observed_older_than_days": 0}}}})
+            plan = retention.plan_sweep(layout, blobs, cfg, now=NOW)
+            self.assertEqual(len(plan.damaged_entities), 1)
+            self.assertEqual(plan.candidates, [])
+            result = retention.execute_sweep(plan, blobs, remove_orphans=True)
+            self.assertEqual(result.deleted, 0)
+            self.assertEqual(result.orphans_removed, 0)
+            self.assertTrue(result.blocked_by_damaged)
+            self.assertEqual(blobs.state(ref.sha256, "json"), PRESENT)
+
+    def test_gc_store_reports_the_damage_instead_of_crashing(self):
+        with tempfile.TemporaryDirectory() as td:
+            layout, _blobs, _ref, _path = self._store_with_damaged_entity(td)
+            proc = subprocess.run(
+                [sys.executable, str(STORE_TOOLS / "gc_store.py"),
+                 "--data-root", str(Path(td)), "--dry-run"],
+                capture_output=True, text=True)
+            self.assertNotIn("Traceback", proc.stderr)
+            self.assertIn("DAMAGED derived entities", proc.stdout)
+            self.assertEqual(proc.returncode, 4)
+
+
+class MultiExtensionSweepTests(unittest.TestCase):
+    """Two content-types over identical bytes are ONE blob; the sweep must reclaim it."""
+
+    def test_sweep_reclaims_both_copies_and_stops_re_listing(self):
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            blobs = BlobStore(layout.blobs)
+            payload = b'{"job": "same bytes, two content-types"}'
+            ref = _write_fetch(layout, blobs, "20260601T000000Z-000001-aaaaaa",
+                               _days_ago(40), source="jobicy", operation="scrape",
+                               payload=payload)
+            blobs.write(payload, None)  # a second capture with no Content-Type
+            self.assertEqual(len(list(layout.blobs.rglob("*.zst"))), 2)
+            cfg = retention.parse_config({"tiers": {"aggregator_sweeps": {
+                "prune_blobs_when": {"last_observed_older_than_days": 0}}}})
+            _plan, result = retention.sweep(layout, blobs, cfg, now=NOW, execute=True)
+            self.assertEqual(result.deleted, 1)
+            self.assertEqual(blobs.state(ref.sha256), PRUNED)
+            self.assertEqual(list(layout.blobs.rglob("*.zst")), [])
+            # A second pass has nothing left to do — no forever-re-tombstoning.
+            plan2 = retention.plan_sweep(layout, blobs, cfg, now=NOW)
+            self.assertEqual(plan2.candidates, [])
+
+
 if __name__ == "__main__":
     unittest.main()

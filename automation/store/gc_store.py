@@ -90,6 +90,18 @@ def _print_plan(plan: retention.SweepPlan, *, execute: bool, remove_orphans: boo
               "    machine that captured it, then re-run. Nothing here removes it for\n"
               "    you — a damaged manifest is still owner data.")
 
+    if plan.damaged_entities:
+        print(f"\n  DAMAGED derived entities (present but UNPARSEABLE): "
+              f"{len(plan.damaged_entities)}")
+        for d in plan.damaged_entities:
+            print(f"    - {d.path}")
+            print(f"        {d.error}")
+        print("    A derived entity is where a blob's keep-class veto and its\n"
+              "    posting date come from, so an unreadable one makes its payload\n"
+              "    look like it feeds nothing. THE WHOLE SWEEP IS SUSPENDED until\n"
+              "    every one parses again. Remedy: restore or re-sync the file, or\n"
+              "    rebuild derived/ from raw (build_postings.py --rebuild).")
+
     print(f"\n  CANDIDATE blobs (deletable): {len(plan.candidates)}  "
           f"({_fmt_kb(plan.disk_bytes)} on disk reclaimable)")
     for tier, n in sorted(plan.tier_counts.items()):
@@ -110,7 +122,7 @@ def _print_plan(plan: retention.SweepPlan, *, execute: bool, remove_orphans: boo
     for d in plan.debris:
         print(f"    - {d.path}  ({d.age_hours:.1f}h old)")
 
-    if plan.damaged:
+    if plan.is_suspended:
         print("\n  orphaned blobs (present, referenced by no manifest): UNDETERMINED "
               "— part of the reference set is unreadable, so nothing can be proven "
               "unreferenced.")
@@ -130,8 +142,8 @@ def _print_plan(plan: retention.SweepPlan, *, execute: bool, remove_orphans: boo
 def _print_result(result: retention.ExecResult) -> None:
     print("\n  EXECUTED:")
     if result.blocked_by_damaged:
-        print(f"    NOTHING DELETED — {result.blocked_by_damaged} damaged manifest(s) "
-              f"suspended the sweep (see above).")
+        print(f"    NOTHING DELETED — {result.blocked_by_damaged} damaged store "
+              f"file(s) suspended the sweep (see above).")
         return
     print(f"    frozen-facts written: {result.frozen_written}")
     print(f"    tombstones written:   {result.tombstoned}")
@@ -184,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with DomainLock(layout.lock_path()):
             plan = retention.plan_sweep(layout, blobstore, cfg)
-            damaged = len(plan.damaged)
+            damaged = len(plan.damaged) + len(plan.damaged_entities)
             _print_plan(plan, execute=execute, remove_orphans=args.remove_orphans)
             if execute:
                 result = retention.execute_sweep(
@@ -195,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"gc_store: {exc}", file=sys.stderr)
         return 3
     if damaged:
-        print(f"gc_store: {damaged} damaged manifest(s) — sweep suspended, nothing "
+        print(f"gc_store: {damaged} damaged store file(s) — sweep suspended, nothing "
               f"deleted. Repair them (restore/re-sync) and re-run.", file=sys.stderr)
         return 4
     return 0

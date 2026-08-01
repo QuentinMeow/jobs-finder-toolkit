@@ -364,6 +364,22 @@ def _line_text(line: str) -> str:
     return line.rstrip("\r\n")
 
 
+def _is_marker_close(line: str) -> bool:
+    """True on the line that ENDS an entry's marker block, either spelling.
+
+    The compact form the planner writes is one line — ``<!-- jobhunt-calendar
+    {...} -->`` — so its stripped text is never the bare ``-->`` that closes the
+    LEGACY multi-line form. Testing only for the bare token walks every span to
+    the end of the section, which collapses the chronological insertion probe into
+    a single iteration: a new interview then lands first or last, never between
+    two existing ones. ``parse_calendar`` already draws this distinction; this is
+    the same test.
+    """
+    stripped = _line_text(line).strip()
+    return stripped == MARKER_CLOSE or (
+        stripped.startswith(MARKER_OPEN) and stripped.endswith(MARKER_CLOSE))
+
+
 def parse_calendar(text: str) -> CalendarDocument:
     """Parse calendar.md. Any structural problem lands in ``doc.errors``."""
     doc = CalendarDocument(lines=text.splitlines(keepends=True))
@@ -939,7 +955,7 @@ def plan_calendar_update(
                     stripped = _line_text(lines[probe])
                     if _CHECKBOX_RE.match(stripped):
                         span_end = probe
-                        while span_end < end and _line_text(lines[span_end]).strip() != MARKER_CLOSE:
+                        while span_end < end and not _is_marker_close(lines[span_end]):
                             span_end += 1
                         existing_key = _entry_sort_key(lines[probe:span_end + 1])
                         if sort_key < existing_key:

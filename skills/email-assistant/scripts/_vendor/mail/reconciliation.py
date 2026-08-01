@@ -322,9 +322,18 @@ def normalize_stored_message(mapping: Mapping[str, Any]) -> dict[str, Any]:
         _first_mapping_value(mapping, "to", "to_recipients", "toRecipients", "recipients")
         or _first_mapping_value(envelope, "to", "to_recipients", "toRecipients", "recipients")
     )
+    # ``modified_at``/``observed_at`` are the keys ``store_sync.normalize_message``
+    # actually writes (``lastModifiedDateTime`` is the Graph spelling it maps FROM).
+    # Drafts are the only folder with neither ``received_at`` nor ``sent_at``, so
+    # without these a draft gets timestamp "" — which sorts before every dated
+    # message and opens the application's chronological timeline.
     timestamp_raw = _first_mapping_value(
-        mapping, "timestamp", "received_at", "receivedDateTime", "sent_at", "sentDateTime", "lastModifiedDateTime"
-    ) or _first_mapping_value(envelope, "timestamp", "received_at", "receivedDateTime", "sent_at", "sentDateTime")
+        mapping, "timestamp", "received_at", "receivedDateTime", "sent_at", "sentDateTime",
+        "lastModifiedDateTime", "modified_at", "observed_at",
+    ) or _first_mapping_value(
+        envelope, "timestamp", "received_at", "receivedDateTime", "sent_at", "sentDateTime",
+        "lastModifiedDateTime", "modified_at", "observed_at",
+    )
     timestamp = _parse_time(timestamp_raw)
     thread_values = list(_strings(_first_mapping_value(mapping, "thread_keys", "correlation_keys", "thread_key")))
     for key in ("thread_key", "provider_thread_id", "conversation_id", "conversationId", "rfc_message_id", "internet_message_id", "internetMessageId", "in_reply_to", "inReplyTo", "references"):
@@ -398,6 +407,22 @@ def _contains(text: str, *phrases: str) -> bool:
     if not text:
         return False
     return any(_phrase_re(phrase).search(text) for phrase in phrases if phrase)
+
+
+# The legal footer on nearly every US recruiting email. It contains the word
+# "opportunity", which is otherwise a genuine cold-outreach cue, so leaving it in
+# turns every automated no-op status update into a personal reply TODO — exactly
+# the noise ``_needs_reply`` exists to prevent. Removed before that one cue is
+# tested, so a real "I have an opportunity for you" still counts.
+_EEO_BOILERPLATE_RE = re.compile(
+    r"equal\s+(?:employment\s+)?opportunity(?:\s*/\s*affirmative\s+action)?"
+    r"(?:\s+employer)?",
+    re.I,
+)
+
+
+def _without_eeo_boilerplate(text: str) -> str:
+    return _EEO_BOILERPLATE_RE.sub(" ", text)
 
 
 def _explicit_schedule(text: str) -> dict[str, str] | None:
@@ -504,7 +529,10 @@ def categorize_message(message: Mapping[str, Any]) -> dict[str, Any]:
     if subtypes - {"awaiting_result"}:
         categories.add("scheduling")
 
-    if direction == "inbound" and _contains(text, "recruiter", "talent acquisition", "opportunity", "open role", "are you interested"):
+    if direction == "inbound" and (
+        _contains(text, "recruiter", "talent acquisition", "open role", "are you interested")
+        or _contains(_without_eeo_boilerplate(text), "opportunity")
+    ):
         categories.add("inbound_recruiter_outreach")
     if direction == "outbound" and _contains(text, "reaching out", "interested in the", "my application", "would love to connect"):
         categories.add("outbound_cold_outreach")

@@ -13,6 +13,7 @@ from job_metadata import (
     extract_required_yoe_details,
 )
 from location import assess_location
+from registry import comparable_base
 from visa import classify_visa, visa_tags
 
 # Engineering role nouns that make a broad domain include ("infrastructure",
@@ -115,6 +116,20 @@ def _nontechnical_occupation_hits(ntitle: str) -> list[str]:
             if pattern.search(ntitle)]
 
 
+# Research occupation heads. The lexicon's hard drop is gated on "this title has
+# no engineering role NOUN", and `_ROLE_NOUN_RE` carries none of these — so
+# "Machine Learning Scientist, Clinical Imaging", "Applied Scientist, Marketing
+# Science" and "Research Scientist, Legal Reasoning" reached it bare and were
+# hard-dropped by a lexicon token naming the application VERTICAL, not the
+# occupation. (Clinical imaging, marketing science and legal reasoning are ML
+# product areas; the people doing them are not clinicians, marketers or lawyers.)
+# These words therefore lift the DEFINITE-non-technical claim exactly like a role
+# noun does — and no further: the title still has to clear the include list and
+# the broad-domain guard, so an unrelated "Environmental Scientist" lands in
+# review rather than becoming a match.
+_RESEARCH_ROLE_RE = re.compile(r"\b(scientist|scientists|researcher|researchers)\b")
+
+
 def _is_role_bearing(term: str) -> bool:
     tn = normalize(term)
     return bool(_ROLE_NOUN_RE.search(tn)) or tn in _STANDALONE_ROLE_FAMILIES
@@ -200,7 +215,7 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
     # title carries no engineering role noun — a co-occurring role noun (e.g.
     # "Customer Success Engineer", "Sales Engineer") makes the occupation
     # genuinely ambiguous rather than definite, so it falls through instead.
-    if not _title_has_role(ntitle_excl):
+    if not _title_has_role(ntitle_excl) and not _RESEARCH_ROLE_RE.search(ntitle_excl):
         nontechnical = _nontechnical_occupation_hits(ntitle_excl)
         if nontechnical:
             return _title_result(
@@ -671,8 +686,14 @@ def score_posting(posting: JobPosting, profile: dict,
 
 
 def _norm_company(name: str) -> str:
-    n = normalize(name)
-    for suffix in (" inc", " llc", " ltd", " corp", " corporation", " labs",
-                   " technologies", " technology", " ai", " io", " the "):
-        n = n.replace(suffix, " ")
-    return " ".join(n.split())
+    """Key a company for the DOL sponsor index: trailing legal suffixes removed.
+
+    Delegates to ``registry.comparable_base``, which strips whole TRAILING tokens
+    and never the last remaining one. A plain ``str.replace`` per suffix chewed
+    into ordinary words instead — `" corp"` inside "Corporation" left
+    ``'acme oration'``, `" inc"` inside "Incorporated" left
+    ``'databricks orporated'``, and `" io"` matched mid-string — so a DOL filing's
+    legal name and the posting's short registry name never keyed the same, and the
+    sponsorship-history boost silently never fired for that whole class of employer.
+    """
+    return comparable_base(name)

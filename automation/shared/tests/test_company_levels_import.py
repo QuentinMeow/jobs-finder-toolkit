@@ -395,6 +395,64 @@ class CompanyLevelsImportTests(unittest.TestCase):
         self.assertEqual((google["min"], google["max"]), (4.0, 4.5))
         self.assertEqual(google["provenance"]["provider"], "old survey")
 
+    def test_a_csv_cell_is_split_only_on_an_explicit_delimiter(self):
+        # CSV has no native lists, so one location pattern is naturally one cell —
+        # and "Seattle, WA" carries an internal comma. Splitting on it changes the
+        # band's scope key, so a refresh import APPENDS a second band instead of
+        # replacing the first, and `_salary_envelope` then reports the stale floor
+        # against the fresh ceiling. `|` and `;` stay explicit multi-value forms.
+        csv_path = self.root / "rows.csv"
+        csv_row = row(aliases="SWE II", title_patterns="Software Engineer II",
+                      location_patterns="Seattle, WA")
+        with csv_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(csv_row))
+            writer.writeheader()
+            writer.writerow(csv_row)
+        self.assertEqual(load_records(csv_path)[0]["location_patterns"],
+                         ["Seattle, WA"])
+
+        for text, expected in (("Seattle, WA|New York, NY",
+                                ["Seattle, WA", "New York, NY"]),
+                               ("Seattle, WA; New York, NY",
+                                ["Seattle, WA", "New York, NY"]),
+                               ('["Seattle, WA"]', ["Seattle, WA"])):
+            with self.subTest(text=text):
+                csv_row = row(aliases="SWE II",
+                              title_patterns="Software Engineer II",
+                              location_patterns=text)
+                with csv_path.open("w", newline="", encoding="utf-8") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=list(csv_row))
+                    writer.writeheader()
+                    writer.writerow(csv_row)
+                self.assertEqual(
+                    load_records(csv_path)[0]["location_patterns"], expected)
+
+    def test_a_csv_refresh_replaces_the_band_a_yaml_import_wrote(self):
+        # The live shape of the defect: the cache holds one band scoped to
+        # "Seattle, WA"; the refresh arrives as CSV. Splitting the cell changed
+        # the scope key, so the refresh APPENDED a second band and the stale
+        # floor survived alongside the fresh ceiling.
+        destination = self.root / "cache.yaml"
+        first = self.write_yaml("first.yaml", [row(location_patterns=["Seattle, WA"],
+                                                   base_min=100000, base_max=130000)])
+        import_company_levels(first, destination, write=True)
+
+        csv_path = self.root / "refresh.csv"
+        csv_row = row(aliases="SWE II", title_patterns="Software Engineer II",
+                      location_patterns="Seattle, WA", base_min=150000,
+                      base_max=190000, retrieved_at="2026-07-15")
+        with csv_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(csv_row))
+            writer.writeheader()
+            writer.writerow(csv_row)
+
+        salary = find_level(import_company_levels(csv_path, destination))[
+            "compensation"]["salary_range"]
+        bands = salary["bands"]
+        self.assertEqual(len(bands), 1, bands)
+        self.assertEqual((bands[0]["min"], bands[0]["max"]), (150000, 190000))
+        self.assertEqual(bands[0]["location_patterns"], ["Seattle, WA"])
+
 
 if __name__ == "__main__":
     unittest.main()

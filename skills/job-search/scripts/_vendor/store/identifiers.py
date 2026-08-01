@@ -36,6 +36,14 @@ _NAMESPACES = {"profile": "profile", "account": "acct"}
 # identifier allocation as the guarded path. ``resolve*`` stays lock-free.
 _ALLOC_LOCK_TIMEOUT_S = 5.0
 _ALLOC_LOCK_POLL_S = 0.02
+# A lock older than this was abandoned by a process that died between the
+# ``O_CREAT|O_EXCL`` and its ``finally`` unlink. Without a staleness path that file
+# wedges allocation permanently: every later capture that needs a new slug stalls
+# the full timeout and fails, ``capture`` swallows the error into a warning, and the
+# fetch is simply not recorded — recoverable only by hand-deleting an undocumented
+# file. The window is generous because the lock is held for microseconds (re-read →
+# allocate → write), so nothing legitimate is ever near it.
+ALLOC_LOCK_STALE_SECONDS = 300
 
 
 class IdentifierAllocationError(RuntimeError):
@@ -68,11 +76,45 @@ class IdentifierRegistry:
                              f"(known: {sorted(_NAMESPACES)})")
         return _NAMESPACES[namespace]
 
+    @staticmethod
+    def _steal_if_stale(lock_path: Path) -> bool:
+        """Claim an abandoned lock. ``True`` iff this caller removed it.
+
+        Race-safe in the same shape as the builder ``DomainLock``: rename the stale
+        file to a unique claim name and unlink the claim. ``os.rename`` is atomic
+        and the source exists exactly once, so of any number of concurrent stealers
+        exactly one wins; every loser gets ``FileNotFoundError`` and simply keeps
+        polling.
+        """
+        try:
+            age = time.time() - lock_path.stat().st_mtime
+        except FileNotFoundError:
+            return False  # already gone — the normal create path will win
+        if age < ALLOC_LOCK_STALE_SECONDS:
+            return False
+        claim = lock_path.with_name(
+            f"{lock_path.name}.steal-{os.getpid()}-{os.urandom(4).hex()}")
+        try:
+            os.rename(lock_path, claim)
+        except (FileNotFoundError, OSError):
+            return False
+        try:
+            os.unlink(claim)
+        except FileNotFoundError:
+            pass
+        return True
+
     @contextlib.contextmanager
     def _alloc_lock(self):
-        """Exclusive allocation lock (O_CREAT|O_EXCL spin, short poll, deadline)."""
+        """Exclusive allocation lock (O_CREAT|O_EXCL spin, short poll, deadline).
+
+        The lock file carries a token unique to this acquisition, and the release
+        unlinks only while that token is still on disk — the victim of a stale steal
+        must not delete the stealer's lock on its way out.
+        """
         lock_path = self.path.with_name(self.path.name + ".alloc.lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
+        token = f"{os.getpid()}-{os.urandom(8).hex()}"
         deadline = time.monotonic() + _ALLOC_LOCK_TIMEOUT_S
         while True:
             try:
@@ -80,6 +122,8 @@ class IdentifierRegistry:
                              os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
                 break
             except FileExistsError:
+                if self._steal_if_stale(lock_path):
+                    continue  # abandoned by a dead process — retry immediately
                 if time.monotonic() >= deadline:
                     raise IdentifierAllocationError(
                         f"could not acquire {lock_path.name} within "
@@ -87,14 +131,15 @@ class IdentifierRegistry:
                     ) from None
                 time.sleep(_ALLOC_LOCK_POLL_S)
         try:
-            os.write(fd, str(os.getpid()).encode())
+            os.write(fd, token.encode())
             os.close(fd)
             yield
         finally:
             try:
-                os.unlink(lock_path)
-            except FileNotFoundError:
-                pass
+                if lock_path.read_text(encoding="utf-8") == token:
+                    os.unlink(lock_path)
+            except (OSError, ValueError):
+                pass  # gone, unreadable, or someone else's — leave it alone
 
     def allocate(self, namespace: str, label: str) -> str:
         """Return the slug for ``label``, allocating the next free ``NN`` if new.

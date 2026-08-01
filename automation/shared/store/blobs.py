@@ -17,6 +17,7 @@ Four availability states a caller must never conflate (store-core retention rule
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +42,9 @@ _CONTENT_TYPE_EXT = {
     "text/xml": "xml",
     "application/x-ndjson": "jsonl",
 }
+
+# A blob filename's leading component is a sha256 hex digest and nothing else.
+_SHA_RE = re.compile(r"[0-9a-f]{64}")
 
 
 class BlobCorrupt(Exception):
@@ -91,20 +95,40 @@ class BlobStore:
     def tombstone_path(self, sha: str) -> Path:
         return self.root / sha[:2] / f"{sha}.tombstone"
 
-    def find(self, sha: str) -> Path | None:
-        """Locate a stored blob by sha alone (any extension), or ``None``."""
+    def find_all(self, sha: str) -> list[Path]:
+        """Every file in the shard holding this sha's bytes, whatever its extension.
+
+        One sha can legitimately sit on disk more than once: the filename embeds
+        the *content-type* extension, so identical bytes fetched once as
+        ``application/json`` and once with no ``Content-Type`` land as
+        ``<sha>.json.zst`` AND ``<sha>.bin.zst``. Identity is the sha alone, so
+        anything that answers a question about "this blob" must see all of them.
+        """
         shard = self.root / sha[:2]
         if not shard.is_dir():
-            return None
-        matches = sorted(shard.glob(f"{sha}.*.zst"))
-        if matches:
-            return matches[0]
+            return []
+        found = sorted(shard.glob(f"{sha}.*.zst"))
         plain = shard / f"{sha}.zst"
-        return plain if plain.exists() else None
+        if plain.exists():
+            found.append(plain)
+        return found
+
+    def find(self, sha: str) -> Path | None:
+        """Locate a stored blob by sha alone (any extension), or ``None``."""
+        found = self.find_all(sha)
+        return found[0] if found else None
 
     # ── write ──
     def write(self, data: bytes, content_type: str | None = None) -> BlobRef:
-        """Store ``data`` (compress + name by uncompressed sha256). Dedup no-op."""
+        """Store ``data`` (compress + name by uncompressed sha256). Dedup no-op.
+
+        The dedupe is a bare ``exists()`` — a re-capture holding the correct bytes
+        does NOT repair an already-corrupt file. That is deliberate: verifying on
+        every duplicate write costs a full read+decompress on the capture hot path,
+        where duplicates are the common case, and ``corrupt`` is already a loud
+        state (:meth:`state`, ``validate_store`` and ``store_show`` all report it),
+        never a silent one. Repair belongs in an explicit operator path.
+        """
         sha = sha256_hex(data)
         ext = ext_for_content_type(content_type)
         path = self.path_for(sha, ext)
@@ -136,17 +160,26 @@ class BlobStore:
         return path
 
     def delete(self, sha: str, ext: str | None = None) -> bool:
-        """Delete the blob file for ``sha`` (idempotent). Returns ``True`` if removed.
+        """Delete EVERY stored copy of ``sha`` (idempotent). ``True`` if any went.
 
-        Only the payload file is touched — never the tombstone or the manifest. After
+        Only payload files are touched — never the tombstone or the manifest. After
         a paired :meth:`write_tombstone` + :meth:`delete`, :meth:`state` reports
         ``pruned``.
+
+        ``ext`` is accepted (callers pass the extension their manifest recorded) but
+        is not a filter: deleting only that one file while the same bytes survive
+        under another content-type's extension leaves :meth:`state` reporting
+        ``present``, so the sweep re-lists and re-tombstones the blob on every pass
+        and never reclaims a byte.
         """
-        path = self.path_for(sha, ext) if ext else self.find(sha)
-        if path is not None and path.exists():
-            path.unlink()
-            return True
-        return False
+        removed = False
+        for path in self.find_all(sha):
+            try:
+                path.unlink()
+                removed = True
+            except FileNotFoundError:  # a concurrent sweep got there first
+                pass
+        return removed
 
     def is_pruned_pending(self, sha: str, ext: str | None = None) -> bool:
         """A tombstone exists but the blob file is still present (crash window).
@@ -154,10 +187,16 @@ class BlobStore:
         The GC order is frozen-facts → tombstone → delete; a crash between the last
         two leaves this re-sweepable state. It is NOT ``pruned`` yet (the bytes are
         still here and verify), so the next GC pass re-completes the delete.
+
+        Like :meth:`state`, this falls back to the any-extension lookup: the bytes
+        surviving under a *different* content-type's extension is exactly the state
+        that needs re-sweeping.
         """
         if not self.tombstone_path(sha).exists():
             return False
-        path = self.path_for(sha, ext) if ext else self.find(sha)
+        path = self.path_for(sha, ext) if ext else None
+        if path is None or not path.exists():
+            path = self.find(sha)
         return path is not None and path.exists()
 
     # ── read (verify-on-read) ──
@@ -172,7 +211,15 @@ class BlobStore:
         if path is None or not path.exists():
             raise FileNotFoundError(f"blob {sha} not present in {self.root}")
         compressed = path.read_bytes()
-        data = zstandard.ZstdDecompressor().decompress(compressed)
+        try:
+            data = zstandard.ZstdDecompressor().decompress(compressed)
+        except zstandard.ZstdError as exc:
+            # A truncated / bit-rotted frame fails in the codec, BEFORE the hash
+            # check below. That is still "these bytes are not the blob", so it
+            # surfaces as the one documented failure type rather than leaking a
+            # codec exception every caller's except clause would miss.
+            raise BlobCorrupt(
+                f"blob {sha} could not be decompressed ({exc})") from exc
         actual = sha256_hex(data)
         if actual != sha:
             raise BlobCorrupt(f"blob {sha} failed verify-on-read (got {actual})")
@@ -201,7 +248,14 @@ class BlobStore:
         return NOT_SYNCED_HERE
 
     def present_shas(self) -> set[str]:
-        """Every blob sha physically present under the store (from filenames)."""
+        """Every blob sha physically present under the store (from filenames).
+
+        Only well-formed sha names count. A crash mid-``atomic_write_bytes`` leaves
+        a ``.tmp-<rand>.zst`` in the shard, whose leading component is the empty
+        string — and this set is what the GC subtracts the reference set from, so a
+        phantom name would be reported as a nameless orphan. The stray temp file is
+        left where it is: this store has no unattended delete path into ``_blobs``.
+        """
         found: set[str] = set()
         if not self.root.is_dir():
             return found
@@ -209,5 +263,7 @@ class BlobStore:
             if not shard.is_dir():
                 continue
             for f in shard.glob("*.zst"):
-                found.add(f.name.split(".", 1)[0])
+                name = f.name.split(".", 1)[0]
+                if _SHA_RE.fullmatch(name):
+                    found.add(name)
         return found

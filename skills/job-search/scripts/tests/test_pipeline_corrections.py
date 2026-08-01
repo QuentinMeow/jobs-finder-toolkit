@@ -26,6 +26,7 @@ import os
 import shutil
 import sys
 import tempfile
+import types
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +38,7 @@ for _path in (_SCRIPTS, _SCRIPTS / "_vendor"):
 
 from common import HttpResult, JobPosting  # noqa: E402
 from registry import Registry  # noqa: E402
+import scoring  # noqa: E402
 from scoring import (  # noqa: E402
     assess_posting_quality,
     assess_title,
@@ -437,6 +439,128 @@ class OccupationAmbiguousBoundedRolloutTests(unittest.TestCase):
             registry=Registry([]), now=self.NOW)
         self.assertEqual(counts["n_occupation_ambiguous_overflow"], 0)
         self.assertEqual(counts["n_review"], 5)
+
+
+class LexiconVersusProfileIncludeTests(unittest.TestCase):
+    """The generic occupation lexicon must not hard-drop a title the profile names.
+
+    The lexicon fires on a title with no engineering role NOUN, and it cannot tell
+    an occupation ("Clinical Nurse") from an application VERTICAL ("Clinical
+    Imaging" — the product area at every health-AI employer). Decision 3a's rule is
+    that only a DEFINITE non-match is a hard drop; a profile include term matching
+    the same title makes it ambiguous, so it goes to review instead.
+    """
+
+    CFG = {
+        "include": ["machine learning", "ml", "applied scientist",
+                    "research scientist", "infrastructure"],
+        "exclude": ["manager", "director"],
+    }
+
+    def test_a_research_title_in_a_lexicon_vertical_is_not_hard_dropped(self):
+        for title in ("Machine Learning Scientist, Clinical Imaging",
+                      "Applied Scientist, Marketing Science",
+                      "Research Scientist, Legal Reasoning"):
+            with self.subTest(title=title):
+                assessment = assess_title(title, self.CFG)
+                self.assertNotEqual(assessment["decision"], "no_match")
+                self.assertFalse([r for r in assessment["rule_ids"]
+                                  if r.startswith("title.nontechnical_occupation.")])
+                posting = JobPosting(source="board", company="Example Corp",
+                                     title=title, url="https://example.test/j")
+                self.assertTrue(title_ok(posting, {"titles": self.CFG}))
+
+    def test_the_lexicon_still_hard_drops_a_non_research_occupation(self):
+        for title in ("Clinical Research Coordinator",
+                      "Marketing Partnerships Lead",
+                      "Senior Technical Recruiter",
+                      "Capital Markets Infrastructure Financing Associate"):
+            with self.subTest(title=title):
+                self.assertEqual(assess_title(title, self.CFG)["decision"],
+                                 "no_match")
+
+    def test_an_unrelated_research_title_reaches_review_never_a_match(self):
+        self.assertEqual(assess_title("Environmental Scientist", self.CFG)["decision"],
+                         "review")
+
+
+class DedupeIdentityTests(unittest.TestCase):
+    """One title published as several per-location requisitions is several jobs."""
+
+    def _req(self, req_id, location):
+        return JobPosting(
+            source="board", company="Acme", title="Senior Software Engineer",
+            url=f"https://acme.example/jobs/{req_id}", location=location)
+
+    def test_distinct_requisitions_are_not_collapsed(self):
+        rows = [self._req("JR100", "Seattle, WA"), self._req("JR200", "New York, NY"),
+                self._req("JR300", "Remote, US")]
+        kept = search_jobs.dedupe(rows)
+        self.assertEqual(len(kept), 3)
+        self.assertEqual([p.url for p in kept], [p.url for p in rows])
+
+    def test_the_same_opening_from_two_sources_still_collapses(self):
+        # Two sources give the SAME opening two different URLs; that is exactly
+        # what dedupe exists for, so the key must not be the URL.
+        a = self._req("JR100", "Seattle, WA")
+        b = self._req("JR100-indeed", "Seattle, WA")
+        b.source, b.score = "aggregator", 9.0
+        a.score = 1.0
+        kept = search_jobs.dedupe([a, b])
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0].source, "aggregator")   # highest score wins
+
+
+class LowQualityVisibilityTests(unittest.TestCase):
+    """Gate 0 is the first hard drop in the pipeline; its count must be visible."""
+
+    NOW = datetime(2026, 7, 22, tzinfo=timezone.utc)
+
+    def test_the_gate_0_drop_count_reaches_the_run_metadata(self):
+        template = JobPosting(
+            source="board", company="Example Corp", title="<Job Title>",
+            url="https://example.test/jobs/template",
+            description="Lorem ipsum dolor sit amet.")
+        real = JobPosting(
+            source="board", company="Example Corp", title="Software Engineer",
+            url="https://example.test/jobs/real", location="Remote, United States",
+            description="Python, Kubernetes, distributed systems.")
+        ctx = {"considered_urls": set(), "considered_pairs": set(), "skip_days": 0,
+               "search_tokens": [], "ignore_search_log": True, "ai_native_keys": set()}
+        _kept, counts = search_jobs.filter_score_rank(
+            [template, real], {"titles": TITLES_CFG}, ctx, max_age=None, top_k=40,
+            max_per_company=10, sponsor_index=None, company_levels={},
+            registry=Registry([]), now=self.NOW)
+        self.assertEqual(counts["n_low_quality"], 1)
+        meta = search_jobs.build_meta(
+            {"titles": TITLES_CFG}, types.SimpleNamespace(profile="example"),
+            stage=1, n_companies=0, aggregators=[], n_raw=2, counts=counts,
+            max_age=None, max_per_company=10, errors=[], now=self.NOW)
+        self.assertEqual(meta["n_low_quality"], 1)
+
+
+class SponsorIndexCompanyKeyTests(unittest.TestCase):
+    """DOL filings use legal names; postings use short registry names."""
+
+    def test_a_legal_suffix_is_stripped_as_a_token_not_a_substring(self):
+        for raw, expected in (("Acme Corporation", "acme"),
+                              ("Acme Corp", "acme"),
+                              ("Databricks Incorporated", "databricks"),
+                              ("Databricks Inc", "databricks"),
+                              ("Bio IO Health", "bio io health"),
+                              ("Northwind Technologies", "northwind")):
+            with self.subTest(raw=raw):
+                self.assertEqual(scoring._norm_company(raw), expected)
+
+    def test_the_boost_fires_for_a_legal_name_in_the_index(self):
+        index = {scoring._norm_company("Acme Corp"): {"h1b": 40, "perm": 10}}
+        posting = JobPosting(
+            source="board", company="Acme Corporation",
+            title="Senior Software Engineer", url="https://acme.example/jobs/1",
+            description="Python, distributed systems.")
+        score_posting(posting, {"titles": TITLES_CFG}, sponsor_index=index)
+        self.assertTrue(any(r.startswith("DOL:") for r in posting.reasons),
+                        posting.reasons)
 
 
 if __name__ == "__main__":

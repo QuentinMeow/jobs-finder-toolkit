@@ -646,7 +646,23 @@ class EmailStoreSync:
         state["field_set_version"] = FIELD_SET_VERSION
         for folder in FOLDERS:
             folder_state = state["folders"][folder]
-            folder_state["inventory"] = sorted(by_folder[folder])
+            observed = by_folder[folder]
+            if mode == "full":
+                # A full snapshot IS the folder's inventory for this window.
+                folder_state["inventory"] = sorted(observed)
+            else:
+                # A delta reports only what CHANGED, so it is not an inventory.
+                # Storing it as one truncates the set to that handful, and the
+                # next full snapshot then computes `previous - observed` against
+                # the truncated set and finds no absences -- permanently disabling
+                # the only mechanism that tombstones a provider-side deletion.
+                # `sync-store --full`, the documented repair path, would repair
+                # nothing. Carry the untouched keys forward instead, minus the two
+                # ways a key legitimately leaves a folder in delta mode.
+                carried = set(folder_state.get("inventory") or [])
+                carried -= seen - observed      # moved into another folder this run
+                carried -= pending_absences     # tombstoned / went out of scope
+                folder_state["inventory"] = sorted(carried | observed)
             if work[folder].sync_token:
                 folder_state["delta_token"] = work[folder].sync_token
             # Use a post-sync cheap live probe as the actual watermark.  It is

@@ -171,9 +171,18 @@ def _as_list(value: Any, *, field: str, lead: str) -> list[str]:
                 raise ImportValidationError(
                     f"{lead}.{field} must be a JSON array or delimited string"
                 ) from exc
+        elif "|" in text or ";" in text:
+            value = [item.strip() for item in text.split("|" if "|" in text else ";")]
         else:
-            separator = "|" if "|" in text else ";" if ";" in text else ","
-            value = [item.strip() for item in text.split(separator)]
+            # ONE value. A bare comma is not a delimiter here: CSV has no native
+            # lists, so a multi-valued cell is naturally one field, and the values
+            # that land in it routinely contain commas ("Seattle, WA"). Splitting
+            # on those changed a band's scope key, so a refresh import appended a
+            # second band instead of replacing the first — and `_salary_envelope`
+            # collapses bands min-of-mins/max-of-maxes, so the stale figure
+            # survived in the reported range with no warning. `|`, `;` and the
+            # JSON-array form stay the explicit ways to say "several values".
+            value = [text]
     if not isinstance(value, list):
         raise ImportValidationError(f"{lead}.{field} must be a list")
     result = []
@@ -901,7 +910,13 @@ def build_parser() -> argparse.ArgumentParser:
             "Dry-run is the default; use --write for atomic replacement."
         )
     )
-    parser.add_argument("input", help="normalized .yaml/.yml, .json, or .csv records")
+    parser.add_argument(
+        "input",
+        help="normalized .yaml/.yml, .json, or .csv records. In a CSV, a "
+             "multi-valued cell (aliases, title_patterns, location_patterns) is "
+             "separated by '|' or ';', or written as a JSON array; a bare comma "
+             "is part of the value, so 'Seattle, WA' stays one pattern",
+    )
     parser.add_argument("destination", help="company-level YAML cache path")
     parser.add_argument(
         "--write",

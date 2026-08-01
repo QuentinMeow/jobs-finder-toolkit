@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import multiprocessing
+import os
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,7 +18,7 @@ SHARED = Path(__file__).resolve().parents[1]
 if str(SHARED) not in sys.path:
     sys.path.insert(0, str(SHARED))
 
-from store import keyregistry, serialization  # noqa: E402
+from store import identifiers, keyregistry, serialization  # noqa: E402
 from store.identifiers import IdentifierRegistry  # noqa: E402
 from store.keyregistry import KeyRegistry  # noqa: E402
 from store.manifest import build_envelope  # noqa: E402
@@ -98,6 +100,43 @@ class IdentifierAllocationTests(unittest.TestCase):
             self.assertEqual(len(reg._data["profile"]), len(labels))  # file complete
             for lbl in labels:
                 self.assertIsNotNone(reg.resolve_label("profile", lbl))
+
+
+class AllocationLockStalenessTests(unittest.TestCase):
+    """An orphaned allocation lock must expire, not wedge allocation permanently.
+
+    A process killed between ``O_CREAT|O_EXCL`` and its ``finally`` unlink leaves
+    ``identifiers.yaml.alloc.lock`` on disk forever. Capture swallows the resulting
+    error into a warning, so every later fetch that needs a new slug is simply not
+    recorded — and recovery means hand-deleting an undocumented file.
+    """
+
+    def _orphan_lock(self, path: Path, age_seconds: float) -> Path:
+        lock = path.with_name(path.name + ".alloc.lock")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("999999")  # a pid that is long gone
+        stamp = time.time() - age_seconds
+        os.utime(lock, (stamp, stamp))
+        return lock
+
+    def test_stale_orphan_lock_is_stolen(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "identifiers.yaml"
+            self._orphan_lock(path, identifiers.ALLOC_LOCK_STALE_SECONDS + 10)
+            reg = IdentifierRegistry(path)
+            self.assertEqual(reg.allocate("profile", "Person"), "profile-01")
+            self.assertEqual(IdentifierRegistry(path).resolve_slug("profile-01"),
+                             "Person")
+
+    def test_fresh_lock_is_still_respected(self):
+        # The staleness path must not become a way around mutual exclusion: a lock
+        # held by a live allocation still makes a concurrent caller wait and fail.
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "identifiers.yaml"
+            self._orphan_lock(path, 0)
+            reg = IdentifierRegistry(path)
+            with self.assertRaises(identifiers.IdentifierAllocationError):
+                reg.allocate("profile", "Person")
 
 
 class SlugEnforcementTests(unittest.TestCase):
