@@ -40,6 +40,13 @@ message:
      FAILURES (they might hide a real name/resume/screenshot). A narrow explicit
      allowlist (``BINARY_ALLOWLIST`` + the ``examples/`` placeholder dataset)
      covers intentionally-shipped binaries.
+  8. Unreadable tracked files (fail closed). A tracked path the guard could not
+     OPEN at all — a dangling symlink, a permission error, an I/O error — is a
+     FAILURE: its bytes ship and the guard inspected none of them. The line is
+     OPENABILITY, not extractability. A file that opened but holds no scannable
+     text (a raw binary blob, a non-UTF-8 file, an image with no extractor) is
+     counted in the report's ``content read: N of M`` line but is never fatal
+     (rationale: the "inspection accounting" comment above ``_probe_open``).
 
 This guard is designed to go GREEN on a properly genericized public checkout. Run
 it in a maintainer checkout (where ``config.yaml`` supplies the real tokens)
@@ -56,7 +63,7 @@ carry a real identity arm the guard:
   * the ``JOBHUNT_PERSONAL_TOKENS`` env var (how the exporter/CI forward it).
 ``private/leak_tokens.txt`` is supplementary: it adds tokens but can NEVER arm the
 guard on its own (it holds employers/schools, not the name/email/handles). Pass
-``--allow-unarmed`` to run the token-independent checks (1-5, 7) knowingly — the
+``--allow-unarmed`` to run the token-independent checks (1-5, 7-8) knowingly — the
 pre-commit hook does exactly that, while the pre-push hook does NOT.
 
 Exit codes: 0 clean · 1 violations found · 2 unarmed (no identity tokens).
@@ -652,18 +659,80 @@ def find_skill_notes_violations(tracked: list[str]) -> list[dict]:
     ]
 
 
-def _read_text(path: Path) -> list[str] | None:
-    """Return the file's lines as text, or ``None`` if it looks binary/unreadable."""
+# ── inspection accounting (check 8) ──────────────────────────────────────────
+# A publish gate must never certify bytes it did not look at, so every tracked
+# path lands in EXACTLY ONE of three buckets and the summary prints the split:
+#
+#   read       the content was inspected — text lines, an extracted document, or
+#              (for a symlink) the target path the link stores.
+#   skipped    the guard OPENED it and there was legitimately no text to scan: a
+#              raw binary blob, a non-UTF-8 file, an image or archive it has no
+#              extractor for. Expected, counted, named — never fatal. Failing
+#              here would fail on every ordinary binary in the tree, and a guard
+#              that cries wolf on `examples/screenshots/*.jpg` is a guard someone
+#              switches off.
+#   unreadable the guard could not OPEN it: a dangling symlink, a permission
+#              error, an I/O error. Git tracks the path, so the content ships,
+#              and the guard knows NOTHING about it. That is a finding (check 8).
+#
+# The line between the last two is OPENABILITY, not extractability. A corrupt
+# .docx WAS opened — it is check 7's business, and the tracked fixture
+# ``examples/fixtures/resume-writer/empty-corrupt/corrupt-docx.docx`` exists on
+# purpose. A broken symlink was never opened at all.
+SKIP_GUARD_SELF = "guard-self"          # this file: content-exempt by design
+SKIP_BINARY_SNIFF = "binary-sniff"      # NUL byte — a binary blob, no text
+SKIP_NOT_UTF8 = "not-utf8"              # decoded as neither UTF-8 nor binary
+SKIP_NO_EXTRACTOR = "no-text-extractor"  # image/archive: nothing to extract
+SKIP_EXTRACT_FAILED = "extract-failed"  # extractor ran; container malformed/lib missing
+UNREADABLE_BROKEN_SYMLINK = "broken-symlink"
+UNREADABLE_OPEN_FAILED = "open-failed"
+
+
+def _oserror_detail(exc: OSError) -> str:
+    return f"{type(exc).__name__}: {exc.strerror or exc}"
+
+
+def _probe_open(path: Path) -> str | None:
+    """Return why ``path`` cannot be opened for reading, or None if it can.
+
+    Used before handing a binary to an extractor, so "could not open it" is never
+    mistaken for "opened it and found no text".
+    """
+    try:
+        with path.open("rb") as handle:
+            handle.read(1)
+    except OSError as exc:
+        return _oserror_detail(exc)
+    return None
+
+
+def _read_text_classified(path: Path) -> tuple[list[str] | None, str, str]:
+    """Read ``path`` as UTF-8 lines AND say why, when that did not happen.
+
+    Returns ``(lines, status, detail)``. ``status`` is ``"read"`` with the lines,
+    or one of ``SKIP_BINARY_SNIFF`` / ``SKIP_NOT_UTF8`` (opened, no text to scan)
+    or ``UNREADABLE_OPEN_FAILED`` (never opened — a check-8 finding).
+    """
     try:
         data = path.read_bytes()
-    except OSError:
-        return None
+    except OSError as exc:
+        return None, UNREADABLE_OPEN_FAILED, _oserror_detail(exc)
     if b"\x00" in data:
-        return None
+        return None, SKIP_BINARY_SNIFF, ""
     try:
-        return data.decode("utf-8").splitlines()
-    except UnicodeDecodeError:
-        return None
+        return data.decode("utf-8").splitlines(), "read", ""
+    except UnicodeDecodeError as exc:
+        return None, SKIP_NOT_UTF8, f"undecodable byte at offset {exc.start}"
+
+
+def _read_text(path: Path) -> list[str] | None:
+    """Return the file's lines as text, or ``None`` if it looks binary/unreadable.
+
+    Content-only wrapper for callers that just want the lines (the exporter's
+    token screen). The guard's own scan uses ``_read_text_classified`` so a file
+    it could never open becomes a finding instead of a silent skip.
+    """
+    return _read_text_classified(path)[0]
 
 
 def _docx_text(path: Path) -> str | None:
@@ -708,6 +777,18 @@ def _pdf_text(path: Path) -> str | None:
         return None
 
 
+_EXTRACTABLE_SUFFIXES = frozenset({".docx", ".doc", ".xlsx", ".pptx", ".pdf"})
+
+
+def _has_extractor(suffix: str) -> bool:
+    """True if the guard even HAS a text extractor for ``suffix``.
+
+    Separates "there is no extractor for a .png" from "the .docx extractor ran
+    and the container was malformed" — different problems, different fixes.
+    """
+    return suffix in _EXTRACTABLE_SUFFIXES
+
+
 def _binary_text(path: Path, suffix: str) -> str | None:
     """Best-effort text extraction for a shipped binary, or None if unscannable."""
     if suffix in (".docx", ".doc", ".xlsx", ".pptx"):
@@ -717,22 +798,59 @@ def _binary_text(path: Path, suffix: str) -> str | None:
     return None
 
 
+def _scan_blob(rel: str, blob: str, where: str, note: str,
+               lowered: list[tuple[str, str]],
+               token_viols: list[dict], pii_viols: list[dict]) -> None:
+    """Scan one whole-file string for tokens (first hit) + structural PII (per kind)."""
+    blob_lower = blob.lower()
+    hit = next((tok for tok, low in lowered if low in blob_lower), None)
+    if hit is not None:
+        token_viols.append({
+            "category": "personal_token",
+            "where": where,
+            "path": rel,
+            "line": None,
+            "token": hit,
+            "text": note,
+        })
+    seen_kinds: set[str] = set()
+    for kind, matched in _structural_hits(blob):
+        if kind in seen_kinds:
+            continue
+        seen_kinds.add(kind)
+        pii_viols.append({
+            "category": "structural_pii",
+            "kind": kind,
+            "path": rel,
+            "line": None,
+            "match": matched,
+        })
+
+
 def find_token_and_pii_violations(
     root: Path, tracked: list[str], tokens: list[str]
-) -> tuple[list[dict], list[dict], list[str]]:
+) -> tuple[list[dict], list[dict], list[dict], dict]:
     """Scan file PATHs and CONTENT for personal tokens AND structural PII.
 
     Path token matches apply to every file. Text-file content is scanned line by
-    line; document binaries have their extracted text + metadata scanned; images
-    and other unextractable fail-closed binaries are reported for manual review.
-    The guard file itself is content-exempt (it embeds the detection patterns).
-    Returns ``(token_violations, structural_pii_violations, unscanned_binaries)``.
+    line; document binaries have their extracted text + metadata scanned; a
+    symlink's stored TARGET PATH is its content; images and other unextractable
+    fail-closed binaries are reported for manual review. The guard file itself is
+    content-exempt (it embeds the detection patterns).
+
+    Returns ``(token_violations, structural_pii_violations, unscanned_binaries,
+    inspection)``, where ``inspection`` accounts for every tracked path exactly
+    once — ``files_read`` + ``files_skipped`` + ``unreadable`` — so a caller can
+    tell "clean" from "inspected nothing" (see the INSPECTION notes above).
     """
     root = Path(root)
     lowered = [(tok, tok.lower()) for tok in tokens]
     token_viols: list[dict] = []
     pii_viols: list[dict] = []
-    unscanned: list[str] = []
+    unscanned: list[dict] = []
+    skipped: list[dict] = []
+    unreadable: list[dict] = []
+    files_read = 0
 
     for rel in tracked:
         rel_lower = rel.lower()
@@ -748,48 +866,66 @@ def find_token_and_pii_violations(
             })
 
         if rel == GUARD_REL_PATH:
+            skipped.append({"path": rel, "reason": SKIP_GUARD_SELF})
             continue
+
+        src = root / rel
+        # A tracked SYMLINK's own content is the TARGET PATH it stores — that is
+        # the blob git ships, and it can name a private tree
+        # (``.claude/skills/<x> -> ../../private/skills/<x>``). ``--staged``
+        # already scans exactly that (see ``_materialize_index``); doing it here
+        # keeps the two modes in agreement. A link to a DIRECTORY has nothing
+        # further to read (its files are tracked in their own right); a link to a
+        # file falls through so the file is scanned too; a link that resolves to
+        # nothing is a check-8 finding — its bytes are gone, and a dangling link
+        # in a published tree is broken output besides.
+        if src.is_symlink():
+            target = os.readlink(src)
+            _scan_blob(rel, target, "symlink-target", f"-> {target}",
+                       lowered, token_viols, pii_viols)
+            if not src.exists():
+                unreadable.append({"path": rel, "reason": UNREADABLE_BROKEN_SYMLINK,
+                                   "detail": f"-> {target}"})
+                continue
+            if src.is_dir():
+                files_read += 1
+                continue
 
         suffix = Path(rel).suffix.lower()
         if suffix in BINARY_EXTENSIONS:
-            blob = _binary_text(root / rel, suffix)
-            if blob is None:
-                # A binary we could not read as text (image, unextractable doc, or
-                # missing PDF lib). Fail closed unless it is an intentionally-
-                # shipped example asset.
-                if suffix in FAIL_CLOSED_EXTENSIONS and not _binary_allowed(rel):
-                    unscanned.append(rel)
+            open_error = _probe_open(src)
+            if open_error is not None:
+                unreadable.append({"path": rel, "reason": UNREADABLE_OPEN_FAILED,
+                                   "detail": open_error})
                 continue
-            blob_lower = blob.lower()
-            hit = next((tok for tok, low in lowered if low in blob_lower), None)
-            if hit is not None:
-                token_viols.append({
-                    "category": "personal_token",
-                    "where": "binary-content",
-                    "path": rel,
-                    "line": None,
-                    "token": hit,
-                    "text": f"(inside {suffix} text/metadata)",
-                })
-            seen_kinds: set[str] = set()
-            for kind, matched in _structural_hits(blob):
-                if kind in seen_kinds:
-                    continue
-                seen_kinds.add(kind)
-                pii_viols.append({
-                    "category": "structural_pii",
-                    "kind": kind,
-                    "path": rel,
-                    "line": None,
-                    "match": matched,
-                })
+            blob = _binary_text(src, suffix)
+            if blob is None:
+                # Opened fine, but yielded no text. Two different problems: there
+                # is no extractor for this type at all (an image, an archive), or
+                # the extractor ran and the container was malformed / its library
+                # is missing. Either way fail closed for a fail-closed extension,
+                # unless it is an intentionally-shipped example asset.
+                reason = (SKIP_EXTRACT_FAILED if _has_extractor(suffix)
+                          else SKIP_NO_EXTRACTOR)
+                if suffix in FAIL_CLOSED_EXTENSIONS and not _binary_allowed(rel):
+                    unscanned.append({"path": rel, "reason": reason})
+                skipped.append({"path": rel, "reason": reason})
+                continue
+            files_read += 1
+            _scan_blob(rel, blob, "binary-content", f"(inside {suffix} text/metadata)",
+                       lowered, token_viols, pii_viols)
             continue
 
-        lines = _read_text(root / rel)
+        lines, status, detail = _read_text_classified(src)
         if lines is None:
+            if status == UNREADABLE_OPEN_FAILED:
+                unreadable.append({"path": rel, "reason": status, "detail": detail})
+            else:
+                skipped.append({"path": rel, "reason": status})
             continue
+        files_read += 1
         token_found = False
-        seen_kinds = set()
+        seen_kinds: set[str] = set()
         for lineno, line in enumerate(lines, start=1):
             if not token_found:
                 line_lower = line.lower()
@@ -815,7 +951,12 @@ def find_token_and_pii_violations(
                     "line": lineno,
                     "match": matched,
                 })
-    return token_viols, pii_viols, unscanned
+    inspection = {
+        "files_read": files_read,
+        "files_skipped": skipped,
+        "unreadable": unreadable,
+    }
+    return token_viols, pii_viols, unscanned, inspection
 
 
 def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
@@ -852,7 +993,9 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
     overlay = find_personal_overlay_violations(tracked)
     skill_notes = find_skill_notes_violations(tracked)
     path_denylist = find_path_denylist_violations(tracked)
-    token_viols, pii_viols, unscanned = find_token_and_pii_violations(root, tracked, tokens)
+    token_viols, pii_viols, unscanned, inspection = find_token_and_pii_violations(
+        root, tracked, tokens)
+    unreadable = inspection["unreadable"]
 
     violations = {
         "private_skill_tracked": private_skill,
@@ -861,7 +1004,9 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         "path_denylist": path_denylist,
         "structural_pii": pii_viols,
         "personal_token": token_viols,
-        "unscanned_binary": [{"category": "unscanned_binary", "path": r} for r in unscanned],
+        "unscanned_binary": [
+            {"category": "unscanned_binary", **item} for item in unscanned],
+        "unreadable_file": [{"category": "unreadable_file", **item} for item in unreadable],
     }
     total = sum(len(v) for v in violations.values())
     return {
@@ -876,7 +1021,15 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         # WHY the identity count is what it is: a real config, the fictional
         # example, or a config layer that refused/failed. Never raises.
         "config_status": config_identity_status(),
-        "unscanned_binaries": unscanned,
+        # Paths only (the reasons live in ``violations['unscanned_binary']``) —
+        # callers assert membership by path.
+        "unscanned_binaries": [item["path"] for item in unscanned],
+        # Inspection accounting: files_read + files_skipped + unreadable_files
+        # == tracked_file_count, so "clean" is never confused with "nothing was
+        # inspected" (check 8).
+        "files_read": inspection["files_read"],
+        "files_skipped": inspection["files_skipped"],
+        "unreadable_files": unreadable,
         "ok": total == 0,
         "total_violations": total,
         "violations": violations,
@@ -966,11 +1119,27 @@ def print_report(result: dict) -> None:
     structural = v["structural_pii"]
     tokens = v["personal_token"]
     unscanned = result.get("unscanned_binaries") or []
+    unreadable = result.get("unreadable_files") or []
 
     print("Public-repo leak guard")
     print(f"  repo root:      {result['repo_root']}")
     label = "staged files: " if result.get("mode") == "staged" else "tracked files:"
     print(f"  {label}  {result['tracked_file_count']}")
+    # How much of that was actually looked at. Printed ALWAYS, clean or not: a
+    # "Safe to publish" over zero inspected files must never read like a pass.
+    if result.get("files_read") is not None:
+        print(f"  content read:   {result['files_read']} of "
+              f"{result['tracked_file_count']} file(s)")
+        by_reason: dict[str, int] = {}
+        for item in result.get("files_skipped") or []:
+            by_reason[item["reason"]] = by_reason.get(item["reason"], 0) + 1
+        if by_reason:
+            summary = ", ".join(f"{k}: {n}" for k, n in sorted(by_reason.items()))
+            print(f"  not inspected:  {sum(by_reason.values())} ({summary}) "
+                  "— opened, no text to scan")
+        if unreadable:
+            print(f"  UNREADABLE:     {len(unreadable)} file(s) could not be opened "
+                  "— see [8] below")
     identity = result.get("identity_token_count")
     supplementary = result.get("supplementary_token_count")
     if identity is None:
@@ -1058,9 +1227,19 @@ def print_report(result: dict) -> None:
     if unscanned:
         print(f"[7] Unscannable binaries (fail closed — cannot verify contents) "
               f"({len(unscanned)}):")
-        for rel in unscanned:
-            print(f"  - {rel}")
+        for item in v["unscanned_binary"]:
+            why = f"  [{item['reason']}]" if item.get("reason") else ""
+            print(f"  - {item['path']}{why}")
         print()
+
+    if unreadable:
+        print(f"[8] Unreadable tracked files (fail closed — the guard could not open "
+              f"them, so NOTHING in them was inspected) ({len(unreadable)}):")
+        for item in unreadable:
+            detail = f"  ({item['detail']})" if item.get("detail") else ""
+            print(f"  - {item['reason'].upper():15} {item['path']}{detail}")
+        print("  Fix: repoint or remove the dangling link, restore read permission, "
+              "or untrack the file.\n")
 
 
 EXIT_OK = 0
@@ -1114,8 +1293,8 @@ def main(argv: list[str] | None = None) -> int:
             print("Or run the token-independent checks knowingly with --allow-unarmed.")
             return EXIT_UNARMED
         print("WARNING: leak guard is UNARMED (--allow-unarmed): zero identity tokens, "
-              "so checks 1-5 and 7\n         run but the personal-token scan (check 6) "
-              "inspects nothing.", file=sys.stderr)
+              "so checks 1-5, 7\n         and 8 run but the personal-token scan "
+              "(check 6) inspects nothing.", file=sys.stderr)
 
     result = scan_staged() if args.staged else scan()
     if args.json:

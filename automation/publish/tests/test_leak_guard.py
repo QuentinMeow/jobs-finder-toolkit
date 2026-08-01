@@ -11,6 +11,8 @@ stays guard-clean while the runtime fixture files it writes still trip the guard
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -518,6 +520,229 @@ class StagedIndexTests(unittest.TestCase):
             result = check_public.scan_staged(repo, tokens=["hidden-practice"])
         self.assertFalse(result["ok"])
         self.assertTrue(result["violations"]["personal_token"])
+
+    def test_staged_broken_symlink_has_no_unreadable_file(self):
+        """The check-8 failure mode does NOT exist in ``--staged``, by construction.
+
+        ``_materialize_index`` writes the INDEX blob of every staged path into a
+        scratch tree and rewrites each symlink as the text of its target, so
+        nothing the pre-commit hook scans can be a dangling link. The target text
+        is still scanned (previous test); this pins that the hook does not start
+        rejecting a commit that merely adds a link into a not-yet-created dir.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            os.symlink("nowhere/missing.md", repo / "link")
+            _git(repo, "add", "link")
+            result = check_public.scan_staged(repo, tokens=[])
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(result["unreadable_files"], [])
+        self.assertEqual(result["files_read"], 1)
+
+
+class UnreadableFileTests(unittest.TestCase):
+    """Check 8: a tracked path the guard could not OPEN is a finding, not a skip.
+
+    The dividing line is OPENABILITY, not extractability:
+
+    * never opened (dangling symlink, permission error, I/O error) -> FAIL. The
+      bytes ship and the guard saw none of them.
+    * opened but holding no scannable text (binary blob, non-UTF-8 file, image,
+      corrupt container) -> counted and named in the summary, never fatal. The
+      tree tracks such files on purpose (``examples/screenshots/*.jpg``,
+      ``examples/fixtures/resume-writer/empty-corrupt/corrupt-docx.docx``), and a
+      guard that red-lights them is a guard someone turns off.
+    """
+
+    def _scan(self, files: dict, extra=None) -> dict:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, files)
+            if extra is not None:
+                tracked = sorted(set(tracked) | set(extra(root)))
+            return check_public.scan(root=root, tracked=tracked, tokens=[])
+
+    def _reasons(self, result: dict, key: str) -> dict:
+        out: dict[str, int] = {}
+        for item in result[key]:
+            out[item["reason"]] = out.get(item["reason"], 0) + 1
+        return out
+
+    # ── never opened: FAIL ───────────────────────────────────────────────────
+    def test_broken_symlink_is_a_finding(self):
+        def plant(root: Path) -> list[str]:
+            os.symlink("../nowhere/missing.md", root / "docs" / "dangling.md")
+            return ["docs/dangling.md"]
+
+        result = self._scan({"docs/real.md": "clean\n"}, extra=plant)
+        self.assertFalse(result["ok"])
+        self.assertEqual([i["path"] for i in result["unreadable_files"]],
+                         ["docs/dangling.md"])
+        self.assertEqual(result["unreadable_files"][0]["reason"],
+                         check_public.UNREADABLE_BROKEN_SYMLINK)
+        self.assertEqual([i["path"] for i in result["violations"]["unreadable_file"]],
+                         ["docs/dangling.md"])
+
+    def test_broken_symlink_is_named_in_the_report(self):
+        def plant(root: Path) -> list[str]:
+            os.symlink("../nowhere/missing.md", root / "docs" / "dangling.md")
+            return ["docs/dangling.md"]
+
+        result = self._scan({"docs/real.md": "clean\n"}, extra=plant)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        out = buf.getvalue()
+        self.assertIn("[8] Unreadable tracked files", out)
+        self.assertIn("BROKEN-SYMLINK", out)
+        self.assertIn("docs/dangling.md", out)
+        self.assertNotIn("OK: no public-repo leaks detected", out)
+
+    def test_broken_symlink_exits_nonzero_end_to_end(self):
+        """The planted defect from the task, through the real CLI."""
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            (repo / "docs").mkdir(parents=True)
+            _git(repo, "init", "-q")
+            (repo / "docs" / "real.md").write_text("clean\n", encoding="utf-8")
+            os.symlink("../nowhere/missing.md", repo / "docs" / "dangling.md")
+            _git(repo, "add", "-A")
+            result = check_public.scan(root=repo, tokens=[])
+        self.assertFalse(result["ok"])
+        self.assertEqual(
+            check_public.EXIT_VIOLATIONS if not result["ok"] else check_public.EXIT_OK,
+            check_public.EXIT_VIOLATIONS)
+        self.assertIn("docs/dangling.md",
+                      [i["path"] for i in result["unreadable_files"]])
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "root can read a 0o000 file, so the condition cannot be planted")
+    def test_permission_denied_is_a_finding(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, {"docs/secret.md": "clean\n"})
+            (root / "docs" / "secret.md").chmod(0o000)
+            try:
+                result = check_public.scan(root=root, tracked=tracked, tokens=[])
+            finally:
+                (root / "docs" / "secret.md").chmod(0o644)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["unreadable_files"][0]["reason"],
+                         check_public.UNREADABLE_OPEN_FAILED)
+        self.assertIn("PermissionError", result["unreadable_files"][0]["detail"])
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "root can read a 0o000 file, so the condition cannot be planted")
+    def test_unopenable_binary_is_unreadable_not_unscanned(self):
+        # A .docx nobody can open is check 8 (never opened), NOT check 7
+        # (opened, no text) — and the examples/ exemption does not cover it,
+        # because that allowlist is a claim about extractability.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, {"examples/doc.docx": b"PK\x03\x04 junk"})
+            (root / "examples" / "doc.docx").chmod(0o000)
+            try:
+                result = check_public.scan(root=root, tracked=tracked, tokens=[])
+            finally:
+                (root / "examples" / "doc.docx").chmod(0o644)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["unscanned_binaries"], [])
+        self.assertEqual([i["path"] for i in result["unreadable_files"]],
+                         ["examples/doc.docx"])
+
+    # ── opened, nothing to scan: counted, not fatal ──────────────────────────
+    def test_undecodable_file_skips_quietly(self):
+        # latin-1 text: opened fine, decodes as neither UTF-8 nor a binary blob.
+        result = self._scan({"docs/notes.md": b"caf\xe9 r\xe9sum\xe9\n"})
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(self._reasons(result, "files_skipped"),
+                         {check_public.SKIP_NOT_UTF8: 1})
+        self.assertEqual(result["files_read"], 0)
+
+    def test_binary_blob_without_a_known_extension_skips_quietly(self):
+        # A NUL-bearing blob (the tracked ``*.json.zst`` job payloads look like
+        # this): no text exists to substring-scan.
+        result = self._scan({"examples/data/blob.zst": b"\x28\xb5\x2f\xfd\x00\x00raw"})
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(self._reasons(result, "files_skipped"),
+                         {check_public.SKIP_BINARY_SNIFF: 1})
+
+    def test_corrupt_docx_outside_examples_still_fails_as_check_7(self):
+        result = self._scan({"docs/report.docx": b"this is not a zip archive"})
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["unscanned_binaries"], ["docs/report.docx"])
+        self.assertEqual(result["violations"]["unscanned_binary"][0]["reason"],
+                         check_public.SKIP_EXTRACT_FAILED)
+        self.assertEqual(result["unreadable_files"], [])
+
+    def test_corrupt_docx_under_examples_is_exempt_but_counted(self):
+        # Mirrors the tracked fixture
+        # examples/fixtures/resume-writer/empty-corrupt/corrupt-docx.docx.
+        result = self._scan(
+            {"examples/fixtures/corrupt-docx.docx": b"this is not a zip archive"})
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(self._reasons(result, "files_skipped"),
+                         {check_public.SKIP_EXTRACT_FAILED: 1})
+
+    # ── symlinks that resolve ────────────────────────────────────────────────
+    def test_symlink_to_a_directory_is_read_not_unreadable(self):
+        # The 33 tracked ``.claude/skills/<skill> -> ../../skills/<skill>`` links
+        # are symlinks to DIRECTORIES: unreadable as files, but their content —
+        # the target path — is exactly what git ships, and it is scanned.
+        def plant(root: Path) -> list[str]:
+            os.symlink("../skills/job-search", root / "host" / "job-search")
+            return ["host/job-search"]
+
+        result = self._scan({"skills/job-search/SKILL.md": "---\nname: x\n---\n",
+                             "host/.keep": ""}, extra=plant)
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(result["unreadable_files"], [])
+        self.assertEqual(result["files_skipped"], [])
+
+    def test_symlink_target_text_is_scanned_in_whole_tree_mode_too(self):
+        # Parity with --staged (``test_staged_symlink_target_is_scanned_as_text``):
+        # a link into the overlay leaks the private path it names.
+        def plant(root: Path) -> list[str]:
+            os.symlink("../private/skills/hidden-practice", root / "host" / "link")
+            return ["host/link"]
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, {"host/.keep": ""})
+            tracked = sorted(set(tracked) | set(plant(root)))
+            result = check_public.scan(root=root, tracked=tracked,
+                                       tokens=["hidden-practice"])
+        self.assertFalse(result["ok"])
+        hits = result["violations"]["personal_token"]
+        self.assertIn("symlink-target", [h["where"] for h in hits])
+
+    # ── accounting ───────────────────────────────────────────────────────────
+    def test_every_tracked_path_lands_in_exactly_one_bucket(self):
+        def plant(root: Path) -> list[str]:
+            os.symlink("../nowhere/missing.md", root / "docs" / "dangling.md")
+            os.symlink("real.md", root / "docs" / "alias.md")
+            return ["docs/dangling.md", "docs/alias.md"]
+
+        result = self._scan({
+            "docs/real.md": "clean\n",
+            "docs/notes.md": b"caf\xe9\n",
+            "examples/data/blob.zst": b"\x00raw",
+            "examples/screenshot.png": b"\x89PNG\r\n not-real",
+        }, extra=plant)
+        self.assertEqual(
+            result["files_read"] + len(result["files_skipped"])
+            + len(result["unreadable_files"]),
+            result["tracked_file_count"])
+
+    def test_summary_reports_how_much_was_actually_read(self):
+        result = self._scan({"docs/notes.md": b"caf\xe9\n", "docs/real.md": "ok\n"})
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        out = buf.getvalue()
+        self.assertIn("content read:   1 of 2 file(s)", out)
+        self.assertIn("not inspected:  1", out)
+        self.assertIn(check_public.SKIP_NOT_UTF8, out)
 
 
 class RealTreeStructuralTests(unittest.TestCase):
