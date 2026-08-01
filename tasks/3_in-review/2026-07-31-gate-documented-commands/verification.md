@@ -38,9 +38,18 @@ $ .venv/bin/python automation/gardener/verify_links.py --no-overlay
 
 **Why this number keeps moving, and how to read it.** `verify_links` counts references
 across every tracked `.md`, so any commit that adds documentation moves it — including the
-2026-07-31 correction pass that rewrote this block, which adds 14 references of its own
-and takes the tree to **2566**. Every figure in this file therefore names the commit it was
-measured at. A bare reference count with no SHA beside it is not evidence of anything.
+2026-07-31 correction pass that rewrote this block. That pass is commit `71de852`, and it
+takes the tree to **2580**: **+28** against `40871e6`, the commit the block above was
+measured at, and **+14** against `c819f0d`, the pass's own parent. Every figure in this
+file therefore names the commit it was measured at. A bare reference count with no SHA
+beside it is not evidence of anything.
+
+**Corrected again 2026-08-01.** The sentence above previously read "adds 14 references of
+its own and takes the tree to **2566**" — a number this file introduced and no commit in
+this history reports. `2566` is `c819f0d`'s count, and `+14` is the delta against
+`c819f0d`, not against the `40871e6` the surrounding block is measured at; the two were
+combined into one claim. Re-measured at each commit in a config-less clone with no overlay:
+`40871e6` → 2552, `c819f0d` → 2566, `71de852` → **2580**.
 
 ## Every command finding it produces, triaged
 
