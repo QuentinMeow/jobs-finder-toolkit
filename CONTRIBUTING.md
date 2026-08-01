@@ -21,8 +21,11 @@ No `config.yaml` is needed to contribute: with none present, every tool falls
 back to the tracked `config.example.yaml` and the `examples/` Jordan Rivers
 fixture. (For PDF rendering, install LibreOffice — see `README.md`.)
 
-Optionally wire the tracked git hooks (drift check + compile on commit) in one
-idempotent, stdlib-only step:
+Optionally wire the tracked git hooks in one idempotent, stdlib-only step. The
+pre-commit hook runs nine gates — a staged-`private/` reject, the leak guard over
+the staged index, the public review gate, the vendored-copy drift check, the mail
+send-less policy, `compileall`, the instruction-file budget, the reconciler, and the
+reference/markdown link check — and `automation/hooks/pre-commit` is the list:
 
 ```bash
 python automation/bootstrap_overlay.py        # installs automation/hooks/pre-commit + automation/hooks/pre-push
@@ -30,9 +33,10 @@ python automation/bootstrap_overlay.py        # installs automation/hooks/pre-co
 
 ## Running the checks
 
-This list is the canonical one — the pull-request template points here instead of
-repeating it, and `.github/workflows/ci.yml` runs the same set. Run it before
-opening a PR; all of it must pass.
+This is the **contributor** list — the commands worth running locally before opening
+a PR, which the pull-request template points at instead of repeating. All of it must
+pass. It is a **subset**, not a mirror: `.github/workflows/ci.yml` is the authoritative
+gate list and runs strictly more (see the note under the block).
 
 ```bash
 # Resume-writer schema/extraction/render tests (includes one fake multi-experience E2E)
@@ -75,9 +79,13 @@ JOBHUNT_CONFIG="$PWD/config.example.yaml" \
 
 CI additionally runs the maintenance-tooling suites
 (`automation/{reconcile,gardener,hooks,search-recall-audit,metrics}/tests`), the
-reconciler, and the example render — see `.github/workflows/ci.yml` for the
-authoritative order. The tracked pre-commit hook runs the cheap gates from this
-list on every commit.
+reconciler, the public review gate, the example render, the vendored-copy drift
+check, `compileall`, and the example-store validation — see
+`.github/workflows/ci.yml` for the authoritative set and order. The tracked
+pre-commit hook runs the cheap gates on every commit; three of them (the public
+review gate, the reconciler, the reference/link check) are **not** in the block
+above, so a green local run of this list is not proof the hook will pass — read
+`automation/hooks/pre-commit` for what it actually runs.
 
 Vendored copies must stay in sync; after editing a canonical `automation/shared/`
 module, regenerate with `.venv/bin/python automation/vendoring/sync_vendored.py` (the
