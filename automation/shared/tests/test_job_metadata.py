@@ -15,6 +15,7 @@ if str(SHARED_DIR) not in sys.path:
 from job_metadata import (  # noqa: E402
     APPLICATION_SCHEMA_VERSION,
     STATUS_VALUES,
+    _compensation_range,
     analyze_job_metadata,
     assess_required_yoe,
     assess_sponsorship,
@@ -269,6 +270,30 @@ class SalaryExtractionTests(unittest.TestCase):
             "The base salary range (or hourly wage range, if applicable) "
             "is $190,000 to $280,000."
         ))
+
+    def test_the_word_remote_between_the_keyword_and_the_number_is_not_ote(self):
+        # "ote" (on-target earnings) is a _TOTAL_TERMS token, and the keyword
+        # NEAREST the number decides base-vs-total.  Found unanchored, it matched
+        # inside "rem-OTE-", so an ordinary "this is a fully remote position"
+        # sentence beat "base salary" and the whole range was discarded.
+        salary = extract_salary_range(
+            "The base salary range for this role is, for a fully remote "
+            "position, $150,000 - $200,000 per year."
+        )
+        self.assertIsNotNone(salary)
+        self.assertEqual((salary["min"], salary["max"]), (150000, 200000))
+
+    def test_remote_does_not_relabel_a_base_range_as_total_comp(self):
+        self.assertIsNone(_compensation_range(
+            "The base salary range for this remote role is $150,000 - $200,000 "
+            "per year.", total=True))
+
+    def test_standalone_ote_still_reads_as_total_compensation(self):
+        total = _compensation_range(
+            "OTE for this role is $150,000 - $200,000 per year.", total=True)
+        self.assertEqual((total["min"], total["max"]), (150000, 200000))
+        self.assertIsNone(extract_salary_range(
+            "OTE for this role is $150,000 - $200,000 per year."))
 
 
 class AnalyzeTests(unittest.TestCase):

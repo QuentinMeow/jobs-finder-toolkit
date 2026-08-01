@@ -294,6 +294,79 @@ class StoredMailProposalTests(unittest.TestCase):
             ["acct-01/confirmed-booking"],
         )
 
+    def test_unconfirmed_hold_is_not_a_confirmed_interview(self):
+        # "confirmed" sits inside "unconfirmed".  A bare substring lexicon read a
+        # message that says the slot is NOT confirmed as `schedule_confirmed`,
+        # which suppresses the reply TODO (a confirmed time is informational) and
+        # escalates to a tracker-ready calendar proposal for a tentative time.
+        raw = incoming(
+            "acct-01/hold",
+            "REQ-123: this is an UNCONFIRMED hold for 2026-08-05 2:00 PM PT. "
+            "Please reply to confirm or we will release the slot.",
+            thread="hold-thread",
+        )
+        message = normalize_stored_message(raw)
+        classification = categorize_message(message)
+        self.assertNotIn("schedule_confirmed", classification["scheduling_subtypes"])
+        projections = reconcile_messages([raw], APPS, DOMAINS)["projections"]
+        self.assertEqual([item["message_key"] for item in projections["needs_reply"]],
+                         ["acct-01/hold"])
+        link = link_message(message, APPS, DOMAINS)
+        scheduled = [item["target"].get("scheduling_subtype")
+                     for item in propose_reconciliation(message, link, APPS)
+                     if item["kind"] == "progress_calendar"]
+        self.assertNotIn("schedule_confirmed", scheduled)
+
+    def test_genuine_confirmation_still_confirms(self):
+        message = normalize_stored_message(incoming(
+            "acct-01/real-confirm",
+            "REQ-123: your interview is confirmed for 2026-08-05 2:00 PM PT.",
+        ))
+        self.assertIn("schedule_confirmed",
+                      categorize_message(message)["scheduling_subtypes"])
+
+    def test_courtesy_unfortunately_does_not_reject_a_reschedule_request(self):
+        # "Unfortunately" is a courtesy adverb, not a decision.  `rejection` is a
+        # needs-reply hard exclusion, so setting it on this message dropped a
+        # genuine reschedule request out of the reply queue entirely.
+        raw = incoming(
+            "acct-01/polite-reschedule",
+            "Unfortunately I have a conflict, so we need to reschedule your "
+            "interview. Please reply with a few times that work.",
+            thread="polite-thread",
+        )
+        classification = categorize_message(normalize_stored_message(raw))
+        self.assertNotIn("rejection", classification["categories"])
+        self.assertIn("reschedule_requested", classification["scheduling_subtypes"])
+        projections = reconcile_messages([raw], APPS, DOMAINS)["projections"]
+        self.assertEqual([item["message_key"] for item in projections["needs_reply"]],
+                         ["acct-01/polite-reschedule"])
+
+    def test_explicit_rejection_wording_is_still_a_rejection(self):
+        for body in (
+            "Unfortunately, we are not moving forward with your application.",
+            "We have decided not to move forward at this time.",
+            "We regret to inform you that the position has been filled.",
+        ):
+            with self.subTest(body=body):
+                classification = categorize_message(
+                    normalize_stored_message(incoming("acct-01/reject", body)))
+                self.assertIn("rejection", classification["categories"])
+
+    def test_lexicon_phrases_keep_matching_their_plurals_and_gerunds(self):
+        # Word-bounding a natural-language lexicon must not cost the inflections
+        # the old substring match got for free.
+        cases = [
+            ("interviews", "Your interviews are next week.", "interview_invite"),
+            ("interviewing", "We are interviewing for this role.", "interview_invite"),
+            ("assessments", "Two assessments are required.", "assessment"),
+        ]
+        for label, body, category in cases:
+            with self.subTest(label=label):
+                classification = categorize_message(
+                    normalize_stored_message(incoming(f"acct-01/{label}", body)))
+                self.assertIn(category, classification["categories"])
+
     def test_exact_transition_must_reopen_the_same_stored_message(self):
         raw = incoming("acct-01/transition", "REQ-123: your technical interview is confirmed for 2026-08-04 10:30 AM PT.")
         message = normalize_stored_message(raw)

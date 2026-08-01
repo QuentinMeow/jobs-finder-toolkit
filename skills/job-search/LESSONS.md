@@ -14,7 +14,10 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 - ATS board tokens are not always the company's obvious name: Glean → `gleanwork`,
   Scale AI → `scaleai`, Together AI → `togetherai`, Cursor → `cursor` (not `anysphere`).
   Probe both Greenhouse and Ashby when unsure; run `validate_companies.py` after edits.
-- Greenhouse `content` is double entity-encoded HTML; `strip_html` already unescapes twice.
+- Greenhouse `content` is double entity-encoded HTML — the ONLY such source. Read it with
+  `strip_html(..., entity_encoded=True)`; every other source is single-encoded and must not
+  get that flag, or a `&lt;` in JD prose ("teams of &lt; 12") becomes a real `<` and the tag
+  stripper eats the rest of the element (a sponsorship denial included).
 - Ashby exposes `descriptionPlain` directly (no HTML parsing needed) and `isListed:false`
   postings should be skipped.
 

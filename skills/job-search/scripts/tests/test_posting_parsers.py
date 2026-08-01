@@ -26,6 +26,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 import aggregators  # noqa: E402
 import capture_hooks  # noqa: E402
+import common  # noqa: E402
 import posting_parsers as pp  # noqa: E402
 import sources  # noqa: E402
 from common import HttpResult, parse_dt  # noqa: E402
@@ -334,12 +335,17 @@ class WorkdayParseTests(unittest.TestCase):
 
 
 class NormalizerTests(unittest.TestCase):
-    def test_double_escaped_greenhouse_content_unescaped_once(self):
-        # Greenhouse content arrives ENTITY-ESCAPED; the normalized text must be
-        # stable (not perpetually "changed") and free of markup.
-        h1 = pp.content_hash("&lt;p&gt;Hello &amp; world&lt;/p&gt;")
-        h2 = pp.content_hash("<p>Hello &amp; world</p>")
-        self.assertEqual(h1, h2)
+    def test_double_escaped_greenhouse_content_flattens_like_single_encoded(self):
+        # Greenhouse content=true arrives DOUBLE entity-encoded; every other source
+        # is single-encoded. Decoding is per-source and happens at parse time, so
+        # the two forms of the same body must flatten — and therefore hash — the
+        # same, and the normalized text must be free of markup.
+        gh = "&lt;p&gt;Hello &amp;amp; world&lt;/p&gt;"      # greenhouse content=true
+        single = "<p>Hello &amp; world</p>"                  # every other source
+        self.assertEqual(common.strip_html(gh, entity_encoded=True), "Hello & world")
+        self.assertEqual(
+            pp.content_hash(common.strip_html(gh, entity_encoded=True)),
+            pp.content_hash(common.strip_html(single)))
 
     def test_normalizer_version_declared(self):
         self.assertIsInstance(pp.NORMALIZER_VERSION, int)

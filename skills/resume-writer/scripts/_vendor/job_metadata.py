@@ -1054,14 +1054,21 @@ def _compensation_range(text: str | None, *, total: bool) -> dict | None:
         before = blob[max(0, match.start() - 120):match.start()].lower()
         after = blob[match.end():min(len(blob), match.end() + 80)].lower()
         context = before + " " + after
-        nearest_total = max((before.rfind(term) for term in _TOTAL_TERMS), default=-1)
-        nearest_salary = max((before.rfind(term) for term in _SALARY_TERMS), default=-1)
+        # BOUNDED, not `rfind`/`in`. `_TOTAL_TERMS` carries the bare token "ote"
+        # (on-target earnings), and an unanchored scan finds it inside "rem-OTE-".
+        # Because the nearest keyword to the number wins, a compensation paragraph
+        # that says "this is a fully remote position" beat "base salary": the range
+        # was then dropped entirely (`extract_salary_range` returns None) or filed
+        # as total comp. `_bounded_phrase_matches` is this module's one spelling of
+        # a bounded phrase — "ote" as a standalone word still matches.
+        nearest_total = _last_bounded_start(before, _TOTAL_TERMS)
+        nearest_salary = _last_bounded_start(before, _SALARY_TERMS)
         if nearest_total >= 0 or nearest_salary >= 0:
             has_total = nearest_total > nearest_salary
             has_salary = nearest_salary > nearest_total
         else:
-            has_total = any(term in after for term in _TOTAL_TERMS)
-            has_salary = any(term in after for term in _SALARY_TERMS)
+            has_total = bool(_bounded_phrase_matches(after, _TOTAL_TERMS))
+            has_salary = bool(_bounded_phrase_matches(after, _SALARY_TERMS))
         if total:
             if not has_total:
                 continue
@@ -1499,6 +1506,12 @@ def _bounded_phrase_matches(text: str, phrases):
 def _bounded_phrase_hits(text: str, phrases) -> list[str]:
     return list(dict.fromkeys(
         phrase for phrase, _match in _bounded_phrase_matches(text, phrases)))
+
+
+def _last_bounded_start(text: str, phrases) -> int:
+    """Offset of the LAST bounded occurrence of any phrase, or -1 (bounded ``rfind``)."""
+    return max((match.start() for _phrase, match
+                in _bounded_phrase_matches(text, phrases)), default=-1)
 
 
 def assess_sponsorship(text: str | None) -> dict:

@@ -66,7 +66,7 @@ from aggregators import (  # noqa: E402
     KEYED, KEYLESS, build_aggregator_tasks, build_jobspy_tasks, jobspy_available,
     keyed_available,
 )
-from common import days_since  # noqa: E402
+from common import days_since, drain_source_warnings  # noqa: E402
 from job_metadata import analyze_job_metadata, load_company_levels  # noqa: E402
 from registry import Registry, load_registry  # noqa: E402
 from scoring import (  # noqa: E402
@@ -600,7 +600,8 @@ def render_markdown(kept, profile, meta) -> str:
              f"{meta.get('n_review', 0)} preserved for filter review)",
              ""]
     if meta["errors"]:
-        lines += ["> Source errors: " + "; ".join(meta["errors"][:12]), ""]
+        lines += ["> Source errors / not inspected: "
+                  + "; ".join(meta["errors"][:12]), ""]
     lines += [
         "| # | Score | Company | Title | Level (Google eq.) | YOE | Salary | "
         "Loc/Remote | Age | Visa | Source | Why | Link |",
@@ -1274,10 +1275,18 @@ def main() -> int:
               f"[{', '.join(agg_labels) or 'none'}] ({len(tasks)} tasks)...",
               file=sys.stderr)
         postings, errors, per_source = run_tasks(tasks, workers=args.workers)
+        # Partial-fetch reports: a source that returned rows but could not inspect
+        # everything it set out to inspect (JD detail outage, a truncated listing).
+        # These are not exceptions — the rows are real — but a run that silently
+        # dropped or blanked part of a board must not read as a complete one, so
+        # they join `errors` and land in the snapshot and the `> Source errors:`
+        # block alongside the hard failures.
+        errors.extend(drain_source_warnings())
         n_raw = len(postings)
         n_companies = len(companies)
         print(f"Fetched {n_raw} raw postings "
-              f"({dict(per_source)}); {len(errors)} source errors.", file=sys.stderr)
+              f"({dict(per_source)}); {len(errors)} source errors/warnings.",
+              file=sys.stderr)
 
         now = datetime.now(timezone.utc)
         # Snapshot the normalized, PRE-filter postings so a later --refilter can

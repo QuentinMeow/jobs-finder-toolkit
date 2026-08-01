@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from hashlib import sha256
 import re
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -79,6 +80,32 @@ NEEDS_REPLY_ACTIONABLE_SCHEDULING_SUBTYPES = frozenset({
     "booking_requested",
     "reschedule_requested",
 })
+
+# ``rejection`` is a NEEDS_REPLY hard exclusion, so it wins over every actionable
+# signal on the message.  That makes it the most expensive category to set by
+# accident, and it must therefore be triggered only by a phrase that states an
+# OUTCOME.  "Unfortunately" is a courtesy adverb, not a decision: on its own it
+# marked "Unfortunately I need to move our interview" as a rejection and dropped
+# a genuine reschedule request out of the reply queue entirely.  It is gone from
+# this list; the unambiguous decision phrasings it usually accompanies are in it.
+#
+# The trade is deliberate and runs the safe way: a rejection worded ONLY as
+# "Unfortunately, ..." now reaches the reply queue.  A spurious TODO costs a
+# glance; a missed reschedule costs an interview.
+REJECTION_DECISION_PHRASES = (
+    "not moving forward",
+    "not move forward",
+    "not to move forward",
+    "will not be moving forward",
+    "will not be proceeding",
+    "decided not to proceed",
+    "not to proceed",
+    "no longer under consideration",
+    "regret to inform",
+    "moving forward with another candidate",
+    "position has been filled",
+    "role has been filled",
+)
 
 # These vendors host mail for thousands of companies.  A match here is useful
 # only as vendor metadata; treating it as a company would be a mislink factory.
@@ -334,8 +361,43 @@ def normalize_stored_message(mapping: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+# Every lexicon phrase below is matched BOUNDED — never as a bare substring.
+# ``phrase in text`` read "confirmed" inside "unconfirmed", so a recruiter message
+# saying a slot is NOT yet confirmed satisfied `confirmation_language`, classified
+# as ``schedule_confirmed``, suppressed the reply TODO (a confirmed time is
+# informational by design) and escalated to a tracker-ready calendar proposal
+# carrying a time the message explicitly called tentative.
+#
+# The boundary is the toolkit's established bounded-phrase idiom
+# (``job_metadata._bounded_phrase_matches``): refuse a match glued to a
+# surrounding letter or digit. One deliberate allowance: a trailing English
+# inflection, because substring matching got plurals and gerunds for free and a
+# strict boundary would silently lose them — "interview" must keep matching
+# "interviews"/"interviewing", "assessment" must keep matching "assessments". An
+# inflection is still nothing like the "un-" PREFIX that caused the defect.
+#
+# The boundary is asserted only where the phrase's own edge is alphanumeric, so
+# ".ics" still matches inside "invite.ics".
+#
+# This module is vendored into the email-assistant skill and may not import repo
+# Python, so the helper is spelled here as well as in
+# ``skills/job-search/scripts/common.py`` (``bounded_phrase_hit``). Keep the two
+# in step.
+_INFLECTION = r"(?:s|es|d|ed|ing|er|ers)?"
+
+
+@lru_cache(maxsize=4096)
+def _phrase_re(phrase: str) -> re.Pattern:
+    prefix = r"(?<![a-z0-9])" if phrase[:1].isalnum() else ""
+    suffix = _INFLECTION + r"(?![a-z0-9])" if phrase[-1:].isalnum() else ""
+    return re.compile(prefix + re.escape(phrase) + suffix, re.I)
+
+
 def _contains(text: str, *phrases: str) -> bool:
-    return any(phrase in text for phrase in phrases)
+    """True if any phrase occurs as a bounded phrase — never as a bare substring."""
+    if not text:
+        return False
+    return any(_phrase_re(phrase).search(text) for phrase in phrases if phrase)
 
 
 def _explicit_schedule(text: str) -> dict[str, str] | None:
@@ -405,7 +467,7 @@ def categorize_message(message: Mapping[str, Any]) -> dict[str, Any]:
         categories.add("interview_invite")
     if _contains(text, "application update", "still under consideration", "status update", "next steps"):
         categories.add("neutral_status_update")
-    if _contains(text, "unfortunately", "not moving forward", "not move forward", "decided not to proceed", "no longer under consideration", "will not be moving forward"):
+    if _contains(text, *REJECTION_DECISION_PHRASES):
         categories.add("rejection")
     if _contains(text, "job offer", "offer letter", "pleased to offer", "offer package"):
         categories.add("offer")
