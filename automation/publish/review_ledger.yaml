@@ -1919,3 +1919,9 @@
   files: 20
   digest: sha256:85f02ea7124d6e50
   finding: instruction-conflict audit — six mechanical doc corrections, ten conflicts filed as tasks, one filed as an owner decision
+- commit: 765079e2
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 11
+  digest: sha256:811a1f566c308a51
+  finding: US-country residency clause read as us_remote; 352-cell matrix shows 63 review->match moves and zero moves in any other direction

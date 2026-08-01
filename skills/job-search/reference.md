@@ -233,20 +233,23 @@ preferred-cities/remote filter.
 ### When a remote signal does NOT grant US scope (`assess_location`)
 
 A remote statement says how the work is done, not where. Three narrowings apply once the
-workplace reads `remote`; each has a fictional regression in `filter_variants/corpus.yaml`:
+workplace reads `remote` — plus one residency reading that CONFIRMS US scope instead of
+narrowing it. Each has a fictional regression in `filter_variants/corpus.yaml`:
 
 | Shape | Verdict | Evidence / review id |
 |-------|---------|----------------------|
 | JD grants remote, then requires residence in a metro the policy does not prefer (`this is a remote role but the location requirement is that you reside in <Metro>`) | `no_match` / `other_us` (or `foreign`) | `jd_remote_bound_to_residency` |
 | Same, but the named metro IS preferred | `match` / `metro` | `jd_residency_preferred_metro` |
-| Same, but the named place cannot be parsed | `review` | `residency_restriction_unparsed` |
+| Same, but the named place is the COUNTRY (`you must reside in the United States`) | `match` / `us_remote` | `jd_residency_us_scope` |
+| Same, but the named place cannot be parsed — or the clause is negated (`you do not need to reside in <place>`) | `review` | `residency_restriction_unparsed` |
 | Location field is nothing but workplace words and no US signal appears in location, title or JD | `review` | `remote_without_us_scope` |
 | Location field is a workplace word (`Hybrid`, `In-Office`, `Distributed`) and the JD names no cities either | `review` | `workplace_tag_without_geography` |
 
 The residency rule needs a requirement word (`must`, `required`, `requirement`, …) within a
 tight span of the residency verb, so a sentence about where colleagues happen to live cannot
-rewrite a posting's geography. It can only NARROW a grant — it is never the sole grounds for
-granting one.
+rewrite a posting's geography. It reads a grant's geography and never grants remote itself: the
+country reading supplies the US scope a bare `Remote` field omits, but the remote grant still has
+to come from the location field or the JD.
 
 Two guardrails on the bare-remote rule, both deliberate:
 

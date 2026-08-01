@@ -471,6 +471,129 @@ class ResidencyRestrictedRemoteTests(unittest.TestCase):
         self.assertIn("remote_eligible", result.evidence)
 
 
+class UsCountryResidencyTests(unittest.TestCase):
+    """A residency requirement naming the COUNTRY confirms US-remote.
+
+    The residency reader knew preferred metros, US states, US hubs and foreign
+    places, and could not name the one place US-remote boilerplate always names:
+    the United States. So the single most common sentence in a US-remote posting
+    — "you must reside in the United States" — classified as an unreadable
+    restriction and sent every such posting to manual review, even when the
+    location field ALREADY said US. The residency branch runs before the location
+    field is consulted, so it overrode that too.
+
+    A country-wide residency rule cannot narrow anything: the whole country
+    satisfies it, which is exactly the ``us_remote`` category. The rule stays
+    asymmetric — it still never GRANTS remote, it only reads a grant's geography.
+    """
+
+    POLICY = {"metro": ["springfield", "fairview"], "allow_us_remote": True,
+              "us_only": True, "require_match": True}
+
+    def _assess(self, description, location="Remote"):
+        return assess_location(
+            location, self.POLICY, title="Software Engineer",
+            description=description, workplace_hint="")
+
+    def test_a_country_wide_residency_requirement_is_us_remote(self):
+        for location in ("Remote", "Remote (US)", "Remote - US", ""):
+            for sentence in (
+                "You must reside in the United States.",
+                "You must be located in the United States to be eligible.",
+                "Candidates must be located in the US.",
+                "You must be based in the USA.",
+                "You must reside in US.",
+            ):
+                with self.subTest(location=location, sentence=sentence):
+                    result = self._assess(
+                        "This is a fully remote role. " + sentence,
+                        location=location)
+                    self.assertEqual(result.decision, "match")
+                    self.assertEqual(result.category, "us_remote")
+                    self.assertIn("jd_residency_us_scope", result.evidence)
+
+    def test_a_bare_remote_field_needs_no_other_us_signal(self):
+        # The residency sentence IS the US signal, so `remote_without_us_scope`
+        # must not fire on a location field that is only the word "Remote".
+        result = self._assess("You must reside in the United States.")
+        self.assertEqual(result.decision, "match")
+        self.assertEqual(result.category, "us_remote")
+        self.assertEqual(result.review_reasons, ())
+
+    def test_a_narrower_place_still_wins_over_the_country(self):
+        # The country reading is checked LAST. A clause that also names a state,
+        # a hub, a preferred metro or a foreign country keeps the reading it
+        # already had — the safe direction, and the one the corpus pins.
+        for sentence, decision, category in (
+            ("You must reside in California.", "no_match", "other_us"),
+            ("You must reside in the Boston area.", "no_match", "other_us"),
+            ("You must reside in the Springfield area.", "match", "metro"),
+            ("You must reside in Canada.", "no_match", "foreign"),
+            ("You must reside in the United States or Canada.",
+             "no_match", "foreign"),
+        ):
+            with self.subTest(sentence=sentence):
+                result = self._assess(sentence, location="Remote (US)")
+                self.assertEqual(result.decision, decision)
+                self.assertEqual(result.category, category)
+
+    def test_a_negated_residency_clause_never_manufactures_a_match(self):
+        # "You do not need to live in the US" is not a US residency requirement.
+        # It stays a review, exactly as it was before the country reading
+        # existed: the sentence says where you need NOT be, and says nothing
+        # about whether this role is open in the US at all.
+        for sentence in (
+            "You do not need to reside in the United States.",
+            "There is no requirement to reside in the United States.",
+            "You are not required to reside in the United States.",
+            "You must not reside in the United States.",
+        ):
+            with self.subTest(sentence=sentence):
+                result = self._assess(sentence)
+                self.assertEqual(result.decision, "review")
+                self.assertIn("residency_restriction_unparsed",
+                              result.review_reasons)
+
+    def test_an_unrelated_negative_clause_does_not_cancel_the_requirement(self):
+        # The negation window is anchored to the requirement word. A sentence-wide
+        # search would read the negative half of each of these as "residency not
+        # required" and drop a posting that plainly requires US residency.
+        for sentence in (
+            "We are not able to sponsor visas; you must reside in the "
+            "United States.",
+            "We do not have offices, so you must reside in the United States.",
+        ):
+            with self.subTest(sentence=sentence):
+                result = self._assess(sentence)
+                self.assertEqual(result.decision, "match")
+                self.assertEqual(result.category, "us_remote")
+
+    def test_the_pronoun_after_near_is_not_the_country(self):
+        # "near us" is an office, not a country. Bare "us" is read as the US only
+        # after "in"/"within"; anything else keeps its review.
+        result = self._assess("You must live near us.")
+        self.assertEqual(result.decision, "review")
+        self.assertIn("residency_restriction_unparsed", result.review_reasons)
+
+    def test_a_dotted_abbreviation_stays_at_review_on_purpose(self):
+        # `_JD_RESIDENCY_RE`'s place capture excludes "." so a residency clause
+        # cannot run past its own sentence. That also truncates "the U.S." to
+        # "the U", so the dotted abbreviation never reaches the country reading
+        # and keeps its review. Widening the capture is NOT the fix: "the U.S. or
+        # Canada" truncates identically, so a dotted reading would call that
+        # posting US-remote while the spelled-out "the United States or Canada"
+        # correctly stays foreign. Pinned so the residual is a decision, not a
+        # surprise.
+        result = self._assess("You must reside in the U.S.")
+        self.assertEqual(result.decision, "review")
+        self.assertIn("residency_restriction_unparsed", result.review_reasons)
+
+    def test_an_unreadable_place_is_still_unreadable(self):
+        result = self._assess("You must reside in the Tri-Valley corridor.")
+        self.assertEqual(result.decision, "review")
+        self.assertIn("residency_restriction_unparsed", result.review_reasons)
+
+
 class BareRemoteWithoutUsScopeTests(unittest.TestCase):
     """A work MODE with no country behind it is not a US-remote match.
 
