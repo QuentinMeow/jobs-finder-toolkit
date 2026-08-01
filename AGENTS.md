@@ -202,7 +202,15 @@ Router:
   Rephrase and add real, traceable detail, but locked fields, titles, and skill-list gating always hold.
 - **Validation is mandatory / hard gates**: `render.py` auto-runs `check.py` (locked
   identity/employer fields, real titles/skills, bullet counts, one-page PDF). A FAILed render must
-  be fixed — never shipped or bypassed with `--skip-checks`.
+  be fixed — never shipped or bypassed with `--skip-checks`. **Read a gate's exit code, never its
+  prose** — and never through a pipe (see **Shell & Paths**).
+- **A gate that is red outside your scope**: never bypass, silence, or weaken it. Your change caused
+  it → fix it. It was already red for a reason your task must not fix → (1) show that the finding
+  cannot change your result, (2) file it ONCE, after checking no item already covers it —
+  `tasks/0_backlog/` for anything needing judgement, `message-queue/needs-agent/retries/` only for a
+  mechanical repair, (3) say in your reply that the gate is red and what you filed. You may then
+  continue the ANALYSIS. You may **not** commit, push, or open a PR over a red gate that pre-commit
+  or CI runs — fix that or stop.
 - **Deep, tailored research**: each cover letter / why-fit / past-experience section shows genuine
   understanding of the company AND that JD (concrete real specifics, never invented claims). **One
   cover letter per JD — no shared/boilerplate letter.**
@@ -282,6 +290,15 @@ Each expands in a named `docs/handbook/` doc; the bolded name is the canonical s
 - **Shell & Paths** — the shell is **zsh**; always use **absolute paths** in bash calls (a subagent's
   working directory resets between calls, so relative paths break), and **quote** any `=`-leading
   argument or glob (`'--flag=val'`, `'*.md'`) so zsh does not mis-split or expand it.
+  **Never pipe a command whose exit code you are about to read.** `$?` after a pipeline is the LAST
+  stage's status, so `<gate> | tail -5` then `echo $?` prints `tail`'s 0 for a gate that exited 1 —
+  a red gate read as green. Truncating output is not a reason to pipe: **redirect instead** (a
+  redirect is not a pipeline), which keeps the real status —
+  `<gate> > local/scratch/gate.log 2>&1; echo "EXIT=$?"`, then read the log. Reading a pipeline
+  stage's status directly is zsh-specific: the array is `$pipestatus`, **1-indexed**, so the first
+  stage is `${pipestatus[1]}`; bash's `${PIPESTATUS[0]}` expands to the empty string in zsh and
+  reads as "nothing wrong". `$?` after a `for` loop or an `&&` chain has the same trap — it is the
+  last command's status only, and the earlier ones are gone.
 - **Read Hygiene** — never re-Read a file already in context (duplicate reads are pure token waste);
   for a file over ~800 lines, prefer a `grep` or an offset/limit slice over reading the whole file.
 
