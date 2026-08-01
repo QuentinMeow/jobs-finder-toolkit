@@ -21,6 +21,11 @@ Design rules:
     skipped — a renamed or typo'd entry used to ship zero files and say nothing.
     ``--strict`` turns those warnings into a refusal, before ``--force`` touches
     the destination.
+  * The DESTINATION is decided twice: a blocklist of paths that are never a
+    legitimate export target (the checkout, the private overlay, your home,
+    another git checkout) refuses first, and then ``--force`` may DELETE only an
+    empty directory or one carrying this exporter's own marker file. See
+    ``forbidden_destination`` / ``overwrite_refusal``.
   * Which ``skills/<name>`` trees ship is DERIVED from each SKILL.md's
     ``visibility:`` frontmatter (``sync_skill_manifests``), never restated here.
   * The DENYLIST is applied AFTER the allowlist, per file: ``__pycache__``,
@@ -124,6 +129,179 @@ TOKEN_CONTENT_EXEMPT = {check_public.GUARD_REL_PATH}
 # — a single source of truth, so the exported mirror and this checkout can never
 # drift. (The tracked file already contains only public/overlay-continuity rules.)
 GITIGNORE_REL = ".gitignore"
+
+# ── destination safety ───────────────────────────────────────────────────────
+# The exporter CREATES a tree at --dest and, under --force, DELETES whatever is
+# already there. ``shutil.rmtree`` is irreversible, so the destination has to
+# clear TWO independent rules:
+#
+#   1. A BLOCKLIST of destinations that are never legitimate
+#      (``forbidden_destination``). It runs FIRST — before the arming gate,
+#      before preflight, before anything is written — because it is a pure path
+#      predicate, and it exists to NAME the rule that was broken: "that is the
+#      private overlay, which holds owner data" is a far more useful refusal
+#      than "that is not an empty directory".
+#   2. An ALLOWLIST of what --force may DELETE (``overwrite_refusal``): an empty
+#      directory (nothing to lose) or a directory carrying this exporter's own
+#      marker file (a previous export — reproducible by definition). Everything
+#      else is somebody's data, so rmtree only ever runs over a tree this tool
+#      made.
+#
+# Neither shape is sufficient alone. A blocklist fails open on the case nobody
+# enumerated: this guard used to refuse only the repo root and its ancestors, so
+# ``--dest private --force`` fell straight through to rmtree on the owner's
+# mounted overlay repo — the one directory AGENTS.md says an agent must never
+# delete. An allowlist alone can be satisfied by an empty-looking mount point or
+# by a marker file that ended up somewhere it should not be, and it cannot say
+# WHICH rule a bad destination broke. So both run, blocklist first.
+EXPORT_MARKER_NAME = ".jobhunt-export-marker"
+EXPORT_MARKER_TEXT = (
+    "This directory is an export target of automation/publish/export_public.py.\n"
+    "\n"
+    "The exporter writes this file right after it creates the destination, and\n"
+    "treats any directory carrying it as safe to DELETE AND REPLACE on the next\n"
+    "`export_public.py --dest <this directory> --force` run. It is excluded from\n"
+    "the exported git history (.git/info/exclude), so it never reaches a\n"
+    "published tree.\n"
+    "\n"
+    "Delete this file if the directory stops being a disposable export target:\n"
+    "the exporter will then refuse to overwrite it.\n"
+)
+
+
+def _home() -> Path:
+    """The user's home directory, resolved. Never raises."""
+    try:
+        return Path.home().resolve()
+    except (RuntimeError, OSError):  # HOME unset / unresolvable
+        return Path("/nonexistent-home-directory")
+
+
+def _at_or_under(dest: Path, root: Path) -> bool:
+    return dest == root or root in dest.parents
+
+
+def _enclosing_git_repo(dest: Path) -> Path | None:
+    """The nearest STRICT ancestor of ``dest`` that is a git checkout, if any.
+
+    ``.git`` may be a directory or (in a worktree/submodule) a file, so this
+    tests existence rather than ``is_dir``. Strict ancestors only: ``dest``
+    itself being a git repo is handled by ``overwrite_refusal`` — a foreign
+    checkout is non-empty and carries no marker — while a previous export of
+    this tool has a ``.git`` of its own and must stay overwritable.
+    """
+    for parent in dest.parents:
+        if (parent / ".git").exists():
+            return parent
+    return None
+
+
+def owner_data_roots() -> list[tuple[Path, str]]:
+    """Roots holding owner data that this exporter must never write over.
+
+    ``private/`` under the checkout is included unconditionally and by its REAL
+    path: it is the documented overlay mount, it is a separate git repository
+    that may hold uncommitted work, and it is often a symlink to a tree living
+    outside the checkout — in which case the "inside the source tree" rule alone
+    would miss it.
+
+    The configured roots on top of that are best-effort and additive — they
+    matter when the overlay is configured to live somewhere other than
+    ``private/``. A config layer that refuses to resolve contributes nothing
+    rather than raising out of a safety check, and two families of root are
+    dropped because a clearer rule already covers them: anything comparable to
+    the checkout (a checkout with no ``config.yaml`` derives these from the
+    tracked example tree, which the "inside the source checkout" rule refuses by
+    a better name), and anything at or above ``$HOME`` (a pathological
+    ``applications_root: ~/applications`` would otherwise refuse every
+    destination under the home directory).
+    """
+    roots: list[tuple[Path, str]] = []
+    try:
+        private = (REPO_ROOT / "private").resolve()
+    except OSError:
+        private = REPO_ROOT / "private"
+    roots.append((private, f"it is the private overlay ({private}) — a separate "
+                           "repository holding owner data"))
+
+    config = check_public._load_shared_config()
+    if config is None:
+        return roots
+    home = _home()
+    for accessor, label in (
+        ("overlay_root", "the configured private overlay root"),
+        ("applications_root", "the configured applications root"),
+        ("companies_root", "the configured company-research root"),
+        ("data_root", "the configured raw-data store root"),
+    ):
+        try:
+            value = getattr(config, accessor)()
+        except Exception:  # noqa: BLE001 — a safety check never raises
+            continue
+        if value is None:
+            continue
+        try:
+            root = Path(value).resolve()
+        except OSError:
+            continue
+        if _at_or_under(home, root):
+            continue
+        if _at_or_under(root, REPO_ROOT) or _at_or_under(REPO_ROOT, root):
+            continue
+        roots.append((root, f"it is {label} ({root}) — owner data"))
+    return roots
+
+
+def forbidden_destination(dest: Path) -> str | None:
+    """Why ``dest`` is never a legitimate export target, or None.
+
+    ``dest`` must already be resolved. The returned string completes the
+    sentence "refusing to export into <dest>: ...", so every refusal names both
+    the path and the rule it broke.
+    """
+    if dest == REPO_ROOT:
+        return "it is the source checkout itself"
+    if dest in REPO_ROOT.parents:
+        return f"it contains the source checkout ({REPO_ROOT})"
+    for root, why in owner_data_roots():
+        if _at_or_under(dest, root):
+            return why + " — agents never delete owner data"
+    if REPO_ROOT in dest.parents:
+        return (f"it is inside the source checkout ({REPO_ROOT}) — the export is a "
+                "COPY of this tree and must land outside it")
+    home = _home()
+    if dest == home:
+        return "it is your home directory"
+    if dest in home.parents:
+        return f"it contains your home directory ({home})"
+    enclosing = _enclosing_git_repo(dest)
+    if enclosing is not None:
+        return f"it is inside another git checkout ({enclosing})"
+    if dest.exists() and not dest.is_dir():
+        return "it exists and is not a directory"
+    return None
+
+
+def overwrite_refusal(dest: Path) -> str | None:
+    """Why ``--force`` may not DELETE the existing ``dest``, or None.
+
+    The allowlist: an EMPTY directory, or a directory carrying
+    ``EXPORT_MARKER_NAME``. A directory holding anything else — a foreign git
+    checkout, a downloads folder, a half-remembered path — is refused, so the
+    user (never this tool) decides when their own files go away.
+    """
+    if (dest / EXPORT_MARKER_NAME).is_file():
+        return None
+    try:
+        entries = sorted(p.name for p in dest.iterdir())
+    except OSError as exc:
+        return f"it cannot be listed ({exc})"
+    if not entries:
+        return None
+    preview = ", ".join(entries[:5]) + (", …" if len(entries) > 5 else "")
+    return (f"it holds {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
+            f"({preview}) and carries no {EXPORT_MARKER_NAME}, so it is not a tree "
+            "this exporter wrote")
 
 
 def _deny_reason(rel: str, tokens: list[str]) -> str | None:
@@ -290,6 +468,15 @@ def _run_guard(dest_root: Path, tokens: list[str]) -> int:
     code (0 = clean).
     """
     subprocess.run(["git", "init"], cwd=dest_root, check=True, capture_output=True, text=True)
+    # Keep the export marker out of the exported HISTORY. It is a local property
+    # of this directory ("a later --force run may replace me"), not content a
+    # published repo should carry, so it goes in .git/info/exclude — which is
+    # repository-local and never published — rather than the shipped .gitignore.
+    exclude = dest_root / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    with exclude.open("a", encoding="utf-8") as handle:
+        handle.write(f"\n# written by export_public.py; see {EXPORT_MARKER_NAME}\n"
+                     f"/{EXPORT_MARKER_NAME}\n")
     subprocess.run(["git", "add", "-A"], cwd=dest_root, check=True, capture_output=True, text=True)
 
     env = dict(os.environ)
@@ -351,8 +538,25 @@ def _print_manifest(dest_root: Path, copied: list[str], skipped: list[tuple[str,
 
 
 def export(dest: Path, git_init: bool, force: bool, strict: bool = False) -> int:
-    # Refuse to export from an UNARMED checkout. FIRST — before --force deletes
-    # the destination — so a refusal costs the caller nothing.
+    # Where the destination is decided. This runs before EVERY other gate: it is
+    # a pure path predicate (no writes, no subprocesses, no config required), so
+    # the most destructive mistake available — pointing --force at the overlay,
+    # the checkout, or your home directory — is refused even in a checkout that
+    # would fail the arming gate a few lines below.
+    dest = dest.resolve()
+    reason = forbidden_destination(dest)
+    if reason is not None:
+        print(f"error: refusing to export into {dest}:\n"
+              f"       {reason}.\n"
+              "       Choose a destination OUTSIDE this checkout — a path that does not\n"
+              "       exist yet, or an empty directory (`mktemp -d`). --force deletes only\n"
+              f"       an empty directory or one carrying {EXPORT_MARKER_NAME}.",
+              file=sys.stderr)
+        return 2
+
+    # Refuse to export from an UNARMED checkout. Still ahead of everything that
+    # touches the filesystem — above all the --force delete — so a refusal costs
+    # the caller nothing.
     #
     # The guard we run against the copied tree is armed through
     # ``JOBHUNT_PERSONAL_TOKENS``, which we set from the UNION below. A checkout
@@ -387,18 +591,25 @@ def export(dest: Path, git_init: bool, force: bool, strict: bool = False) -> int
               file=sys.stderr)
         return 2
 
-    dest = dest.resolve()
-    if dest == REPO_ROOT or dest in REPO_ROOT.parents:
-        print(f"error: refusing to export into the repo root or an ancestor: {dest}",
-              file=sys.stderr)
-        return 2
     if dest.exists():
         if not force:
             print(f"error: destination exists: {dest}\n"
                   "       pass --force to overwrite it.", file=sys.stderr)
             return 2
+        blocked = overwrite_refusal(dest)
+        if blocked is not None:
+            print(f"error: refusing to delete {dest}:\n"
+                  f"       {blocked}.\n"
+                  "       Export to a new directory, or delete this one yourself first —\n"
+                  "       this tool removes only empty directories and its own exports.",
+                  file=sys.stderr)
+            return 2
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
+    # Written BEFORE the copy, so an export that dies halfway (a leak-guard
+    # failure, a Ctrl-C) still leaves a destination that the next --force run can
+    # replace. ``_run_guard`` keeps it out of the exported git history.
+    (dest / EXPORT_MARKER_NAME).write_text(EXPORT_MARKER_TEXT, encoding="utf-8")
 
     # Resolve the REAL personal-identity tokens once (from the source checkout's
     # config.yaml + private/leak_tokens.txt); used for the copy-time denylist AND
@@ -451,7 +662,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--git-init", action="store_true",
                         help="git init + add -A, run the leak guard, and commit only if it passes")
     parser.add_argument("--force", action="store_true",
-                        help="overwrite --dest if it already exists")
+                        help="overwrite --dest if it already exists — only when it is "
+                             "EMPTY or is a previous export of this tool (it carries "
+                             f"{EXPORT_MARKER_NAME}); never the checkout, the private "
+                             "overlay, your home directory, or another git checkout")
     parser.add_argument("--strict", action="store_true",
                         help="refuse to export when any allowlisted path contributes "
                              "nothing (missing directory, untracked/absent file)")
