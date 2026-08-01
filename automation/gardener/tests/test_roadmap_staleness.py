@@ -52,7 +52,7 @@ class TempTree(unittest.TestCase):
     def report(self) -> str:
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = RS.run()
+            rc = RS.run(today=TODAY)
         self.assertEqual(rc, 0, "the routine must never fail a caller")
         return buf.getvalue()
 
@@ -71,7 +71,7 @@ class TestStaleness(TempTree):
         self.write("- **Last-updated**: 2020-01-01\n")
         buf = io.StringIO()
         with redirect_stdout(buf):
-            self.assertEqual(RS.run(), 0)
+            self.assertEqual(RS.run(today=TODAY), 0)
         self.assertIn("STALE", buf.getvalue())
 
     def test_the_boundary_is_the_declared_limit(self) -> None:
@@ -86,7 +86,9 @@ class TestStaleness(TempTree):
     def test_a_fresh_roadmap_says_current(self) -> None:
         self.write("- **Last-updated**: 2026-07-30\n")
         self.assertFalse(RS.analyze(today=TODAY)["stale"])
-        self.assertIn("current", self.report())
+        report = self.report()
+        self.assertIn("day(s) old", report, report)
+        self.assertNotIn("STALE", report, report)
 
     def test_an_absent_roadmap_is_not_an_error(self) -> None:
         """The published export ships no docs/roadmap/."""
