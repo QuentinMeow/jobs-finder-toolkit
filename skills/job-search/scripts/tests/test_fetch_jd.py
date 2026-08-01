@@ -529,6 +529,66 @@ class DigestBuilderTests(unittest.TestCase):
         self.assertIn("TITLE: Data Analyst", d)
         self.assertIn("no workplace/location keyword", d)
         self.assertIn("no visa/sponsorship sentence found", d)
+        self.assertIn("no compensation sentence found", d)
+
+    def test_required_yoe_is_located_with_the_parsed_value(self):
+        # analyze_job_metadata fills required_yoe from the JD body and
+        # assess_required_yoe turns a high-confidence minimum over the profile cap
+        # into a HARD drop — so the digest must carry both the parse and the line.
+        d = self._digest(JD_REMOTE_DENIAL)
+        self.assertIn("REQUIRED YOE (job_metadata.extract_required_yoe_details)", d)
+        self.assertIn("min=5", d)
+        yoe_block = d.split("REQUIRED-EXPERIENCE SENTENCES")[1].split(
+            "PARSED LOCATION")[0]
+        self.assertIn("5+ years of backend experience.", yoe_block)
+        # LOCATOR, not a verdict: no cap is applied here.
+        self.assertNotIn("no_match", d)
+
+    def test_missing_yoe_shows_a_placeholder(self):
+        d = self._digest(JD_HYBRID_METRO)
+        self.assertIn("min=None", d)
+        self.assertIn("no years-of-experience requirement stated", d)
+
+    def test_compensation_is_located_with_the_parsed_range(self):
+        jd = (
+            "# Senior Backend Engineer\n\n"
+            "Location: Remote (US)\n\n"
+            "## Compensation\n"
+            "The base salary range for this role is $160,000 - $210,000 per year.\n"
+            "We also offer equity and a 401(k) match.\n"
+        )
+        d = self._digest(jd)
+        self.assertIn("PARSED SALARY (job_metadata.extract_salary_range)", d)
+        self.assertIn("160000-210000 USD/year", d)
+        comp = d.split("COMPENSATION SENTENCES")[1]
+        self.assertIn("$160,000 - $210,000 per year", comp)
+        # Sentence-scoped: the unrelated benefits sentence is not dragged in.
+        self.assertNotIn("401(k)", comp)
+
+    def test_compensation_terms_are_word_anchored(self):
+        # "ote" (on-target earnings) is a SUBSTRING of "Remote"/"promote" — a
+        # substring match would drag every remote-work line into the pay section.
+        d = self._digest(JD_REMOTE_DENIAL)
+        comp = d.split("COMPENSATION SENTENCES")[1]
+        self.assertNotIn("fully remote team", comp)
+        self.assertIn("no compensation sentence found", comp)
+
+    def test_level_falls_back_to_the_jd_body_when_the_title_is_silent(self):
+        # Mirrors analyze_job_metadata: a silent title falls back to an explicit
+        # level phrase in the body, so the digest surfaces that read too.
+        jd = (
+            "# Software Engineer, Platform\n\n"
+            "Location: Remote (US)\n\n"
+            "This is a staff-level position on the platform team.\n"
+        )
+        d = self._digest(jd)
+        self.assertIn("LEVEL (job_metadata.classify_level on title): unknown", d)
+        self.assertIn("LEVEL FALLBACK (job_metadata.classify_level_from_jd_body): "
+                      "staff", d)
+
+    def test_no_level_fallback_line_when_the_title_resolves(self):
+        d = self._digest(JD_REMOTE_DENIAL)
+        self.assertNotIn("LEVEL FALLBACK", d)
 
     def test_digest_is_compact_vs_full_jd(self):
         # A long JD (repeated prose + many bullets) still yields a small, roughly
@@ -550,6 +610,26 @@ class DigestBuilderTests(unittest.TestCase):
         # Both gate signals still present despite the surrounding bulk.
         self.assertIn("San Francisco, CA (Hybrid)", d)
         self.assertIn("unable to provide visa sponsorship", d)
+
+    def test_digest_stays_bounded_when_every_section_is_saturated(self):
+        # A JD that repeats YOE and pay lines in every bullet must not let the two
+        # new sections unbound the digest — both cap and say so. (Such a dense JD
+        # can still digest LARGER than itself; company_roles.dump_jd measures that
+        # and passes the JD through verbatim instead — see its own tests.)
+        big = (
+            "# Senior Platform Engineer\n"
+            "Location: Austin, TX (Hybrid)\n\n"
+            + "\n".join(
+                f"- Track {i}: at least {i + 2} years of experience; the base salary "
+                f"range is ${100 + i},000 - ${200 + i},000 per year."
+                for i in range(30))
+            + "\nWe are unable to provide visa sponsorship for this role.\n"
+        )
+        d = fetch_jd.build_digest(big, jd_path="/x/JD.md",
+                                  byte_count=len(big.encode("utf-8")))
+        self.assertLess(len(d.encode("utf-8")), 6000)
+        self.assertIn(f"more than {fetch_jd._DIGEST_MAX_YOE_SENTENCES} sentences", d)
+        self.assertIn(f"more than {fetch_jd._DIGEST_MAX_COMP_SENTENCES} sentences", d)
 
 
 class DigestCliTests(unittest.TestCase):
