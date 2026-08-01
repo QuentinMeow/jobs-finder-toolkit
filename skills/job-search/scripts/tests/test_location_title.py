@@ -86,7 +86,8 @@ class WeirdLocationFormatTests(unittest.TestCase):
         self.assertNotIn("weird_location_format", assessment.review_reasons)
 
 
-def _posting(location, *, title="Senior Software Engineer", remote="", source="board"):
+def _posting(location, *, title="Senior Software Engineer", remote="",
+             source="board", description=""):
     return JobPosting(
         source=source,
         company="Example",
@@ -94,7 +95,47 @@ def _posting(location, *, title="Senior Software Engineer", remote="", source="b
         url="https://example.test/jobs/x",
         location=location,
         remote=remote,
+        description=description,
     )
+
+
+class TokenBoundaryGateTests(unittest.TestCase):
+    """The search gate must not drop a posting on a token matched mid-word.
+
+    ``location_ok`` is the hard filter: a ``no_match`` here removes the posting
+    from the run entirely, with nothing written anywhere. These four are the
+    shapes that were being removed (or wrongly kept) by an unanchored match.
+    """
+
+    def test_us_city_containing_a_country_name_survives_the_gate(self):
+        posting = _posting("Remote (Indianapolis)")
+        self.assertTrue(location_ok(posting, PROFILE))
+        self.assertNotEqual(
+            posting.filter_assessments["location"]["category"], "foreign")
+
+    def test_a_title_word_cannot_drop_a_us_remote_posting(self):
+        # "apac" inside "Capacity" / "turin" inside "Turing".
+        for title in ("Software Engineer, Capacity Planning",
+                      "Software Engineer, Turing Compiler Team"):
+            with self.subTest(title=title):
+                posting = _posting("Remote - US", title=title)
+                self.assertTrue(location_ok(posting, PROFILE))
+                self.assertEqual(
+                    posting.filter_assessments["location"]["decision"], "match")
+
+    def test_foreign_city_with_its_own_country_code_is_dropped(self):
+        posting = _posting("Bangalore, IN")
+        self.assertFalse(location_ok(posting, PROFILE))
+        self.assertEqual(
+            posting.filter_assessments["location"]["category"], "foreign")
+
+    def test_someone_elses_remote_work_does_not_make_a_role_remote(self):
+        posting = _posting(
+            "Columbus, OH",
+            description=("The job may also involve mentoring remote interns "
+                         "during the summer."))
+        self.assertFalse(location_ok(posting, PROFILE))
+        self.assertEqual(posting.workplace, "onsite")
 
 
 class PreferredRemoteWordTests(unittest.TestCase):
