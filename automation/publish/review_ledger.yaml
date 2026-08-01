@@ -1607,3 +1607,9 @@
     and in no CI workflow. The single narrowing is reconcile's roadmap AGE check moving to a
     report-only gardener routine, which is doc grooming, not a privacy gate, and the same
     change adds three new blocking failures.
+- commit: f307a407
+  reviewed_by: agent
+  date: 2026-07-31
+  files: 6
+  digest: sha256:11049cabab30b53a
+  finding: none

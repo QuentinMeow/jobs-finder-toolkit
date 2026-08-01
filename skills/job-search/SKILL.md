@@ -120,12 +120,12 @@ Every fetch also writes a pre-filter snapshot to `local/search_cache/` (gitignor
 freshness window, change top-k, or re-emit JSON after a search, re-filter — never re-fetch:**
 ```bash
 # reuses the snapshot, anchors posting age to its fetch time; refuses snapshots >6h old (--allow-stale)
-... --profile example --refilter latest --max-age-days 7 --top-k 60 --json-out /tmp/m.json
+... --profile example --refilter latest --max-age-days 7 --top-k 60 --json-out local/m.json
 ```
 Widen the freshness window stepwise this way. `--refilter` refuses fetch-affecting flags
 (`--stage`/`--aggregators`) — those need a real re-fetch. Pull one JSON field rather than dumping
 records, e.g. the top 5 URLs:
-`python -c "import json;print(*[r['url'] for r in json.load(open('/tmp/m.json'))][:5],sep='\n')"`
+`python -c "import json;print(*[r['url'] for r in json.load(open('local/m.json'))][:5],sep='\n')"`
 
 Common overrides (flags beat profile values):
 ```bash
@@ -134,7 +134,7 @@ Common overrides (flags beat profile values):
 ... --profile example --visa-policy require_positive    # only EXPLICIT sponsorship (stricter)
 ... --profile example --ai-native-only                 # hard-filter to AI-native / AI-transitioning employers
 ... --profile example --no-jobspy                      # company boards + keyless aggregators only
-... --profile example --json-out /tmp/matches.json       # machine-readable JSON (needed for handoff)
+... --profile example --json-out local/matches.json      # machine-readable JSON (needed for handoff)
 # exhaustive opt-in registry cohort: board-only, no top-K/per-company truncation
 ... --profile example --company-batches ai-expansion-01 --no-aggregators --all-matches \
     --json-out local/matches.json
@@ -198,13 +198,13 @@ folder then. Scaffold with `handoff.py` (needs `--json-out` from Step 2):
 ```bash
 # one posting -> one single-role folder
 .venv/bin/python skills/job-search/scripts/handoff.py \
-    --json /tmp/matches.json --select "rank 1"            # or --select "Company/Title"
+    --json local/matches.json --select "rank 1"            # or --select "Company/Title"
 # several roles at ONE company -> ONE multi-role folder (the default grouping)
 .venv/bin/python skills/job-search/scripts/handoff.py \
-    --json /tmp/matches.json --select "Acme Corp"          # or --select "rank 1,3,5"
+    --json local/matches.json --select "Acme Corp"          # or --select "rank 1,3,5"
 # whole shortlist -> one folder PER COMPANY (add --split only for divergent roles)
 .venv/bin/python skills/job-search/scripts/handoff.py \
-    --json /tmp/matches.json --all --report local/handoff-report.json
+    --json local/matches.json --all --report local/handoff-report.json
 ```
 `--all` (and any multi-posting `--select`) groups **one folder per company** after a live-folder/log
 duplicate preflight, continuing with an auditable per-company result; `--split` forces the old
