@@ -30,6 +30,7 @@ import hashlib
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 
 # Preferred-metro tokens. This module ships with NO built-in metros — the real
 # list is candidate-specific and injected at call time via ``config.location_policy``
@@ -62,6 +63,14 @@ _WORKPLACE_MARKER_WORDS = frozenset(
     for word in re.findall(r"[a-z0-9]+", marker)
 )
 
+# EVERY token list below is matched on WORD BOUNDARIES (``_token_pattern``), never
+# as a bare substring. A substring test over these lists fails in both directions
+# and this module has now been bitten by it three times: "ote" inside "remote",
+# "apac" inside "capacity", "india" inside "Indianapolis". So: a token here is a
+# whole word (or whole phrase), and a token that is only meaningful as a fragment
+# does not belong in a list — give it its own anchored regex, as ``_FOREIGN_ABBR_RE``
+# does for uk / eu.
+#
 # Remote signals. "hybrid" / "in-office" / "on-site" are deliberately NOT here —
 # a hybrid role in a specific non-preferred city still requires being in that city.
 # "distributed" is deliberately NOT a remote signal: a bare "Distributed" location
@@ -70,7 +79,7 @@ _WORKPLACE_MARKER_WORDS = frozenset(
 # (e.g. a "Distributed" tag on a Melbourne-only role). Such a tag is unverified —
 # it classifies as "unknown" (review manually) rather than a us_remote match.
 REMOTE_TOKENS = (
-    "remote", "work from home", "wfh", "fully remote", "anywhere",
+    "remote", "remotely", "work from home", "wfh", "fully remote", "anywhere",
     "worldwide", "global",
 )
 
@@ -113,6 +122,56 @@ _US_STATE_ABBR = {
     "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI",
     "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
 }
+# 26 of those abbreviations are ALSO ISO-3166 alpha-2 country codes, so a bare
+# two-letter code in a location field is not self-evidently a US signal:
+#   AL Albania    AR Argentina  AZ Azerbaijan  CA Canada     CO Colombia
+#   DE Germany    GA Gabon      ID Indonesia   IL Israel     IN India
+#   KY Cayman Is. LA Laos       MA Morocco     MD Moldova    ME Montenegro
+#   MN Mongolia   MO Macao      MS Montserrat  MT Malta      NC New Caledonia
+#   NE Niger      PA Panama     SC Seychelles  SD Sudan      TN Tunisia
+#   VA Vatican
+# ``Bangalore, IN`` and ``Indianapolis, IN`` are the SAME shape — trailing,
+# comma-delimited — so position cannot separate them. What separates them is
+# whether the rest of the same field already names the country the code stands
+# for; see ``_resolve_state_abbrs``.
+_STATE_COUNTRY_CODE_COLLISIONS = {
+    "AL", "AR", "AZ", "CA", "CO", "DE", "GA", "ID", "IL", "IN", "KY", "LA",
+    "MA", "MD", "ME", "MN", "MO", "MS", "MT", "NC", "NE", "PA", "SC", "SD",
+    "TN", "VA",
+}
+# Foreign place tokens -> the ISO code of the country they name, restricted to
+# the collision set above. When such a token appears in the SAME field as its own
+# code, the code corroborates a country the string already names and is therefore
+# a country code, not a state ("Bangalore, IN" -> India). A token naming a
+# DIFFERENT country never resolves the code — "Dublin, CA" (Dublin, California is
+# real) and "Milan, IN" (Milan, Indiana is real) stay contradictory and reach
+# review.
+_FOREIGN_TOKEN_COUNTRY_CODE = {
+    # Canada
+    "canada": "CA", "toronto": "CA", "vancouver": "CA", "montreal": "CA",
+    "quebec": "CA", "british columbia": "CA", "alberta": "CA",
+    "saskatchewan": "CA", "manitoba": "CA",
+    # Germany
+    "germany": "DE", "berlin": "DE", "munich": "DE", "hamburg": "DE",
+    "cologne": "DE", "frankfurt": "DE", "karlsruhe": "DE", "nuremberg": "DE",
+    "bremen": "DE", "stuttgart": "DE",
+    # India
+    "india": "IN", "bangalore": "IN", "bengaluru": "IN", "hyderabad": "IN",
+    "pune": "IN", "mumbai": "IN", "delhi": "IN", "chennai": "IN",
+    "gurugram": "IN", "gurgaon": "IN",
+    # Israel / Indonesia / Argentina / Colombia / Morocco / Panama
+    "israel": "IL", "tel aviv": "IL",
+    "indonesia": "ID", "jakarta": "ID",
+    "argentina": "AR", "colombia": "CO", "morocco": "MA", "panama": "PA",
+}
+# The codes whose FOREIGN reading is routinely written as a bare `City, XX` in
+# tech postings. When one of these is the ONLY geography in the string ("Remote -
+# CA", "IN"), neither reading is earned and the verdict is `review` — see
+# ``_bare_contested_code``. Every other collision above keeps its US-state
+# reading, because "Remote - VA" is Virginia and not the Vatican: a US job search
+# never sees the foreign reading of those codes, and inventing a review for them
+# would be noise with no recall to show for it.
+_CONTESTED_COUNTRY_CODES = {"CA", "DE", "IN", "IL"}
 # Non-preferred US hub cities -> a specific US office (on-site/hybrid) when not remote.
 _US_HUBS = {
     "san francisco", "bay area", "silicon valley", "mountain view", "palo alto",
@@ -121,12 +180,22 @@ _US_HUBS = {
     "boston", "cambridge", "austin", "dallas", "houston", "denver", "boulder",
     "chicago", "atlanta", "miami", "los angeles", "san diego", "portland",
     "phoenix", "raleigh", "durham", "pittsburgh", "philadelphia", "minneapolis",
-    "nashville", "salt lake", "washington, d", "livingston", "richardson",
+    "nashville", "salt lake", "washington, dc", "washington, d.c",
+    "livingston", "richardson",
     "sandy", "arlington", "seattle", "bellevue", "redmond", "kirkland",
     "tacoma", "everett",
 }
+# Every US place name this module knows, for the containment rule in
+# ``_foreign_matches``: a word boundary separates "India" from "Indianapolis",
+# but not "Mexico" from "New Mexico", where one whole place name CONTAINS
+# another. The longest place name wins.
+_US_PLACE_NAMES = tuple(sorted(set(_US_STATE_NAMES) | set(_US_HUBS)))
 _FOREIGN_TOKENS = (
-    "united kingdom", " uk", "uk)", "u.k", "london", "england", "scotland",
+    # uk / u.k / eu are NOT here: they are fragments, not words, and belong to
+    # the anchored `_FOREIGN_ABBR_RE` below (which already runs over the same
+    # text). A space-prefixed " uk" entry is exactly the kind of hand-rolled
+    # boundary this module no longer needs.
+    "united kingdom", "london", "england", "scotland",
     "ireland", "dublin", "germany", "berlin", "munich", "hamburg", "cologne",
     "frankfurt", "karlsruhe", "nuremberg", "bremen", "stuttgart", "canada",
     "toronto", "vancouver", "montreal", "france", "paris", "india",
@@ -139,7 +208,10 @@ _FOREIGN_TOKENS = (
     "israel", "tel aviv", "zurich", "geneva", "sweden", "stockholm", "denmark",
     "copenhagen", "romania", "bucharest", "philippines", "manila", "argentina",
     "colombia", "nigeria", "kenya", "new zealand", "vietnam", "indonesia",
-    "malaysia", "dubai", "abu dhabi", "nordic",
+    "malaysia", "dubai", "abu dhabi",
+    # Inflections get their OWN entry now that matching is whole-word: boards
+    # write both "Nordic" and "Nordics", and a prefix can no longer cover both.
+    "nordic", "nordics",
     # High-confidence foreign COUNTRY names surfaced by the live-snapshot audit.
     # Countries (not bare city names) are chosen deliberately: they are
     # unambiguous foreign scope and avoid the US-city name collisions that make a
@@ -159,9 +231,9 @@ _FOREIGN_TOKENS = (
     "british columbia", "alberta", "saskatchewan", "manitoba", "quebec",
 )
 
-# Short foreign abbreviations that need word-boundary matching (a bare "uk"/"eu"
-# substring would otherwise ride inside unrelated words, and a leading-space token
-# misses "UK remote" / "UK, ...").
+# Short foreign abbreviations. These live in their own anchored regex rather than
+# in `_FOREIGN_TOKENS` because they are two letters that occur inside ordinary
+# words; the boundary is the whole point of the entry.
 _FOREIGN_ABBR_RE = re.compile(r"\b(uk|u\.k\.?|eu)\b")
 
 MATCH_CATEGORIES = ("metro", "us_remote")
@@ -179,9 +251,25 @@ _REMOTE_JD_RULES = (
         r"\b(?:hub|office|location)s?\b.{0,120}\bor\s+remotely\b|"
         r"\bor\s+remotely\b.{0,120}\b"
         r"(?:united states|u\.?s\.?a?|north america|americas)\b", re.I | re.S)),
+    # "<role> can/may/could … remote" needs a verb that binds remote to THIS
+    # role. Without one the rule reduces to three common words in one paragraph
+    # and any JD sentence about somebody else's remote work grants remote work:
+    # "The job may also involve mentoring remote interns." The qualifier group
+    # used to carry a trailing `?`, and `\b…?\b` collapses to zero width, so the
+    # binding was optional — i.e. absent. Either a qualifying verb runs between
+    # the modal and "remote", or the modal is followed directly by "be (fully)
+    # remote"; the spans are tight enough to keep the three anchors in one
+    # clause. ("filled" is deliberately absent: "can be filled by a remote
+    # contractor" describes hiring, not where the job is done.)
     ("jd_role_can_be_remote", re.compile(
-        r"\b(?:role|position|job)\b.{0,180}\b(?:can|may|could)\b.{0,100}"
-        r"\b(?:held|based|performed|worked)?\b.{0,80}\bremot(?:e|ely)\b",
+        r"\b(?:role|position|job)\b.{0,80}\b(?:can|may|could)\b"
+        r"(?:"
+        r".{0,40}\b(?:held|based|perform(?:ed)?|work(?:ed|ing)?|done|"
+        r"locat(?:ed)?)\b.{0,40}\bremot(?:e|ely)\b"
+        r"|"
+        r"\s+(?:also\s+)?be\s+(?:fully\s+|entirely\s+|completely\s+|100%\s+)?"
+        r"remot(?:e|ely)\b"
+        r")",
         re.I | re.S)),
 )
 _HYBRID_JD_RULES = (
@@ -343,17 +431,119 @@ def _normalize(text: str | None) -> str:
     return t.strip()
 
 
+def _token_key(tokens) -> tuple[str, ...]:
+    """A hashable, order-stable cache key for a token list."""
+    if isinstance(tokens, tuple):
+        return tokens
+    return tuple(sorted(tokens))
+
+
+@lru_cache(maxsize=64)
+def _token_pattern(tokens: tuple[str, ...]):
+    """Compile ONE word-bounded alternation for a token list.
+
+    The boundary is ``(?<![a-z0-9]) … (?![a-z0-9])`` rather than ``\\b`` because
+    several tokens begin or end with punctuation — ``u.s.``, ``remote (us``,
+    ``washington, d.c`` — where ``\\b`` asserts about the wrong character. The
+    lookarounds treat every separator this module's normalizer keeps (space,
+    comma, dot, hyphen, slash, parenthesis) as a boundary, which is what a
+    location field actually uses.
+
+    Alternation is longest-first so a longer token is never shadowed by a
+    shorter one that prefixes it. One compiled pattern per list keeps the cost at
+    one scan per call rather than N substring scans, and the cache makes the
+    policy-supplied lists (metro, remote tokens) as cheap as the constants.
+    """
+    parts = sorted({str(t) for t in tokens if str(t).strip()},
+                   key=lambda t: (-len(t), t))
+    if not parts:
+        return None
+    return re.compile(r"(?<![a-z0-9])(?:"
+                      + "|".join(re.escape(p) for p in parts)
+                      + r")(?![a-z0-9])")
+
+
 def _has(tokens, nloc: str) -> bool:
-    return any(tok in nloc for tok in tokens)
+    pattern = _token_pattern(_token_key(tokens))
+    return bool(nloc and pattern is not None and pattern.search(nloc))
 
 
 def _has_us_state(nloc: str) -> bool:
-    return any(re.search(rf"\b{re.escape(s)}\b", nloc) for s in _US_STATE_NAMES)
+    return _has(_US_STATE_NAMES, nloc)
 
 
-def _has_state_abbr(original: str) -> bool:
-    return any(ab in _US_STATE_ABBR
-               for ab in re.findall(r"\b[A-Z]{2}\b", original or ""))
+def _foreign_matches(text: str) -> tuple[str, ...]:
+    """Foreign place tokens in ``text``, minus any swallowed by a US place name.
+
+    Word boundaries stop a token from riding inside a longer WORD ("india" in
+    "Indianapolis"). They do not stop one whole place NAME from sitting inside
+    another: "New Mexico" is a US state whose second word is a foreign country.
+    So a foreign hit whose span lies inside a US place name's span is not
+    foreign evidence — the longest place name wins.
+    """
+    pattern = _token_pattern(_FOREIGN_TOKENS + FOREIGN_REGIONS)
+    if not text or pattern is None:
+        return ()
+    us_pattern = _token_pattern(_US_PLACE_NAMES)
+    us_spans = [m.span() for m in us_pattern.finditer(text)] if us_pattern else []
+    hits = [
+        m.group(0) for m in pattern.finditer(text)
+        if not any(start <= m.start() and m.end() <= end
+                   for start, end in us_spans)
+    ]
+    return tuple(dict.fromkeys(hits))
+
+
+def _resolve_state_abbrs(
+    original: str, location_foreign_tokens,
+) -> tuple[bool, tuple[str, ...]]:
+    """Read the two-letter codes in a location as US states or country codes.
+
+    Returns ``(us_state_signal, contested_codes)``.
+
+    A code is read as a US state UNLESS the same field also names the country
+    that code stands for — ``Bangalore, IN`` names India, so ``IN`` is India's
+    code and supplies no US signal, while ``Indianapolis, IN`` names no country
+    and keeps Indiana. Only the LOCATION may resolve the code, never the title:
+    a title region ("Solutions Architect, Canada") is a coverage descriptor, and
+    letting it rewrite ``Sacramento, CA`` into Canada would drop a real US
+    posting — the exact failure direction this module exists to avoid.
+
+    ``contested_codes`` are the still-unresolved codes whose foreign reading is
+    plausible; the caller escalates to review when one of them is all the
+    geography there is.
+    """
+    codes = tuple(dict.fromkeys(
+        ab for ab in re.findall(r"\b[A-Z]{2}\b", original or "")
+        if ab in _US_STATE_ABBR))
+    if not codes:
+        return False, ()
+    # Only a code that actually collides with a state abbreviation can cancel a
+    # state signal; anything else was never read as a state to begin with.
+    named_countries = {
+        code for tok in location_foreign_tokens
+        if (code := _FOREIGN_TOKEN_COUNTRY_CODE.get(tok))
+        in _STATE_COUNTRY_CODE_COLLISIONS
+    }
+    unresolved = tuple(c for c in codes if c not in named_countries)
+    contested = tuple(c for c in unresolved if c in _CONTESTED_COUNTRY_CODES)
+    return bool(unresolved), contested
+
+
+def _bare_contested_code(nloc: str, contested: tuple[str, ...]) -> bool:
+    """Whether a contested code is the ONLY geography in the location.
+
+    ``Remote - CA`` is California or Canada and the string says nothing else;
+    ``Sacramento, CA`` names a place, so the code is corroborated enough to
+    read as a state. Workplace words carry no geography and are ignored.
+    """
+    if not contested:
+        return False
+    lowered = {c.lower() for c in contested}
+    return not [
+        word for word in re.findall(r"[a-z]+", nloc)
+        if word not in lowered and word not in _WORKPLACE_MARKER_WORDS
+    ]
 
 
 def _is_ambiguous_region_bucket(nloc: str) -> bool:
@@ -414,7 +604,7 @@ def _workplace_assessment(
     # A location field that is ONLY a workplace word states a mode with no place
     # attached, so it is a board-level tag rather than a role-level obligation.
     bare_workplace_tag = _is_workplace_word_only(nloc)
-    loc_hybrid = "hybrid" in nloc
+    loc_hybrid = _has(("hybrid",), nloc)
     loc_remote = _has(REMOTE_TOKENS, nloc)
     remote_hits = _rule_hits(description, _REMOTE_JD_RULES)
     hybrid_hits = _rule_hits(description, _HYBRID_JD_RULES)
@@ -517,14 +707,17 @@ def assess_location(
 
     workplace, confidence, evidence, review = _workplace_assessment(
         original, description, workplace_hint or "", hint_trusted)
-    foreign = (_has(_FOREIGN_TOKENS, context) or _has(FOREIGN_REGIONS, context)
+    foreign = (bool(_foreign_matches(context))
                or _FOREIGN_ABBR_RE.search(context) is not None)
+    # Only the location may resolve a two-letter code (see _resolve_state_abbrs).
+    state_abbr, contested_codes = _resolve_state_abbrs(
+        original, _foreign_matches(nloc))
     us = (_has(us_remote_regions, nloc) or _has_us_state(nloc)
-          or _has(_US_HUBS, nloc) or _has_state_abbr(original)
+          or _has(_US_HUBS, nloc) or state_abbr
           or re.search(r"\bus\b", nloc) is not None)
     preferred = _has(metro, nloc)
     has_specific_us_office = (_has(_US_HUBS, nloc) or _has_us_state(nloc)
-                              or _has_state_abbr(original))
+                              or state_abbr)
     # At this point evidence contains workplace evidence only; geographic
     # evidence is appended below. A non-empty location otherwise defaults to an
     # inferred onsite workplace, which is not itself an explicit signal and must
@@ -581,6 +774,15 @@ def assess_location(
             # `unclassified_location`: the fix is to read the posting, not to
             # widen the token lists.
             review.append("workplace_tag_without_geography")
+
+    # A two-letter code that is both a US state and a country code, with nothing
+    # else in the field to corroborate either reading, is genuinely undecidable:
+    # "Remote - CA" is California or Canada. Say so instead of picking one — a
+    # confident wrong pick either hides a US role or presents a foreign one as
+    # eligible. (A string that ALSO carries foreign scope is already a
+    # mixed-scope review below, so this only fires where the code stands alone.)
+    if not foreign and _bare_contested_code(nloc, contested_codes):
+        review.append("ambiguous_state_or_country_code")
 
     # Definitively foreign-only geography dominates any internal workplace
     # remote/hybrid/onsite tension: the role is out of a US-only search either

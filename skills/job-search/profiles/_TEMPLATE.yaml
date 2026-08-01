@@ -25,7 +25,7 @@ keywords:
   negative: []             # reduce score for honest mis-fits
 
 location:
-  preferred: [remote]      # substring match against posting location
+  preferred: [remote]      # whole-word match against posting location
   allow_remote: true
   us_only: true            # keep only US-based / (non-foreign) remote roles; set false to allow global
   require_match: false     # true = hard-filter to ONLY preferred cities / remote

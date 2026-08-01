@@ -597,3 +597,117 @@ variants:
       category: us_remote
       workplace: remote
       evidence_contains: [jd_remote_over_bare_workplace_tag]
+
+  - id: location-us-city-containing-a-country-name
+    domain: location
+    # "india" used to match inside "Indianapolis", so a plain US city classified
+    # foreign and the posting was dropped at the search stage with no review
+    # reason. Every token list is matched on word boundaries now.
+    input:
+      title: Software Engineer
+      location: Remote (Indianapolis)
+      workplace_hint: unknown
+      description: Build reliable distributed services.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+
+  - id: location-title-word-cannot-manufacture-a-foreign-scope
+    domain: location
+    # The title joins the foreign-scope context, so "apac" inside "Capacity"
+    # demoted a clean US-remote posting to a mixed-scope review.
+    input:
+      title: Software Engineer, Capacity Planning
+      location: Remote - US
+      workplace_hint: unknown
+      description: Build reliable distributed services.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+
+  - id: location-foreign-city-with-its-own-country-code
+    domain: location
+    # 26 US state abbreviations are also ISO country codes. "IN" here
+    # corroborates the country the same field already names, so it is India's
+    # code and supplies no US signal.
+    input:
+      title: Software Engineer
+      location: Bangalore, IN
+      workplace_hint: unknown
+      description: Build reliable distributed services.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: foreign
+
+  - id: location-us-city-with-a-colliding-state-code
+    domain: location
+    # Same shape, opposite reading: nothing here names India, so "IN" is
+    # Indiana and the posting is a real (non-preferred) US office.
+    input:
+      title: Software Engineer
+      location: Indianapolis, IN
+      workplace_hint: unknown
+      description: Build reliable distributed services.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: other_us
+
+  - id: location-contested-country-code-alone-is-undecidable
+    domain: location
+    # California or Canada — the field says nothing else. Neither verdict is
+    # earned, so the posting is preserved for a human instead.
+    input:
+      title: Software Engineer
+      location: Remote - CA
+      workplace_hint: unknown
+      description: Build reliable distributed services.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [ambiguous_state_or_country_code]
+
+  - id: location-third-party-remote-mention-is-not-a-grant
+    domain: location
+    # "<role> can/may/could ... remote" needs a verb binding remote to THIS
+    # role; without one, a sentence about someone else's remote work turned an
+    # onsite posting into a US-remote match.
+    input:
+      title: Software Engineer
+      location: Columbus, OH
+      workplace_hint: unknown
+      description: >-
+        The job may also involve mentoring remote interns during the summer.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: other_us
+      workplace: onsite

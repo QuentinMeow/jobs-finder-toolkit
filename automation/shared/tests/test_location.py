@@ -20,6 +20,154 @@ _POLICY = {
 }
 
 
+class TokenBoundaryTests(unittest.TestCase):
+    """No keyword list may match INSIDE a longer word.
+
+    Every list in this module is a bag of place words scanned against short,
+    noisy strings. A bare substring test therefore fails in both directions: it
+    invents a foreign posting out of a US city ("india" inside "Indianapolis")
+    and a US posting out of nothing ("usa" inside "thousand"). The drop
+    direction is the serious half — it hides a real opening and tells nobody.
+    """
+
+    def test_us_city_containing_a_country_name_is_not_foreign(self):
+        for raw in ("Indianapolis", "Indianapolis Metro Area",
+                    "Remote (Indianapolis)"):
+            with self.subTest(raw=raw):
+                result = assess_location(raw, _POLICY)
+                self.assertNotEqual(result.category, "foreign")
+                self.assertNotEqual(result.decision, "no_match")
+                self.assertNotIn("foreign_scope", result.evidence)
+
+    def test_us_state_containing_a_country_name_keeps_its_us_scope(self):
+        # "india" inside "Indiana", "mexico" inside "New Mexico": both used to
+        # collide with the foreign list and land on mixed-scope review.
+        for raw in ("Remote - Indiana", "Remote - New Mexico"):
+            with self.subTest(raw=raw):
+                result = assess_location(raw, _POLICY)
+                self.assertEqual(result.category, "us_remote")
+                self.assertEqual(result.decision, "match")
+                self.assertNotIn(
+                    "mixed_us_foreign_scope", result.review_reasons)
+
+    def test_a_title_word_cannot_manufacture_a_foreign_scope(self):
+        # The title joins the foreign-scope context, so "apac" inside "Capacity"
+        # and "turin" inside "Turing" used to demote a clean US posting.
+        for title in ("Software Engineer, Capacity Planning",
+                      "Software Engineer, Turing Compiler Team"):
+            with self.subTest(title=title):
+                result = assess_location("Remote - US", _POLICY, title=title)
+                self.assertEqual(result.category, "us_remote")
+                self.assertEqual(result.decision, "match")
+                self.assertNotIn(
+                    "mixed_us_foreign_scope", result.review_reasons)
+
+    def test_a_us_signal_may_not_ride_inside_a_word_either(self):
+        # "usa" inside "thoUSAnd" manufactured `broad_us_scope` (and a match)
+        # for a string carrying no US signal at all.
+        result = assess_location("Thousand Oaks", _POLICY)
+        self.assertNotIn("broad_us_scope", result.evidence)
+        self.assertEqual(result.decision, "review")
+
+
+class StateAbbreviationVersusCountryCodeTests(unittest.TestCase):
+    """26 US state abbreviations are also ISO-3166 country codes.
+
+    ``Bangalore, IN`` and ``Indianapolis, IN`` are the same shape, so position
+    cannot separate them. What separates them is whether the rest of the SAME
+    field already names the country the code stands for.
+    """
+
+    def test_foreign_city_with_its_own_country_code_is_foreign(self):
+        for raw in ("Bangalore, IN", "Berlin, DE", "Toronto, CA",
+                    "Tel Aviv, IL", "Munich, DE", "Mumbai, IN (Remote)"):
+            with self.subTest(raw=raw):
+                result = assess_location(raw, _POLICY)
+                self.assertEqual(result.category, "foreign")
+                self.assertEqual(result.decision, "no_match")
+
+    def test_us_city_with_the_same_code_keeps_its_us_reading(self):
+        onsite = assess_location("Indianapolis, IN", _POLICY)
+        self.assertEqual(onsite.category, "other_us")
+        remote = assess_location("Remote - Indianapolis, IN", _POLICY)
+        self.assertEqual(remote.category, "us_remote")
+        self.assertEqual(remote.decision, "match")
+
+    def test_a_code_is_only_resolved_by_its_own_field(self):
+        # The code sits in the location, so only the location may resolve it. A
+        # foreign country in the TITLE is a coverage descriptor and must not
+        # turn a US state code into a country code and drop the posting.
+        result = assess_location(
+            "Sacramento, CA", _POLICY, title="Solutions Architect, Canada")
+        self.assertNotEqual(result.decision, "no_match")
+        self.assertIn("mixed_us_foreign_scope", result.review_reasons)
+
+    def test_a_city_shared_by_both_countries_stays_undecided(self):
+        # Vancouver WA and Vancouver BC are both real. The code decides it when
+        # it corroborates the country; otherwise a human does.
+        canada = assess_location("Vancouver, CA", _POLICY)
+        self.assertEqual(canada.category, "foreign")
+        shared = assess_location("Vancouver, WA", _POLICY)
+        self.assertEqual(shared.decision, "review")
+        self.assertIn("mixed_us_foreign_scope", shared.review_reasons)
+
+    def test_a_contested_code_alone_is_undecidable(self):
+        # Nothing but a code that reads as a state AND as a country: neither
+        # verdict is earned, so neither is given.
+        for raw in ("Remote - CA", "Remote (DE)", "IN"):
+            with self.subTest(raw=raw):
+                result = assess_location(raw, _POLICY)
+                self.assertEqual(result.decision, "review")
+                self.assertIn("ambiguous_state_or_country_code",
+                              result.review_reasons)
+
+    def test_a_named_city_or_an_uncontested_code_is_decided(self):
+        for raw in ("Remote - Sacramento, CA", "Remote - WA", "Remote - US, CA"):
+            with self.subTest(raw=raw):
+                result = assess_location(raw, _POLICY)
+                self.assertEqual(result.decision, "match")
+                self.assertNotIn("ambiguous_state_or_country_code",
+                                 result.review_reasons)
+
+
+class RemoteGrantQualifierTests(unittest.TestCase):
+    """"can/may/could … remote" needs a verb binding remote to THIS role."""
+
+    def test_someone_elses_remote_work_is_not_a_remote_grant(self):
+        for description in (
+            "The job may also involve mentoring remote interns during the "
+            "summer.",
+            "The role may require you to collaborate with remote teams across "
+            "several time zones.",
+            "This position can be filled by a remote contractor agency.",
+        ):
+            with self.subTest(description=description[:40]):
+                result = assess_location(
+                    "Columbus, OH", _POLICY, description=description)
+                self.assertNotIn("jd_role_can_be_remote", result.evidence)
+                self.assertEqual(result.workplace, "onsite")
+                self.assertEqual(result.category, "other_us")
+
+    def test_genuine_remote_grants_still_read_as_remote(self):
+        for description in (
+            "This role can be performed remotely from anywhere in the United "
+            "States.",
+            "This position may be based remotely.",
+            "This role can be fully remote.",
+            "The job can be done remotely.",
+            "This position can be held remotely.",
+            "This role may be worked remotely.",
+            "This role, which reports to the Director of Platform "
+            "Engineering, can be performed remotely.",
+        ):
+            with self.subTest(description=description[:40]):
+                result = assess_location(
+                    "Columbus, OH", _POLICY, description=description)
+                self.assertIn("jd_role_can_be_remote", result.evidence)
+                self.assertEqual(result.workplace, "remote")
+                self.assertEqual(result.decision, "match")
+
+
 class DistributedTagTests(unittest.TestCase):
     """A bare 'Distributed' location tag is unverified, not a US-remote match."""
 

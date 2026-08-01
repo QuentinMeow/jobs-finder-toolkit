@@ -301,11 +301,11 @@ def _load_digest_helpers():
     )
     # Foreign is the decisive NO-MATCH location signal and is often stated only in
     # prose / a title / an "Available Locations" bullet, so reuse location.py's OWN
-    # foreign place names — but match them on WORD BOUNDARIES here. location.py
-    # substring-matches these against short location strings; over full JD prose a
-    # substring match false-fires ("apac" in "capacity", "india" in "Indiana",
-    # "paris" in "comparison"), so the digest anchors them as whole words. Short/
-    # punctuated abbreviations (uk / eu) stay with location's own _FOREIGN_ABBR_RE.
+    # foreign place names, anchored as whole words ("apac" in "capacity", "india"
+    # in "Indiana", "paris" in "comparison" are all false fires). location.py now
+    # anchors the same lists itself; this pattern stays because it runs
+    # case-insensitively over raw, un-normalized JD prose. Short/punctuated
+    # abbreviations (uk / eu) stay with location's own _FOREIGN_ABBR_RE.
     foreign_words = sorted(
         {t.strip() for t in (_FOREIGN_TOKENS + FOREIGN_REGIONS)
          if re.fullmatch(r"[a-z][a-z ]{2,}", t.strip())},
