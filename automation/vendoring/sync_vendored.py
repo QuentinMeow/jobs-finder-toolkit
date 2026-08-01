@@ -50,6 +50,14 @@ TARGETS: dict[str, list[str]] = {
         "skills/application-tracker/scripts/_vendor/location.py",
         "skills/job-search/scripts/_vendor/location.py",
     ],
+    # ONE copy, on purpose. The profile's '## Skills' vocabulary is read by the
+    # resume-writer's check.py / build_tailoring_card.py (this copy) and by
+    # automation/gardener/skill_drift.py (the canonical file, imported directly
+    # as repo-root maintenance tooling). Those two carried separate regexes whose
+    # section boundaries had drifted apart; no other skill parses the profile.
+    "automation/shared/profile_skills.py": [
+        "skills/resume-writer/scripts/_vendor/profile_skills.py",
+    ],
     "automation/shared/job_metadata.py": [
         "skills/resume-writer/scripts/_vendor/job_metadata.py",
         "skills/application-tracker/scripts/_vendor/job_metadata.py",

@@ -26,7 +26,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
@@ -40,70 +39,14 @@ try:
 except ImportError:  # pragma: no cover
     config = C.config
 
-# Split a comma-separated skill line while keeping parenthesized groups intact
-# ("AWS (Lambda, SQS, SNS)" stays one token). Mirrors check.py's _split_items.
-_ITEM_SPLIT_RE = re.compile(r",\s*(?![^()]*\))")
-# The profile's canonical vocabulary lives under the '## Skills' section.
-_SKILLS_SECTION_RE = re.compile(r"^## Skills\s*$(.*?)(?=^## |\Z)", re.M | re.S)
-_PAREN_RE = re.compile(r"(.+?)\s*\(([^()]*)\)")
-
-
-def _norm(text: str) -> str:
-    """Lowercase + whitespace-collapsed form used to compare skill spellings."""
-    return re.sub(r"\s+", " ", str(text or "").strip()).lower()
-
-
-def _split_items(line: str) -> list[str]:
-    return [t.strip() for t in _ITEM_SPLIT_RE.split(line) if t.strip()]
-
-
-def _expand_keys(token: str) -> set[str]:
-    """Normalized spellings a canonical token should recognize.
-
-    A plain token maps to itself; a nested "Base (a, b)" token also recognizes the
-    base, each member, and "base member" (mirroring check.py's _skill_keys), so a
-    baseline "AWS" or "AWS Lambda" is not flagged against a canonical
-    "AWS (Lambda, SQS, SNS)".
-    """
-    norm = _norm(token)
-    if not norm:
-        return set()
-    keys = {norm}
-    m = _PAREN_RE.fullmatch(norm)
-    if m:
-        base = m.group(1).strip()
-        members = [x.strip() for x in re.split(r"[,/]", m.group(2)) if x.strip()]
-        if base:
-            keys.add(base)
-        for member in members:
-            keys.add(member)
-            if base:
-                keys.add(f"{base} {member}")
-    return keys
-
-
-def canonical_keys(profile_text: str) -> set[str]:
-    """Canonical skill spellings from the profile's '## Skills' section.
-
-    Collects every bullet token under the section (its Approved / Weak / Never
-    subsections), so the returned set is the full canonical vocabulary.
-    """
-    m = _SKILLS_SECTION_RE.search(profile_text or "")
-    if not m:
-        return set()
-    keys: set[str] = set()
-    for line in m.group(1).splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("-"):
-            continue
-        stripped = stripped.lstrip("-").strip()
-        if not stripped or stripped.startswith("("):
-            continue
-        if ":" in stripped:
-            stripped = stripped.split(":", 1)[1]
-        for tok in _split_items(stripped):
-            keys.update(_expand_keys(tok))
-    return keys
+# The profile's '## Skills' vocabulary is parsed in exactly ONE place. This module
+# and the render-time gate (skills/resume-writer/scripts/check.py, through its
+# vendored copy) used to carry their own section regexes, and the two boundaries
+# differed — check.py's lacked the ``\Z`` alternative, so it read an EMPTY
+# vocabulary from any profile whose '## Skills' was the last '##' section while
+# this routine reported the same bytes as fine. See automation/shared/profile_skills.py.
+from profile_skills import (canonical_keys,  # noqa: E402,F401  (re-exported)
+                            norm_spelling as _norm, split_items as _split_items)
 
 
 def baseline_tokens(baseline_text: str) -> list[tuple[str, str]]:

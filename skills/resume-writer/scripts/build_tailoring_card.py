@@ -66,6 +66,13 @@ for _p in (_HERE, _HERE / "_vendor"):
         sys.path.insert(0, str(_p))
 
 import config  # noqa: E402  (import after sys.path bootstrap, by design)
+# One reader for the profile's '## Skills' boundary, shared with check.py's gate
+# and the gardener's skill-drift report (automation/shared/profile_skills.py).
+# This file used to locate the section with its own line scan, so a profile
+# heading the three disagreed about would put a DIFFERENT vocabulary in the card
+# than the render gate enforces — including a silently empty Never blocklist,
+# which this card is required to carry verbatim and complete.
+from profile_skills import skills_section, subsection_bullets  # noqa: E402
 from resume_schema import ResumeSchemaError, normalize_resume  # noqa: E402
 
 CEILING_BYTES = 8192          # ~2k tokens target ceiling for the card
@@ -147,24 +154,12 @@ def _section(md: str, heading_prefix: str) -> list[str]:
 
 
 def _parse_skills(profile_md: str) -> dict[str, list[str]]:
-    """Return raw bullet lines for the Approved / Weak / Never lists in ``## Skills``."""
-    out: dict[str, list[str]] = {"Approved": [], "Weak": [], "Never": []}
-    in_skills = False
-    current: str | None = None
-    for line in profile_md.splitlines():
-        if line.startswith("## "):
-            in_skills = line.strip().lower().startswith("## skills")
-            current = None
-            continue
-        if not in_skills:
-            continue
-        if line.startswith("### "):
-            head = line[4:].strip().lower()
-            current = next((k for k in out if head.startswith(k.lower())), None)
-            continue
-        if current and line.lstrip().startswith("- "):
-            out[current].append(line.rstrip())
-    return out
+    """Raw bullet lines for the Approved / Weak / Never lists in ``## Skills``.
+
+    Thin wrapper over the shared reader so the card, the render gate and the
+    gardener all find the section by the same rule.
+    """
+    return subsection_bullets(profile_md)
 
 
 _NUM_PATTERNS = [
@@ -358,17 +353,23 @@ def build_card(profile_path: Path, baseline_path: Path, story_dir: Path,
         L.append(", ".join(key_nums))
         L.append("")
 
+    # An empty list because the section was NOT FOUND is a different fact from an
+    # empty list the profile actually declares — and on the Never BLOCKLIST the
+    # difference matters, so the card never renders the two the same way.
+    empty = ("- (NOT FOUND — this profile has no `## Skills` section, so this card "
+             "carries NO vocabulary; treat it as unread, not as permissive)"
+             if skills_section(profile_md) is None else "- (none listed)")
     L.append("## Skills gate")
     L.append("")
     L.append("**Approved** (use freely):")
-    L.extend(skills["Approved"] or ["- (none listed)"])
+    L.extend(skills["Approved"] or [empty])
     L.append("")
     L.append("**Weak** (include ONLY when a JD explicitly names the term):")
-    L.extend(skills["Weak"] or ["- (none listed)"])
+    L.extend(skills["Weak"] or [empty])
     L.append("")
     L.append("**Never** — BLOCKLIST. These must NEVER appear anywhere on the resume "
              "(verbatim and complete; a blocklist is never summarized):")
-    L.extend(skills["Never"] or ["- (none listed)"])
+    L.extend(skills["Never"] or [empty])
     L.append("")
 
     L.append("## Story-bank digest")

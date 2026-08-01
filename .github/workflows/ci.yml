@@ -67,9 +67,12 @@ jobs:
       # `libreoffice-writer` runs headless and is enough to convert the example
       # resume + cover-letter DOCX to PDF, while being much lighter than the full
       # suite. With it installed, the example render below runs WITHOUT --no-pdf, so
-      # check.py's one-page PDF validation also runs. (If you ever need to drop the
-      # LibreOffice install to speed CI up, add --no-pdf to the render step — that
-      # skips PDF creation and check.py auto-skips the PDF page-count check.)
+      # check.py's one-page PDF validation also runs. Do NOT drop this install to
+      # speed CI up without also adding --no-pdf to the render step: a render that
+      # asks for a PDF and gets none now FAILS (the PDF gates report NOT INSPECTED
+      # rather than passing silently), so the step would go red. --no-pdf keeps it
+      # green but converts the six PDF gates into a reported NOT RUN — CI would
+      # stop checking that the example resume is one page.
       - name: Install LibreOffice (DOCX -> PDF for the example render)
         run: sudo apt-get update && sudo apt-get install -y libreoffice-writer
 

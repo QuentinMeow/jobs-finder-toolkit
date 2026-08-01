@@ -19,6 +19,10 @@ correctly-formatted variant of the approved baseline resume:
 - Bullet/title lengths bounded so nothing wraps past 2 lines.
 - Rendered PDF must be exactly one page with extractable text AND fill the page —
   a large blank band at the bottom fails, so the resume never looks unfinished.
+  A PDF that is absent or unreadable is never a silent skip: the gates report
+  "PDF NOT INSPECTED" and FAIL, unless --no-pdf declared a DOCX-only draft (then
+  they report NOT INSPECTED and warn). No run prints an unqualified
+  "all checks passed" over a PDF nothing looked at.
 - Cover letters map one-to-one to JDs: one bundled ..._Application_<role>.txt per
   role in meta.yaml (a `jobs:` list or the single top-level `role`). Each COVER LETTER
   section must read as professional prose: a salutation and sign-off, at least two
@@ -29,6 +33,7 @@ Usage (accepts the app folder, or the source/tailored.yaml path):
     python skills/resume-writer/scripts/check.py applications/6_drafted/<slug>/
     python skills/resume-writer/scripts/check.py applications/6_drafted/<slug>/source/tailored.yaml
     python skills/resume-writer/scripts/check.py applications/6_drafted/<slug>/source/tailored.yaml --pdf "applications/6_drafted/<slug>/<RESUME_STEM>.pdf"
+    python skills/resume-writer/scripts/check.py applications/6_drafted/<slug>/ --no-pdf
 
 Exit code 0 = all checks pass, 1 = at least one failure.
 render.py runs these checks automatically after rendering.
@@ -63,6 +68,16 @@ from job_metadata import APPLICATION_SCHEMA_VERSION, validate_meta
 from layout import (SOURCE_DIRNAME, _stem, application_dir,  # noqa: F401  (re-exported)
                     application_roles, compose_stem, find_jd_files, meta_path,
                     slugify_label, source_dir, tailored_path)
+# The profile's '## Skills' vocabulary has exactly one reader (vendored here).
+# It used to be parsed by a private regex in this file AND another in
+# automation/gardener/skill_drift.py; the two boundaries differed, and this
+# file's copy silently returned an EMPTY vocabulary — disarming
+# check_never_skills — whenever '## Skills' was the profile's last '##'
+# section. See automation/shared/profile_skills.py for the full account.
+# parse_skill_lists is re-exported: skills_diff.py imports check.parse_skill_lists.
+from profile_skills import (parse_skill_lists,  # noqa: F401  (re-exported)
+                            skills_section)
+from profile_skills import split_items as _split_items
 from resume_schema import ResumeSchemaError, normalize_resume
 
 # Baseline + profile locations now come from config (config.yaml holds the real
@@ -105,6 +120,20 @@ LOCKED_EMPLOYER_FIELDS = ("company", "role", "dates", "location")
 # the content genuinely overflows one page.
 RESUME_BOTTOM_BLANK_WARN_IN = 1.1     # warn: a little sparse at the bottom
 RESUME_BOTTOM_BLANK_FAIL_IN = 1.5     # fail: clearly too blank at the bottom
+
+# ── PDF gates (what is lost when no PDF is inspected) ─────
+# Named, not counted in prose, so the "NOT INSPECTED" message below always lists
+# exactly the gates check_pdf runs. AGENTS.md puts "one-page PDF" among the
+# mandatory hard gates, so a run that never opened a PDF must SAY it did not —
+# it may never print an unqualified "all checks passed".
+PDF_GATE_NAMES = (
+    "exactly one page",
+    "extractable text",
+    "candidate name present",
+    "every employer company/role present",
+    "every project title present",
+    "bottom-of-page fill",
+)
 
 # ── Cover-letter rules (enforced on the bundled Application .txt) ──────────
 # The cover letter must read as professional, full-sentence prose — never
@@ -180,38 +209,6 @@ def parse_profile_project_owners(profile_text: str) -> dict[tuple[str, str], set
         if current and match:
             owners[current].add(_norm(match.group(2)))
     return owners
-
-
-def _split_items(line: str) -> list:
-    """Split a comma-separated skill line, keeping parenthesized groups intact."""
-    return [t.strip() for t in re.split(r",\s*(?![^()]*\))", line) if t.strip()]
-
-
-def parse_skill_lists(profile_text: str) -> tuple:
-    """Parse (approved, weak, never) skill token lists from the '## Skills' section.
-
-    The section has '### Approved', '### Weak', '### Never' subsections whose
-    bullet lines look like '- Label: item, item, item (a, b), item'.
-    """
-    m = re.search(r"^## Skills\s*$(.*?)(?=^## )", profile_text, re.M | re.S)
-    section = m.group(1) if m else ""
-
-    def sub_tokens(header):
-        mm = re.search(rf"^### {header}\b[^\n]*\n(.*?)(?=^### |\Z)",
-                       section, re.M | re.S)
-        if not mm:
-            return []
-        tokens = []
-        for line in mm.group(1).splitlines():
-            line = line.strip().lstrip("-").strip()
-            if not line or line.startswith("("):  # placeholder/comment lines
-                continue
-            if ":" in line:
-                line = line.split(":", 1)[1]
-            tokens.extend(_split_items(line))
-        return tokens
-
-    return sub_tokens("Approved"), sub_tokens("Weak"), sub_tokens("Never")
 
 
 class Checker:
@@ -669,12 +666,16 @@ def _bottom_blank_inches(page) -> float | None:
     return min(ys) / 72.0
 
 
-def check_pdf(c: Checker, pdf_path: Path, data: dict):
+def check_pdf(c: Checker, pdf_path: Path, data: dict) -> bool:
+    """Run the PDF gates. Returns False if the PDF could not be inspected at all.
+
+    The return value is what lets ``run_checks`` keep its summary honest: a run
+    that never opened the PDF must not print an unqualified success line.
+    """
     try:
         from pypdf import PdfReader
     except ImportError:
-        c.warn("pypdf not installed — skipping PDF checks (pip install pypdf)")
-        return
+        return False          # the caller reports it; see _report_uninspected_pdf
     reader = PdfReader(str(pdf_path))
     if len(reader.pages) != 1:
         c.fail(f"PDF is {len(reader.pages)} pages — must be exactly 1. "
@@ -710,12 +711,38 @@ def check_pdf(c: Checker, pdf_path: Path, data: dict):
                 c.warn(f"Resume is a little sparse at the bottom (~{gap:.1f}in trailing "
                        "whitespace); consider lengthening bullets so the page fills more fully "
                        "(keep all projects).")
+    return True
+
+
+def _report_uninspected_pdf(c: Checker, reason: str, fix: str, pdf_required: bool):
+    """Record that the PDF gates did not run — as a FAIL unless opted out of.
+
+    ``pdf_required`` is the difference between an ENVIRONMENT failure and a
+    DELIBERATE one. Rendering without ``--no-pdf`` on a machine with no
+    DOCX->PDF converter asks for the full pipeline and silently does not get it,
+    so the mandatory one-page gate never runs: that is a FAIL. Passing
+    ``--no-pdf`` states the intent up front, so it is a loud WARN and exit 0 —
+    but never an unqualified "all checks passed".
+    """
+    head = (f"PDF NOT INSPECTED — {reason}, so the {len(PDF_GATE_NAMES)} PDF gates "
+            f"did NOT run ({'; '.join(PDF_GATE_NAMES)}). ")
+    if pdf_required:
+        c.fail(head + fix)
+    else:
+        c.warn(head + "This resume's page count is UNVALIDATED — re-render with "
+                      "PDF conversion before sending it anywhere.")
 
 
 def run_checks(yaml_path: Path, pdf_path: Path | None = None,
                baseline_path: Path = DEFAULT_BASELINE,
-               profile_path: Path = DEFAULT_PROFILE) -> bool:
-    """Run all checks. Prints results; returns True if everything passed."""
+               profile_path: Path = DEFAULT_PROFILE,
+               pdf_required: bool = True) -> bool:
+    """Run all checks. Prints results; returns True if everything passed.
+
+    ``pdf_required`` (default True) makes an uninspected PDF a FAIL. Set it False
+    only where the CALLER declared it did not want a PDF (``render.py --no-pdf``,
+    ``check.py --no-pdf``); the gates are still reported as NOT RUN either way.
+    """
     c = Checker()
     try:
         with open(yaml_path) as f:
@@ -762,6 +789,11 @@ def run_checks(yaml_path: Path, pdf_path: Path | None = None,
         c.fail(f"Could not read job description: {exc}")
         jd_text = None
     approved, weak, never = parse_skill_lists(profile_text)
+    # A vocabulary of zero tokens is a PARSE failure, not an empty policy: the
+    # Never blocklist would then be enforced against nothing (silently), and
+    # check_skills would blame every already-categorized skill on the resume.
+    # Say which it is, once, and do not run the two gates that would lie.
+    skills_gate_ran = bool(approved or weak or never)
 
     check_locked_fields(c, data, baseline)
     check_titles(
@@ -770,8 +802,18 @@ def run_checks(yaml_path: Path, pdf_path: Path | None = None,
         parse_profile_titles(profile_text),
         parse_profile_project_owners(profile_text),
     )
-    check_skills(c, data, approved, weak, jd_text)
-    check_never_skills(c, data, never)
+    if skills_gate_ran:
+        check_skills(c, data, approved, weak, jd_text)
+        check_never_skills(c, data, never)
+    elif profile_text:
+        missing = skills_section(profile_text) is None
+        c.fail(
+            "SKILL VOCABULARY NOT INSPECTED — the profile's '## Skills' section "
+            + ("was not found" if missing else "parsed to no Approved/Weak/Never tokens")
+            + f" in {profile_path}, so the Approved/Weak gate and the Never BLOCKLIST "
+            "did NOT run. Fix the profile's '## Skills' section (its '### Approved', "
+            "'### Weak' and '### Never' subsections with '- Label: item, item' bullets); "
+            "this is a parse failure, not an empty vocabulary.")
     check_structure(c, data, baseline)
     check_lengths(c, data)
     check_bold_markers(c, data)
@@ -785,10 +827,28 @@ def run_checks(yaml_path: Path, pdf_path: Path | None = None,
     roles = application_roles(app_dir) or [data.get("target_position", "")]
     for role in roles:
         check_cover_letter(c, app_dir, role)
-    if pdf_path is not None and Path(pdf_path).exists():
-        check_pdf(c, Path(pdf_path), data)
-    elif pdf_path is not None:
-        c.warn(f"PDF not found at {pdf_path} — skipping PDF checks")
+    # The PDF gates. Both "no PDF path at all" (render.py --no-pdf, or no
+    # DOCX->PDF converter on this machine) and "a path that does not exist" land
+    # in the same reported state: NOT INSPECTED. Neither may pass silently — this
+    # branch used to print nothing at all when pdf_path was None.
+    pdf_inspected = False
+    no_converter = ("Install LibreOffice (brew install --cask libreoffice) or point "
+                    "JOBHUNT_SOFFICE at it and re-render; pass --no-pdf if you "
+                    "deliberately want a DOCX-only draft and accept an unvalidated "
+                    "page count.")
+    if pdf_path is None:
+        _report_uninspected_pdf(c, "no PDF was produced or supplied",
+                                no_converter, pdf_required)
+    elif not Path(pdf_path).exists():
+        _report_uninspected_pdf(c, f"no PDF found at {pdf_path}",
+                                no_converter, pdf_required)
+    else:
+        pdf_inspected = check_pdf(c, Path(pdf_path), data)
+        if not pdf_inspected:
+            _report_uninspected_pdf(
+                c, "pypdf is not installed, so the PDF could not be opened",
+                "pip install pypdf (it is in requirements.txt) and re-run the checks.",
+                pdf_required)
 
     for w in c.warnings:
         print(f"  WARN: {w}")
@@ -797,6 +857,11 @@ def run_checks(yaml_path: Path, pdf_path: Path | None = None,
     if c.failures:
         print(f"  → {len(c.failures)} check(s) FAILED — fix tailored.yaml and re-render")
         return False
+    if not pdf_inspected:
+        # Never an unqualified success line over an artifact no gate looked at.
+        print(f"  ✓ non-PDF checks passed ({len(c.warnings)} warning(s)) — "
+              f"the {len(PDF_GATE_NAMES)} PDF gates were NOT RUN (see WARN above)")
+        return True
     print(f"  ✓ all checks passed ({len(c.warnings)} warning(s))")
     return True
 
@@ -831,6 +896,10 @@ def rule_groups() -> list[tuple[str, str]]:
          "aliases " + aliases + "). A skill in none of the 3 lists FAILS — queue it for the user."),
         ("check_never_skills",
          "No profile 'Never' skill anywhere (skills line, summary, or bullets)."),
+        ("profile_skill_vocabulary",
+         "The profile's '## Skills' section must parse to at least one Approved/Weak/Never token. "
+         "Zero tokens = a PARSE failure: the two skill gates above report NOT INSPECTED and FAIL "
+         "rather than pass a resume against an empty blocklist."),
         ("check_structure",
          f"Summary bullets = baseline count (default {SUMMARY_BULLET_COUNT}); every employer keeps content; "
          f"{d_lo}-{d_hi} direct bullets/employer; {p_lo}-{p_hi} bullets/project; total projects within "
@@ -849,7 +918,9 @@ def rule_groups() -> list[tuple[str, str]]:
          f">= {COVER_MAIN_MIN_COUNT} paragraphs of {cm_lo}-{cm_hi} words, {ct_lo}-{ct_hi}-word body, no placeholders."),
         ("check_pdf",
          "PDF: exactly 1 page, extractable text (name, every employer company/role, every project title "
-         f"present), not too blank (FAIL over {RESUME_BOTTOM_BLANK_FAIL_IN:g}in trailing whitespace)."),
+         f"present), not too blank (FAIL over {RESUME_BOTTOM_BLANK_FAIL_IN:g}in trailing whitespace). "
+         "A PDF that is absent or unreadable is NOT a skip: the gates report NOT INSPECTED and FAIL, "
+         "unless --no-pdf (render.py or check.py) declared a DOCX-only draft, which downgrades it to a WARN."),
     ]
 
 
@@ -879,6 +950,12 @@ def main():
                              "reads no resume/profile files.")
     parser.add_argument("--pdf", default=None,
                         help=f"Path to rendered PDF (default: the sibling {RESUME_STEM}[_<position>].pdf if present)")
+    parser.add_argument("--no-pdf", action="store_true",
+                        help="Accept that there is no PDF to inspect (a DOCX-only "
+                             "draft). The PDF gates are still reported as NOT RUN, "
+                             "but they do not fail the run. Without this flag a "
+                             "missing/unreadable PDF is a FAIL — the one-page gate "
+                             "is mandatory.")
     parser.add_argument("--baseline", default=str(DEFAULT_BASELINE))
     parser.add_argument("--profile", default=str(DEFAULT_PROFILE))
     args = parser.parse_args()
@@ -907,7 +984,8 @@ def main():
         pdf_path = application_dir(yaml_path) / f"{resume_stem(label)}.pdf"
 
     ok = run_checks(yaml_path, pdf_path,
-                    Path(args.baseline), Path(args.profile))
+                    Path(args.baseline), Path(args.profile),
+                    pdf_required=not args.no_pdf)
     sys.exit(0 if ok else 1)
 
 

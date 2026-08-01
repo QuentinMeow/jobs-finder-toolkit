@@ -92,6 +92,10 @@ approved template; only touch margins/spacing/font with the user's ok.
   `render.py` converts the resume + every cover letter **concurrently**, each in its own
   LibreOffice process with an isolated `-env:UserInstallation` profile (instances share one
   profile lock otherwise and serialize/hang) — ~1.8x faster on the 2-PDF example (16.5s→9.1s).
+- No converter at all is not a skip: `render.py` prints `PDF: NOT PRODUCED` and check.py FAILs
+  with `PDF NOT INSPECTED` (the six PDF gates did not run). `--no-pdf` is the only way to accept
+  that state, and it still reports the gates as NOT RUN — no run prints plain "all checks passed"
+  over a PDF nothing opened.
 - The old transient "PDF: skipped" flake (LibreOffice exits 0 without writing the PDF) is now
   handled inside `pdf_convert.py`: it verifies a real PDF landed (>1KB), clears stray lock state,
   retries ONCE after a short backoff, and on a hard failure exits non-zero with a clear error

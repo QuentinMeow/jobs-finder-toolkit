@@ -21,8 +21,10 @@ example config) — substitute the resolved path, never a literal folder at the 
 # Render just one role's cover letter:
 .venv/bin/python skills/resume-writer/scripts/cover_letter.py applications/6_drafted/<slug>/ --label "Senior Platform Engineer"
 
-# Validate without rendering
+# Validate without rendering (a missing/unreadable PDF FAILs — the one-page gate is mandatory)
 .venv/bin/python skills/resume-writer/scripts/check.py applications/6_drafted/<slug>/
+# Same, for a deliberate DOCX-only draft: the PDF gates are reported NOT RUN, not failed
+.venv/bin/python skills/resume-writer/scripts/check.py applications/6_drafted/<slug>/ --no-pdf
 
 # Show all applications and their status (status = which folder each app lives in)
 .venv/bin/python skills/application-tracker/scripts/status.py
