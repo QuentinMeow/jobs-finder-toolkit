@@ -2193,6 +2193,20 @@ def validate_jd_file_associations(meta: dict, app_dir: str | Path) -> list[str]:
     return errors
 
 
+def _role_label_key(role: str) -> str:
+    """The collision domain of a ``jobs[].role`` label: its output-filename slug.
+
+    ``layout.slugify_label`` is what turns a role into the ``<COVER_STEM>_<role>``
+    and ``<APPLICATION_STEM>_<role>`` suffixes, so two roles collide exactly when
+    their slugs do. Reproduced here rather than imported because this module is
+    vendored into three skills and must stay dependency-free; casefolded on top of
+    it, because the filesystems this ships on are case-insensitive and
+    ``check.check_role_filename_collisions`` (which compares case-sensitively)
+    would otherwise miss ``Software Engineer`` vs ``software engineer``.
+    """
+    return "_".join(re.sub(r"[^0-9A-Za-z]+", " ", str(role)).split()).casefold()
+
+
 def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]:
     """Validate schema-v5 application metadata (a uniform ``jobs`` list).
 
@@ -2241,12 +2255,26 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
         errors.append("jobs must be a non-empty list (one entry per posting)")
         return errors
 
+    seen_role_labels: dict[str, str] = {}
     for index, job in enumerate(jobs):
         if not isinstance(job, dict):
             errors.append(f"jobs[{index}] must be a mapping")
             continue
-        if not str(job.get("role") or "").strip():
+        role = str(job.get("role") or "").strip()
+        if not role:
             errors.append(f"jobs[{index}].role is required")
+        else:
+            label = _role_label_key(role)
+            if label in seen_role_labels:
+                errors.append(
+                    f"jobs[{index}].role duplicates another posting's role: "
+                    f"{role!r} and {seen_role_labels[label]!r} produce the same "
+                    "cover-letter and bundle filename, so two JDs would share one "
+                    "cover letter; give each posting a distinguishing label "
+                    "(e.g. 'Software Engineer (Austin, TX)')"
+                )
+            else:
+                seen_role_labels[label] = role
         if not str(job.get("jd_file") or "").strip():
             errors.append(f"jobs[{index}].jd_file is required")
         errors.extend(validate_job_metadata(job, prefix=f"jobs[{index}]"))

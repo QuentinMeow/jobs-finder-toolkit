@@ -212,10 +212,26 @@ folder then. Scaffold with `handoff.py` (needs `--json-out` from Step 2):
 .venv/bin/python skills/job-search/scripts/handoff.py \
     --json local/matches.json --all --report local/handoff-report.json
 ```
-`--all` (and any multi-posting `--select`) groups **one folder per company** after a live-folder/log
-duplicate preflight, continuing with an auditable per-company result; `--split` forces the old
-one-folder-per-posting layout for a divergent set. When grouping, a posting that fails the location
-policy is dropped from its company folder (each drop reported) instead of blocking the folder.
+The live-folder/log **duplicate preflight runs on every path**, including a single `--select`. A
+bulk run *skips* a duplicate and carries on (`duplicate` in the report); a single explicit
+`--select` that names a duplicate **creates nothing and exits 2**, printing the `--forget-log`
+tombstone command with its argument filled in — the undo for a skip-log row is a tombstone, never
+deleting a folder. `--all` (and any multi-posting `--select`) then groups **one folder per
+company**, continuing with an auditable per-company result; `--split` forces the
+one-folder-per-posting layout for a divergent set, and two same-title requisitions there get
+distinct folders (the second slug carries its location), not one dropped as a "duplicate".
+
+Two postings in one folder that share a title also get **distinct `jobs[].role` labels** (the
+second carries its location, e.g. `Software Engineer (Austin, TX)`), because `role` is the
+cover-letter and bundle filename key and one cover letter per JD is a hard guardrail. Rename a
+label in `meta.yaml` if you prefer different wording.
+
+When grouping, a posting that fails the location policy **on its search row** is dropped from its
+company folder (each drop reported) instead of blocking it. A posting whose row carried no location
+and whose fetched JD names a place outside the policy is a different case — the pre-filter could not
+see it, so it **blocks** the folder (reported by role, exit non-zero) rather than being dropped
+silently after the fact. The gate classifies **each posting on its own**: a folder holding one
+US and one foreign posting is not "OK".
 
 It creates `applications/6_drafted/<slug>/`, saves one `source/JD-<job title>.md` per posting
 **verbatim** (via `fetch_jd`), and writes a schema-v5 `meta.yaml` carrying each posting's

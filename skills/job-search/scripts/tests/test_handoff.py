@@ -27,6 +27,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 import handoff  # noqa: E402
 from job_metadata import validate_meta  # noqa: E402
+from layout import slugify_label  # noqa: E402  (the cover-letter/bundle filename key)
 import skip_log  # noqa: E402  (importable because handoff puts _vendor/ on the path)
 
 import shutil  # noqa: E402
@@ -234,9 +235,13 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(rows[0]["slug"], folder.name)
 
     def test_select_by_rank_picks_the_ranked_row(self):
+        # Two postings, two URLs: this test scaffolds both in turn, and a shared
+        # URL is one posting as far as the duplicate preflight is concerned.
+        url2 = (self.tmp / "jd2.html").as_uri()
+        (self.tmp / "jd2.html").write_text(JD_PAGE, encoding="utf-8")
         rows = [
             _row(company="Alpha Systems", title="Staff Backend Engineer", url=self.jd_url),
-            _row(company="Nimbus Robotics", title="Senior Platform Engineer", url=self.jd_url),
+            _row(company="Nimbus Robotics", title="Senior Platform Engineer", url=url2),
         ]
         _code, folder, _out, err = self._run(rows, "rank 2", "--skip-jd-fetch")
         self.assertIsNotNone(folder, err)
@@ -394,11 +399,20 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(code1, 0, err1)
         sentinel = folder / "meta.yaml"
         original = sentinel.read_bytes()
-        # A second handoff for the same company/role/date must refuse.
+        # A second handoff for the same posting must refuse and change nothing.
+        # It now stops one step EARLIER than it used to: the duplicate preflight
+        # runs on the single-posting path too, and the folder the first run left
+        # is a live folder, so the refusal names the duplicate rather than the
+        # slug collision. Same exit code, same untouched tree, better reason —
+        # and it fires even when the second run uses a different --research-date,
+        # which the slug-collision branch never caught.
         code2, _folder2, _out2, err2 = self._run(rows, "rank 1")
         self.assertEqual(code2, 2)
-        self.assertIn("refusing to overwrite", err2)
+        self.assertIn("REFUSING to scaffold", err2)
+        self.assertIn("duplicate", err2)
         self.assertEqual(sentinel.read_bytes(), original)   # untouched
+        self.assertEqual(
+            len(list((self.root / "6_drafted").glob("*/meta.yaml"))), 1)
 
     def test_bulk_handoff_skips_live_duplicate_and_creates_new_role(self):
         existing = _row(url=self.jd_url)
@@ -952,11 +966,14 @@ class CreationTimeSkipLogTests(unittest.TestCase):
     def test_a_second_run_on_the_same_posting_adds_no_second_line(self):
         code, _folder, _out, err = self._run([_row(url=self.jd_url)], "rank 1")
         self.assertEqual(code, 0, err)
-        # Same day -> same slug -> the refuse-to-overwrite branch, which returns
-        # before the folder (and therefore before the append) is touched.
+        # The second run is stopped by the duplicate preflight — the first run's
+        # folder is a live folder carrying this URL — before any mkdir and so
+        # before the append. (It was the refuse-to-overwrite branch that caught
+        # this; the preflight now catches it first, and unlike the slug check it
+        # still catches it under a different --research-date.)
         code2, _folder2, _out2, err2 = self._run([_row(url=self.jd_url)], "rank 1")
         self.assertEqual(code2, 2, err2)
-        self.assertIn("refusing to overwrite", err2)
+        self.assertIn("REFUSING to scaffold", err2)
         self.assertEqual(len(self._events()), 1)
 
     def test_a_bulk_rerun_is_stopped_by_the_row_the_first_run_wrote(self):
@@ -1043,6 +1060,246 @@ class CreationTimeSkipLogTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertTrue((self.root / "0_profile" / "applications-log.jsonl").is_file())
         self.assertIn(str(self.root / "0_profile" / "applications-log.jsonl"), err)
+
+
+class PostingIdentityTests(unittest.TestCase):
+    """One identity rule for a posting: its URL, else its ``(company, title)`` pair.
+
+    ``skip_log.fold_key`` already writes that rule down and says why the ``else``
+    branch is load-bearing. handoff used to spell identity a second way — the
+    posting's TITLE — in three places at once: the in-run duplicate register, the
+    per-JD role label, and the folder slug. Two requisitions at one employer
+    routinely share a title, so each of those three spellings collapsed two
+    distinct postings into one, and every collapse exited 0.
+
+    Fixtures are borrowed from ``HandoffTests`` (a temp applications root, a
+    ``file://`` JD) rather than inherited, so its whole suite does not re-run
+    under a second name.
+    """
+
+    setUp = HandoffTests.setUp
+    _write_json = HandoffTests._write_json
+    _run = HandoffTests._run
+    _run_all = HandoffTests._run_all
+    _run_raw = HandoffTests._run_raw
+    _drafted_metas = HandoffTests._drafted_metas
+    _seed_log = HandoffTests._seed_log
+    _pin_policy = HandoffTests._pin_policy
+
+    def _jd(self, name: str, body: str = "") -> str:
+        """A distinct ``file://`` JD page; ``body`` can add a ``Location:`` line."""
+        path = self.tmp / f"{name}.html"
+        path.write_text(
+            "<!doctype html><html><body><h1>Role</h1>"
+            f"{body}<p>Nimbus Robotics builds warehouse robots.</p>"
+            "</body></html>",
+            encoding="utf-8",
+        )
+        return path.as_uri()
+
+    # -- finding 1: the per-JD role label --------------------------------- #
+    def test_two_same_title_postings_keep_one_cover_letter_each(self):
+        # AGENTS.md: "One cover letter per JD — no shared/boilerplate letter."
+        # The per-JD artifacts (cover letter, bundled .txt) are keyed on
+        # jobs[].role, so two identical role labels collapse two JDs onto one
+        # letter. Pre-fix this printed "meta.yaml: valid" and exited 0; the
+        # collision only surfaced at render time.
+        self._pin_policy(metro=("seattle", "springfield"))
+        rows = [
+            _row(title="Software Engineer", url=self._jd("req1"),
+                 location="Seattle, WA"),
+            _row(title="Software Engineer", url=self._jd("req2"),
+                 location="Springfield, IL"),
+        ]
+        code, _out, err = self._run_raw(rows, "--select", "Nimbus Robotics")
+        self.assertEqual(code, 0, err)
+        metas = self._drafted_metas()
+        self.assertEqual(len(metas), 1, "the multi-role default still makes ONE folder")
+        roles = [job["role"] for job in metas[0]["jobs"]]
+        self.assertEqual(len(roles), 2)
+        # The cover-letter / bundle stem is slugify_label(role): two JDs, two stems.
+        self.assertEqual(len({slugify_label(r) for r in roles}), 2, roles)
+        # The lead posting keeps its plain title; the discriminator is the second
+        # posting's own location, not a bare "-2".
+        self.assertIn("Software Engineer", roles)
+        self.assertTrue(any("Springfield" in r for r in roles), roles)
+        # Each posting still keeps its own verbatim JD, one-to-one with its role.
+        folder = next((self.root / "6_drafted").glob("*"))
+        jd_files = [job["jd_file"] for job in metas[0]["jobs"]]
+        self.assertEqual(len(set(jd_files)), 2)
+        for name in jd_files:
+            self.assertTrue((folder / "source" / name).is_file(), name)
+        self.assertEqual(validate_meta(metas[0], app_dir=folder), [])
+
+    def test_validate_meta_rejects_a_duplicate_role(self):
+        # The mirror of the duplicate-jd_file assertion that already exists: a
+        # duplicate role is the same defect one artifact over.
+        job = {
+            "role": "Software Engineer",
+            "jd_file": "JD-software-engineer.md",
+            "status": "drafted",
+            "progress": {"phase": "application_prep", "state": "action_required"},
+        }
+        meta = {
+            "job_metadata_schema_version": 5,
+            "company": "Nimbus Robotics",
+            "jobs": [dict(job), dict(job, jd_file="JD-software-engineer-2.md")],
+        }
+        errors = validate_meta(meta)
+        self.assertTrue(
+            any("role duplicates" in error for error in errors), errors)
+
+    # -- finding 2: --split must not discard a distinct requisition -------- #
+    def test_split_keeps_a_same_title_sibling_with_its_own_url(self):
+        # _register_row used to add the (company, title) pair after each group,
+        # so the next group's DIFFERENT requisition matched it and was dropped as
+        # a "duplicate" of its own sibling — nothing scaffolded, nothing logged,
+        # exit 0, and a stderr line claiming it "already exists" in a log and a
+        # tree that had never seen it.
+        self._pin_policy(metro=("seattle", "springfield"))
+        rows = [
+            _row(title="Software Engineer", url=self._jd("req1"),
+                 location="Seattle, WA"),
+            _row(title="Software Engineer", url=self._jd("req2"),
+                 location="Springfield, IL"),
+        ]
+        code, report, _stdout, err = self._run_all(rows, "--split")
+        self.assertEqual(report["counts"]["duplicate"], 0, err)
+        self.assertEqual(report["counts"]["created"], 2, err)
+        self.assertEqual(code, 0, err)
+        metas = self._drafted_metas()
+        self.assertEqual(len(metas), 2)
+        # Both requisitions are on disk, in two folders with distinct slugs.
+        self.assertEqual(len({meta["jobs"][0]["url"] for meta in metas}), 2)
+        self.assertEqual(
+            len({p.name for p in (self.root / "6_drafted").glob("*")}), 2)
+        # And both are recorded in the append-only log.
+        rows_logged = skip_log.read_postings(
+            self.root / "0_profile" / "applications-log.jsonl")
+        self.assertEqual(len(rows_logged), 2)
+
+    def test_a_urlless_same_pair_row_is_still_caught_in_run(self):
+        # The else branch of the identity rule: with no URL to tell them apart,
+        # two same-company/same-title rows ARE one posting as far as this tool
+        # can tell, and the second must still be skipped.
+        rows = [_row(title="Software Engineer", url=""),
+                _row(title="Software Engineer", url="")]
+        code, report, _stdout, err = self._run_all(rows, "--split")
+        self.assertEqual(report["counts"]["duplicate"], 1, err)
+        self.assertNotEqual(code, 0, err)
+
+    # -- finding 3: the location gate over a multi-role folder ------------- #
+    def test_a_blank_location_sibling_is_judged_by_its_own_jd(self):
+        # A row with no location is "review", so the multi-role pre-filter keeps
+        # it; the folder rollup was then any-matches, so the sibling's Seattle
+        # location made the whole folder "location OK" and the London posting
+        # rode in with its JD saying so on disk, unread.
+        self._pin_policy(metro=("seattle",))
+        rows = [
+            _row(title="Backend Engineer", location="Seattle, WA",
+                 url=self._jd("us", "<p>Location: Seattle, WA</p>")),
+            _row(title="Infra Engineer", location="",
+                 url=self._jd("uk", "<p>Location: London, United Kingdom</p>")),
+        ]
+        code, _out, err = self._run_raw(rows, "--select", "Nimbus Robotics")
+        # Non-zero: a multi-posting selection runs the bulk path, which collapses
+        # every non-clean outcome to 1 (the single-posting path exits 3).
+        self.assertNotEqual(code, 0, err)
+        self.assertIn("MISMATCH", err)
+        self.assertIn("Infra Engineer", err)          # the offending posting, named
+        self.assertIn("London", err)
+        self.assertNotIn("location OK", err)
+
+    def test_allow_location_mismatch_still_reports_a_grouped_mismatch(self):
+        # The flag's documented contract is "warn and proceed". Over a grouped
+        # folder the any-matches rollup said "match", so report_location took the
+        # match branch and the mismatch was never mentioned at all.
+        self._pin_policy(metro=("seattle",))
+        rows = [
+            _row(title="Backend Engineer", location="Seattle, WA",
+                 url=self._jd("us")),
+            _row(title="Infra Engineer", location="London, United Kingdom",
+                 url=self._jd("uk")),
+        ]
+        code, _out, err = self._run_raw(
+            rows, "--select", "Nimbus Robotics", "--allow-location-mismatch")
+        self.assertEqual(code, 0, err)
+        self.assertIn("MISMATCH", err)
+        self.assertIn("London", err)
+        self.assertIn("--allow-location-mismatch set", err)
+
+    # -- finding 4: the duplicate preflight on the single-posting path ----- #
+    def test_a_single_select_runs_the_duplicate_preflight(self):
+        # SKILL.md's first handoff example is --select "rank N", and the preflight
+        # lived only in _run_groups: an already-applied posting was scaffolded a
+        # SECOND time, with no warning, exit 0.
+        url = self._jd("req1")
+        self._seed_log({"company": "Nimbus Robotics",
+                        "role": "Senior Platform Engineer",
+                        "url": url, "status": "applied"})
+        code, _out, err = self._run_raw([_row(url=url)], "--select", "rank 1")
+        self.assertNotEqual(code, 0, err)
+        self.assertFalse(list((self.root / "6_drafted").glob("*/meta.yaml")))
+        self.assertIn("duplicate", err)
+        # "Delete the folder" is not the undo here — nothing was created. The
+        # remedy for a posting you DO want is the tombstone, argument filled in.
+        self.assertIn("--forget-log", err)
+        self.assertIn(url, err)
+
+    def test_a_single_select_of_a_fresh_role_at_a_known_employer_still_works(self):
+        # The negative control the preflight must not break: the pair key is
+        # (company, role), not company alone.
+        self._seed_log({"company": "Nimbus Robotics",
+                        "role": "Staff Data Engineer",
+                        "url": "https://boards.example.com/nimbus/jobs/9001"})
+        code, _out, err = self._run_raw(
+            [_row(url=self._jd("req1"))], "--select", "rank 1")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(list((self.root / "6_drafted").glob("*/meta.yaml"))), 1)
+
+    # -- finding 5: --research-date is a path component -------------------- #
+    def test_research_date_must_be_an_iso_date(self):
+        # `2026/07/31` is an ordinary typo for the documented YYYY-MM-DD. It was
+        # joined into the slug unslugified, so mkdir(parents=True) buried the
+        # application two levels deeper than every tool globs, and the permanent
+        # skip-log row recorded slug "31" with an empty date. Exit was 0.
+        rows = [_row(url=self._jd("req1"))]
+        with self.assertRaises(SystemExit) as ctx:
+            self._run_raw(rows, "--select", "rank 1",
+                          "--research-date", "2026/07/31")
+        self.assertNotEqual(ctx.exception.code, 0)
+        self.assertFalse(list(self.root.rglob("meta.yaml")))
+        self.assertFalse(list(self.root.rglob("applications-log.jsonl")))
+
+    def test_an_application_folder_is_always_two_levels_under_the_root(self):
+        # Belt and braces for every other path component that reaches the slug.
+        with self.assertRaises(ValueError):
+            handoff._require_folder_under_root(
+                self.root / "6_drafted" / "a" / "b", self.root, "6_drafted")
+
+    # -- finding 6: what the bulk report says about a refusal -------------- #
+    def test_a_refusal_is_reported_as_refused_not_as_an_incomplete_scaffold(self):
+        # Two different titles that slugify identically collide on the folder
+        # slug. _run_group returns 2 having created NOTHING, but 2 fell to the
+        # default "incomplete" bucket and the row carried "folder": the
+        # PRE-EXISTING folder, which belongs to a different posting. An agent
+        # working the report to finish the incomplete scaffolds is aimed at it.
+        first = _row(title="Software Engineer, Backend", url=self._jd("req1"))
+        code1, _o, err1 = self._run_raw(
+            [first], "--select", "rank 1", "--research-date", "2026-07-31")
+        self.assertEqual(code1, 0, err1)
+        existing = next((self.root / "6_drafted").glob("*"))
+
+        second = _row(title="Software Engineer (Backend)", url=self._jd("req2"))
+        code, report, _stdout, err = self._run_all(
+            [second], "--research-date", "2026-07-31")
+        self.assertNotEqual(code, 0, err)
+        self.assertEqual(report["counts"]["refused"], 1, report["counts"])
+        self.assertEqual(report["counts"]["incomplete"], 0, report["counts"])
+        row = report["rows"][0]
+        self.assertEqual(row["status"], "refused")
+        self.assertNotIn("folder", row)   # nothing was created; no path to offer
+        self.assertEqual(row["conflicting_folder"], str(existing.resolve()))
 
 
 if __name__ == "__main__":
