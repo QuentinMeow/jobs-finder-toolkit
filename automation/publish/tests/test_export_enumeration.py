@@ -114,7 +114,11 @@ class GitEnumerationTests(unittest.TestCase):
         """Every file in the real export is a tracked path (or a generated one)."""
         tracked = set(export_public.tracked_files())
         export = _shared_export()
-        generated = {".gitignore"}
+        # The two files the exporter WRITES rather than copies. The marker records
+        # that this directory is a disposable export target (so a later --force may
+        # replace it); it is excluded from the export's git history, which is what
+        # test_export_destination.py asserts.
+        generated = {".gitignore", export_public.EXPORT_MARKER_NAME}
         offenders = []
         for path in export.rglob("*"):
             if not path.is_file() or path.is_symlink():
