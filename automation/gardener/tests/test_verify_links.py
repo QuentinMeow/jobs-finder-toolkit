@@ -695,19 +695,24 @@ class TestUnrecognisedRootIsCounted(VerifyLinksTestCase):
     ``if/elif`` with nothing incremented. Renaming a root migrates references into
     that hole one at a time and NOTHING said so — the ``handbook/`` →
     ``docs/handbook/`` rename moved ~19 of them in silence. It stays non-fatal (most
-    are prose shorthand, branch names or API paths) but it is never invisible again,
-    and the baseline compare turns the tally into the detector.
+    are prose shorthand, branch names or API paths) but it is never invisible again.
+
+    Two things changed since. Roots this repo actually RENAMED are no longer filed
+    here at all — see ``TestRetiredRoots``, which is why these fixtures use a root
+    that was never real instead of ``handbook/``. And the tally is no longer the only
+    signal: the default report now names the distinct roots underneath it, because
+    the baseline compare that was supposed to be the detector is passed by no gate.
     """
 
-    def test_retired_root_is_counted_and_not_broken(self) -> None:
+    def test_an_unknown_root_is_counted_and_not_broken(self) -> None:
         self.write("docs/handbook/x.md",
-                   "See `handbook/definitely-not-a-real-file.md`.\n")
+                   "See `notes/definitely-not-a-real-file.md`.\n")
         self.git_init()
         broken, advisory, permitted, skipped, unrecognised = V.check_references()
         self.assertEqual((broken, advisory, permitted), ([], [], []))
         self.assertEqual(skipped["unrecognised-root"], 1)
         self.assertEqual([u["ref"] for u in unrecognised],
-                         ["handbook/definitely-not-a-real-file.md"])
+                         ["notes/definitely-not-a-real-file.md"])
 
     def test_the_paired_control_under_a_live_root_is_broken(self) -> None:
         """Same file, same basename — only the ROOT differs, and that is the point."""
@@ -736,13 +741,148 @@ class TestUnrecognisedRootIsCounted(VerifyLinksTestCase):
 
     def test_names_a_file_split_makes_the_tally_readable(self) -> None:
         """621 is unreadable; "of which 126 name a file" concentrates the damage."""
-        self.write("docs/handbook/x.md", "Both `handbook/x.md` and `handbook/`.\n")
+        self.write("docs/handbook/x.md", "Both `notes/x.md` and `notes/`.\n")
         self.git_init()
         _, _, _, skipped, unrecognised = V.check_references()
         self.assertEqual(skipped["unrecognised-root"], 2)
         self.assertEqual(sorted(u["ref"] for u in unrecognised),
-                         ["handbook/", "handbook/x.md"])
+                         ["notes/", "notes/x.md"])
         self.assertEqual(sum(1 for u in unrecognised if u["names_a_file"]), 1)
+
+
+class TestRetiredRoots(VerifyLinksTestCase):
+    """A root THIS repo renamed is not prose shorthand and must not be filed as it.
+
+    ``design/``, ``handbook/`` and ``roadmap/`` moved under ``docs/`` (422377d) and
+    ``automation/maintenance/`` was split into ``automation/`` (031e05d). 83 references
+    to the four survived the renames, and 71 were invisible: their first segment
+    matches no STRICT_ROOT_PREFIX, so they landed in the unrecognised bucket — whose
+    only detector, ``--compare`` against a baseline, is run by no gate.
+
+    Putting them in STRICT_ROOT_PREFIXES instead would not have worked:
+    ``_present_strict_prefixes`` drops a prefix whose directory is absent, so they
+    would have moved to the equally silent "absent-root" and ``--require-roots`` would
+    then fail on all four by construction.
+    """
+
+    def test_a_retired_root_with_a_path_under_it_is_broken_in_a_live_doc(self) -> None:
+        """The gate the map exists to close: a handbook page naming the old path."""
+        self.write("docs/handbook/x.md", "See `handbook/file-organization.md`.\n")
+        self.git_init()
+        broken, _, _, skipped, unrecognised = V.check_references()
+        self.assertEqual([b["ref"] for b in broken], ["handbook/file-organization.md"])
+        self.assertEqual(broken[0]["successor"], "docs/handbook/file-organization.md")
+        self.assertEqual(skipped["unrecognised-root"], 0)
+        self.assertEqual(unrecognised, [])
+
+    def test_a_bare_retired_root_stays_in_the_bucket(self) -> None:
+        """``current-state.md`` says "`handbook/` + `design/` became `docs/…`" — TRUE.
+
+        A bare root is the SUBJECT of a sentence about the rename, not a pointer to
+        anything. Failing it would force a maintainer to falsify a true sentence, or
+        disable the check, to get a commit in.
+        """
+        self.write("docs/roadmap/current-state.md",
+                   "Top-level `handbook/` and `design/` became `docs/`.\n")
+        self.git_init()
+        broken, advisory, permitted, skipped, _ = V.check_references()
+        self.assertEqual((broken, advisory, permitted), ([], [], []))
+        self.assertEqual(skipped["unrecognised-root"], 2)
+
+    def test_in_a_record_it_is_permitted_never_fatal(self) -> None:
+        """Tiering still decides fate. A completed task record is listed, not failed —
+        it was accurate about the tree on the day it was written."""
+        self.write("tasks/4_done/t/worklog.md", "Wrote `design/raw-data-layer/x.md`.\n")
+        self.git_init()
+        broken, _, permitted, _, _ = V.check_references()
+        self.assertEqual(broken, [])
+        self.assertEqual([p["ref"] for p in permitted], ["design/raw-data-layer/x.md"])
+        self.assertEqual(permitted[0]["successor"],
+                         "docs/designs/raw-data-layer/x.md")
+
+    def test_the_successor_reaches_the_printed_report(self) -> None:
+        """``_suggest``'s ``renames`` branch was dead code — all three call sites
+        passed ``{}``, so a renamed root printed with no successor."""
+        self.write("tasks/4_done/t/worklog.md", "Wrote `design/raw-data-layer/x.md`.\n")
+        self.link_root()
+        self.git_init()
+        rc, out = self.run_report()
+        self.assertEqual(rc, 0)
+        self.assertIn("did you mean docs/designs/raw-data-layer/x.md?", out)
+
+    def test_a_resurrected_root_is_a_finding(self) -> None:
+        """The map's own disarm condition, mirroring ``check_required_roots``.
+
+        If ``design/`` comes back, references under it resolve for real and this map
+        starts rewriting live paths into "did you mean" noise.
+        """
+        self.write("design/README.md", "# back from the dead\n")
+        self.git_init()
+        self.assertEqual(V.check_retired_roots(), ["design/"])
+
+    def test_the_map_is_still_true_of_the_real_repo(self) -> None:
+        """Runs against the REAL tree, not a fixture: every key must stay absent."""
+        self.assertEqual([], [old for old in V.RETIRED_ROOTS
+                              if (self._saved_root / old.rstrip("/")).exists()])
+
+
+class TestMessageQueueTiering(VerifyLinksTestCase):
+    """``message-queue/`` was one blanket plan prefix; its five queues differ in kind.
+
+    Three ask for work that does not exist yet and stay advisory. Two point AT work
+    that does exist, so a dead link in them is a rotted pointer in a LIVE working
+    document and fails closed — which is not hypothetical: the one live review item
+    linked twice at ``migration.md``, a file that never existed under any name.
+    """
+
+    def _examples_root(self) -> None:
+        """``examples/`` must EXIST or its refs count as absent-root, not advisory."""
+        self.write("examples/keep.md", "# placeholder\n")
+
+    def test_a_decision_item_may_still_name_what_does_not_exist_yet(self) -> None:
+        """Proposals are the point: "should `examples/me/` exist?" stays advisory."""
+        self._examples_root()
+        self.write("message-queue/needs-human/decisions/d.md",
+                   "Create `examples/me/profile.md`?\n")
+        self.git_init()
+        broken, advisory, _, _, _ = V.check_references()
+        self.assertEqual(broken, [])
+        self.assertEqual([a["ref"] for a in advisory], ["examples/me/profile.md"])
+
+    def test_a_review_item_fails_closed(self) -> None:
+        self.write("message-queue/needs-human/reviews/r.md",
+                   "Look at [it](../../../docs/designs/gone.md).\n")
+        self.git_init()
+        broken, advisory, _, _, _ = V.check_references()
+        self.assertEqual(advisory, [])
+        self.assertEqual([b["target"] for b in broken], ["docs/designs/gone.md"])
+
+    def test_a_retry_item_fails_closed(self) -> None:
+        """The reconciler files retries naming a REAL file that failed a check."""
+        self.write("message-queue/needs-agent/retries/r.md",
+                   "Repair `skills/gone.py`.\n")
+        self.git_init()
+        broken, advisory, _, _, _ = V.check_references()
+        self.assertEqual(advisory, [])
+        self.assertEqual([b["ref"] for b in broken], ["skills/gone.py"])
+
+    def test_the_queue_readme_is_reference_not_plan(self) -> None:
+        """Deliberate second effect: a README states where things are NOW."""
+        self.write("message-queue/README.md", "See `skills/gone.py`.\n")
+        self.git_init()
+        broken, advisory, _, _, _ = V.check_references()
+        self.assertEqual(advisory, [])
+        self.assertEqual([b["ref"] for b in broken], ["skills/gone.py"])
+
+    def test_an_unknown_queue_folder_fails_closed(self) -> None:
+        """Same rule the five task status folders get: a queue nobody has taught this
+        checker about defaults to REFERENCE rather than being silently exempt."""
+        self.write("message-queue/needs-human/approvals/a.md",
+                   "See `skills/gone.py`.\n")
+        self.git_init()
+        broken, advisory, _, _, _ = V.check_references()
+        self.assertEqual(advisory, [])
+        self.assertEqual([b["ref"] for b in broken], ["skills/gone.py"])
 
 
 class TestOverlayAndSkipTreesForMarkdownLinks(VerifyLinksTestCase):

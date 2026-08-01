@@ -38,6 +38,15 @@ to have no counter at all: a backticked token whose first segment is not a recog
 root ("unrecognised-root"). Renaming a root moves references into that bucket one at a
 time, so the bucket is compared against a baseline rather than thresholded.
 
+A root THIS repo renamed is the one thing that bucket got wrong. ``design/`` and
+``handbook/`` are not prose shorthand — they are former roots of this repo — and 83
+references to four of them sat unread, because ``--compare`` (the bucket's only
+detector) is wired into no gate. ``RETIRED_ROOTS`` names them, so a retired root
+FOLLOWED BY A PATH is tiered as the broken pointer it is and prints where the target
+moved. A BARE retired root stays in the bucket: it is normally the subject of a
+sentence about the rename ("``handbook/`` became ``docs/handbook/``"), and failing it
+would force a maintainer to falsify a true sentence.
+
 Also checked: heading anchors (``#section``) with GitHub's slug rules; the Codex,
 Claude Code, and Cursor compatibility symlinks resolve — and that there was
 something to resolve; and vendored copies are in sync.
@@ -116,6 +125,50 @@ SKILLS_ROOT = "skills"
 # products). Present only when the overlay is mounted at ``private/``.
 OVERLAY_PREFIX = "private/"
 
+# --- Retired roots --------------------------------------------------------------
+# Directories THIS repo used to have at the path on the left, renamed by the commit
+# on the right without every inbound reference following. Each was read out of
+# ``git log --diff-filter=D``, so they are recorded facts rather than guesses.
+#
+# Why they need naming at all: the tier machinery keys on STRICT_ROOT_PREFIXES, so a
+# token under a root that no longer exists matches no prefix and falls into
+# "unrecognised-root" — the 792-entry bucket of branch names, Graph endpoints and
+# skill-relative shorthand that nobody reads. That is exactly the hole this module's
+# own docstring predicted ("renaming a root migrates references here one at a time,
+# silently"), and the mitigation it shipped — a counter plus ``--compare`` against a
+# baseline — never fired, because nothing in pre-commit or CI passes ``--compare``.
+# 83 references across these four roots accumulated unseen.
+#
+# Adding them to STRICT_ROOT_PREFIXES instead does NOT work: ``_present_strict_prefixes``
+# drops any prefix whose directory is absent, so they would land in "absent-root" —
+# equally silent — and ``--require-roots`` would then fail on all four by design.
+#
+# This is deliberately a DENYLIST of four, not the allowlist of ~600 innocent tokens
+# that ``test_a_branch_name_is_counted_not_broken`` rightly refuses to grow. It is
+# bounded (one entry per root rename, ever), and ``check_required_roots`` asserts each
+# key is still ABSENT, so a resurrected root is loud rather than quietly wrong.
+RETIRED_ROOTS = {
+    "design/": "docs/designs/",                 # 422377d
+    "handbook/": "docs/handbook/",              # 422377d
+    "roadmap/": "docs/roadmap/",                # 422377d
+    "automation/maintenance/": "automation/",   # 031e05d
+}
+
+
+def _retired_root(token: str) -> str | None:
+    """The retired root ``token`` names or sits under, or None. Longest match wins."""
+    t = token.rstrip("/")
+    return max((r for r in RETIRED_ROOTS
+                if t == r.rstrip("/") or token.startswith(r)),
+               key=len, default=None)
+
+
+def _retired_successor(token: str) -> str | None:
+    """Where ``token`` moved to, or None when it names no retired root."""
+    r = _retired_root(token)
+    return None if r is None else RETIRED_ROOTS[r] + token[len(r):]
+
+
 # --- The three tiers ------------------------------------------------------------
 # Dated testimony. The text records what was true when it was written; rewriting it
 # would falsify the record. Counted, listed, NEVER fatal, never repaired.
@@ -140,6 +193,31 @@ OVERLAY_RECORD_SOURCES = ("benchmark/fixtures/", "evals/fixtures/")
 # ``tasks/`` prefix so that a status folder nobody has taught this checker about
 # defaults to REFERENCE and fails closed.
 #
+# ``message-queue/`` gets the same treatment, and for the same reason: it used to sit
+# here as one blanket prefix, which made EVERY queue item advisory. But the five
+# queues do not do the same job, and only three of them are proposals.
+#
+#   * ``decisions/`` and ``clarifications/`` ask the owner about work not yet done, and
+#     ``requests/`` is the owner's free-form "please build X" drop box. Naming a path
+#     that does not exist is the POINT of all three — requiring it inverts the meaning,
+#     exactly as with ``docs/designs/``. They stay PLAN.
+#   * ``reviews/`` and ``retries/`` point AT work that already exists — a review item
+#     asks a human to look at a real artifact, and a retry is the reconciler naming a
+#     real file that failed a check. A dead link in either is a rotted pointer in a
+#     LIVE working document, not a proposal, so both fall through to REFERENCE and fail
+#     closed. That is not a hypothetical: the one live review item linked twice at
+#     ``migration.md``, a file that never existed under any name, and pointed at a task
+#     that had since moved to ``tasks/4_done/``. Advisory hid all three for weeks.
+#
+# Note the deliberate second effect: ``message-queue/README.md`` is no longer swept
+# into the plan tier either. It is a README — it states where things are NOW — so it
+# belongs in reference like every other README in the repo.
+#
+# None of these folders is archival. Every queue item is deleted when it resolves
+# (AGENTS.md: fold a decision then delete it; delete a request in the same commit;
+# sweep reviews at 30 days), so "live vs archival" is not the axis that separates them
+# — "proposal vs pointer" is, and that is what the plan tier was always defined on.
+#
 # ``memory/known-issues/`` is here rather than in the reference tier, which is where
 # the other memory zones sit, and the reason is structural: a known-issue's JOB is to
 # name the gap between the tree and what should be there, so at least one path in it
@@ -148,9 +226,12 @@ OVERLAY_RECORD_SOURCES = ("benchmark/fixtures/", "evals/fixtures/")
 # advisory is not silence — and a genuinely stale path in one still shows up with its
 # "did you mean" suggestion. It just does not fail a gate for saying something true.
 PLAN_SOURCES = (
-    "docs/designs/", "message-queue/", "docs/roadmap/desired-state.md",
+    "docs/designs/", "docs/roadmap/desired-state.md",
     "tasks/0_backlog/", "tasks/1_in-progress/", "tasks/2_blocked/",
     "tasks/3_in-review/", "memory/known-issues/",
+    "message-queue/needs-human/decisions/",
+    "message-queue/needs-human/clarifications/",
+    "message-queue/needs-agent/requests/",
 )
 # Everything else asserts CURRENT state and fails hard. There is no list for it:
 # the default IS the strict case.
@@ -628,7 +709,27 @@ def check_references(check_anchors: bool = True):
                 if _resolves(token, bases):
                     skipped[VERIFIED_KEY] += 1
                     continue
-                if token.startswith(absent):
+                retired = _retired_root(token)
+                if retired is not None and token.rstrip("/") != retired.rstrip("/"):
+                    # A retired root WITH a path under it is a POINTER that a rename
+                    # broke, so it is tiered like any other reference: permitted in a
+                    # record, advisory in a plan, FATAL in a document that claims to
+                    # state where things are now. Nothing in the tree is fatal today —
+                    # this gates the NEXT stale handbook link, it does not punish the
+                    # backlog.
+                    #
+                    # A BARE retired root (`handbook/`, `design/`) deliberately does
+                    # NOT come here. It is almost always the SUBJECT of a sentence
+                    # about the rename itself — current-state.md's "top-level
+                    # `handbook/` + `design/` became `docs/{handbook,designs}`" is
+                    # reference-tier and TRUE, and failing it would force a maintainer
+                    # to falsify the sentence or disable the check. It keeps its
+                    # existing unrecognised-root counter.
+                    skipped[VERIFIED_KEY] += 1
+                    sink.append({**hit, "successor": _retired_successor(token),
+                                 "why": f"{retired} was renamed to "
+                                        f"{RETIRED_ROOTS[retired]}"})
+                elif token.startswith(absent):
                     skipped["absent-root"] += 1
                 elif token.startswith(strict):
                     candidates.append((sink, hit))
@@ -795,6 +896,19 @@ def check_required_roots() -> list[str]:
     return missing
 
 
+def check_retired_roots() -> list[str]:
+    """RETIRED_ROOTS keys that exist again — the map's own disarm condition.
+
+    ``check_required_roots`` asserts the module's prefixes are PRESENT. This is its
+    mirror: every retired root must stay ABSENT. If someone re-creates ``design/``,
+    every reference under it starts resolving for real, this map silently rewrites
+    live paths into "did you mean" noise, and the tiering it drives becomes wrong in
+    the one direction nobody would look. Same flag, same maintainer-only semantics.
+    """
+    return [old for old in RETIRED_ROOTS
+            if (C.REPO_ROOT / old.rstrip("/")).exists()]
+
+
 # --- Baseline / compare ---------------------------------------------------------
 def _head(root: Path) -> str | None:
     r = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
@@ -902,6 +1016,10 @@ _SKIP_LABELS = {
 }
 
 
+# How many distinct unrecognised roots the default report names before it truncates.
+_UNRECOGNISED_ROOTS_SHOWN = 8
+
+
 def _print_findings(title: str, items: list[dict], tracked: set[str],
                     renames: dict[str, str]) -> None:
     print(f"  {title}: {len(items)}")
@@ -920,6 +1038,7 @@ def run(check_anchors: bool = True, require_roots: bool = False,
     C.print_header("verify-links (report-only)", apply=False)
 
     missing_roots = check_required_roots() if require_roots else []
+    resurrected = check_retired_roots() if require_roots else []
     broken, advisory, permitted, skipped, unrecognised = check_references(check_anchors)
     bad_links = check_symlinks()
     vendor_rc, vendor_msg = check_vendor()
@@ -931,24 +1050,56 @@ def run(check_anchors: bool = True, require_roots: bool = False,
     print(f"  refs + markdown links checked across {len(files)} tracked .md files"
           + (f" ({n_ovl} of them in the mounted overlay)" if n_ovl else ""))
 
+    # The unrecognised bucket's only detector was ``--compare`` against a baseline, and
+    # NOTHING passes it — not the pre-commit hook, not CI (ci.yml runs this module bare).
+    # So "never invisible again" was true of the TOTAL and of nothing else, and a total
+    # sliding from 792 to 794 does not say WHICH root arrived. Name the roots instead,
+    # biggest first, restricted to refs that name a file — the subset that can actually
+    # be a rotted path rather than prose shorthand — so a newly stale root is a line in
+    # the DEFAULT report instead of a delta someone has to go looking for.
+    #
+    # It still does not gate, and that is deliberate: ``test_a_branch_name_is_counted_
+    # not_broken`` is right that failing the whole class needs an unbounded allowlist of
+    # innocent tokens (branch names, Graph endpoints, skill-relative ``scripts/``).
+    # RETIRED_ROOTS carves out the part that can be decided on evidence; the rest is
+    # made READABLE, which is the actual complaint about a bucket nobody reads.
+    filey = [u for u in unrecognised if u["names_a_file"]]
+    by_root: dict[str, list[dict]] = {}
+    for u in filey:
+        by_root.setdefault(u["ref"].split("/", 1)[0] + "/", []).append(u)
+    ordered = sorted(by_root.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+
     for key, count in skipped.items():
         if count and key != VERIFIED_KEY:
-            extra = ""
-            if key == "unrecognised-root":
-                extra = (f", of which {sum(1 for u in unrecognised if u['names_a_file'])}"
-                         " name a file")
+            extra = f", of which {len(filey)} name a file" \
+                if key == "unrecognised-root" else ""
             print(f"  skipped refs — {_SKIP_LABELS[key]}: {count}{extra}")
+            if key != "unrecognised-root" or not ordered:
+                continue
+            print(f"    they sit under {len(ordered)} distinct roots; "
+                  "biggest first:")
+            for name, us in ordered[:_UNRECOGNISED_ROOTS_SHOWN]:
+                print(f"      {name:26} {len(us):4}  e.g. "
+                      f"{us[0]['file']}:{us[0]['line']}  -> {us[0]['ref']}")
+            if len(ordered) > _UNRECOGNISED_ROOTS_SHOWN:
+                print(f"      … and {len(ordered) - _UNRECOGNISED_ROOTS_SHOWN} more "
+                      "(--list-unrecognised prints every one)")
 
     # Every bucket gets the "did you mean" hint, not just the fatal one. The whole
     # payoff of the permitted tier is that a folded queue item's five inbound
     # handover links stay listed AND carry a pointer to the ADR that replaced them —
     # a reader who wants the successor should not have to go looking for it.
+    # Feed ``_suggest`` the retired-root map. Its ``renames`` branch had been dead
+    # since it was written — all three call sites passed ``{}`` — so a reference to a
+    # renamed root printed with no successor even though the successor is a fact.
+    retired_renames = {h["target"]: h["successor"]
+                       for h in broken + advisory + permitted if h.get("successor")}
     if advisory:
         _print_findings("advisory (plans name targets that do not exist yet)",
-                        advisory, tracked_pub, {})
+                        advisory, tracked_pub, retired_renames)
     if permitted:
         _print_findings("permitted (dated records — rewriting them would falsify "
-                        "the record)", permitted, tracked_pub, {})
+                        "the record)", permitted, tracked_pub, retired_renames)
     # The summary says what was VERIFIED, never "all resolve". The old line was a
     # clean bill of health issued over a third of the corpus: on this repo it printed
     # after 729 refs had been counted as unresolvable-here and 89 findings had been
@@ -957,7 +1108,7 @@ def run(check_anchors: bool = True, require_roots: bool = False,
     verified = skipped[VERIFIED_KEY]
     unverified = sum(v for k, v in skipped.items() if k != VERIFIED_KEY)
     if broken:
-        _print_findings("BROKEN references", broken, tracked_pub, {})
+        _print_findings("BROKEN references", broken, tracked_pub, retired_renames)
     no_coverage = verified == 0
     if no_coverage:
         # The check_symlinks rule, applied to references: verifying nothing is a
@@ -1033,8 +1184,16 @@ def run(check_anchors: bool = True, require_roots: bool = False,
         for p in missing_roots:
             print(f"    {p}")
 
+    if resurrected:
+        print(f"  RESURRECTED ROOTS ({len(resurrected)}) — RETIRED_ROOTS says these "
+              "were renamed away, but they exist again, so the map now rewrites live "
+              "paths:")
+        for p in resurrected:
+            print(f"    {p} (mapped to {RETIRED_ROOTS[p]})")
+
     failed = (bool(broken) or bool(bad_links) or vendor_rc != 0
-              or bool(missing_roots) or compare_failed or no_coverage)
+              or bool(missing_roots) or bool(resurrected) or compare_failed
+              or no_coverage)
     print("\n  " + ("FAIL: broken references / symlinks / drift found."
                     if failed
                     else f"OK: {verified} references, the skill symlinks and the "
