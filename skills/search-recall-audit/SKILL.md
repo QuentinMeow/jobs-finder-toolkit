@@ -165,8 +165,9 @@ a separate `address`/`allLocations` field), so the gate decides on a lossy strin
 .venv/bin/python automation/search-recall-audit/field_fidelity.py corpus
 # 2. Curate/sample cases (weighted to flagged) for AI verification.
 .venv/bin/python automation/search-recall-audit/field_fidelity.py sample --n 30
-# 3. Re-parse ONE entity deterministically to root-cause a flagged case.
-.venv/bin/python automation/search-recall-audit/field_fidelity.py check --source lever --id <native_id>
+# 3. Re-parse ONE entity deterministically to root-cause a flagged case. Takes STORE
+#    ENTITY KEYS (repeatable), not the `<source>-<native_id>` case-file name from step 2.
+.venv/bin/python automation/search-recall-audit/field_fidelity.py check --key <entity-key>
 # 4. Escape hatch: list weird-format postings (review reason weird_location_format) as AI TODOs.
 .venv/bin/python automation/search-recall-audit/field_fidelity.py todo
 ```

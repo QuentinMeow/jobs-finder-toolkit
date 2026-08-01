@@ -243,8 +243,8 @@ the machine contract is one hidden JSON-comment line. Optional calendar fields i
 `action`, `due_at`, `starts_at`, `ends_at`, timezone, and `follow_up_at`.
 Sections project entry state: **Action needed** (owner work), **Waiting and follow-up**
 (employer/result/paused waits), **Interview schedule** (confirmed times, chronological), and
-**My notes and personal todos** (owner-only). A separate generated **In-progress companies and
-roles** view contains every application rolled up to `in_progress`, every role in each folder, the
+**My notes and personal todos** (owner-only). A separate generated **`## Companies in progress`**
+view contains every application rolled up to `in_progress`, every role in each folder, the
 canonical per-role stage, and the latest concise company update with a `human` or `email` source.
 It is a projection only: `meta.yaml` progress plus standardized `notes.md` evidence remain canonical.
 Company-scope evidence may appear there when an exact posting is unresolved, but it must not be
@@ -349,7 +349,7 @@ The two per-job statuses above roll up to `in_progress`, so this folder lives in
 .venv/bin/python skills/application-tracker/scripts/status.py
 ```
 
-Prints a table of all applications with company, role, date, status, source, and files. Shows funnel summary if multiple statuses exist.
+Prints a table of all applications with company, role, date, status, channel, and files. Shows funnel summary if multiple statuses exist.
 
 ### Filter Postings
 

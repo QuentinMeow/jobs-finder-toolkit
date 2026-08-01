@@ -1356,8 +1356,9 @@ def update_progress(
     transactionally. Entering a scheduling state (booking/waiting/scheduled/
     reschedule) creates the calendar entry when the job has none — with a fresh
     stable id recorded as ``progress.calendar_item``. ``--state scheduled``
-    requires the calendar entry to already carry the confirmed time + timezone
-    (record it in calendar.md, then run --sync-calendar --write).
+    requires an exact ``--starts-at`` plus ``--timezone`` on the SAME
+    invocation (they land on the entry before it is validated); ``--ends-at``
+    is optional. Nothing has to be recorded in calendar.md first.
     """
     if phase not in PROGRESS_PHASES:
         print(f"Error: --phase must be one of {', '.join(PROGRESS_PHASES)}",
@@ -2610,7 +2611,8 @@ def main():
                              "generated in-progress company view. Add --write "
                              "to apply; metadata is untouched.")
     parser.add_argument("--write", action="store_true",
-                        help="With --sync-calendar: apply the previewed proposals.")
+                        help="With --sync-calendar or --refresh-calendar: apply "
+                             "the previewed proposals.")
     parser.add_argument("--sync-log", action="store_true",
                         help="Append every changed posting to the append-only "
                              "skip-log applications-log.jsonl (the postings "

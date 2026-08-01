@@ -11,8 +11,10 @@ only), mirroring test_status_transitions.py.
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -242,6 +244,36 @@ class ProgressCalendarTests(unittest.TestCase):
         text = self.calendar.read_text()
         self.assertIn("**Mon, Aug 3 · 10:00 AM PDT–11:00 AM PDT**", text)
         self.assertIn('"ends_at":"2026-08-03T11:00:00-07:00"', text)
+
+    # -- the CLI's own prose must not contradict the CLI ------------------- #
+    # Both cases below were real drift: the docstring told agents to pre-record
+    # the time in calendar.md and re-sync (the test above proves flags in ONE
+    # invocation are enough), and --write's help named only --sync-calendar
+    # while its own guard also accepts --refresh-calendar.
+
+    def test_update_progress_docstring_matches_the_enforced_scheduled_contract(self):
+        tree = ast.parse(STATUS.read_text(encoding="utf-8"))
+        doc = next(
+            ast.get_docstring(node) for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "update_progress")
+        self.assertIn("--starts-at", doc)
+        self.assertIn("--timezone", doc)
+        # The retired instruction: record it in calendar.md, then re-sync.
+        self.assertNotIn("--sync-calendar", doc)
+
+    def test_write_help_names_every_flag_its_guard_accepts(self):
+        guard = self._run(STATUS, "--write")
+        self.assertNotEqual(guard.returncode, 0)
+        accepted = set(re.findall(r"--[a-z-]+", guard.stderr.split("requires", 1)[1]))
+        self.assertEqual(accepted, {"--sync-calendar", "--refresh-calendar"})
+
+        # argparse lists each option at a fixed two-space indent; anchor there so
+        # a wrapped "Add --write ..." inside a neighbour's help never matches.
+        help_text = self._run(STATUS, "--help").stdout
+        block = re.split(r"^  --write\b", help_text, maxsplit=1, flags=re.M)[1]
+        block = re.split(r"^  --[a-z]", block, maxsplit=1, flags=re.M)[0]
+        for flag in accepted:
+            self.assertIn(flag, block, f"--write help omits {flag}")
 
     def test_assessment_and_offer_actions_are_first_class_todos(self):
         slug = "example-corp-solo-20260720"
