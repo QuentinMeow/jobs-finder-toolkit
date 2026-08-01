@@ -88,7 +88,10 @@ class RulesDumpTests(unittest.TestCase):
             self.assertIn(f"{k}={v}", text)
 
     def test_dump_is_compact(self):
-        # Compact surface (vs reading the ~37 KB validator source).
+        # Compact surface (vs reading the ~41 KB validator source). This ceiling is
+        # what SKILL.md's "~2 KB, test-pinned under 3 KB" rests on: the size is the
+        # argument for running the dump instead of reading check.py, so it is pinned
+        # here rather than restated as a hand-maintained number in prose.
         self.assertLess(len(check.format_rules().encode()), 3000)
 
     def test_cli_rules_flag_prints_and_exits_zero(self):

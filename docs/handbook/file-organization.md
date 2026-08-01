@@ -19,8 +19,10 @@ where its purpose is obvious:
 - **Purpose over mechanism.** Name folders after the job they do (`shared`,
   `vendoring`, `company-info`, `oa-references`), not after a file type or a
   generic bucket (`scripts`, `docs`, `files`, `data`).
-- **Generic top-level folders must fan out into purpose subfolders.** `scripts/` splits
-  into `shared/`, `vendoring/`, `gardener/`, and a folder per job — the interim
+- **Generic top-level folders must fan out into purpose subfolders.** There is no root
+  `scripts/`: the tooling root is `automation/`, and it fans out into `shared/`,
+  `vendoring/`, and a folder per job (`gardener/`, `search-recall-audit/`,
+  `company-levels/`, `metrics/`, `publish/`, `store/`, `reconcile/`, `hooks/`) — the interim
   `maintenance/` bucket was itself dissolved for breaking this rule; each skill keeps its code under
   `skills/<skill>/scripts/`. `docs/` is the worked example: it once held files directly and was
   dissolved for it, and it was reinstated in 2026-07 **only as a parent** whose every child is
@@ -55,7 +57,7 @@ unless it exceeds 150 characters (see the applicable overlay-only interview skil
 Ad-hoc, throwaway work — one-off API/ATS probes, scraper snippets, fetched raw HTML/JSON,
 sanity-check scripts, any disposable intermediate — MUST live under the single top-level
 **`local/`** folder in **purpose-named subfolders**, never in the repo root or a tracked/product
-folder (`applications/`, `scripts/`, `templates/`, `skills/`, the overlay's `companies/` and
+folder (`applications/`, `automation/`, `templates/`, `skills/`, the overlay's `companies/` and
 `me/` trees). A hard rule
 for every agent and skill; the old flat `tmp_*.py`-in-root habit is retired.
 

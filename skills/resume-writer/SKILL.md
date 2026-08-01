@@ -251,7 +251,7 @@ a legacy `employer:`/`experience:` layout, or a field the baseline doesn't show.
 - A skill in none of the three lists fails validation — never add it silently; see Step 7
   (categorize new skills with the user).
 - **Need the exact gate semantics or a threshold** (skill-list matching, cover-letter word
-  counts, bullet/length limits)? Run `check.py --rules` (~1 KB) — never read the `check.py` source.
+  counts, bullet/length limits)? Run `check.py --rules` (~2 KB, test-pinned under 3 KB) — never read the `check.py` source.
 - Every bullet must map to real content the user actually did — reword, never invent. The source
   of truth is the profile (`config.profile_md_path()`) **plus** the supporting library
   (the story bank at `config.story_bank_path()`, the question bank beside it under
@@ -327,7 +327,7 @@ the fix lands under budget). Expect 1–2 cycles; **after 3, stop and report to 
 Checks can also be run standalone:
 `.venv/bin/python skills/resume-writer/scripts/check.py applications/6_drafted/<slug>/`.
 **To learn exactly what check.py enforces (every gate + numeric threshold), run `check.py --rules`
-(~1 KB) — never read the validator source.** Submit the resume DOCX from `source/` to portals (PDFs
+(~2 KB, test-pinned under 3 KB vs a 41 KB validator) — never read the validator source.** Submit the resume DOCX from `source/` to portals (PDFs
 are for humans). **Trigger — a render/layout failure the menu above doesn't resolve (LibreOffice /
 DOCX internals, employer-header alignment, the schema-v5 `meta.yaml` gate, cover-letter render flags,
 master-resume/log updates): read ONLY [`reference.md`](reference.md) § "Render & validate —

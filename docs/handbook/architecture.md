@@ -97,14 +97,16 @@ transactional writer of the single `calendar.md` resolved by `config.calendar_pa
 ## Self-contained skills (vendoring)
 
 Each skill under `skills/<skill>/` bundles its own `scripts/` plus a
-`scripts/_vendor/` copy of the shared modules it needs (`config.py`, `layout.py`,
-`location.py`, `job_metadata.py`, `metadata_editor.py`). A skill never imports
-repo-root Python, so a single skill folder can be dropped into another project and
-keeps working.
+`scripts/_vendor/` copy of the shared modules — and whole shared packages — it needs.
+A skill never imports repo-root Python, so a single skill folder can be dropped into
+another project and keeps working.
 
 The canonical sources live in `automation/shared/`; `automation/vendoring/sync_vendored.py`
 regenerates the byte-identical `_vendor/` copies, and its `--check` mode (run by the
 pre-commit hook and CI) fails on any drift. Edit the canonical source, never a copy.
+**What is vendored into which skill is not listed here on purpose** — the registry is
+`TARGETS` (modules) and `DIR_TARGETS` (packages) in that script, and it is the only copy
+of that list the drift check can actually enforce.
 (This is "Approach 2" of the historical design exploration in
 `docs/designs/skill-script-sharing/`.)
 
@@ -137,27 +139,33 @@ Full walkthrough: [`docs/handbook/private-overlay.md`](private-overlay.md).
 ## Continuous integration
 
 CI ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) runs on every push and
-pull request:
+pull request. **That workflow file is the authoritative list**, step by commented step;
+this section deliberately does not renumber it, because the hand-copied list that used to
+live here went eight steps stale the last time CI grew. What is worth knowing without
+opening it:
 
-1. **Vendored-copy drift check** — `sync_vendored.py --check`.
-2. **Compile** — byte-compiles all toolkit and skill Python.
-3. **Example renders + validate** — renders the legacy worked example under
-   `examples/applications/6_drafted/` and a public multi-experience fixture with fake
-   configs, including one-page PDF checks (LibreOffice is installed in CI).
-4. **Resume-writer unit tests** — schema normalization, extraction diagnostics,
-   multi-employer rendering/layout, and an isolated `_test_application_` workflow.
-5. **Shared-module unit tests** — `automation/shared/tests` (job metadata, the
-   formatting-preserving editor, layout, search/backfill).
-6. **Leak-guard + exporter unit tests** — `automation/publish/tests`.
-7. **Public leak guard** — blocking; zero findings is the steady state.
+- **Every step in the `build` job is blocking.** The workflow contains no
+  `continue-on-error:` anywhere, so a red step fails the PR — there are no advisory steps.
+- The verification steps fall into four families: **structural** (vendored-copy drift,
+  byte-compile), **process and safety gates** (mail send-less policy, the reconciler,
+  the reference/markdown link check, the public review gate, the instruction-file budget),
+  **behavioural** (the example render + validate, plus the unit suites across `automation/`
+  and every skill), and the **leak defenses** (leak-guard + exporter unit tests, then the
+  blocking public leak guard). Ahead of them sit four environment steps — checkout with
+  full history, Python, `requirements.txt`, LibreOffice.
+- Two gates used to run **only** in the local pre-commit hook — the mail send-less policy
+  and the instruction-file budget — so an uninstalled hook, a `git commit --no-verify`, or
+  a fork PR could land a change either one would have refused. Both run here now.
+- `--require-roots` is **deliberately absent** from the reconciler and link-checker steps.
+  It asserts that every process root exists, which is a maintainer-checkout assertion, and
+  the published export ships fewer roots; it lives in the pre-commit hook only.
 
 A separate `secret-scan` job runs gitleaks over the full history for credential
 shapes the identity guard does not target.
 
-Local equivalents of all gates are listed in
-[`CONTRIBUTING.md`](../../CONTRIBUTING.md) → "Running the checks"; the tracked git hooks
-(installed by `python automation/bootstrap_overlay.py`) run the cheap ones on commit and
-the leak guard on push.
+Local equivalents are in [`CONTRIBUTING.md`](../../CONTRIBUTING.md) → "Running the checks";
+the tracked git hooks (installed by `python automation/bootstrap_overlay.py`) run the cheap
+gates on commit and the leak guard on push.
 
 ## Repo reference
 
@@ -173,9 +181,11 @@ the leak guard on push.
 | `automation/search-recall-audit/` | Recall/precision + field-fidelity audits of the job-search pipeline (`audit.py`, `field_fidelity.py`, `store_refilter.py`) |
 | `automation/company-levels/` | File-only `import_company_levels.py` — never fetches or scrapes |
 | `automation/metrics/` | Opt-in local metrics hooks + the instruction-file size budget (`instruction_budget.py --strict`) |
-| `automation/publish/` | Leak guard + exporter (the repo's privacy defenses) |
+| `automation/publish/` | Leak guard + exporter (the repo's privacy defenses) + the public review gate and its ledger |
+| `automation/store/` | Raw-data-layer store tooling: builder, validator, retention garbage collector |
+| `automation/reconcile/` | The reconciler — the process-layer gate (`reconcile.py --check`) |
 | `evals/` | All measurement: `canaries/<skill>.yaml` gating skill-instruction changes, `protocols/` (matched-pair A/B + stage benchmarks), `rubrics/`, dated `results/` (see `evals/README.md`) |
-| `automation/hooks/` | Tracked git hooks: pre-commit (staged-index leak guard + staged-`private/` reject, drift, compile, budget, reconciler), pre-push (leak guard, armed) |
+| `automation/hooks/` | Tracked git hooks: pre-commit (nine gates — staged-`private/` reject, staged-index leak guard, public review gate, vendor drift, mail send-less policy, compile, instruction budget, reconciler, reference/link check; the hook file is the list), pre-push (leak guard, armed) |
 | `AGENTS.md` | The agent-facing contract: guardrails, conventions, memory map |
 | `docs/handbook/` | Human-facing operating docs (this file, `docs/handbook/private-overlay.md`, `docs/handbook/metrics.md`) |
 | `docs/designs/` | Design programs — one folder per family (`docs/designs/skill-script-sharing/`, `docs/designs/raw-data-layer/`, …) |

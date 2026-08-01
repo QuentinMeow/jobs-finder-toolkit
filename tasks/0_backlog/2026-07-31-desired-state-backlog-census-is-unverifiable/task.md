@@ -1,54 +1,57 @@
-# `desired-state.md`'s backlog census cannot be reproduced from the public tree
+# The desired-state backlog census cannot be re-derived from the public tree
 
 - **Priority**: P2 (someday)
 - **Area**: repo
-- **Source**: doc-vs-code contradiction audit, 2026-07-31 — filed as a task, not an owner
-  decision: nothing here needs a ruling, only a re-measurement the public tree cannot do
+- **Source**: roadmap grooming session 2026-07-31 (the pass that corrected `current-state.md`); contradiction audit finding B7
 - **Claimed-by**:
 
 ## Goal
 
-The backlog census in `docs/roadmap/desired-state.md` either matches a count someone can
-reproduce, or stops quoting a raw number that goes stale within a day.
+Either make `docs/roadmap/desired-state.md`'s backlog census re-derivable by a
+command, or replace the hand-counted numbers with the command that produces them —
+so the argument built on those numbers can be re-checked without reading `private/`.
 
 ## Context
 
-`docs/roadmap/desired-state.md:58-60`:
+`docs/roadmap/desired-state.md` → "The gap this list does not describe" opens with
+*"Of the 24 open backlog items, 19 concern the harness that tracks the work and 5
+concern the job hunt."* The paragraph is dated 2026-07-31 and the 19-vs-5 split is
+the whole load-bearing argument of that section: the backlog is inverted relative to
+where damage reaches the user.
 
-> Recorded 2026-07-31, deliberately as one paragraph here rather than as seven task
-> folders. Of the 24 open backlog items, 19 concern the harness that tracks the work
-> and 5 concern the job hunt.
+The number cannot be checked from the public tree. `ls tasks/0_backlog | wc -l` was
+**15** on 2026-07-31, so 24 must be a public + `private/tasks/0_backlog/` total —
+and an agent working the public repo (or any reader of the published export, which
+ships no `tasks/` at all) has no way to confirm or refute it. The grooming pass that
+corrected `current-state.md` deliberately did not touch the number rather than guess
+at it, because the private half was out of reach by instruction.
 
-`ls tasks/0_backlog | wc -l` in the public tree returns **15** today. It returned **14**
-when the audit measured it earlier the same day — the number moved twice within the day the
-paragraph was written, which is itself the argument against quoting it.
+Two shapes of fix, both fine:
 
-**This is not necessarily wrong.** The private overlay has its own `tasks/0_backlog/`, so
-`24` may be the correct combined total. It cannot be checked from a config-less checkout, and
-it cannot be checked in CI, which never mounts the overlay. So the sentence is currently
-unfalsifiable by anyone except the maintainer at a machine with the overlay mounted — and the
-paragraph does not say which trees it counts, so even the maintainer cannot tell whether they
-are reproducing it or re-deriving it.
+1. **Derive it.** A tiny counter that reports `open backlog items, split by the
+   `- **Area**:` field` across `tasks/0_backlog/` plus `private/tasks/0_backlog/`
+   when mounted. `automation/metrics/` is the natural home; the gardener's
+   report-only routines are the natural caller. The roadmap then names the command
+   instead of a number, the way `current-state.md`'s link-check bullet now does.
+2. **Re-measure and re-date, with the derivation written next to it.** Cheaper, but
+   it goes stale on the next filed task and nothing will catch it — the same failure
+   this session was cleaning up.
 
-**The argument the number supports probably survives.** The paragraph's point — that the
-backlog is inverted relative to where the damage is, and that `memory/known-issues/` holds
-seven open entries of which only one is referenced by a task — does not depend on the exact
-total. The 19-versus-5 split does. Neither should be quoted again until re-run.
+Note the census also depends on the harness/job-hunt classification, which today is
+a judgement made per task, not a field. `- **Area**:` in `templates/task/task.md`
+already carries a close-enough taxonomy (`job-search | resume-writer | tracker |
+email | harness | benchmarks | repo`) — a split on that field is mechanical, whereas
+"harness vs job hunt" is not, so option 1 should report the `Area` split and let the
+prose do the collapsing.
 
-**Do not fold this into a `current-state.md` grooming pass.** That is a separate, larger job
-(the same audit found `current-state.md` describing a repo four merges old while carrying
-today's date). This task is one paragraph in the *other* roadmap file.
-
-Requires the overlay mounted; a config-less agent can complete the second bullet below but
-not the first.
+**Leak rule**: any counter must print counts only. A private task's id, slug or title
+must never reach the public roadmap or a public commit message.
 
 ## Definition of done
 
-- [ ] The paragraph's counts are re-measured across both trees on the day it is rewritten,
-      and it states which trees it counts — or
-- [ ] The raw counts are replaced by the ratio and the argument they support, so the
-      paragraph cannot go stale within a day of being written
-- [ ] `grep -c "24 open backlog" docs/roadmap/desired-state.md` returns 0 unless 24 is the
-      re-measured figure
-- [ ] `.venv/bin/python automation/reconcile/reconcile.py --check` and
-      `.venv/bin/python automation/gardener/verify_links.py` stay green
+- `docs/roadmap/desired-state.md`'s census paragraph either names a command that
+  reproduces its numbers, or carries a re-measured number with the command that
+  produced it written beside it.
+- If option 1: the counter runs in a config-less checkout with no overlay mounted
+  (public half only, no crash), and its output contains no task ids or titles.
+- `.venv/bin/python automation/reconcile/reconcile.py --check` stays green.

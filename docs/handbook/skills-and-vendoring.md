@@ -18,15 +18,20 @@ import repo-root toolkit Python** and must never `sys.path`-inject a path
 outside its own skill folder. When a skill needs a pure toolkit module, that
 module is **vendored** (copied) into the skill:
 
-- **One canonical source per shared module** lives in `automation/shared/` (today:
-  `config.py`, `layout.py`, `location.py`, `job_metadata.py`, and
-  `metadata_editor.py`). Edit the logic there — never in a copy.
+- **One canonical source per shared module** lives in `automation/shared/`. Edit the
+  logic there — never in a copy. **Whole package trees are vendored too**, not just
+  single modules.
 - **Byte-identical copies** are generated into each consuming skill's
   `scripts/_vendor/` (e.g. `skills/resume-writer/scripts/_vendor/config.py`,
-  `skills/job-search/scripts/_vendor/location.py`).
+  `skills/job-search/scripts/_vendor/location.py`,
+  `skills/email-assistant/scripts/_vendor/mail/`).
   Everything in `_vendor/` except `__init__.py`/`README.md` is generated — do not edit.
-- The registry of `source -> [copies]` lives in `automation/vendoring/sync_vendored.py`.
-  After editing a canonical source, regenerate the copies:
+- **The registry is the list.** `automation/vendoring/sync_vendored.py` holds
+  `TARGETS` (`source module -> [copies]`) and `DIR_TARGETS`
+  (`source package -> [copy dirs]`). Read those two dicts to learn what is vendored
+  and which skills consume it; this page deliberately does not restate them, because a
+  copied list here is a second source of truth that only the drift check can falsify —
+  and it checks the copies, not the prose. After editing a canonical source, regenerate:
   `.venv/bin/python automation/vendoring/sync_vendored.py`.
 - A drift check (`sync_vendored.py --check`) fails if any copy diverges from its
   source. It runs in the tracked `automation/hooks/pre-commit` hook (install once with
@@ -51,9 +56,9 @@ test module skips the call.
 
 Where does a new shared module go? If **only one skill** needs it and it's
 skill-specific, keep it in that skill's `scripts/`. If a skill needs a **pure toolkit
-module**, add it to `automation/vendoring/sync_vendored.py`'s `TARGETS`, run the sync, and
-import the `_vendor/` copy. The self-contained skills (`resume-writer`,
-`application-tracker`, `job-search`) vendor the shared modules they need; the repo-root
-maintenance tooling (`automation/gardener/`, `automation/search-recall-audit/`,
+module**, add it to `automation/vendoring/sync_vendored.py`'s `TARGETS` (or `DIR_TARGETS`
+for a package), run the sync, and import the `_vendor/` copy. Every skill that appears on
+the right-hand side of those two dicts is a self-contained consumer and vendors what it
+needs; the repo-root maintenance tooling (`automation/gardener/`, `automation/search-recall-audit/`,
 `automation/company-levels/`, `automation/vendoring/`) may import
 `automation/shared/` directly since it always runs inside this repo.

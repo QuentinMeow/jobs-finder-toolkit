@@ -2,12 +2,22 @@
 
 - **Last-updated**: 2026-07-31
 
+*Groomed 2026-07-31 after an audit found this page four merges stale under a fresh
+date. Every claim below was re-derived from the tree that day — task folders read
+from `tasks/`, gate lists read from `.github/workflows/ci.yml` and
+`automation/hooks/pre-commit`, the link count re-run. Where a claim was a count that
+only re-measurement can keep true, it was replaced by the command that produces it.*
+
 - **Process layer**: the AgentFold restructure is **done and closed**, not in
   flight — all four PRs (#56–#59) merged on 2026-07-22, and the task moved to
   `tasks/4_done/` on 2026-07-31. `message-queue/`, `tasks/`, `memory/`,
   `templates/`, `docs/roadmap/`, `history/` and the reconciler all ship, in both
-  repositories, with `reconcile --check --require-roots` wired into pre-commit
-  and CI. One item was reversed: top-level `handbook/` + `design/` became
+  repositories, with `reconcile --check` wired into pre-commit and CI.
+  `--require-roots` is **pre-commit only**, and only when `private/` is mounted:
+  CI runs the reconciler deliberately without it (`.github/workflows/ci.yml`, the
+  comment directly above the step), because the flag asserts that every process
+  root exists and the published export ships fewer of them. The same split applies
+  to the link checker. One item was reversed: top-level `handbook/` + `design/` became
   `docs/{handbook,designs}` under workspace phase 2's superseding ADR. *(This
   bullet described a PR train "in review" for nine days after it merged. No date
   check catches that: the reconciler's `roadmap-dated` gate proves only that the
@@ -23,7 +33,16 @@
   `skills/email-assistant/` (no alias; the overlay's `references_private`
   folder is already renamed). Stage 2 (tracker schema v5 + the single
   calendar file) is merged; its owner-review UX revision makes events and
-  todos scannable while retaining broad reporting phases. Stages 3–5 not started. Owner follow-up: the one
+  todos scannable while retaining broad reporting phases. **Stages 3–5, re-checked
+  against `tasks/` on 2026-07-31** — this page previously called them "not started",
+  contradicting the census in `docs/roadmap/desired-state.md` item 1; the two files
+  are read as a pair, so they must agree. Stage 3 is `tasks/3_in-review/2026-07-22-email-store-sync`
+  and stage 1's own task is likewise still in `3_in-review`, both held for missing
+  definition-of-done evidence; stage 4 is the one genuinely in flight
+  (`tasks/1_in-progress/2026-07-22-email-progress-reconciliation`); and **stage 5 —
+  the store-first review cutover — has no task file at all**, only the design's own
+  section, with filing gated on stage 4 landing plus the dual criterion in
+  `memory/decisions/raw-data-layer-decisions.md` row 14. Owner follow-up: the one
   read-only `--live` conformance run.
 - **Job store**: raw-data-layer stages 0–4 shipped (PRs #49–#53) — library,
   capture boundary, builder, pipeline integration, retention/gardener. The
@@ -37,13 +56,20 @@
   `config.calendar_path()`) is current; v4 is rejected after the preview-first
   migration cutover. Calendar rows lead with the time or action, link to role
   context, and keep machine metadata to one hidden compact line.
-- **Quality gates**: CI runs vendor drift, compileall, example render +
-  validate, four unit suites, store fixture validation, the public-change
-  review gate (`review_gate.py --verify-all`), leak guard, and gitleaks;
-  pre-commit mirrors the fast checks + the staged-index leak guard + the
-  review gate + instruction budgets + the reconciler with `--require-roots`.
-  Every public commit now needs a row in
-  `automation/publish/review_ledger.yaml`.
+- **Quality gates**: CI's `build` job is four environment steps followed by
+  verification steps in four families — structural (vendor drift, compileall),
+  process and safety gates (mail send-less policy, reconciler, reference/markdown
+  links, the public review gate, instruction budget), behavioural (example render +
+  validate, and unit suites across `automation/` and every skill), and the leak
+  defenses (leak-guard/exporter tests, then the blocking public leak guard); an
+  independent `secret-scan` job runs gitleaks. **None of it is advisory** — the
+  workflow contains no `continue-on-error:`. The tracked pre-commit hook runs nine
+  gates. *Neither list is restated here on purpose*: `.github/workflows/ci.yml` and
+  `automation/hooks/pre-commit` are the lists, and this bullet went four gates stale
+  the last time CI grew. The two facts worth carrying: the reconciler and the link
+  checker run in CI **without** `--require-roots` by design, and every public commit
+  needs a row in `automation/publish/review_ledger.yaml` — the review gate blocks in
+  both pre-commit and CI.
 - **Workspace restructure**: phases 0 (leak guard/config-discovery/pre-push
   fail closed instead of open, `sync_skill_manifests.py` makes `SKILL.md`
   frontmatter the sole visibility SSOT, eleven config accessors, widened link
@@ -53,8 +79,12 @@
   access now goes through config accessors and git-ignored `.claude/skills`
   /`.cursor/skills` links) are **merged** (PRs #81–#86, commits
   `72d45e2`…`7809b4b`). Phases 1 (both orphaned items refiled inside the
-  overlay; the scratch tree classified, never emptied) and 2 are **complete and
-  in review** as open stacked PRs. Phase 2 gave the public tree its final root
+  overlay; the scratch tree classified, never emptied) and 2 are **merged and
+  closed** — both task folders sit in `tasks/4_done/`
+  (`2026-07-28-workspace-phase-1-orphans`, `2026-07-28-workspace-phase-2-public-cleanup`),
+  and phase 2's five PRs (#99–#103) plus the ledger re-anchor (#105) are on `main`,
+  which is why the root shape described next is the one you see in a fresh clone.
+  Phase 2 gave the public tree its final root
   shape: the former generic maintenance bucket is split into
   `automation/gardener/`, `automation/search-recall-audit/` and
   `automation/company-levels/` with six of nine depth constants replaced by an
@@ -79,8 +109,15 @@
   location, the tailoring card rebuilds with its 7 stories and its staleness check
   goes fresh → STALE → fresh, and `--require-roots` refused the first commit after
   the move because a checker constant still named `benchmark/fixtures/`.
-  **Phases 6–8 are not started**; their preconditions are now met and their task
-  files carry re-measured scope. See
+  **Phase 6 shipped** — `automation/shared/skip_log.py` makes the applications
+  skip-log authoritative rather than derived; its task is in `tasks/3_in-review/`,
+  one ledger row behind. **Phase 7 is done** — `automation/shared/company_index.py`
+  is the single company index every alias lookup resolves through, and its task is in
+  `tasks/4_done/2026-07-28-workspace-phase-7-company-key`, with two follow-ups filed:
+  7b (put `company_key` on every application `meta.yaml`) in `tasks/3_in-review/` and
+  7c (durable vs disposable timeline) in `tasks/0_backlog/`. **Only phase 8 is
+  genuinely unstarted** (`tasks/0_backlog/2026-07-28-workspace-phase-8-instruction-surface`);
+  its preconditions are met and its task file carries re-measured scope. See
   `docs/designs/workspace-restructure/execution-plan.md`.
 - **The link-checker repair merged ahead of phase 5** — owner decision, 2026-07-29,
   and it was the right order for a reason nobody had seen yet. `verify_links.py`
@@ -93,7 +130,15 @@
   renames across both repositories so a move cannot report a regression that did not
   happen; and it runs in CI and pre-commit, where it previously ran nowhere. The
   "31–36 broken, no two checkers agree" mystery was one omission: a code span may
-  contain a newline. The real count is **23, every one in a dated record**.
+  contain a newline. **Do not quote a break count from this page** — it moves with
+  every commit and has an authoritative source: run
+  `.venv/bin/python automation/gardener/verify_links.py`, the same routine CI and
+  pre-commit gate on, which prints broken / advisory / permitted and exits non-zero
+  only on `broken`. Re-run 2026-07-31 in a config-less checkout with no overlay
+  mounted: **0 broken, exit 0.** The verified/advisory/permitted totals are omitted
+  deliberately: the verified total moved on every single document this grooming pass
+  touched, including this one, which is the whole reason the command belongs here
+  instead of a number.
   Two further owner decisions landed 2026-07-29: phase 5 moves
   company-specific interview material into company folders and reorganises
   nothing else (`memory/decisions/interview-material-moves-by-company-only.md`,
