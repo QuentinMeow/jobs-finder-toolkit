@@ -26,4 +26,7 @@ writer. Promotion (MEMORY→LESSONS→SKILL) exists; **forgetting**
 
 The queues (`message-queue/`, `tasks/`) are coordination state, not memory —
 their lifecycle is defined in their own READMEs and they hold only live
-items.
+items. Nothing expires them, so the gardener's report-only `queue-hygiene`
+routine flags the aging ones (old reviews, long-pending decisions, dwelling
+tasks, parked items whose revisit condition already shipped); acting on a
+finding is always a human judgement, so it exits 0 and moves nothing.

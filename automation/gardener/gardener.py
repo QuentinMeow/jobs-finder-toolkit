@@ -12,6 +12,7 @@ Routines:
     card-staleness       flag the tailoring card when its sources drifted (report-only)
     roadmap-staleness    flag docs/roadmap/current-state.md when its date aged out (report-only)
     skill-drift          flag baseline skills not in the profile's canonical lists (report-only)
+    queue-hygiene        flag aging message-queue/ items + dwelling tasks (report-only)
     verify-links         check referenced paths + symlinks + vendor drift (exit 1 on break)
     self-measure         recompute the pipeline funnel + memory metrics (--apply writes yaml)
     store-report         raw-data-layer store health (sizes/blobs/locks/validate; report-only)
@@ -33,6 +34,7 @@ import card_staleness  # noqa: E402
 import compact_logs  # noqa: E402
 import expire_discoveries  # noqa: E402
 import lessons_report  # noqa: E402
+import queue_hygiene  # noqa: E402
 import roadmap_staleness  # noqa: E402
 import self_measure  # noqa: E402
 import skill_drift  # noqa: E402
@@ -48,13 +50,14 @@ ROUTINES = {
     "roadmap-staleness": (lambda apply: roadmap_staleness.run(), False),
     "skill-drift": (lambda apply: skill_drift.run(), False),
     "store-report": (lambda apply: store_report.run(), False),
+    "queue-hygiene": (lambda apply: queue_hygiene.run(), False),
     "verify-links": (lambda apply: verify_links.run(), False),
     "self-measure": (lambda apply: self_measure.run(apply), True),
 }
 # Order used by --all (verify-links last so its exit code is the overall gate).
 ALL_ORDER = ["self-measure", "expire-discoveries", "compact-logs",
              "lessons-report", "card-staleness", "roadmap-staleness", "skill-drift",
-             "store-report", "verify-links"]
+             "store-report", "queue-hygiene", "verify-links"]
 
 
 def run_all() -> int:
