@@ -189,6 +189,12 @@ def _finalize(layout, root: Path):
     readme = root / "README.md"
     if readme.exists():
         readme.unlink()
+    # Same for the builder's fold cache: a purely local accelerator that a fresh
+    # build regenerates, and one whose header fingerprints the builder's own source
+    # — tracking it would dirty the fixture on every unrelated builder edit.
+    cache = layout.state / "postings-fold-cache.jsonl"
+    if cache.exists():
+        cache.unlink()
     # A consumer cursor demonstrating the sequence-cursor contract.
     cursors = {"schema_version": 1,
                "cursors": {"shortlist-review": {"seq": 1,

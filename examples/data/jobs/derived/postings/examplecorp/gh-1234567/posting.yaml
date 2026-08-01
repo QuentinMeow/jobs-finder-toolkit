@@ -12,13 +12,13 @@ jd:
   content_hash: 57b1111df417602ea827fb766ba214da4a0eeefcdb4b1468b91789aebea4f4ed
   fetched_verbatim: true
   file: jd.md
-  normalizer_version: 1
+  normalizer_version: 2
 key: gh-1234567
 last_seen: '2026-07-15T09:30:00Z'
 location: Seattle, WA (Hybrid)
 opinions:
   level:
-    by: job_metadata.py@3aebb9ea
+    by: job_metadata.py@28172df3
     from: 20260715T093000Z-000002-b2c3d4
     value: unknown
   visa:
@@ -27,7 +27,7 @@ opinions:
     hits: []
     label: unclear
   workplace:
-    by: job_metadata.py@3aebb9ea
+    by: job_metadata.py@28172df3
     effective: hybrid
     from: 20260715T093000Z-000002-b2c3d4
     human: hybrid
@@ -36,12 +36,12 @@ opinions:
 profiles:
 - profile-01
 provenance:
-  built_by: build_postings.py@e0b4788a
+  built_by: build_postings.py@e15dea50
   canonicalizer_version: 1
   fetch_ids:
   - 20260714T093000Z-000001-a1b2c3
   - 20260715T093000Z-000002-b2c3d4
-  normalizer_version: 1
+  normalizer_version: 2
 schema_version: 1
 source_ids:
 - id: '1234567'

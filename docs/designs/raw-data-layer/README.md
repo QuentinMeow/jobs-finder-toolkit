@@ -73,7 +73,8 @@ The principles every document shares:
 | Doc | What it covers | Post-review verdict |
 |-----|----------------|---------------------|
 | [01 — Store core](01-store-core.md) | The generic contract: five zones, write discipline, the determinism contract, identity pinning, retention with reference counting, agent ergonomics, content-egress rules | **Implemented for jobs.** Shared store and retention shipped; the email domain will reuse it |
-| [02 — Job postings](02-job-postings-pipeline.md) | Capture, stable posting identity, gap-tolerant observation history, code-only queries, JD reuse, application linkage, and the suppressed-row review queue | **Implemented.** Stages 1–3 shipped; the multi-day capture measurement and O(new) optimization remain follow-ups |
+| [02 — Job postings](02-job-postings-pipeline.md) | Capture, stable posting identity, gap-tolerant observation history, code-only queries, JD reuse, application linkage, and the suppressed-row review queue | **Implemented.** Stages 1–3 shipped; the multi-day capture measurement remains a follow-up |
+| [05 — Incremental builds](05-incremental-build.md) | Persisted per-entity fold state so a routine build costs O(new manifests); where the order dependence lives, what forces a full fold, the measured index strategy, crash safety, and the SQLite verdict | **Implemented.** Closes the O(new) follow-up the job-postings design asked for |
 | [03 — Provider interfaces](03-provider-interfaces.md) | One abstract mail contract; isolated Outlook/Gmail implementations; conformance testing; Gmail read-only by default | **Accepted, not implemented.** This is the first remaining email implementation slice |
 | [04 — Email download & categorization](04-email-download-categorization.md) | Incremental mail sync, categorization, guarded application linkage, and triage | **Accepted, not implemented.** Git policy is resolved |
 | [Application progress and calendar](../application-progress-calendar/README.md) | Structured hiring phases, booking/waiting/scheduled/reschedule states, and one private calendar todo file | **Designed, not implemented.** Required before email-driven scheduling reconciliation |
@@ -108,7 +109,7 @@ a path, manifest, or query output.
 | 0 — store library | Shipped | PR #49 |
 | 1 — jobs capture | Shipped; measurement open | PR #50; multi-day growth/overhead/dedup soak remains |
 | 2 — builder and queries | Shipped | PR #51 |
-| 3 — pipeline integration | Shipped | PR #52; O(new) incremental-build optimization remains queued |
+| 3 — pipeline integration | Shipped | PR #52; the O(new) incremental-build optimization landed — see [05 — Incremental builds](05-incremental-build.md) |
 | 4 — retention and gardener | Shipped | PR #53 |
 | 5 — email | Planned | Provider contract, tracker/calendar foundation, sync, categorization, reconciliation, and cutover |
 

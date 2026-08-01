@@ -3,6 +3,7 @@
 - **Priority**: P1 (next store round)
 - **Area**: harness
 - **Source**: stage-3 integration probe 2026-07-21; filed by the implementing session
+- **Claimed-by**: agent session 2026-07-31 (branch `wip/05-store-incremental-build`)
 
 ## Goal
 
@@ -23,15 +24,18 @@ O(new-manifests) work per run.
 
 ## Definition of done
 
-- [ ] Incremental builds fold ONLY pending manifests into persisted prior state
+- [x] Incremental builds fold ONLY pending manifests into persisted prior state
       (derived entities update in place for touched keys; untouched entities are
       not re-reduced, not re-written, not re-serialized).
-- [ ] The incremental==rebuild byte-identical equivalence test STILL passes —
+- [x] The incremental==rebuild byte-identical equivalence test STILL passes —
       equivalence is the non-negotiable contract; the optimization must not
       introduce order dependence (the ledger-ordered fold semantics stay).
-- [ ] Index update strategy documented (in-place row patch vs partitioned files
+- [x] Index update strategy documented (in-place row patch vs partitioned files
       vs accept full index rewrite while derived goes O(new) — measured choice).
-- [ ] Post-fetch build time on a 15k-entity store drops from minutes to seconds;
+- [x] Post-fetch build time on a 15k-entity store drops from minutes to seconds;
       number recorded in the PR.
-- [ ] The pre-sanctioned SQLite-cache escape hatch (design 01, alternatives) is
+- [x] The pre-sanctioned SQLite-cache escape hatch (design 01, alternatives) is
       explicitly evaluated and either adopted or deferred with a reason.
+
+Design record: [docs/designs/raw-data-layer/05-incremental-build.md](../../../docs/designs/raw-data-layer/05-incremental-build.md).
+Evidence: `verification.md` in this folder.

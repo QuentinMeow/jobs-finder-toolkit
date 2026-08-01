@@ -13,7 +13,7 @@ import shutil
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -255,6 +255,338 @@ class DeterminismTests(_StoreCase):
         self.assertEqual(len(changed), 1)
         fields = {c["field"] for c in changed[0]["changes"]}
         self.assertIn("location", fields)
+
+
+class IncrementalFoldTests(_StoreCase):
+    """The O(new) fold: it must reach every entity a full fold would have changed.
+
+    Each test here compares the incremental result against a full ``--rebuild`` of
+    the same raw zone byte-for-byte, and several deliberately arrange for a NEW
+    manifest to change an entity that manifest never mentions — the failure mode a
+    "only touch what the delta names" optimization invites.
+    """
+
+    def _snapshot(self, dst):
+        shutil.rmtree(dst, ignore_errors=True)
+        os.makedirs(dst)
+        shutil.copytree(self.layout.derived, Path(dst) / "derived")
+        shutil.copytree(self.layout.index, Path(dst) / "index")
+
+    def _tree_bytes(self, root):
+        out = {}
+        for p in sorted(Path(root).rglob("*")):
+            if p.is_file():
+                out[str(p.relative_to(root))] = p.read_bytes()
+        return out
+
+    def _assert_matches_rebuild(self):
+        """Snapshot the incremental result, rebuild, and require identical bytes."""
+        snap = tempfile.mkdtemp(prefix="fold-snap-")
+        try:
+            self._snapshot(snap)
+            incr_d = self._tree_bytes(Path(snap) / "derived")
+            incr_i = self._tree_bytes(Path(snap) / "index")
+            self.assertEqual(self._build(["--rebuild"]), 0)
+            self.assertEqual(self._tree_bytes(self.layout.derived), incr_d,
+                             "derived: incremental != rebuild")
+            self.assertEqual(self._tree_bytes(self.layout.index), incr_i,
+                             "index: incremental != rebuild")
+        finally:
+            shutil.rmtree(snap, ignore_errors=True)
+
+    def _summary(self, argv=None):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = self._build(argv or [])
+        self.assertEqual(rc, 0, buf.getvalue())
+        return buf.getvalue()
+
+    def _cache(self):
+        import postings_fold_state as fs
+        return fs.cache_path(self.layout)
+
+    # ── the fast path runs at all ──
+    def test_second_build_folds_pending_only(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertIn("fold=full", self._summary())
+        self.assertTrue(self._cache().exists())
+        self._capture_gh([_job(111, "SWE", "Seattle, WA"),
+                          _job(222, "SRE", "Remote, US")], _dt(15))
+        out = self._summary()
+        self.assertIn("fold=pending-only", out)
+        self._assert_matches_rebuild()
+
+    # ── the cross-entity reduction: a new manifest changing an OLD entity ──
+    DUP_JD = "Own the ingestion pipeline end to end. Kafka, Flink, and Iceberg."
+
+    def _capture_ashby(self, company, jid, title, dt, jd):
+        payload = {"apiVersion": "1", "jobs": [{
+            "id": jid, "title": title, "location": "Remote, US",
+            "jobUrl": f"https://jobs.ashbyhq.com/{company}/{jid}",
+            "descriptionPlain": jd, "publishedAt": "2026-07-15T00:00:00Z",
+            "isListed": True}]}
+        self._session().capture_fetch(
+            source="ashby", operation="board",
+            request={"url": f"https://api.ashbyhq.com/posting-api/job-board/{company}"},
+            status=200, payload_bytes=json.dumps(payload).encode(),
+            content_type="application/json", fetched_at=dt,
+            context={"company": company, "profile": "profile-01"})
+
+    def test_new_manifest_stamps_duplicate_hint_on_an_untouched_entity(self):
+        """The regression this optimization invites: an entity nobody re-observed.
+
+        The greenhouse posting is NOT in the second build's pending manifest, yet a
+        full fold would stamp ``possible_duplicate`` on it because the ashby posting
+        landed in its bucket. Folding only the delta's own keys would silently skip
+        it.
+        """
+        self._session().capture_fetch(
+            source="greenhouse", operation="board",
+            request={"url": "https://boards-api.greenhouse.io/v1/boards/examplecorp/jobs"},
+            status=200,
+            payload_bytes=_gh_board([_job(900, "Staff Engineer", "Remote, US",
+                                          content=self.DUP_JD)]),
+            content_type="application/json", fetched_at=_dt(14),
+            context={"company": "examplecorp", "profile": "profile-01"})
+        self.assertEqual(self._build([]), 0)
+        self.assertNotIn("possible_duplicate", self._posting("examplecorp", "gh-900"))
+
+        self._capture_ashby("examplecorp", "ay-1", "Staff Engineer", _dt(16),
+                            self.DUP_JD)
+        self.assertIn("fold=pending-only", self._summary())
+        gh = self._posting("examplecorp", "gh-900")
+        ashby = self._posting("examplecorp", "ashby-ay-1")
+        self.assertEqual(gh.get("possible_duplicate"), ["ashby-ay-1"])
+        self.assertEqual(ashby.get("possible_duplicate"), ["gh-900"])
+        self._assert_matches_rebuild()
+
+    def test_departing_entity_clears_a_stale_duplicate_hint(self):
+        """The mirror case: a bucket EMPTIES and the leftover hint must disappear."""
+        self._session().capture_fetch(
+            source="greenhouse", operation="board",
+            request={"url": "https://boards-api.greenhouse.io/v1/boards/examplecorp/jobs"},
+            status=200,
+            payload_bytes=_gh_board([_job(900, "Staff Engineer", "Remote, US",
+                                          content=self.DUP_JD)]),
+            content_type="application/json", fetched_at=_dt(14),
+            context={"company": "examplecorp", "profile": "profile-01"})
+        self._capture_ashby("examplecorp", "ay-1", "Staff Engineer", _dt(15),
+                            self.DUP_JD)
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._posting("examplecorp", "gh-900")["possible_duplicate"],
+                         ["ashby-ay-1"])
+        # The ashby JD is rewritten — the pair is no longer a content duplicate, so
+        # the greenhouse entity (untouched by this fetch) must lose its hint.
+        self._capture_ashby("examplecorp", "ay-1", "Staff Engineer", _dt(17),
+                            "Completely different role: run the billing platform.")
+        self.assertIn("fold=pending-only", self._summary())
+        self.assertNotIn("possible_duplicate", self._posting("examplecorp", "gh-900"))
+        self._assert_matches_rebuild()
+
+    def test_new_annotation_reaches_an_unobserved_entity(self):
+        """A human annotation lands with no new fetch for the entity it annotates."""
+        self._capture_gh([_job(111, "SWE", "Remote, US")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self.layout.annotations.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(self.layout.annotations / "gh-111.yaml",
+                          serialization.dumps_yaml({"schema_version": 1, "key": "gh-111",
+                                                    "verified_by": "human",
+                                                    "facts": {"workplace": "onsite"}}))
+        self._capture_gh([_job(222, "SRE", "Austin, TX")], _dt(15))
+        self.assertIn("fold=pending-only", self._summary())
+        p = self._posting("examplecorp", "gh-111")
+        self.assertEqual(p["opinions"]["workplace"]["effective"], "onsite")
+        row = [r for r in self._index_rows() if r["key"] == "gh-111"][0]
+        self.assertEqual(row["workplace"], "onsite")
+        self._assert_matches_rebuild()
+
+    def test_removed_annotation_is_undone_on_an_unobserved_entity(self):
+        self._capture_gh([_job(111, "SWE", "Remote, US")], _dt(14))
+        self.layout.annotations.mkdir(parents=True, exist_ok=True)
+        ann = self.layout.annotations / "gh-111.yaml"
+        atomic_write_text(ann, serialization.dumps_yaml(
+            {"schema_version": 1, "key": "gh-111", "verified_by": "human",
+             "facts": {"workplace": "onsite"}}))
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._posting("examplecorp", "gh-111")
+                         ["opinions"]["workplace"]["effective"], "onsite")
+        ann.unlink()
+        self._capture_gh([_job(222, "SRE", "Austin, TX")], _dt(15))
+        self.assertIn("fold=pending-only", self._summary())
+        p = self._posting("examplecorp", "gh-111")
+        self.assertNotIn("human", p)
+        self.assertNotIn("effective", p["opinions"]["workplace"])
+        self._assert_matches_rebuild()
+
+    # ── multi-stage histories, including JD versions and suppressed rows ──
+    def test_many_staged_builds_equal_one_rebuild(self):
+        jd_a = "Build the control plane. Kubernetes at scale."
+        jd_b = "Build the control plane. Now with Rust and eBPF."
+        self._capture_gh([_job(111, "SWE", "Austin, TX", content=jd_a),
+                          _job(222, "SRE", "Remote, US")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        # stage 2: gh-111's JD text changes -> a `changed` event + a jd-<hash>.md
+        self._capture_gh([_job(111, "SWE", "Austin, TX", content=jd_b),
+                          _job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertIn("fold=pending-only", self._summary())
+        # stage 3: a brand-new posting appears; gh-222 is not listed at all
+        self._capture_gh([_job(111, "SWE", "Seattle, WA", content=jd_b),
+                          _job(333, "Data Engineer", "NYC, NY")], _dt(16))
+        self.assertIn("fold=pending-only", self._summary())
+        # stage 4: an aggregator scrape adds a weak-identity row AND a suppressed row
+        self._capture_scrape("jobicy", SuppressionAndWeakTests.SCRAPE, _dt(17))
+        self.assertIn("fold=pending-only", self._summary())
+
+        jd_versions = list((self.layout.derived / "postings" / "examplecorp"
+                            / "gh-111").glob("jd-*.md"))
+        self.assertEqual(len(jd_versions), 1, "prior JD version not snapshotted")
+        triage = list((self.layout.index / "triage").glob("*.jsonl"))
+        self.assertEqual(len(triage), 1)
+        self._assert_matches_rebuild()
+
+    def test_reached_entity_keeps_its_continuable_fold(self):
+        """Being pulled in for a hint or an annotation must not cost the fast path.
+
+        An entity reached by the duplicate pass is loaded from disk, not folded, so
+        rebuilding its cache entry from that load would drop its fold state and
+        condemn it to forcing a full fold on every later build that touches it.
+        """
+        self._session().capture_fetch(
+            source="greenhouse", operation="board",
+            request={"url": "https://boards-api.greenhouse.io/v1/boards/examplecorp/jobs"},
+            status=200,
+            payload_bytes=_gh_board([_job(900, "Staff Engineer", "Remote, US",
+                                          content=self.DUP_JD)]),
+            content_type="application/json", fetched_at=_dt(14),
+            context={"company": "examplecorp", "profile": "profile-01"})
+        self.assertEqual(self._build([]), 0)
+        self._capture_ashby("examplecorp", "ay-1", "Staff Engineer", _dt(16),
+                            self.DUP_JD)
+        self.assertIn("fold=pending-only", self._summary())   # gh-900 gets reached
+        # gh-900 is now re-observed. If its cache entry lost the fold state, this
+        # build would fall back to a full fold instead of continuing it.
+        self._session().capture_fetch(
+            source="greenhouse", operation="board",
+            request={"url": "https://boards-api.greenhouse.io/v1/boards/examplecorp/jobs"},
+            status=200,
+            payload_bytes=_gh_board([_job(900, "Staff Engineer", "Austin, TX",
+                                          content=self.DUP_JD)]),
+            content_type="application/json", fetched_at=_dt(18),
+            context={"company": "examplecorp", "profile": "profile-01"})
+        self.assertIn("fold=pending-only", self._summary())
+        self._assert_matches_rebuild()
+
+    def test_repeated_no_op_builds_are_stable(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        before = self._tree_bytes(self.layout.index)
+        for _ in range(3):
+            self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._tree_bytes(self.layout.index), before)
+        self._assert_matches_rebuild()
+
+    # ── refusals: every one must still produce the rebuild's bytes ──
+    def test_out_of_order_capture_falls_back_to_a_full_fold(self):
+        """A backfilled/clock-skewed fetch may not be appended to a finished fold."""
+        self._capture_gh([_job(111, "SWE", "Seattle, WA")], _dt(16))
+        self.assertEqual(self._build([]), 0)
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))  # EARLIER capture
+        out = self._summary()
+        self.assertIn("fold=full", out)
+        events_path = (self.layout.derived / "postings" / "examplecorp" / "gh-111"
+                       / "events.jsonl")
+        events = [json.loads(ln) for ln in events_path.read_text().splitlines()]
+        self.assertEqual(events[0]["at"], "2026-07-14T09:00:00Z")  # re-ordered fold
+        self._assert_matches_rebuild()
+
+    def test_per_entity_order_check_is_independent_of_the_global_one(self):
+        """The fold's own stop point is re-checked, not just the manifest bound.
+
+        Forcing one entity's recorded stop point past the incoming capture is the
+        only way to exercise the per-entity guard, because the whole-store bound
+        in `_fast_plan` is strictly the stronger of the two in normal operation.
+        A build that appended here anyway would emit different `changed` events
+        than a rebuild — the silent corruption this whole design guards against.
+        """
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        path = self._cache()
+        lines = path.read_text().splitlines()
+        rows = [json.loads(ln) for ln in lines]
+        for row in rows[1:]:
+            if row["k"] == "gh-111":
+                row["f"]["l"] = ["2099-01-01T00:00:00Z", "zzzz"]
+        path.write_text("\n".join(json.dumps(r, sort_keys=True) for r in rows) + "\n")
+        self._capture_gh([_job(111, "SWE", "Seattle, WA")], _dt(15))
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = self._build([])
+        self.assertEqual(rc, 0)
+        self.assertIn("fold=full", out.getvalue())
+        self.assertIn("out of order", err.getvalue())
+        self._assert_matches_rebuild()
+
+    def test_missing_cache_falls_back(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._cache().unlink()
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertIn("fold=full", self._summary())
+        self._assert_matches_rebuild()
+
+    def test_truncated_cache_falls_back(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX"),
+                          _job(222, "SRE", "Remote, US")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        path = self._cache()
+        path.write_text(path.read_text().splitlines()[0] + "\n")  # header only
+        self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(15))
+        self.assertIn("fold=full", self._summary())
+        self._assert_matches_rebuild()
+
+    def test_classifier_change_re_derives_every_entity(self):
+        """A code fingerprint change must reach postings no fetch has touched."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        path = self._cache()
+        lines = path.read_text().splitlines()
+        header = json.loads(lines[0])
+        header["fingerprint"]["visa"] = "visa.py@deadbeef"
+        path.write_text("\n".join([json.dumps(header, sort_keys=True)] + lines[1:])
+                        + "\n")
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertIn("fold=full", self._summary())
+        self._assert_matches_rebuild()
+
+    def test_dropped_derived_falls_back(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        shutil.rmtree(self.layout.derived / "postings" / "examplecorp" / "gh-111")
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertIn("fold=full", self._summary())
+        self._assert_matches_rebuild()
+
+    def test_ledger_ahead_of_cache_falls_back(self):
+        """A crash between the derived/index writes and the cache write."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        stale = self._cache().read_text()
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertEqual(self._build([]), 0)
+        self._cache().write_text(stale)          # cache rolled back, store did not
+        self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(16))
+        self.assertIn("fold=full", self._summary())
+        self._assert_matches_rebuild()
+
+    def test_pruned_blob_falls_back(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self.assertEqual(self._build([]), 0)
+        self._delete_blob_for("gh-222")
+        self._capture_gh([_job(111, "SWE", "Seattle, WA")], _dt(16))
+        self.assertIn("fold=full", self._summary())
+        self.assertTrue(self._posting("examplecorp", "gh-222")["provenance"]["carried"])
+        self._assert_matches_rebuild()
 
 
 class OrphanTests(_StoreCase):

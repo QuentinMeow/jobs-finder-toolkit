@@ -5,8 +5,15 @@ and regenerates the index — deterministically, so a rebuild is byte-identical 
 an incremental build equals a full rebuild. Three modes:
 
 * **incremental** (default): process the ledger set-difference under the builder
-  lock; recompute every entity from its full manifest history and write only the
-  ones whose bytes changed; regenerate index/triage/README wholesale.
+  lock. Normally this folds ONLY the pending manifests into per-entity state
+  persisted in ``state/postings-fold-cache.jsonl``, so the run costs O(new
+  manifests) rather than O(store) — see
+  ``docs/designs/raw-data-layer/05-incremental-build.md``. When anything that
+  state does not model has moved (a changed code fingerprint, a pruned blob, an
+  out-of-order capture, a drifted derived zone, …) the run falls back to the
+  whole-raw-zone fold — recompute every entity from its full manifest history,
+  write only the ones whose bytes changed, regenerate index/triage/README
+  wholesale. Both paths produce identical bytes; the fallback is only slower.
 * ``--rebuild``: build derived+index ASIDE into fresh dirs, verify (schemas,
   counts, 100% annotation joins, an incremental-equals-rebuild spot check), then
   atomically swap. Never touches ``annotations/`` or ``state/`` except the ledger.
@@ -36,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
 import shutil
 import sys
@@ -51,6 +59,7 @@ import job_metadata  # vendored classifier machinery  # noqa: E402
 import location as location_mod  # vendored location classifier  # noqa: E402
 import posting_identity as ident  # noqa: E402
 import posting_parsers as parsers  # noqa: E402
+import postings_fold_state as fold_state  # persisted per-entity fold state  # noqa: E402
 import visa as visa_mod  # noqa: E402
 from _vendor.store import serialization  # noqa: E402
 from _vendor.store.annotations import (AnnotationOrphanError, assert_no_orphans,  # noqa: E402
@@ -275,48 +284,93 @@ def _obs_sort_key(o: Observation):
 
 
 class EntityBuild:
-    """The computed derived artifacts for one entity (pre-serialization)."""
+    """The computed derived artifacts for one entity (pre-serialization).
 
-    __slots__ = ("key", "partition", "posting", "jd_text", "jd_versions", "events")
+    ``fold`` carries the accumulator that produced it when — and only when — the
+    entity came straight out of :class:`_Fold` over present raw. Anything that
+    mutates an entity after the fold (the frozen-facts merge) or reconstructs one
+    without folding at all (carry-forward, frozen reconstruction) leaves it
+    ``None``, which is the incremental path's signal that this entity may not be
+    continued and its arrival forces a full fold.
+    """
 
-    def __init__(self, key, partition, posting, jd_text, jd_versions, events):
+    __slots__ = ("key", "partition", "posting", "jd_text", "jd_versions", "events",
+                 "fold")
+
+    def __init__(self, key, partition, posting, jd_text, jd_versions, events,
+                 fold=None):
         self.key = key
         self.partition = partition
         self.posting = posting
         self.jd_text = jd_text
         self.jd_versions = jd_versions  # {hash: text} for prior JD versions
         self.events = events
+        self.fold = fold
 
 
-def _reduce(key, obs_list, seq_of, stamps) -> EntityBuild:
-    obs_list = sorted(obs_list, key=_obs_sort_key)
-    latest = obs_list[-1]
-    company = latest.company
-    partition = validate_slug(_slugify(company) or "unknown", field="company partition")
+class _Fold:
+    """The ordered accumulator one entity's observations are folded through.
 
-    # source_ids (distinct, ordered by first appearance)
-    source_ids, seen_sid = [], set()
-    for o in obs_list:
-        sid = (o.row.get("source"), o.row.get("native_id"), o.row.get("url", ""))
-        if sid not in seen_sid:
-            seen_sid.add(sid)
-            source_ids.append({"source": o.row.get("source"),
-                               "id": o.row.get("native_id"),
-                               "url": o.row.get("url", "")})
+    This is where the build's ONE genuinely order-dependent step lives: a
+    `changed` event compares an observation against ``prior``, the immediately
+    preceding observation's snapshot. Everything else the fold accumulates is
+    order-insensitive in value (sets, sorted lists) or first/last-wins. Because
+    the state is explicit and small, an incremental build can rehydrate it and
+    continue — provided every new observation sorts AFTER the last folded one,
+    which the caller proves before using this (see ``_fast_plan``).
 
-    # JD text: the latest observation carrying a non-empty description.
-    jd_text = ""
-    for o in reversed(obs_list):
-        if o.row.get("description"):
-            jd_text = o.row["description"]
-            break
+    Both build paths fold through this same class, so a full rebuild and a
+    continued fold cannot drift apart in the event semantics.
+    """
 
-    # events + JD-version history, folded in observation order.
-    events, jd_versions = [], {}
-    prior: dict = {}
-    for i, o in enumerate(obs_list):
+    __slots__ = ("key", "source_ids", "_seen_sid", "jd_versions", "events", "prior",
+                 "started", "profiles", "fetch_ids", "jd_text", "last", "first_at")
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+        self.source_ids: list[dict] = []
+        self._seen_sid: set = set()
+        self.jd_versions: dict = {}
+        self.events: list[dict] = []
+        self.prior: dict = {}
+        self.started = False
+        self.profiles: set = set()
+        self.fetch_ids: set = set()
+        self.jd_text = ""
+        self.last: Observation | None = None
+        self.first_at = ""
+
+    # ── rehydration (incremental path only) ──
+    def resume(self, *, source_ids, profiles, fetch_ids, events, jd_text, prior,
+               first_at) -> None:
+        """Restore the accumulator to the end of a previously folded history."""
+        self.source_ids = [dict(s) for s in source_ids]
+        self._seen_sid = {(s.get("source"), s.get("id"), s.get("url", ""))
+                          for s in self.source_ids}
+        self.profiles = set(profiles)
+        self.fetch_ids = set(fetch_ids)
+        self.events = list(events)
+        self.jd_text = jd_text
+        self.prior = dict(prior)
+        self.first_at = first_at
+        self.started = True
+
+    def add(self, o: Observation, seq_of: dict) -> None:
+        """Fold one observation in (must sort at or after every prior one)."""
         row = o.row
-        jd_hash = parsers.content_hash(row.get("description")) if row.get("description") else None
+        sid = (row.get("source"), row.get("native_id"), row.get("url", ""))
+        if sid not in self._seen_sid:
+            self._seen_sid.add(sid)
+            self.source_ids.append({"source": row.get("source"),
+                                    "id": row.get("native_id"),
+                                    "url": row.get("url", "")})
+        if row.get("description"):
+            self.jd_text = row["description"]
+        if o.profile:
+            self.profiles.add(o.profile)
+        self.fetch_ids.add(o.fetch_id)
+        jd_hash = (parsers.content_hash(row.get("description"))
+                   if row.get("description") else None)
         snap = {"title": row.get("title", ""), "location": row.get("location", ""),
                 "url": row.get("url", ""), "workplace_raw": row.get("workplace_raw"),
                 "salary_text": row.get("salary_text"),
@@ -324,28 +378,59 @@ def _reduce(key, obs_list, seq_of, stamps) -> EntityBuild:
                 "posted_at": row.get("posted_at"),
                 "jd_hash": jd_hash}
         seq = seq_of.get(o.fetch_id)
-        base = {"entity": key, "fetch": o.fetch_id, "at": _z(o.fetched_at)}
+        base = {"entity": self.key, "fetch": o.fetch_id, "at": _z(o.fetched_at)}
         if seq is not None:
             base["seq"] = seq
-        if i == 0:
-            events.append({**base, "type": "first_seen"})
+        if not self.started:
+            self.events.append({**base, "type": "first_seen"})
+            self.first_at = _z(o.fetched_at)
+            self.started = True
         else:
-            events.append({**base, "type": "seen"})
+            self.events.append({**base, "type": "seen"})
             changes = []
             for f in _TRACKED:
-                if snap.get(f) != prior.get(f):
-                    changes.append({"field": f, "old": prior.get(f), "new": snap.get(f)})
+                if snap.get(f) != self.prior.get(f):
+                    changes.append({"field": f, "old": self.prior.get(f),
+                                    "new": snap.get(f)})
             if changes:
-                events.append({**base, "type": "changed", "changes": changes})
+                self.events.append({**base, "type": "changed", "changes": changes})
                 # A JD text change snapshots the PRIOR JD as a content-versioned sibling.
-                if any(c["field"] == "jd_hash" for c in changes) and prior.get("jd_hash"):
-                    prev_text = prior.get("_jd_text")
+                if any(c["field"] == "jd_hash" for c in changes) and \
+                        self.prior.get("jd_hash"):
+                    prev_text = self.prior.get("_jd_text")
                     if prev_text:
-                        jd_versions[prior["jd_hash"]] = prev_text
-        prior = dict(snap)
-        prior["_jd_text"] = row.get("description") or prior.get("_jd_text", "")
+                        self.jd_versions[self.prior["jd_hash"]] = prev_text
+        self.prior = dict(snap)
+        self.prior["_jd_text"] = row.get("description") or ""
+        self.last = o
 
-    fetch_ids = sorted({o.fetch_id for o in obs_list})
+    def carried_state(self) -> dict:
+        """The minimal state a later build needs to continue this fold.
+
+        ``l`` is where this fold stopped — ``(fetched_at, fetch_id)`` of the last
+        observation — so a later build can CHECK, per entity, that what it is
+        about to append really does come after it, rather than only trusting the
+        whole-store argument in ``_fast_plan``.
+
+        ``_jd_text`` is deliberately NOT stored: it is only ever read when
+        ``jd_hash`` is set, and in exactly that case it equals the entity's
+        current ``jd.md`` — so the derived file is the single copy, and ``n``
+        records the one bit ``jd.md`` normalization would lose.
+        """
+        prior = {k: v for k, v in self.prior.items() if k != "_jd_text"}
+        return {
+            "l": [self.last.fetched_at or "", self.last.fetch_id or ""],
+            "s": prior,
+            "n": None if not self.jd_text else self.jd_text.endswith("\n"),
+        }
+
+
+def _finish(fold: _Fold, stamps: dict) -> EntityBuild:
+    """Turn a completed accumulator into the entity's derived artifacts."""
+    latest = fold.last
+    company = latest.company
+    partition = validate_slug(_slugify(company) or "unknown", field="company partition")
+    fetch_ids = sorted(fold.fetch_ids)
     latest_row = latest.row
     facts = {}
     if latest_row.get("posted_at"):
@@ -357,18 +442,18 @@ def _reduce(key, obs_list, seq_of, stamps) -> EntityBuild:
     if latest_row.get("workplace_raw"):
         facts["workplace_raw"] = latest_row["workplace_raw"]
 
-    profiles = sorted({o.profile for o in obs_list if o.profile})
+    jd_text = fold.jd_text
     posting = {
         "schema_version": POSTING_SCHEMA_VERSION,
-        "key": key,
+        "key": fold.key,
         "identity": latest.strength,
         "company": company,
         "title": latest_row.get("title", ""),
         "location": latest_row.get("location", ""),
-        "source_ids": source_ids,
-        "profiles": profiles,
-        "first_seen": _z(obs_list[0].fetched_at),
-        "last_seen": _z(obs_list[-1].fetched_at),
+        "source_ids": fold.source_ids,
+        "profiles": sorted(fold.profiles),
+        "first_seen": _z(fold.first_at),
+        "last_seen": _z(latest.fetched_at),
         "facts": facts,
         "opinions": _opinions(latest_row.get("title", ""), latest_row.get("location", ""),
                               jd_text, latest_row.get("workplace_raw"),
@@ -387,7 +472,15 @@ def _reduce(key, obs_list, seq_of, stamps) -> EntityBuild:
             "normalizer_version": parsers.NORMALIZER_VERSION,
             "fetched_verbatim": True,
         }
-    return EntityBuild(key, partition, posting, jd_text, jd_versions, events)
+    return EntityBuild(fold.key, partition, posting, jd_text, fold.jd_versions,
+                       fold.events, fold.carried_state())
+
+
+def _reduce(key, obs_list, seq_of, stamps) -> EntityBuild:
+    fold = _Fold(key)
+    for o in sorted(obs_list, key=_obs_sort_key):
+        fold.add(o, seq_of)
+    return _finish(fold, stamps)
 
 
 # ── migration + duplicate post-pass ──────────────────────────
@@ -914,7 +1007,7 @@ def _apply_annotations(entities: dict, layout) -> None:
                             conflicts_path, key)
 
 
-def _build_entities(layout, registry, stamps):
+def _build_entities(layout, registry, stamps, manifests=None, blobstore=None):
     """Reduce the full raw zone into ``{key: EntityBuild}`` + carried entities.
 
     Reads every present-blob member manifest, groups observations by entity key,
@@ -927,8 +1020,8 @@ def _build_entities(layout, registry, stamps):
     :func:`_carry_forward_from_index` (never merged into ``entities`` — index-only
     survivors stay honestly derived-absent, never fabricated as derived artifacts).
     """
-    blobstore = BlobStore(layout.blobs)
-    manifests = list(iter_manifests(layout))
+    blobstore = BlobStore(layout.blobs) if blobstore is None else blobstore
+    manifests = list(iter_manifests(layout)) if manifests is None else manifests
     ledger = BuildLedger(layout.build_ledger)
     seq_of = _seq_map(ledger)
     observations, suppressed = _collect(layout, blobstore, manifests, registry)
@@ -950,6 +1043,9 @@ def _build_entities(layout, registry, stamps):
             fids = (entities[key].posting.get("provenance") or {}).get("fetch_ids") or []
             entity_seq[key] = min((seq_of.get(f, 0) for f in fids),
                                   default=entity_seq.get(key, 0))
+            # Mutated after the fold — the accumulator no longer describes it, so a
+            # later incremental build must not try to continue it.
+            entities[key].fold = None
     # Reconstruct entities that materialized NO fresh observation (all their blobs
     # pruned). Sourced from frozen facts REGARDLESS of whether derived is on disk, so
     # a derived-present build and a derived-wiped build agree byte-for-byte (MINOR-1).
@@ -1057,13 +1153,202 @@ def _iter_store_keys(data):
             yield from _iter_store_keys(item)
 
 
+# ── fold cache: fingerprint + store digests ─────────────────
+def _module_fingerprint(registry: Registry) -> dict:
+    """Everything OUTSIDE the raw zone that decides an entity's bytes.
+
+    Any difference here means a cached fold could no longer reproduce what a
+    rebuild would write, so the build re-derives from raw — which is also how a
+    classifier tweak still reaches every historical posting.
+    """
+    return {
+        **_stamps(),
+        "parsers": _module_stamp(parsers),
+        "identity": _module_stamp(ident),
+        "registry_mod": _module_stamp(sys.modules[Registry.__module__]),
+        "normalizer": parsers.NORMALIZER_VERSION,
+        "canonicalizer": ident.CANONICALIZER_VERSION,
+        "posting_schema": POSTING_SCHEMA_VERSION,
+        "index_schema": INDEX_SCHEMA_VERSION,
+        "registry": fold_state.digest_obj(registry.entries),
+    }
+
+
+def _manifest_sort_key(env: dict) -> tuple:
+    return (env.get("fetched_at") or "", env.get("fetch_id") or "")
+
+
+def _store_state(manifests, blobstore, registry, present=None) -> dict:
+    """Digests of everything the per-entity cache does not model itself."""
+    ids, absent, cap = [], [], ("", "")
+    present = blobstore.present_shas() if present is None else present
+    for _path, env in manifests:
+        ids.append(env.get("fetch_id") or "")
+        cap = max(cap, _manifest_sort_key(env))
+        payload = env.get("payload")
+        if isinstance(payload, dict) and payload.get("blob") \
+                and payload["blob"] not in present:
+            absent.append(payload["blob"])
+    return {
+        "fingerprint": _module_fingerprint(registry),
+        "manifest_digest": fold_state.digest_strings(ids),
+        "absent_digest": fold_state.digest_strings(absent),
+        "max_manifest": list(cap),
+    }
+
+
+def _entity_triple(posting: dict):
+    """The (company, title, JD-hash) bucket ``_post_pass`` groups entities into."""
+    jd_hash = (posting.get("jd") or {}).get("content_hash")
+    if not jd_hash:
+        return None
+    return (ident._norm_company(posting.get("company", "")),
+            ident._norm_title(posting.get("title", "")), jd_hash)
+
+
+def _cache_entry(eb: EntityBuild) -> dict:
+    triple = _entity_triple(eb.posting)
+    entry = {"k": eb.key, "p": eb.partition}
+    if eb.fold is not None:
+        entry["f"] = eb.fold
+    if triple is not None:
+        entry["t"] = list(triple)
+    return entry
+
+
+def _annotation_targets(layout, keys) -> dict:
+    """``{entity key: annotation}`` for every annotation that joins an entity."""
+    reg = None
+    out = {}
+    for ann_key, ann in load_annotations(layout.annotations).items():
+        key = ann_key
+        if key not in keys:
+            reg = reg if reg is not None else KeyRegistry(layout.key_registry)
+            key = reg.resolve(ann_key)
+        if key in keys and isinstance(ann, dict):
+            out[key] = ann
+    return out
+
+
+def _write_cache(layout, entities: dict, state: dict, ledger: BuildLedger,
+                 frozen_digest: str) -> None:
+    """Persist the fold state for the next run (ALWAYS the build's last write).
+
+    Derived and index have already landed when this runs, so a crash here leaves a
+    cache whose ``ledger_digest`` no longer matches the ledger — which the next
+    build detects and answers with a full fold.
+    """
+    header = dict(state)
+    header["ledger_digest"] = fold_state.digest_strings(ledger.processed_fetch_ids())
+    header["frozen_digest"] = frozen_digest
+    header["ann_keys"] = sorted(_annotation_targets(layout, set(entities)))
+    fold_state.save(fold_state.cache_path(layout),
+                    header, {k: _cache_entry(eb) for k, eb in entities.items()})
+
+
+def _frozen_digest(layout) -> str:
+    """Content digest of every frozen-facts snapshot (they feed entity bytes)."""
+    fdir = layout.state / "frozen-facts"
+    if not fdir.is_dir():
+        return fold_state.digest_pairs([])
+    return fold_state.digest_pairs(
+        (p.name, p.read_bytes()) for p in sorted(fdir.glob("*.yaml")))
+
+
+def _derived_keys(derived_root: Path) -> set:
+    """Every entity key with a derived ``posting.yaml`` — the same predicate
+    :func:`_carry_forward` uses, as a stat-only two-level scan.
+
+    ``os.scandir`` rather than ``rglob`` on purpose: at 15k entities the pathlib
+    walk measured 2.25s and this measures 0.23s for the identical answer, and
+    this check runs on every build.
+    """
+    postings_root = Path(derived_root) / "postings"
+    if not postings_root.is_dir():
+        return set()
+    keys = set()
+    for partition in os.scandir(postings_root):
+        if not partition.is_dir():
+            continue
+        for entity in os.scandir(partition.path):
+            if entity.is_dir() and \
+                    os.path.exists(os.path.join(entity.path, "posting.yaml")):
+                keys.add(entity.name)
+    return keys
+
+
+# ── the fast path's admission test ───────────────────────────
+def _refuse(reason: str) -> None:
+    print(f"store: full fold this run ({reason})", file=sys.stderr)
+    return None
+
+
+def _fast_plan(layout, registry, ledger, manifests, pending, blobstore):
+    """May this run fold ONLY the pending manifests? Plan, or ``None`` with a reason.
+
+    Every check answers one question: "is there anything the persisted per-entity
+    state does not already account for?" A yes anywhere refuses, and the refusal
+    costs exactly one full fold — the behaviour that shipped before this cache
+    existed. Nothing here can make a build wrong; it can only make it slow.
+    """
+    loaded = fold_state.load(fold_state.cache_path(layout))
+    if loaded is None:
+        return _refuse("no usable fold cache")
+    header, entries = loaded
+    pending_ids = {env.get("fetch_id") for _p, env in pending}
+    folded = [(p, e) for p, e in manifests if e.get("fetch_id") not in pending_ids]
+
+    present = blobstore.present_shas()
+    now = _store_state(folded, blobstore, registry, present)
+    now["ledger_digest"] = fold_state.digest_strings(ledger.processed_fetch_ids())
+    now["frozen_digest"] = _frozen_digest(layout)
+    bad = fold_state.compare_header(header, now)
+    if bad:
+        return _refuse(f"fold cache stale ({bad} changed)")
+
+    # ORDER: the fold is a left fold, so continuing it is only equal to redoing it
+    # when every new observation sorts after every folded one. One tuple compare
+    # per pending manifest proves that for every entity at once.
+    cap = tuple(header.get("max_manifest") or ("", ""))
+    for _p, env in pending:
+        if not env.get("fetch_id"):
+            # The ledger cannot record it, so it would stay "pending" forever and
+            # be folded again on every run — the one way this design could double
+            # an observation. Refuse rather than risk it.
+            return _refuse("a pending manifest carries no fetch id")
+        if _manifest_sort_key(env) <= cap:
+            return _refuse("capture out of order (clock skew or backfill)")
+
+    if _derived_keys(layout.derived) != set(entries):
+        return _refuse("derived zone no longer matches the fold cache")
+
+    return {"header": header, "entries": entries,
+            "state": _store_state(manifests, blobstore, registry, present),
+            "frozen_digest": now["frozen_digest"]}
+
+
 def build_incremental(layout, registry) -> dict:
     stamps = _stamps()
     ledger = BuildLedger(layout.build_ledger)
-    pending = pending_manifests(layout, ledger)
+    blobstore = BlobStore(layout.blobs)
+    manifests = list(iter_manifests(layout))
+    done = ledger.processed_fetch_ids()
+    pending = sorted((pe for pe in manifests if pe[1].get("fetch_id") not in done),
+                     key=lambda pe: pe[1].get("fetch_id", ""))
+    plan = _fast_plan(layout, registry, ledger, manifests, pending, blobstore)
     newly = _record_pending(layout, ledger, pending)
+    if plan is None:
+        return _build_incremental_full(layout, registry, stamps, ledger, newly,
+                                       manifests, blobstore)
+    return _build_incremental_fast(layout, registry, stamps, ledger, newly, pending,
+                                   plan, blobstore, manifests)
+
+
+def _build_incremental_full(layout, registry, stamps, ledger, newly, manifests,
+                            blobstore) -> dict:
+    """The unchanged whole-raw-zone fold — still the fallback and the safety net."""
     entities, suppressed, entity_seq, _groups, _seq, index_survivors = _build_entities(
-        layout, registry, stamps)
+        layout, registry, stamps, manifests=manifests, blobstore=blobstore)
 
     _check_case_collisions(layout.derived, entities)
     _verify(entities, layout)  # orphan hard-fail on EVERY build path (incl. incremental)
@@ -1077,9 +1362,343 @@ def build_incremental(layout, registry) -> dict:
                       index_survivors)
     _pin_referenced_keys(layout, entities)
     _write_readme(layout.root.parent, layout, stamps)
-    return {"mode": "incremental", "pending": len(newly), "entities": len(entities),
-            "changed": changed, "suppressed": len(suppressed),
+    _write_cache(layout, entities, _store_state(manifests, blobstore, registry),
+                 ledger, _frozen_digest(layout))
+    return {"mode": "incremental", "fold": "full", "pending": len(newly),
+            "entities": len(entities), "changed": changed,
+            "suppressed": len(suppressed),
             "carried_from_index": len(index_survivors)}
+
+
+# ── the fast path ────────────────────────────────────────────
+def _resume_fold(key: str, entry: dict, entity_dir: Path) -> _Fold:
+    """Rehydrate one entity's accumulator from its OWN derived files + the cache.
+
+    The cache holds only what derived cannot express (the carried snapshot and the
+    one bit ``jd.md`` normalization drops); everything else is read back from the
+    entity, so the two can never disagree about the same fact.
+    """
+    posting = serialization.loads_yaml(
+        (entity_dir / "posting.yaml").read_text(encoding="utf-8")) or {}
+    jd_path = entity_dir / "jd.md"
+    jd_text = jd_path.read_text(encoding="utf-8") if jd_path.exists() else ""
+    if jd_text and entry["f"].get("n") is False:
+        jd_text = jd_text[:-1]  # `_entity_files` appended the newline; undo it
+    fold = _Fold(key)
+    fold.resume(source_ids=posting.get("source_ids") or [],
+                profiles=posting.get("profiles") or [],
+                fetch_ids=(posting.get("provenance") or {}).get("fetch_ids") or [],
+                events=read_jsonl(entity_dir / "events.jsonl"),
+                jd_text=jd_text,
+                prior=dict(entry["f"].get("s") or {}),
+                first_at=posting.get("first_seen") or "")
+    # `_jd_text` is read only when the previous observation carried a JD, and in
+    # that case it IS the current jd.md — reconstructed exactly above.
+    if fold.prior.get("jd_hash"):
+        fold.prior["_jd_text"] = jd_text
+    return fold
+
+
+def _load_derived_entity(derived_root: Path, partition: str, key: str) -> EntityBuild:
+    """Load an untouched entity as the fold would have produced it (pre-overlay).
+
+    Used only for the handful of entities a touched one can reach: duplicate/
+    migration siblings and annotation targets. The post-fold overlays are stripped
+    so re-running them reproduces a fresh build exactly, including REMOVING a hint
+    or a human fact that no longer applies.
+    """
+    entity_dir = Path(derived_root) / "postings" / partition / key
+    posting = serialization.loads_yaml(
+        (entity_dir / "posting.yaml").read_text(encoding="utf-8")) or {}
+    posting.pop("migrated_from", None)
+    posting.pop("possible_duplicate", None)
+    posting.pop("human", None)
+    for op in (posting.get("opinions") or {}).values():
+        if isinstance(op, dict):
+            for field in ("human", "effective", "source"):
+                op.pop(field, None)
+    jd_path = entity_dir / "jd.md"
+    jd_text = jd_path.read_text(encoding="utf-8") if jd_path.exists() else ""
+    return EntityBuild(key, partition, posting, jd_text, {},
+                       read_jsonl(entity_dir / "events.jsonl"), None)
+
+
+def _duplicate_participants(entries: dict, touched: dict) -> set:
+    """Untouched entities whose duplicate/migration hints this run can change.
+
+    ``_post_pass`` is the one reduction that is NOT a per-key partition: it groups
+    entities by (company, title, JD hash) and stamps hints on every member of a
+    multi-member bucket. A newly folded entity can therefore change an entity it
+    never observed — and a departure can leave a stale hint behind. Both bucket
+    memberships (before and after) are pulled in so the pass sees whole buckets.
+    """
+    buckets: dict[tuple, set] = {}
+    for k, entry in entries.items():
+        if entry.get("t"):
+            buckets.setdefault(tuple(entry["t"]), set()).add(k)
+    after = {t: set(ks) for t, ks in buckets.items()}
+    affected: set = set()
+    for key, eb in touched.items():
+        old = entries.get(key, {}).get("t")
+        new = _entity_triple(eb.posting)
+        if old:
+            after.get(tuple(old), set()).discard(key)
+        if new:
+            after.setdefault(new, set()).add(key)
+    for key, eb in touched.items():
+        old = entries.get(key, {}).get("t")
+        for triple in (tuple(old) if old else None, _entity_triple(eb.posting)):
+            if triple is None:
+                continue
+            before_members = buckets.get(triple, set())
+            after_members = after.get(triple, set())
+            if max(len(before_members), len(after_members)) >= 2:
+                affected |= before_members | after_members
+    return affected - set(touched)
+
+
+def _check_case_collisions_incremental(entries: dict, touched: dict) -> None:
+    """Case-collision guard restricted to what this run adds or moves.
+
+    The pre-existing set passed the same guard when it was written, so only the
+    newcomers need checking against it — the identical failure, at O(new) cost.
+    """
+    partitions: dict[str, set] = {}
+    for key, entry in entries.items():
+        if key in touched:
+            continue  # re-checked below at its (possibly new) partition
+        partitions.setdefault(entry.get("p") or "", set()).add(key)
+    for key, eb in touched.items():
+        clash = detect_case_collision([p for p in partitions if p != eb.partition],
+                                      eb.partition)
+        if clash:
+            raise BuildError(f"case-only partition collision: {eb.partition!r} vs "
+                             f"{clash!r}")
+        siblings = partitions.setdefault(eb.partition, set())
+        clash = detect_case_collision([k for k in siblings if k != key], key)
+        if clash:
+            raise BuildError(f"case-only key collision under {eb.partition!r}: "
+                             f"{key!r} vs {clash!r}")
+        siblings.add(key)
+
+
+def _build_incremental_fast(layout, registry, stamps, ledger, newly, pending, plan,
+                            blobstore, manifests) -> dict:
+    """Fold ONLY the pending manifests into the persisted prior state."""
+    entries = plan["entries"]
+    seq_of = _seq_map(ledger)
+    observations, suppressed = _collect(layout, blobstore, pending, registry)
+    groups: dict[str, list[Observation]] = {}
+    for o in observations:
+        groups.setdefault(o.key, []).append(o)
+
+    frozen_keys = set(load_frozen_facts(layout))
+    for key in groups:
+        entry = entries.get(key)
+        if key in frozen_keys or (entry is not None and "f" not in entry):
+            # A carried / frozen / frozen-merged entity has no continuable fold;
+            # its history lives outside the raw this run can see.
+            print(f"store: full fold this run (entity {key} is not continuable)",
+                  file=sys.stderr)
+            return _build_incremental_full(layout, registry, stamps, ledger, newly,
+                                           manifests, blobstore)
+
+    # 1. Continue each touched entity's fold from its persisted state.
+    touched: dict[str, EntityBuild] = {}
+    for key, obs in groups.items():
+        entry = entries.get(key)
+        obs = sorted(obs, key=_obs_sort_key)
+        if entry is None:
+            fold = _Fold(key)  # brand new (or an index-only key materializing now)
+        else:
+            # `_fast_plan` already proved this for the run as a whole, from the
+            # manifest bound. Re-check it here per entity, against where this
+            # entity's own fold actually stopped: a left fold appended to out of
+            # order would produce different `changed` events, and that is the one
+            # way this optimization could silently corrupt the store.
+            stopped = tuple(entry["f"].get("l") or ("", ""))
+            if _obs_sort_key(obs[0])[:2] <= stopped:
+                print(f"store: full fold this run (entity {key} would be folded "
+                      f"out of order)", file=sys.stderr)
+                return _build_incremental_full(layout, registry, stamps, ledger,
+                                               newly, manifests, blobstore)
+            fold = _resume_fold(key, entry,
+                                Path(layout.derived) / "postings" / entry["p"] / key)
+        for o in obs:
+            fold.add(o, seq_of)
+        touched[key] = _finish(fold, stamps)
+
+    # 2. Pull in the untouched entities this run can still change.
+    derived_root = Path(layout.derived)
+    extra: dict[str, EntityBuild] = {}
+    all_keys = set(entries) | set(touched)
+    ann_targets = _annotation_targets(layout, all_keys)
+    reach = _duplicate_participants(entries, touched)
+    reach |= set(ann_targets) - set(touched)
+    reach |= (set(plan["header"].get("ann_keys") or []) & set(entries)) - set(touched)
+    for key in sorted(reach):
+        entry = entries.get(key)
+        if entry is not None:
+            extra[key] = _load_derived_entity(derived_root, entry["p"], key)
+    working = {**extra, **touched}
+
+    # 3. The passes that are not per-key partitions, over the reachable set only.
+    _post_pass(working, registry)
+    conflicts_path = layout.state / "annotation-conflicts.jsonl"
+    for key, ann in ann_targets.items():
+        eb = working.get(key)
+        facts = (ann.get("facts") or {}) if eb is not None else {}
+        if not facts:
+            continue
+        eb.posting["human"] = {"facts": dict(facts),
+                               "verified_by": ann.get("verified_by", "human"),
+                               "verified_at": ann.get("verified_at")}
+        _overlay_annotation(eb.posting.setdefault("opinions", {}), facts,
+                            conflicts_path, key)
+
+    _check_case_collisions_incremental(entries, touched)
+    _verify(all_keys, layout)
+
+    # 4. Write only what changed.
+    changed = 0
+    for eb in working.values():
+        if _write_entity(derived_root, eb, only_if_changed=True):
+            changed += 1
+
+    built_at = _index_built_at(ledger)
+    # Only a re-folded entity's sequence can move; a reachable-but-unobserved one
+    # keeps the sequence the previous build computed for it (its persisted index
+    # row), which is what a full fold would leave it with.
+    entity_seq = {key: min((seq_of.get(f, 0) for f in
+                            (eb.posting.get("provenance") or {}).get("fetch_ids") or []),
+                           default=0)
+                  for key, eb in touched.items()}
+    pending_rels = {_rel_manifest(layout, p) for p, _env in pending}
+    survivors = _patch_index_zone(layout.index, working, entity_seq, all_keys,
+                                  frozen_keys, set(touched), suppressed,
+                                  pending_rels, built_at)
+    _pin_referenced_keys(layout, all_keys)
+    _write_readme(layout.root.parent, layout, stamps)
+
+    # 5. The cache is the LAST write of the build (see `_write_cache`).
+    # Only a RE-FOLDED entity gets a new cache entry. An entity pulled in for the
+    # duplicate pass or an annotation keeps its existing one: its observations,
+    # carried snapshot and bucket triple are untouched by those passes, and
+    # rebuilding its entry from a disk-loaded posting would drop the fold state and
+    # silently condemn it to forcing a full fold forever after.
+    merged = {k: (_cache_entry(touched[k]) if k in touched else entries[k])
+              for k in all_keys}
+    header = dict(plan["state"])
+    header["ledger_digest"] = fold_state.digest_strings(ledger.processed_fetch_ids())
+    header["frozen_digest"] = plan["frozen_digest"]
+    header["ann_keys"] = sorted(ann_targets)
+    fold_state.save(fold_state.cache_path(layout), header, merged)
+    return {"mode": "incremental", "fold": "pending-only", "pending": len(newly),
+            "entities": len(all_keys), "folded": len(touched), "changed": changed,
+            "suppressed": len(suppressed), "carried_from_index": len(survivors)}
+
+
+def _rel_manifest(layout, path) -> str:
+    try:
+        return str(Path(path).relative_to(layout.root))
+    except ValueError:
+        return str(path)
+
+
+def _patch_index_zone(index_root: Path, working: dict, entity_seq: dict, all_keys: set,
+                      frozen_keys: set, touched: set, suppressed: list,
+                      pending_rels: set, built_at: str) -> dict:
+    """Update the index zone in place instead of regenerating it from every entity.
+
+    Measured choice (see docs/designs/raw-data-layer/05-incremental-build.md): the
+    index files are rewritten whole, but from the PERSISTED rows rather than from
+    re-reduced entities. Every file's header carries ``built_at``, which moves on
+    every run that ingests a fetch, so a partitioned or row-patched index would
+    still have to rewrite every file — the saving is in not re-deriving the rows,
+    not in writing fewer bytes.
+    """
+    index_root = Path(index_root)
+    header = {"_schema": INDEX_SCHEMA_VERSION, "built_at": built_at, "note": INDEX_NOTE}
+
+    # postings.jsonl — persisted rows, with this run's entities replacing their own.
+    rows = _read_index_rows(index_root)
+    survivors = {}
+    for key, row in rows.items():
+        if key in all_keys or key in frozen_keys:
+            continue
+        row = dict(row)
+        row["carried"] = True
+        row["carried_from"] = "index"
+        survivors[key] = row
+    for key, eb in working.items():
+        seq = entity_seq[key] if key in entity_seq \
+            else int(rows.get(key, {}).get("seq") or 0)
+        rows[key] = _index_row(eb, seq)
+    rows.update(survivors)
+    lines = [serialization.dumps_jsonl_line(header)]
+    lines += [serialization.dumps_jsonl_line(rows[k]) for k in sorted(rows)]
+    for stale in index_root.glob("*.jsonl"):
+        if stale.name != "postings.jsonl":
+            stale.unlink()
+    atomic_write_text(index_root / "postings.jsonl", "".join(lines))
+
+    # by-day — drop every row belonging to a re-folded entity, re-add from its new
+    # event list. Idempotent by construction: a rerun re-derives the same rows.
+    by_day: dict[str, list[dict]] = {}
+    day_dir = index_root / "by-day"
+    for path in sorted(day_dir.glob("*.jsonl")) if day_dir.is_dir() else []:
+        # Tolerant read: a full regeneration simply overwrote these files, so index
+        # debris must degrade (one warning, that line skipped) rather than block.
+        kept = [r for r in read_jsonl(path, strict_interior=False)
+                if isinstance(r, dict) and "entity" in r
+                and r.get("entity") not in touched]
+        by_day[path.stem] = kept
+    for key in sorted(touched):
+        for ev in working[key].events:
+            at = ev.get("at") or ""
+            day = at[:10] if len(at) >= 10 else "unknown"
+            by_day.setdefault(day, []).append(
+                {"entity": ev["entity"], "fetch": ev["fetch"], "type": ev["type"],
+                 "at": ev.get("at"), "seq": ev.get("seq")})
+    _rewrite_bucketed(day_dir, by_day, header,
+                      lambda r: (r.get("at") or "", r["entity"], r["type"]))
+
+    # triage — same shape, keyed by the manifest that produced each suppressed row.
+    by_month: dict[str, list[dict]] = {}
+    triage_dir = index_root / "triage"
+    for path in sorted(triage_dir.glob("suppressed-*.jsonl")) if triage_dir.is_dir() else []:
+        kept = [r for r in read_jsonl(path, strict_interior=False)
+                if isinstance(r, dict) and "gate" in r
+                and r.get("manifest") not in pending_rels]
+        by_month[path.stem[len("suppressed-"):]] = kept
+    for s in suppressed:
+        at = s.get("at") or ""
+        by_month.setdefault(at[:7] if len(at) >= 7 else "unknown", []).append(s)
+    _rewrite_bucketed(triage_dir, by_month, header,
+                      lambda r: (r.get("at") or "", r.get("source", ""),
+                                 r.get("company", ""), r.get("title", ""),
+                                 r.get("manifest", "")),
+                      name=lambda b: f"suppressed-{b}.jsonl")
+    return survivors
+
+
+def _rewrite_bucketed(directory: Path, buckets: dict, header: dict, sort_key,
+                      name=lambda b: f"{b}.jsonl") -> None:
+    """Rewrite one bucketed index directory; an emptied bucket loses its file.
+
+    A full regeneration only writes buckets that have rows, so an emptied bucket
+    must be removed here too or the two paths would disagree by one stale file.
+    """
+    for bucket, rows in buckets.items():
+        path = Path(directory) / name(bucket)
+        if not rows:
+            if path.exists():
+                path.unlink()
+            continue
+        rows.sort(key=sort_key)
+        out = [serialization.dumps_jsonl_line(header)]
+        out += [serialization.dumps_jsonl_line(r) for r in rows]
+        atomic_write_text(path, "".join(out))
 
 
 def _regen_index_zone(index_root: Path, entities, entity_seq, suppressed, built_at,
@@ -1104,10 +1723,17 @@ def _regen_index_zone(index_root: Path, entities, entity_seq, suppressed, built_
 def build_rebuild(layout, registry) -> dict:
     stamps = _stamps()
     ledger = BuildLedger(layout.build_ledger)
+    blobstore = BlobStore(layout.blobs)
+    manifests = list(iter_manifests(layout))
     pending = pending_manifests(layout, ledger)
     _record_pending(layout, ledger, pending)
+    # A rebuild replaces derived+index wholesale; the old fold state describes the
+    # generation being discarded, so it is dropped up-front and rewritten only if
+    # the rebuild reaches the end. A crashed rebuild therefore leaves no cache at
+    # all — the next build re-derives from raw.
+    fold_state.discard(fold_state.cache_path(layout))
     entities, suppressed, entity_seq, groups, seq_of, index_survivors = _build_entities(
-        layout, registry, stamps)
+        layout, registry, stamps, manifests=manifests, blobstore=blobstore)
 
     _check_case_collisions(layout.derived, entities)
     _verify(entities, layout)           # annotation-orphan hard-fail before any swap
@@ -1135,6 +1761,8 @@ def build_rebuild(layout, registry) -> dict:
     _swap_dir(layout.index, index_new)
     _pin_referenced_keys(layout, entities)
     _write_readme(layout.root.parent, layout, stamps)
+    _write_cache(layout, entities, _store_state(manifests, blobstore, registry),
+                 ledger, _frozen_digest(layout))
     return {"mode": "rebuild", "entities": len(entities),
             "suppressed": len(suppressed),
             "events": sum(len(e.events) for e in entities.values()),
