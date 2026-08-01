@@ -69,9 +69,9 @@ def analyze(today: datetime.date | None = None) -> dict:
     return result
 
 
-def run(apply: bool = False) -> int:
+def run(apply: bool = False, today: datetime.date | None = None) -> int:
     C.print_header("roadmap-staleness (report-only)", apply=False)
-    res = analyze()
+    res = analyze(today=today)
     if not res["exists"]:
         # The published export ships no docs/roadmap/; so does a contributor clone
         # that has not adopted the process folders.
