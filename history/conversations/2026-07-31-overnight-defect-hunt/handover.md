@@ -7,11 +7,11 @@
 An overnight session that went looking for defects rather than building features. Three
 adversarial audits read the code, five live job searches ran against real boards as canary
 runs, and one agent spent its whole run trying to break the largest change in the stack.
-Between them they found more than sixty confirmed defects. Thirty-one PRs fix or record them. Nothing is merged.
+Between them they found more than sixty confirmed defects. Thirty-eight PRs fix or record them. Nothing is merged.
 
 ## What happened
 
-- **A 31-PR public stack, `#135`–`#165`**, each branch on the one below, bottom PR on `main`.
+- **A 38-PR public stack, `#135`–`#172`**, each branch on the one below, bottom PR on `main`.
   Roughly a third are gates that reported success without inspecting anything; a third are
   silent false negatives in the job pipeline — a registered company board that had been
   returning 404, a location gate printing confident rejections for postings it had actually
@@ -38,7 +38,7 @@ Between them they found more than sixty confirmed defects. Thirty-one PRs fix or
 
 ## Where things stand
 
-- **All 31 PRs are open and green, none merged.** Merge bottom-up, `#135` first, one at a
+- **All 38 PRs are open and green, none merged.** Merge bottom-up, `#135` first, one at a
   time. Expect `main`'s CI to go red after each merge until a reconciliation row is
   appended — that is the documented cost of stacking here, not a regression, and
   `skills/github-workflow/SKILL.md` has the recovery.
@@ -57,6 +57,16 @@ Between them they found more than sixty confirmed defects. Thirty-one PRs fix or
 - Three findings were **accepted rather than fixed**, each with the reason in the code and a
   task filed. One of them, sweeping the blob store, would have re-added exactly the
   unattended delete path the PR below it had just hardened against.
+- **The canaries were run twice — before the stack and at its head — and the second run is why
+  `#171` exists.** It caught a regression the stack itself introduced: the sponsorship fix
+  over-corrected and made the strict `require_positive` filter return zero roles where it had
+  returned dozens. Fixed, then re-run: 59 roles, all 59 labels verified against their own JD
+  text. That loop is the single best argument for running canaries at head rather than trusting
+  unit tests.
+- **The store's byte-identity contract was unproven.** Its equivalence test rebuilt in place, so
+  for every carried entity it compared a value to itself. Repaired, it catches nothing on its
+  own — because no fixture ever built the class it had stopped covering — so a fixture where the
+  paths genuinely diverge was added alongside it.
 
 ## Needs your attention
 
