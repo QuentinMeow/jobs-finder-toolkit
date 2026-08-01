@@ -1,14 +1,14 @@
 # Workspace layout — sign off on the design and the two things I need from you
 
 - **Filed**: 2026-07-28
-- **Look at**: [`docs/designs/workspace-restructure/README.md`](../../../docs/designs/workspace-restructure/README.md) · [`review-gate.md`](../../../docs/designs/workspace-restructure/review-gate.md) · [`migration.md`](../../../docs/designs/workspace-restructure/migration.md)
+- **Look at**: [`docs/designs/workspace-restructure/README.md`](../../../docs/designs/workspace-restructure/README.md) · [`review-gate.md`](../../../docs/designs/workspace-restructure/review-gate.md) · [`execution-plan.md`](../../../docs/designs/workspace-restructure/execution-plan.md)
 - **Why you might care**: This sets the shape of both repos. Phase 0 is separately urgent — it fixes a reproduced case where the publish guard prints "Safe to publish" over a file containing your real name.
 - **If you do nothing**: Nothing moves. The phase-0 defects stay as they are.
 - **Resolution**: Answered 2026-07-28. Topology, Q1/Q2/Q4/Q5/Q6 all decided and folded into
   [the design](../../../docs/designs/workspace-restructure/README.md), the
   [execution plan](../../../docs/designs/workspace-restructure/execution-plan.md), the
   [ADR](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md), and 11
-  backlog tasks. Q3 deferred to `tasks/0_backlog/2026-07-28-company-key-assignment-approach`.
+  backlog tasks. Q3 deferred to `tasks/4_done/2026-07-28-company-key-assignment-approach`.
   This item stays open only until the owner confirms nothing was mis-folded; it is safe to
   delete after that.
 
@@ -114,7 +114,7 @@ the index; the exported repo's CI is already red; and the private repo — about
 of your commits — has no git hooks at all.
 
 Full list and fixes in
-[migration.md](../../../docs/designs/workspace-restructure/migration.md#phase-0--repair-what-already-fails-open).
+[execution-plan.md](../../../docs/designs/workspace-restructure/execution-plan.md#merged-phase-0--the-gates-fail-closed).
 
 ---
 
