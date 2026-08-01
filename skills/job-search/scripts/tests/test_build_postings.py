@@ -52,6 +52,7 @@ class _StoreCase(unittest.TestCase):
         self._prior = os.environ.get("JOBHUNT_DATA_ROOT")
         self._prior_config = os.environ.get(config.ENV_VAR)
         self.data_root = Path(tempfile.mkdtemp(prefix="build-test-"))
+        self._pre_build = Path(tempfile.mkdtemp(prefix="pre-build-")) / "data"
         os.environ["JOBHUNT_DATA_ROOT"] = str(self.data_root)
         # Pin the CONFIG too, not just the store. `_pin_referenced_keys` runs on
         # every build path and rglobs `config.applications_root()` for `store_key`
@@ -79,9 +80,57 @@ class _StoreCase(unittest.TestCase):
                 os.environ[var] = prior
         config._load.cache_clear()
         shutil.rmtree(self.data_root, ignore_errors=True)
+        shutil.rmtree(self._pre_build.parent, ignore_errors=True)
 
     def _session(self):
         return CaptureSession("jobs", self.data_root, tool_version="test")
+
+    # ── incremental == rebuild, proved against an INDEPENDENT rebuild ──
+    def _tree_bytes(self, root):
+        out = {}
+        for p in sorted(Path(root).rglob("*")):
+            if p.is_file():
+                out[str(p.relative_to(root))] = p.read_bytes()
+        return out
+
+    def _snapshot_pre_build(self):
+        """Keep the generation the next build starts FROM.
+
+        ``_assert_matches_rebuild`` rebuilds this clone in a store of its own, so
+        the rebuild's carry-forward input is the generation that existed *before*
+        the incremental run — never the incremental run's own output.
+        """
+        shutil.rmtree(self._pre_build, ignore_errors=True)
+        shutil.copytree(self.data_root, self._pre_build)
+
+    def _assert_matches_rebuild(self, *extra_argv):
+        """Require the last incremental build to equal an independent rebuild.
+
+        Rebuilding IN PLACE proves nothing for the entities this optimization
+        exists for. ``_carry_forward`` (``_load_existing_entity``) and
+        ``_reconstruct_from_frozen`` read ``derived/<key>/posting.yaml`` — so an
+        in-place rebuild reads the incremental run's OWN output and copies it
+        forward, and the assertion compares every carried and frozen entity to
+        itself. Byte-identical-to-rebuild is the contract the whole O(new)
+        optimization rests on, so the rebuild has to start from the same input
+        the incremental build did: a clone of the pre-build generation, built in
+        a data root of its own.
+        """
+        parent = Path(tempfile.mkdtemp(prefix="rebuild-"))
+        try:
+            rebuilt = parent / "data"
+            shutil.copytree(self._pre_build, rebuilt)
+            self.assertEqual(
+                bp.main(["--data-root", str(rebuilt), "--rebuild", *extra_argv]), 0)
+            rb = domain_layout(rebuilt, "jobs")
+            self.assertEqual(self._tree_bytes(self.layout.derived),
+                             self._tree_bytes(rb.derived),
+                             "derived: incremental != rebuild")
+            self.assertEqual(self._tree_bytes(self.layout.index),
+                             self._tree_bytes(rb.index),
+                             "index: incremental != rebuild")
+        finally:
+            shutil.rmtree(parent, ignore_errors=True)
 
     def _capture_gh(self, jobs, dt, company="examplecorp"):
         self._session().capture_fetch(
@@ -98,6 +147,30 @@ class _StoreCase(unittest.TestCase):
             content_type="application/json", fetched_at=dt,
             context={"profile": "profile-01"})
 
+    # One JD shared by two boards — the content that puts two keys in one
+    # `_post_pass` duplicate bucket.
+    DUP_JD = "Own the ingestion pipeline end to end. Kafka, Flink, and Iceberg."
+
+    def _capture_ashby(self, company, jid, title, dt, jd):
+        payload = {"apiVersion": "1", "jobs": [{
+            "id": jid, "title": title, "location": "Remote, US",
+            "jobUrl": f"https://jobs.ashbyhq.com/{company}/{jid}",
+            "descriptionPlain": jd, "publishedAt": "2026-07-15T00:00:00Z",
+            "isListed": True}]}
+        self._session().capture_fetch(
+            source="ashby", operation="board",
+            request={"url": f"https://api.ashbyhq.com/posting-api/job-board/{company}"},
+            status=200, payload_bytes=json.dumps(payload).encode(),
+            content_type="application/json", fetched_at=dt,
+            context={"company": company, "profile": "profile-01"})
+
+    def _annotate(self, key, facts):
+        self.layout.annotations.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(self.layout.annotations / f"{key}.yaml",
+                          serialization.dumps_yaml(
+                              {"schema_version": 1, "key": key,
+                               "verified_by": "human", "facts": facts}))
+
     def _capture_workday(self, req, company_slug, dt, host="acme.wd5.myworkdayjobs.com",
                          site="Careers"):
         payload = {"jobPostings": [{
@@ -112,7 +185,18 @@ class _StoreCase(unittest.TestCase):
             context={"company": company_slug, "profile": "profile-01"})
 
     def _build(self, argv):
+        self._snapshot_pre_build()
         return bp.main(argv + ["--data-root", str(self.data_root)])
+
+    def _summary(self, argv=None):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = self._build(argv or [])
+        self.assertEqual(rc, 0, buf.getvalue())
+        return buf.getvalue()
+
+    def _cache(self):
+        return fold_state.cache_path(self.layout)
 
     def _index_keys(self):
         rows = [json.loads(l) for l in
@@ -133,6 +217,33 @@ class _StoreCase(unittest.TestCase):
         _p, entity = load_entity(self.layout, key)
         payload = resolve_blob(self.layout, entity)
         BlobStore(self.layout.blobs).find(payload["blob"]).unlink()
+
+    def _truncate_newest_blob(self):
+        """Half-copy the newest blob — exactly what an interrupted rsync leaves.
+
+        The file stays in ``present_shas()`` (the name is intact), so nothing in
+        the store's absence bookkeeping moves; only ``BlobStore.read`` can tell.
+        """
+        blobs = sorted(Path(self.layout.blobs).rglob("*.zst"),
+                       key=lambda p: p.stat().st_mtime)
+        target = blobs[-1]
+        data = target.read_bytes()
+        target.write_bytes(data[:len(data) // 2])
+        return target
+
+    def _freeze_and_prune(self, partition, key, *, prune=True):
+        """Do what the retention GC does: snapshot the entity, then prune its blob."""
+        from _vendor.store import retention
+        entity_dir = self.layout.derived / "postings" / partition / key
+        entity = serialization.loads_yaml(
+            (entity_dir / "posting.yaml").read_text(encoding="utf-8"))
+        ef = retention.EntityFacts(
+            key=key, entity_dir=entity_dir, entity_yaml=entity_dir / "posting.yaml",
+            entity=entity, posted_at=None,
+            fetch_ids=tuple((entity.get("provenance") or {}).get("fetch_ids") or ()))
+        retention.write_frozen_facts(self.layout, retention.snapshot_entity(ef))
+        if prune:
+            self._delete_blob_for(key)
 
     def _drop_raw_and_derived(self):
         """Simulate a checkout that only has the committed index/state locally.
@@ -229,19 +340,6 @@ class SuppressionAndWeakTests(_StoreCase):
 
 
 class DeterminismTests(_StoreCase):
-    def _snapshot(self, dst):
-        shutil.rmtree(dst, ignore_errors=True)
-        os.makedirs(dst)
-        shutil.copytree(self.layout.derived, Path(dst) / "derived")
-        shutil.copytree(self.layout.index, Path(dst) / "index")
-
-    def _tree_bytes(self, root):
-        out = {}
-        for p in sorted(Path(root).rglob("*")):
-            if p.is_file():
-                out[str(p.relative_to(root))] = p.read_bytes()
-        return out
-
     def test_staged_incremental_equals_rebuild(self):
         # stage 1: day-14 board
         self._capture_gh([_job(111, "SWE", "Austin, TX"),
@@ -251,24 +349,16 @@ class DeterminismTests(_StoreCase):
         self._capture_gh([_job(111, "SWE", "Seattle, WA"),
                           _job(222, "SRE", "Remote, US")], _dt(15))
         self.assertEqual(self._build([]), 0)
-        snap = tempfile.mkdtemp(prefix="snap-")
-        self._snapshot(snap)
-        incr_d = self._tree_bytes(Path(snap) / "derived")
-        incr_i = self._tree_bytes(Path(snap) / "index")
 
-        # full rebuild over the same raw must be byte-identical
-        self.assertEqual(self._build(["--rebuild"]), 0)
-        self.assertEqual(self._tree_bytes(self.layout.derived), incr_d,
-                         "derived: incremental != rebuild")
-        self.assertEqual(self._tree_bytes(self.layout.index), incr_i,
-                         "index: incremental != rebuild")
+        # A rebuild of the SAME input, in a store of its own, must be byte-identical.
+        self._assert_matches_rebuild()
 
         # rebuild again — byte-identical to the first rebuild
+        self.assertEqual(self._build(["--rebuild"]), 0)
         rb1_d = self._tree_bytes(self.layout.derived)
         self.assertEqual(self._build(["--rebuild"]), 0)
         self.assertEqual(self._tree_bytes(self.layout.derived), rb1_d,
                          "derived: rebuild != rebuild")
-        shutil.rmtree(snap, ignore_errors=True)
 
     def test_changed_event_recorded(self):
         self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
@@ -295,45 +385,6 @@ class IncrementalFoldTests(_StoreCase):
     "only touch what the delta names" optimization invites.
     """
 
-    def _snapshot(self, dst):
-        shutil.rmtree(dst, ignore_errors=True)
-        os.makedirs(dst)
-        shutil.copytree(self.layout.derived, Path(dst) / "derived")
-        shutil.copytree(self.layout.index, Path(dst) / "index")
-
-    def _tree_bytes(self, root):
-        out = {}
-        for p in sorted(Path(root).rglob("*")):
-            if p.is_file():
-                out[str(p.relative_to(root))] = p.read_bytes()
-        return out
-
-    def _assert_matches_rebuild(self):
-        """Snapshot the incremental result, rebuild, and require identical bytes."""
-        snap = tempfile.mkdtemp(prefix="fold-snap-")
-        try:
-            self._snapshot(snap)
-            incr_d = self._tree_bytes(Path(snap) / "derived")
-            incr_i = self._tree_bytes(Path(snap) / "index")
-            self.assertEqual(self._build(["--rebuild"]), 0)
-            self.assertEqual(self._tree_bytes(self.layout.derived), incr_d,
-                             "derived: incremental != rebuild")
-            self.assertEqual(self._tree_bytes(self.layout.index), incr_i,
-                             "index: incremental != rebuild")
-        finally:
-            shutil.rmtree(snap, ignore_errors=True)
-
-    def _summary(self, argv=None):
-        buf = io.StringIO()
-        with redirect_stdout(buf):
-            rc = self._build(argv or [])
-        self.assertEqual(rc, 0, buf.getvalue())
-        return buf.getvalue()
-
-    def _cache(self):
-        import postings_fold_state as fs
-        return fs.cache_path(self.layout)
-
     # ── the fast path runs at all ──
     def test_second_build_folds_pending_only(self):
         self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
@@ -346,21 +397,6 @@ class IncrementalFoldTests(_StoreCase):
         self._assert_matches_rebuild()
 
     # ── the cross-entity reduction: a new manifest changing an OLD entity ──
-    DUP_JD = "Own the ingestion pipeline end to end. Kafka, Flink, and Iceberg."
-
-    def _capture_ashby(self, company, jid, title, dt, jd):
-        payload = {"apiVersion": "1", "jobs": [{
-            "id": jid, "title": title, "location": "Remote, US",
-            "jobUrl": f"https://jobs.ashbyhq.com/{company}/{jid}",
-            "descriptionPlain": jd, "publishedAt": "2026-07-15T00:00:00Z",
-            "isListed": True}]}
-        self._session().capture_fetch(
-            source="ashby", operation="board",
-            request={"url": f"https://api.ashbyhq.com/posting-api/job-board/{company}"},
-            status=200, payload_bytes=json.dumps(payload).encode(),
-            content_type="application/json", fetched_at=dt,
-            context={"company": company, "profile": "profile-01"})
-
     def test_new_manifest_stamps_duplicate_hint_on_an_untouched_entity(self):
         """The regression this optimization invites: an entity nobody re-observed.
 
@@ -406,13 +442,6 @@ class IncrementalFoldTests(_StoreCase):
                          ["ashby-ay-1"])
         self.assertEqual(self._posting("examplecorp", "ashby-ay-1")["possible_duplicate"],
                          ["gh-900"])
-
-    def _annotate(self, key, facts):
-        self.layout.annotations.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(self.layout.annotations / f"{key}.yaml",
-                          serialization.dumps_yaml(
-                              {"schema_version": 1, "key": key,
-                               "verified_by": "human", "facts": facts}))
 
     def test_annotating_half_a_duplicate_pair_keeps_both_hints(self):
         """The two reach mechanisms INTERSECTING — each is fine alone.
@@ -751,6 +780,258 @@ class IncrementalFoldTests(_StoreCase):
         self.assertIn("fold=full", self._summary())
         self.assertTrue(self._posting("examplecorp", "gh-222")["provenance"]["carried"])
         self._assert_matches_rebuild()
+
+
+class CarriedOverlayTests(_StoreCase):
+    """Every load path must hand ``_post_pass``/``_apply_annotations`` a bare posting.
+
+    ``_post_pass`` and the annotation overlay only ever ADD, so an entity that
+    arrives still carrying last generation's ``possible_duplicate`` /
+    ``migrated_from`` / ``human`` overlays can gain a hint but never lose one. The
+    fast path's loader (``_load_derived_entity``) strips them for exactly that
+    reason; the full fold's ``_load_existing_entity`` and ``_reconstruct_from_frozen``
+    must too, or ``--rebuild`` — the authoritative path — is the one that cannot
+    repair a stale hint or take back a deleted annotation.
+    """
+
+    def test_a_carried_entity_loses_a_hint_its_bucket_no_longer_supports(self):
+        self._capture_gh([_job(900, "Staff Engineer", "Remote, US",
+                               content=self.DUP_JD)], _dt(14))
+        self._capture_ashby("examplecorp", "ay-1", "Staff Engineer", _dt(15),
+                            self.DUP_JD)
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._posting("examplecorp", "gh-900")["possible_duplicate"],
+                         ["ashby-ay-1"])
+        self.assertEqual(self._posting("examplecorp", "ashby-ay-1")["possible_duplicate"],
+                         ["gh-900"])
+        # Ashby's raw stops syncing to this laptop → the entity is CARRIED from
+        # derived, and greenhouse's JD is rewritten, so the pair is no longer a
+        # content duplicate. Both halves must lose the hint.
+        self._delete_blob_for("ashby-ay-1")
+        self._capture_gh([_job(900, "Staff Engineer", "Remote, US",
+                               content="Completely different role: run billing.")],
+                         _dt(17))
+        self.assertEqual(self._build([]), 0)
+        self.assertNotIn("possible_duplicate", self._posting("examplecorp", "gh-900"))
+        self.assertNotIn("possible_duplicate",
+                         self._posting("examplecorp", "ashby-ay-1"))
+        self._assert_matches_rebuild()
+
+    def test_the_fast_path_and_a_rebuild_agree_about_a_carried_entitys_hint(self):
+        """The asymmetry itself, as a byte divergence between the two paths.
+
+        The blob is already absent when the fold cache is written, so the next
+        build keeps the fast path — which reaches the carried entity through
+        ``_duplicate_participants`` and loads it STRIPPED, correctly dropping the
+        hint. A rebuild reaches the same entity through ``_carry_forward``. If only
+        one of the two loaders strips, the two paths write different bytes for the
+        same input, and ``--rebuild`` is the one that is wrong.
+        """
+        self._capture_gh([_job(900, "Staff Engineer", "Remote, US",
+                               content=self.DUP_JD)], _dt(14))
+        self._capture_ashby("examplecorp", "ay-1", "Staff Engineer", _dt(15),
+                            self.DUP_JD)
+        self.assertEqual(self._build([]), 0)
+        self._delete_blob_for("ashby-ay-1")
+        self.assertEqual(self._build([]), 0)   # absorbs the absence into the cache
+        self.assertEqual(self._posting("examplecorp", "ashby-ay-1")
+                         ["possible_duplicate"], ["gh-900"])
+        # A new greenhouse JD takes gh-900 out of the bucket — on the FAST path.
+        self._capture_gh([_job(900, "Staff Engineer", "Remote, US",
+                               content="Completely different role: run billing.")],
+                         _dt(17))
+        self.assertIn("fold=pending-only", self._summary())
+        self.assertNotIn("possible_duplicate",
+                         self._posting("examplecorp", "ashby-ay-1"))
+        self._assert_matches_rebuild()
+
+    def test_a_carried_entity_gives_back_a_deleted_annotation(self):
+        self._capture_gh([_job(111, "SWE", "Remote, US")], _dt(14))
+        self._annotate("gh-111", {"workplace": "onsite"})
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._posting("examplecorp", "gh-111")
+                         ["opinions"]["workplace"]["effective"], "onsite")
+        self._delete_blob_for("gh-111")                     # raw stops syncing here
+        (self.layout.annotations / "gh-111.yaml").unlink()  # the owner takes it back
+        self._capture_gh([_job(222, "SRE", "Austin, TX")], _dt(15))
+        self.assertEqual(self._build([]), 0)
+        p = self._posting("examplecorp", "gh-111")
+        self.assertNotIn("human", p)
+        self.assertNotIn("effective", p["opinions"]["workplace"])
+        self.assertEqual([r for r in self._index_rows()
+                          if r["key"] == "gh-111"][0]["workplace"], "remote")
+        self._assert_matches_rebuild()
+
+    def test_the_overlay_strip_and_the_index_floor_cover_disjoint_keys(self):
+        """The two mechanisms that decide what survives without being re-derived.
+
+        ``_write_postings_index`` re-adds, verbatim, every live-index key the build
+        does not account for. The overlay strip re-derives every key the build DOES
+        account for. The sets are disjoint by construction — a stripped key has a
+        derived or frozen entity, and that is exactly what puts it in the writer's
+        ``rows`` — so no row can both survive the writer untouched and be one the
+        strip owed a re-derivation. This holds all three states in one build.
+
+        The last assertion is the boundary, stated deliberately: an index-only
+        survivor's ``workplace`` was baked from a human annotation that is now
+        deleted, and it stays. Its raw AND derived are both gone, so there is no JD
+        to re-classify from and nothing to re-derive — the row is honest history
+        marked ``carried_from: index``. Dropping it instead is the exact data loss
+        the single-writer change exists to prevent.
+        """
+        self._capture_gh([_job(111, "SWE", "Remote, US")], _dt(14))
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self._annotate("gh-111", {"workplace": "onsite"})
+        self._annotate("gh-222", {"workplace": "onsite"})
+        self.assertEqual(self._build([]), 0)
+        before = {r["key"]: r for r in self._index_rows()}
+        self.assertEqual(before["gh-111"]["workplace"], "onsite")
+        self.assertEqual(before["gh-222"]["workplace"], "onsite")
+
+        # gh-111 keeps its derived (carried); gh-222 loses raw AND derived, so only
+        # its committed index row remains. Both annotations are taken back.
+        self._delete_blob_for("gh-111")
+        self._delete_blob_for("gh-222")
+        shutil.rmtree(self.layout.derived / "postings" / "examplecorp" / "gh-222")
+        for key in ("gh-111", "gh-222"):
+            (self.layout.annotations / f"{key}.yaml").unlink()
+        self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(16))
+        self.assertEqual(self._build([]), 0)
+
+        rows = {r["key"]: r for r in self._index_rows()}
+        self.assertEqual(set(rows), {"gh-111", "gh-222", "gh-333"})
+        # gh-111 — the strip owns it: re-derived, and NOT a floor survivor.
+        p = self._posting("examplecorp", "gh-111")
+        self.assertNotIn("human", p)
+        self.assertNotIn("effective", p["opinions"]["workplace"])
+        self.assertEqual(rows["gh-111"]["workplace"], "remote")
+        self.assertNotIn("carried_from", rows["gh-111"])
+        # gh-222 — the floor owns it: verbatim, original seq, no derived fabricated.
+        self.assertEqual(rows["gh-222"]["carried_from"], "index")
+        self.assertEqual(rows["gh-222"]["seq"], before["gh-222"]["seq"])
+        self.assertFalse((self.layout.derived / "postings" / "examplecorp"
+                          / "gh-222").exists())
+        self.assertNotIn("carried_from", rows["gh-333"])
+        # The boundary: the survivor keeps the human-derived value it was written
+        # with, because nothing survives to re-derive it from.
+        self.assertEqual(rows["gh-222"]["workplace"], "onsite")
+        self._assert_matches_rebuild()
+
+    def test_a_frozen_entity_gives_back_a_deleted_annotation(self):
+        """The third loader: reconstructed from a frozen-facts snapshot.
+
+        The snapshot is the entity YAML verbatim, overlays included, and it wins
+        over derived — so without a strip a pruned entity's human fact is
+        un-deletable by any build path at all.
+        """
+        self._capture_gh([_job(111, "SWE", "Remote, US")], _dt(14))
+        self._annotate("gh-111", {"workplace": "onsite"})
+        self.assertEqual(self._build([]), 0)
+        self._freeze_and_prune("examplecorp", "gh-111")
+        (self.layout.annotations / "gh-111.yaml").unlink()
+        self._capture_gh([_job(222, "SRE", "Austin, TX")], _dt(15))
+        self.assertEqual(self._build([]), 0)
+        p = self._posting("examplecorp", "gh-111")
+        self.assertTrue(p["provenance"]["frozen"])
+        self.assertNotIn("human", p)
+        self.assertNotIn("effective", p["opinions"]["workplace"])
+        self._assert_matches_rebuild()
+
+
+class FrozenTimelineTests(_StoreCase):
+    """A frozen entity observed again must produce ONE timeline, not two halves."""
+
+    def test_a_re_observed_frozen_entity_keeps_one_first_seen_and_records_the_change(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._freeze_and_prune("examplecorp", "gh-111")
+        # The requisition is still open and is observed again, with a new posted_at.
+        job = _job(111, "SWE", "Austin, TX")
+        job["first_published"] = "2026-07-18T00:00:00Z"
+        self._capture_gh([job], _dt(20))
+        self.assertEqual(self._build([]), 0)
+
+        events = [json.loads(ln) for ln in
+                  (self.layout.derived / "postings" / "examplecorp" / "gh-111"
+                   / "events.jsonl").read_text().splitlines()]
+        types = [e["type"] for e in events]
+        self.assertEqual(types.count("first_seen"), 1, types)
+        self.assertEqual(types[0], "first_seen")
+        changed = [e for e in events if e["type"] == "changed"]
+        self.assertEqual(len(changed), 1, events)
+        self.assertEqual({c["field"] for c in changed[0]["changes"]}, {"posted_at"})
+        p = self._posting("examplecorp", "gh-111")
+        self.assertEqual(p["first_seen"], "2026-07-14T09:00:00Z")
+        self.assertEqual(p["last_seen"], "2026-07-20T09:00:00Z")
+        # by-day must not report the same entity as first_seen on two days.
+        first_days = [d.name for d in sorted((self.layout.index / "by-day").iterdir())
+                      if any(json.loads(ln).get("type") == "first_seen"
+                             for ln in d.read_text().splitlines()[1:])]
+        self.assertEqual(first_days, ["2026-07-14.jsonl"])
+        self._assert_matches_rebuild()
+
+    def test_a_frozen_snapshot_that_adds_nothing_is_a_no_op(self):
+        """Frozen holds no fetch the present raw lacks → the fresh fold stands."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._freeze_and_prune("examplecorp", "gh-111", prune=False)
+        self._capture_gh([_job(111, "SWE", "Seattle, WA")], _dt(15))
+        self.assertEqual(self._build([]), 0)
+        p = self._posting("examplecorp", "gh-111")
+        self.assertNotIn("frozen", p["provenance"])
+        self.assertEqual(p["location"], "Seattle, WA")
+        self._assert_matches_rebuild()
+
+
+class CollectToleranceTests(_StoreCase):
+    """`_collect`'s two "I could not use this" states must degrade AND be counted."""
+
+    def test_a_corrupt_blob_is_skipped_counted_and_never_wedges_the_build(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
+        self._truncate_newest_blob()  # exactly what an interrupted rsync leaves
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = self._build([])
+        self.assertEqual(rc, 0, err.getvalue())
+        self.assertIn("corrupt=1", out.getvalue())
+        self.assertIn("corrupt blob", err.getvalue())
+        self.assertEqual(self._index_keys(), {"gh-111"})  # gh-222 never materialized
+        # …and no build path is wedged by it: the full fold and --rebuild both run.
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._build(["--rebuild"]), 0)
+        self.assertEqual(self._index_keys(), {"gh-111"})
+
+    def test_a_payload_the_parser_cannot_read_is_counted(self):
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        # A source-wide parser regression: HTTP 200, well-formed JSON, present
+        # blob, new envelope shape — indistinguishable from an empty board today.
+        self._session().capture_fetch(
+            source="greenhouse", operation="board",
+            request={"url": "https://boards-api.greenhouse.io/v1/boards/examplecorp/jobs"},
+            status=200,
+            payload_bytes=json.dumps({"data": {"jobs": [_job(222, "SRE", "Remote, US")]}}).encode(),
+            content_type="application/json", fetched_at=_dt(15),
+            context={"company": "examplecorp", "profile": "profile-01"})
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = self._build([])
+        self.assertEqual(rc, 0, err.getvalue())
+        self.assertIn("no_rows=1", out.getvalue())
+        self.assertIn("greenhouse", err.getvalue())
+
+    def test_a_build_with_nothing_to_report_stays_quiet(self):
+        """Neither counter fires on a healthy build (they are signal, not noise)."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            self.assertEqual(self._build([]), 0)
+        self.assertNotIn("no_rows", out.getvalue())
+        self.assertNotIn("corrupt", out.getvalue())
+        self.assertNotIn("produced no rows", err.getvalue())
+        self.assertNotIn("corrupt blob", err.getvalue())
 
 
 class OrphanTests(_StoreCase):
