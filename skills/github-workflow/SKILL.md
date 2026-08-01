@@ -88,9 +88,19 @@ usable for one-off paths in tests.
 
 ## Verification
 
-`python -m unittest discover tests` — 41 tests, all pass. Ran the export twice in
-one day against a scratch directory and confirmed the second run exits 1 instead
-of overwriting.
+Measured at `9c1f2ab`, this branch's tip after its last rebase — not the worktree
+it was written in.
+
+```
+$ python -m unittest discover tests
+Ran 41 tests   OK                                                 exit 0
+$ .venv/bin/python automation/gardener/verify_links.py
+OK: 812 references, the skill symlinks and the vendored copies
+verified.                                                         exit 0
+```
+
+Ran the export twice in one day against a scratch directory and confirmed the
+second run exits 1 instead of overwriting.
 
 ## What was filed
 
@@ -117,10 +127,16 @@ that yourself. It does **not** check your numbers; that is the next section.
 
 ### Every number in a body belongs to one commit — name it
 
-Three separate correction passes over the same stack rewrote the same class of
-false number, and the second pass published new false numbers while fixing the
-first pass's. The cause is the same every time, and it is mechanical, not
-carelessness:
+**Read this section as a description of the cause, not as the fix.** Four
+correction passes over one stack rewrote the same class of false number. The
+second published new false numbers while fixing the first's. The third wrote
+*this section* — and then published a wrong diff size and a wrong file count of
+its own, and the two commits stacked directly on top of it published fresh false
+reference counts, one of them under a correctly named commit. Prose has now
+failed three times, once inside the pass that wrote it. The fix is mechanical and
+is filed at P0:
+`tasks/0_backlog/2026-07-31-pr-verification-blocks-are-measured-off-the-stack/`.
+Do not add a fifth warning here. Until the checker lands, this is what goes wrong:
 
 **A count is a property of a commit, not of a change.** `verify_links` counts
 references across the whole tracked tree; `Ran N tests` counts the whole suite.
@@ -135,23 +151,30 @@ they were published.
 So, when you write a `## Verification` block:
 
 - **Measure after your last rebase, on the commit you are actually publishing.**
-  Not the branch you wrote on. Re-running the four fast gates costs about four
-  seconds (`reconcile --check`, `verify_links.py`,
-  `instruction_budget.py --strict`, `sync_vendored.py --check`).
+  Not the branch you wrote on. The four fast gates cost about four seconds
+  together; run them and the SHA in one go, and paste what it prints:
+
+  ```bash
+  git rev-parse --short HEAD    # the SHA that goes beside every number below
+  .venv/bin/python automation/reconcile/reconcile.py --check         ; echo "EXIT=$?"
+  .venv/bin/python automation/gardener/verify_links.py               ; echo "EXIT=$?"
+  .venv/bin/python automation/metrics/instruction_budget.py --strict ; echo "EXIT=$?"
+  .venv/bin/python automation/vendoring/sync_vendored.py --check     ; echo "EXIT=$?"
+  ```
 - **Put the SHA next to the number.** `0 broken of 2580 verified (at 71de852)`.
   A bare count with no commit beside it is not evidence of anything, and a
   reader cannot tell a stale paste from a fresh one without it.
 - **Never combine two runs into one line.** Copying half a transcript from one
   tree and half from another produces a line that matches no commit in the
   history — which is harder to spot, and worse, than a plainly stale number.
-- **Compare against your parent — it is a free self-check that needs no oracle.**
-  Most PRs only add, so these counts usually rise. Two shapes are suspicious and
-  cost nothing to spot: a count **below** your parent's, and a count **exactly
-  equal** to it (any PR that touches a tracked `.md` normally moves the reference
-  count, so equality usually means you pasted the parent's value). Neither is
-  proof — a PR that deletes or rewrites documentation can genuinely lower the
-  count — but if yours is below or equal, you must be able to say *which* it is.
-  Re-measure before you publish it.
+- **Compare against your parent, and do not trust the comparison.** A count below
+  your parent's, or exactly equal to it, costs nothing to spot and is worth a
+  second look. It is evidence of nothing, and it never substitutes for
+  re-measuring. Measured on this stack: at `#175` the **correct** count (2668) was
+  exactly equal to its parent's, and the **fabricated** one (2670) sat cleanly
+  above it — so the check would have flagged the truth and passed the invention.
+  It did fire correctly at `#174` (2658, below its parent's 2664). A count above
+  your parent's tells you nothing at all.
 - **If you genuinely cannot re-measure** (it needs the private overlay, another
   machine, a live board), say what it was measured on and that it was not
   reproduced. Do not publish a number you did not take.

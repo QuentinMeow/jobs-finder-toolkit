@@ -7,11 +7,12 @@
 An overnight session that went looking for defects rather than building features. Three
 adversarial audits read the code, five live job searches ran against real boards as canary
 runs, and one agent spent its whole run trying to break the largest change in the stack.
-Between them they found more than sixty confirmed defects. Forty PRs fix or record them. Nothing is merged.
+Between them they found more than sixty confirmed defects. A stack of PRs fixes or records
+them; `gh pr list --state open` prints how many. Nothing is merged.
 
 ## What happened
 
-- **A 40-PR public stack, `#135`–`#174`**, each branch on the one below, bottom PR on `main`.
+- **A public stack whose bottom PR is `#135`**, each branch on the one below, bottom PR on `main`.
   Roughly a third are gates that reported success without inspecting anything; a third are
   silent false negatives in the job pipeline — a registered company board that had been
   returning 404, a location gate printing confident rejections for postings it had actually
@@ -38,11 +39,13 @@ Between them they found more than sixty confirmed defects. Forty PRs fix or reco
 
 ## Where things stand
 
-*Counts below are true of this file's own commit. This handover sits inside the stack it
-describes, so any PR added above it makes its numbers stale — which happened three times
-tonight. `gh pr list --state open` is the authority; this is orientation.*
+*This file ships inside the stack it describes, so any total it states goes stale the moment
+anything lands above it. Four corrections in a row proved that, the last one stale by the very
+PR that made it. So it no longer states one: for the live range and count, run
+`gh pr list --state open` — that is the authority, and this section is orientation. The
+remaining counts below are true of this file's own commit and say so where it matters.*
 
-- **All 40 PRs are open and green, none merged.** Merge bottom-up, `#135` first, one at a
+- **Every PR in the stack is open and green, none merged.** Merge bottom-up, `#135` first, one at a
   time. Expect `main`'s CI to go red after each merge until a reconciliation row is
   appended — that is the documented cost of stacking here, not a regression, and
   `skills/github-workflow/SKILL.md` has the recovery.
@@ -71,8 +74,16 @@ tonight. `gh pr list --state open` is the authority; this is orientation.*
   reports. And it **did not cover the thirteen PRs above it**: re-measured at each PR's own
   substantive commit in a config-less clone, **nine of `#160`–`#172` publish a false
   `verify_links` count** and only `#167` is right, with four more carrying stale suite counts.
-  All are corrected in the bodies as of 2026-08-01. Why this recurs, and the one rule that
-  ends it, is written once in `skills/github-workflow/SKILL.md` §1 — not repeated here.
+  All are corrected in the bodies as of 2026-08-01. Why this recurs is written once in
+  `skills/github-workflow/SKILL.md` §1 — not repeated here.
+- **The third pass did not hold either, and a fourth on 2026-08-01 corrected `#173`–`#175`.**
+  The third pass is the one that wrote the rule into `skills/github-workflow/SKILL.md` §1, and
+  the class recurred in its own body and in the next two commits: `#174` published `2658`
+  where its commit `5f1ebc98` gives **2668**, `#175` published `2670` at the commit it
+  correctly named, `10479ae8`, which gives **2668**, and `#173` itself overstated its own diff
+  size and its own finding. **Treat the §1 rule as a description of the cause, not as the fix.**
+  Three passes have now written prose against this and the class recurred immediately after
+  each. The fix is mechanical and is the P0 task above; do not settle this with more wording.
 - Three findings were **accepted rather than fixed**, each with the reason in the code and a
   task filed. One of them, sweeping the blob store, would have re-added exactly the
   unattended delete path the PR below it had just hardened against.
