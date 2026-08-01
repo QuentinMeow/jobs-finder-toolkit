@@ -249,8 +249,15 @@ everything so you judge role fit yourself — and its remote signal is a heurist
 SmartRecruiters, over-report `remote`), so always confirm a candidate's true location from the
 actual JD before acting.
 
+The verdict is **three-valued**, like the gate itself: `MATCH`, `no`, and `REVIEW`. `REVIEW` means
+the posting's fields were silent or contradictory — most often a board that parks a workplace word
+(`Hybrid`, `In-Office`, `Distributed`) in the location field and names the cities only inside the
+JD — so open that posting before reporting anything about it. **Never relay a `REVIEW` row as "no
+match":** `--json` carries `decision` alongside `match` for exactly this reason, and `--match-only`
+hides only the definite non-matches, so review rows stay visible.
+
 ```bash
-# company in companies.yaml (resolve by name / alias / token); --match-only shows only policy-matching roles
+# company in companies.yaml (resolve by name / alias / token); --match-only drops definite non-matches (keeps match + review)
 .venv/bin/python skills/job-search/scripts/company_roles.py --name Cloudflare --match-only
 # dump one posting's full JD text verbatim (for writing source/JD-<title>.md)
 .venv/bin/python skills/job-search/scripts/company_roles.py --name Sentry --jd "Control Plane"

@@ -456,8 +456,11 @@ variants:
 
   - id: location-unclassified-bare-workplace-word
     domain: location
-    # A location string that is only a workplace word ("Hybrid", "In-Office") or
-    # an unrecognized single place names no classifiable geography -> unknown.
+    # A location string that is only a workplace word ("Hybrid", "In-Office")
+    # names no classifiable geography -> unknown. The review reason is specific
+    # rather than the `unclassified_location` catch-all: the board stated a work
+    # MODE where a place belongs, so the fix is to read the posting, not to widen
+    # any token list.
     input:
       title: Software Engineer
       location: Hybrid
@@ -471,7 +474,7 @@ variants:
     expect:
       decision: review
       category: unknown
-      review_contains: [unclassified_location]
+      review_contains: [workplace_tag_without_geography]
 
   - id: location-remote-grant-with-mandatory-hybrid-role
     domain: location
@@ -528,3 +531,69 @@ variants:
     expect:
       decision: review
       review_contains: [uncorroborated_ats_workplace_hint]
+
+  - id: location-region-title-cannot-grant-us-remote
+    domain: location
+    # Boards that park a workplace WORD in the location field leave the gate with
+    # no geography. A coverage region in the TITLE ("…, Americas") is a market
+    # descriptor, not a work grant, so it must not carry the posting to a match.
+    input:
+      title: Solutions Architect, Americas
+      location: In-Office
+      workplace_hint: unknown
+      description: >-
+        This is a hybrid role and you will work from one of our offices three
+        days per week.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      category: unknown
+      workplace: hybrid
+      review_contains: [workplace_tag_without_geography]
+
+  - id: location-us-region-with-office-obligation
+    domain: location
+    # Region-level US geography plus an EVIDENCED office obligation: the country
+    # is known, the office is not, so neither the metro rule nor US-remote can be
+    # confirmed. Reviewable — the unnamed office may be a preferred metro.
+    input:
+      title: Platform Engineer
+      location: United States
+      workplace_hint: unknown
+      description: This is a hybrid role with three office days each week.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      category: unknown
+      review_contains: [us_scope_without_remote_workplace]
+
+  - id: location-bare-hybrid-tag-yields-to-jd-remote
+    domain: location
+    # A bare "Hybrid" tag names no office to report to, so it cannot contradict
+    # an explicit JD remote grant. A PLACE-BEARING hybrid location still can —
+    # see location-preferred-metro-hybrid-vs-jd-remote above.
+    input:
+      title: Senior Software Engineer, Platform
+      location: Hybrid
+      workplace_hint: hybrid
+      description: >-
+        This is a fully remote role. You may live anywhere you are authorized to
+        work. Available Locations: Remote - United States
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+      evidence_contains: [jd_remote_over_bare_workplace_tag]

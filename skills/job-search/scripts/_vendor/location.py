@@ -51,6 +51,17 @@ _GENERIC_WORKPLACE_MARKERS = frozenset({
     "work remotely", "anywhere", "worldwide", "global", "flexible",
 })
 
+# The individual words of the markers above. Some ATS boards put a WORKPLACE WORD
+# in the structured location field ("Hybrid", "In-Office", "Distributed") and
+# leave the actual cities inside the JD body, so such a field states a work MODE
+# and carries no geography at all. Used to recognize that shape — see
+# ``_is_workplace_word_only``.
+_WORKPLACE_MARKER_WORDS = frozenset(
+    word
+    for marker in _GENERIC_WORKPLACE_MARKERS
+    for word in re.findall(r"[a-z0-9]+", marker)
+)
+
 # Remote signals. "hybrid" / "in-office" / "on-site" are deliberately NOT here —
 # a hybrid role in a specific non-preferred city still requires being in that city.
 # "distributed" is deliberately NOT a remote signal: a bare "Distributed" location
@@ -352,6 +363,18 @@ def _is_ambiguous_region_bucket(nloc: str) -> bool:
         word in _AMBIGUOUS_REGION_BUCKET_WORDS for word in words)
 
 
+def _is_workplace_word_only(nloc: str) -> bool:
+    """Whether a normalized location is nothing but generic workplace words.
+
+    ``Hybrid`` / ``In-Office`` / ``Distributed`` in an ATS location field name a
+    work MODE, not a place: they assert no city, state, country or region. Such a
+    field therefore cannot supply geography, and it cannot contradict a
+    role-specific workplace statement in the JD body either.
+    """
+    words = re.findall(r"[a-z0-9]+", nloc)
+    return bool(words) and all(word in _WORKPLACE_MARKER_WORDS for word in words)
+
+
 def _rule_hits(text: str, rules) -> list[str]:
     return [rule_id for rule_id, pattern in rules if pattern.search(text or "")]
 
@@ -388,6 +411,9 @@ def _workplace_assessment(
     hint = _normalize(workplace_hint)
     hint = hint if hint in _WORKPLACE_VALUES else "unknown"
 
+    # A location field that is ONLY a workplace word states a mode with no place
+    # attached, so it is a board-level tag rather than a role-level obligation.
+    bare_workplace_tag = _is_workplace_word_only(nloc)
     loc_hybrid = "hybrid" in nloc
     loc_remote = _has(REMOTE_TOKENS, nloc)
     remote_hits = _rule_hits(description, _REMOTE_JD_RULES)
@@ -422,7 +448,16 @@ def _workplace_assessment(
     if hybrid_hits and remote_hits and "jd_office_or_remote" not in remote_hits:
         review.append("remote_hybrid_conflict")
     if loc_hybrid and remote_hits and "jd_office_or_remote" not in remote_hits:
-        review.append("location_hybrid_jd_remote_conflict")
+        # A PLACE-BEARING hybrid location ("Austin, TX (Hybrid)") genuinely
+        # competes with a JD remote grant and needs a human. A bare "Hybrid" tag
+        # does not: it names no office to report to, so the role-specific JD text
+        # is the only statement of record and remote stands. Without this, boards
+        # that park a workplace word in the location field turn every explicitly
+        # remote posting into a review the caller reads as a rejection.
+        if bare_workplace_tag:
+            evidence.append("jd_remote_over_bare_workplace_tag")
+        else:
+            review.append("location_hybrid_jd_remote_conflict")
     if review:
         return "unknown", "low", evidence, review
 
@@ -461,14 +496,18 @@ def assess_location(
 ) -> LocationAssessment:
     """Assess one posting using all available location/workplace evidence.
 
-    The raw location remains the geographic source. The title is used only to
-    catch country/city scope hidden by boards behind generic tags such as
-    ``Distributed``. Full JD text supplies role-level workplace alternatives such
-    as "one of our US hubs or remotely in the United States".
+    The raw location is the ONLY source of positive geography. The title is read
+    for geography in the REJECTING direction only — it can mark a posting foreign
+    (``Distributed`` + "…, Canberra"), but a region word in a title
+    ("…, Americas", "…, NAmer") is a market/coverage descriptor, not a grant of
+    US work eligibility, so it can never carry a posting to a match on its own.
+    Full JD text supplies role-level workplace alternatives such as "one of our US
+    hubs or remotely in the United States".
     """
     original = location or ""
     nloc = _normalize(original)
     ntitle = _normalize(title)
+    # Foreign scope may be asserted by either field; US scope only by the location.
     context = " ".join(x for x in (nloc, ntitle) if x)
     description = description or ""
     (metro, _remote_tokens, us_remote_regions,
@@ -480,9 +519,9 @@ def assess_location(
         original, description, workplace_hint or "", hint_trusted)
     foreign = (_has(_FOREIGN_TOKENS, context) or _has(FOREIGN_REGIONS, context)
                or _FOREIGN_ABBR_RE.search(context) is not None)
-    us = (_has(us_remote_regions, context) or _has_us_state(nloc)
+    us = (_has(us_remote_regions, nloc) or _has_us_state(nloc)
           or _has(_US_HUBS, nloc) or _has_state_abbr(original)
-          or re.search(r"\bus\b", context) is not None)
+          or re.search(r"\bus\b", nloc) is not None)
     preferred = _has(metro, nloc)
     has_specific_us_office = (_has(_US_HUBS, nloc) or _has_us_state(nloc)
                               or _has_state_abbr(original))
@@ -514,6 +553,17 @@ def assess_location(
     elif has_specific_us_office:
         category = "other_us"
         evidence.append("specific_us_office")
+    elif us and allow_us_remote and workplace in {"hybrid", "onsite"} \
+            and confidence == "high":
+        # Region-level US geography ("United States", "Americas") plus an EVIDENCED
+        # office obligation from the JD or the location field: the country is known
+        # but the office is not, so neither the preferred-metro rule nor US-remote
+        # can be confirmed. Reviewable, not a match — and not a no_match either,
+        # because the unnamed office may well be a preferred metro. An INFERRED
+        # onsite (a bare region tag with no workplace evidence, confidence
+        # medium/low) is untouched and keeps its historical us_remote reading.
+        category = "unknown"
+        review.append("us_scope_without_remote_workplace")
     elif us:
         # A country/region-only answer means US eligibility even if the ATS omitted
         # a workplace mode; preserve the historical policy behavior.
@@ -525,6 +575,12 @@ def assess_location(
             # This was already an unknown/review result. Give it a distinct
             # investigation reason without changing any match/no_match decision.
             review.append("weird_location_format")
+        elif _is_workplace_word_only(nloc):
+            # The board stated a work MODE where a place belongs and the JD never
+            # named one either. Say so specifically instead of the catch-all
+            # `unclassified_location`: the fix is to read the posting, not to
+            # widen the token lists.
+            review.append("workplace_tag_without_geography")
 
     # Definitively foreign-only geography dominates any internal workplace
     # remote/hybrid/onsite tension: the role is out of a US-only search either
