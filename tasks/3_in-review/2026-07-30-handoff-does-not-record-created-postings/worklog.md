@@ -14,7 +14,9 @@
   `message-queue/needs-human/decisions/handoff-records-non-clean-scaffolds.md`. Default
   path (implemented): record every folder actually created, and print the
   `--forget-log` un-skip command with its argument filled in on a non-zero exit.
-- 11 new handoff tests + 16 new shared tests. `--sync-log` appending **zero** rows over a
+- 11 new handoff tests + 14 new shared tests (corrected 2026-07-31 — this line said 16;
+  the suite delta is 455 → 469 and `grep -cE '^\+ *def test'` over the added
+  `test_skip_log.py` hunk gives 14). `--sync-log` appending **zero** rows over a
   folder handoff just created is the anti-drift assertion — it fails if the two writers
   disagree on any of the six stored fields.
 - Surprise: `--select "Company"` over an all-mismatch group exits 1, not 3 — the bulk path

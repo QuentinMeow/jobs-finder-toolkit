@@ -32,15 +32,16 @@ each PR's own substantive commit in a pristine clone:
 - **Reference counts move backwards up an append-only stack.** `verify_links.py` rises
   monotonically `1698 → 2510` across the stack; the claimed sequence for #143 → #144 →
   #145 → #147 reads 1718, 1700, 1699, 1698 — decreasing. #156 claims 1862 where its own
-  commit gives 2505.
+  commit (`86a18e0`) gives **2508** (corrected 2026-07-31 — this line said 2505).
 - **Suite sizes are reported as shrinking.** `automation/shared/tests` is accurate at and
   below #140 (#136 claims 455, actual 455; #139 claims 469, actual 469) and understated
   above it (#141 claims 459/actual 473; #147 claims 464/actual 482; #153 claims
   455/actual 489). Same shape in `skills/job-search/scripts/tests` (#153 claims 356,
   actual 406) and `automation/publish/tests` (157 claimed, 188 actual).
 
-It is not confined to PR bodies. `tasks/3_in-review/2026-07-21-store-incremental-build-o-new/verification.md:66-82`
-ships the same five wrong numbers **into the repo**. And
+It is not confined to PR bodies. `tasks/3_in-review/2026-07-21-store-incremental-build-o-new/verification.md`
+shipped the same five wrong numbers **into the repo** (its "whole store test surface"
+block; corrected there 2026-07-31, with the wrong and right figures both kept). And
 `tasks/0_backlog/2026-07-31-word-anchor-the-remaining-substring-keyword-lists/task.md`
 asserted that `_title_prefilter` "still drops Software Engineer, Internal Developer
 Platform" in commit `8699726`, whose own ancestor `6bec7a3` had already fixed it
@@ -53,23 +54,26 @@ says *"Every command below was run on this branch"* above a block whose numbers 
 
 ### What a check would have to compare, and what it would cost
 
-The four fast gates print one summary line each and are cheap. Measured on
-`wip/28-verification-regressions`, 2026-07-31:
+The four fast gates print one summary line each and are cheap. Re-measured on the stack
+tip `40871e6`, 2026-07-31 (the table was first captured on `wip/28-verification-regressions`,
+which reported 2537 references; the branch has moved since, which is the same staleness
+this task is about):
 
 | gate | summary line it prints | wall |
 |---|---|---|
 | `automation/reconcile/reconcile.py --check` | `reconcile: OK (9 checks clean)` | 0.28 s |
-| `automation/gardener/verify_links.py` | `OK: 2537 references, the skill symlinks and the vendored copies verified.` | 3.22 s |
+| `automation/gardener/verify_links.py` | `OK: 2552 references, the skill symlinks and the vendored copies verified.` | 3.22 s |
 | `automation/metrics/instruction_budget.py --strict` | `OK: all instruction files within budget.` | 0.25 s |
 | `automation/vendoring/sync_vendored.py --check` | `vendored copies in sync` | 0.19 s |
 
 Total **≈ 3.9 s**. That is affordable anywhere.
 
 **Test counts are the opposite.** They are the largest class of false claim in the stack,
-and they are the expensive one: `automation/gardener/tests` alone is **165 tests in 124 s**
-on this machine and `automation/publish/tests` is **188 in 127 s**; the whole battery is
-**1790 tests** over roughly seven minutes. A pre-push step that re-runs the suites costs
-minutes per push, so it gets disabled — which is worse than not having it.
+and they are the expensive one: `automation/gardener/tests` alone is **165 tests in 83 s**
+and `automation/publish/tests` is **188 in 131 s** on this machine; the whole 13-suite
+battery is **1801 tests** over roughly eight minutes. (Corrected 2026-07-31 — the total read
+1790, which is what the battery was one branch earlier.) A pre-push step that re-runs the
+suites costs minutes per push, so it gets disabled — which is worse than not having it.
 
 So the honest scope of the cheap version:
 

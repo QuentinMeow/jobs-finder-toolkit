@@ -83,8 +83,8 @@ reconciler, the public review gate, the example render, the vendored-copy drift
 check, `compileall`, and the example-store validation — see
 `.github/workflows/ci.yml` for the authoritative set and order. The tracked
 pre-commit hook runs the cheap gates on every commit; three of them (the public
-review gate, the reconciler, the reference/link check) are **not** in the block
-above, so a green local run of this list is not proof the hook will pass — read
+review gate, the reconciler, `compileall`) are **not** in the block above, so a
+green local run of this list is not proof the hook will pass — read
 `automation/hooks/pre-commit` for what it actually runs.
 
 Vendored copies must stay in sync; after editing a canonical `automation/shared/`

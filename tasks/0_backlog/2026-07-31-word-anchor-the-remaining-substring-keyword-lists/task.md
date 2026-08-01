@@ -26,7 +26,7 @@ each was demonstrated live by the audit:
 | `automation/shared/job_metadata.py:454` (`_TOTAL_TERMS`, used by `_compensation_range`) | `"ote"` matches inside "rem**ote**", so a base-salary band next to the word "remote" is dropped or filed as total comp | OPEN |
 | `automation/shared/mail/reconciliation.py:337` (`_contains`) | `"confirmed"` matches inside "un**confirmed**" — an explicitly unconfirmed hold becomes a tracker-ready confirmed interview | OPEN |
 | `automation/shared/mail/reconciliation.py:445` | bare `"opportunity"` matches the EEO footer, so every no-op status email becomes a reply TODO | DONE 2026-07-31 |
-| `skills/email-assistant/scripts/application_context.py:191` | a company name inside a longer word scores +40 (threshold 20) — "**Meta**data", "Drop**box**" | OPEN |
+| `skills/email-assistant/scripts/application_context.py:191` | a company name matched with a trailing inflection scores +40 (threshold 20) — `"Box"` in "**boxes** were shipped", `"Stripe"` in "**stripes** on the field". *(Row corrected 2026-07-31: it said "**Meta**data" / "Drop**box**"; neither fires — see the re-measurement below.)* | OPEN |
 | `skills/job-search/scripts/sources.py:285` (`_title_prefilter`) | `"intern"` matches inside "**Intern**al", dropping titles the real title gate would keep | DONE 2026-07-31 |
 | `skills/job-search/scripts/scoring.py:673` (`_norm_company`) | substring replace, so the sponsor boost never fires for a legal name | DONE 2026-07-31 |
 | `skills/job-search/scripts/common.py:169` | the two-letter keyword `"go"` matches "**go**-to-market" / "**go** live" | ACCEPTED — split to `tasks/0_backlog/2026-07-31-ambiguous-short-keywords-rank-on-english-prose` |
@@ -56,6 +56,31 @@ space-padded entry, i.e. a WHITESPACE boundary rather than a word boundary, beca
 word-anchoring newly dropped `Software Engineer (Manager Tools)`, `Software Engineer (VP)`,
 `Lead Software Engineer/Manager` and `VP, Engineering`. Three rows stay open:
 `_TOTAL_TERMS`, `_contains`'s "confirmed", and `application_context`'s company match.
+
+**2026-07-31 re-measurement of the three still-open rows (stack tip `40871e6`).** The
+paragraph two above says the surviving rows "still reproduce". Driven directly against the
+tip, the *mechanisms* are all real but **none of the three reproduces on the shape the row
+names**. The rows stay open; their reproduction lines do not stand as written, and whoever
+picks this up needs a fixture that actually fires before writing the failing test.
+
+- **`_TOTAL_TERMS` / `"ote"` inside "remote".** The bare `'ote'` term is really in the
+  tuple (`job_metadata._TOTAL_TERMS` ends `…, 'on target earnings', 'ote'`). But
+  `_compensation_range("Base salary for this remote position: $150,000 - $180,000 per
+  year.", total=False)` returns the full band `{'min': 150000, 'max': 180000, …}` — the
+  same as the control without "remote" — and `total=True` returns `None` for both. The
+  band is neither dropped nor filed as total comp on this shape.
+- **`_contains` / `"confirmed"` inside "unconfirmed".** `categorize_message` on
+  `"Your interview hold for Tuesday is UNCONFIRMED; we will follow up to lock it in."`
+  returns `['interview_invite', 'scheduling']` — no `schedule_confirmed`. The genuinely
+  confirmed control returns the same two categories, so this fixture does not separate
+  them at all.
+- **`application_context` / a company name inside a longer word.** The row's two examples
+  do **not** fire: `_company_mentioned("Box", "we shipped a dropbox integration")` and
+  `_company_mentioned("Meta", "metadata migration complete")` both return `False`. What
+  does fire is the *trailing inflection* the matcher allows deliberately —
+  `_company_mentioned("Box", "boxes were shipped today")` and
+  `_company_mentioned("Stripe", "stripes on the field")` both return `True`. The defect is
+  real; "Metadata"/"Dropbox" is the wrong description of it.
 
 A fourth instance is already recorded separately in
 `memory/known-issues/check-py-never-skill-hyphen-substring-false-positive.md`

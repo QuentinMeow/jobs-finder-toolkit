@@ -36,12 +36,16 @@ $ git show 8a1321a --numstat --format= | grep -E "job-search/(SKILL|reference)"
 
 ## Gates
 
+Re-run 2026-07-31 on the stack tip `40871e6`. The reference total was 2537 when this file
+was first written on `wip/28-verification-regressions`; that branch has since moved, so
+the figure is refreshed rather than left to rot.
+
 ```
 $ .venv/bin/python automation/reconcile/reconcile.py --check
 reconcile: OK (9 checks clean)                                            exit 0
 
 $ .venv/bin/python automation/gardener/verify_links.py     # last line of the report
-  OK: 2537 references, the skill symlinks and the vendored copies verified.  exit 0
+  OK: 2552 references, the skill symlinks and the vendored copies verified.  exit 0
 
 $ .venv/bin/python automation/metrics/instruction_budget.py --strict
 OK: all instruction files within budget.                                   exit 0

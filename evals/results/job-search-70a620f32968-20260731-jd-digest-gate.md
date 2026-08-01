@@ -13,11 +13,33 @@ Employer names are redacted to `<company>` — the results tree is public.
 | Skill | `job-search` |
 | Canary set | `evals/canaries/job-search.yaml` |
 | Run kind | regression pre-merge |
-| Git SHA | `70a620f32968` ("Give the ATS-API JD path a digest mode") |
+| Git SHA | `70a620f32968` ("Give the ATS-API JD path a digest mode") — **not resolvable from merged history; see the provenance note below.** |
 | Model version | `claude-opus-5` — the five runs and this judgement |
 | Config mode | examples fallback (`config.yaml` unset → `config.example.yaml`, fictional persona, `example` profile) |
 | Date | `2026-07-31` |
 | Judge | judge subagent (`claude-opus-5`), per `evals/rubrics/judging.md` — every `expected_behavior` bullet an independent pass/fail check, all must hold, a listed `failure_mode` = automatic fail |
+
+## Commit-pin provenance — added 2026-07-31, read before citing this record
+
+**`70a620f32968` is not an ancestor of the merged history.** It exists only on the
+pre-rebase branch `wip/07-company-roles-jd-digest`; `git branch -a --contains 70a620f32968`
+names that branch and nothing else, and `git merge-base --is-ancestor 70a620f32968 HEAD`
+is false at the stack tip `40871e6`. The landed equivalent is **`1e4b7c1`** (same title,
+PR #152), which sits *later* in the stack than this record. This file's name retains the
+pre-rebase SHA; it has not been renamed, so that the record keeps a stable identity.
+
+**The runs do not bound the merged skill surface, and this is not a bookkeeping detail.**
+`git diff --stat 70a620f32968 1e4b7c1 -- skills/job-search/{SKILL,LESSONS,reference}.md`
+gives 3 files, **88 changed lines** (SKILL.md 39, reference.md 38, LESSONS.md 11) — the
+instruction files these canaries actually route on. Anyone treating this as a gate at head
+needs a re-run; treat it as evidence about `70a620f32968`'s behaviour only.
+
+What *is* verified: the two downstream fixes this record credits are both in merged
+history and are both ancestors of the tip — `9778181` ("Stop printing 'no' for a location
+verdict that said 'review'") and `c055e3b` ("Point one company's registry entry at the
+board that exists"). The rubric-provenance claim below also holds: `9778181` is the only
+commit between `70a620f32968` and the tip that touches `evals/canaries/job-search.yaml`,
+and it changes it by +4/−1.
 
 ## Method
 
