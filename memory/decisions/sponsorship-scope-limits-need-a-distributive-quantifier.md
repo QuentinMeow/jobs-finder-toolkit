@@ -5,7 +5,13 @@
 - **Decided by**: agent (within standing policy — reversible heuristic behind an advisory gate)
 - **Supersedes / Superseded-by**: narrows item 1 of
   `memory/decisions/sponsorship-offer-versus-denial.md` (2026-07-31); every other item of
-  that decision stands unchanged
+  that decision stands unchanged. **Completed 2026-08-01 by
+  `memory/decisions/sponsorship-an-unsettled-denial-is-review-not-a-silent-drop.md`**:
+  items 1–3 below stand, **item 4 is reversed** (`at all` needs its own exclusion again),
+  the second Consequences bullet is superseded (the recall loss it accepts is withdrawn),
+  and the "8-token" mechanism in the final Consequences bullet is **wrong** — the filed
+  sentence loses its cue to a clause-break truncation, at a real distance of 12 tokens, not
+  17. Read that file before acting on any bullet here
 
 ## Context
 

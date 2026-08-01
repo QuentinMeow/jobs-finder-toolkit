@@ -177,10 +177,46 @@ class VisaPolicyBindingTests(unittest.TestCase):
         self.assertNotEqual(posting.visa_label, "yes")
         self.assertEqual(posting.sponsorship, "unknown")
         self.assertIn("sponsorship_requires_review", posting.review_reasons)
-        # The same sentence with nothing positive beside it is simply a denial.
-        alone = self._posting("We are unable to sponsor visas for all new hires.")
-        self.assertFalse(visa_ok(alone, profile))
-        self.assertEqual(alone.visa_label, "no")
+
+    def test_require_positive_never_drops_a_quantified_denial_silently(self):
+        # The mirror, and the reason this pair is one test file rather than two.
+        # With nothing positive beside it the same sentence used to be a confident
+        # `no` — dropped under both policies, unflagged — even though the
+        # quantifier that made it a denial is the one the comment above calls
+        # ambiguous. An employer whose offer is worded outside the phrase list
+        # ("our immigration team supports H-1B and green card cases") was deleted
+        # from the shortlist with no trace. Both policies now keep it and flag it.
+        for policy in ("exclude_negative", "require_positive"):
+            for text in (
+                "We are unable to sponsor visas for all new hires.",
+                "Our immigration team supports H-1B and green card cases, but "
+                "we do not sponsor all roles.",
+            ):
+                with self.subTest(policy=policy, text=text):
+                    profile = {"visa": {"needs_sponsorship": True,
+                                        "policy": policy}}
+                    posting = self._posting(text)
+                    self.assertTrue(visa_ok(posting, profile))
+                    self.assertEqual(posting.visa_label, "unclear")
+                    self.assertIn("sponsorship_requires_review",
+                                  posting.review_reasons)
+
+    def test_a_settled_denial_is_still_dropped_under_both_policies(self):
+        # The guard: unsettling a quantified denial must not make the classifier
+        # soft on the refusals it can actually read.
+        for policy in ("exclude_negative", "require_positive"):
+            for text in (
+                "We are unable to sponsor visas.",
+                "We cannot sponsor visas at all for this position.",
+                "We are unable to sponsor visas for all new hires. This role "
+                "does not offer sponsorship.",
+            ):
+                with self.subTest(policy=policy, text=text):
+                    profile = {"visa": {"needs_sponsorship": True,
+                                        "policy": policy}}
+                    posting = self._posting(text)
+                    self.assertFalse(visa_ok(posting, profile))
+                    self.assertEqual(posting.visa_label, "no")
 
     def test_require_positive_still_keeps_an_offer_with_a_distributive_limit(self):
         # The counterpart: an employer that sponsors but not universally is still

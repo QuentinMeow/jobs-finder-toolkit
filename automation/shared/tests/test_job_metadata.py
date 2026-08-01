@@ -842,10 +842,10 @@ class SponsorshipScopeLimitTests(unittest.TestCase):
                 self.assertEqual(classify_sponsorship(text), "unlikely")
 
     def test_at_all_intensifies_a_denial_rather_than_bounding_it(self):
-        # "at all" INTENSIFIES a denial. It used to need a lookbehind to survive
-        # the quantifier rule; now that bare "all" bounds nothing (see
-        # QuantifiedDenialTests) it is covered by the general rule, and this case
-        # stays as the pin that it must never regrade.
+        # "at all" INTENSIFIES a denial, so it is excluded from the ambiguous-
+        # quantifier cue by name (``_SPONSOR_AMBIGUOUS_SCOPE_RE``). The exclusion
+        # is load-bearing again: bare "all" no longer bounds nothing, it unsettles
+        # a denial, and this is the one wording where it must not.
         self.assertEqual(
             classify_sponsorship("We cannot sponsor visas at all for this role."),
             "unlikely",
@@ -880,7 +880,7 @@ class SponsorshipScopeLimitTests(unittest.TestCase):
 
 
 class QuantifiedDenialTests(unittest.TestCase):
-    """A denial that names its population is a denial, not a limit on an offer.
+    """An `all`-quantified denial is a denial — and not a CONFIDENT one.
 
     The scope-limit rule was right that ``not (for every role)`` negates a
     UNIVERSAL and so entails that some roles ARE sponsored. It went one quantifier
@@ -897,7 +897,17 @@ class QuantifiedDenialTests(unittest.TestCase):
     sponsorship as a confident sponsor, with no review flag. That is the invariant
     the earlier change asserted ("a scope limit can only REMOVE a denial, never
     create an offer") and never enforced anywhere but in prose, so it is pinned at
-    the VERDICT level here, not just per phrase. Every wording below is fictional.
+    the VERDICT level here, not just per phrase.
+
+    Removing ``all`` from the scope-limit cue closed that, and opened its mirror:
+    the phrase then fell through to the ordinary denial path and answered
+    ``no_match``/``unlikely``/**high** with no review flag, so the posting was
+    dropped under BOTH policies on a sentence this very docstring calls ambiguous.
+    Both halves are pinned here together, because they are the two directions one
+    quantifier can fail in and every previous revision fixed one by reopening the
+    other: the phrase NEVER leaves the denial list (no promotion is reachable),
+    and a denial resting only on it never carries a confident verdict. Every
+    wording below is fictional.
     """
 
     DENIAL = "We are unable to sponsor visas for all new hires."
@@ -913,13 +923,45 @@ class QuantifiedDenialTests(unittest.TestCase):
         "We cannot sponsor all applicants for this opening.",
     )
 
-    def test_a_quantified_denial_alone_is_a_denial(self):
+    # Offers phrased in words `_SPONSOR_POSITIVE` does not contain — the class the
+    # confident drop actually swallowed, since a recognised offer phrase would have
+    # sent the posting to the `denial and positive -> review` branch anyway.
+    UNLISTED_OFFERS = (
+        "Our immigration team supports H-1B and green card cases.",
+        "Sponsorship is offered for many roles on this team.",
+    )
+
+    def test_a_quantified_denial_alone_is_not_a_confident_refusal(self):
+        # It is still DENIAL evidence — that is the promotion guard, asserted on
+        # the rule id — but the verdict it supports on its own is `review`, not a
+        # silent `no_match` at high confidence.
         assessment = assess_sponsorship(self.DENIAL)
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["confidence"], "low")
+        self.assertEqual(assessment["decision"], "review")
+        self.assertIn("sponsorship.unsettled_denial.unable to sponsor",
+                      assessment["rule_ids"])
+        self.assertNotIn("sponsorship.scope_limit.unable to sponsor",
+                         assessment["rule_ids"])
+
+    def test_an_unsettled_denial_never_hides_an_offlist_sponsor(self):
+        # The reported recall loss, over the class rather than the one sentence.
+        for denial in self.QUANTIFIED_DENIALS:
+            for offer in self.UNLISTED_OFFERS:
+                for text in (f"{offer} {denial}", f"{denial} {offer}"):
+                    with self.subTest(text=text):
+                        assessment = assess_sponsorship(text)
+                        self.assertEqual(assessment["decision"], "review", text)
+                        self.assertEqual(assessment["verdict"], "unknown", text)
+
+    def test_one_settled_denial_outranks_any_number_of_unsettled_ones(self):
+        # Unsettling a denial must not unsettle the POSTING.
+        assessment = assess_sponsorship(
+            f"{self.DENIAL} We do not sponsor all candidates. This role does "
+            "not offer sponsorship.")
         self.assertEqual(assessment["verdict"], "unlikely")
         self.assertEqual(assessment["confidence"], "high")
         self.assertEqual(assessment["decision"], "no_match")
-        self.assertIn("sponsorship.negative.unable to sponsor",
-                      assessment["rule_ids"])
 
     def test_a_quantified_denial_beside_an_offer_is_a_conflict(self):
         assessment = assess_sponsorship(f"{self.OFFERS[0]} {self.DENIAL}")

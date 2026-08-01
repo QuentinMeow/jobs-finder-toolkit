@@ -18,6 +18,7 @@
 - `memory/decisions/process-folders-v2-todo-queue.md` — Process folders v2: the message-queue/ queue family
 - `memory/decisions/raw-data-layer-decisions.md` — Raw-data-layer design family: owner decisions
 - `memory/decisions/salary-range-carries-annual-pay-or-nothing.md` — `salary_range` carries annual pay or nothing — never a converted or unlabelled band
+- `memory/decisions/sponsorship-an-unsettled-denial-is-review-not-a-silent-drop.md` — Sponsorship: an ambiguous quantifier unsettles a denial, it does not decide one
 - `memory/decisions/sponsorship-offer-versus-denial.md` — Sponsorship: an offer plus a limit on that offer is not a denial
 - `memory/decisions/sponsorship-scope-limits-need-a-distributive-quantifier.md` — Sponsorship: only a distributive quantifier makes a negation a scope limit
 - `memory/decisions/tree-instruction-growth-policy.md` — Grow folder-scoped instructions reactively
