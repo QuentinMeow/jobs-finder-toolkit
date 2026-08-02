@@ -2202,3 +2202,9 @@
   files: 3
   digest: sha256:e4ea4bb5c8faf6f6
   finding: 'Re-points three live references from the deleted wip branch to the annotated tag that now holds the same commit. The eval record gets a dated appended note (its earlier notes are untouched); the backlog task''s pointer is corrected; the open decision keeps its question and its default and only restates the ref shape. The dated handover and the completed task that also name the branch are left alone - they are historical records and rewriting them to match the present would falsify them. No identity, employer, school, salary or dated job-hunt content.'
+- base: 5e40070f
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:0792ac98be70efab
+  finding: 'Two new files under skills/github-workflow/scripts/: a merge driver that classifies a PR as a native-stack member or an ordinary PR before merging it, and its unittest suite. Read both in full. The driver shells out to `gh` only, imports no repo-root Python, writes no file, and is dry-run by default. Every fact it cites is this repo''s own public GitHub state - PR numbers 87/136/190/198, stack number 88, and merge commit 281bc933 - all of which are already visible in the repository''s own history and in the existing SKILL.md. The tests mock `gh` entirely and make no network call; their branch names and SHAs are invented placeholders. No identity, employer, school, salary or dated job-hunt content.'
