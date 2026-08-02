@@ -67,6 +67,44 @@ commit): `Eval gate: skipped — <intention + size rationale>`. A run is recorde
 always covers the accumulated state, not just its own triggering diff — so a later gated edit
 re-tests everything that skipped ahead of it.
 
+### Stacked PRs: the run happens once, at the tip
+
+An intermediate PR of a stack is a rung, not a shipping state — the branches above it rebase onto
+it, and canaries run on that rung measure something that never merges as it stands. So an
+intermediate PR may defer its run to the stack tip, with a line that **names that tip**:
+
+```
+Eval gate: stack — <why this one is intermediate>; tip: <#PR number or branch name>
+```
+
+Worked example, on PR 2 of a four-branch stack:
+
+```
+Eval gate: stack — intermediate rung; the job-search canaries run once on the whole stack; tip: #137
+```
+
+The tip must be a PR number (`#137`), a pull URL, or a branch name (`feat/04-jd-renderer`), and it
+must sit **on the same line** as the verdict. A `stack` line that names nothing is a form every PR
+can type, so `check_pr_body.py` rejects it, and rejects a file path (`tip: evals/README.md`) as a
+name.
+
+Three things this form does **not** do — which is why it names a target at all:
+
+- **It verifies nothing.** At the intermediate PR's CI time the tip's run does not exist yet, and
+  CI never reads another PR's body. The line is a *declaration*; the obligation moves to the tip.
+- **The tip is not automatically bound.** A stacked PR's diff is measured against its own base, so
+  the tip's `pr-body` job sees only the tip's own commits — it carries the gate only when the tip's
+  OWN diff touches a `SKILL.md` / `LESSONS.md` / `reference.md`. When it does not, use the `stack`
+  form only alongside a `tasks/0_backlog/` item for the tip run: **one item per stack** (not per
+  PR), naming every skill the stack touched.
+- **Detection is an audit, not a gate.** A stack whose tip never ran is found by grepping merged PR
+  bodies for `Eval gate: stack` and checking each named tip — which is exactly what the name buys.
+  No check can do it at merge time.
+
+At the tip, discharge normally: `ran`, with results covering **every skill the stack touched**, not
+only the tip's own diff — or `skipped` / `debt` on the usual terms. The tip has nothing above it to
+name, so the `stack` form is never its answer.
+
 When a run is required, the mechanics are unchanged. For any PR that edits
 `skills/<skill>/{SKILL.md,LESSONS.md,reference.md}`:
 
@@ -81,7 +119,9 @@ When a run is required, the mechanics are unchanged. For any PR that edits
 
 **This gate is enforced, not advisory.** `AGENTS.md` states it as a hard behavioral invariant, and
 `skills/github-workflow/scripts/check_pr_body.py` checks that a PR touching a skill's instruction
-files carries either a canary-run record or the one-line skip rationale. What stays agent-judged is
+files carries one of four things: a canary-run record, the one-line skip rationale, a `stack` line
+naming the tip that runs them (above), or tracked debt — an `Eval gate: debt — …` line plus a
+`tasks/0_backlog/` item named in the body and added by the same diff. What stays agent-judged is
 the *run-or-skip* call above — never whether to record the outcome.
 
 ## How to run a canary

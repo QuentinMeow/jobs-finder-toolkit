@@ -245,7 +245,10 @@ Router:
   canaries (`evals/canaries/<skill>.yaml`) by judging the edit's **intention and size** —
   behavioral or large edits must pass canaries before merge where a set exists (no large efficiency
   regression, model-pinned, run/skip criteria + records per `evals/README.md`); mechanical or small
-  edits — and skills with no canary set — skip **with a recorded one-line rationale**. Harness
+  edits — and skills with no canary set — skip **with a recorded one-line rationale**. An
+  **intermediate PR of a stack** may instead defer to the run at the tip, in a line that NAMES that
+  tip (`Eval gate: stack — <why>; tip: <#PR or branch>`) — the tip then reports a run covering the
+  whole stack; naming nothing is not a discharge. Harness
   self-edits are delta-only — never full-file rewrites, and **consolidation never deletes a domain
   edge case.**
 

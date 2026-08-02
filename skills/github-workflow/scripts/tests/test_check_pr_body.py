@@ -163,6 +163,27 @@ TEMPLATE_CHECKLIST_LINE_THREE_FORMS = (
     "rationales — see `evals/README.md`\n"
 )
 
+# The checklist item once the `stack` form joined it. It quotes a fourth form whose
+# whole content is a NAMED tip — so the quoted placeholder (`tip: <#PR or branch>`)
+# must not read as a naming.
+TEMPLATE_CHECKLIST_LINE_FOUR_FORMS = (
+    "- [ ] If any `skills/*/SKILL.md` / `LESSONS.md` / `reference.md` changed: "
+    "discharge the risk-based eval gate in this body — CI's `pr-body` job blocks "
+    "on it. Exactly one of: that skill's canary results from "
+    "`evals/canaries/<skill>.yaml` pasted below (or the `evals/results/` record "
+    "named); `Eval gate: skipped — <intention + size>` with the rationale actually "
+    "written out; `Eval gate: stack — <why this one is intermediate>; "
+    "tip: <#PR or branch>` when this is an intermediate PR of a stack and the run "
+    "happens once at the named tip; `Eval gate: debt — <why not now>` plus a "
+    "`tasks/0_backlog/` item named here and added by this same diff. The bracketed "
+    "placeholders are not rationales — see `evals/README.md`\n"
+)
+
+# The tracked template itself. An unfilled template must discharge nothing, and the
+# constants above are only a copy of it — this is the file CI's `pr-body` job meets.
+TRACKED_TEMPLATE = (Path(__file__).resolve().parents[4]
+                    / ".github" / "pull_request_template.md")
+
 
 class EvalGateTests(unittest.TestCase):
     """Property 4 — a harness edit must discharge the risk-based eval gate."""
@@ -224,6 +245,20 @@ class EvalGateTests(unittest.TestCase):
                         "quoted template text must not discharge via a backlog item "
                         "the PR added for its own reasons")
 
+    def test_four_form_template_line_is_not_a_discharge(self):
+        body = GOOD_BODY + "\n" + TEMPLATE_CHECKLIST_LINE_FOUR_FORMS
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(messages, "the unfilled template must not discharge")
+
+    @unittest.skipUnless(TRACKED_TEMPLATE.is_file(),
+                         f"{TRACKED_TEMPLATE} is not in this checkout")
+    def test_the_tracked_pr_template_discharges_nothing(self):
+        """The file CI actually meets, unfilled, must fail the gate."""
+        body = TRACKED_TEMPLATE.read_text(encoding="utf-8")
+        self.assertTrue(check_pr_body.check_eval_gate(body, SKILL_EDIT),
+                        "an unfilled .github/pull_request_template.md must not "
+                        "discharge the eval gate")
+
     def test_inline_code_inside_a_rationale_is_not_truncation(self):
         """The reported defect: a code span mid-sentence swallowed the rationale.
 
@@ -280,6 +315,67 @@ class EvalGateTests(unittest.TestCase):
         changed = SKILL_EDIT + ["tasks/0_backlog/2026-08-01-runner-unrelated/task.md"]
         messages = [m for _, m in check_pr_body.check(body, changed)]
         self.assertTrue(any("adds nothing under it" in m for m in messages), messages)
+
+    def test_stack_form_naming_a_pr_number_discharges(self):
+        body = GOOD_BODY + ("\nEval gate: stack — intermediate PR of a four-branch "
+                            "stack; the job-search canaries run once at the tip: "
+                            "#137\n")
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_stack_form_naming_a_branch_discharges(self):
+        body = GOOD_BODY + ("\nEval gate: stack — intermediate; tip: "
+                            "feat/04-jd-renderer runs them\n")
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_stack_tip_in_backticks_discharges(self):
+        """A branch name is an identifier — code spans are where people put those."""
+        body = GOOD_BODY + ("\nEval gate: stack — intermediate PR; tip: "
+                            "`feat/04-jd-renderer`.\n")
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_stack_form_accepts_a_pull_request_url(self):
+        body = GOOD_BODY + ("\nEval gate: stack — tip: "
+                            "https://github.com/o/r/pull/137\n")
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_bare_stack_line_without_a_tip_fails(self):
+        """"It's a stack" is a form every PR can type — it commits to nobody."""
+        for text in ("Eval gate: stack",
+                     "Eval gate: stack — this is an intermediate PR in a stack and "
+                     "the canaries run at the tip"):
+            with self.subTest(text=text):
+                messages = [m for _, m in
+                            check_pr_body.check(GOOD_BODY + "\n" + text + "\n",
+                                                SKILL_EDIT)]
+                self.assertTrue(any("names no tip" in m for m in messages), messages)
+
+    def test_stack_form_with_a_placeholder_tip_fails(self):
+        body = GOOD_BODY + "\nEval gate: stack — intermediate; tip: <#PR or branch>\n"
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("names no tip" in m for m in messages), messages)
+
+    def test_a_file_path_is_not_a_stack_tip(self):
+        """`the tip runs them, see evals/README.md` names a document, not a tip."""
+        body = GOOD_BODY + ("\nEval gate: stack — intermediate; tip: "
+                            "evals/README.md explains it\n")
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("names no tip" in m for m in messages), messages)
+
+    def test_the_tip_must_be_named_on_the_verdict_line(self):
+        """A `#137` elsewhere in the body is some other PR, not a promise."""
+        body = GOOD_BODY + ("\nEval gate: stack — intermediate PR, canaries at the "
+                            "tip.\n\nThis one follows on from #137.\n")
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("names no tip" in m for m in messages), messages)
+
+    def test_stack_template_line_is_not_a_discharge(self):
+        """The template quotes the form AND its placeholder tip; neither discharges."""
+        quoted = ("- [ ] `Eval gate: stack — <why this one is intermediate>; "
+                  "tip: <#PR or branch>` when this is an intermediate PR\n")
+        messages = [m for _, m in
+                    check_pr_body.check(GOOD_BODY + "\n" + quoted, SKILL_EDIT)]
+        self.assertTrue(messages, "quoting the stack form must not discharge")
+        self.assertTrue(any("inline code span" in m for m in messages), messages)
 
     def test_lessons_and_reference_files_also_trigger(self):
         for path in ("skills/job-search/LESSONS.md", "skills/job-search/reference.md"):

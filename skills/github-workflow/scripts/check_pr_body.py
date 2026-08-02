@@ -22,21 +22,32 @@ The fourth property needs to know what the PR changed, so it runs only when
 
   4. ``eval-gate`` — a PR whose diff touches ``skills/*/{SKILL,LESSONS,reference}.md``
      must DISCHARGE the risk-based eval gate (``AGENTS.md`` → Guardrails,
-     ``evals/README.md``) in its body, in one of three ways:
+     ``evals/README.md``) in its body, in one of four ways:
        * **ran** — the body names a recorded run under ``evals/results/``, or carries
          an ``Eval gate: ran — …`` line that says what ran and how it went;
        * **skipped** — an ``Eval gate: skipped — <intention + size>`` line whose
          rationale is actually written. The unfilled template placeholder (the
          angle-bracket text itself) does not count as a rationale;
+       * **stack** — an ``Eval gate: stack — … tip: <#PR | branch>`` line, for an
+         INTERMEDIATE PR of a stack whose canary run happens once, at the tip. The
+         tip must be NAMED on that same line — a PR number, a pull URL, or a branch
+         name — because a form that commits to nothing is a rubber stamp any PR can
+         type. This form is a DECLARATION and nothing more: at the intermediate PR's
+         CI time the tip's run does not exist yet, and CI never reads another PR's
+         body, so the obligation lands on the tip. The tip's own diff binds it only
+         when that diff itself touches an instruction file — a tip need not — so the
+         form also asks for one ``tasks/0_backlog/`` item per stack covering the tip
+         run (``evals/README.md``). Detection is a later audit — grep merged bodies
+         for ``Eval gate: stack`` and check each named tip — never this script;
        * **debt** — an ``Eval gate: debt — …`` line PLUS a ``tasks/0_backlog/`` item
          named in the body and added by this same diff. Pre-merge canary discharge
          is not always reachable at batch size (one measured canary run cost a whole
          session), so the gate accepts TRACKED debt — but only tracked: a debt line
-         with no backlog item in the diff is the undischarged case, not a third way
+         with no backlog item in the diff is the undischarged case, not a fourth way
          of saying "skipped".
      Anything else is a finding. The gate was already a hard rule in ``AGENTS.md``
      and in ``evals/README.md``; nothing read the body, so a behavioral edit could
-     merge with the gate neither run, skipped, nor owed.
+     merge with the gate neither run, skipped, deferred, nor owed.
 
      The verdict line is read with its inline code spans BLANKED (the same rule the
      marketing check uses), so a rationale may name a skill, a canary id or a file
@@ -136,6 +147,7 @@ EVAL_RECORD_RE = re.compile(r"evals/results/[\w.@+-]+\.md")
 
 _RAN_RE = re.compile(r"^(?:ran|run|pass(?:ed|es)?)\b", re.IGNORECASE)
 _SKIPPED_RE = re.compile(r"^skip(?:ped)?\b", re.IGNORECASE)
+_STACK_RE = re.compile(r"^stack(?:ed)?\b", re.IGNORECASE)
 _DEBT_RE = re.compile(r"^debt\b", re.IGNORECASE)
 
 # A backlog item named in the body. The gate then checks the DIFF for it.
@@ -145,12 +157,29 @@ BACKLOG_ITEM_RE = re.compile(r"tasks/0_backlog/[\w.@+/-]+")
 PLACEHOLDER_RE = re.compile(r"<[^>\n]*>")
 MIN_RATIONALE_WORDS = 3
 
+# ── the stack tip (the `stack` form's one commitment) ────────────────────────
+# ``tip: #137`` / ``tip: feat/12-eval-gate`` — where the deferred canary run
+# happens. The LABEL is required. A line may say "tip" in passing ("the tip runs
+# them, see evals/README.md"), and a repo path is not a promise, so the token that
+# follows the label is what the check reads — and it must look like a PR or a
+# branch.
+STACK_TIP_RE = re.compile(r"\btip\s*[:=]\s*(?:PR\b\s*)?(\S+)", re.IGNORECASE)
+_PR_NUMBER_RE = re.compile(r"^#?\d+$")
+_PR_URL_RE = re.compile(r"^https?://\S+/pull/\d+/?$", re.IGNORECASE)
+# ``feat/12-eval-gate-stack-skip`` — a branch, i.e. a slash-bearing token that is
+# not a file. A path ending in a known source extension is a document, not a tip.
+_BRANCH_RE = re.compile(r"^[\w.@-]+/[\w./@-]+$")
+_FILE_SUFFIX_RE = re.compile(r"\.(?:md|ya?ml|py|txt|json|toml|cfg|sh|ini)$",
+                             re.IGNORECASE)
+
 _ACCEPTED_FORMS = (
     "either paste/name a canary run (a path under `evals/results/`, or "
     "`Eval gate: ran — <what ran, how it went>`), or write "
     "`Eval gate: skipped — <intention + size>` with the rationale actually filled "
-    "in, or declare tracked debt (`Eval gate: debt — …`) and add the "
-    "`tasks/0_backlog/` item you name in the SAME diff"
+    "in, or — for an INTERMEDIATE PR of a stack that runs its canaries once at the "
+    "tip — `Eval gate: stack — <why>; tip: <#PR or branch>` naming that tip, or "
+    "declare tracked debt (`Eval gate: debt — …`) and add the `tasks/0_backlog/` "
+    "item you name in the SAME diff"
 )
 
 
@@ -229,8 +258,30 @@ def _has_substance(text: str) -> bool:
     return len(words) >= MIN_RATIONALE_WORDS
 
 
-def _eval_gate_lines(body: str) -> tuple[list[tuple[str, bool]], bool]:
-    """``([(remainder, code_was_removed)], a_line_was_quoted_away)``.
+def _stack_tip(line: str) -> str | None:
+    """The stack tip named on ``line``, or None.
+
+    Read from the RAW line, backticks and all — a branch name and a PR number are
+    identifiers, and the `evals/results/` path and the `tasks/0_backlog/` item are
+    already read that way. Only the author's verdict WORD is subject to the
+    quoted-text rule, because that is the part a template can pre-write for them.
+
+    A token that is a placeholder (``tip: <#PR or branch>``, which is what the
+    template quotes) or a file path (``tip: evals/README.md``) names no tip.
+    """
+    for match in STACK_TIP_RE.finditer(line):
+        token = match.group(1).strip("`'\"").strip().rstrip(".,;:)]>").strip("`'\"")
+        if not token or PLACEHOLDER_RE.search(match.group(1)):
+            continue
+        if _PR_NUMBER_RE.match(token) or _PR_URL_RE.match(token):
+            return token
+        if _BRANCH_RE.match(token) and not _FILE_SUFFIX_RE.search(token):
+            return token
+    return None
+
+
+def _eval_gate_lines(body: str) -> tuple[list[tuple[str, bool, str]], bool]:
+    """``([(remainder, code_was_removed, raw_line)], a_line_was_quoted_away)``.
 
     Which TEXT of a line the verdict is read from, which is the whole subtlety of
     this property:
@@ -249,8 +300,12 @@ def _eval_gate_lines(body: str) -> tuple[list[tuple[str, bool]], bool]:
     the two words before it. The second return value flags a line whose only
     ``Eval gate:`` text was inside a span, so the finding can say so instead of
     reporting an empty rationale.
+
+    The RAW line comes back alongside, for the identifiers a verdict may carry:
+    ``_stack_tip`` reads the tip from it, the same way the ``evals/results/`` and
+    ``tasks/0_backlog/`` paths are read from the raw body.
     """
-    found: list[tuple[str, bool]] = []
+    found: list[tuple[str, bool, str]] = []
     quoted_away = False
     in_fence = False
     fence_marker = ""
@@ -266,7 +321,7 @@ def _eval_gate_lines(body: str) -> tuple[list[tuple[str, bool]], bool]:
         scanned = line if in_fence else INLINE_CODE_RE.sub(" ", line)
         match = EVAL_GATE_RE.search(scanned)
         if match:
-            found.append((match.group(1).strip(), scanned != line))
+            found.append((match.group(1).strip(), scanned != line, line))
         elif not in_fence and EVAL_GATE_RE.search(line):
             quoted_away = True
     return found, quoted_away
@@ -302,10 +357,11 @@ def check_eval_gate(body: str, changed_files: list[str]) -> list[tuple[str, str]
     location = "eval gate"
 
     verdicts, quoted_away = _eval_gate_lines(body)
-    ran = [(_verdict_rest(v), coded) for v, coded in verdicts if _RAN_RE.match(v)]
-    skipped = [(_verdict_rest(v), coded) for v, coded in verdicts
+    ran = [(_verdict_rest(v), coded) for v, coded, _ in verdicts if _RAN_RE.match(v)]
+    skipped = [(_verdict_rest(v), coded) for v, coded, _ in verdicts
                if _SKIPPED_RE.match(v)]
-    debts = [v for v, _ in verdicts if _DEBT_RE.match(v)]
+    stacked = [raw for v, _, raw in verdicts if _STACK_RE.match(v)]
+    debts = [v for v, _, _ in verdicts if _DEBT_RE.match(v)]
 
     # The record path and the backlog item are read from the RAW body, backticks
     # and all: those are identifiers, and naming one in code is how everybody
@@ -318,7 +374,12 @@ def check_eval_gate(body: str, changed_files: list[str]) -> list[tuple[str, str]
     # 2. a skip whose rationale is written, not the template's placeholder.
     if any(_has_substance(s) for s, _ in skipped):
         return []
-    # 3. tracked debt: the declaration AND the backlog item, in this diff.
+    # 3. a stack intermediate that NAMES the tip its canaries run at. Nothing here
+    #    verifies that run — see the module docstring: the tip's CI cannot be read
+    #    from this PR's, so the form buys a name to audit later, not a guarantee.
+    if any(_stack_tip(raw) for raw in stacked):
+        return []
+    # 4. tracked debt: the declaration AND the backlog item, in this diff.
     named, present = _named_backlog_items(body, changed_files)
     if debts and present:
         return []
@@ -340,6 +401,12 @@ def check_eval_gate(body: str, changed_files: list[str]) -> list[tuple[str, str]
         return [(location, head + "the `Eval gate: debt` line names no "
                  "`tasks/0_backlog/` item. Debt that is not filed is a skip "
                  "without a rationale")]
+    if stacked:
+        return [(location, head + "the `Eval gate: stack` line names no tip. Write "
+                 "`tip: <#PR number or branch name>` ON THAT LINE — the whole form "
+                 "is a promise that the canaries run at a specific tip, and a "
+                 "promise naming nobody is one any PR can make. A file path is not "
+                 "a tip")]
     if skipped:
         return [(location, head + "the `Eval gate: skipped` rationale is empty or "
                  "still the template placeholder. Say what the edit was and how "
@@ -419,8 +486,8 @@ def main(argv: list[str] | None = None) -> int:
                      "body uses no marketing words. With --changed-files it also "
                      "checks that a diff touching "
                      "skills/*/{SKILL,LESSONS,reference}.md discharges the "
-                     "risk-based eval gate (ran / skipped-with-rationale / tracked "
-                     "debt)."),
+                     "risk-based eval gate (ran / skipped-with-rationale / "
+                     "stack-intermediate-naming-its-tip / tracked debt)."),
         epilog=("Reads FILE, or stdin when FILE is omitted or `-`. "
                 "Exit 0 = passes, 1 = findings, 2 = usage/IO problem."),
     )

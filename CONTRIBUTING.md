@@ -110,8 +110,8 @@ audience decides: fork → this file, maintainer branch → the skill.
    `automation/bootstrap_overlay.py`) re-runs the cheap ones.
 4. **Open the PR against `main`** and fill in the pull-request template — it
    mirrors the gates: checks pass, the eval gate discharged in the body (ran,
-   skipped-with-a-written-rationale, or tracked debt) if you touched skill
-   instruction files, no personal data. **Report gate results as exit codes plus the deltas your PR
+   skipped-with-a-written-rationale, deferred to a named stack tip, or tracked
+   debt) if you touched skill instruction files, no personal data. **Report gate results as exit codes plus the deltas your PR
    caused — never an absolute tree-wide count** ("2669 references", "43
    records"): a count measured on your branch is wrong the moment anything else
    lands under it, so totals come from the post-merge canonical counts job that
@@ -149,7 +149,7 @@ rewording) may skip with a **one-line skip rationale recorded in the PR**. See
 outcome. Instruction edits are delta-only, and consolidation must not drop a
 domain edge case.
 
-**CI blocks on this, and takes three forms.** The `pr-body` job runs
+**CI blocks on this, and takes four forms.** The `pr-body` job runs
 `skills/github-workflow/scripts/check_pr_body.py --eval-gate-only` over your
 description and the diff; a PR touching those files fails unless the body says
 one of:
@@ -159,7 +159,13 @@ one of:
 2. **Skipped** — `Eval gate: skipped — <intention + size>` with the rationale
    filled in. The bare placeholder, `N/A`, and `TBD` all fail: quoting the form
    is not discharging the gate.
-3. **Debt** — `Eval gate: debt — <why not now>` **plus** a `tasks/0_backlog/`
+3. **Stack** — `Eval gate: stack — <why this one is intermediate>; tip: <#PR or
+   branch>`, for an intermediate PR of a stack that runs its canaries once at the
+   named tip. The name is the commitment: no tip named (or a file path in its
+   place) fails. Nothing verifies the tip's run at this PR's CI time — see
+   `evals/README.md` → "Stacked PRs". Maintainer-facing: contributors are asked
+   above to avoid stacks from a fork.
+4. **Debt** — `Eval gate: debt — <why not now>` **plus** a `tasks/0_backlog/`
    item, named in the body and added by the same diff. Running a skill's canaries
    costs about a session, so tracked debt is a real option; untracked debt is a
    skip with no rationale and fails.
