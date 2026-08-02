@@ -2387,3 +2387,9 @@
   files: 139
   digest: sha256:177a4bc52148889a
   finding: 'Stack merge only - brings in the whole stack below, each part already reviewed on its own branch: the gitignore base and its logs/ path-deny, the gate runner, the GitHub merge runbook and merge_stack.py, the repeated-mistake lesson, the dangling-symlink store fix, the build-postings correctness fixes, the ledger duplicate-key refusal, the recall-audit CLI fixes, and both halves of the examples/ reshape. This branch contributes nothing of its own to that diff. No identity, employer, school, salary or dated job-hunt content.'
+- base: eb574a3b
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:99df9afc3507e680
+  finding: 'Session handover for the merge-runbook and folder-refactor session. Describes the work in shapes, not specifics: which decision fired, which defects were fixed, which gates caught what. Names only public repo paths, PR numbers and commit SHAs. The one private reference is the standing note that verify_links is red on refs inside private/, stated without naming any of those paths. No identity, employer, school, salary or dated job-hunt content.'
