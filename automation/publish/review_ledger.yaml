@@ -1957,3 +1957,14 @@
   files: 5
   digest: sha256:668f332d60e36bcb
   finding: none — new automation/evals module plus its tests, the eval-result template's two commit rows and pin block, and one exporter allowlist entry; no name, employer, school, date, salary or job-hunt detail in any of the five files
+- commit: e876a423
+  base: 1144d288
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 92
+  digest: sha256:35993393865e278a
+  finding: none — 90 of 92 files are pure `git mv` renames (task.md/verification.md/worklog.md
+    for 31 tasks/3_in-review -> tasks/4_done moves; zero content bytes changed, confirmed via
+    `git diff --stat`), plus one canary-rubric wording fix (fictional PR 41/136 numbers only) and
+    one new eval-results record referencing the same fictional PR numbers and a public GitHub
+    branch name; no real name, employer, school, date, salary or job-hunt detail in any file
