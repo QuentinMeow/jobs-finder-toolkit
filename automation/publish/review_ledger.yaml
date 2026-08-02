@@ -2208,3 +2208,16 @@
   files: 1
   digest: sha256:bea7c8d3cfca8daf
   finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:304ada688b8eaf5a
+  finding: 'Store builder: an entity whose company changes now MOVES its derived
+    dir instead of forking it, plus four regressions. Diff read in full. The only
+    new deletion is shutil.rmtree over derived/postings/<partition>/<key> guarded
+    by a resolved-path zone check that raises BuildError on anything else; raw/,
+    annotations/ and state/ are untouched. Test fixtures are the existing fictional
+    shapes (ExampleCorp) plus two new invented ones (Zeta Corp, Alpha Labs) - no
+    real employer, no board token, no posting. No identity, employer, school,
+    salary or dated job-hunt content.'

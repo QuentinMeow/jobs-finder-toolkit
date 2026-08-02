@@ -673,6 +673,79 @@ def _entity_dir(derived_root: Path, eb: EntityBuild) -> Path:
     return derived_root / "postings" / eb.partition / eb.key
 
 
+def _partition_index(derived_root: Path) -> dict[str, set[str]]:
+    """``{entity key: {partition, ...}}`` for the derived entity dirs on disk NOW.
+
+    Snapshotted ONCE per build and handed to every :func:`_write_entity` call, so
+    the stale-partition sweep costs a dict lookup per entity rather than a
+    directory listing per entity. A snapshot taken before the write loop is exact
+    for the whole loop: an entity key is unique within a build, so writing entity
+    K can never add a directory for any other key.
+    """
+    postings_root = Path(derived_root) / "postings"
+    if not postings_root.is_dir():
+        return {}
+    out: dict[str, set[str]] = {}
+    for partition in os.scandir(postings_root):
+        if not partition.is_dir():
+            continue
+        for entity in os.scandir(partition.path):
+            if entity.is_dir():
+                out.setdefault(entity.name, set()).add(partition.name)
+    return out
+
+
+def _drop_stale_partitions(derived_root: Path, eb: EntityBuild,
+                           partitions: dict[str, set[str]]) -> None:
+    """Remove this entity's derived dirs at partitions it no longer belongs to.
+
+    ``derived/postings/<company>/<key>/`` is partitioned by company, and an
+    aggregator row carries no context company — its partition comes from the row's
+    own ``companyName``, which the aggregator can and does change between sweeps
+    ("UsCo" -> "UsCo Inc"). The key is URL-derived and unchanged, so it is the same
+    entity at a NEW partition, and a writer that only ever writes leaves the key
+    materialized at both. That is not merely tree drift: :func:`_carry_forward`
+    iterates ``sorted(rglob("posting.yaml"))`` assigning ``out[key]``, so the
+    alphabetically LAST partition wins — and once raw is not present locally, the
+    orphan at the old partition silently reinstates the old company and title into
+    the index, which ``validate_store`` reports as ``ok`` and no later full fold
+    cleans up.
+
+    **This is the builder's only deletion of a derived directory**, and it is
+    legitimate under the "agents never delete owner data" rule: ``derived/`` is
+    regenerated output, every byte removed here re-derives from ``raw/`` (or from a
+    ``state/frozen-facts/`` snapshot), and ``raw/``, ``annotations/`` and
+    ``state/`` are never touched. The zone check below refuses to remove anything
+    that is not exactly ``<derived>/postings/<partition>/<key>``, so no partition
+    string can steer the removal out of the derived postings zone.
+    """
+    postings_root = (Path(derived_root) / "postings").resolve()
+    keep = _entity_dir(derived_root, eb)
+    for partition in sorted(partitions.get(eb.key, ())):
+        if partition == eb.partition:
+            continue
+        stale = Path(derived_root) / "postings" / partition / eb.key
+        if not stale.is_dir():
+            continue
+        # Case-insensitive filesystems: "UsCo" and "usco" name ONE directory, and
+        # on this machine it is the one just written. Compare identity, not spelling.
+        if keep.is_dir() and stale.samefile(keep):
+            continue
+        resolved = stale.resolve()
+        if resolved.parent.parent != postings_root:
+            raise BuildError(
+                f"refusing to remove {resolved}: not a "
+                f"{postings_root}/<partition>/<key> directory")
+        shutil.rmtree(resolved)
+        # A rebuild never leaves an empty partition dir, so keeping one is the same
+        # drift one level up. `rmdir` removes ONLY an empty directory — a partition
+        # that still holds another entity raises OSError and is left alone.
+        try:
+            resolved.parent.rmdir()
+        except OSError:
+            pass
+
+
 def _check_case_collisions(derived_root: Path, entities: dict) -> None:
     """Wire ``detect_case_collision`` into the derived writer (store-core case rule).
 
@@ -697,7 +770,15 @@ def _check_case_collisions(derived_root: Path, entities: dict) -> None:
                                  f"{key!r} vs {clash!r}")
 
 
-def _write_entity(derived_root: Path, eb: EntityBuild, *, only_if_changed: bool) -> bool:
+def _write_entity(derived_root: Path, eb: EntityBuild, *, only_if_changed: bool,
+                  partitions: dict[str, set[str]]) -> bool:
+    """Write one entity's derived files, then drop its dirs at old partitions.
+
+    ``partitions`` is the pre-loop :func:`_partition_index` snapshot and is a
+    REQUIRED argument on purpose: a caller can forget an optional one, and every
+    write path (both incremental folds and the rebuild's fresh aside) has to be
+    swept or the store keeps forking entities that change company.
+    """
     entity_dir = _entity_dir(derived_root, eb)
     files = _entity_files(eb)
     wrote = False
@@ -711,6 +792,7 @@ def _write_entity(derived_root: Path, eb: EntityBuild, *, only_if_changed: bool)
             continue
         atomic_write_text(target, text)
         wrote = True
+    _drop_stale_partitions(derived_root, eb, partitions)
     return wrote
 
 
@@ -1489,8 +1571,14 @@ def _frozen_digest(layout) -> str:
 
 
 def _derived_keys(derived_root: Path) -> set:
-    """Every entity key with a derived ``posting.yaml`` — the same predicate
-    :func:`_carry_forward` uses, as a stat-only two-level scan.
+    """Every ``(partition, key)`` with a derived ``posting.yaml`` — the same
+    predicate :func:`_carry_forward` uses, as a stat-only two-level scan.
+
+    PAIRS, not bare keys: the cache holds exactly one partition per key
+    (``entry["p"]``), so comparing key SETS cannot see a key materialized at two
+    partitions at once — the shape a company rename used to leave behind. The pair
+    comparison refuses the fast path on any such pre-existing mess, and the full
+    fold that follows heals it (:func:`_drop_stale_partitions`).
 
     ``os.scandir`` rather than ``rglob`` on purpose: at 15k entities the pathlib
     walk measured 2.25s and this measures 0.23s for the identical answer, and
@@ -1499,15 +1587,15 @@ def _derived_keys(derived_root: Path) -> set:
     postings_root = Path(derived_root) / "postings"
     if not postings_root.is_dir():
         return set()
-    keys = set()
+    pairs = set()
     for partition in os.scandir(postings_root):
         if not partition.is_dir():
             continue
         for entity in os.scandir(partition.path):
             if entity.is_dir() and \
                     os.path.exists(os.path.join(entity.path, "posting.yaml")):
-                keys.add(entity.name)
-    return keys
+                pairs.add((partition.name, entity.name))
+    return pairs
 
 
 # ── the fast path's admission test ───────────────────────────
@@ -1561,10 +1649,11 @@ def _fast_plan(layout, registry, ledger, manifests, pending, blobstore):
         if _manifest_sort_key(env) <= cap:
             return _refuse("capture out of order (clock skew or backfill)")
 
-    if _derived_keys(layout.derived) != set(entries):
+    derived = _derived_keys(layout.derived)
+    if derived != {(entry.get("p") or "", key) for key, entry in entries.items()}:
         return _refuse("derived zone no longer matches the fold cache")
 
-    return {"header": header, "entries": entries,
+    return {"header": header, "entries": entries, "derived": derived,
             "state": _store_state(manifests, blobstore, registry, present),
             "frozen_digest": now["frozen_digest"]}
 
@@ -1606,8 +1695,10 @@ def _build_incremental_full(layout, registry, stamps, ledger, newly, manifests,
     _verify(entities, layout)  # orphan hard-fail on EVERY build path (incl. incremental)
     # Write only entities whose bytes changed (carry the rest unchanged).
     changed = 0
+    partitions = _partition_index(layout.derived)
     for eb in entities.values():
-        if _write_entity(layout.derived, eb, only_if_changed=True):
+        if _write_entity(layout.derived, eb, only_if_changed=True,
+                         partitions=partitions):
             changed += 1
     built_at = _index_built_at(ledger)
     index_survivors = _regen_index_zone(layout.index, entities, entity_seq,
@@ -1849,10 +1940,16 @@ def _build_incremental_fast(layout, registry, stamps, ledger, newly, pending, pl
     _check_case_collisions_incremental(entries, touched)
     _verify(all_keys, layout)
 
-    # 4. Write only what changed.
+    # 4. Write only what changed. The partition snapshot comes from the scan
+    # `_fast_plan` already did (it proved it equals the cache), so the O(new) path
+    # does not pay for a second walk of the derived zone.
+    partitions: dict[str, set[str]] = {}
+    for partition, key in plan["derived"]:
+        partitions.setdefault(key, set()).add(partition)
     changed = 0
     for eb in working.values():
-        if _write_entity(derived_root, eb, only_if_changed=True):
+        if _write_entity(derived_root, eb, only_if_changed=True,
+                         partitions=partitions):
             changed += 1
 
     built_at = _index_built_at(ledger)
@@ -2046,8 +2143,13 @@ def build_rebuild(layout, registry) -> dict:
         if d.exists():
             shutil.rmtree(d)
         d.mkdir(parents=True)
+    # The aside is freshly created, so the snapshot is empty and the sweep is a
+    # no-op — a rebuild cannot inherit a stale partition. Passed anyway so no write
+    # path can be written without one.
+    aside_partitions = _partition_index(derived_new)
     for eb in entities.values():
-        _write_entity(derived_new, eb, only_if_changed=False)
+        _write_entity(derived_new, eb, only_if_changed=False,
+                      partitions=aside_partitions)
     # Entity-count check: exactly one derived posting per materialized entity.
     written = len(list((derived_new / "postings").rglob("posting.yaml")))
     if written != len(entities):

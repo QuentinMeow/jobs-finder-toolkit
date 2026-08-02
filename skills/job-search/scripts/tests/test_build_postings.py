@@ -164,6 +164,22 @@ class _StoreCase(unittest.TestCase):
             content_type="application/json", fetched_at=dt,
             context={"company": company, "profile": "profile-01"})
 
+    def _capture_aggregator_row(self, company_name, title, dt, jid=7):
+        """One aggregator row — the capture shape that carries NO context company.
+
+        The partition is then derived from the row's own ``companyName``, which the
+        aggregator can change between sweeps while the URL-derived key stays put.
+        """
+        self._capture_scrape("jobicy", {"jobs": [{
+            "id": jid, "url": f"https://jobicy.com/jobs/{jid}-backend",
+            "jobTitle": title, "companyName": company_name,
+            "jobGeo": "Remote, USA", "jobDescription": "Own the ingestion pipeline.",
+            "pubDate": "2026-07-12"}]}, dt)
+
+    def _partitions(self):
+        root = self.layout.derived / "postings"
+        return sorted(p.name for p in root.iterdir()) if root.is_dir() else []
+
     def _annotate(self, key, facts):
         self.layout.annotations.mkdir(parents=True, exist_ok=True)
         atomic_write_text(self.layout.annotations / f"{key}.yaml",
@@ -395,6 +411,50 @@ class IncrementalFoldTests(_StoreCase):
         out = self._summary()
         self.assertIn("fold=pending-only", out)
         self._assert_matches_rebuild()
+
+    # ── an entity that changes company MOVES; it must not fork ──
+    def test_a_company_rename_moves_the_derived_dir_instead_of_forking_it(self):
+        """One key, two partitions is a store a ``--rebuild`` cannot produce.
+
+        The aggregator renames the company between sweeps; the URL-derived key does
+        not move, so the entity belongs at a new partition. A writer that only ever
+        writes leaves BOTH — a duplicate posting with a frozen ``last_seen``, which
+        ``validate_store`` still calls ok.
+        """
+        self._capture_aggregator_row("Zeta Corp", "Backend Engineer", _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._partitions(), ["zeta-corp"])
+
+        self._capture_aggregator_row("Alpha Labs", "Senior Backend Engineer", _dt(15))
+        self.assertIn("fold=pending-only", self._summary())
+        self.assertEqual(self._partitions(), ["alpha-labs"])
+        self._assert_matches_rebuild()
+
+    def test_a_company_rename_moves_the_derived_dir_on_the_full_fold_too(self):
+        """The same defect on the fallback path — it is not a fast-path artifact."""
+        self._capture_aggregator_row("Zeta Corp", "Backend Engineer", _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._cache().unlink()                       # force the whole-raw-zone fold
+        self._capture_aggregator_row("Alpha Labs", "Senior Backend Engineer", _dt(15))
+        self.assertIn("fold=full", self._summary())
+        self.assertEqual(self._partitions(), ["alpha-labs"])
+        self._assert_matches_rebuild()
+
+    def test_a_key_at_two_partitions_refuses_the_fast_path(self):
+        """The cache holds ONE partition per key, so key sets cannot see a fork."""
+        self._capture_aggregator_row("Zeta Corp", "Backend Engineer", _dt(14))
+        self.assertEqual(self._build([]), 0)
+        entity = next((self.layout.derived / "postings" / "zeta-corp").iterdir())
+        shutil.copytree(entity, self.layout.derived / "postings" / "usco-inc"
+                        / entity.name)
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(15))
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            self.assertEqual(self._build([]), 0)
+        self.assertIn("fold=full", out.getvalue())
+        self.assertIn("derived zone no longer matches", err.getvalue())
+        # …and the full fold that follows heals the fork.
+        self.assertEqual(self._partitions(), ["examplecorp", "zeta-corp"])
 
     # ── the cross-entity reduction: a new manifest changing an OLD entity ──
     def test_new_manifest_stamps_duplicate_hint_on_an_untouched_entity(self):
@@ -1087,6 +1147,33 @@ class CarryForwardTests(_StoreCase):
         # rebuild must also keep it (not silently dropped from derived+index)
         self.assertEqual(self._build(["--rebuild"]), 0)
         self.assertIn("gh-222", self._index_keys())
+
+    def test_a_renamed_company_is_not_reinstated_by_carry_forward(self):
+        """The orphan partition does not just sit there — it can WIN the index.
+
+        ``_carry_forward`` walks ``sorted(rglob("posting.yaml"))`` assigning
+        ``out[key]``, so the alphabetically LAST partition wins. With the stale
+        ``zeta-corp/`` dir still present, the first build that cannot see raw
+        reinstates the OLD company and title into the index, silently reverting a
+        rename that already happened — and ``validate_store`` reports ``ok``.
+        """
+        self._capture_aggregator_row("Zeta Corp", "Backend Engineer", _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._capture_aggregator_row("Alpha Labs", "Senior Backend Engineer", _dt(15))
+        self.assertEqual(self._build([]), 0)
+        [row] = self._index_rows()
+        self.assertEqual((row["company"], row["title"]),
+                         ("Alpha Labs", "Senior Backend Engineer"))
+
+        shutil.rmtree(self.layout.raw)      # raw never synced to this machine
+        self.assertEqual(self._build([]), 0)
+        [row] = self._index_rows()
+        self.assertEqual((row["company"], row["title"]),
+                         ("Alpha Labs", "Senior Backend Engineer"),
+                         "carry-forward reinstated the pre-rename orphan")
+        self.assertEqual(self._partitions(), ["alpha-labs"])
+        report = validate_store(self.data_root)
+        self.assertTrue(report.ok, report.errors)
 
     def test_annotated_not_synced_entity_passes_verify(self):
         self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
