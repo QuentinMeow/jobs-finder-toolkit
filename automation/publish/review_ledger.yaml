@@ -2208,3 +2208,15 @@
   files: 7
   digest: sha256:8ac823210898f91c
   finding: 'Adds automation/gates/ — a local runner for the ~30 blocking gates (the pre-commit chain plus every CI run: step) that executes each one shell-free and redirects its output to the gitignored local/gates/, so no gate is ever read through a pipe''s exit code — with its unit + CI-drift suite, a ci.yml line and export allowlist entry so the drift test runs and the tree ships, and two small delta-only doc additions. Read the whole diff: the only proper nouns are this repo''s own paths, flags and constants plus the fictional "Example Corp" / config.example.yaml persona already public. No identity, employer, school, salary or dated job-hunt content; no absolute home path (the LibreOffice probe calls Path.home() at runtime, as pdf_convert.py does).'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:b64741a49e00873c
+  finding: 'Adds a root-anchored logs/ entry to the leak guard path denylist, repairing an invariant the previous commit on this branch broke. A root-anchored gitignore rule is required to be path-denied as well, because gitignore is not a guard - git add -f overrides it - and anchoring logs/ to /logs/ made it match that shape. Denied rather than exempted: the payload today is counters and ids only, but its schema is version-brittle, and an exemption would silently publish a future field carrying a path. Probed both ways - logs/ denied, examples/market/logs/ not matched. No identity, employer, school, salary or dated job-hunt content.'
+- base: bc1a8956
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:1b60937565fd1cfe
+  finding: 'Stack merge of the gitignore-anchoring base into the gate-runner branch. Brings two files - the two anchored gitignore patterns and the root logs/ path-deny that keeps the leak guard invariant intact. The ledger conflict was resolved at ROW granularity with whole rows kept from both sides, never git union, which is line-based and silently interleaved rows once before; 198 base + 1 ours + 2 theirs = 200 rows, all checked well-formed. No identity, employer, school, salary or dated job-hunt content.'
