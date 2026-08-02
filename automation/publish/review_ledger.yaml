@@ -2208,3 +2208,9 @@
   files: 2
   digest: sha256:0792ac98be70efab
   finding: 'Two new files under skills/github-workflow/scripts/: a merge driver that classifies a PR as a native-stack member or an ordinary PR before merging it, and its unittest suite. Read both in full. The driver shells out to `gh` only, imports no repo-root Python, writes no file, and is dry-run by default. Every fact it cites is this repo''s own public GitHub state - PR numbers 87/136/190/198, stack number 88, and merge commit 281bc933 - all of which are already visible in the repository''s own history and in the existing SKILL.md. The tests mock `gh` entirely and make no network call; their branch names and SHAs are invented placeholders. No identity, employer, school, salary or dated job-hunt content.'
+- base: 9141247c
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:c14051bfcc2f5995
+  finding: 'Corrects the merge recipe in skills/github-workflow/SKILL.md (delta edits only, no section rewritten wholesale) and adds skills/github-workflow/reference.md with the long two-track runbook. Read the full diff. Every concrete claim is a reading of this repository''s own public GitHub state, taken with read-only `gh` and reproducible from the commands printed beside it: PR numbers 81/84/87/113/114/115/95/96/136/190/194/198/199, the ten stack numbers, merge commits 281bc933 / 562655f8 / 5adfb1f8 / a6b5a7da / c3af637b / 14aec2ae, and this repo''s own branch names. All of that is already visible in the repository''s history and its existing SKILL.md; none of it is owner data. The `git add -A` line in the review-gate loop became explicit pathspecs. A section records what is NOT verified, so no unbacked claim ships as fact. No identity, employer, school, salary or dated job-hunt content.'
