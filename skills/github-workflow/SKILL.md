@@ -216,6 +216,14 @@ branches you own in this repo.
 `feat/01-parser`, `feat/02-renderer`, `feat/03-cli`. The number is for humans
 scanning `gh pr list`; nothing reads it.
 
+**Canaries run once, at the tip.** A rung of a stack is not a shipping state, so an
+intermediate PR that touches a skill's instruction files may discharge gate 11 with
+`Eval gate: stack — <why>; tip: <#PR or branch>` — naming the tip is the whole
+commitment, and the tip then reports a run covering every skill the **stack**
+touched. Read form 3 under gate 11 before using it: the tip's own `pr-body` job
+sees only the tip's own commits, so it is bound by the gate only if that diff
+itself touches an instruction file.
+
 **Merge order is bottom-up, with a merge commit and an explicit retarget.** Merge
 the PR that targets `main` first (`gh pr merge <N> --merge`), then — only once it
 has actually merged — retarget the next one (`gh pr edit <N+1> --base main`).
@@ -299,7 +307,7 @@ both places is often invoked with different flags in each.
 | 8 | Reconciler (`automation/reconcile/reconcile.py --check`) | hook + CI; the hook adds `--require-roots` **only when `private/` is mounted**, CI never does | a queue/task/memory item breaks its `templates/` schema, the memory index is stale, a session has no handover, `skill-manifests` drifted, the roadmap's `Last-updated` line is missing/unparseable/in the future (an OLD date does not gate — that is the gardener's `roadmap-staleness` report) |
 | 9 | References + markdown links (`automation/gardener/verify_links.py`) | hook + CI; the hook adds `--require-roots --no-overlay` **only when `private/` is mounted**, CI never does | a backticked path or `[text](path)` in a must-resolve document does not resolve, a skill symlink dangles, or a vendored copy drifted |
 | 10 | Leak guard, armed | `automation/hooks/pre-push` | the guard is UNARMED (no identity tokens), or a tracked file could not be OPENED (dangling symlink, permission error) — either way it refuses rather than certify bytes it did not read. A file it opened but cannot text-extract (image, non-UTF-8 blob) is counted in the `content read: N of M` summary line, not a failure |
-| 11 | Eval gate discharged in the PR body (`skills/github-workflow/scripts/check_pr_body.py --eval-gate-only`) | CI only — the `pr-body` job, blocking | the diff touches a skill's `SKILL.md`, `LESSONS.md`, or `reference.md` and the body carries none of the three discharge forms below |
+| 11 | Eval gate discharged in the PR body (`skills/github-workflow/scripts/check_pr_body.py --eval-gate-only`) | CI only — the `pr-body` job, blocking | the diff touches a skill's `SKILL.md`, `LESSONS.md`, or `reference.md` and the body carries none of the four discharge forms below |
 
 `--require-roots` asserts that every root a checker names in a constant still
 exists, so a rename breaks the check instead of silently disarming it. It is a
@@ -317,7 +325,7 @@ A PR that edits `skills/*/SKILL.md`, `LESSONS.md`, or `reference.md` must
 discharge the risk-based eval gate (`evals/README.md`) **in the PR body**. This is
 no longer self-policed: CI's `pr-body` job runs the checker with
 `--eval-gate-only` over the description and the diff, and fails the PR when the
-body carries none of these three forms:
+body carries none of these four forms:
 
 1. **Ran** — paste the canary results, or name the recorded run under
    `evals/results/`, or write `Eval gate: ran — <what ran, how it went>` with the
@@ -326,7 +334,18 @@ body carries none of these three forms:
 2. **Skipped** — `Eval gate: skipped — <intention + size>` with the rationale
    **actually written**. The bare placeholder fails by design, and so do `N/A`
    and `TBD`; quoting the form is not discharging the gate.
-3. **Debt** — `Eval gate: debt — <why not now>` **plus** the `tasks/0_backlog/`
+3. **Stack** — `Eval gate: stack — <why this one is intermediate>; tip: <#PR or
+   branch>`, for an **intermediate** PR of a stack whose canaries run once at the
+   tip. The tip must be named on that same line (a PR number, a pull URL, or a
+   branch name) — a bare "it's a stack" is a form every PR can type, and a file
+   path is not a name. **This form verifies nothing**: the tip's run does not
+   exist yet at this PR's CI time, and CI never reads another PR's body, so the
+   obligation moves to the tip — which the gate binds only if the tip's OWN diff
+   touches an instruction file. When it does not, file one `tasks/0_backlog/`
+   item **per stack** for the tip run. A stack whose tip never ran is caught by
+   auditing merged bodies for `Eval gate: stack`, not by any check
+   (`evals/README.md` → "Stacked PRs").
+4. **Debt** — `Eval gate: debt — <why not now>` **plus** the `tasks/0_backlog/`
    item you name in the body, added by the **same diff**. Debt that is not filed
    is a skip without a rationale, and the job says so. This form exists because
    pre-merge canary discharge is not always reachable at batch size — one measured

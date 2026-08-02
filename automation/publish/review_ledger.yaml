@@ -15,21 +15,13 @@
 # allowlist — that excludes memory/, tasks/, message-queue/ and history/, which
 # is exactly where an agent writes prose about real work.
 #
-# HOW TO ADD A ROW: `git add` your change, then run the gate with --staged (what
-# pre-commit runs). When it fails it prints the exact row, already filled in. Read
-# the diff first — the digest forecloses guessing, it does not prove reading. Then
-# append the row, `git add` this file, and commit ONCE: the row travels in the same
-# commit as the change it reviews. One row may cover a range of commits. An agent
-# may sign its own review; `reviewed_by: human` is required only when the advisory
-# company detector fires.
-#
-# TWO ROW SHAPES, both valid, both verified the same way:
-#   * PENDING — `base:` + `digest:`, NO `commit:`. The commit being made has no sha
-#     yet, so the row cannot name it; the gate resolves the endpoint later as the
-#     commit that introduced the row into this file. This is what --staged prints.
-#   * NAMED — `commit:` (+ `base:`). For history that has ALREADY landed: a merge
-#     commit you did not make, or a reconciliation row after a rebase. A default
-#     (non---staged) gate run prints this shape.
+# HOW TO ADD A ROW: run the gate. When it fails it prints the exact row, already
+# filled in. Read the diff first — the digest forecloses guessing, it does not
+# prove reading. Then stage the row ALONGSIDE your next change and commit once:
+# the gate reads this file from the working tree, so the row acknowledges HEAD
+# (one row per commit, always one behind). One row may cover a range of commits.
+# An agent may sign its own review; `reviewed_by: human` is required only when
+# the advisory company detector fires.
 #
 # SEEDED, NOT RETROACTIVE: the first row records the HEAD at which the gate was
 # introduced (eb345e71, the phase-0d commit), so the gate never demands a review
@@ -2110,7 +2102,28 @@
   date: 2026-08-01
   files: 3
   digest: sha256:224a50c39c89632e
-  finding: The owner's answers to three open decisions, appended to the queue items themselves, plus a refreshed quotation of a code constant and a verification note about which code paths delete directories. The answers are about tooling policy — a recency window, where filter vocabulary lives, and whether an incomplete scaffold is recorded. No real name, employer, school, posting, salary or dated job-hunt fact.
+  finding: none. Three message-queue decision files gain the owner's answers (recency window, handoff records, title prefilter) plus link/wrapping repairs. Process content only - no real name, employer, school, salary or job-hunt specifics; the company names present are the public fetcher functions already in the tree (fetch_amazon/fetch_apple/fetch_meta).
+- commit: b44710fd
+  base: 783d4fc3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 8
+  digest: sha256:066a848a577c17b7
+  finding: none. The eval gate's fourth discharge form (Eval gate:stack naming the tip) in check_pr_body.py plus its tests, and the matching prose in AGENTS.md, CONTRIBUTING.md, evals/README.md, the github-workflow SKILL.md, the PR template and a CI comment. Tooling and process text only - no identity, employer, school, salary or dated job-hunt content; the branch and PR names used as examples are fictional (feat/04-jd-renderer, #137).
+- commit: 7f9a3d9d
+  base: b44710fd
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:14dd7d0e0c493352
+  finding: none. One evals/results/ record for the github-workflow canary run (4/4), with its eval-pin block. Fictional example identities only; no real person, employer, school or posting.
+- commit: 03372edd
+  base: 7f9a3d9d
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:8cde74af78b38598
+  finding: none. One tasks/0_backlog/ item filing the audit for stacks whose named tip never ran its canaries — the detection path PR #196 documented but left without tooling or an owner. Process content only; no identity, employer, school, salary or dated job-hunt data.
 - commit: f474e478
   base: 783d4fc3
   reviewed_by: agent
@@ -2164,16 +2177,9 @@
   files: 3
   digest: sha256:19da02107dd368c5
   finding: Turns OFF the ledger's union merge driver and adds the row-shape check whose absence let a corrupted row pass a green --verify-all. The union driver is line-based, so two rows for one range written with keys in different order interleaved and a finding line landed in a neighbouring row; YAML's last-duplicate-wins then made that row report a review nobody wrote. The stray line is removed, restoring the row to its authored text; no authored row is edited or dropped. Tooling and process prose only - no identity, employer, school, salary or dated job-hunt content.
-- commit: 783d4fc3
-  base: ad5e881d
-  reviewed_by: agent
-  date: 2026-08-01
-  files: 3
-  digest: sha256:224a50c39c89632e
-  finding: 'RESCUED from a union-merge artefact. This review covers the same range as the earlier 783d4fc3 row; the line-based union driver stranded its text inside the c4060e94 row, where YAML last-duplicate-wins silently overrode that row''s own finding. Restored verbatim rather than dropped. Original text follows. The base branch''s own tip, unsigned when this branch was cut. Three message-queue decision files gain the owner''s answers plus a verification note, and one gets whitespace/link-shape churn. Board names (Amazon, Apple, Meta, Workday) are ATS fetcher names already throughout skills/job-search/scripts/sources.py, not employers of anyone. No identity, employer, school, salary or dated job-hunt content.'
-- base: 783d4fc3
+- base: 03372edd
   reviewed_by: agent
   date: 2026-08-01
   files: 25
-  digest: sha256:8f2b4a717eabeb63
-  finding: 'Repairs the second row the union merge driver corrupted. c4060e94 carried a stray finding line from another row; YAML last-duplicate-wins meant it silently reported a review its author never wrote. The stray text is restored as its own well-formed row rather than dropped. The range also re-covers content already reviewed on its branches (the queue folds, the stack discharge form, the search filter work, the lag fix) whose merge commits into main were never signed. Re-read here. No identity, employer, school, salary or dated job-hunt content.'
+  digest: sha256:1a84dff76b515419
+  finding: 'Merge of main into the stack-discharge branch. The ledger conflict was resolved at ROW granularity (never the union driver, which is off), and every resulting row was checked well-formed before writing. The range re-covers the two ledger repairs and the folded owner decisions already reviewed on their own branches, plus this branch''s discharge form. Re-read here. No identity, employer, school, salary or dated job-hunt content.'
