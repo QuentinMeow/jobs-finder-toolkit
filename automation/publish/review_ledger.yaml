@@ -2208,3 +2208,9 @@
   files: 1
   digest: sha256:bea7c8d3cfca8daf
   finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 6
+  digest: sha256:f8aecd0fbc2a8628
+  finding: 'Records a repeated mistake and re-frames one pending decision. The lesson names two rules that existed in writing and were broken anyway - the piped exit code, closed with prose on 2026-07-31 and repeated on 2026-08-01, and the stacked-PR base check - and concludes that a rule broken twice needs a check rather than better wording. The decision item gets a dated note saying its own pre-registered fallback fired: no owner answer line was filled in, no owner text removed, and the superseded default path is kept verbatim as the record it depends on. The new backlog task proposes auditing which contract rules have a check behind them. No identity, employer, school, salary or dated job-hunt content; the only names are commit SHAs and repo paths.'
