@@ -2220,3 +2220,9 @@
   files: 2
   digest: sha256:a95a5e8ed497ef80
   finding: 'Drops `--limit`/`--seed` from the field-fidelity `corpus` subparser, which declared both and read neither, and rewrites the module docstring paragraph that called corpus a per-sampled-entity pass. Verified no caller anywhere in the tree passes either flag (the skill''s documented command takes none), so removal breaks nothing; the levers stay on `sample`, which reads both, and a test pins that they were not over-removed. The docstring rewrite also corrects two adjacent claims about the same command - it walks manifests, not the derived index, and reads no jd.md lines. Tooling and test prose only - no identity, employer, school, salary or dated job-hunt content.'
+- base: f0478c32
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 3
+  digest: sha256:a6e7758e7ba075d3
+  finding: 'Adds a `truncated_location_list` flag to the field-fidelity auditor and names it in the skill''s field-fidelity section. Every other flag compares raw against generated and so can only see a loss the parser caused; a board that ships one truncated string ("Austin, TX and 3 more") copied verbatim into the generated field leaves raw and generated identical, so the tool reported a faithful copy of a lossy source. One regex on the generated string, source-agnostic, with negative controls pinning that a fully spelled-out multi-location string is not flagged. Example locations are the fictional metros the test module already uses; the ATS vendor name was already throughout the file. No identity, employer, school, salary or dated job-hunt content.'

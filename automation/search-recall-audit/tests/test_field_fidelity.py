@@ -2,7 +2,7 @@
 
 This tool exists to catch the pipeline silently dropping location information, so
 every defect here is the same shape one level up: **the detector reporting a
-confident answer it did not compute.** Six of them, each pinned below:
+confident answer it did not compute.** Seven of them, each pinned below:
 
 * the "gate decision" it printed was not the gate's decision — it dropped the
   title, the workplace hint and the JD that ``scoring.location_ok`` passes, so it
@@ -16,7 +16,9 @@ confident answer it did not compute.** Six of them, each pinned below:
 * every store-reading command tracebacked out of ``pathlib`` where no store is
   configured — the shipped example config, i.e. every fresh clone and CI;
 * ``corpus`` declared ``--limit``/``--seed`` and read neither, so a run asked to
-  stay short quietly walked the whole store.
+  stay short quietly walked the whole store;
+* a source that truncates its own location list (`"Fairview, ST and 3 more"`) was
+  reported as a faithful copy, because raw and generated are the same lossy string.
 
 Isolation: every store test pins ``JOBHUNT_DATA_ROOT`` and ``JOBHUNT_CONFIG`` at
 throwaway paths, so no test reads the owner's store, config or applications tree.
@@ -567,6 +569,74 @@ class WorkdayRawResolutionTests(_StoreCase):
         source, job = ff._RawStore(self.layout).job_for(entity)
         self.assertEqual(source, "workday")
         self.assertIsNone(job)
+
+
+class TruncatedLocationListTests(_StoreCase):
+    """A source that truncates its own location list is not a faithful copy.
+
+    Workday's search payload ships ONE `locationsText`, canonically
+    `"Fairview, ST and 3 more"`, and the generated `location` is a verbatim copy.
+    Raw and generated are then the SAME string and the hidden metros are in
+    neither, so `dropped_raw_tokens` is empty by construction and the posting reads
+    as faithful — a clean verdict over a source that admits, in the string itself,
+    that it withheld locations.
+    """
+
+    def test_the_and_n_more_tail_is_flagged_not_read_as_a_faithful_copy(self):
+        self._capture_workday([_wd_posting()])   # "Fairview, ST and 3 more"
+        self._build()
+        rows, _ = self._corpus()
+        row = rows["workday"]
+        self.assertEqual(row["generated_location"], "Fairview, ST and 3 more")
+        # The point of the defect: nothing was dropped BETWEEN raw and generated…
+        self.assertEqual(row["dropped_raw_tokens"], [])
+        # …and the posting is still not a faithful representation of the role.
+        self.assertEqual(row["flags"], ["truncated_location_list"])
+
+    def test_a_complete_location_list_is_not_flagged(self):
+        self._capture_workday([_wd_posting(locations="Fairview, ST")])
+        self._build()
+        rows, _ = self._corpus()
+        self.assertEqual(rows["workday"]["flags"], [])
+
+    def test_the_flagged_case_reaches_a_judge(self):
+        # A flag nobody samples is a flag nobody acts on: `sample` weights flagged
+        # cases, so the truncated posting must show up as a case file.
+        self._capture_workday([_wd_posting()])
+        self._build()
+        self._corpus()
+        with contextlib.redirect_stdout(io.StringIO()):
+            ff.cmd_sample(argparse.Namespace(out=str(self.out), n=32, seed=7,
+                                             source=None, cmd="sample"))
+        case = (self.out / "cases" / "workday-JR1980360.md").read_text()
+        self.assertIn("truncated_location_list", case)
+
+
+class FlagShapeTests(unittest.TestCase):
+    """The truncation detector fires on the source's shape and nothing else."""
+
+    def _flags(self, location):
+        return ff._flags_for(location, [], False)
+
+    def test_it_fires_on_the_workday_shape_whatever_the_metro(self):
+        for location in ("Fairview, ST and 3 more", "Austin, TX and 12 more",
+                         "Springfield, ST AND 1 MORE"):
+            with self.subTest(location=location):
+                self.assertIn("truncated_location_list", self._flags(location))
+
+    def test_it_does_not_fire_on_a_spelled_out_multi_location_string(self):
+        # A board that ships the whole list has hidden nothing — flagging it would
+        # bury the real cases, and `weird_separator` already covers odd shapes.
+        for location in ("Fairview, ST and Springfield, ST", "Portland, OR",
+                         "Grand Rapids, MI", "Remote - United States"):
+            with self.subTest(location=location):
+                self.assertNotIn("truncated_location_list", self._flags(location))
+
+    def test_it_leaves_the_four_existing_flags_alone(self):
+        self.assertEqual(ff._flags_for("Austin, TX", ["boston"], True),
+                         ["dropped_raw_token", "gate_decision_flip"])
+        self.assertEqual(ff._flags_for("SF/NYC and 2 more", [], False),
+                         ["truncated_location_list", "weird_separator"])
 
 
 class CorpusGateDecisionTests(_StoreCase):

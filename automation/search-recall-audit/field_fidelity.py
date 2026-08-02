@@ -20,9 +20,9 @@ Subcommands
            ``raw_location_view`` (EVERY location-bearing field in the raw job
            object), compare it against the generated ``location``, and flag
            deterministic suspicions (dropped raw location token, gate-decision
-           flip, weird format). It takes no sampling flags: blobs are decompressed
-           once and cached (many manifests share one board blob), so the full pass
-           is cheap, and choosing N is ``sample``'s job.
+           flip, truncated location list, weird format). It takes no sampling
+           flags: blobs are decompressed once and cached (many manifests share one
+           board blob), so the full pass is cheap, and choosing N is ``sample``'s job.
   sample   Pick N per source (weighting the suspicious ones) and write one
            self-contained comparison file per entity for a composer subagent to
            judge: raw view + generated field + jd lines + both gate decisions.
@@ -487,12 +487,27 @@ def cmd_todo(args) -> None:
           f"({skipped_rows} unparseable) -> {todo_path}")
 
 
+# "Austin, TX and 3 more" — a source that counts the locations it did NOT ship.
+_TRUNCATED_LOCATIONS_RE = re.compile(r"\band \d+ more\b", re.I)
+
+
 def _flags_for(gen_loc: str, dropped: list[str], flip: bool) -> list[str]:
     flags = []
     if dropped:
         flags.append("dropped_raw_token")
     if flip:
         flags.append("gate_decision_flip")
+    # Every other flag here compares raw against generated, so it can only see a
+    # loss the PARSER caused. Workday's search list ships one ``locationsText``
+    # whose tail counts the metros it withheld, and the generated ``location`` is a
+    # verbatim copy: raw and generated are the same string, the hidden metros are
+    # in NEITHER, and `dropped_raw_tokens` is empty BY CONSTRUCTION. Without this
+    # the auditor reports a faithful copy of a lossy source — the one verdict it
+    # exists to never give. The count in the string is the evidence, so say
+    # known-lossy-at-source and let a judge see it. Matched on the generated
+    # string, not on Workday: any board shipping the same shape is caught.
+    if _TRUNCATED_LOCATIONS_RE.search(gen_loc):
+        flags.append("truncated_location_list")
     if (gen_loc.count("United States") > 1
             or re.search(r"\b(\w+)\b of america \1\b", gen_loc, re.I)):
         flags.append("duplicated_country")
