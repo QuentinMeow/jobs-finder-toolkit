@@ -230,11 +230,11 @@ setting rather than assuming GitHub's auto-retarget applies: `gh api
 repos/<owner>/<repo> -q .delete_branch_on_merge`. It is `false` here and stays
 that way. With it off (and squash/rebase merge still enabled), merging without an
 explicit retarget lands each PR on the *previous* branch, not `main` — silent, not
-red, and nothing in the UI flags it. The recipe for a ledger-tracked stack (every
-branch tip here is a ledger-only `Acknowledge …` commit, and the review gate's
-`WATCHED_PATHSPEC` excludes the ledger file — see "The review gate and the
-one-commit lag" below) is a **merge commit**, which preserves every SHA, plus a
-manual retarget, one PR at a time, bottom-up:
+red, and nothing in the UI flags it. The recipe for a ledger-tracked stack (each
+branch tip carries its own review row, and the review gate's `WATCHED_PATHSPEC`
+excludes the ledger file — see "The review gate: one commit carries its own row"
+below) is a **merge commit**, which preserves every SHA, plus a manual retarget,
+one PR at a time, bottom-up:
 
 ```bash
 gh pr merge <N>   --merge     # merge commit: every SHA on <N> survives
@@ -291,7 +291,7 @@ both places is often invoked with different flags in each.
 |---|------|-------|-----------|
 | 1 | Staged `private/` paths | hook only | any `private/` path is staged — `git add -f private/` is silent, this is not |
 | 2 | Leak guard over the **staged index** (`automation/publish/check_public.py --staged --allow-unarmed`) | hook; CI runs the whole-tree guard last | the blob being committed carries identity tokens, structural PII, or an absolute home path |
-| 3 | Public review gate (`automation/publish/review_gate.py`) | hook (bounded tail); CI adds `--verify-all`, and `--head <sha>` on a PR | the published tree changed without a row in `automation/publish/review_ledger.yaml` |
+| 3 | Public review gate (`automation/publish/review_gate.py --staged`) | hook (`--staged`, bounded tail); CI adds `--verify-all`, and `--head <sha>` on a PR | the tree being committed changes the published tree without a row in `automation/publish/review_ledger.yaml` |
 | 4 | Vendor drift (`automation/vendoring/sync_vendored.py --check`) | hook + CI | a `scripts/_vendor/` copy diverged from `automation/shared/` |
 | 5 | Mail send-less policy (`automation/shared/mail/check_mail_safety.py`) | hook + CI | any mail path exposes send capability |
 | 6 | Byte-compile (`compileall`) | hook + CI | a toolkit or skill script has a syntax error |
@@ -339,25 +339,42 @@ It checks only this property — the three format properties stay yours to run
 locally. The workflow lists `edited` among its `pull_request` types, so fixing the
 description after the job goes red re-runs it; no empty commit is needed.
 
-### The review gate and the one-commit lag
+### The review gate: one commit carries its own row
 
 Every commit that changes the public tree needs a row in
-`automation/publish/review_ledger.yaml`. The gate reads **HEAD** (the previous
-commit) and the **working-tree** ledger, so a row always acknowledges the commit
-before it — one row per commit, always one behind. Concretely:
+`automation/publish/review_ledger.yaml`. The pre-commit hook runs the gate with
+**`--staged`**, so what it judges is the **staged index** — the tree *this* commit
+will have — not HEAD. The loop is one step:
 
-1. Make change A. The gate passes (it is judging the commit before A). Commit A.
-2. Make change B. The gate now fails on A and **prints the exact row**, filled in.
-   Read A's diff, then stage that row alongside B and commit once.
-3. At the end of the branch there is one unacknowledged commit left. Close it with
-   a **ledger-only commit** — it changes no watched file, so it acknowledges the
-   tip without creating new work.
-4. Only then push. **CI evaluates the tip**, so a branch pushed without the
-   closing ledger commit lands red.
+```bash
+git add -A
+.venv/bin/python automation/publish/review_gate.py --staged   # prints the row
+# read the diff it prints, append the row, then:
+git add automation/publish/review_ledger.yaml && git commit
+```
+
+The row it prints carries **no `commit:`** — the commit has no SHA yet. That is a
+**pending row**: `base:` + `digest:` pin the range, and the gate resolves its
+endpoint later as *the commit that introduced it into the ledger*. Because the
+ledger is excluded from `WATCHED_PATHSPEC`, staging the row cannot change the
+digest the row records, so the change and its review ride in **one commit**. No
+closing ledger-only commit, and one less edit to the file every parallel branch
+also edits.
+
+A row naming an already-landed commit (`commit:` + `base:`) is unchanged, still
+verifies, and is still the **only** shape for history that is already in — a merge
+commit you did not make, or a reconciliation row after a rebase orphaned one. A
+default (non-`--staged`) run prints that shape.
 
 The ledger is **append-only**: every row's `digest` is recomputed from the range
 it claims, so rewriting a row is itself detected. A row is written after reading
 the diff — the digest forecloses guessing, it does not prove reading.
+
+**Still open:** GitHub's merge button appends nothing, so when `main` has moved
+since your branch was cut, the merge commit itself is unreviewed and `main` lands
+red until someone signs it. Merging **locally** (`git merge --no-ff`, then commit
+with a pending row for the merge) avoids that; a button-merge still needs the
+reconciliation row below.
 
 ### A stacked PR's row does not survive the merge
 
