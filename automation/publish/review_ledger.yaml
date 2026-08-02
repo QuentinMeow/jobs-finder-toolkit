@@ -2131,3 +2131,10 @@
   files: 9
   digest: sha256:d9724d6396a857a5
   finding: Folds an owner answer about when the append-only skip-log records a posting into an ADR, three handbook rows, two backlog tasks, and the deletion of the queue item. The verification it quotes is about which code paths delete directories; no posting, employer or application is named. No identity, employer, school, salary or dated job-hunt content.
+- commit: c4060e94
+  base: 1c9853e2
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:c8975c2d725f5ad2
+  finding: Two added lines in the root contract's Configuration section, naming search filter words alongside identity, paths and output stems as things that are never hardcoded, and pointing at the config accessor. No identity, employer, school, salary or dated job-hunt content.
