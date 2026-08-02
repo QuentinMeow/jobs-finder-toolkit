@@ -2124,3 +2124,62 @@
   files: 1
   digest: sha256:8cde74af78b38598
   finding: none. One tasks/0_backlog/ item filing the audit for stacks whose named tip never ran its canaries — the detection path PR #196 documented but left without tooling or an owner. Process content only; no identity, employer, school, salary or dated job-hunt data.
+- commit: f474e478
+  base: 783d4fc3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:08cfb4e595f1631c
+  finding: none
+- commit: 139db0b7
+  base: f474e478
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 6
+  digest: sha256:6facb40636c45ab7
+  finding: Folds an owner answer about a search-pipeline default into an ADR, a handbook row, a backlog task, and the deletion of the queue item. The lost postings that motivated it are described only by shape (US-remote, no visa denial, still open) and are never named, per the queue item's own leak note. No identity, employer, school, salary or dated job-hunt content.
+- commit: 85102cbd
+  base: 139db0b7
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 6
+  digest: sha256:2aa0649df9ac5f32
+  finding: Folds an owner answer about where a search's filter vocabulary lives into an ADR, a handbook bullet, a conformance task, and the deletion of the queue item. The named employer boards that appeared in the deleted item are removed by this diff and are not reintroduced; the retained examples are generic title words. No identity, employer, school, salary or dated job-hunt content.
+- commit: 1c9853e2
+  base: 85102cbd
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 9
+  digest: sha256:d9724d6396a857a5
+  finding: Folds an owner answer about when the append-only skip-log records a posting into an ADR, three handbook rows, two backlog tasks, and the deletion of the queue item. The verification it quotes is about which code paths delete directories; no posting, employer or application is named. No identity, employer, school, salary or dated job-hunt content.
+- commit: c4060e94
+  base: 1c9853e2
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:c8975c2d725f5ad2
+  finding: Two added lines in the root contract's Configuration section, naming search filter words alongside identity, paths and output stems as things that are never hardcoded, and pointing at the config accessor. No identity, employer, school, salary or dated job-hunt content.
+- base: 783d4fc3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 7
+  digest: sha256:0833dd4ed26552d0
+  finding: This branch's own change - the review gate learns a PENDING row shape (no commit key) and a --staged endpoint, plus its tests, the pre-commit hook line, the gate's commit protocol in the workflow skill/CONTRIBUTING/cookbook, and a .gitattributes union merge driver for the ledger. All tooling and process prose. No identity, employer, school, salary or dated job-hunt content; the only shas named are this repo's own commits.
+- base: 3e00e933
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:8a0be613a3dd884a
+  finding: One new tasks/0_backlog item, filing the github-workflow canary run this branch's SKILL.md protocol rewrite owes. Names only this repo's own files, commands and constants. No identity, employer, school, salary or dated job-hunt content.
+- base: 76dc0cbd
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:19da02107dd368c5
+  finding: Turns OFF the ledger's union merge driver and adds the row-shape check whose absence let a corrupted row pass a green --verify-all. The union driver is line-based, so two rows for one range written with keys in different order interleaved and a finding line landed in a neighbouring row; YAML's last-duplicate-wins then made that row report a review nobody wrote. The stray line is removed, restoring the row to its authored text; no authored row is edited or dropped. Tooling and process prose only - no identity, employer, school, salary or dated job-hunt content.
+- base: 03372edd
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 25
+  digest: sha256:1a84dff76b515419
+  finding: 'Merge of main into the stack-discharge branch. The ledger conflict was resolved at ROW granularity (never the union driver, which is off), and every resulting row was checked well-formed before writing. The range re-covers the two ledger repairs and the folded owner decisions already reviewed on their own branches, plus this branch''s discharge form. Re-read here. No identity, employer, school, salary or dated job-hunt content.'

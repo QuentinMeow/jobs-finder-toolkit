@@ -62,7 +62,7 @@ Full detail: `docs/handbook/public-private-split.md`.
 
 ## Configuration
 
-Identity, paths, and output-filename stems are never hardcoded — they load via
+Identity, paths, output-filename stems, and search filter words are never hardcoded — they load via
 `automation/shared/config.py` (vendored into each skill's `scripts/_vendor/config.py`). `config.yaml`
 (git-ignored) holds real values; `config.example.yaml` (tracked) is the neutral **"Jordan Rivers"**
 placeholder + fallback (discovery: `$JOBHUNT_CONFIG` → nearest `config.yaml` up from cwd then the
@@ -70,7 +70,9 @@ loader dir → `config.example.yaml`). **Paths** always come from `config.*_path
 baseline, reference DOCX, company-levels, applications root, discoveries), never literals — real data
 under `private/`, the public example under `examples/`. **Output stems** come from
 `config.resume_stem()`/`cover_stem()`/`application_stem()`; never hardcode a person's filename stem —
-use `<RESUME_STEM>`. **Generation mode**: `config.generation_mode()` returns `token_saving`
+use `<RESUME_STEM>`. **Search filter words** come from the candidate's profile via
+`config.search_profiles_dir()`, never a literal list in a script — one person's filter logic must
+not sit in tooling everyone runs. **Generation mode**: `config.generation_mode()` returns `token_saving`
 (default) or `full` — a token-usage dial for search + drafting; hard gates run identically in both.
 Full function/path detail: `docs/handbook/configuration.md`.
 
