@@ -70,4 +70,5 @@ half.
 If you prefer A, the honest version of it is to make the wide first pass a **step in the
 job-search skill**, not a recipe in a queue file, so it is instruction rather than folklore.
 
-**Your answer:** ______
+**Your answer:** (2026-08-02, in chat) Option B. For a first search we always find all
+available roles, and match older roles by default.
