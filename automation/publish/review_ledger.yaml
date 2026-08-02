@@ -2405,3 +2405,9 @@
   files: 2
   digest: sha256:7d12f0901741e084
   finding: 'build_sponsor_index.py gains the same scripts/_vendor sys.path bootstrap its sibling entry points already carry, so the documented command no longer dies at import; plus a new unit file that sweeps --help across every job-search script with a __main__ block. Toolkit code and test prose only. No identity, employer, school, salary or dated job-hunt content; the only named data files are the public DOL disclosure XLSX names already in the script docstring.'
+- base: 55c4b4c7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 4
+  digest: sha256:d5a86279d90f1d65
+  finding: 'store_refilter.py gains an argparse surface and an unconfigured-store guard that exits 0 with the same sentence validate_store/gc_store print, plus its CLI unit file; and two backlog items — the overlay''s 5 broken references (deliberately NOT enumerated: overlay paths describe the private tree, so the task carries a reproduction command and a count instead) and the layout estimator calling OVERFLOW on the shipped one-page example. Toolkit code, test prose and process files. No identity, employer, school, salary or dated job-hunt content; the only application folder named is the fictional examples/ one.'
