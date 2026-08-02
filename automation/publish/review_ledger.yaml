@@ -2393,3 +2393,10 @@
   files: 1
   digest: sha256:99df9afc3507e680
   finding: 'Session handover for the merge-runbook and folder-refactor session. Describes the work in shapes, not specifics: which decision fired, which defects were fixed, which gates caught what. Names only public repo paths, PR numbers and commit SHAs. The one private reference is the standing note that verify_links is red on refs inside private/, stated without naming any of those paths. No identity, employer, school, salary or dated job-hunt content.'
+- commit: 70dddb35
+  base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 14
+  digest: sha256:d9e82fe17d40cb83
+  finding: 'Sponsorship classifier fix for the GH issue #15 residual, plus its tests, corpus cases, known-issue update and one reference.md table row. Every example sentence is fictional or is the known-issue''s own already-published filed reproduction; no employer in any of them is a real company the owner applied to. The four examples/store/ posting.yaml files change only their job_metadata.py@<hash> provenance stamp - no visa label, salary, company or date moved. The backlog task names only public repo paths. Ran check_public.py --allow-unarmed (OK, 1040 files read); the identity-token scan could not be armed in this checkout, so that half was not exercised here and rests on CI. No identity, employer, school, salary or dated job-hunt content.'
