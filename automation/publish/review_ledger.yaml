@@ -2103,3 +2103,10 @@
   files: 3
   digest: sha256:224a50c39c89632e
   finding: The owner's answers to three open decisions, appended to the queue items themselves, plus a refreshed quotation of a code constant and a verification note about which code paths delete directories. The answers are about tooling policy — a recency window, where filter vocabulary lives, and whether an incomplete scaffold is recorded. No real name, employer, school, posting, salary or dated job-hunt fact.
+- commit: f474e478
+  base: 783d4fc3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:08cfb4e595f1631c
+  finding: none
