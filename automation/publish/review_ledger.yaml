@@ -1957,3 +1957,10 @@
   files: 3
   digest: sha256:03ea0eaf65e6216d
   finding: Instruction files only. Aligned the four stack-merge sites on merge-commit-plus-explicit-retarget (the gh table still prescribed --squash --delete-branch), banned absolute tree-wide counts in individual PR bodies, and made .github/pull_request_template.md pass check_pr_body.py. No identity, employer, school, salary or dated job-hunt content; the only numbers are public PR numbers and reference counts already published in this repo's own history.
+- commit: 1d0ca976
+  base: 883898f3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:e945e4bd21c2de82
+  finding: Instruction files only. Documented all three eval-gate discharge forms (ran / written skip / tracked debt) now that a sibling change makes the gate a blocking CI job, added gate 11 to the gate table, and kept every form in the PR template inside backticks with a bracketed placeholder so the unfilled template still fails the gate. No identity, employer, school, salary or dated job-hunt content.
