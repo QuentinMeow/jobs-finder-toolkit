@@ -3,10 +3,13 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [queue hygiene tooling task, gap A](../../../tasks/0_backlog/2026-07-21-todo-queue-hygiene-tooling/task.md)
-- **Blocking**: nothing. The gardener half of that task (`queue-hygiene`) shipped without this.
+- **Blocks**: nothing. The gardener half of that task (`queue-hygiene`) shipped without this.
 - **Default path**: no company-plus-date screen is added. `check_public.py` keeps screening
   exactly the four shapes it screens today, and the human review gate stays the only thing that
   catches a company name next to a date.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: no screen is added, so nothing is written or blocked; adding it later
+  is a pure addition to `check_public.py`.
 
 ## Background
 

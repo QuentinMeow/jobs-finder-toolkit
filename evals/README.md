@@ -54,6 +54,13 @@ individually small pieces add up to a behavioral change at head).
 - clarity rewording with unchanged semantics;
 - small additive factual notes (≲20 lines).
 
+**Skills with no canary set skip by definition.** `evals/canaries/` does not cover every public
+skill — `gardener` and `search-recall-audit` have no file there today. A behavioral edit to one of
+them cannot "pass canaries", so it records the skip with the missing set named as the reason
+(`Eval gate: skipped — no canary set for <skill>`). This is the carve-out that `AGENTS.md`'s
+"must pass canaries" clause defers to; it is a gap to fill, not a permanent exemption, and writing
+the set is the right fix the first time such an edit is substantial.
+
 **Every skip must be recorded** — one line in the PR description (or the commit body for a direct
 commit): `Eval gate: skipped — <intention + size rationale>`. A run is recorded as before, in
 `evals/results/`. Skips are not permanent exemptions: the **next** behavioral gate run at head
@@ -72,8 +79,10 @@ When a run is required, the mechanics are unchanged. For any PR that edits
    (delta edits only; MEMORY→LESSONS→SKILL promotion needs a separate human-reviewed commit;
    consolidation may never delete a domain edge case; everything reverts via small commits).
 
-This gate is advisory tooling today (a human or the editing agent runs it before merge); a future
-CI hook can enforce it — see the repo AGENTS.md proposal in the P4 hand-off report.
+**This gate is enforced, not advisory.** `AGENTS.md` states it as a hard behavioral invariant, and
+`skills/github-workflow/scripts/check_pr_body.py` checks that a PR touching a skill's instruction
+files carries either a canary-run record or the one-line skip rationale. What stays agent-judged is
+the *run-or-skip* call above — never whether to record the outcome.
 
 ## How to run a canary
 

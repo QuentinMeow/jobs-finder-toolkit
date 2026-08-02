@@ -3,8 +3,11 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [the phase-7c task](../../../tasks/0_backlog/2026-07-31-workspace-phase-7c-durable-timeline/task.md) · [the design's `companies/<key>/` tree](../../../docs/designs/workspace-restructure/README.md)
-- **Blocking**: nothing today. It **would** block if anyone starts phase 7c: two of its four questions must be answered before a rename touches 126 of your files.
+- **Blocks**: nothing today. It **would** block if anyone starts phase 7c: two of its four questions must be answered before a rename touches 126 of your files.
 - **Default path**: **do not build the durable/disposable machinery, and do not rename anything.** Fix the one live defect (two skills specifying incompatible templates for the same file), and leave the rest until a real degradation is observed. The phase-7c task has been updated to say this.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: nothing is renamed, so the files a rename would touch stay put and no
+  reference breaks.
 
 ## Background
 

@@ -19,6 +19,10 @@ or a prior session.
 - When the owner decides: move the file to `memory/decisions/` (public or
   private as appropriate), rewrite in the decided format, record the choice
   and date. Delete it from here in the same commit.
+- **Nothing here ever stops an agent.** Questions ship merged and unanswered;
+  the owner answers in batch afterwards. The stop authority is the Guardrails
+  list in `AGENTS.md`, which stops the *action* (deleting owner data, sending
+  mail, pushing over a red gate) and never the batch.
 - Agents check this folder at session start for anything newly decided in
   conversation, and file new entries the moment they hit a genuinely
   owner-owned fork — instead of blocking or guessing. `parked-until-revisit`
@@ -30,6 +34,47 @@ or a prior session.
   same commit, and on conflict **the doc block wins**.
 - An answer the owner gives in chat is written into this file in the same
   turn, before any other work (chat has no file trace of its own).
+
+## The default path is what actually runs
+
+An answer arrives *after* the batch merges, so a pending item's default path is
+the behaviour that runs in `main` for weeks. It is load-bearing, not a
+placeholder. A default path is **mergeable** only if all four hold:
+
+1. **reversible** — a revert or a named command undoes it;
+2. **writes no owner data** — no application folder, log row, profile, or
+   mailbox state;
+3. **no outward-facing effect** — nothing leaves the repo;
+4. **no compounding silent loss** — it does not lose a little more each run.
+
+**When no default satisfies all four, ship less** — descope to the part that
+does, and say in the item what was left out. Never hold the batch for an answer.
+
+`Cost if wrong` classes the queue by what a wrong default costs. **Worst first:**
+
+| Value | Meaning |
+|-------|---------|
+| `recurring-loss` | fails test 4 — every run loses a little more, silently (missed postings, dropped matches). Answer these first. |
+| `data` | fails test 2 — the default writes owner data; undo is a manual, per-row owner command. |
+| `one-time` | a bounded cost paid once when the answer lands (a backfill, a re-run). |
+| `ratify` | the default IS the shipped behaviour; answering only blesses it. Cheapest to leave open. |
+
+There is no index file. This is the list, and it cannot go stale:
+
+```bash
+grep -H '^- \*\*Cost if wrong\*\*' message-queue/needs-human/decisions/*.md | sort -k2
+```
+
+It groups the open items by class (alphabetically — read them in the table's order above,
+not the shell's). Add `recurring-loss` or `data` to the pattern to see only the two that
+actually cost something.
+
+## Answering in batch
+
+The owner answers post-merge in `message-queue/ANSWERS.md`, one `## <slug>`
+block per item. Folding a pass of answers takes **one** `Status: folding`
+commit for the whole pass, not one per item; then fold, record, and delete the
+answered items together.
 
 ## File format
 

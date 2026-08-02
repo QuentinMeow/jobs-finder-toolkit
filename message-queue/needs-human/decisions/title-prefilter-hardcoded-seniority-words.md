@@ -3,8 +3,13 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [`_BIGTECH_TITLE_SKIP` / `_title_prefilter` in `sources.py`](../../../skills/job-search/scripts/sources.py) vs [`assess_title` in `scoring.py`](../../../skills/job-search/scripts/scoring.py), which disagree about who owns seniority. The fork was found while fixing the prefilter's unanchored-substring defect; the substring half is fixed, this half is not.
-- **Blocking**: nothing. Search runs unchanged.
+- **Blocks**: nothing. Search runs unchanged.
 - **Default path**: **keep the hardcoded list.** The five words stay in `_BIGTECH_TITLE_SKIP`, boundary-matched like every other entry, and the deliberate exception is written into the code comment and pinned by `test_hardcoded_seniority_words_are_still_skipped_pending_the_decision` so it cannot drift silently while this is open.
+- **Cost if wrong**: recurring-loss
+- **Safe to merge because**: the five words are pinned by
+  `test_hardcoded_seniority_words_are_still_skipped_pending_the_decision` so they cannot drift
+  silently — but every search meanwhile drops matching big-tech titles, and only re-running search
+  after a list change recovers them.
 
 ## Background
 

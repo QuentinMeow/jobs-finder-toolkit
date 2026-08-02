@@ -3,10 +3,13 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-30
 - **Source**: [workspace phase 6 — the skip-log becomes authoritative](../../../docs/designs/workspace-restructure/execution-plan.md)
-- **Blocking**: nothing
+- **Blocks**: nothing
 - **Default path**: agents leave the file exactly where it is and never read it. No tool
   writes it any more; `--backfill-log` reads it once and names it in its output. **This
   default is now the weaker option, not the safe one — see the 2026-07-31 update below.**
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the file is inert: agents never read or write it, so leaving it costs
+  nothing and only the owner may delete it.
 
 ## Background
 

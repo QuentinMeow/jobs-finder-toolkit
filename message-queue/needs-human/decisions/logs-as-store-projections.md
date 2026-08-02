@@ -3,7 +3,12 @@
 - **Status**: parked-until-revisit (owner deferred, 2026-07-21)
 - **Filed**: 2026-07-21
 - **Source**: [raw-data-layer pipeline integration design](../../../docs/designs/raw-data-layer/02-job-postings-pipeline.md#6-pipeline-integration)
-- **Blocking?**: nothing
+- **Blocks**: nothing
+- **Default path**: logs stay independent and authoritative; nothing is projected from the store.
+  Full rationale in “Default path while parked” below.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the logs stay exactly as they are; the store is additive and reads
+  them without writing them.
 - **Revisit when**: raw-data-layer execution-plan stage 3 (pipeline
   integration) has shipped and run for a few weeks
 

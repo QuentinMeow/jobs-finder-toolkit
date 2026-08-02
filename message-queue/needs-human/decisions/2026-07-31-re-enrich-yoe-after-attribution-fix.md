@@ -3,10 +3,13 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [task 2026-07-31-sponsorship-negation-defeats-require-positive](../../../tasks/3_in-review/2026-07-31-sponsorship-negation-defeats-require-positive/task.md)
-- **Blocking**: nothing — the fix ships either way; this is only about existing files
+- **Blocks**: nothing — the fix ships either way; this is only about existing files
 - **Default path**: agents change nothing. Existing `meta.yaml` files keep whatever
   `required_yoe` / `job_level` they were written with; only newly enriched
   applications get the corrected reads.
+- **Cost if wrong**: one-time
+- **Safe to merge because**: agents write nothing meanwhile; when the answer lands, `status.py
+  --enrich-metadata` re-derives the affected `meta.yaml` files from the JD and cache.
 
 ## Background
 

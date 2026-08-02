@@ -3,12 +3,15 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-29
 - **Source**: [interview-material ADR](../../../memory/decisions/interview-material-moves-by-company-only.md)
-- **Blocking**: nothing. Phase 5 is proceeding on the default path.
+- **Blocks**: nothing. Phase 5 is proceeding on the default path.
 - **Default path**: the three non-company interview trees keep their existing
   directory names under their new parent — `me/interviews/story-bank/`,
   `me/interviews/question-bank/`, `me/interviews/common-message-replies/` — rather
   than being renamed to `stories/`, `questions/`, `replies/`. Nothing inside any
   moved file changes.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the trees keep their current names, so no path in any skill or note
+  breaks.
 
 ## Background
 

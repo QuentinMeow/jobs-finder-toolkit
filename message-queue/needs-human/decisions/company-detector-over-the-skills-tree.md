@@ -3,9 +3,12 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [company-research LESSONS.md](../../../skills/company-research/LESSONS.md)
-- **Blocking**: nothing — the one live instance is already redacted
+- **Blocks**: nothing — the one live instance is already redacted
 - **Default path**: leave the detector diff-only. Editors are told the rule in the
   redacted section itself, and the sweep below is re-runnable by hand.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: diff-only is the shipped scope and the one live instance is already
+  redacted; widening the detector later re-scans the tree and writes nothing.
 
 ## Background
 

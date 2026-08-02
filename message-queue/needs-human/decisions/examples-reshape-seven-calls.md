@@ -3,11 +3,14 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [workspace phase 8 task](../../../tasks/0_backlog/2026-07-28-workspace-phase-8-instruction-surface/task.md)
-- **Blocking**: the `examples/` half of workspace phase 8. Its instruction-surface half is
+- **Blocks**: the `examples/` half of workspace phase 8. Its instruction-surface half is
   already measured at zero work, so this is what is left of the phase.
 - **Default path**: nothing moves. The phase stays in `tasks/0_backlog/` and `examples/`
   keeps its current shape. If you answer nothing and later say "just do it", the
   recommendation under each item below is what gets built.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: nothing moves, so no path breaks and no file is rewritten; the
+  reshape stays fully available.
 
 **Filed as ONE item, not seven, on purpose.** The seven are not independent: D1 fixes the
 naming convention every other move uses, and D2/D3/D6/D7 each move or delete a path that

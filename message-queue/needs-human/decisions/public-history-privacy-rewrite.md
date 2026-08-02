@@ -3,9 +3,13 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-30
 - **Source**: [runtime skill adapters task](../../../tasks/4_done/2026-07-30-runtime-skill-adapters/task.md)
-- **Blocking**: nothing. The non-destructive runtime fix and current-tree cleanup proceed.
+- **Blocks**: nothing. The non-destructive runtime fix and current-tree cleanup proceed.
 - **Default path**: keep published history unchanged; prevent the identifiers from
   appearing in the current tree, future commits, branch name, commit messages, and PR text.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: published history is left untouched — the default is the
+  non-destructive option, and it is the *rewrite* that would be irreversible for anyone who
+  already cloned.
 
 ## Background
 

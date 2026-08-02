@@ -3,11 +3,13 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-29
 - **Source**: [workspace-restructure execution plan, phase 5 move table](../../../docs/designs/workspace-restructure/execution-plan.md#phase-5--the-lifetime-taxonomy-inside-private)
-- **Blocking**: nothing. Phase 5 proceeds on the default path below and leaves
+- **Blocks**: nothing. Phase 5 proceeds on the default path below and leaves
   `history/` untouched in both repos.
 - **Default path**: `history/` does **not** move in phase 5. Both repos keep their
   tracked `history/` root, the reconciler keeps its `handover-present` check and its
   `CHECK_ROOTS` entry, and the row stays open in the plan with a pointer here.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: `history/` does not move, so no file is rewritten and no link breaks.
 
 ## Background
 

@@ -3,10 +3,13 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [workspace-restructure review-gate design](../../../docs/designs/workspace-restructure/review-gate.md)
-- **Blocking**: nothing.
+- **Blocks**: nothing.
 - **Default path**: no document changes. Agents keep meeting the gate where they meet
   it today — at pre-commit, from its own failure message — and keep riding the ledger
   row along with the next commit.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: no document changes, and agents already meet the gate where it
+  actually runs.
 
 ## Background
 

@@ -4,9 +4,12 @@
   read the Resolution below and reopen only if you disagree with the shape chosen.
 - **Filed**: 2026-07-31
 - **Source**: [job-search skill — visa heuristic](../../../skills/job-search/LESSONS.md)
-- **Blocking**: nothing.
+- **Blocks**: nothing.
 - **Default path**: superseded — the classifier now resolves both shapes (see
   Resolution). No manual second pass is required.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: already resolved by implementation — the classifier handles both
+  shapes and the behaviour is pinned by tests; nothing is pending on the owner.
 
 ## Background
 

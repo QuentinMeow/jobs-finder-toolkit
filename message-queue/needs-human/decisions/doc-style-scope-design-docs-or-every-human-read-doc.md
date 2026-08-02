@@ -3,12 +3,15 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [docs/handbook/doc-style.md](../../../docs/handbook/doc-style.md)
-- **Blocking**: nothing.
+- **Blocks**: nothing.
 - **Default path**: agents treat §§1-4 and §7 (the prose and figure rules) as binding
   under `docs/designs/` only, and §§5-6 (decision blocks, `**Your answer:**` lines,
   resolved tables, `## Human questions / additional tasks`) as binding wherever a
   two-way field actually appears. That is what practice already does; it is just not
   what any single file says.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: a scope convention changes no file on disk; re-scoping later is a doc
+  edit.
 
 ## Background
 

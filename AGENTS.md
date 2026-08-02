@@ -14,10 +14,10 @@ identity/products. This is the core contract every agent reads BEFORE acting; ex
 full command cookbook, complete directory table, long rationale, edge-case policies, setup — lives
 in `docs/handbook/` (index: `docs/handbook/README.md`); read the named doc when a section points you there.
 
-**Collaboration mode:** `async` — decide everything reversible; file expensive-to-reverse choices
-in `message-queue/needs-human/decisions/` with a default path and continue; stop only on
-`Blocking: yes`. See `docs/handbook/collaboration-modes.md`; a task file may override the mode for
-that task only.
+**Collaboration mode:** `async`, merge-then-answer — decide everything reversible; file
+expensive-to-reverse choices in `message-queue/needs-human/decisions/` with a default path and
+continue. A filed question never gates a merge; only the Guardrails stop you. See
+`docs/handbook/collaboration-modes.md`; a task file may override the mode for that task only.
 
 ## Public vs Private (skills + products)
 
@@ -125,8 +125,9 @@ formats: `message-queue/README.md`; private-scope mirror: `private/message-queue
 path** agents follow while pending), `needs-human/clarifications/` (questions that matter soon;
 agent proceeds on a stated assumption), `needs-human/reviews/` (optional human-eyes items),
 `needs-agent/requests/` (human→AI free-form drop box), `needs-agent/retries/` (mechanical repair
-items). Work items live in **`tasks/`** — one folder per task, its status folder IS its status
-(`tasks/README.md`). Decided questions and bug records live in **`memory/`**.
+items), `ANSWERS.md` (the owner's batch answering surface). Work items live in **`tasks/`** — one
+folder per task, its status folder IS its status (`tasks/README.md`). Decided questions and bug
+records live in **`memory/`**.
 
 **Boot ritual** — run by the **top-level session only** (subagents never run it); skip entirely if
 `message-queue/` is absent (public exports omit it). Filenames first; open only what's relevant:
@@ -137,21 +138,18 @@ items). Work items live in **`tasks/`** — one folder per task, its status fold
    "never skip silently".
 2. `ls message-queue/needs-agent/retries/` — pick up repair items touching this session's area;
    never delete one without fixing it or explicitly rejecting it in the file.
-3. Scan `message-queue/needs-human/decisions/` for new owner answers (they arrive in the queue
-   file, in a doc's decision block, or in chat; skip `parked` items unless their revisit condition
-   matches this session's work). **Claim before folding:** commit a one-line `Status: folding`
-   edit to the queue file first. Then fold the answer into the affected docs, update BOTH surfaces
-   of a mirrored question in the same commit, record it in `memory/decisions/`, delete the queue
-   file. **An answer heard in chat is written into the queue file in the same turn, before any
-   other work** — chat is the only channel with no file trace of its own.
+3. Read `message-queue/ANSWERS.md` + `needs-human/decisions/` for new answers (also doc decision
+   blocks and chat — an answer heard in chat is written to its file that same turn, before other
+   work). Fold a pass under ONE `Status: folding` commit: into the affected docs, both surfaces of
+   a mirrored question, `memory/decisions/`, then delete the item. Skip `parked` unless it matches.
 4. Pick up `tasks/0_backlog/` items when relevant to the session's work or when asked (claim
    first: `Claimed-by` in `task.md`, move to `1_in-progress/`).
 5. Sweep `message-queue/needs-human/reviews/`: delete items with a filled Resolution, or older
    than 30 days.
 
-**Always:** end your reply with one line per pending `needs-human/` item you filed or noticed —
-chat is the owner's only push channel. Before opening a PR whose work relied on a pending
-decision's default path, re-check that decision file. Never name or summarize
+**Always:** end your reply with one line per `needs-human/` item you filed **this session**, plus
+one standing line — `N pending · top: <slug>` (highest `Cost if wrong`). Before opening a PR that
+relied on a pending default path, re-check that item. Never name or summarize
 `private/message-queue/` or `private/tasks/` items in public PR descriptions or commit messages.
 
 **End of session** (any session that did real work): write
@@ -227,6 +225,9 @@ Router:
 - **Email is draft-only**: the email assistant may read mail and create/update messages only while
   Microsoft Graph confirms `isDraft: true`. Never request `Mail.Send`, expose a send
   command/tool/endpoint, or send email on the user's behalf. The user sends manually in Outlook.
+- **Never stop for an answer**: questions ship merged and unanswered, so a pending item's default
+  path is what runs in `main` for weeks — it must be reversible, write no owner data, reach nothing
+  outward, and lose nothing silently. No such default? Ship the subset that has one and say so.
 - **Honesty over optimization**: if the user's experience is a poor match, say so clearly.
 - **Profile is user-owned**: ask before modifying the candidate profile (`config.profile_md_path()`).
 - **Agents never delete owner data**: application folders, interview prep, company dossiers,
@@ -242,9 +243,9 @@ Router:
 - **Risk-based eval gate on harness edits**: for any change to a skill's
   `SKILL.md`/`LESSONS.md`/`reference.md`, the editing agent decides whether to run that skill's
   canaries (`evals/canaries/<skill>.yaml`) by judging the edit's **intention and size** —
-  behavioral or large edits must pass canaries before merge (no large efficiency regression,
-  model-pinned, runs recorded per `evals/README.md`); mechanical or small edits may skip **with a
-  recorded one-line rationale**. See `evals/README.md` for the run/skip criteria. Harness
+  behavioral or large edits must pass canaries before merge where a set exists (no large efficiency
+  regression, model-pinned, run/skip criteria + records per `evals/README.md`); mechanical or small
+  edits — and skills with no canary set — skip **with a recorded one-line rationale**. Harness
   self-edits are delta-only — never full-file rewrites, and **consolidation never deletes a domain
   edge case.**
 

@@ -3,8 +3,11 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-08-01
 - **Source**: [email-assistant's Pipeline Status Reconciliation section](../../../skills/email-assistant/SKILL.md) · [application-tracker's Update Status section](../../../skills/application-tracker/SKILL.md) · [`AGENTS.md`](../../../AGENTS.md) "Application Folder Convention"
-- **Blocking**: nothing. Both readings are live today; which one you get depends on which skill the agent happened to read first.
+- **Blocks**: nothing. Both readings are live today; which one you get depends on which skill the agent happened to read first.
 - **Default path**: **ask first.** Until you answer, an agent doing a mailbox review reports the transitions the evidence supports and runs no `status.py --update`/`--update-job` unless the request named status work ("reconcile my pipeline", "update my applications from email"). This is the conservative side: it never moves a folder you did not ask to have moved, and the only cost is one extra confirmation.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the default runs no `status.py --update` at all — it only reports, so
+  no application folder moves without an explicit ask.
 
 ## Background
 
