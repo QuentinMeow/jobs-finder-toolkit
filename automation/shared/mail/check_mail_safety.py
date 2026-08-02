@@ -86,7 +86,7 @@ CONSUMER_CLI_PINS: dict[str, set[str]] = {
         "doctor", "login", "logout", "inbox", "sent", "drafts", "deleted", "review-window",
         "read", "sync-store", "store-staleness", "store-review", "store-search", "store-coverage",
         "match-application", "create-draft",
-        "create-reply-draft",
+        "create-reply-draft", "update-draft",
     },
 }
 

@@ -23,11 +23,11 @@ standalone email-assistant skill.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
 from hashlib import sha256
 import re
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable
 
 
 CATEGORY_VOCABULARY_VERSION = "email-categories.v1"
@@ -148,6 +148,7 @@ _TZ_CANONICAL = {
 _MONTHS = {name.casefold(): number for number, name in enumerate(
     ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"), 1
 )}
+_MONTH_LITERALS = tuple(_MONTHS)
 _ACTIVE_STATUSES = frozenset({"drafted", "applied", "in_progress"})
 
 
@@ -392,21 +393,52 @@ def normalize_stored_message(mapping: Mapping[str, Any]) -> dict[str, Any]:
 # Python, so the helper is spelled here as well as in
 # ``skills/job-search/scripts/common.py`` (``bounded_phrase_hit``). Keep the two
 # in step.
-_INFLECTION = r"(?:s|es|d|ed|ing|er|ers)?"
+_INFLECTIONS = ("", "s", "es", "d", "ed", "ing", "er", "ers")
 
 
-@lru_cache(maxsize=4096)
-def _phrase_re(phrase: str) -> re.Pattern:
-    prefix = r"(?<![a-z0-9])" if phrase[:1].isalnum() else ""
-    suffix = _INFLECTION + r"(?![a-z0-9])" if phrase[-1:].isalnum() else ""
-    return re.compile(prefix + re.escape(phrase) + suffix, re.I)
+def _ascii_alnum(value: str) -> bool:
+    return "a" <= value <= "z" or "0" <= value <= "9"
+
+
+def _bounded_phrase_hit(text: str, phrase: str) -> bool:
+    """Match the existing ASCII boundary/inflection contract with fast finds.
+
+    ``categorize_message`` casefolds the complete subject/body once before this
+    helper runs. ``str.find`` locates literal candidates in C; Python checks only
+    their adjacent characters and the same optional inflections accepted by the
+    former lookaround regex. A rejected early occurrence does not hide a later
+    bounded occurrence.
+    """
+    needle = phrase.casefold()
+    start = 0
+    while (index := text.find(needle, start)) >= 0:
+        prefix_ok = (
+            not phrase[:1].isalnum()
+            or index == 0
+            or not _ascii_alnum(text[index - 1])
+        )
+        if prefix_ok:
+            literal_end = index + len(needle)
+            if not phrase[-1:].isalnum():
+                return True
+            for inflection in _INFLECTIONS:
+                end = literal_end + len(inflection)
+                if (
+                    text.startswith(inflection, literal_end)
+                    and (end == len(text) or not _ascii_alnum(text[end]))
+                ):
+                    return True
+        start = index + 1
+    return False
 
 
 def _contains(text: str, *phrases: str) -> bool:
     """True if any phrase occurs as a bounded phrase — never as a bare substring."""
     if not text:
         return False
-    return any(_phrase_re(phrase).search(text) for phrase in phrases if phrase)
+    # Running a lookaround-heavy regex across every full raw body for every
+    # phrase made all-history review spend minutes in ``re.Pattern.search``.
+    return any(_bounded_phrase_hit(text, phrase) for phrase in phrases if phrase)
 
 
 # The legal footer on nearly every US recruiting email. It contains the word
@@ -425,13 +457,30 @@ def _without_eeo_boilerplate(text: str) -> str:
     return _EEO_BOILERPLATE_RE.sub(" ", text)
 
 
+def _match_at_literals(
+    pattern: re.Pattern, text: str, literals: Sequence[str]
+) -> re.Match | None:
+    """Run an anchored regex only where one of its required prefixes occurs."""
+    for literal in literals:
+        start = 0
+        while (index := text.find(literal, start)) >= 0:
+            if match := pattern.match(text, index):
+                return match
+            start = index + 1
+    return None
+
+
 def _explicit_schedule(text: str) -> dict[str, str] | None:
     """Return a wall-clock datetime only if date, time, and timezone are explicit."""
-    match = _ISO_SCHEDULE_RE.search(text)
+    match = _match_at_literals(_ISO_SCHEDULE_RE, text, ("20",))
     if match:
         date_part, clock, ampm, raw_tz = match.groups()
         return _schedule_parts(date_part, clock, ampm, raw_tz)
-    match = _MONTH_SCHEDULE_RE.search(text)
+    match = _match_at_literals(
+        _MONTH_SCHEDULE_RE,
+        text,
+        _MONTH_LITERALS,
+    )
     if match:
         month, day, year, clock, ampm, raw_tz = match.groups()
         date_part = f"{year}-{_MONTHS[month.casefold()]:02d}-{int(day):02d}"
@@ -459,14 +508,16 @@ def extract_deadline(message: Mapping[str, Any]) -> dict[str, str] | None:
     """Extract a deterministic explicit/relative deadline; never use wall clock."""
     normalized = normalize_stored_message(message) if "body_text" not in message else dict(message)
     text = f"{normalized.get('subject', '')}\n{normalized.get('body_text', '')}".casefold()
-    match = _DATE_DEADLINE_RE.search(text)
+    match = _match_at_literals(
+        _DATE_DEADLINE_RE, text, ("by", "before", "deadline", "due")
+    )
     if match:
         try:
             datetime.fromisoformat(match.group(1))
         except ValueError:
             return None
         return {"due_at": match.group(1), "kind": "explicit_date"}
-    match = _HOURS_DEADLINE_RE.search(text)
+    match = _match_at_literals(_HOURS_DEADLINE_RE, text, ("within",))
     timestamp = _parse_time(normalized.get("timestamp"))
     if match and timestamp:
         due = timestamp + timedelta(hours=int(match.group(1)))
@@ -701,6 +752,24 @@ def link_message(
     normalized = normalize_stored_message(message) if "body_text" not in message else dict(message)
     apps = _normalize_applications(applications)
     domains = validate_company_email_domains(company_domains)
+    return _link_normalized_message(
+        normalized,
+        apps,
+        domains,
+        thread_links=thread_links,
+        human_confirmations=human_confirmations,
+    )
+
+
+def _link_normalized_message(
+    normalized: Mapping[str, Any],
+    apps: list[dict[str, Any]],
+    domains: Mapping[str, tuple[str, ...]],
+    *,
+    thread_links: Mapping[str, Any] | None = None,
+    human_confirmations: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Apply the link ladder to pre-normalized, reusable review context."""
     confirmations = human_confirmations or {}
     confirmed = _human_link(str(normalized["message_key"]), confirmations, apps)
     if confirmed is not None:
@@ -1028,11 +1097,23 @@ def reconcile_messages(
     """
     normalized = [normalize_stored_message(item) for item in messages]
     normalized.sort(key=lambda item: (str(item.get("timestamp") or ""), item["message_key"]))
+    # Applications and domain mappings are invariant across the entire review.
+    # Re-normalizing them for each stored message made review O(messages ×
+    # applications) and dominated all-history mailboxes after hydration was
+    # fixed. Public ``link_message`` still accepts raw context for one-off use.
+    apps = _normalize_applications(applications)
+    domains = validate_company_email_domains(company_domains)
     thread_links: dict[str, list[dict[str, Any]]] = defaultdict(list)
     records = []
     for message in normalized:
         classification = categorize_message(message)
-        link = link_message(message, applications, company_domains, thread_links=thread_links, human_confirmations=human_confirmations)
+        link = _link_normalized_message(
+            message,
+            apps,
+            domains,
+            thread_links=thread_links,
+            human_confirmations=human_confirmations,
+        )
         record = _public_record(message, classification, link)
         records.append(record)
         if link.get("application_slug"):

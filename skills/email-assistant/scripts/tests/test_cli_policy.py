@@ -32,12 +32,19 @@ class CliPolicyTests(unittest.TestCase):
                 "doctor", "login", "logout", "inbox", "sent", "drafts", "review-window",
                 "deleted", "read", "sync-store", "store-staleness", "store-review", "store-search",
                 "store-coverage", "match-application", "create-draft",
-                "create-reply-draft",
+                "create-reply-draft", "update-draft",
             },
         )
         parser = build_parser()
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             parser.parse_args(["send"])
+
+    def test_update_draft_is_an_exact_draft_only_cli_operation(self):
+        args = build_parser().parse_args([
+            "update-draft", "--message-id", "draft-1", "--body-file", "reply.txt"
+        ])
+        self.assertEqual(args.message_id, "draft-1")
+        self.assertEqual(args.body_file, "reply.txt")
 
     def test_store_sync_defaults_to_a_precise_30_day_window(self):
         args = build_parser().parse_args(["sync-store"])

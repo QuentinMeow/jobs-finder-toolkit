@@ -5,11 +5,14 @@ import sys
 import unittest
 from hashlib import sha256
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from _vendor.mail import reconciliation as reconciliation_module
 from _vendor.mail.reconciliation import (
+    _contains,
     categorize_message,
     hydrate_stored_message,
     link_message,
@@ -65,6 +68,12 @@ def incoming(key: str, body: str, *, subject: str = "", thread: str = "t-1", sen
 
 
 class StoredMailCategorizationTests(unittest.TestCase):
+    def test_absent_lexicon_phrases_do_not_scan_the_full_body_with_regex(self):
+        body = "ordinary mailbox content " * 10_000
+        self.assertFalse(
+            _contains(body, "interview", "coding challenge", "offer letter")
+        )
+
     def test_store_envelope_requires_deliberate_hydration_and_public_record_stays_content_free(self):
         envelope = {
             "schema_version": "email-message.v1",
@@ -178,6 +187,21 @@ class StoredMailTimestampTests(unittest.TestCase):
 
 
 class StoredMailLinkingTests(unittest.TestCase):
+    def test_complete_review_normalizes_application_context_once(self):
+        messages = [
+            incoming(f"acct-01/message-{index}", "Ordinary status update.")
+            for index in range(4)
+        ]
+        with patch.object(
+            reconciliation_module,
+            "_normalize_applications",
+            wraps=reconciliation_module._normalize_applications,
+        ) as normalize_applications:
+            result = reconcile_messages(messages, APPS, DOMAINS)
+
+        self.assertEqual(len(result["records"]), 4)
+        normalize_applications.assert_called_once_with(APPS)
+
     def test_company_gated_structured_tokens_are_exact_but_bare_numbers_are_not(self):
         exact = normalize_stored_message(incoming(
             "acct-01/exact", "REQ-123: your technical interview is confirmed for 2026-08-04 10:30 AM PT."

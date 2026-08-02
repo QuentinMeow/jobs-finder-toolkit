@@ -108,6 +108,41 @@ class DraftOnlyGraphClientTests(unittest.TestCase):
             "Thanks\n\nOriginal",
         )
 
+    def test_existing_draft_update_replaces_body_and_verifies_both_sides(self):
+        transport = FakeTransport(
+            [
+                {"id": "draft-1", "isDraft": True},
+                {"id": "draft-1", "isDraft": True},
+                {
+                    "id": "draft-1",
+                    "subject": "Re: Interview",
+                    "isDraft": True,
+                    "body": {"contentType": "text", "content": "Replacement"},
+                },
+            ]
+        )
+        client = DraftOnlyGraphClient("token", transport=transport)
+
+        result = client.update_draft(
+            draft_message_id="draft-1", body_text="Replacement"
+        )
+
+        self.assertTrue(result["isDraft"])
+        self.assertEqual([call[0] for call in transport.calls], ["GET", "PATCH", "GET"])
+        self.assertEqual(
+            transport.calls[1][3],
+            {"body": {"contentType": "Text", "content": "Replacement"}},
+        )
+
+    def test_existing_draft_update_refuses_non_draft_before_write(self):
+        transport = FakeTransport([{"id": "sent-1", "isDraft": False}])
+        client = DraftOnlyGraphClient("token", transport=transport)
+
+        with self.assertRaises(DraftPolicyError):
+            client.update_draft(draft_message_id="sent-1", body_text="No")
+
+        self.assertEqual([call[0] for call in transport.calls], ["GET"])
+
     def test_draft_listing_rejects_non_draft_item(self):
         transport = FakeTransport([{"value": [{"id": "x", "isDraft": False}]}])
         client = DraftOnlyGraphClient("token", transport=transport)
