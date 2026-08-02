@@ -88,6 +88,19 @@ for; add no unprompted extra sweeps.
   N days" run. Do **not** confuse this with the 7-day **company re-search** window
   (`company_search_log.skip_within_days`), which skips companies you already fully searched
   recently — it has nothing to do with posting age.
+- **A company's FIRST search is not age-filtered.** When an age window IS in force, an employer
+  with no row in the company-search log has no prior coverage to protect, so the window widens for
+  that employer on that run only (`company_search_log.widen_first_search`,
+  `first_search_max_age_days: null` = no age filter). Two runs of the same command can therefore
+  return different sets — the first is wider on purpose. The run summary counts what only the
+  widening kept; `reference.md` § Recency filter has the caveats.
+- **Title word classes** (`titles.word_filter`, the candidate's own three lists): `hard_exclude`
+  always drops (before the detail fetch on big-tech boards; counted in the run summary),
+  `soft_exclude` and `include` NEVER drop — they keep the posting, mark it, and push it into the
+  `Review:` report if the ordinary title gate would have dropped it. **Read those review rows'
+  JDs and decide** — that routing exists because a word like "manager" is a report line in one
+  title and a product name in another. Precedence `hard_exclude > include > soft_exclude`.
+  A profile with no `word_filter` block filters nothing (no built-in list; the run says so).
 - Each run also skips **blacklisted + already-considered + recently-searched** companies (identity
   resolved through the registry); the counts print in the run summary. `--include-considered` /
   `--include-recent` override; the blacklist always applies. Detail: `reference.md` § Skip logic.
@@ -321,6 +334,7 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 | `config.company_levels_path()` | Dated reusable company level/YOE/base/total-comp reference; separate from the identity registry (see reference.md § Leveling cache) |
 | `scripts/search_jobs.py` | Main pipeline (two-stage fetch → filter → score → rank → output); `--stage`, `--ai-native-only`, `--no-jobspy`, `--max-per-company`, `--top-k`, `--max-age-days`, `--visa-policy`, `--refilter latest`, `--print-full` |
 | `scripts/company_roles.py` | Re-check ONE company's live board with a location-policy verdict (single-company re-search + JD dump) |
+| `scripts/title_filter.py` | The candidate's three title word classes from `titles.word_filter` (hard_exclude / soft_exclude / include): matching, precedence, and the inert-when-unconfigured rule. No words live in code |
 | `scripts/fetch_jd.py` | Fetch one posting page and save its readable text **verbatim** (`<URL> --out <path>`; no summarization) |
 | `scripts/handoff.py` | Scaffold application folder(s) from selected search rows (`--json <search.json> --select <"rank N"\|"rank N,M"\|"Company"\|"Company/Title">` or `--all`): **one folder per company by default** (multi-role `jobs:` list, one JD + cover letter per posting; `--split` forces one-per-posting for divergent roles) + verbatim JD (via `fetch_jd`) + schema-v6 `meta.yaml` (each posting `status: "drafted"`); validates before exit, refuses to overwrite; appends every created posting to `applications-log.jsonl` last, so the skip survives deleting the folder |
 | `scripts/validate_companies.py` | Check that company tokens still resolve (skips identity-only rows) |
@@ -336,7 +350,8 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 
 - **Profiles hold criteria, scripts stay generic.** Tune the profile in
   `config.search_profiles_dir()`; never bake a person's criteria into code, and never into the
-  public `profiles/` folder.
+  public `profiles/` folder. That includes the coarse title word lists: a script may hold the
+  MATCHING RULE, never the words.
 - **Visa detection is advisory.** `yes`/`no`/`unclear` come from text heuristics; always tell the
   user to confirm sponsorship directly with the employer.
 - **No fabricated postings.** Every result must carry a real `source` + `url`; `?` for missing

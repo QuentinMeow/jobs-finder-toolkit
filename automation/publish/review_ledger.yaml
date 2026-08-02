@@ -2102,7 +2102,14 @@
   date: 2026-08-01
   files: 3
   digest: sha256:224a50c39c89632e
-  finding: none. Three message-queue decision files gain the owner's answers (recency window, handoff records, title prefilter) plus link/wrapping repairs. Process content only - no real name, employer, school, salary or job-hunt specifics; the company names present are the public fetcher functions already in the tree (fetch_amazon/fetch_apple/fetch_meta).
+  finding: none
+- commit: 16d28786
+  base: 783d4fc3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 10
+  digest: sha256:04a222bb83600916
+  finding: Profile-owned title word classes plus the first-search recency window. Reviewed the whole range. The new scripts/title_filter.py and the pipeline wiring hold no candidate words; every list is read from the search profile. The words added to the public example persona and the template are generic occupation and seniority terms (intern, sales, recruit, manager, principal) chosen to illustrate the three classes, and the fixture titles are the pre-existing fictional "Example Corp" set. No identity, employer, school, salary or dated job-hunt content.
 - commit: b44710fd
   base: 783d4fc3
   reviewed_by: agent
@@ -2183,3 +2190,9 @@
   files: 25
   digest: sha256:1a84dff76b515419
   finding: 'Merge of main into the stack-discharge branch. The ledger conflict was resolved at ROW granularity (never the union driver, which is off), and every resulting row was checked well-formed before writing. The range re-covers the two ledger repairs and the folded owner decisions already reviewed on their own branches, plus this branch''s discharge form. Re-read here. No identity, employer, school, salary or dated job-hunt content.'
+- base: 16d28786
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 32
+  digest: sha256:b06c2df516defb64
+  finding: 'Merge of main into the search-filter branch. The ledger conflict was resolved at ROW granularity (the union driver is off) and every resulting row checked well-formed before writing. The range re-covers the two ledger repairs, the folded owner decisions and the stack discharge form already reviewed on their own branches, plus this branch''s profile-owned title word filter and first-search recency window. Example filter words are generic title tokens; no employer board or posting is named. No identity, employer, school, salary or dated job-hunt content.'

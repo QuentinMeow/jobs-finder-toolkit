@@ -75,6 +75,7 @@ from scoring import (  # noqa: E402
 )
 import skip_log  # noqa: E402  (vendored: folds the append-only applications skip-log)
 from sources import fetch_company  # noqa: E402
+import title_filter  # noqa: E402  (sibling: profile-owned title word classes)
 import snapshot  # noqa: E402  (sibling: pre-filter fetch cache + --refilter helpers)
 import capture_hooks  # noqa: E402  (sibling: raw-store capture shim; lazy/no-op if unconfigured)
 
@@ -532,6 +533,30 @@ def is_recently_searched(
     return False
 
 
+def is_first_search(
+    p,
+    token_dates: dict[str, date],
+    registry: Registry | None = None,
+) -> bool:
+    """True when this employer has NEVER completed a successful full-board search.
+
+    Same identity resolution as :func:`is_recently_searched` — a company is "seen"
+    under any of its registry match keys — but the question is different: not
+    "searched lately?" but "searched EVER?". The company-search log is the only
+    thing that knows, which is why the answer is read from there rather than
+    guessed from the applications log (a company can be searched and yield nothing).
+
+    ACCEPTED LIMITATION: the log is written on a successful search, and nothing
+    regenerates it, so an employer whose row was never written (or whose search
+    predates the log) reads as first-search and gets the wide window one more time.
+    Erring that way costs one over-wide run; erring the other way costs the roles.
+    """
+    keys = (registry.match_keys(p.company) if registry is not None
+            else {p.company.strip().lower()})
+    keys.discard("")
+    return not any(key in token_dates for key in keys)
+
+
 def _display_loc(location: str, preferred: list[str]) -> str:
     """Show the preferred-metro segment first so multi-city roles are clear."""
     segs = [s.strip() for s in re.split(r"[/;•]", location or "") if s.strip()]
@@ -606,6 +631,15 @@ def render_markdown(kept, profile, meta) -> str:
     preferred = [p.lower() for p in (profile.get("location", {}) or {}).get("preferred", [])]
     age_desc = (f"\u2264 {meta['max_age_days']} days"
                 if meta["max_age_days"] is not None else "any (not filtered)")
+    if meta.get("first_search_widening"):
+        # Say why the run may look different from the last one: on a company's
+        # FIRST search there is no prior coverage to protect, so the recency gate
+        # is widened for that employer only (owner decision 2026-08-01).
+        first = meta.get("first_search_max_age_days")
+        age_desc += (" (first search at an employer: "
+                     + (f"\u2264 {first} days" if first is not None
+                        else "any \u2014 never-searched employers are not age-filtered")
+                     + ")")
     cap = meta.get("max_per_company")
     cap_desc = (f"{cap}/company" if cap and cap > 0 else "off")
     lines = [f"# Job matches — {profile.get('name', meta['profile'])}",
@@ -620,8 +654,11 @@ def render_markdown(kept, profile, meta) -> str:
              f"(skipped {meta.get('n_blacklisted', 0)} blacklisted + "
              f"{meta.get('n_considered', 0)} already-considered + "
              f"{meta.get('n_recently_searched', 0)} recently-searched + "
-             f"{meta.get('n_low_quality', 0)} unfilled-template; "
-             f"{meta.get('n_review', 0)} preserved for filter review)",
+             f"{meta.get('n_low_quality', 0)} unfilled-template + "
+             f"{meta.get('n_title_hard_excluded', 0)} title hard-excluded; "
+             f"{meta.get('n_review', 0)} preserved for filter review, of which "
+             f"{meta.get('n_title_word_filter_review', 0)} were kept by "
+             f"titles.word_filter instead of dropped)",
              ""]
     if meta["errors"]:
         lines += ["> Source errors / not inspected: "
@@ -719,6 +756,15 @@ def build_filter_context(profile: dict, registry: Registry, args) -> dict:
     ai_cfg = profile.get("ai_company", {}) or {}
     ai_native_tags = ai_cfg.get("company_tags") or ["ai-lab", "ai-infra", "ai-native"]
     ai_native_keys = registry.tagged_keys(ai_native_tags) if ai_cfg else set()
+    # First-search recency widening (owner decision 2026-08-01, Option B). A
+    # company with no row in the company-search log has never been searched, so
+    # there is no "recurring" freshness to protect: the whole board is new
+    # information and the profile's narrow window would hide older-but-unseen
+    # postings that are still live on the employer's ATS. `null` (the default)
+    # means NO posting-age filter at all for that company's first run — "find all
+    # available roles, and match older roles by default" — which is also what
+    # `company_roles.py --match-only` has always done for a single company.
+    log_cfg = profile.get("company_search_log") or {}
     return {
         "considered_urls": considered_urls,
         "considered_pairs": considered_pairs,
@@ -726,6 +772,9 @@ def build_filter_context(profile: dict, registry: Registry, args) -> dict:
         "search_tokens": search_tokens,
         "ignore_search_log": args.include_recent,
         "ai_native_keys": ai_native_keys,
+        "widen_first_search": bool(log_cfg.get("widen_first_search", True)),
+        "first_search_max_age_days": log_cfg.get("first_search_max_age_days"),
+        "title_word_filter": title_filter.load_word_lists(profile),
     }
 
 
@@ -743,6 +792,14 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
     kept, review_postings = [], []
     n_blacklisted = n_considered = n_recently_searched = n_non_ai = n_low_quality = 0
     n_occupation_ambiguous_overflow = 0
+    n_title_hard_excluded = n_title_word_filter_review = n_first_search_widened = 0
+    word_filter = ctx.get("title_word_filter") or title_filter.INERT
+    # First-search recency widening. Inert unless a narrow window is actually in
+    # force: with `max_age` None nothing is filtered by age anyway.
+    widen_first_search = bool(ctx.get("widen_first_search", True))
+    first_search_max_age = ctx.get("first_search_max_age_days")
+    widening_active = (widen_first_search and max_age is not None
+                       and first_search_max_age != max_age)
     # Decision 3a bounded-rollout guard: the residual `title.occupation_ambiguous`
     # review family (Member of Technical Staff, generalist titles, ...) preserves
     # JD semantics instead of a silent hard drop, but a lexicon miss must never
@@ -765,9 +822,36 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
         if not posting_quality_ok(p):
             n_low_quality += 1
             continue
-        if not title_ok(p, profile):
+        # Gate 0b — the candidate's own title word classes (title_filter.py).
+        # `hard_exclude` is the ONLY class that drops, and unlike the pre-fetch
+        # prefilter this drop is COUNTED, so "always drop" is never "drop without
+        # saying so". `soft_exclude` / `include` never drop and never silently
+        # keep: they SUPPRESS the ordinary title gate's hard no_match (a title the
+        # candidate flagged for judgement must not be thrown away by the
+        # include/exclude gate one line later) and they mark the row either way —
+        # as a review reason when the gate would have dropped it, and as a
+        # `reasons` note further down when it stays on the shortlist.
+        title_verdict = word_filter.classify(p.title)
+        if title_verdict.action == title_filter.ACTION_DROP:
+            n_title_hard_excluded += 1
             continue
-        if not date_ok(p, max_age):
+        title_flagged = title_verdict.action == title_filter.ACTION_REVIEW
+        if not title_ok(p, profile):
+            if not title_flagged:
+                continue
+            # Rescued. `title_word_filter_override` says the ordinary title gate
+            # would have dropped this row and which class kept it alive, so the
+            # review report carries the whole story rather than a bare row.
+            p.review_reasons = list(dict.fromkeys(
+                [*p.review_reasons, "title_word_filter_override",
+                 *title_verdict.review_reasons]))
+            n_title_word_filter_review += 1
+        effective_max_age = max_age
+        if widening_active and is_first_search(p, ctx["search_tokens"], registry):
+            effective_max_age = first_search_max_age
+            if not date_ok(p, max_age) and date_ok(p, effective_max_age):
+                n_first_search_widened += 1
+        if not date_ok(p, effective_max_age):
             continue
         if not location_ok(p, profile):
             continue
@@ -793,6 +877,13 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
             continue
         enrich_posting_metadata(p, company_levels)
         score_posting(p, profile, sponsor_index, is_ai_native_company=is_ai_native)
+        # A soft/include hit must not be a SILENT keep either: whichever list the
+        # posting lands on, its row names the configured word that demands a look.
+        # (`score_posting` assigns `reasons`, so this has to come after it.)
+        if title_flagged:
+            # FIRST, not appended: the discovery table truncates this column at 100
+            # characters, and a mark the reader never sees is a silent keep.
+            p.reasons = [*title_verdict.reason_notes, *p.reasons]
         if p.review_reasons:
             review_postings.append(p)
         else:
@@ -822,6 +913,11 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
         "n_non_ai": n_non_ai,
         "n_low_quality": n_low_quality,
         "n_occupation_ambiguous_overflow": n_occupation_ambiguous_overflow,
+        "n_title_hard_excluded": n_title_hard_excluded,
+        "n_title_word_filter_review": n_title_word_filter_review,
+        "n_first_search_widened": n_first_search_widened,
+        "first_search_max_age_days": first_search_max_age if widening_active else None,
+        "widening_active": widening_active,
         "n_review": len(review_postings),
         "review_postings": review_postings,
     }
@@ -849,6 +945,14 @@ def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
         "n_review": counts.get("n_review", 0),
         "n_occupation_ambiguous_overflow": counts.get(
             "n_occupation_ambiguous_overflow", 0),
+        # Title word classes + first-search recency widening. Both are reported
+        # because both change what the run could POSSIBLY have returned, and the
+        # whole point of each is that its effect is never silent.
+        "n_title_hard_excluded": counts.get("n_title_hard_excluded", 0),
+        "n_title_word_filter_review": counts.get("n_title_word_filter_review", 0),
+        "n_first_search_widened": counts.get("n_first_search_widened", 0),
+        "first_search_widening": counts.get("widening_active", False),
+        "first_search_max_age_days": counts.get("first_search_max_age_days"),
         "max_per_company": max_per_company,
         "errors": errors,
     }
@@ -894,6 +998,17 @@ def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
     ]
     if review_path:
         lines.append(f"Review:      {review_path}")
+    if meta.get("n_first_search_widened"):
+        first = meta.get("first_search_max_age_days")
+        window = f"≤ {first}d" if first is not None else "no age filter"
+        lines.append(
+            f"First search: {meta['n_first_search_widened']} posting(s) kept by the "
+            f"widened window ({window}) at employers never searched before")
+    if meta.get("n_title_hard_excluded") or meta.get("n_title_word_filter_review"):
+        lines.append(
+            f"Title words: {meta.get('n_title_hard_excluded', 0)} hard-excluded, "
+            f"{meta.get('n_title_word_filter_review', 0)} sent to review instead of "
+            "dropped (titles.word_filter)")
     # Store line (fetch path only; absent when the store is disabled → identical
     # output to pre-store-integration).
     if store_line:
@@ -1168,6 +1283,17 @@ def main() -> int:
     # These filter/score inputs are read fresh from the CURRENT flags + skip-logs on
     # both paths, so a refilter reflects the current filter intent.
     ctx = build_filter_context(profile, registry, args)
+    word_filter = ctx["title_word_filter"]
+    for warning in word_filter.warnings:
+        print(f"Profile: {warning}", file=sys.stderr)
+    if not word_filter.configured:
+        # Not a failure — an unconfigured profile is the documented inert case —
+        # but it is the difference between "your list dropped nothing" and "there
+        # is no list", and a big-tech fetch is candidate-capped, so say it.
+        print("Profile: no titles.word_filter block "
+              "(hard_exclude / soft_exclude / include) — the coarse title filter "
+              "is inert this run and titles.include/exclude decides alone. See "
+              "skills/job-search/profiles/_TEMPLATE.yaml.", file=sys.stderr)
 
     # Store integration runs on the FETCH path only (refilter is snapshot-only and
     # never builds); defaults keep the refilter output byte-identical to today.
@@ -1245,7 +1371,8 @@ def main() -> int:
         )
         if not args.no_companies:                     # stage 1: company ATS boards
             companies = registry.poll_companies(tags, batches)
-            tasks += [(f"board:{c['name']}", (lambda c=c: fetch_company(c)))
+            tasks += [(f"board:{c['name']}",
+                       (lambda c=c: fetch_company(c, word_filter=word_filter)))
                       for c in companies]
 
         query_terms = resolve_query_terms(profile)

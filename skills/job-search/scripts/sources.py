@@ -15,10 +15,12 @@ import urllib.request
 from datetime import datetime, timezone
 
 import capture_hooks
+import title_filter
 from common import (USER_AGENT, JobPosting, ashby_salary_range,
-                    bounded_phrase_hit, http_get, http_get_full, http_get_json,
+                    http_get, http_get_full, http_get_json,
                     http_post_json, http_post_json_full, parse_dt,
                     provided_salary_range, record_source_warning, strip_html)
+from title_filter import TitleWordFilter
 
 # Default search terms used by big-tech fetchers (Workday / Amazon) so we query a
 # few relevant slices of a huge board instead of pulling every posting. Companies
@@ -32,74 +34,25 @@ DEFAULT_BIGTECH_TERMS = [
     "site reliability",
 ]
 
-# Coarse title prefilter: only skip clearly-excluded titles before the (expensive)
-# per-posting detail fetch. A dropped title never gets a detail fetch, so it never
-# enters the pipeline and appears in NO count — which makes this list the one place
-# in the search path where a mistake is invisible.
+# Coarse title prefilter: skip a title the CANDIDATE'S PROFILE declared always
+# unwanted, before the (expensive) per-posting detail fetch. A dropped title never
+# gets a detail fetch, so it never enters the pipeline and appears in NO count —
+# which is why the words are the candidate's to choose and only the unconditional
+# class (`titles.word_filter.hard_exclude`) may drop one here.
 #
-# Matching is BOUNDED, never a bare substring (``_title_prefilter``). The old
-# ``skip in f" {title.lower()} "`` read "intern" inside *Internal Developer
-# Platform* and *Internationalization*, "director" inside *Active Directory*,
-# "sales" inside *Salesforce Platform*, "co-op" inside *Co-operative Caching* —
-# every one of them a title `scoring.assess_title` matches, dropped before it
-# could be scored.
+# The list used to be a hardcoded tuple in this file. Owner decision 2026-08-01:
+# it is profile-based now, with three classes — hard_exclude (always drop),
+# soft_exclude (keep + mark for AI judgement) and include (keep + mark: "check
+# this one out"). Semantics, matching, precedence and the unconfigured-profile
+# behaviour all live in `title_filter.py`; nothing about the policy lives here.
 #
-# TWO entries keep a LEADING/TRAILING SPACE, and it is load-bearing — not stray
-# formatting. ``common.bounded_phrase_re`` asserts its ``(?<![a-z0-9])`` /
-# ``(?![a-z0-9])`` boundary only on an edge that is itself alphanumeric, so a
-# space on the phrase's edge means "require literal whitespace here" — a
-# STRICTER boundary than ``\b``, because it also refuses a match glued to
-# punctuation. ``_title_prefilter`` pads the title so start/end of string count
-# as that whitespace.
-#
-# "manager" and "vp" need it because each is a seniority word in one position and
-# a qualifier in another, and punctuation is what tells them apart:
-#
-#   drop   Engineering Manager · Manager, Software Engineering · VP Engineering
-#   keep   Software Engineer (Manager Tools)   ← a product, inside a parenthetical
-#   keep   Lead Software Engineer/Manager      ← a hybrid IC row
-#   keep   Software Engineer (VP)              ← the bank IC level, not an officer
-#   keep   VP, Engineering                     ← "vp" is not a whitespace-delimited
-#                                                token, so the real title gate rules
-#
-# The right edge still carries the word boundary + inflection, so "manager" does
-# NOT match *managerial* the way the old bare substring did — the padding restores
-# only the left-hand rule the substring version happened to encode. Every other
-# entry is unaffected by the padding (their own edges are alphanumeric).
-#
-# The rule is positional, not semantic, and one shape stays on the drop side:
-# *Software Engineer, Manager Tools* (comma-space) drops while the parenthesised
-# form is kept. That was equally true before the word-anchoring; separating them
-# needs a head-noun rule, not a boundary tweak, so it is left alone rather than
-# guessed at.
-#
-# Keeping a title here costs one detail fetch; dropping one costs the posting.
-# ``scoring.assess_title`` still gates everything that survives, so on an
-# ambiguous title the recall-safe answer is KEEP.
-#
-# KNOWN, DELIBERATE EXCEPTION to "never drops a title the title gate would keep":
-# the seniority/discipline words below (principal, distinguished, fellow, data
-# scientist, research scientist) are hardcoded here rather than read from the
-# profile's `titles.exclude`, so a profile that TARGETS Principal+ or
-# applied-scientist roles still gets none of them from Workday/Amazon/Apple/Meta.
-# Removing them is an owner decision, not an agent one, because it trades one
-# silent loss for another: these boards have hard candidate budgets (60 Workday,
-# 80 the others), so widening the fetch can displace wanted roles out of the fetch
-# entirely — and a role that is never fetched leaves no filtered row and no
-# snapshot trace. Filed as
-# `message-queue/needs-human/decisions/title-prefilter-hardcoded-seniority-words.md`;
-# the default path is to KEEP the list.
+# The two classes that are NOT hard_exclude deliberately survive this gate. That
+# is the recall rule the old comment block argued for at length: keeping a title
+# costs one detail fetch, dropping one costs the posting, and `scoring.assess_title`
+# still gates everything that survives — so on an ambiguous title the answer is
+# KEEP and let the JD decide.
 #
 # The real title/location/visa gating still runs in scoring.py after fetch.
-_BIGTECH_TITLE_SKIP = (
-    "intern", "internship", "co-op", "new grad", "graduate program", "apprentice",
-    " manager",  # padded ON PURPOSE — see above; do not "tidy" the spaces away
-    "director", "principal", "distinguished", "fellow",
-    "vice president",
-    " vp ",      # padded ON PURPOSE — see above
-    "sales", "marketing", "recruit", "designer",
-    "data scientist", "research scientist", "account executive", "customer success",
-)
 
 
 def _remote_from(text: str, flag=None, workplace: str | None = None) -> str:
@@ -370,23 +323,21 @@ def fetch_smartrecruiters(company: str, token: str) -> list[JobPosting]:
     return out
 
 
-def _title_prefilter(title: str) -> bool:
-    """True if the title is worth a detail fetch (drops only obvious non-matches).
+def _title_prefilter(title: str, word_filter: TitleWordFilter | None = None) -> bool:
+    """True if the title is worth a detail fetch.
 
-    The title is whitespace-normalised and padded before matching so that the two
-    space-padded entries in ``_BIGTECH_TITLE_SKIP`` (see the comment there) read
-    "delimited by whitespace" at the ends of the string too, and so a board that
-    emits a tab or a non-breaking space is matched like one that emits a space.
-    Padding is a no-op for every other entry: their edges are alphanumeric, so
-    they carry ``bounded_phrase_re``'s own boundary assertion instead.
+    Only the profile's ``hard_exclude`` class answers False. ``word_filter=None``
+    is the INERT filter — an unconfigured profile, or a caller (a test, an ad-hoc
+    board dump) that has no profile at all — and keeps every title, leaving the
+    decision entirely to ``scoring.assess_title``.
     """
-    padded = " %s " % re.sub(r"\s+", " ", title.lower()).strip()
-    return not bounded_phrase_hit(padded, _BIGTECH_TITLE_SKIP)
+    return (word_filter or title_filter.INERT).prefilter(title)
 
 
 def fetch_workday(company: str, token: str, host: str, site: str,
                   search_terms: list[str] | None = None,
-                  max_candidates: int = 60) -> list[JobPosting]:
+                  max_candidates: int = 60,
+                  word_filter: TitleWordFilter | None = None) -> list[JobPosting]:
     """Fetch postings from a Workday CXS board.
 
     host   = e.g. "nvidia.wd5.myworkdayjobs.com"
@@ -442,7 +393,7 @@ def fetch_workday(company: str, token: str, host: str, site: str,
                 for jp in batch:
                     path = jp.get("externalPath")
                     title = (jp.get("title") or "").strip()
-                    if path and title and _title_prefilter(title):
+                    if path and title and _title_prefilter(title, word_filter):
                         seen_paths.setdefault(path, None)
                 if len(batch) < 20 or len(seen_paths) >= max_candidates:
                     break
@@ -519,18 +470,20 @@ def _parse_amazon_date(value: str | None) -> datetime | None:
 
 
 def fetch_amazon(company: str, search_terms: list[str] | None = None,
-                 max_candidates: int = 80) -> list[JobPosting]:
+                 max_candidates: int = 80,
+                 word_filter: TitleWordFilter | None = None) -> list[JobPosting]:
     """Fetch US postings from the amazon.jobs public search API (per term)."""
     terms = search_terms if search_terms is not None else DEFAULT_BIGTECH_TERMS
     seen: dict[str, JobPosting] = {}
     # A keyword-sampled, result-capped search — never attested complete.
     with capture_hooks.group("search", company, expected=None) as g:
-        _fetch_amazon_terms(company, terms, seen, max_candidates, g)
+        _fetch_amazon_terms(company, terms, seen, max_candidates, g, word_filter)
         g.attest(complete=False)
     return list(seen.values())
 
 
-def _fetch_amazon_terms(company, terms, seen, max_candidates, group) -> None:
+def _fetch_amazon_terms(company, terms, seen, max_candidates, group,
+                        word_filter=None) -> None:
     for term in terms:
         search_url = ("https://www.amazon.jobs/en/search.json?"
                       + f"base_query={term.replace(' ', '+')}&country=USA"
@@ -552,7 +505,8 @@ def _fetch_amazon_terms(company, terms, seen, max_candidates, group) -> None:
                 continue
             title = (j.get("title") or "").strip()
             path = j.get("job_path") or ""
-            if not title or not path or path in seen or not _title_prefilter(title):
+            if (not title or not path or path in seen
+                    or not _title_prefilter(title, word_filter)):
                 continue
             loc = j.get("normalized_location") or ", ".join(
                 x for x in (j.get("city"), j.get("state"),
@@ -586,7 +540,8 @@ def _opener_resp(resp, body: bytes):
 
 
 def fetch_apple(company: str = "Apple", search_terms: list[str] | None = None,
-                max_candidates: int = 80) -> list[JobPosting]:
+                max_candidates: int = 80,
+                word_filter: TitleWordFilter | None = None) -> list[JobPosting]:
     """Fetch US postings from jobs.apple.com (cookie jar + per-session CSRF token)."""
     terms = search_terms if search_terms is not None else DEFAULT_BIGTECH_TERMS
     jar = http.cookiejar.CookieJar()
@@ -613,11 +568,13 @@ def fetch_apple(company: str = "Apple", search_terms: list[str] | None = None,
             return []
         if not token:
             return []
-        _fetch_apple_terms(company, terms, seen, max_candidates, opener, token, g)
+        _fetch_apple_terms(company, terms, seen, max_candidates, opener, token, g,
+                           word_filter)
     return list(seen.values())
 
 
-def _fetch_apple_terms(company, terms, seen, max_candidates, opener, token, group):
+def _fetch_apple_terms(company, terms, seen, max_candidates, opener, token, group,
+                       word_filter=None):
     for term in terms:
         for page in (1, 2):
             payload = json.dumps({
@@ -650,7 +607,8 @@ def _fetch_apple_terms(company, terms, seen, max_candidates, opener, token, grou
             for j in results:
                 pid = str(j.get("positionId") or "")
                 title = (j.get("postingTitle") or "").strip()
-                if not pid or not title or pid in seen or not _title_prefilter(title):
+                if (not pid or not title or pid in seen
+                        or not _title_prefilter(title, word_filter)):
                     continue
                 locs = j.get("locations") or []
                 loc = " / ".join(x.get("name", "") for x in locs if x.get("name"))
@@ -682,7 +640,8 @@ _META_HSI_RE = re.compile(r'"hsi":"(\d+)"')
 
 def fetch_meta(company: str = "Meta", search_terms: list[str] | None = None,
                max_candidates: int = 80,
-               doc_id: str = "27807005005556827") -> list[JobPosting]:
+               doc_id: str = "27807005005556827",
+               word_filter: TitleWordFilter | None = None) -> list[JobPosting]:
     """Fetch postings from metacareers.com (Relay GraphQL; needs LSD/hsi from HTML).
 
     The search operation returns title + locations + id only (no description); the
@@ -707,11 +666,13 @@ def fetch_meta(company: str = "Meta", search_terms: list[str] | None = None,
         lsd = lm.group(1)
         hm = _META_HSI_RE.search(page_html)
         hsi = hm.group(1) if hm else "0"
-        _fetch_meta_terms(company, terms, seen, max_candidates, doc_id, lsd, hsi, g)
+        _fetch_meta_terms(company, terms, seen, max_candidates, doc_id, lsd, hsi, g,
+                          word_filter)
     return list(seen.values())
 
 
-def _fetch_meta_terms(company, terms, seen, max_candidates, doc_id, lsd, hsi, group):
+def _fetch_meta_terms(company, terms, seen, max_candidates, doc_id, lsd, hsi, group,
+                      word_filter=None):
     url = "https://www.metacareers.com/api/graphql/"
     for term in terms:
         form = {
@@ -742,7 +703,8 @@ def _fetch_meta_terms(company, terms, seen, max_candidates, doc_id, lsd, hsi, gr
         for j in jobs:
             jid = str(j.get("id") or "")
             title = (j.get("title") or "").strip()
-            if not jid or not title or jid in seen or not _title_prefilter(title):
+            if (not jid or not title or jid in seen
+                    or not _title_prefilter(title, word_filter)):
                 continue
             locs = j.get("locations") or []
             loc = " / ".join(x for x in locs if isinstance(x, str))
@@ -764,18 +726,31 @@ FETCHERS = {
 }
 
 
-def fetch_company(entry: dict) -> list[JobPosting]:
+def fetch_company(entry: dict,
+                  word_filter: TitleWordFilter | None = None) -> list[JobPosting]:
+    """Fetch one registry entry's board.
+
+    ``word_filter`` is the candidate profile's ``titles.word_filter`` (see
+    ``title_filter.py``). Only the big-tech fetchers consult it, because only they
+    pay a per-posting detail fetch that a coarse title decision can save; every
+    other ATS returns its whole board in one request, so their titles reach the
+    pipeline and are classified there alongside the aggregator rows. Omitted (or
+    ``None``) means the inert filter: nothing is dropped before the title gate.
+    """
     ats = entry.get("ats", "").lower()
     name = entry.get("name", entry.get("token", "?"))
     if ats == "workday":
         return fetch_workday(name, entry["token"], entry["host"], entry["site"],
-                             entry.get("search_terms"))
+                             entry.get("search_terms"), word_filter=word_filter)
     if ats == "amazon":
-        return fetch_amazon(name, entry.get("search_terms"))
+        return fetch_amazon(name, entry.get("search_terms"),
+                            word_filter=word_filter)
     if ats == "apple":
-        return fetch_apple(name, entry.get("search_terms"))
+        return fetch_apple(name, entry.get("search_terms"),
+                           word_filter=word_filter)
     if ats == "meta":
-        return fetch_meta(name, entry.get("search_terms"))
+        return fetch_meta(name, entry.get("search_terms"),
+                          word_filter=word_filter)
     fetcher = FETCHERS.get(ats)
     if not fetcher:
         raise ValueError(f"Unknown ATS '{ats}' for {entry.get('name')}")
