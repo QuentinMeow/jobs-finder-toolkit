@@ -2103,3 +2103,10 @@
   files: 3
   digest: sha256:224a50c39c89632e
   finding: none
+- commit: 16d28786
+  base: 783d4fc3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 10
+  digest: sha256:04a222bb83600916
+  finding: Profile-owned title word classes plus the first-search recency window. Reviewed the whole range. The new scripts/title_filter.py and the pipeline wiring hold no candidate words; every list is read from the search profile. The words added to the public example persona and the template are generic occupation and seniority terms (intern, sales, recruit, manager, principal) chosen to illustrate the three classes, and the fixture titles are the pre-existing fictional "Example Corp" set. No identity, employer, school, salary or dated job-hunt content.
