@@ -33,8 +33,24 @@ slash+capitals heuristic has no education-phrase guard.
 
 ## Suggested fix
 
-Reuse the provenance-header skip that `fetch_jd.build_digest` now has
-(commit b68c909 on `feat/jd-digest`) — skip the header block before
-extraction — and drop candidates matching a degree pattern
-(`\b(BS|MS|BA|MA|PhD)(/(BS|MS|BA|MA|PhD))+\b` or "in Computer Science"
-context). Add both as regression tests next to the existing 9.
+**Outstanding half only — the degree-pattern half already shipped.** Reuse the
+provenance-header skip that `fetch_jd.build_digest` now has (commit b68c909 on
+`feat/jd-digest`) — skip the header block before extraction — with a regression test next to
+the existing ones. That is what still queues `JavaScript-rendered` and `descriptionPlain`,
+and it is the whole of what `Status: open` now refers to.
+
+~~drop candidates matching a degree pattern
+(`\b(BS|MS|BA|MA|PhD)(/(BS|MS|BA|MA|PhD))+\b` or "in Computer Science" context)~~ —
+**done 2026-07-22 in `20d085e`** ("Fix resume skill categorization noise").
+`skills/resume-writer/scripts/skills_diff.py` ships the guard:
+
+```python
+_DEGREE_CHAIN_RE = re.compile(
+    r"^(?:B(?:A|S)|M(?:A|S)|PhD)(?:/(?:B(?:A|S)|M(?:A|S)|PhD))*$",
+    re.I,
+)
+```
+
+read in the candidate filter as `if _DEGREE_CHAIN_RE.fullmatch(token.replace(".", "")):
+return False`, so `BS/MS/PhD` no longer reaches the queue. Re-implementing it is the failure
+mode this strike-through exists to prevent.

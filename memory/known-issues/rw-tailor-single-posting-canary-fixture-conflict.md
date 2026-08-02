@@ -1,6 +1,7 @@
 # Canary fixture conflict: `rw-tailor-single-posting` is unsatisfiable against the shipped complete example folder
 
-- **Status**: open
+- **Status**: fixed 2026-07-20 by `1a1fbac` ("evals: give rw-tailor-single-posting an
+  isolated fresh-tailoring scaffold"); confirmed still fixed 2026-08-02 — see Resolution below
 - **Severity**: medium (wasted cost or manual workaround)
 - **Area**: benchmarks
 - **Source**: GH issue #16; worked around under the "issue #16 protocol" in
@@ -64,3 +65,25 @@ just `meta.yaml` + `source/JD-*.md` (mirroring the `handoff.py` scaffold state),
 point the canary at a second, JD-only fixture folder instead of the shipped
 complete example. Either way, keep `rw-duplicate-preflight` as the sole owner of
 the already-complete-folder stop behavior so the two canaries stop overlapping.
+
+## Resolution
+
+Fixed by `1a1fbac`, which implemented the first branch of the Suggested fix above. The
+canary's `setup:` field in `evals/canaries/resume-writer.yaml` is no longer "Default setup":
+it now stages an isolated tree and seeds only the handoff scaffold —
+
+> ISOLATED fresh-tailoring scaffold (NOT the default in-place setup) so this canary
+> exercises the full fresh-tailoring path instead of stopping at the duplicate guard that
+> `rw-duplicate-preflight` owns (GH #16 …). Seed ONLY the handoff-scaffold inputs into
+> `<isolated>/6_drafted/example-corp-senior-software-engineer/`: `meta.yaml` and
+> `source/JD-senior-software-engineer-platform.md` … Do NOT copy any generated output …
+> the run must produce them.
+
+It cites GH #16 — this entry's own issue — by number, and it closes with "This keeps
+`rw-duplicate-preflight` the sole owner of the already-complete-folder stop", which is the
+overlap this entry asked to be removed. The "manual, undocumented workaround" described
+under Impact is therefore no longer needed by any gate run: the workaround IS the setup
+field now, written down.
+
+The shipped example folder is deliberately unchanged (it is still a complete application,
+which is what `rw-duplicate-preflight` needs).

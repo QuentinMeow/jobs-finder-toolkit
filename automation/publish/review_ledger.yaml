@@ -2220,3 +2220,9 @@
   files: 5
   digest: sha256:dd24bd00a018dc15
   finding: 'Comment-only edit to the two tracked git hooks, plus the closing records for the task. Read the whole 231-line diff; zero added or removed lines are executable (`git diff -U0 automation/hooks/ | grep -c "^[-+][^-+# ]"` returns 0) and both files pass `sh -n`. The pre-commit header listed six blocking gates while the body runs nine, so the three missing ones are now listed in the order they run, with the two `[ -d private ]` branches noted. Both escape hatches now name their audience - repo owner at a terminal, never an agent - and the pre-push note resolves a live disagreement in which the github-workflow canary scores suggesting JOBHUNT_ALLOW_PUSH as a failure while the hook offered it twice unqualified. The task records quote only repo files and canary text. No identity, employer, school, salary, company name or dated job-hunt content.'
+- base: c012e626
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 13
+  digest: sha256:6ade122ba6e5a8fd
+  finding: 'Read the full 603-line diff. Three known-issue entries flipped to fixed with their fixing commit and a Resolution section quoting the current code that disproves each symptom; each was re-verified first, and entry 1 by re-running its own reproduction. A fourth entry keeps Status open and only strikes the half that shipped. Two immutable ADRs get a dated header forward-link and keep their body text unchanged. The roadmap census paragraph now names two commands instead of an unverifiable hand count, drops the two defects that are now fixed, and states the re-derived split honestly even though it is weaker than the prose it replaces. The commands print counts and the Area vocabulary only, never a task id or title, so the private half stays unnamed. No identity, employer, school, salary, company name or dated job-hunt content.'

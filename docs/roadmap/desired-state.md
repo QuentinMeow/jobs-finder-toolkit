@@ -55,26 +55,56 @@
 
 ## The gap this list does not describe: the backlog is inverted relative to damage
 
-Recorded 2026-07-31, deliberately as one paragraph here rather than as seven task
-folders. Of the 24 open backlog items, 19 concern the harness that tracks the work
-and 5 concern the job hunt. Meanwhile **`memory/known-issues/` holds 7 open entries
-and only one is referenced by any task** — and four of those are defects in the
-*product*, not the harness:
+Recorded 2026-07-31, re-derived 2026-08-02, deliberately as one paragraph here rather
+than as seven task folders.
+
+**The census is a command, not a number.** The original hand count (24 open items, 19
+harness / 5 job hunt) could not be re-derived from any tree, and the public count alone
+moved 15 → 18 → 38 → 62 → 60 in the four days around it — the last two figures inside one
+session, because closing a task changes the number. So run it instead of reading it:
+
+```bash
+ls tasks/0_backlog | wc -l                                              # open items
+grep -rh '^- \*\*Area\*\*:' tasks/0_backlog/*/task.md | sort | uniq -c | sort -rn
+```
+
+The second line splits the backlog on the `- **Area**:` field that `templates/task/task.md`
+already requires of every task — a mechanical stand-in for the "harness vs job hunt"
+judgement the original paragraph made by hand. With the overlay mounted, run both against
+`private/tasks/0_backlog/` too and add the totals. **Print counts only**: a private task's
+id, slug or title must never reach this file or a public commit message.
+
+The claim this section rests on is the SHAPE, not the figure, and the shape has held at
+every measurement: the backlog is dominated by the harness that tracks the work, while the
+defects with the shortest path to a wrong artifact reaching the user sit in
+`memory/known-issues/` and on no list at all. (2026-08-02, public tree only: 60 open items;
+`harness` 16 + `repo` 12 + `benchmarks` 4 = 32 against `job-search` 17 + `resume-writer` 4 +
+`email` 4 + `tracker` 3 = 28 — the split is milder than the hand count claimed, and the
+`Area` field draws the line differently from the original prose, which is precisely why the
+command is now the record.)
+
+Meanwhile **`memory/known-issues/` holds 4 open entries** (down from 7 on 2026-07-31; three
+were closed on 2026-08-02 after being verified fixed in code, and each names its fixing
+commit). Two of the four remaining are defects in the *product*, not the harness:
 
 - `check-py-never-skill-hyphen-substring-false-positive` — **blocks a render with a
   spurious FAIL** on a hyphenated compound;
 - `visa-sponsorship-negation-phrase-gap` — the sponsorship classifier misses real
-  denial wordings, so a role that will not sponsor survives the filter;
-- `location-title-only-foreign-leak` — a foreign role classifies as US-remote when
-  the city appears only in the title;
-- `rw-tailor-single-posting-canary-fixture-conflict` — a canary that cannot be
-  satisfied against the shipped example folder.
+  denial wordings, so a role that will not sponsor survives the filter.
 
-Those four are the items with the shortest path to a wrong artifact reaching the
-user, and none is on this list or in `tasks/`. **They are not converted to tasks
+Two more that this list carried are now closed and must not be re-opened from here:
+`location-title-only-foreign-leak` was fixed by `e967b91` (the search leg passes the title
+to the classifier, which reads it in the rejecting direction), and
+`rw-tailor-single-posting-canary-fixture-conflict` by `1a1fbac` (the canary got its own
+isolated fresh-tailoring scaffold). Each entry carries its Resolution.
+
+Those two are the items with the shortest path to a wrong artifact reaching the
+user, and neither is on this list or in `tasks/`. **They are not converted to tasks
 here on purpose**: `memory/known-issues/` is the correct container for a known
 defect, and what is actually missing is a *drain* — nothing in the repo ever
 promotes, expires, or re-reviews an entry, which is why one survived 49 merge cycles
-against its own "delete after one PR cycle" instruction. That drain is question D7(c)
+against its own "delete after one PR cycle" instruction. (The three closed on 2026-08-02
+were drained by a session doing it by hand, which is evidence for the gap, not against it:
+all three had been fixed in code for a week or more and nothing noticed.) That drain is question D7(c)
 in `message-queue/needs-human/decisions/process-weight-what-to-cut.md`. Until it is
 answered, treat this paragraph as the pointer the backlog does not give you.
