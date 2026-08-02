@@ -183,6 +183,13 @@ _DENY_TREES = [
     (re.compile(r"^\.agents/inputs/"), ".agents/inputs/"),
     (re.compile(r"^data/"), "data/"),
     (re.compile(r"^job-search-profiles/"), "job-search-profiles/"),
+    # Local metrics output (automation/metrics/hook_collect.py writes
+    # REPO_ROOT/logs/metrics.jsonl, which summarizes session transcripts). It is
+    # opt-in and local-only, so nothing tracked ever lives here — but it is
+    # session telemetry about a real person's work and must never be published.
+    # Added when `.gitignore` anchored the rule to `/logs/`; the `^` keeps the
+    # tracked `examples/market/logs/**` fixture out of scope.
+    (re.compile(r"^logs/"), "logs/"),
     # names the planned private-tree renames introduce (denied before they exist)
     (re.compile(r"^store/"), "store/"),
     (re.compile(r"^me/"), "me/"),
@@ -345,8 +352,16 @@ FAIL_CLOSED_EXTENSIONS = frozenset({
 # dataset (the "Jordan Rivers" placeholder resume/cover binaries) ships publicly
 # by design; the private product trees that hold real binaries are path-denied
 # above, so exempting the example dataset here cannot mask a real leak.
+#
+# The one entry below is REDUNDANT today: ``_binary_allowed`` already exempts
+# everything under ``examples/``, so the set only matters for a binary that ships
+# from somewhere else. It is kept — repointed, not dropped, when the reference
+# DOCX moved to ``me/resume/`` — because it is the worked example of the escape
+# hatch's shape; an empty frozenset reads like an unused mechanism and invites
+# deleting the hatch itself. Being unreachable is also why it went stale unnoticed,
+# so anything added here needs a test, not just a line.
 BINARY_ALLOWLIST = frozenset({
-    "examples/templates/reference.example.docx",
+    "examples/me/resume/reference.example.docx",
 })
 
 

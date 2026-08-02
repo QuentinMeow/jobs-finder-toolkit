@@ -683,8 +683,8 @@ the board name (the resolver already derives match keys from `name` + `token`).
 Keep reusable leveling research separate from `companies.yaml`: that registry owns stable
 identity/polling data, while level mappings and compensation are approximate and dated.
 The active cache is `config.company_levels_path()` (by default
-`company-levels.yaml` beside the configured profile; the public example is
-`examples/profile/company-levels.example.yaml`).
+`company-levels.yaml` inside `config.candidate_dir()`; the public example is
+`examples/market/logs/company-levels.example.yaml`).
 
 This reference cache is a **separate, richer** database from the flat application
 `meta.yaml`: it keeps `schema_version: 2` (the company-levels cache file format — a different

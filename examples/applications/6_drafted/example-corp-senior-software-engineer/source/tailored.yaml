@@ -1,7 +1,7 @@
 # Tailored resume for the fictional example persona "Jordan Rivers", targeting
 # the Example Corp "Senior Software Engineer, Platform" posting (source/JD-*.md).
 #
-# Started as a copy of examples/profile/baseline.example.yaml; locked identity
+# Started as a copy of examples/me/baseline.example.yaml; locked identity
 # fields, project titles, and skills stay anchored to the baseline + profile so
 # check.py validates. All content is fully invented.
 #

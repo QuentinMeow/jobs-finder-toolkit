@@ -4,28 +4,39 @@ candidate:
   name_slug: "Jordan_Rivers"
   title_slug: "Software_Engineer"
 paths:
-  profile_md: "examples/profile/profile.example.md"
-  baseline_yaml: "examples/profile/baseline.example.yaml"
-  reference_docx: "examples/templates/reference.example.docx"
-  company_levels_yaml: "examples/profile/company-levels.example.yaml"
+  # Lifetime taxonomy: me/ is what the candidate authored and keeps across every
+  # application; market/ is what the pipeline scans as a whole; applications/ is
+  # disposable. The example tree mirrors the shape a private overlay uses.
+  profile_md: "examples/me/profile.example.md"
+  baseline_yaml: "examples/me/baseline.example.yaml"
+  reference_docx: "examples/me/resume/reference.example.docx"
+  company_levels_yaml: "examples/market/logs/company-levels.example.yaml"
   applications_root: "examples/applications"
   discoveries_dir: "examples/applications/1_discoveries"
   # The single calendar/todo file the application tracker maintains alongside
   # per-job progress (interview schedules, booking todos, reschedule history).
-  # Defaults to <applications_root>/0_profile/calendar.md when omitted.
-  calendar_md: "examples/applications/0_profile/calendar.md"
-  # The tailoring card and the skip-logs. Each defaults to
-  # <applications_root>/0_profile/<filename>, which is where the example keeps
-  # them, so all of them are omitted here. Set one only when your layout puts it
-  # somewhere else — a lifetime-organised private tree, for instance, keeps the
-  # card with the profile and the logs with the market research:
+  # Defaults to <candidate_dir>/calendar.md when omitted; the example keeps it
+  # with the rest of the interview material instead, so it is set explicitly.
+  calendar_md: "examples/me/interviews/calendar.md"
+  # candidate_dir is the fallback parent for the tailoring card and all three
+  # skip-logs, and the write target self_measure.py uses for metrics.yaml. It
+  # defaults in CODE to <applications_root>/0_profile — the derivation that keeps
+  # a benchmark run, which redirects applications_root and nothing else, from
+  # writing into the real card and the real skip-log. The example tree has no
+  # 0_profile support folder, so it points the key at the market logs instead:
+  # a forgotten skip-log key then lands in the right directory rather than an
+  # empty one.
+  candidate_dir: "examples/market/logs"
+  # The tailoring card and the skip-logs each default to
+  # <candidate_dir>/<filename>, so all of them are omitted here. Set one only
+  # when your layout puts it somewhere else — a lifetime-organised private tree,
+  # for instance, keeps the card with the profile and the logs with the market
+  # research:
   #   tailoring_card:     "private/me/tailoring-card.md"
   #   applications_log:   "private/market/logs/applications-log.yaml"
   #   applications_jsonl: "private/market/logs/applications-log.jsonl"
   #   company_search_log: "private/market/logs/company-search-log.yaml"
-  # Leave them unset unless you mean it. The default derivation is what keeps a
-  # benchmark run — which redirects applications_root and nothing else — from
-  # writing into the real card and the real skip-log.
+  # Leave them unset unless you mean it.
 job_search:
   default_profile: "example"
 generation:

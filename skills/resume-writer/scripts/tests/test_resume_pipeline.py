@@ -237,7 +237,7 @@ class RenderAndLayoutTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        self.reference = REPO_ROOT / "examples" / "templates" / "reference.example.docx"
+        self.reference = REPO_ROOT / "examples" / "me" / "resume" / "reference.example.docx"
 
     def test_render_outputs_every_employer_and_direct_bullet(self):
         data = _resume([

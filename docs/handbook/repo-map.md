@@ -14,29 +14,28 @@ in each `jobs:` entry's `status`, and the sub-folder the application sits in
 is the derived overall status (rollup); the profile-support directory
 (`<profile-dir>` = `config.candidate_dir()`, which defaults to
 `<applications_root>/0_profile/` — where the skip-logs live, regardless of where
-`config.profile_md_path()` points; in the shipped example the profile file
-lives under `examples/profile/`, but this logs dir is
-`examples/applications/0_profile/`, while a lifetime-organised private overlay
-points `candidate_dir` at its own market-logs folder) and `config.discoveries_dir()`
+`config.profile_md_path()` points; the shipped example keeps the profile under
+`examples/me/` and overrides `candidate_dir` to `examples/market/logs`, the same
+split a lifetime-organised private overlay uses) and `config.discoveries_dir()`
 are support folders, not applications. The tailoring card has its own key
 (`config.tailoring_card_path()`) and need not sit with the logs.
 
 | Path | Purpose |
 |------|---------|
 | `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, and output-stem config; the tracked example is the neutral "Jordan Rivers" placeholder + fallback (see `docs/handbook/configuration.md`) |
-| `config.profile_md_path()` (example: `examples/profile/profile.example.md`) | Comprehensive candidate profile: all experience, skills, and resume writing preferences |
+| `config.profile_md_path()` (example: `examples/me/profile.example.md`) | Comprehensive candidate profile: all experience, skills, and resume writing preferences |
 | `config.baseline_path()` | Canonical transcription of the approved resume — starting point for every tailored.yaml and the reference for locked-field validation |
 | `skills/job-search/companies.yaml` | Canonical company registry — public, single source of truth for company **identity**, ATS poll config, and tags. Ships NO personal skip rules; candidate-specific blacklist rows (companies that don't sponsor, the candidate's own employer) live in a git-ignored overlay at `config.blacklist_path()` (`private/market/blacklist.yaml`) merged at load time by `registry.py` (each row: identity-only + `blacklist:` reason, no `ats`/`token`). Never carries specific or dated postings |
 | `config.applications_jsonl_path()` | Append-only event log of postings already generated/considered — job-search skips them (new roles at the same company still surface). `handoff.py` appends at folder creation — **every folder it creates, whatever exit code the run returned**, including a location mismatch or an incomplete scaffold, and nothing when no folder was created — while `status.py --sync-log` and every `--update` append after; all three flatten through the shared `skip_log.posting_rows` (`automation/shared/skip_log.py`), and nothing rewrites it, so deleting an application does not un-skip its posting. That rule holds because only the owner ever deletes an application folder, so a missing folder is a decision, not an accident (`memory/decisions/handoff-records-every-folder-it-creates.md`) |
 | `config.company_search_log_path()` | Last successful full-company search per employer — job-search skips within 7 days (`skip_within_days`); upserted by `--sync-log` (`created`) or `--log-search` (`no_suitable`). Also the **first-search test**: a company with no row here has never been searched, so that run finds every open role — the profile's `max_age_days` does not apply, older roles are matched by default, and the widened window is printed in the run header; every later run narrows to the profile default (`memory/decisions/first-search-finds-every-open-role.md`) |
-| `config.company_levels_path()` | Reusable, sourced company level/YOE/base-salary/total-compensation mappings used as a fallback when a live JD omits those facts; real dated research defaults beside the private profile, while the public toolkit ships only `examples/profile/company-levels.example.yaml` |
+| `config.company_levels_path()` | Reusable, sourced company level/YOE/base-salary/total-compensation mappings used as a fallback when a live JD omits those facts; real dated research defaults to the market-logs folder `config.candidate_dir()` names, while the public toolkit ships only `examples/market/logs/company-levels.example.yaml` |
 | `config.discoveries_dir()` | Ad-hoc research findings during the job search (job-search output, target-company lists) |
 | `config.applications_root()/6_drafted/<slug>/` | Generated applications land here first — for the user to review the resume + JD and decide the next move |
 | `config.applications_root()/5_applied/<slug>/` | Applications the user has submitted (user moves the folder here manually) |
 | `config.applications_root()/4_in_progress/<slug>/` | Heard back / interviews scheduled — active pipeline (user moves here manually) |
 | `config.applications_root()/3_rejected/<slug>/` | Rejected at any stage (user moves here manually) |
 | `config.applications_root()/2_ignored/<slug>/` | Decided not to submit; don't reconsider this posting (user moves here manually) |
-| `config.reference_docx_path()` (default `examples/templates/reference.example.docx`; real DOCX under `private/`) | Formatted resume DOCX — the rendering reference (preserves all formatting) |
+| `config.reference_docx_path()` (default `examples/me/resume/reference.example.docx`; real DOCX under `private/`) | Formatted resume DOCX — the rendering reference (preserves all formatting) |
 | `skills/resume-writer/scripts/render.py` | Fill the DOCX template from `source/tailored.yaml` → resume DOCX (`source/`) + PDF (root, stem from `config.resume_stem()`) + **one cover letter per JD**; auto-runs `check.py`. Detail in the resume-writer skill |
 | `skills/resume-writer/scripts/cover_letter.py` | Render one cover letter per JD from each bundled `..._Application_<job title>.txt` COVER LETTER section (DOCX in `source/` + PDF at root); `--label "<Role>"` renders just one. Detail in the resume-writer skill |
 | `skills/resume-writer/scripts/pdf_convert.py` | Shared DOCX → PDF conversion (LibreOffice, docx2pdf fallback) used by both renderers |

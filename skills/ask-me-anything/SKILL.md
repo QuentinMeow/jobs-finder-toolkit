@@ -82,10 +82,10 @@ relative to the config file's directory. The four files the paths point at:
 
 | Path key | What it is | How to create it |
 |----------|-----------|------------------|
-| `paths.profile_md` | Your complete professional profile (markdown): all experience, projects tagged `[draft]`/`[backup]`, and your Approved/Weak/Never **skill lists**. The source of truth. | Start from `examples/profile/profile.example.md`; replace with your real content. |
-| `paths.baseline_yaml` | Exact YAML transcription of your **approved** resume — the anchor every tailored resume starts from. | Copy `examples/profile/baseline.example.yaml`; or extract from a DOCX with `resume-writer/scripts/extract.py`. |
-| `paths.reference_docx` | Your formatted resume DOCX — the render *template* (fonts/margins/styles preserved). | Copy `examples/templates/reference.example.docx`; replace with your own formatted resume. |
-| `paths.company_levels_yaml` | Optional reusable level/YOE/comp reference cache. | Optional; `examples/profile/company-levels.example.yaml` shows the shape. |
+| `paths.profile_md` | Your complete professional profile (markdown): all experience, projects tagged `[draft]`/`[backup]`, and your Approved/Weak/Never **skill lists**. The source of truth. | Start from `examples/me/profile.example.md`; replace with your real content. |
+| `paths.baseline_yaml` | Exact YAML transcription of your **approved** resume — the anchor every tailored resume starts from. | Copy `examples/me/baseline.example.yaml`; or extract from a DOCX with `resume-writer/scripts/extract.py`. |
+| `paths.reference_docx` | Your formatted resume DOCX — the render *template* (fonts/margins/styles preserved). | Copy `examples/me/resume/reference.example.docx`; replace with your own formatted resume. |
+| `paths.company_levels_yaml` | Optional reusable level/YOE/comp reference cache. | Optional; `examples/market/logs/company-levels.example.yaml` shows the shape. |
 
 If you don't set `config.yaml`, the toolkit falls back to `config.example.yaml` (the fake
 "Jordan Rivers" candidate) so every script still runs out of the box for a demo.

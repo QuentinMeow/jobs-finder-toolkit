@@ -29,7 +29,7 @@ if str(SCRIPTS) not in sys.path:
 
 import estimate_layout  # noqa: E402
 
-REFERENCE = REPO_ROOT / "examples" / "templates" / "reference.example.docx"
+REFERENCE = REPO_ROOT / "examples" / "me" / "resume" / "reference.example.docx"
 CONFIG = REPO_ROOT / "config.example.yaml"
 RENDER = SCRIPTS / "render.py"
 EXAMPLE_TAILORED = (REPO_ROOT / "examples" / "applications" / "6_drafted"

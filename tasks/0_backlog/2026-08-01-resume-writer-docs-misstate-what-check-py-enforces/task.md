@@ -27,7 +27,7 @@ Four items, verified against `skills/resume-writer/scripts/check.py` on this bra
    ```
 
    The real ceiling is the BASELINE's own count. With the shipped
-   `examples/profile/baseline.example.yaml` (projects only, zero direct bullets), adding any direct
+   `examples/me/baseline.example.yaml` (projects only, zero direct bullets), adding any direct
    bullet — the obvious move on a SPARSE page — hard-FAILs the render. `check.py --rules` states the
    real rule; `SKILL.md` reads as a grant of a range.
 

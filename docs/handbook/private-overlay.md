@@ -135,10 +135,10 @@ mkdir -p private/market/{universe,searches,logs,scans/{current,archive}}
 mkdir -p private/skills/skill-notes
 
 # 2. Seed the data files from the tracked fixtures, then edit them to be YOU:
-cp examples/profile/profile.example.md        private/me/profile.md
-cp examples/profile/baseline.example.yaml     private/me/baseline.yaml
-cp examples/profile/company-levels.example.yaml private/market/logs/company-levels.yaml
-cp examples/templates/reference.example.docx  private/me/resume/reference.docx
+cp examples/me/profile.example.md                     private/me/profile.md
+cp examples/me/baseline.example.yaml                  private/me/baseline.yaml
+cp examples/market/logs/company-levels.example.yaml   private/market/logs/company-levels.yaml
+cp examples/me/resume/reference.example.docx          private/me/resume/reference.docx
 cp skills/job-search/profiles/_TEMPLATE.yaml  private/market/searches/my-default.yaml
 
 # 3. Arm the leak guard with your identity (one token per line: name variants,
