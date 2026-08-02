@@ -2068,3 +2068,10 @@
   files: 95
   digest: sha256:eefd7f91fba8c003
   finding: Merge of origin/main into the housekeeping branch; ledger conflict resolved by concatenating both sides' rows. The 95 files are almost entirely renames of completed task folders from 3_in-review to 4_done, plus the corrected github-workflow canary bullet, one new eval record, an appended supersession note, and a test fixture string. Grep hits on "salary" are the folder name of a JD-parsing bug task, not owner data. No identity, employer, school or dated job-hunt content.
+- commit: 0c422554
+  base: 6b777866
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 40
+  digest: sha256:eb315e1e4b3eada8
+  finding: Merge of origin/main into the queue-protocol branch; ledger conflict resolved by concatenating both sides' rows. Reviewed range covers the AGENTS.md boot-ritual and guardrail rewrite, the queue-schema keys added to the existing reconciler check, the collaboration-modes doc, the queue templates and READMEs, and the backfilled decision items. Decision items are process questions about tooling; none names a real company, posting or person. No identity, employer, school, salary or dated job-hunt content.
