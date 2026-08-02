@@ -2208,3 +2208,9 @@
   files: 1
   digest: sha256:bea7c8d3cfca8daf
   finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 5
+  digest: sha256:994eb48a0f1e55b9
+  finding: 'Six self-contradictions in AGENTS.md corrected as wording only, plus one owner question filed and one task closed. Read the full 327-line diff. The contract changes are: Read Hygiene now exempts the two-way-file safety re-read it previously forbade; the boot ritual now leaves a dated agent reply in place instead of deleting it; "tracked implies published" became "tracked must be publishable" with the five export-absent roots named; the parked status token now matches the value the files carry; --file-retries no longer reads as an alternative to passing the reconciler; and doc ownership now separates the root README from a folder README. The new queue item and the task records quote only repo files. No identity, employer, school, salary, company name or dated job-hunt content anywhere in the diff.'

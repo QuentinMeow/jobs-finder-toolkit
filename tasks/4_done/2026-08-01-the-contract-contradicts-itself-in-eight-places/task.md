@@ -5,7 +5,7 @@
 - **Source**: instruction-conflict audit, 2026-08-01 (a sweep for contradictory instructions across
   `AGENTS.md`, `docs/handbook/`, every public `SKILL.md`/`LESSONS.md`/`reference.md`, the process
   READMEs and the code that enforces them)
-- **Claimed-by**:
+- **Claimed-by**: agent, session 2026-08-02 (branch `docs/26-contract-and-record-corrections`)
 
 ## Goal
 
