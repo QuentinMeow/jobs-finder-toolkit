@@ -1,6 +1,6 @@
 # Should handoff record a posting whose scaffold came out incomplete?
 
-- **Status**: awaiting-owner-input
+- **Status**: folding
 - **Filed**: 2026-07-31
 - **Source**: [handoff.py creates application folders without recording the posting in the skip-log](../../../tasks/3_in-review/2026-07-30-handoff-does-not-record-created-postings/task.md)
 - **Blocks**: nothing

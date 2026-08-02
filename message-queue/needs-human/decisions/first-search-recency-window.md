@@ -1,6 +1,6 @@
 # Should a company's FIRST-ever automated search use a wider recency window?
 
-- **Status**: awaiting-owner-input
+- **Status**: folding
 - **Filed**: 2026-07-31 (public surface for a question first raised in the overlay on 2026-07-26)
 - **Source**: [`search_jobs.py`'s recency gate](../../../skills/job-search/scripts/search_jobs.py) vs [`company_roles.py --match-only`](../../../skills/job-search/scripts/company_roles.py), which disagree by design
 - **Blocks**: nothing. Every run still works; the cost is silent, not loud.

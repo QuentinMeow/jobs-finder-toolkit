@@ -1,6 +1,6 @@
 # Should the big-tech title prefilter keep its hardcoded seniority skip list, or delegate to the profile's `titles.exclude`?
 
-- **Status**: awaiting-owner-input
+- **Status**: folding
 - **Filed**: 2026-07-31
 - **Source**: `_BIGTECH_TITLE_SKIP` [/](../../../skills/job-search/scripts/sources.py) `_title_prefilter` [in](../../../skills/job-search/scripts/sources.py) `sources.py` vs `assess_title` [in](../../../skills/job-search/scripts/scoring.py) `scoring.py`, which disagree about who owns seniority. The fork was found while fixing the prefilter's unanchored-substring defect; the substring half is fixed, this half is not.
 - **Blocks**: nothing. Search runs unchanged.
