@@ -1957,3 +1957,10 @@
   files: 5
   digest: sha256:668f332d60e36bcb
   finding: none — new automation/evals module plus its tests, the eval-result template's two commit rows and pin block, and one exporter allowlist entry; no name, employer, school, date, salary or job-hunt detail in any of the five files
+- commit: a68ea96b
+  base: 1144d288
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 39
+  digest: sha256:dae9b94909c15745
+  finding: none — queue schema keys, contract prose in AGENTS.md/collaboration-modes/evals README, and 30 process-decision items. Company cross-reference run by hand against the overlay index (222 display names, added lines only); the single hit was `meta.yaml`/`--enrich-metadata`, the toolkit's own vocabulary, not a company. No name, employer, school, date, salary or job-hunt detail.
