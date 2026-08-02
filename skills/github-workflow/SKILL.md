@@ -321,7 +321,11 @@ body carries none of these three forms:
 
 1. **Ran** — paste the canary results, or name the recorded run under
    `evals/results/`, or write `Eval gate: ran — <what ran, how it went>` with the
-   detail filled in.
+   detail filled in. **Keep at least three plain words before your first
+   backtick**: the checker reads the verdict line only as far as that backtick, so
+   "ran — the four `github-workflow` canaries…" is truncated to two words and
+   reads as an empty rationale. Naming a real record file under `evals/results/`
+   discharges the gate on its own, wherever it sits in the body.
 2. **Skipped** — `Eval gate: skipped — <intention + size>` with the rationale
    **actually written**. The bare placeholder fails by design, and so do `N/A`
    and `TBD`; quoting the form is not discharging the gate.
