@@ -2117,3 +2117,10 @@
   files: 6
   digest: sha256:6facb40636c45ab7
   finding: Folds an owner answer about a search-pipeline default into an ADR, a handbook row, a backlog task, and the deletion of the queue item. The lost postings that motivated it are described only by shape (US-remote, no visa denial, still open) and are never named, per the queue item's own leak note. No identity, employer, school, salary or dated job-hunt content.
+- commit: 85102cbd
+  base: 139db0b7
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 6
+  digest: sha256:2aa0649df9ac5f32
+  finding: Folds an owner answer about where a search's filter vocabulary lives into an ADR, a handbook bullet, a conformance task, and the deletion of the queue item. The named employer boards that appeared in the deleted item are removed by this diff and are not reintroduced; the retained examples are generic title words. No identity, employer, school, salary or dated job-hunt content.
