@@ -218,6 +218,36 @@ class VisaPolicyBindingTests(unittest.TestCase):
                     self.assertFalse(visa_ok(posting, profile))
                     self.assertEqual(posting.visa_label, "no")
 
+    def test_require_positive_never_presents_an_unreachable_cue_as_an_offer(self):
+        # The high-severity reproduction end to end. The clause break inside the
+        # parenthetical cut `unable` out of the offer phrase's scope, and an
+        # unreachable cue used to leave the phrase scored as an explicit OFFER —
+        # so the strictest policy returned a posting that refuses sponsorship in
+        # writing, with no review flag on it. Fictional wording.
+        profile = {"visa": {"needs_sponsorship": True, "policy": "require_positive"}}
+        posting = self._posting(
+            "We are unable, given current headcount constraints and the "
+            "timeline for this particular opening, to offer visa sponsorship.")
+        visa_ok(posting, profile)
+        self.assertNotEqual(posting.visa_label, "yes")
+        self.assertEqual(posting.sponsorship, "unknown")
+        self.assertIn("sponsorship_requires_review", posting.review_reasons)
+
+    def test_an_unreachable_cue_is_kept_and_flagged_under_both_policies(self):
+        # The mirror: an unreadable sentence is not a refusal either, so neither
+        # policy may drop it silently.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting(
+                    "We are unable, given current headcount constraints and "
+                    "the timeline for this particular opening, to offer visa "
+                    "sponsorship.")
+                self.assertTrue(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "unclear")
+                self.assertIn("sponsorship_requires_review",
+                              posting.review_reasons)
+
     def test_require_positive_still_keeps_an_offer_with_a_distributive_limit(self):
         # The counterpart: an employer that sponsors but not universally is still
         # a sponsor, and the strict policy must still surface it.

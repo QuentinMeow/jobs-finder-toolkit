@@ -2393,3 +2393,9 @@
   files: 1
   digest: sha256:99df9afc3507e680
   finding: 'Session handover for the merge-runbook and folder-refactor session. Describes the work in shapes, not specifics: which decision fired, which defects were fixed, which gates caught what. Names only public repo paths, PR numbers and commit SHAs. The one private reference is the standing note that verify_links is red on refs inside private/, stated without naming any of those paths. No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 11
+  digest: sha256:3fe0301d71888a0a
+  finding: 'Sponsorship classifier: an offer phrase whose governing negation cue the bounded scope cannot reach is recorded as unsettled instead of asserted as an offer. Code, comments, unit tests and three filter-variant corpus cases, all written from fictional JD sentences invented for the tests; four example-store posting.yaml files change only the embedded job_metadata.py content hash, no verdict. No identity, employer, school, salary or dated job-hunt content.'

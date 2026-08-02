@@ -780,6 +780,93 @@ class SponsorshipNegationScopeTests(unittest.TestCase):
         self.assertFalse(assessment["signal_present"])
 
 
+class SponsorshipUnreachableCueTests(unittest.TestCase):
+    """A cue the scope cannot reach must not leave the offer phrase asserted.
+
+    Two independent bounds — the clause break and the token budget — can put a
+    negation the sentence plainly contains out of an offer phrase's reach, and
+    the failure was not symmetric: the phrase kept scoring as an explicit OFFER.
+    A denial written with a parenthetical in the middle of it therefore graded
+    ``likely``/``high``/``match``, so ``--visa-policy require_positive`` — the
+    policy chosen by the one candidate who needs sponsorship — returned an
+    employer that refuses it in writing, unflagged.
+
+    The repair leaves both bounds exactly where they were and fails toward
+    review instead, so the guardrail that keeps a clause restart readable is
+    untouched. Every sentence here is fictional.
+    """
+
+    def test_clause_break_inside_a_parenthetical_no_longer_asserts_an_offer(self):
+        # The filed reproduction. `_SPONSOR_CLAUSE_BREAK_RE` matches the "and the"
+        # INSIDE the aside, which truncates the scope before the token budget is
+        # ever consulted, so `unable` is not in scope at all.
+        assessment = assess_sponsorship(
+            "We are unable, given current headcount constraints and the "
+            "timeline for this particular opening, to offer visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["confidence"], "low")
+        self.assertEqual(assessment["decision"], "review")
+        self.assertIn(
+            "sponsorship.unreachable_cue.offer visa sponsorship",
+            assessment["rule_ids"])
+
+    def test_the_token_budget_bound_is_closed_by_the_same_repair(self):
+        # The OTHER bound, on the same sentence with the coordinator removed:
+        # `unable` is back in scope, 9 tokens away, and refused by the budget. A
+        # repair aimed at only one bound would leave this one open.
+        assessment = assess_sponsorship(
+            "We are unable, given current headcount constraints for this "
+            "particular opening, to offer visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+    def test_an_unreachable_cue_is_never_promoted_to_a_denial(self):
+        # The asymmetry that keeps the safety posture in BOTH directions: an
+        # unreadable sentence is not evidence of refusal either, so it must not
+        # drop the posting.
+        assessment = assess_sponsorship(
+            "We are unable, given current headcount constraints and the "
+            "timeline for this particular opening, to offer visa sponsorship.")
+        self.assertNotEqual(assessment["verdict"], "unlikely")
+        self.assertNotEqual(assessment["decision"], "no_match")
+
+    def test_an_offer_that_opens_its_own_clause_still_stands(self):
+        # The guardrail the widening repair would have put at risk. The cue "no"
+        # belongs to the relocation clause; the offer starts a new one, which is
+        # measurable as an EMPTY clause scope, so no demotion applies.
+        assessment = assess_sponsorship(
+            "There is no relocation budget, and visa sponsorship is available "
+            "for this role.")
+        self.assertEqual(assessment["verdict"], "likely")
+        self.assertEqual(assessment["confidence"], "high")
+
+    def test_an_offer_in_a_later_sentence_is_out_of_the_cues_sentence(self):
+        assessment = assess_sponsorship(
+            "We are unable, given headcount and the timeline, to expand the "
+            "team this quarter. Visa sponsorship is available for this role.")
+        self.assertEqual(assessment["verdict"], "likely")
+
+    def test_a_settled_denial_still_outranks_an_unreachable_cue(self):
+        # Recording a reading as unsettled must never weaken a refusal the
+        # module CAN read — the property the quantifier pass exists to protect.
+        assessment = assess_sponsorship(
+            "This role does not offer sponsorship. We are unable, given "
+            "current headcount constraints and the timeline for this "
+            "particular opening, to offer visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unlikely")
+        self.assertEqual(assessment["decision"], "no_match")
+
+    def test_an_unreachable_cue_beside_a_real_offer_is_a_conflict(self):
+        # An unreadable sentence is a POSSIBLE denial, so it conflicts with a
+        # real offer rather than being ignored beside one.
+        assessment = assess_sponsorship(
+            "We are unable, given current headcount constraints and the "
+            "timeline for this particular opening, to offer visa sponsorship. "
+            "We sponsor H-1B transfers for senior hires.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+
 class SponsorshipScopeLimitTests(unittest.TestCase):
     """An offer plus a limit ON that offer is a sponsor, not a refusal.
 

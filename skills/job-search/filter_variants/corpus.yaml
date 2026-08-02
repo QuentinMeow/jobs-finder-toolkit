@@ -431,6 +431,53 @@ variants:
       verdict: likely
       confidence: high
 
+  - id: sponsorship-unreachable-cue-is-not-an-offer
+    domain: sponsorship
+    # The high-severity shape. A clause break INSIDE a comma-delimited aside
+    # ("and the") truncates the negation scope before the token budget is ever
+    # consulted, so "unable" never reaches the offer phrase behind it — and an
+    # unreachable cue used to leave that phrase scored as an explicit OFFER.
+    # The posting graded `match`/`likely`/high, so `require_positive` handed an
+    # employer that refuses sponsorship in writing to the one candidate who
+    # cannot take it. Both bounds are unchanged; the reading is recorded as
+    # unsettled instead, and the posting is kept and flagged.
+    input:
+      text: >-
+        We are unable, given current headcount constraints and the timeline
+        for this particular opening, to offer visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-unreachable-cue-over-the-token-budget
+    domain: sponsorship
+    # The OTHER bound, on the same sentence with the coordinator removed: the
+    # cue is back in scope at a 9-token gap and refused by the budget. Pinned
+    # separately because a repair aimed at one bound leaves the other open.
+    input:
+      text: >-
+        We are unable, given current headcount constraints for this particular
+        opening, to offer visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-settled-denial-outranks-an-unreachable-cue
+    domain: sponsorship
+    # Guardrail: recording a reading as unsettled must never weaken a refusal
+    # the module CAN read.
+    input:
+      text: >-
+        This role does not offer sponsorship. We are unable, given current
+        headcount constraints and the timeline for this particular opening,
+        to offer visa sponsorship.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
   - id: sponsorship-silence-is-unknown
     domain: sponsorship
     # The baseline the two shapes above are graded against.
