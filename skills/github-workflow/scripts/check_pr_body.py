@@ -38,6 +38,16 @@ The fourth property needs to know what the PR changed, so it runs only when
      and in ``evals/README.md``; nothing read the body, so a behavioral edit could
      merge with the gate neither run, skipped, nor owed.
 
+     The verdict line is read with its inline code spans BLANKED (the same rule the
+     marketing check uses), so a rationale may name a skill, a canary id or a file
+     in backticks and still be judged on its prose. What it may NOT do is live
+     entirely inside a span: quoting the form of the line is what every checklist
+     item in ``.github/pull_request_template.md`` does, and a template nobody filled
+     in must not discharge anything. Inside a fenced block the line is read
+     verbatim, because a pasted canary table is evidence rather than prose. The
+     ``evals/results/`` record and the ``tasks/0_backlog/`` item are matched against
+     the raw body — those are identifiers, and everybody writes a path in code.
+
 Everything else the format asks for ("say plainly when something gets slower",
 short sentences, naming the real command) is a judgment call and is deliberately
 NOT enforced here: a checker that guesses at those would either pass bad bodies or
@@ -117,11 +127,9 @@ SKILL_INSTRUCTION_RE = re.compile(r"^skills/[^/]+/(?:SKILL|LESSONS|reference)\.m
 
 # ``Eval gate: <verdict> …`` anywhere on a line. Bold, a list bullet, or a table
 # cell around it are all tolerated — the line is evidence, not prose to police.
-# The remainder is truncated at the first backtick so the CHECKLIST ITEM in
-# .github/pull_request_template.md, which quotes the line format inside backticks
-# and then keeps writing ("… — see `evals/README.md`"), cannot read as a filled-in
-# rationale. Quoting the form is not discharging the gate.
-EVAL_GATE_RE = re.compile(r"Eval\s+gate\s*\**\s*:\s*\**\s*([^`\n]*)", re.IGNORECASE)
+# The remainder runs to end of line; ``_eval_gate_lines`` decides WHICH text the
+# line is read from, and that is where the backtick rule lives.
+EVAL_GATE_RE = re.compile(r"Eval\s+gate\s*\**\s*:\s*\**\s*(.*)$", re.IGNORECASE)
 
 # A recorded run (evals/README.md: "A run is recorded … in `evals/results/`").
 EVAL_RECORD_RE = re.compile(r"evals/results/[\w.@+-]+\.md")
@@ -221,6 +229,49 @@ def _has_substance(text: str) -> bool:
     return len(words) >= MIN_RATIONALE_WORDS
 
 
+def _eval_gate_lines(body: str) -> tuple[list[tuple[str, bool]], bool]:
+    """``([(remainder, code_was_removed)], a_line_was_quoted_away)``.
+
+    Which TEXT of a line the verdict is read from, which is the whole subtlety of
+    this property:
+
+    * inside a fenced block the line is read verbatim — a pasted canary table is
+      evidence, and blanking code there would blank the evidence;
+    * outside one, inline code spans are blanked FIRST, exactly as the
+      marketing-word check does. Backticks mark quoted text, so a line that quotes
+      the FORM of the discharge — which every checklist item in
+      .github/pull_request_template.md does, for all three forms — leaves nothing
+      behind and cannot pass as a filled-in one.
+
+    Blanking rather than truncating is what makes an ordinary sentence work: a
+    rationale that NAMES something in code (``ran — the four `github-workflow`
+    canaries, 4/4 pass``) is judged on the words either side of the span, not on
+    the two words before it. The second return value flags a line whose only
+    ``Eval gate:`` text was inside a span, so the finding can say so instead of
+    reporting an empty rationale.
+    """
+    found: list[tuple[str, bool]] = []
+    quoted_away = False
+    in_fence = False
+    fence_marker = ""
+    for line in body.splitlines():
+        fence = FENCE_RE.match(line)
+        if fence:
+            marker = fence.group(1)
+            if not in_fence:
+                in_fence, fence_marker = True, marker
+            elif marker == fence_marker:
+                in_fence, fence_marker = False, ""
+            continue
+        scanned = line if in_fence else INLINE_CODE_RE.sub(" ", line)
+        match = EVAL_GATE_RE.search(scanned)
+        if match:
+            found.append((match.group(1).strip(), scanned != line))
+        elif not in_fence and EVAL_GATE_RE.search(line):
+            quoted_away = True
+    return found, quoted_away
+
+
 def _named_backlog_items(body: str, changed_files: list[str]):
     """``(named_in_body, present_in_diff)`` for ``tasks/0_backlog/`` paths.
 
@@ -250,16 +301,22 @@ def check_eval_gate(body: str, changed_files: list[str]) -> list[tuple[str, str]
         shown += f" (+{len(touched) - 3} more)"
     location = "eval gate"
 
-    verdicts = [match.group(1).strip() for match in EVAL_GATE_RE.finditer(body)]
-    ran = [_verdict_rest(v) for v in verdicts if _RAN_RE.match(v)]
-    skipped = [_verdict_rest(v) for v in verdicts if _SKIPPED_RE.match(v)]
-    debts = [_verdict_rest(v) for v in verdicts if _DEBT_RE.match(v)]
+    verdicts, quoted_away = _eval_gate_lines(body)
+    ran = [(_verdict_rest(v), coded) for v, coded in verdicts if _RAN_RE.match(v)]
+    skipped = [(_verdict_rest(v), coded) for v, coded in verdicts
+               if _SKIPPED_RE.match(v)]
+    debts = [v for v, _ in verdicts if _DEBT_RE.match(v)]
 
+    # The record path and the backlog item are read from the RAW body, backticks
+    # and all: those are identifiers, and naming one in code is how everybody
+    # writes a path. Only the author's own verdict sentence is subject to the
+    # quoted-text rule above.
+    #
     # 1. a run: a recorded result file, or a line that says what ran.
-    if EVAL_RECORD_RE.search(body) or any(_has_substance(r) for r in ran):
+    if EVAL_RECORD_RE.search(body) or any(_has_substance(r) for r, _ in ran):
         return []
     # 2. a skip whose rationale is written, not the template's placeholder.
-    if any(_has_substance(s) for s in skipped):
+    if any(_has_substance(s) for s, _ in skipped):
         return []
     # 3. tracked debt: the declaration AND the backlog item, in this diff.
     named, present = _named_backlog_items(body, changed_files)
@@ -269,6 +326,12 @@ def check_eval_gate(body: str, changed_files: list[str]) -> list[tuple[str, str]
     head = (f"this diff touches {shown}, so the risk-based eval gate "
             f"(AGENTS.md → Guardrails, evals/README.md) has to be discharged in "
             f"the body — ")
+    # Never report an empty rationale when the rationale was written in code: that
+    # is the one wrong answer this check can give, because the author is looking at
+    # words the finding says are not there.
+    code_note = (". The words inside `backticks` were read as a quotation and left "
+                 "out — name what you like in code, but keep the rationale itself "
+                 "in plain prose")
     if debts and named:
         return [(location, head + "the `Eval gate: debt` line names "
                  f"{named[0]}, but this diff adds nothing under it. Tracked debt "
@@ -280,10 +343,17 @@ def check_eval_gate(body: str, changed_files: list[str]) -> list[tuple[str, str]
     if skipped:
         return [(location, head + "the `Eval gate: skipped` rationale is empty or "
                  "still the template placeholder. Say what the edit was and how "
-                 "big it was")]
+                 "big it was"
+                 + (code_note if any(coded for _, coded in skipped) else ""))]
     if ran:
         return [(location, head + "the `Eval gate: ran` line does not say what ran "
-                 "or how it went, and no `evals/results/` record is named")]
+                 "or how it went, and no `evals/results/` record is named"
+                 + (code_note if any(coded for _, coded in ran) else ""))]
+    if quoted_away:
+        return [(location, head + "the only `Eval gate:` text in the body is inside "
+                 "an inline code span, which reads as quoting the FORM of the line "
+                 "— which is what .github/pull_request_template.md does. Write the "
+                 "line as ordinary prose, outside backticks")]
     return [(location, head + _ACCEPTED_FORMS)]
 
 

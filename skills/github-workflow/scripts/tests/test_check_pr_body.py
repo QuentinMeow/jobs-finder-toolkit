@@ -148,6 +148,21 @@ TEMPLATE_CHECKLIST_LINE = (
     "`evals/README.md`\n"
 )
 
+# The same checklist item after the template was rewritten to name all three
+# forms. It quotes TWO of them, and mentions `tasks/0_backlog/` in the same
+# breath — so a PR that happens to add a backlog item for its own reasons must
+# still not be discharged by the unfilled template text.
+TEMPLATE_CHECKLIST_LINE_THREE_FORMS = (
+    "- [ ] If any `skills/*/SKILL.md` / `LESSONS.md` / `reference.md` changed: "
+    "discharge the risk-based eval gate in this body — CI's `pr-body` job blocks "
+    "on it. Exactly one of: that skill's canary results from "
+    "`evals/canaries/<skill>.yaml` pasted below (or the `evals/results/` record "
+    "named); `Eval gate: skipped — <intention + size>` with the rationale actually "
+    "written out; `Eval gate: debt — <why not now>` plus a `tasks/0_backlog/` item "
+    "named here and added by this same diff. The bracketed placeholders are not "
+    "rationales — see `evals/README.md`\n"
+)
+
 
 class EvalGateTests(unittest.TestCase):
     """Property 4 — a harness edit must discharge the risk-based eval gate."""
@@ -193,7 +208,46 @@ class EvalGateTests(unittest.TestCase):
     def test_template_checklist_line_is_not_a_discharge(self):
         body = GOOD_BODY + "\n" + TEMPLATE_CHECKLIST_LINE
         messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
-        self.assertTrue(any("template placeholder" in m for m in messages), messages)
+        self.assertTrue(messages, "the unfilled template must not discharge")
+        self.assertTrue(any("inline code span" in m for m in messages), messages)
+
+    def test_three_form_template_line_is_not_a_discharge(self):
+        body = GOOD_BODY + "\n" + TEMPLATE_CHECKLIST_LINE_THREE_FORMS
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(messages, "the unfilled template must not discharge")
+
+    def test_three_form_template_line_does_not_ride_an_unrelated_backlog_item(self):
+        """Its quoted `debt` form + its mention of the backlog folder must not pair up."""
+        body = GOOD_BODY + "\n" + TEMPLATE_CHECKLIST_LINE_THREE_FORMS
+        changed = SKILL_EDIT + ["tasks/0_backlog/2026-08-01-something-unrelated/task.md"]
+        self.assertTrue(check_pr_body.check(body, changed),
+                        "quoted template text must not discharge via a backlog item "
+                        "the PR added for its own reasons")
+
+    def test_inline_code_inside_a_rationale_is_not_truncation(self):
+        """The reported defect: a code span mid-sentence swallowed the rationale.
+
+        The line was read only as far as the first backtick — two words — and the
+        finding then reported an empty rationale at an author who had written one.
+        """
+        body = GOOD_BODY + ("\nEval gate: ran — the four `github-workflow` canaries, "
+                            "4/4 pass\n")
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_inline_code_inside_a_skip_rationale_is_not_truncation(self):
+        body = GOOD_BODY + ("\nEval gate: skipped — corrected the `--strict` flag "
+                            "name in one line; no step semantics changed.\n")
+        self.assertEqual(check_pr_body.check(body, SKILL_EDIT), [])
+
+    def test_a_rationale_written_only_in_code_says_why_it_failed(self):
+        body = GOOD_BODY + "\nEval gate: skipped — `a typo in one path`\n"
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("read as a quotation" in m for m in messages), messages)
+
+    def test_a_fully_quoted_eval_line_says_why_it_failed(self):
+        body = GOOD_BODY + "\nSee `Eval gate: skipped — a real rationale` for the form.\n"
+        messages = [m for _, m in check_pr_body.check(body, SKILL_EDIT)]
+        self.assertTrue(any("inline code span" in m for m in messages), messages)
 
     def test_debt_with_a_backlog_item_in_the_same_diff_discharges(self):
         body = GOOD_BODY + ("\nEval gate: debt — canaries cost a full session at this "
