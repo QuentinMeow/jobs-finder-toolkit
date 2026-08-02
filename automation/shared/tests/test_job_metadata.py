@@ -780,6 +780,98 @@ class SponsorshipNegationScopeTests(unittest.TestCase):
         self.assertFalse(assessment["signal_present"])
 
 
+class SponsorshipOffListDenialTests(unittest.TestCase):
+    """A denial phrased in words NEITHER phrase list contains must still land.
+
+    Polarity was decided structurally, but detection was still lexical: with no
+    phrase matching, the negation scope had nothing to act on and the posting
+    classified ``unknown`` — the JD said no in writing and the pipeline read it
+    as silence.  A negation that reaches a bare sponsorship head THROUGH AN
+    OFFER VERB is a denial of that offer.  Every sentence here is fictional.
+    """
+
+    def test_coordinated_object_defeats_both_phrase_lists(self):
+        # The filed reproduction: the denial phrases need "offer sponsorship"
+        # contiguous and the offer phrases need "offer visa sponsorship"
+        # contiguous, and one coordinated object defeats both.
+        assessment = assess_sponsorship(
+            "We do not offer relocation or visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unlikely")
+        self.assertEqual(assessment["confidence"], "high")
+        self.assertEqual(assessment["decision"], "no_match")
+
+    def test_other_offer_verbs_are_read_the_same_way(self):
+        for text in (
+            "We cannot extend visa sponsorship for this position.",
+            "We are unable to provide relocation or employment sponsorship "
+            "for this opening.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(classify_sponsorship(text), "unlikely")
+
+    def test_eeo_copy_is_not_a_denial(self):
+        # The misfire a generic "cue ... sponsorship head" rule produces, and the
+        # reason the OFFER VERB is required rather than merely helpful: this
+        # sentence puts a cue five tokens from the head and is the OPPOSITE of a
+        # denial.  Reading it as one would drop an employer that sponsors.
+        assessment = assess_sponsorship(
+            "We do not discriminate against candidates who need visa "
+            "sponsorship.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+    def test_the_verb_to_head_window_stays_tight(self):
+        # A head far enough from the offer verb is no longer plausibly its
+        # object; the rule declines rather than guessing.
+        self.assertEqual(
+            classify_sponsorship(
+                "We do not offer relocation or housing or transit or gym or "
+                "childcare or visa sponsorship."),
+            "unknown",
+        )
+
+    def test_a_later_sentences_offer_is_untouched(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We do not offer relocation. Visa sponsorship is available "
+                "for this role."),
+            "likely",
+        )
+
+    def test_a_discretionary_offer_has_no_cue_to_negate(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We will consider visa sponsorship for exceptional "
+                "candidates."),
+            "unknown",
+        )
+
+    def test_the_fallback_never_steals_a_wording_the_lists_already_read(self):
+        # The rule only ADDS detection: a head already covered by a phrase from
+        # either tuple keeps its existing path, evidence and rule id.
+        assessment = assess_sponsorship(
+            "This role does not currently offer visa sponsorship.")
+        self.assertEqual(
+            assessment["rule_ids"],
+            ["sponsorship.negated_offer.offer visa sponsorship"],
+        )
+
+    def test_an_off_list_denial_obeys_the_double_negation_rule(self):
+        assessment = assess_sponsorship(
+            "It is not true that we do not offer relocation or visa "
+            "sponsorship.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertIn(
+            "sponsorship.ambiguous.double_negation", assessment["rule_ids"])
+
+    def test_an_off_list_denial_beside_an_offer_is_a_conflict(self):
+        assessment = assess_sponsorship(
+            "We do not offer relocation or visa sponsorship. We sponsor H-1B "
+            "transfers for senior hires.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+
 class SponsorshipUnreachableCueTests(unittest.TestCase):
     """A cue the scope cannot reach must not leave the offer phrase asserted.
 

@@ -431,6 +431,59 @@ variants:
       verdict: likely
       confidence: high
 
+  - id: sponsorship-off-list-denial-with-a-coordinated-object
+    domain: sponsorship
+    # Detection, not polarity. The denial phrases need "offer sponsorship"
+    # contiguous and the offer phrases need "offer visa sponsorship" contiguous,
+    # so ONE coordinated object defeats both lists and the negation scope has
+    # nothing to act on — the JD said no in writing and the pipeline read it as
+    # silence. A negation reaching a bare sponsorship head through an OFFER VERB
+    # is a denial of that offer.
+    input:
+      text: We do not offer relocation or visa sponsorship.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-off-list-denial-other-offer-verbs
+    domain: sponsorship
+    # Same shape, different verb: the rule is about the offer relation, not
+    # about one word.
+    input:
+      text: We cannot extend visa sponsorship for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-eeo-copy-is-not-a-denial
+    domain: sponsorship
+    # The guardrail on the rule above, and the reason the OFFER VERB is required
+    # rather than merely helpful. This sentence puts a negation cue five tokens
+    # from the sponsorship head and is the OPPOSITE of a denial; a generic
+    # "cue ... sponsorship head" rule would drop an employer that sponsors.
+    input:
+      text: >-
+        We do not discriminate against candidates who need visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-off-list-denial-window-stays-tight
+    domain: sponsorship
+    # The second guardrail: a head far from the offer verb is no longer
+    # plausibly its object, so the rule declines rather than guessing.
+    input:
+      text: >-
+        We do not offer relocation or housing or transit or gym or childcare
+        or visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
   - id: sponsorship-unreachable-cue-is-not-an-offer
     domain: sponsorship
     # The high-severity shape. A clause break INSIDE a comma-delimited aside

@@ -2399,3 +2399,9 @@
   files: 11
   digest: sha256:3fe0301d71888a0a
   finding: 'Sponsorship classifier: an offer phrase whose governing negation cue the bounded scope cannot reach is recorded as unsettled instead of asserted as an offer. Code, comments, unit tests and three filter-variant corpus cases, all written from fictional JD sentences invented for the tests; four example-store posting.yaml files change only the embedded job_metadata.py content hash, no verdict. No identity, employer, school, salary or dated job-hunt content.'
+- base: 5c515762
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 11
+  digest: sha256:43e38e9351780c57
+  finding: 'Sponsorship classifier: detection for a denial phrased in words neither substring list contains (a negation reaching a bare sponsorship head through an offer verb). Code, comments, unit tests and four filter-variant corpus cases, all written from fictional JD sentences invented for the tests; four example-store posting.yaml files change only the embedded job_metadata.py content hash, no verdict. No identity, employer, school, salary or dated job-hunt content.'

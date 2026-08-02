@@ -1580,6 +1580,47 @@ _SPONSOR_SCOPE_LIMIT_MAX_GAP_TOKENS = 6
 # bounding it — "we cannot sponsor visas at all" is a flat refusal.
 _SPONSOR_AMBIGUOUS_SCOPE_RE = re.compile(r"(?<!\bat\s)\ball\b", re.I)
 
+# --- detection: a denial phrased in words neither list contains --------------
+# Polarity is decided structurally, but DETECTION was still purely lexical: if no
+# phrase from either tuple matched, the negation scope had nothing to act on and
+# the posting classified ``unknown``.  "We do not offer relocation or visa
+# sponsorship." is that hole — the denial phrases need "offer sponsorship"
+# contiguous and the offer phrases need "offer visa sponsorship" contiguous, and
+# a single coordinated object defeats both.
+#
+# The denial side gets the structural treatment the offer side already has: a
+# bare sponsorship HEAD whose governing negation reaches it THROUGH AN OFFER VERB
+# is a denial of that offer, whatever words sit between them.  Three bounds keep
+# it from becoming a generic "cue … sponsorship" rule, which misfires badly:
+#
+#   * the OFFER VERB is required.  EEO copy — "we do not discriminate against
+#     candidates who need visa sponsorship" — puts a cue five tokens from the
+#     head and is NOT a denial; it has no offer verb between the two, and that is
+#     the only thing that separates the two shapes;
+#   * the window between the verb and the head is TIGHT (5 tokens), so the verb
+#     has to plausibly govern the head;
+#   * the scope is the module's existing ``_sponsor_negation`` — same clause
+#     break, same budget — so a clause restart ends this rule exactly as it ends
+#     every other one, and no third notion of "reach" enters the module.
+#
+# It is a FALLBACK only: a head already covered by a phrase from either tuple is
+# left to the existing paths, byte for byte, so no wording that already had an
+# answer gets a new one.
+_SPONSOR_HEAD_RE = re.compile(
+    r"\b(?:(?:visa|immigration|employment|employer|h-?1b|green\s+card)\s+)?"
+    r"sponsorship\b",
+    re.I,
+)
+_SPONSOR_OFFER_VERB_RE = re.compile(
+    r"\b(?:offer(?:s|ed|ing)?|provid(?:e|es|ed|ing)|extend(?:s|ed|ing)?|"
+    r"grant(?:s|ed|ing)?|support(?:s|ed|ing)?)\b",
+    re.I,
+)
+# How far the offer verb may sit from the head it offers ("offer relocation or
+# visa sponsorship" is 2).  Deliberately tighter than the negation budget.
+_SPONSOR_OFFER_VERB_MAX_GAP_TOKENS = 5
+_SPONSOR_OFFER_VERB_DENIAL = "negated offer verb"
+
 # --- hedged offers: modality is not a guarantee ------------------------------
 # The mirror error the same canary found: "limited immigration sponsorship may be
 # available" graded `likely` while the unhedged offer above graded `unknown`, so
@@ -1834,6 +1875,57 @@ def _sponsor_offer_is_hedged(source: str, start: int, end: int) -> bool:
     )
 
 
+class _SponsorSpan:
+    """A structurally detected denial, duck-typing the ``re.Match`` API used here.
+
+    Only ``start()``/``end()`` are read by the sponsorship code, and the span has
+    to run from the negation CUE to the head — not from the head — or
+    ``_sponsor_denial_is_negated`` reads this rule's own cue as an outer negation
+    and grades the denial as a double negative.
+    """
+
+    __slots__ = ("_start", "_end")
+
+    def __init__(self, start: int, end: int) -> None:
+        self._start, self._end = start, end
+
+    def start(self) -> int:
+        return self._start
+
+    def end(self) -> int:
+        return self._end
+
+
+def _sponsor_offer_verb_denials(source: str, covered: list[tuple[int, int]]):
+    """Denials the phrase lists cannot see: a negated OFFER VERB plus a bare head.
+
+    ``covered`` is the span of every ``_SPONSOR_NEGATIVE``/``_SPONSOR_POSITIVE``
+    match in ``source``.  A head inside one of those spans already has an answer
+    from the existing paths and is left to them, so this rule only ever ADDS
+    detection for wordings that previously matched nothing at all.
+    """
+    for head in _SPONSOR_HEAD_RE.finditer(source):
+        if any(head.start() < end and start < head.end()
+               for start, end in covered):
+            continue
+        negation = _sponsor_negation(source, head.start())
+        if negation is None:
+            continue
+        scope, cue = negation
+        between = scope[cue.end():]
+        verb = None
+        for verb in _SPONSOR_OFFER_VERB_RE.finditer(between):
+            pass
+        if verb is None:
+            continue
+        if (len(_SPONSOR_TOKEN_RE.findall(between[verb.end():]))
+                > _SPONSOR_OFFER_VERB_MAX_GAP_TOKENS):
+            continue
+        # ``scope`` ends exactly at the head, so the cue's absolute offset is
+        # measured back from there.
+        yield _SponsorSpan(head.start() - len(scope) + cue.start(), head.end())
+
+
 def _bounded_phrase_matches(text: str, phrases):
     hits = []
     for phrase in phrases:
@@ -1904,9 +1996,18 @@ def assess_sponsorship(text: str | None) -> dict:
             return False
         return True
 
+    listed = [
+        *_bounded_phrase_matches(source, _SPONSOR_NEGATIVE),
+        *_bounded_phrase_matches(source, _SPONSOR_POSITIVE),
+    ]
+    covered = [(match.start(), match.end()) for _phrase, match in listed]
     negative_matches = [
         (phrase, match)
         for phrase, match in _bounded_phrase_matches(source, _SPONSOR_NEGATIVE)
+        if _immigration_sense(match)
+    ] + [
+        (_SPONSOR_OFFER_VERB_DENIAL, match)
+        for match in _sponsor_offer_verb_denials(source, covered)
         if _immigration_sense(match)
     ]
     negative: list[str] = []

@@ -218,6 +218,31 @@ class VisaPolicyBindingTests(unittest.TestCase):
                     self.assertFalse(visa_ok(posting, profile))
                     self.assertEqual(posting.visa_label, "no")
 
+    def test_an_off_list_denial_is_dropped_under_both_policies(self):
+        # Detection, end to end. The denial matched no phrase in either list, so
+        # the posting reached the candidate as if sponsorship were merely
+        # unstated. Fictional wording.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting(
+                    "We do not offer relocation or visa sponsorship.")
+                self.assertFalse(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "no")
+
+    def test_eeo_copy_is_never_dropped_as_a_denial(self):
+        # The misfire the tight window and the offer-verb requirement exist to
+        # prevent: this sentence is the OPPOSITE of a denial, and reading it as
+        # one would delete an employer that sponsors.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting(
+                    "We do not discriminate against candidates who need visa "
+                    "sponsorship.")
+                self.assertTrue(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "unclear")
+
     def test_require_positive_never_presents_an_unreachable_cue_as_an_offer(self):
         # The high-severity reproduction end to end. The clause break inside the
         # parenthetical cut `unable` out of the offer phrase's scope, and an
