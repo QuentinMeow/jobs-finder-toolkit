@@ -780,6 +780,85 @@ class SponsorshipNegationScopeTests(unittest.TestCase):
         self.assertFalse(assessment["signal_present"])
 
 
+class SponsorshipUnreachableNegationTests(unittest.TestCase):
+    """A negation cue present in the sentence but out of reach is not silence.
+
+    ``_sponsor_negation`` bounds how far a cue may carry: the clause scope stops at
+    a clause break, and a token budget caps the gap. Both bounds are correct and
+    both stay. What was wrong is what happened when a bound cut the cue away: the
+    offer phrase fell through to a CONFIDENT offer, so a sentence that refuses
+    sponsorship in writing was graded ``likely`` / ``high`` / ``match`` and handed
+    to the one candidate who cannot take the job — under ``require_positive``, the
+    policy chosen precisely by someone who needs sponsorship, with no review flag.
+
+    The repair keeps both bounds and changes only the VERDICT the unread sentence
+    can support: an offer whose sentence carries a cue the scope could not reach is
+    unsettled, so it lands ``review`` / ``unknown`` — kept and flagged, the way every
+    other ambiguity in this module resolves. See
+    ``memory/known-issues/visa-sponsorship-negation-phrase-gap.md`` (repair 0b) and
+    GH issue #15.
+    """
+
+    # The verbatim reproduction filed in the known-issue. The clause break matches
+    # `and the` INSIDE the parenthetical, so the scope is truncated to
+    # ' timeline for this particular opening, to ' and `unable` is not in it at all.
+    FILED_REPRODUCTION = (
+        "We are unable, given current headcount constraints and the timeline "
+        "for this particular opening, to offer visa sponsorship."
+    )
+
+    def test_filed_reproduction_is_not_a_confident_offer(self):
+        assessment = assess_sponsorship(self.FILED_REPRODUCTION)
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+        self.assertNotEqual(assessment["confidence"], "high")
+
+    def test_filed_reproduction_is_flagged_not_dropped(self):
+        # Demotion, not promotion to a denial: the sentence is never read as an
+        # explicit refusal either, because the classifier could not read it.
+        assessment = assess_sponsorship(self.FILED_REPRODUCTION)
+        self.assertNotEqual(assessment["verdict"], "unlikely")
+        self.assertIn(
+            "sponsorship.unreachable_negation.offer visa sponsorship",
+            assessment["rule_ids"],
+        )
+
+    def test_the_token_budget_bound_is_covered_too(self):
+        # Same sentence with the coordinator removed: here `unable` IS in scope and
+        # the 8-token budget is what refuses it. Either bound must demote.
+        assessment = assess_sponsorship(
+            "We are unable, given current headcount constraints for this "
+            "particular opening, to offer visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+    # --- guardrails: demotion must not swallow an offer that stands on its own --
+    def test_offer_heading_its_own_clause_still_survives(self):
+        # The clause genuinely restarts and the offer phrase HEADS the new clause,
+        # so the earlier `no` belongs to the relocation clause and nothing is
+        # unread. This must keep grading `likely`.
+        self.assertEqual(
+            classify_sponsorship(
+                "There is no relocation budget, and visa sponsorship is "
+                "available for this role."),
+            "likely",
+        )
+
+    def test_offer_in_a_later_sentence_still_survives(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We do not require a degree. Visa sponsorship is available."),
+            "likely",
+        )
+
+    def test_offer_with_no_negation_anywhere_is_untouched(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "For this role we are glad to offer visa sponsorship."),
+            "likely",
+        )
+
+
 class SponsorshipScopeLimitTests(unittest.TestCase):
     """An offer plus a limit ON that offer is a sponsor, not a refusal.
 

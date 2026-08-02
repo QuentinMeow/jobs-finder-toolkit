@@ -239,6 +239,32 @@ class VisaPolicyBindingTests(unittest.TestCase):
         self.assertEqual(posting.visa_label, "unclear")
         self.assertIn("sponsorship_requires_review", posting.review_reasons)
 
+    def test_require_positive_never_presents_an_unread_denial_as_an_offer(self):
+        # The high-severity residual of GH issue #15, end to end, in the exact
+        # wording filed in the known-issue. A parenthetical pushes "unable" out of
+        # the offer phrase's clause scope, so the sentence used to grade
+        # `yes`/likely/high with NO review flag: a written refusal, recommended
+        # under the one policy chosen by a candidate who needs sponsorship.
+        profile = {"visa": {"needs_sponsorship": True, "policy": "require_positive"}}
+        posting = self._posting(
+            "We are unable, given current headcount constraints and the timeline "
+            "for this particular opening, to offer visa sponsorship.")
+        self.assertTrue(visa_ok(posting, profile))
+        # Kept and FLAGGED rather than asserted — the demotion never claims the
+        # sentence is a denial either, only that it could not be read.
+        self.assertEqual(posting.visa_label, "unclear")
+        self.assertIn("sponsorship_requires_review", posting.review_reasons)
+
+    def test_require_positive_still_keeps_an_offer_after_a_hard_break(self):
+        # The guardrail on that demotion: a contrastive conjunction ends the
+        # negation outright, so this offer must still read as an explicit yes.
+        profile = {"visa": {"needs_sponsorship": True, "policy": "require_positive"}}
+        posting = self._posting(
+            "We cannot guarantee an outcome, but we do provide visa sponsorship "
+            "for senior hires.")
+        self.assertTrue(visa_ok(posting, profile))
+        self.assertEqual(posting.visa_label, "yes")
+
 
 if __name__ == "__main__":
     unittest.main()

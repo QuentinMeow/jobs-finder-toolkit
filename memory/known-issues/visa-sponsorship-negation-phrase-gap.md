@@ -1,14 +1,17 @@
 # `classify_sponsorship()` still misses denials that match no phrase at all
 
-- **Status**: open (narrowed 2026-07-31; **severity corrected upward 2026-08-01** — the
-  2026-07-31 correction pass wrote a safety claim into this file that the code did not
-  have, see the note below)
-- **Severity**: **high** — a denial can still reach the candidate as an explicit
-  **offer**. `--visa-policy require_positive` is NOT safe: one denial shape below still
-  returns `verdict: likely`, `confidence: high`, `decision: match`, `classify_visa: yes`,
-  so a posting that refuses sponsorship in writing is shortlisted, unflagged, for the one
-  candidate who cannot take it. The `unclear` fall-through and the false-denial shape are
-  the lesser, still-open remainder.
+- **Status**: open (narrowed 2026-07-31; severity corrected upward 2026-08-01; **the
+  high-severity shape closed 2026-08-02** — see "Fixed on 2026-08-02" below. Two medium
+  shapes remain, which is why this entry stays open rather than being deleted)
+- **Severity**: **medium** (was high, closed down 2026-08-02) — no denial shape now
+  reaches the candidate as an explicit **offer**, so `--visa-policy require_positive` no
+  longer recommends a posting that refuses sponsorship in writing. What remains is a
+  weaker signal, not a wrong one: a denial the phrase list cannot see still classifies
+  `unknown` and is kept as if sponsorship were merely unstated, and a non-immigration use
+  of "sponsor" can still read as a visa denial and drop a posting. **Re-measured on the
+  tree that ships this line** — the third line of the Reproduction below now prints
+  `unknown low review`, not `likely high match`. Never carried forward from a prior read;
+  that is the rule this file exists to enforce.
 - **Area**: job-search
 - **Source**: GH issue #15 (comment thread); reconfirmed in
   `evals/results/stage2-canary-gate-19c3ff8-20260720.md` and
@@ -51,12 +54,15 @@ matches **neither** list is invisible and the posting classifies `unknown`:
   "offer sponsorship" contiguous, and the offer phrases need "visa sponsorship
   available" / "offer visa sponsorship"; neither matches, so nothing fires and the
   negation scope has nothing to act on.
-- A negation cue that the clause scope cannot reach is not applied. **This does not
-  fail safe.** When the phrase left unguarded is an OFFER phrase, the sentence is
-  scored as an explicit offer, not as silence — so a denial with a parenthetical in
-  the middle of it ("We are unable, given current headcount constraints and the
-  timeline for this particular opening, to offer visa sponsorship.") returns
-  `likely` / `high` / `match` and `classify_visa` → `yes`.
+- ~~A negation cue that the clause scope cannot reach is not applied.~~ **FIXED
+  2026-08-02 — it now fails toward review.** It used not to fail safe: when the phrase
+  left unguarded was an OFFER phrase, the sentence was scored as an explicit offer
+  rather than as silence, so a denial with a parenthetical in the middle of it ("We
+  are unable, given current headcount constraints and the timeline for this
+  particular opening, to offer visa sponsorship.") returned `likely` / `high` /
+  `match` and `classify_visa` → `yes`. It now returns `unknown` / `low` / `review`.
+  Both bounds are unchanged; only the verdict an unread sentence can support changed.
+  Details in "Fixed on 2026-08-02" below.
 
   **The mechanism, measured rather than assumed** (corrected 2026-08-01 — see the
   note below; the previous version of this bullet named the wrong cause and the
@@ -99,10 +105,10 @@ for t in ('We do not offer relocation or visa sponsorship.',
           'for this particular opening, to offer visa sponsorship.'):
     print(a(t)['verdict'], a(t)['confidence'], a(t)['decision'])
 "
-# prints:
-#   unknown  unknown  review     <- should be 'unlikely' (denial matches no phrase)
-#   unlikely high     no_match   <- should be 'unknown'  (non-immigration "sponsor")
-#   likely   high     match      <- should be 'unlikely'; THIS is the high-severity one
+# prints, measured 2026-08-02 on the branch that closes line 3:
+#   unknown  unknown  review     <- should be 'unlikely' (denial matches no phrase); OPEN
+#   unlikely high     no_match   <- should be 'unknown'  (non-immigration "sponsor"); OPEN
+#   unknown  low      review     <- CLOSED 2026-08-02; was `likely high match`
 ```
 
 Re-run 2026-07-31 on the stack tip `40871e6`: the first two print `unknown` then
@@ -113,6 +119,13 @@ carrying the quantifier-confidence fix below): **all three still print exactly t
 above.** That change touches the denial side's confidence only and closes none of these
 three; nothing here is fixed by it.
 
+**2026-08-02, on `fix/sponsorship-unreachable-negation`:** the third line now prints
+`unknown low review` — it is no longer an offer, and it was never promoted to a denial
+either. The first two are unchanged and remain open; both are detection gaps (a denial
+nothing matches, and a "sponsor" that is not about visas), and neither is closed by a
+verdict-layer change. Do not read the first line's `review` as the same fix: it has always
+printed `review`, for the different reason that nothing fires at all.
+
 The one figure in this file that is **not** reproducible is "roughly 28 of 430 `likely`
 rows on the 2026-07-31 run" (and the 11,638 raw postings behind it). Those come from a
 live keyless board sweep whose postings have since moved on; they are recorded as what
@@ -122,12 +135,13 @@ that run reported, not as a claim about any tree, and nothing here depends on th
 
 Three shapes, and they do not cost the same.
 
-1. **A denial reported as an offer (high).** When a denial's sentence carries an offer
-   substring that the negation scope cannot reach, the posting classifies `likely` at
-   `high` confidence with `decision: match`, so `--visa-policy require_positive` — the
-   policy chosen precisely by someone who needs sponsorship — returns it with **no**
-   `sponsorship_requires_review` flag. The user is pointed at an employer that said no
-   in writing. This is the reason the entry's severity is high.
+1. ~~**A denial reported as an offer (high).**~~ **CLOSED 2026-08-02.** When a denial's
+   sentence carried an offer substring that the negation scope could not reach, the
+   posting classified `likely` at `high` confidence with `decision: match`, so
+   `--visa-policy require_positive` — the policy chosen precisely by someone who needs
+   sponsorship — returned it with **no** `sponsorship_requires_review` flag. The user was
+   pointed at an employer that said no in writing. This was the reason the entry's
+   severity was high; it is now medium. See "Fixed on 2026-08-02" below.
 2. **A denial reported as silence (medium).** An unrecognized denial classifies
    `unknown`, and the default `exclude_negative` policy keeps `unknown`, so the posting
    reaches the candidate as if sponsorship were merely unstated — advisory-only output
@@ -222,6 +236,54 @@ of the evidence lists by construction and was never enforced at the VERDICT leve
 removing a denial is itself a two-step promotion (`review`/`unknown`/low →
 `match`/`likely`/high). The unenforced half is where the defect landed.
 
+## Fixed on 2026-08-02 (kept as history)
+
+**An unreachable negation cue no longer leaves the offer unopposed.** This is repair 0(b)
+below — "fail toward review" — chosen over 0(a) "widen the reach". Both bounds
+(`_SPONSOR_CLAUSE_BREAK_RE`, `_SPONSOR_NEGATION_MAX_GAP_TOKENS`) are **unchanged**; what
+changed is the verdict a sentence can support when a bound refuses a cue.
+
+`_sponsor_negation` returns `None` for two different reasons that were being treated as
+one: the sentence carries no negation at all (real silence), or it carries one that a
+bound refused (a sentence this classifier could not read). The second now demotes the
+offer to `unknown` / `review` instead of asserting it. It is **never** promoted to a
+denial — an unread sentence is evidence in neither direction — so the invariant that a
+scope rule may only remove a denial, never create one, is untouched.
+
+The demotion is guarded by two conditions, and each was added because the suite caught the
+version without it swallowing a real offer:
+
+1. **The phrase must not head its own clause.** An empty `_sponsor_clause_scope` means the
+   break landed on the phrase, so the offer is an independent assertion and an earlier cue
+   belongs to the earlier clause. Without this, "there is no relocation budget, and visa
+   sponsorship is available" — the `sponsorship-offer-after-clause-restart` guardrail —
+   was demoted.
+2. **No HARD break may stand between the cue and the phrase.** Sentence punctuation, a
+   dash and the contrastive conjunctions end a negation *definitively*, so a cue behind one
+   is finished, not unread. Without this, "we cannot guarantee an outcome, **but** we do
+   provide visa sponsorship for senior hires" was demoted, and "this role does not offer
+   sponsorship, **though** limited immigration sponsorship may be available on other
+   teams" lost its offer/denial conflict and was silently dropped instead of flagged.
+
+The hard/soft split is why `_SPONSOR_HARD_BREAK_SRC` now exists: `_SPONSOR_CLAUSE_BREAK_RE`
+is composed from it, so the two halves stay one definition. Only the SOFT half — a guessed
+clause restart, or the token budget — leaves a sentence unread.
+
+Pinned by `SponsorshipUnreachableNegationTests` (`automation/shared/tests/test_job_metadata.py`),
+`test_require_positive_never_presents_an_unread_denial_as_an_offer` and
+`test_require_positive_still_keeps_an_offer_after_a_hard_break`
+(`skills/job-search/scripts/tests/test_visa.py`), and the corpus cases
+`sponsorship-unreachable-negation-is-not-an-offer`,
+`sponsorship-unreachable-negation-token-budget` and
+`sponsorship-offer-after-a-hard-break-still-stands`.
+
+**Known cost, accepted.** A JD that puts a negation and an unrelated offer in one
+mid-clause position now lands `review` rather than `likely`. The posting is **kept** under
+both policies and carries `sponsorship_requires_review`, so nothing is hidden — the user
+sees a flag instead of a clean `yes`. Repair 0(a) remains available and this change does
+not stand in its way: widening the reach would shrink the set that reaches the demotion,
+not conflict with it.
+
 ## Deliberately NOT fixed (recorded so the record cannot be misread as a regression)
 
 An independent verification pass published three sentences as one blocking finding — a
@@ -247,18 +309,23 @@ to be, the fix is the discourse-relation reading the decision record lists under
 alternatives, not a narrowing of the quantifier — which is what the three previous revisions
 each tried, in alternating directions.
 
-Also unchanged by design: the long-parenthetical denial is the open high-severity item
-described at the top of this entry, tracked here rather than closed.
+Also unchanged by design: the long-parenthetical denial WAS the open high-severity item
+described at the top of this entry. It was closed on 2026-08-02 by repair 0(b) below; the
+paragraph above is kept as the record of why it stayed open until then.
 
 ## Suggested fix
 
-Three independent pieces; any can ship alone.
+Three independent pieces; any can ship alone. **Piece 0 shipped on 2026-08-02** (option
+(b)); pieces 1 and 2 are still open and are what keeps this entry alive.
 
-0. **The unreachable negation cue (the high-severity remainder).** An offer phrase whose
-   governing cue is out of scope is scored as an offer rather than ignored. Two candidate
-   repairs, and the choice is an owner call because they trade recall against safety
-   differently — but note first that they are **not** interchangeable here: only (b) closes
-   the reproduction filed above.
+0. ~~**The unreachable negation cue (the high-severity remainder).**~~ **DONE 2026-08-02
+   via (b)** — see "Fixed on 2026-08-02" above. An offer phrase whose governing cue was
+   out of scope was scored as an offer rather than ignored. Two candidate repairs, and the
+   choice was an owner call because they trade recall against safety differently — but note
+   first that they are **not** interchangeable here: only (b) closes the reproduction filed
+   above. **(b) was chosen**, on the grounds that it closes the reproduction whichever
+   bound cut the cue, matches how every other ambiguity in this module resolves, and is
+   reversible — (a) remains open and is not blocked by it.
    - **(a) Widen the reach.** Stop `_SPONSOR_CLAUSE_BREAK_RE` ending the scope on a
      coordinator that sits INSIDE a comma-delimited parenthetical (the `and the` that cuts
      the filed sentence), and stop counting that parenthetical's tokens against

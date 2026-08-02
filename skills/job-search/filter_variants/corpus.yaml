@@ -218,6 +218,45 @@ variants:
       verdict: likely
       confidence: high
 
+  - id: sponsorship-unreachable-negation-is-not-an-offer
+    domain: sponsorship
+    # The mirror of the guardrail above, and the reason it needs one. Here the
+    # clause break fires on the "and the" INSIDE the parenthetical, so "unable"
+    # never enters the offer phrase's scope. The offer must NOT be asserted: the
+    # sentence is a refusal, and grading it `likely` handed a written no to the
+    # one candidate who needs a yes. Demoted to review, never promoted to a
+    # denial — an unread sentence is evidence in neither direction.
+    input:
+      text: We are unable, given current headcount constraints and the timeline for this particular opening, to offer visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-unreachable-negation-token-budget
+    domain: sponsorship
+    # The same demotion when the OTHER bound is what cut the cue: with the
+    # coordinator removed, "unable" is in scope but sits outside the 8-token gap
+    # budget. Both bounds must fail toward review.
+    input:
+      text: We are unable, given current headcount constraints for this particular opening, to offer visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-offer-after-a-hard-break-still-stands
+    domain: sponsorship
+    # A contrastive conjunction ends a negation definitively, so the cue before
+    # "but" is finished, not unread. This is the case that keeps the demotion
+    # above from swallowing real offers.
+    input:
+      text: We cannot guarantee an outcome, but we do provide visa sponsorship for senior hires.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
   - id: sponsorship-export-control-is-not-a-denial
     domain: sponsorship
     # "Sponsorship" in US export-licensing boilerplate is a different legal

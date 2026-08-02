@@ -1427,11 +1427,22 @@ _SPONSOR_NEGATION_CUE_RE = re.compile(
 # own verb) — so "we are not, at this time, able to offer visa sponsorship" stays
 # one negated clause while "no relocation budget, and visa sponsorship is
 # available" does not.
-_SPONSOR_CLAUSE_BREAK_RE = re.compile(
+#
+# The two halves are named separately because they carry different certainty, and
+# one consumer needs to tell them apart. A HARD break — sentence punctuation, a
+# dash, or a contrastive conjunction — ends a negation definitively: nothing before
+# "but" governs anything after it. The SOFT half (a comma/and/or followed by what
+# looks like a new subject) is a heuristic guess at a clause restart, and a wrong
+# guess there is what ``_sponsor_negation_out_of_reach`` exists to catch.
+_SPONSOR_HARD_BREAK_SRC = (
     r"[.;:!?•|]|--|—|–"
     r"|\b(?:but|however|although|though|yet|whereas|while|nevertheless|"
     r"nonetheless|unless|otherwise|instead)\b"
-    r"|(?:,|\band\b|\bor\b|\bplus\b)\s+(?:"
+)
+_SPONSOR_HARD_BREAK_RE = re.compile(_SPONSOR_HARD_BREAK_SRC, re.I)
+_SPONSOR_CLAUSE_BREAK_RE = re.compile(
+    _SPONSOR_HARD_BREAK_SRC
+    + r"|(?:,|\band\b|\bor\b|\bplus\b)\s+(?:"
     r"(?:we|they|it|you|he|she|i|this|these|those|that|our|your|their|the|a|an|"
     r"candidates?|applicants?|employees?|employers?|positions?|roles?|"
     r"is|are|was|were|will|can|may|might|would|should|must|do|does|did|"
@@ -1636,6 +1647,49 @@ def _sponsor_negation(source: str, start: int):
     return scope, cue
 
 
+def _sponsor_negation_out_of_reach(source: str, start: int) -> bool:
+    """True when a negation governs this sentence but no bound let it reach ``start``.
+
+    ``_sponsor_negation`` returns ``None`` for two different reasons, and they do
+    not mean the same thing. Either the sentence carries no negation at all — real
+    silence — or it carries one that a bound refused: the clause scope stopped at a
+    break, or the token budget capped the gap. The second is a sentence that said
+    something this classifier could not read, and reading it as silence is what let
+
+        "We are unable, given current headcount constraints and the timeline for
+         this particular opening, to offer visa sponsorship."
+
+    grade ``likely`` / ``high`` / ``match`` — a refusal in writing, handed under
+    ``--visa-policy require_positive`` to the one candidate who cannot take the job,
+    with no review flag on it. Both bounds are correct and BOTH STAY; only the
+    verdict their refusal can support changes.
+
+    Two conditions, and both are needed — each one alone was measured against the
+    suite and swallowed a real offer.
+
+    1. **The phrase does not head its own clause.** When ``_sponsor_clause_scope``
+       comes back empty the break landed on the phrase itself, so the offer is an
+       independent assertion and an earlier cue belongs to the earlier clause —
+       "there is no relocation budget, and visa sponsorship is available" stays a
+       sponsor. A NON-empty scope means the phrase sits mid-clause and its clause
+       head is on the far side of the bound.
+    2. **No HARD break stands between the cue and the phrase.** A hard break ends a
+       negation definitively, so a cue behind one is not unread — it is finished.
+       Without this, "we cannot guarantee an outcome, but we do provide visa
+       sponsorship for senior hires" would be demoted, and ``but`` is exactly the
+       token that makes the offer stand.
+
+    So only a cue that a SOFT bound refused — a guessed clause restart, or the
+    token budget — leaves the sentence unread.
+    """
+    if not _sponsor_clause_scope(source, start).strip():
+        return False
+    left = 0
+    for break_match in _SPONSOR_HARD_BREAK_RE.finditer(source, 0, start):
+        left = break_match.end()
+    return _SPONSOR_NEGATION_CUE_RE.search(source, left, start) is not None
+
+
 def _sponsor_double_negated(scope: str, cue) -> bool:
     """True when ``cue`` is itself sitting inside another negation."""
     before = scope[:cue.start()]
@@ -1827,6 +1881,13 @@ def assess_sponsorship(text: str | None) -> dict:
     * an offer stated only under a possibility modal, a discretion clause or a
       quantity hedge is a HEDGED offer and lands ``unknown``, not ``likely``.
 
+    And the bounds on that structural read fail toward review rather than toward
+    silence: when a negation cue sits in the offer's own sentence but no bound let
+    it reach the phrase (see ``_sponsor_negation_out_of_reach``), the sentence has
+    said something this classifier could not read, so the offer is demoted to
+    ``unknown`` instead of being asserted. It is never promoted to a denial either
+    — an unread sentence is evidence of nothing, in both directions.
+
     So an unhedged offer outranks a hedged one, a hedged one outranks silence, and
     a scope limit moves nothing — while a SETTLED denial still wins over
     everything.
@@ -1868,6 +1929,7 @@ def assess_sponsorship(text: str | None) -> dict:
             negative.append(phrase)
     positive: list[str] = []
     hedged_offer: list[str] = []
+    unreachable_negation: list[str] = []
     negated_offer: list[str] = []
     for phrase, positive_match in _bounded_phrase_matches(source, _SPONSOR_POSITIVE):
         if not _immigration_sense(positive_match):
@@ -1899,6 +1961,12 @@ def assess_sponsorship(text: str | None) -> dict:
                     unsettled.append(phrase)
             elif phrase not in negated_offer:
                 negated_offer.append(phrase)
+            continue
+        # A cue that IS in this sentence but that no bound let reach the phrase
+        # leaves the offer unread rather than unopposed: demote, never assert.
+        if _sponsor_negation_out_of_reach(source, positive_match.start()):
+            if phrase not in unreachable_negation:
+                unreachable_negation.append(phrase)
             continue
         if _sponsor_offer_is_hedged(
                 source, positive_match.start(), positive_match.end()):
@@ -1938,6 +2006,11 @@ def assess_sponsorship(text: str | None) -> dict:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = ("The posting's only sponsorship offer is hedged (discretionary "
                   "or limited), so it is not read as an offer.")
+    elif unreachable_negation:
+        decision, verdict, confidence = "review", "unknown", "low"
+        reason = ("The posting's only sponsorship offer sits in a sentence that "
+                  "also negates, too far away to read reliably, so it is not "
+                  "read as an offer.")
     elif scope_limited:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = ("The posting limits the SCOPE of sponsorship without saying "
@@ -1957,6 +2030,8 @@ def assess_sponsorship(text: str | None) -> dict:
         *(["sponsorship.ambiguous.double_negation"] if ambiguous else []),
         *(["sponsorship.non_immigration.export_control"] if export_control else []),
         *(f"sponsorship.hedged_offer.{phrase}" for phrase in hedged_offer),
+        *(f"sponsorship.unreachable_negation.{phrase}"
+          for phrase in unreachable_negation),
         *(f"sponsorship.positive.{phrase}" for phrase in positive),
     ]
     # The structural signature groups by rule FAMILY (polarity/conflict), not the
@@ -1980,6 +2055,8 @@ def assess_sponsorship(text: str | None) -> dict:
             *(f"unsettled: {phrase}" for phrase in unsettled),
             *(f"scope-limited: {phrase}" for phrase in scope_limited),
             *(f"hedged: {phrase}" for phrase in hedged_offer),
+            *(f"unreachable-negation: {phrase}"
+              for phrase in unreachable_negation),
             *positive,
         ],
         "signal_present": bool(_SPONSOR_SIGNAL_RE.search(source)),
