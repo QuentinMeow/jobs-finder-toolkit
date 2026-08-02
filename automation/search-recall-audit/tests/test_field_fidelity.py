@@ -2,7 +2,7 @@
 
 This tool exists to catch the pipeline silently dropping location information, so
 every defect here is the same shape one level up: **the detector reporting a
-confident answer it did not compute.** Four of them, each pinned below:
+confident answer it did not compute.** Five of them, each pinned below:
 
 * the "gate decision" it printed was not the gate's decision — it dropped the
   title, the workplace hint and the JD that ``scoring.location_ok`` passes, so it
@@ -12,7 +12,9 @@ confident answer it did not compute.** Four of them, each pinned below:
   of ``sample`` — a whole ATS reported clean without ever being looked at;
 * one unparseable index row truncated the rest of the index, silently;
 * two of the three writing commands skipped the ``local/`` containment guard the
-  third enforces.
+  third enforces;
+* every store-reading command tracebacked out of ``pathlib`` where no store is
+  configured — the shipped example config, i.e. every fresh clone and CI.
 
 Isolation: every store test pins ``JOBHUNT_DATA_ROOT`` and ``JOBHUNT_CONFIG`` at
 throwaway paths, so no test reads the owner's store, config or applications tree.
@@ -79,6 +81,16 @@ class _Layout:
 
     def __init__(self, index: Path):
         self.index = index
+
+
+def _restore_env(prior: dict) -> None:
+    """Put ``{var: value-before-the-test}`` back, un-setting what was unset."""
+    for var, value in prior.items():
+        if value is None:
+            os.environ.pop(var, None)
+        else:
+            os.environ[var] = value
+    ff.config._load.cache_clear()
 
 
 # --------------------------------------------------------------------------- #
@@ -224,6 +236,18 @@ class IterIndexTests(unittest.TestCase):
 class OutputContainmentTests(unittest.TestCase):
     """`corpus`/`sample` wrote wherever they were pointed; only `todo` refused."""
 
+    def setUp(self):
+        # `main` refuses a store-reading command before dispatch when the store is
+        # unset, so the containment message is only reachable with one configured.
+        # Pinned at a throwaway path rather than inherited: a test that reads the
+        # ambient config asserts a different thing on a developer machine (store
+        # configured) than in CI (example config, store unset).
+        self._prior_data = os.environ.get("JOBHUNT_DATA_ROOT")
+        self.data_root = Path(tempfile.mkdtemp(prefix="ff-contain-")).resolve()
+        os.environ["JOBHUNT_DATA_ROOT"] = str(self.data_root)
+        self.addCleanup(shutil.rmtree, self.data_root, True)
+        self.addCleanup(_restore_env, {"JOBHUNT_DATA_ROOT": self._prior_data})
+
     def test_every_writing_command_refuses_a_path_outside_local(self):
         target = ff.REPO_ROOT / "skills" / "_ff_containment_probe"
         # A pre-fix run of this very test leaves the directory behind — which is
@@ -241,6 +265,74 @@ class OutputContainmentTests(unittest.TestCase):
                 self.assertIn(cmd, message)
         self.assertFalse(target.exists(),
                          "a rejected --out still created its directory")
+
+
+# --------------------------------------------------------------------------- #
+# No store configured is a SENTENCE, not a seven-frame TypeError
+# (backlog: 2026-07-31-field-fidelity-unconfigured-store)
+# --------------------------------------------------------------------------- #
+class UnconfiguredStoreTests(unittest.TestCase):
+    """The shipped example config leaves the store unset — i.e. every fresh clone.
+
+    `config.data_root()` returns None by design there, and every store-reading
+    command handed that None straight to `pathlib`, so the toolkit's own quickstart
+    commands died inside a stdlib frame. Pinned per command, because a guard that
+    covers `check` alone leaves the same traceback under `corpus` and `todo`.
+    """
+
+    def setUp(self):
+        self._prior = {var: os.environ.get(var)
+                       for var in ("JOBHUNT_DATA_ROOT", ff.config.ENV_VAR)}
+        self.addCleanup(_restore_env, self._prior)
+        os.environ.pop("JOBHUNT_DATA_ROOT", None)
+        os.environ[ff.config.ENV_VAR] = str(ff.REPO_ROOT / "config.example.yaml")
+        ff.config._load.cache_clear()
+        self.assertIsNone(ff.config.data_root(),
+                          "the shipped example config must leave the store unset")
+        scratch = ff.REPO_ROOT / "local"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.out = Path(tempfile.mkdtemp(prefix="ff-unconfigured-", dir=str(scratch)))
+        self.addCleanup(shutil.rmtree, self.out, True)
+
+    def _run(self, *argv):
+        """``(exit code, everything a user would see)`` for one CLI invocation.
+
+        Nothing is caught but `SystemExit`: an escaping traceback IS the defect,
+        so it must reach the test runner as an error.
+        """
+        out_buf, err = io.StringIO(), io.StringIO()
+        exit_message = ""
+        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err):
+            try:
+                code = ff.main(["--out", str(self.out), *argv])
+            except SystemExit as raised:      # a command's own `sys.exit(message)`
+                code = raised.code
+                if isinstance(code, str):     # the message IS the code; 1 on a shell
+                    exit_message, code = code, 1
+        return code, "\n".join((out_buf.getvalue(), err.getvalue(), exit_message))
+
+    def test_every_store_reading_command_names_what_to_configure(self):
+        for argv in (["corpus"], ["check", "--key", "anything"], ["todo"]):
+            with self.subTest(cmd=argv[0]):
+                code, message = self._run(*argv)
+                self.assertEqual(code, 2, message)
+                self.assertIn("store not configured", message)
+                self.assertIn("paths.data_root", message)
+                self.assertIn("JOBHUNT_DATA_ROOT", message)
+                self.assertIn(argv[0], message)
+
+    def test_the_refusal_leaves_the_scratch_dir_unwritten(self):
+        # Refusing after writing a half-run's artifacts would leave the next
+        # `sample` reading a corpus that no store backs.
+        self._run("corpus")
+        self.assertEqual(sorted(p.name for p in self.out.iterdir()), [])
+
+    def test_sample_reads_only_the_scratch_corpus_so_it_needs_no_store(self):
+        # `sample` never touches `data_root`; its honest refusal is the missing
+        # corpus file, and gating it on the store would be a lie about what it reads.
+        code, message = self._run("sample")
+        self.assertNotEqual(code, 0)
+        self.assertIn("run `corpus` first", message)
 
 
 # --------------------------------------------------------------------------- #

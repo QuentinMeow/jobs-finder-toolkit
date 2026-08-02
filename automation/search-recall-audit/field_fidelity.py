@@ -736,8 +736,11 @@ def main(argv=None) -> int:
     c = sub.add_parser("corpus", help="resolve raw + compare vs generated location")
     c.add_argument("--limit", type=int, default=600)
     c.add_argument("--seed", type=int, default=42)
-    c.set_defaults(func=cmd_corpus)
+    c.set_defaults(func=cmd_corpus, needs_store=True)
 
+    # `sample` reads the corpus file `corpus` already wrote, never the store, so it
+    # deliberately carries no `needs_store`: gating it would claim a dependency it
+    # does not have.
     s = sub.add_parser("sample", help="write per-entity comparison files for subagents")
     s.add_argument("--n", type=int, default=32)
     s.add_argument("--seed", type=int, default=7)
@@ -747,12 +750,26 @@ def main(argv=None) -> int:
 
     t = sub.add_parser("check", help="deterministic single-entity re-parse root-cause")
     t.add_argument("--key", action="append", required=True)
-    t.set_defaults(func=cmd_check)
+    t.set_defaults(func=cmd_check, needs_store=True)
 
     d = sub.add_parser("todo", help="write weird-location reviews for AI follow-up")
-    d.set_defaults(func=cmd_todo)
+    d.set_defaults(func=cmd_todo, needs_store=True)
 
     args = ap.parse_args(argv)
+    # No store, no audit. ``config.data_root()`` is ``None`` BY DESIGN wherever
+    # ``paths.data_root`` is unset — which is `config.example.yaml`, i.e. every
+    # fresh clone and CI — and each store-reading command handed that ``None``
+    # straight to ``pathlib``, so the quickstart commands died seven frames deep in
+    # the stdlib. One guard, before dispatch: a new store-reading subcommand
+    # declares ``needs_store=True`` beside its ``func`` instead of repeating it.
+    # Non-zero, unlike the store's own gc/validate tools that exit 0 on "nothing to
+    # do": this tool was ASKED for a verdict and has none, and exiting 0 would
+    # report an audit that never ran as a clean one.
+    if getattr(args, "needs_store", False) and config.data_root() is None:
+        print(f"{args.cmd}: store not configured (set paths.data_root in config.yaml "
+              f"or export JOBHUNT_DATA_ROOT) — this command reads the raw zone.",
+              file=sys.stderr)
+        return 2
     args.func(args)
     return 0
 

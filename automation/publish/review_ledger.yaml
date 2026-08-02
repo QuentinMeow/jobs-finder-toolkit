@@ -2208,3 +2208,9 @@
   files: 1
   digest: sha256:bea7c8d3cfca8daf
   finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:4161c30332b7bf8f
+  finding: 'Guards the field-fidelity auditor against an unconfigured store. Every store-reading subcommand handed `config.data_root()`''s documented None straight to pathlib, so the toolkit''s own quickstart commands died seven frames deep in the stdlib on every fresh clone and in CI. One pre-dispatch guard in main, keyed off a `needs_store` default each store-reading subparser declares; `sample` deliberately has none because it reads only the scratch corpus. Exits 2 rather than the sibling store tools'' 0: an audit asked for a verdict and unable to read the store has not passed. The containment test now pins JOBHUNT_DATA_ROOT so it asserts the same thing on a maintainer machine and in CI. Tooling and test prose only - no identity, employer, school, salary or dated job-hunt content.'
