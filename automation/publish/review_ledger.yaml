@@ -2221,3 +2221,16 @@
     shapes (ExampleCorp) plus two new invented ones (Zeta Corp, Alpha Labs) - no
     real employer, no board token, no posting. No identity, employer, school,
     salary or dated job-hunt content.'
+- base: 5fce4ba2
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:1b26488f37f70e16
+  finding: 'Store builder: the in-place index regeneration now writes first and
+    removes only the difference, instead of rmtree-ing by-day/ and triage/ before
+    the write. Diff read in full. Net effect is one fewer destructive step; the
+    only remaining unlink targets a file that existed before the write and was not
+    rewritten. Two writer functions gained a return value and three call sites were
+    updated. Test fixtures are the existing fictional shapes (ExampleCorp, UkCo) -
+    no real employer, no board token, no posting. No identity, employer, school,
+    salary or dated job-hunt content.'

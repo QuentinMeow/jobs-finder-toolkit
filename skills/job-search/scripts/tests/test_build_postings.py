@@ -1562,6 +1562,84 @@ class EmptyStoreRebuildTests(_StoreCase):
             self.assertEqual(row["seq"], floor[key]["seq"])
 
 
+class IndexRegenCrashTests(_StoreCase):
+    """The incremental regeneration must not delete the index zone before writing.
+
+    ``--rebuild`` writes the whole index into ``index.building`` and swaps, so a
+    failure anywhere before the swap leaves the live zone untouched. The default
+    (incremental) path regenerates in place, and it used to ``rmtree`` ``by-day/``
+    and ``triage/`` FIRST. ``postings.jsonl`` was already excluded and the crash
+    leaves the write-ahead marker that forces the next build to regenerate both
+    directories — so the hole is transient, not the permanent loss of a durable
+    floor. Transient is still a window ``--rebuild`` does not have.
+    """
+
+    def _ensure_index_zone(self):
+        """Two postings (by-day rows) plus one suppressed row (a triage row)."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX"),
+                          _job(222, "SRE", "Remote, US")], _dt(14))
+        self._capture_scrape("jobicy", {"jobs": [
+            {"id": 2, "url": "https://jobicy.com/jobs/2-lon", "jobTitle": "UK Backend",
+             "companyName": "UkCo", "jobGeo": "London, United Kingdom",
+             "jobDescription": "d", "pubDate": "2026-07-12"}]}, _dt(15))
+        self.assertEqual(self._build([]), 0)
+        zone = self._zone()
+        self.assertTrue(zone["by-day"] and zone["triage"], zone)
+        return zone
+
+    def _zone(self):
+        out = {"postings.jsonl": (self.layout.index / "postings.jsonl").is_file()}
+        for sub in ("by-day", "triage"):
+            d = self.layout.index / sub
+            out[sub] = sorted(p.name for p in d.glob("*.jsonl")) if d.is_dir() \
+                else "MISSING"
+        return out
+
+    def _build_with_a_failing_index_write(self, *argv):
+        """ENOSPC inside the index write — the audit's demonstration."""
+        real = bp.atomic_write_text
+
+        def _fail(path, text):
+            if Path(path).name == "postings.jsonl":
+                raise OSError(28, "No space left on device")
+            return real(path, text)
+
+        bp.atomic_write_text = _fail
+        try:
+            with self.assertRaises(OSError):
+                self._build(list(argv))
+        finally:
+            bp.atomic_write_text = real
+
+    def test_a_failed_incremental_index_write_leaves_by_day_and_triage(self):
+        before = self._ensure_index_zone()
+        self._cache().unlink()          # force the whole-raw-zone fold (regen path)
+        self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(16))
+        self._build_with_a_failing_index_write()
+        self.assertEqual(self._zone(), before)
+
+    def test_rebuild_already_survives_the_same_failure(self):
+        """The behaviour the incremental path is being brought level with."""
+        before = self._ensure_index_zone()
+        self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(16))
+        self._build_with_a_failing_index_write("--rebuild")
+        self.assertEqual(self._zone(), before)
+
+    def test_a_bucket_that_empties_still_loses_its_file(self):
+        """Write-first must not turn into never-prune: a stale bucket still goes."""
+        self._ensure_index_zone()
+        orphan = self.layout.index / "by-day" / "2020-01-01.jsonl"
+        atomic_write_text(orphan, '{"_schema": 1}\n')
+        stray = self.layout.index / "leftovers.jsonl"
+        atomic_write_text(stray, '{"_schema": 1}\n')
+        self._cache().unlink()
+        self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(16))
+        self.assertIn("fold=full", self._summary())
+        self.assertFalse(orphan.exists(), "a bucket with no rows kept its file")
+        self.assertFalse(stray.exists(), "a stale top-level index file survived")
+        self._assert_matches_rebuild()
+
+
 class SwapCrashRecoveryTests(_StoreCase):
     """A build killed inside ``_swap_dir`` leaves the zone only as ``<zone>.old``.
 

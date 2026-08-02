@@ -890,13 +890,14 @@ def _write_index(index_root: Path, entities: dict, entity_seq: dict, built_at: s
     this is byte-identical to a plain rewrite from ``entities`` (a pure superset
     guarantee). ``by-day/`` stays event-derived from ``entities`` only — index-only
     survivors have no events this build and are never fabricated one.
-    Returns the survivor rows the floor contributed.
+    Returns ``(survivor rows the floor contributed, the paths written)``.
     """
     header = {"_schema": INDEX_SCHEMA_VERSION, "built_at": built_at, "note": INDEX_NOTE}
     # postings.jsonl — sorted by key for determinism; entities win by key.
     rows = {key: _index_row(eb, entity_seq.get(key, 0))
             for key, eb in entities.items()}
     survivors = _write_postings_index(index_root, rows, header, tombstoned)
+    written = {Path(index_root) / "postings.jsonl"}
 
     # by-day/<date>.jsonl — every observation event bucketed by UTC capture day
     by_day: dict[str, list[dict]] = {}
@@ -911,13 +912,17 @@ def _write_index(index_root: Path, entities: dict, entity_seq: dict, built_at: s
         day_rows.sort(key=lambda r: (r.get("at") or "", r["entity"], r["type"]))
         out = [serialization.dumps_jsonl_line(header)]
         out += [serialization.dumps_jsonl_line(r) for r in day_rows]
-        atomic_write_text(Path(index_root) / "by-day" / f"{day}.jsonl", "".join(out))
-    return survivors
+        path = Path(index_root) / "by-day" / f"{day}.jsonl"
+        atomic_write_text(path, "".join(out))
+        written.add(path)
+    return survivors, written
 
 
-def _write_suppressed(index_root: Path, suppressed: list[dict], built_at: str) -> None:
+def _write_suppressed(index_root: Path, suppressed: list[dict], built_at: str) -> set:
+    """Write ``triage/suppressed-<month>.jsonl``; return the paths written."""
     header = {"_schema": INDEX_SCHEMA_VERSION, "built_at": built_at, "note": INDEX_NOTE}
     by_month: dict[str, list[dict]] = {}
+    written = set()
     for s in suppressed:
         at = s.get("at") or ""
         month = at[:7] if len(at) >= 7 else "unknown"
@@ -928,8 +933,10 @@ def _write_suppressed(index_root: Path, suppressed: list[dict], built_at: str) -
                                  r.get("manifest", "")))
         out = [serialization.dumps_jsonl_line(header)]
         out += [serialization.dumps_jsonl_line(r) for r in rows]
-        atomic_write_text(index_root / "triage" / f"suppressed-{month}.jsonl",
-                          "".join(out))
+        path = Path(index_root) / "triage" / f"suppressed-{month}.jsonl"
+        atomic_write_text(path, "".join(out))
+        written.add(path)
+    return written
 
 
 # ── generated store README ───────────────────────────────────
@@ -2082,6 +2089,19 @@ def _rewrite_bucketed(directory: Path, buckets: dict, header: dict, sort_key,
         atomic_write_text(path, "".join(out))
 
 
+def _index_zone_files(index_root: Path) -> set:
+    """Every generated index-zone file EXCEPT ``postings.jsonl``.
+
+    The postings index is excluded because it is the durable floor: it is read for
+    survivors and then replaced wholesale, never removed.
+    """
+    root = Path(index_root)
+    out = {p for p in root.glob("*.jsonl") if p.name != "postings.jsonl"}
+    for sub in ("by-day", "triage"):
+        out |= set((root / sub).glob("*.jsonl"))
+    return out
+
+
 def _regen_index_zone(index_root: Path, entities, entity_seq, suppressed, built_at,
                       tombstoned=()) -> dict:
     """Regenerate the whole index zone (postings + by-day + triage) wholesale.
@@ -2093,16 +2113,31 @@ def _regen_index_zone(index_root: Path, entities, entity_seq, suppressed, built_
     historical key. ``postings.jsonl`` is deliberately NOT unlinked here: the floor
     is read from the live file, and the write below replaces it wholesale anyway.
     Returns the survivor rows the floor contributed.
+
+    WRITE FIRST, then remove the difference. ``by-day/`` and ``triage/`` used to be
+    ``rmtree``d before ``_write_index`` ran, so any failure inside the write —
+    ENOSPC is the audit's demonstration — left them missing until a later build
+    regenerated them, while ``--rebuild`` (which builds the whole index into
+    ``index.building`` and swaps) kept them throughout. The hole was transient, not
+    permanent: ``postings.jsonl`` was already excluded, and the crash leaves the
+    write-ahead marker that forces the next build to regenerate both directories.
+    Transient is still a gap the rebuild path does not have, and closing it costs
+    one extra listing of two directories.
     """
+    index_root = Path(index_root)
+    before = _index_zone_files(index_root)
+    survivors, written = _write_index(index_root, entities, entity_seq, built_at,
+                                      tombstoned)
+    written |= _write_suppressed(index_root, suppressed, built_at)
+    for stale in sorted(before - written):
+        stale.unlink()
+    # A wholesale regeneration with nothing to bucket leaves no directory at all —
+    # that is what `--rebuild` (writing into a fresh aside) produces, and the two
+    # paths must not disagree by one empty directory.
     for sub in ("by-day", "triage"):
         d = index_root / sub
-        if d.is_dir():
-            shutil.rmtree(d)
-    for stale in index_root.glob("*.jsonl"):
-        if stale.name != "postings.jsonl":
-            stale.unlink()
-    survivors = _write_index(index_root, entities, entity_seq, built_at, tombstoned)
-    _write_suppressed(index_root, suppressed, built_at)
+        if d.is_dir() and not any(d.iterdir()):
+            d.rmdir()
     return survivors
 
 
@@ -2158,8 +2193,8 @@ def build_rebuild(layout, registry) -> dict:
     built_at = _index_built_at(ledger)
     # Writes into the ASIDE dir; `_write_postings_index` reads the floor from the
     # live `index/` regardless, so the swap commits entities ∪ survivors.
-    index_survivors = _write_index(index_new, entities, entity_seq, built_at,
-                                   frozen_keys)
+    index_survivors, _written = _write_index(index_new, entities, entity_seq,
+                                             built_at, frozen_keys)
     _write_suppressed(index_new, suppressed, built_at)
 
     _swap_dir(layout.derived, derived_new)
@@ -2309,8 +2344,9 @@ def build_opinions_only(layout, registry) -> dict:
         # both gone contributes none — `_write_postings_index` is what keeps its index
         # row alive. Same tombstone set as every other path, so the key set this
         # leaves behind is the one a build would.
-        survivors = _write_index(layout.index, entities_for_index, entity_seq,
-                                 built_at, set(load_frozen_facts(layout)))
+        survivors, _written = _write_index(layout.index, entities_for_index,
+                                           entity_seq, built_at,
+                                           set(load_frozen_facts(layout)))
     fold_state.clear_incomplete(fold_state.incomplete_path(layout))
     _print_opinion_diff(diffs, changed_entities)
     return {"mode": "opinions-only", "changed": changed_entities,
