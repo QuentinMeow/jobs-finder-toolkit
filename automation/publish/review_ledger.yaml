@@ -2208,3 +2208,9 @@
   files: 1
   digest: sha256:bea7c8d3cfca8daf
   finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 30
+  digest: sha256:e349b4a04907edc7
+  finding: 'Pure `git mv` of the example fixture store, examples/data -> examples/store; no reference edits in this commit (they are the next one) so `git log --follow` works across the rename. Verified rename-only: `git diff --cached --numstat -M` is 0/0 on all 27 text files and `-`/`-` on the 3 zstd blobs, and `--summary` lists 30 renames and nothing else, so this commit ships no new content at all. The fixture is the fictional Jordan-Rivers universe (examplecorp / ghostworks / remoteworks / profile-01 / example.com); the blob filenames are sha256 of their uncompressed bytes and are unchanged by the move. Confirmed the fixture content is path-independent (grep for "examples" inside it: no hits) and that no gitignore rule matches the new prefix (git check-ignore exit 1). check_public.py _DENY_TREES is root-anchored, so the new examples/store/ prefix is not hit by the ^store/ deny. No identity, employer, school, salary or dated job-hunt content.'
