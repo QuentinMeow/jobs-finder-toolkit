@@ -1,7 +1,11 @@
 #!/bin/sh
 # Pre-commit guard for the jobs-finder toolkit.
 #
-# Blocks a commit when:
+# Blocks a commit when any of these NINE gates fails, in the order they run below.
+# This list is the file's own table of contents: CONTRIBUTING.md sends readers here to
+# learn what actually blocks a commit, so a list that is short by three is worse than no
+# list at all. Keep it in sync with the body (docs/handbook/repo-map.md mirrors the nine).
+#
 #   1. any path under the private overlay (private/) is STAGED, or
 #   2. the leak guard finds a violation in the STAGED INDEX content
 #      (automation/publish/check_public.py --staged), or
@@ -11,7 +15,18 @@
 #      (see automation/vendoring/sync_vendored.py + .../job-search/scripts/_vendor/), or
 #   5. any mail provider folder or the email-assistant CLI exposes email-sending
 #      capability (folder-walking check: automation/shared/mail/check_mail_safety.py), or
-#   6. any toolkit/skill Python file fails to byte-compile.
+#   6. any toolkit/skill Python file fails to byte-compile, or
+#   7. an instruction file is over its token budget
+#      (automation/metrics/instruction_budget.py --strict) — the gate most likely to stop
+#      a commit that ADDS documentation, and the one no contract surface names, or
+#   8. the reconciler finds a process-layer problem: schemas, the memory index, a missing
+#      handover, a malformed roadmap date (automation/reconcile/reconcile.py --check), or
+#   9. a reference or markdown link in the tracked docs is broken
+#      (automation/gardener/verify_links.py).
+#
+# Gates 8 and 9 each branch on `[ -d private ]`: a maintainer checkout (overlay mounted)
+# gets the stricter run (--require-roots, plus --no-overlay for 9), while an exported
+# clone with no overlay gets the plain, still-correct run. Both branches block.
 #
 # Checks 1-3 run FIRST because a leak is the only failure here that is not
 # reversible by fixing the working tree: once the blob is in a commit it is in the
@@ -21,6 +36,12 @@
 #   ln -sf ../../automation/hooks/pre-commit .git/hooks/pre-commit
 #
 # Bypass in an emergency with:  git commit --no-verify
+#   FOR THE REPO OWNER, at a terminal, in an emergency — never for an AGENT. AGENTS.md
+#   forbids it outright ("never weaken a check to make a commit pass, never bypass with
+#   --no-verify"), and so does skills/github-workflow/SKILL.md. An agent facing a red gate
+#   fixes the finding or stops; it never reaches for this line. The hatch stays because
+#   the human who installed the hook needs an exit — naming the audience is the whole fix,
+#   and it is the same one CONTRIBUTING.md already applies to its fork-vs-maintainer split.
 set -e
 
 # ── 1. Staged private/ overlay paths (no interpreter needed) ─────────────────

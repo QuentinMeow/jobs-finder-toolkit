@@ -3,7 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: repo
 - **Source**: roadmap grooming session 2026-07-31 (the pass that corrected `current-state.md`); contradiction audit finding B7
-- **Claimed-by**:
+- **Claimed-by**: agent, session 2026-08-02 (branch `docs/26-contract-and-record-corrections`)
 
 ## Goal
 

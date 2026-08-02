@@ -3,6 +3,17 @@
 - **Status**: decided
 - **Date**: 2026-07-28
 - **Decided by**: owner
+- **Correction (2026-08-02, forward-link — the Consequences text below is left intact
+  because an ADR is immutable)**: the third Consequences bullet states as accomplished fact
+  that "Session handovers move to `private/local/history/` (never committed)". That move
+  never happened and is not planned. Handovers are still written to
+  `history/conversations/<YYYY-MM-DD>-<slug>/` per `AGENTS.md`, the reconciler's
+  `handover-present` check still reads `history/conversations`, and 35 handovers are tracked
+  (`git ls-files 'history/conversations/*/handover.md' | wc -l`, 2026-08-02) — several dated
+  after this ADR. Whether `history/` moves at all is still open in
+  [`message-queue/needs-human/decisions/history-untracked-in-phase-5.md`](../../message-queue/needs-human/decisions/history-untracked-in-phase-5.md),
+  whose default path is "`history/` does **not** move". Write your handover to
+  `history/conversations/`; do not follow that bullet.
 
 ## Context
 

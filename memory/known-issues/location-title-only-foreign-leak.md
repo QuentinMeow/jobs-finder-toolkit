@@ -1,6 +1,7 @@
 # Foreign role with generic location field classifies as us_remote when the city is only in the title
 
-- **Status**: open
+- **Status**: fixed 2026-07-21 by `e967b91` ("Job search: harden filtering and expand target
+  coverage"); confirmed still fixed 2026-08-02 — see Resolution below
 - **Severity**: medium (wasted verification work; the JD-text gate catches it downstream)
 - **Area**: job-search
 - **Source**: job-search canary run on branch `fix/search-hardening`
@@ -40,3 +41,39 @@ field matches only via a generic remote/hybrid phrase, scan the title for
 known foreign-city/country tokens and downgrade the verdict to `review`.
 Keep the shared classifier pure (location-string in, category out); the
 title heuristic belongs to the search leg that has the title in hand.
+
+## Resolution
+
+Fixed by `e967b91`. The search leg now hands the title to the classifier —
+`skills/job-search/scripts/scoring.py`, in the `assess_location(...)` call:
+
+```python
+        title=posting.title,
+```
+
+and `automation/shared/location.py`'s `assess_location` reads it in the REJECTING
+direction only (its own docstring: "The title is read for geography in the REJECTING
+direction only — it can mark a posting foreign … but a region word in a title … can never
+carry a posting to a match on its own"). Foreign scope is asserted from
+`" ".join((nloc, ntitle))`; US scope still only from the location field, so the fix could
+not create the mirror-image false positive.
+
+Re-running this entry's own reproduction on 2026-08-02:
+
+```
+>>> policy = {"preferred": ["Seattle", "New York"], "allow_remote": True,
+...           "us_only": True, "require_match": False}
+>>> assess_location("Hybrid or Remote", policy, title="Senior SRE — Bangalore")
+category='foreign'  decision='no_match'  evidence=('location_hybrid', 'location_remote', 'foreign_scope')
+>>> assess_location("Hybrid or Remote", policy, title="Senior SRE")
+category='unknown'  decision='review'    review_reasons=('unclassified_location',)
+>>> classify_location("Hybrid or Remote", policy)
+'unknown'
+```
+
+The Bangalore-titled posting is now rejected outright rather than surviving to a JD fetch,
+and even the title-less control no longer reaches `us_remote` — the bare-remote check
+(`remote_without_us_scope`) demotes a location field that is nothing but workplace words.
+Per `memory/known-issues/README.md` this file is kept one PR cycle and deleted later; it is
+NOT deleted here, because `docs/roadmap/desired-state.md` cited it as a live defect and a
+reader arriving from that citation needs to find this record.

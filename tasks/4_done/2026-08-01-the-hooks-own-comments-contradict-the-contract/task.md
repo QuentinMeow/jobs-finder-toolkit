@@ -3,7 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: repo
 - **Source**: instruction-conflict audit, 2026-08-01
-- **Claimed-by**:
+- **Claimed-by**: agent, session 2026-08-02 (branch `docs/26-contract-and-record-corrections`)
 
 ## Goal
 

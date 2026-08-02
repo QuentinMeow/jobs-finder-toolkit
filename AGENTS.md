@@ -47,8 +47,13 @@ to `config.yaml`/the profile; residual personal skill guidance goes in the overl
 skill-notes folder, reached by `config.skill_references_dir()` (exporter prunes it; leak guard
 fails on any tracked file under a `skill-notes/` folder — or its retired name
 `references_private/` — in the public tree).
-**If a path does not start with `private/`, tracked content written there is
-published.** The only local metadata outside that prefix is the generated runtime
+**If a path does not start with `private/`, tracked content written there must be
+PUBLISHABLE** — the leak guard scans `git ls-files` wholesale, so every tracked byte
+is screened. Publishable is not the same as *published*: five tracked roots (`tasks/`,
+`memory/`, `message-queue/`, `history/`, `docs/roadmap/` — `review_gate.EXPORT_ABSENT_ROOTS`,
+matching `export_public.py`'s allowlist) are deliberately left OUT of the export, so
+in-flight process prose belongs in one of them rather than in a shipped doc. The only
+local metadata outside the `private/` prefix is the generated runtime
 adapter links described below. The overlay is reached through `config.*()` accessors
 and those adapters. **The leak
 guard** (`automation/publish/check_public.py`) hardcodes NO identity — it derives personal tokens from
@@ -137,8 +142,10 @@ records live in **`memory/`**.
 **Boot ritual** — run by the **top-level session only** (subagents never run it); skip entirely if
 `message-queue/` is absent (public exports omit it). Filenames first; open only what's relevant:
 1. `ls message-queue/needs-agent/requests/` (+ the `private/` mirror if mounted). For each item:
-   act, or convert it (task / decision / dated reply appended to the item), then delete the
-   request file in the same commit. **Valve:** if the user's request is explicitly narrow or items
+   act, or convert it (task / decision), then delete the request file in the same commit —
+   **except** when the right response is an ANSWER to the owner: append it under a dated
+   `## Agent reply (YYYY-MM-DD)` heading and LEAVE the file, which is deleted only once the owner
+   acknowledges it. **Valve:** if the user's request is explicitly narrow or items
    exceed 3, process what fits and list the remainder by name in your reply — reporting satisfies
    "never skip silently".
 2. `ls message-queue/needs-agent/retries/` — pick up repair items touching this session's area;
@@ -146,7 +153,8 @@ records live in **`memory/`**.
 3. Read `message-queue/ANSWERS.md` + `needs-human/decisions/` for new answers (also doc decision
    blocks and chat — an answer heard in chat is written to its file that same turn, before other
    work). Fold a pass under ONE `Status: folding` commit: into the affected docs, both surfaces of
-   a mirrored question, `memory/decisions/`, then delete the item. Skip `parked` unless it matches.
+   a mirrored question, `memory/decisions/`, then delete the item. Skip a
+   `parked-until-revisit` item unless its revisit condition matches this session's work.
 4. Pick up `tasks/0_backlog/` items when relevant to the session's work or when asked (claim
    first: `Claimed-by` in `task.md`, move to `1_in-progress/`).
 5. Sweep `message-queue/needs-human/reviews/`: delete items with a filled Resolution, or older
@@ -239,12 +247,14 @@ Router:
   and store payloads are removed by the **user only** — never by an agent, under any
   condition, including cleanup, migration, or a rejected application. Propose a deletion in
   `message-queue/needs-human/` and stop; never perform one.
-- **Doc ownership**: `README.md` is human-facing (no agent instructions); `AGENTS.md` is agent-facing
-  (no human usage guides).
+- **Doc ownership**: the ROOT `README.md` is human-facing (no agent instructions); the root
+  `AGENTS.md` is agent-facing (no human usage guides). A FOLDER's `README.md` is that folder's
+  contract and is agent-facing on purpose (`templates/`, `tasks/`, `memory/`, `message-queue/` +
+  its sub-queues, `evals/`) — never strip its schema or ritual instructions as "doc hygiene".
 - **The reconciler is a gate**: `automation/reconcile/reconcile.py --check` (process-layer
   schemas, memory index, handovers, a well-formed roadmap date) runs in pre-commit + CI and must pass —
-  fix the finding or let `--file-retries` queue it; never weaken a check to make a commit pass,
-  never bypass with `--no-verify`.
+  fix the finding. `--file-retries` only FILES it: the run still exits 1, so pre-commit still
+  blocks. Never weaken a check to make a commit pass, never bypass with `--no-verify`.
 - **Risk-based eval gate on harness edits**: for any change to a skill's
   `SKILL.md`/`LESSONS.md`/`reference.md`, the editing agent decides whether to run that skill's
   canaries (`evals/canaries/<skill>.yaml`) by judging the edit's **intention and size** —
@@ -308,7 +318,9 @@ Each expands in a named `docs/handbook/` doc; the bolded name is the canonical s
   stage is `${pipestatus[1]}`; bash's `${PIPESTATUS[0]}` expands to the empty string in zsh and
   reads as "nothing wrong". `$?` after a `for` loop or an `&&` chain has the same trap — it is the
   last command's status only, and the earlier ones are gone.
-- **Read Hygiene** — never re-Read a file already in context (duplicate reads are pure token waste);
+- **Read Hygiene** — never re-Read a file already in context (duplicate reads are pure token waste),
+  **except** the safety re-read of a two-way file immediately before writing it (see **Doc dialogue**
+  above — that re-read is what stops you clobbering owner text, and it is never a duplicate);
   for a file over ~800 lines, prefer a `grep` or an offset/limit slice over reading the whole file.
 
 ## Application Folder Convention

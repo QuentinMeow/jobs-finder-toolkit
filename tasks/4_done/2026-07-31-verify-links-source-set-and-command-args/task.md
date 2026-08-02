@@ -5,7 +5,7 @@
 - **Source**: session 2026-07-31, scoped out of
   `2026-07-31-gate-documented-commands` and
   `2026-07-31-verify-links-reads-no-fenced-command` (both in `3_in-review`)
-- **Claimed-by**: <(set when work starts, before the first change)>
+- **Claimed-by**: agent, session 2026-08-02 (branch `docs/26-contract-and-record-corrections`)
 
 ## Goal
 

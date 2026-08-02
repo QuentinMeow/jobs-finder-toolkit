@@ -24,12 +24,26 @@
 #      the destination private.
 #
 # Manual override (reported loudly):  JOBHUNT_ALLOW_PUSH=1 git push ...
+#   FOR THE REPO OWNER ONLY — never for an AGENT, and the strongest case of that rule in
+#   the repo: this variable skips BOTH the content leak guard and the refusal to push
+#   while the guard is unarmed, so it is the one line here that can put private bytes on
+#   a public remote. AGENTS.md forbids an agent bypassing a gate, and
+#   evals/canaries/github-workflow.yaml scores "suggests JOBHUNT_ALLOW_PUSH" as a canary
+#   FAILURE mode — i.e. an agent must not even propose it. There is no contradiction
+#   between that and this hook offering it: the escape hatch exists for the human who
+#   installed these hooks, and it must never be reached for by anything else. An agent
+#   whose push is refused fixes the finding, or arms the guard, or stops.
+#   (It is also NOT the leak guard's documented interface: docs/handbook/private-overlay.md
+#   mentions it in one parenthetical and nothing else does.)
 #
 # Install once (tracked, no git-config change):
 #   .venv/bin/python automation/bootstrap_overlay.py     # or:
 #   ln -sf ../../automation/hooks/pre-push .git/hooks/pre-push
 #
 # Bypass in an emergency with:  git push --no-verify
+#   Same audience rule as JOBHUNT_ALLOW_PUSH above: owner, at a terminal, never an agent.
+#   AGENTS.md ("never bypass with --no-verify") and skills/github-workflow/SKILL.md
+#   ("Never --no-verify") both forbid agent use outright.
 set -e
 
 remote_name="$1"
@@ -147,6 +161,8 @@ else
         echo "pre-push: REFUSING push — leak guard found violations in the tracked tree." >&2
         echo "pre-push: fix them before pushing." >&2
     fi
+    # The next line is addressed to the REPO OWNER at a terminal. An agent that reads it
+    # in a failed push must NOT act on it — see the JOBHUNT_ALLOW_PUSH note in the header.
     echo "pre-push: override knowingly with JOBHUNT_ALLOW_PUSH=1 (it skips BOTH checks)." >&2
     exit 1
 fi

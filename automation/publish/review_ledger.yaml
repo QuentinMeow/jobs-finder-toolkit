@@ -2211,9 +2211,27 @@
 - base: e91f6cb7
   reviewed_by: agent
   date: 2026-08-02
-  files: 34
-  digest: sha256:a02647ebf1ffe255
-  finding: 'Read the whole 661-line staged diff. Five files move by 100% similarity rename (examples/profile -> examples/me, the reference DOCX to examples/me/resume/, company-levels to examples/market/logs/, calendar.md to examples/me/interviews/) with zero content change, so the shipped example mirrors the lifetime taxonomy the private overlay already uses; examples/templates/ and examples/applications/0_profile/ disappear. Everything else re-points a reference to the new path - config.example.yaml (plus a new explicit candidate_dir), the shared config accessors and their five vendored copies, eight test-module constants, the leak guard binary allowlist, a fixture config, a tailored.yaml comment, a gitignore comment, two canary definitions, seven handbook/design/README passages and one backlog task line. Two non-path deltas, both narrowing rather than widening - a dead unreachable default literal in company_levels_path is dropped, and the fail-closed deny list gains ^logs/ so the local metrics output the base commit just root-anchored in gitignore can never be published (the ^ keeps the tracked examples/market/logs fixture out of scope). All persona content is the fictional Jordan Rivers dataset that already shipped. No identity, employer, school, salary or dated job-hunt content is introduced, and nothing crosses into or out of the published tree.'
+  files: 5
+  digest: sha256:994eb48a0f1e55b9
+  finding: 'Six self-contradictions in AGENTS.md corrected as wording only, plus one owner question filed and one task closed. Read the full 327-line diff. The contract changes are: Read Hygiene now exempts the two-way-file safety re-read it previously forbade; the boot ritual now leaves a dated agent reply in place instead of deleting it; "tracked implies published" became "tracked must be publishable" with the five export-absent roots named; the parked status token now matches the value the files carry; --file-retries no longer reads as an alternative to passing the reconciler; and doc ownership now separates the root README from a folder README. The new queue item and the task records quote only repo files. No identity, employer, school, salary, company name or dated job-hunt content anywhere in the diff.'
+- base: eac64e62
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 5
+  digest: sha256:dd24bd00a018dc15
+  finding: 'Comment-only edit to the two tracked git hooks, plus the closing records for the task. Read the whole 231-line diff; zero added or removed lines are executable (`git diff -U0 automation/hooks/ | grep -c "^[-+][^-+# ]"` returns 0) and both files pass `sh -n`. The pre-commit header listed six blocking gates while the body runs nine, so the three missing ones are now listed in the order they run, with the two `[ -d private ]` branches noted. Both escape hatches now name their audience - repo owner at a terminal, never an agent - and the pre-push note resolves a live disagreement in which the github-workflow canary scores suggesting JOBHUNT_ALLOW_PUSH as a failure while the hook offered it twice unqualified. The task records quote only repo files and canary text. No identity, employer, school, salary, company name or dated job-hunt content.'
+- base: c012e626
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 13
+  digest: sha256:6ade122ba6e5a8fd
+  finding: 'Read the full 603-line diff. Three known-issue entries flipped to fixed with their fixing commit and a Resolution section quoting the current code that disproves each symptom; each was re-verified first, and entry 1 by re-running its own reproduction. A fourth entry keeps Status open and only strikes the half that shipped. Two immutable ADRs get a dated header forward-link and keep their body text unchanged. The roadmap census paragraph now names two commands instead of an unverifiable hand count, drops the two defects that are now fixed, and states the re-derived split honestly even though it is weaker than the prose it replaces. The commands print counts and the Area vocabulary only, never a task id or title, so the private half stays unnamed. No identity, employer, school, salary, company name or dated job-hunt content.'
+- base: 8a05c2fa
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 16
+  digest: sha256:9d66022b9d224c54
+  finding: 'Read the full 699-line diff. Three routed design docs and five eval-protocol files corrected against the code, plus the two closing task records. Design families are records, so every superseded claim is struck and dated in place with the current fact beside it, never deleted - the workspace README no longer says "Not implemented" while its own review gate runs in pre-commit and CI, and the tree-instructions README no longer points section 5 at a task folder that exists in no status directory. The review-gate spec gains the six real outcomes of an unresolvable ledger, two of which exit 0, and names the flags CI passes. The transcript-miner requirement is struck rather than built, because no such script exists and a protocol demanding a number no tool produces gets an invented one. Three surfaces now say the metrics hooks are opt-in. One artifact path everywhere, and a nonexistent protocol.md replaced with the file that exists. The stage-map size table was stale in all ten public rows, worst by 18x, and is re-measured at a named commit with the old claims kept in their own column; the five overlay rows are split out and marked unverifiable from the public tree, so no private byte is quoted. No identity, employer, school, salary, company name or dated job-hunt content.'
 - base: 8c8112ac
   reviewed_by: agent
   date: 2026-08-02
@@ -2363,3 +2381,15 @@
   files: 1
   digest: sha256:e6e9ed2aad60c605
   finding: 'CORRECTS THE ROW IMMEDIATELY ABOVE (base e8a62b80 predecessor, the examples/me merge), which asserted that the duplicate root logs/ deny entry had been collapsed. It had not - git kept both, because each side added its entry at a different point in the list, so there was no textual conflict. That row is left exactly as written: the ledger is append-only and a row digest pins a diff someone read, so a wrong finding is corrected by appending, never by editing. Two identical (re.compile(r caret logs/), logs/) entries are now one. Kept the comment that describes the payload accurately - counters and ids, no prompt text or file path - and dropped the one claiming it summarizes session transcripts, which overstates what hook_collect.py records. Probed both ways again after the collapse: root logs/ denied, examples/market/logs/ not. No identity, employer, school, salary or dated job-hunt content.'
+- base: c2a9c426
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 139
+  digest: sha256:177a4bc52148889a
+  finding: 'Stack merge only - brings in the whole stack below, each part already reviewed on its own branch: the gitignore base and its logs/ path-deny, the gate runner, the GitHub merge runbook and merge_stack.py, the repeated-mistake lesson, the dangling-symlink store fix, the build-postings correctness fixes, the ledger duplicate-key refusal, the recall-audit CLI fixes, and both halves of the examples/ reshape. This branch contributes nothing of its own to that diff. No identity, employer, school, salary or dated job-hunt content.'
+- base: eb574a3b
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:99df9afc3507e680
+  finding: 'Session handover for the merge-runbook and folder-refactor session. Describes the work in shapes, not specifics: which decision fired, which defects were fixed, which gates caught what. Names only public repo paths, PR numbers and commit SHAs. The one private reference is the standing note that verify_links is red on refs inside private/, stated without naming any of those paths. No identity, employer, school, salary or dated job-hunt content.'

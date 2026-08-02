@@ -62,9 +62,10 @@ Per row, record (into `evals/results/` via the template):
 - `total_tokens` (**primary metric for token levers**), `tool_calls`,
   `wall_clock_s` (**primary for D8/S3 latency levers**);
 - the self-audit (files read + `wc -c`, large stdout);
-- **tool-failure telemetry**: failed tool calls, retries and their
-  classification (from the transcript-mining script over the run's session
-  transcript);
+- **tool-failure telemetry**: failed tool calls and retries, as far as the run itself
+  reports them (~~from the transcript-mining script over the run's session
+  transcript~~ — **struck 2026-08-02: no such script exists**; see
+  [Failure-rate telemetry](#failure-rate-telemetry-standing));
 - the stage artifact itself, kept under
   `private/evals/runs/artifacts/<row-id>/` for pairwise quality comparison.
 
@@ -89,8 +90,25 @@ Per row, record (into `evals/results/` via the template):
 
 ## Failure-rate telemetry (standing)
 
-Every stage row and every future full row runs the transcript miner over its
-own session transcript and records: tool-call count, failure count by tool,
-retry classification (meaningless / transient / adaptive), tokens burned in
-failed+meaningless-retry turns. Target: keep "meaningless retry" at zero — a
-nonzero count is a bug to file in `memory/known-issues/`, not noise to accept.
+**Requirement struck 2026-08-02 — the tool it named was never built.** This section used to
+read:
+
+> ~~Every stage row and every future full row runs the transcript miner over its
+> own session transcript and records: tool-call count, failure count by tool,
+> retry classification (meaningless / transient / adaptive), tokens burned in
+> failed+meaningless-retry turns.~~
+
+There is no transcript miner anywhere in `automation/`. The closest thing,
+`automation/metrics/hook_collect.py`'s `_summarize_transcript`, runs inside the opt-in Stop
+hook and totals tokens, wall clock and tool calls — it produces none of the three fields
+above, and it is not a script you can point at a finished run. A protocol that demands a
+number no tool produces gets a made-up number, which is worse than no number.
+
+**What a row records instead:** `tool_calls` (the harness reports it), plus, in prose, any
+tool failures or retries you actually observed during the run, and the word "not measured"
+where you did not. The intent is kept — a run that thrashed on failed tool calls is not a
+clean efficiency win, and a pattern of meaningless retries is a bug to file in
+`memory/known-issues/` rather than noise to accept — but it is now a judgement the reviewer
+makes from the transcript in front of them, not a metric.
+
+Re-open this only by building the miner; until then, do not re-add the requirement.

@@ -1,6 +1,16 @@
 # Workspace layout — public working root, private overlay, detection after the fact
 
-**Status:** design, owner-approved topology (2026-07-28). Not implemented.
+**Status (corrected 2026-08-02):** owner-approved topology (2026-07-28), **largely
+implemented**. Phases 0-6 are merged into `main` and phase 7 is done — see
+[the execution plan](execution-plan.md) and `docs/roadmap/current-state.md`, which are the
+status board; this README is the topology. Both layers of the defense run today: Layer 2 is
+`automation/publish/review_gate.py`, executed by the pre-commit hook and by CI (its own
+sibling [review-gate.md](review-gate.md) already said "Implemented in
+`automation/publish/review_gate.py`"). Phases 7b, 7c and 8 are not started.
+
+~~**Status:** design, owner-approved topology (2026-07-28). Not implemented.~~ — true when
+written, false for weeks afterwards. Struck rather than deleted: every phase task links this
+file as `[design]`, so a reader arriving from one needs to see which claim was corrected.
 
 ## The principle
 
@@ -78,9 +88,10 @@ jobs-finder-toolkit/
 ├── config.example.yaml                    # tracked placeholder (Jordan Rivers)
 ├── config.yaml                            # git-ignored; paths.* point into private/
 ├── .venv/                                 # git-ignored, unchanged
-├── skills/                                # 10 public skills, each self-contained
+├── skills/                                # 11 public skills, each self-contained
 │   ├── application-tracker/  ask-me-anything/  behavioral-interview-prep/
-│   ├── company-research/  email-assistant/  gardener/  interview-calendar/
+│   ├── company-research/  email-assistant/  gardener/  github-workflow/
+│   ├── interview-calendar/
 │   ├── job-search/                        #   keeps companies.yaml, profiles/, filter_variants/
 │   ├── resume-writer/  search-recall-audit/
 │   └── (no overlay-only symlinks — runtimes find them in private/skills/)

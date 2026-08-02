@@ -3,6 +3,16 @@
 - **Status**: decided
 - **Date**: 2026-07-31
 - **Decided by**: agent (within standing policy — reversible heuristic behind an advisory gate)
+- **Superseded-by**: read this file with its two successors, in this order —
+  [`sponsorship-scope-limits-need-a-distributive-quantifier.md`](sponsorship-scope-limits-need-a-distributive-quantifier.md)
+  (2026-08-01, narrows item 1 below) and then
+  [`sponsorship-an-unsettled-denial-is-review-not-a-silent-drop.md`](sponsorship-an-unsettled-denial-is-review-not-a-silent-drop.md)
+  (2026-08-01, completes that one). Concretely, **item 1's list of scope-limit cues below is
+  out of date**: bare `all` is no longer a scope-limit cue. `_SPONSOR_SCOPE_LIMIT_RE` in
+  `automation/shared/job_metadata.py` now matches only the distributive quantifiers
+  (`every`/`everyone`/`everybody`/`each`/`guarantee*`), and bare `all` moved to
+  `_SPONSOR_AMBIGUOUS_SCOPE_RE`, where it UNSETTLES a denial into
+  `review`/`unknown`/low rather than removing it. Items 2-4 below still stand as written.
 
 ## Context
 
