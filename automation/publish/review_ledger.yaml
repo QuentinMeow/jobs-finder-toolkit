@@ -2345,3 +2345,9 @@
   files: 66
   digest: sha256:010d2a57561d2446
   finding: 'Stack merge only - brings in the gitignore base and its logs/ path-deny, the gate runner, the GitHub merge runbook, the repeated-mistake lesson, the dangling-symlink store fix, the build-postings correctness fixes, the ledger duplicate-key refusal and the recall-audit CLI fixes, each already reviewed on its own branch. The four example fixture files this branch renamed were also regenerated on the build-postings branch; git applied the content change to the renamed path. No identity, employer, school, salary or dated job-hunt content.'
+- base: 3cea5e5a
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:9fc901bfdaa7979c
+  finding: 'Repoints the gate runner at the renamed example store. Two branches in this stack changed the same fact from opposite ends - one renamed examples/data to examples/store and updated the CI step, the other declared the CI gate table - and merging them left the table naming a path that no longer exists. Found by the runner own CI-drift test, on its first real outing. One argv string. No identity, employer, school, salary or dated job-hunt content.'

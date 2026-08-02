@@ -374,7 +374,7 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
         ),
         Gate(
             name="validate-example-store",
-            argv=(py, "automation/store/validate_store.py", "examples/data",
+            argv=(py, "automation/store/validate_store.py", "examples/store",
                   "--check-fixture-size"),
             what_it_proves="The fictional example store validates zone-by-zone; its "
                            "size threshold warns rather than blocks.",
