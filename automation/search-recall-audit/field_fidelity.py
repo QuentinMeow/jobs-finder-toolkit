@@ -15,13 +15,14 @@ ONLY to a gitignored scratch dir (default ``local/field_fidelity_audit/``).
 
 Subcommands
 -----------
-  corpus   Walk the derived store index, resolve each sampled entity's RAW blob,
-           extract a per-source ``raw_location_view`` (EVERY location-bearing
-           field in the raw job object) + the ``jd.md`` location lines, compare
-           against the stored generated ``location``, and flag deterministic
-           suspicions (dropped raw location token, gate-decision flip, weird
-           format). Blobs are decompressed once and cached (many entities share
-           one board blob), so a few-hundred sample is cheap.
+  corpus   Walk the RAW zone WHOLE — every manifest, deduped by blob sha — re-run
+           the builder's own parser over each blob, extract a per-source
+           ``raw_location_view`` (EVERY location-bearing field in the raw job
+           object), compare it against the generated ``location``, and flag
+           deterministic suspicions (dropped raw location token, gate-decision
+           flip, weird format). It takes no sampling flags: blobs are decompressed
+           once and cached (many manifests share one board blob), so the full pass
+           is cheap, and choosing N is ``sample``'s job.
   sample   Pick N per source (weighting the suspicious ones) and write one
            self-contained comparison file per entity for a composer subagent to
            judge: raw view + generated field + jd lines + both gate decisions.
@@ -733,9 +734,11 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="scratch dir (gitignored)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
+    # No `--limit`/`--seed` here: `corpus` is a full-store pass and always was, so
+    # the two flags it used to declare read as a promise the code never kept — a
+    # caller passing `--limit 50` to keep a run short got the whole store. The
+    # sampling levers are `sample`'s, which reads both of its own.
     c = sub.add_parser("corpus", help="resolve raw + compare vs generated location")
-    c.add_argument("--limit", type=int, default=600)
-    c.add_argument("--seed", type=int, default=42)
     c.set_defaults(func=cmd_corpus, needs_store=True)
 
     # `sample` reads the corpus file `corpus` already wrote, never the store, so it

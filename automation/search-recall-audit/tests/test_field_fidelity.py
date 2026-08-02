@@ -2,7 +2,7 @@
 
 This tool exists to catch the pipeline silently dropping location information, so
 every defect here is the same shape one level up: **the detector reporting a
-confident answer it did not compute.** Five of them, each pinned below:
+confident answer it did not compute.** Six of them, each pinned below:
 
 * the "gate decision" it printed was not the gate's decision — it dropped the
   title, the workplace hint and the JD that ``scoring.location_ok`` passes, so it
@@ -14,7 +14,9 @@ confident answer it did not compute.** Five of them, each pinned below:
 * two of the three writing commands skipped the ``local/`` containment guard the
   third enforces;
 * every store-reading command tracebacked out of ``pathlib`` where no store is
-  configured — the shipped example config, i.e. every fresh clone and CI.
+  configured — the shipped example config, i.e. every fresh clone and CI;
+* ``corpus`` declared ``--limit``/``--seed`` and read neither, so a run asked to
+  stay short quietly walked the whole store.
 
 Isolation: every store test pins ``JOBHUNT_DATA_ROOT`` and ``JOBHUNT_CONFIG`` at
 throwaway paths, so no test reads the owner's store, config or applications tree.
@@ -336,6 +338,53 @@ class UnconfiguredStoreTests(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
+# `corpus` advertises only the levers it reads
+# (backlog: 2026-07-31-field-fidelity-corpus-declares-flags-it-never-reads)
+# --------------------------------------------------------------------------- #
+class CorpusContractTests(unittest.TestCase):
+    """`corpus` declared `--limit`/`--seed` and read neither.
+
+    Harmless in effect — it always did MORE than asked — but a caller who passes
+    `--limit 50` to keep a run short gets the whole store, silently. `corpus` is a
+    full-store pass by design; the sampling levers belong to `sample`, which reads
+    both of its own.
+    """
+
+    def setUp(self):
+        scratch = ff.REPO_ROOT / "local"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.out = Path(tempfile.mkdtemp(prefix="ff-flags-", dir=str(scratch)))
+        self.addCleanup(shutil.rmtree, self.out, True)
+
+    def test_corpus_rejects_the_sampling_flags_it_never_read(self):
+        for flag in ("--limit", "--seed"):
+            with self.subTest(flag=flag):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), \
+                        self.assertRaises(SystemExit) as raised:
+                    ff.main(["--out", str(self.out), "corpus", flag, "5"])
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn("unrecognized arguments", err.getvalue())
+                self.assertIn(flag, err.getvalue())
+
+    def test_sample_keeps_the_sampling_levers_that_are_really_its_own(self):
+        # The levers are removed from the command that ignored them, not from the
+        # tool: `sample` still takes `--n`/`--seed` and uses both.
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+            ff.main(["--out", str(self.out), "sample", "--n", "5", "--seed", "3"])
+        self.assertIn("run `corpus` first", str(raised.exception))
+        self.assertNotIn("unrecognized arguments", err.getvalue())
+
+    def test_the_docstring_describes_the_full_pass_corpus_actually_runs(self):
+        corpus_doc = ff.__doc__.split("  corpus ", 1)[1].split("\n  sample ", 1)[0]
+        self.assertNotIn("sampled", corpus_doc,
+                         "the docstring still advertises a sampling step `corpus` "
+                         "does not have")
+        self.assertIn("every", corpus_doc)
+
+
+# --------------------------------------------------------------------------- #
 # 4 (+ 3 end-to-end). A real store, built by the real builder.
 # --------------------------------------------------------------------------- #
 class _StoreCase(unittest.TestCase):
@@ -413,8 +462,7 @@ class _StoreCase(unittest.TestCase):
     def _corpus(self):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            ff.cmd_corpus(argparse.Namespace(out=str(self.out), limit=600, seed=42,
-                                             cmd="corpus"))
+            ff.cmd_corpus(argparse.Namespace(out=str(self.out), cmd="corpus"))
         rows = [json.loads(ln) for ln
                 in (self.out / "corpus.jsonl").read_text().splitlines() if ln.strip()]
         return {r["source"]: r for r in rows}, buf.getvalue()

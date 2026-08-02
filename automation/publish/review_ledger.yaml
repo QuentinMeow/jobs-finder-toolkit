@@ -2214,3 +2214,9 @@
   files: 2
   digest: sha256:4161c30332b7bf8f
   finding: 'Guards the field-fidelity auditor against an unconfigured store. Every store-reading subcommand handed `config.data_root()`''s documented None straight to pathlib, so the toolkit''s own quickstart commands died seven frames deep in the stdlib on every fresh clone and in CI. One pre-dispatch guard in main, keyed off a `needs_store` default each store-reading subparser declares; `sample` deliberately has none because it reads only the scratch corpus. Exits 2 rather than the sibling store tools'' 0: an audit asked for a verdict and unable to read the store has not passed. The containment test now pins JOBHUNT_DATA_ROOT so it asserts the same thing on a maintainer machine and in CI. Tooling and test prose only - no identity, employer, school, salary or dated job-hunt content.'
+- base: 3e9af467
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:a95a5e8ed497ef80
+  finding: 'Drops `--limit`/`--seed` from the field-fidelity `corpus` subparser, which declared both and read neither, and rewrites the module docstring paragraph that called corpus a per-sampled-entity pass. Verified no caller anywhere in the tree passes either flag (the skill''s documented command takes none), so removal breaks nothing; the levers stay on `sample`, which reads both, and a test pins that they were not over-removed. The docstring rewrite also corrects two adjacent claims about the same command - it walks manifests, not the derived index, and reads no jd.md lines. Tooling and test prose only - no identity, employer, school, salary or dated job-hunt content.'
