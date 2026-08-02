@@ -2208,3 +2208,9 @@
   files: 1
   digest: sha256:bea7c8d3cfca8daf
   finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:b64741a49e00873c
+  finding: 'Adds a root-anchored logs/ entry to the leak guard path denylist, repairing an invariant the previous commit on this branch broke. A root-anchored gitignore rule is required to be path-denied as well, because gitignore is not a guard - git add -f overrides it - and anchoring logs/ to /logs/ made it match that shape. Denied rather than exempted: the payload today is counters and ids only, but its schema is version-brittle, and an exemption would silently publish a future field carrying a path. Probed both ways - logs/ denied, examples/market/logs/ not matched. No identity, employer, school, salary or dated job-hunt content.'
