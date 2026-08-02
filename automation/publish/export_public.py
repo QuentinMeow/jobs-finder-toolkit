@@ -95,6 +95,11 @@ ALLOWLIST_DIRS = [
     # copy of ``verify_links.py`` reads that fence, so it would go red there.
     "automation/evals",
     "evals",
+    # The local gate runner. It ships because ``ci.yml`` runs its tests (step 2c) and
+    # ``docs/handbook/command-cookbook.md`` names its path — the mirror runs this same
+    # workflow and the same markdown-link check, so omitting it would red the exported
+    # repo's own CI twice over.
+    "automation/gates",
     "automation/hooks",
     "automation/reconcile",
     "templates",

@@ -369,6 +369,16 @@ CI additionally runs what no hook does: every unit suite, the example render, th
 example-store validation, and an independent `gitleaks` secret scan in its own
 job — plus gate 11, which reads the PR description itself.
 
+### Running the gates locally, in one command
+
+`.venv/bin/python automation/gates/run_gates.py` runs the table above **plus** every
+CI-only suite — no shell, **no pipe**, output redirected per gate, so the exit code
+you read is the gate's own. Never shorten a gate with `| tail` and then read `$?`:
+that is the pager's status, and it has read a red gate as green here before. SKIP is
+never a PASS. **Run it before every PR**, not just before committing: the hook is a
+strict subset of CI, so a branch can commit clean and still be red. Flags, skip cases
+and the CI-drift test: `skills/github-workflow/reference.md`.
+
 ### Gate 11 — discharging the eval gate in the body
 
 A PR that edits `skills/*/SKILL.md`, `LESSONS.md`, or `reference.md` must

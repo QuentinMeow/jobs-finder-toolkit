@@ -315,6 +315,42 @@ Written down so nobody promotes a plausible guess into a rule:
 - Whether GitHub ever converts a base-chain into a stack **without being asked**
   is unknown; the documentation implies conversion is an explicit act.
 
+## 8. Running the gates locally
+
+`automation/gates/run_gates.py` runs every blocking gate — the pre-commit chain and
+the CI-only suites — as shell-free subprocesses whose output is **redirected**, never
+piped, to `local/gates/<name>.log`. The exit code you read is the gate's own.
+
+| Flag | Effect |
+|---|---|
+| `--list` | print the table and exit without running anything |
+| `--group hook` \| `--group ci` | run only that group; default is both |
+| `--only <a>,<b>` · `--skip <a>,<b>` | narrow the selection by name |
+| `--fail-fast` | stop at the first red gate |
+| `--tail N` | how much of a failing log prints inline (default 15) |
+| `--jobs N` | parallelism; some gates are forced serial because they share the index |
+
+Three behaviours worth knowing before you trust a green run:
+
+- **SKIP is not PASS.** A gate that cannot run here — no LibreOffice for the example
+  render, no `private/` mount for the two `--require-roots` forms — reports SKIP, is
+  named on its own line in the summary, and is excluded from the green count. The
+  final line reads `ALL GREEN (n gates, k skipped: …)` so the skips are never silent.
+- **`example-render` dirties the worktree.** It regenerates four tracked example
+  DOCX/PDFs whose bytes are not reproducible. CI does this in a throwaway checkout;
+  you are not in one. `git checkout -- examples/` afterwards unless those bytes are
+  the point of your change.
+- **The table cannot quietly fall behind CI.** `automation/gates/tests` re-parses
+  `.github/workflows/ci.yml`, and fails when a step is neither in the table nor
+  excused in writing in `NOT_RUN_LOCALLY` — and fails in the other direction too, so
+  an excuse for something CI no longer runs is also an error.
+
+**Run it before opening a PR, not just before committing.** The pre-commit hook runs a
+strict subset of CI: it does not run `automation/publish/tests`, `automation/shared/tests`,
+or any skill suite. A branch can commit clean and still be red. That has happened here —
+anchoring a `.gitignore` rule broke a leak-guard invariant that only the publish suite
+asserts, and every branch cut from that base inherited the failure.
+
 ## Files
 
 | Path | Purpose |
