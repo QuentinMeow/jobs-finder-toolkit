@@ -1964,3 +1964,107 @@
   files: 39
   digest: sha256:dae9b94909c15745
   finding: none — queue schema keys, contract prose in AGENTS.md/collaboration-modes/evals README, and 30 process-decision items. Company cross-reference run by hand against the overlay index (222 display names, added lines only); the single hit was `meta.yaml`/`--enrich-metadata`, the toolkit's own vocabulary, not a company. No name, employer, school, date, salary or job-hunt detail.
+- commit: e876a423
+  base: 1144d288
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 92
+  digest: sha256:35993393865e278a
+  finding: none — 90 of 92 files are pure `git mv` renames (task.md/verification.md/worklog.md
+    for 31 tasks/3_in-review -> tasks/4_done moves; zero content bytes changed, confirmed via
+    `git diff --stat`), plus one canary-rubric wording fix (fictional PR 41/136 numbers only) and
+    one new eval-results record referencing the same fictional PR numbers and a public GitHub
+    branch name; no real name, employer, school, date, salary or job-hunt detail in any file
+- commit: b3441679
+  base: e876a423
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:4769b51bf67b9b0b
+  finding: none — a `tasks/README.md` routing sentence, one append-only dated note in a backlog
+    task.md pointing at two fictional-numbered PR/decision filenames, and one test-fixture string
+    literal in a gardener test; no real name, employer, school, date, salary or job-hunt detail
+- commit: 154d8354
+  base: 1144d288
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:845a95b9a4041b17
+  finding: none — one test directory added to the CI maintenance-tooling step plus the comment explaining why that line and the allowlist entry must ship together; no personal data
+- commit: 3b091e1e
+  base: 72d0a5b3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:96af6a06caee5f82
+  finding: none
+- commit: f28706ac
+  base: 3b091e1e
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:ffc0dc3b6a7c9de0
+  finding: none
+- commit: 139cae92
+  base: f28706ac
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:7089778150f5ad00
+  finding: none
+- commit: 6290b6ac
+  base: 139cae92
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 2
+  digest: sha256:6f2a4454edb9a7fa
+  finding: none
+- commit: 883898f3
+  base: 72d0a5b3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:03ea0eaf65e6216d
+  finding: Instruction files only. Aligned the four stack-merge sites on merge-commit-plus-explicit-retarget (the gh table still prescribed --squash --delete-branch), banned absolute tree-wide counts in individual PR bodies, and made .github/pull_request_template.md pass check_pr_body.py. No identity, employer, school, salary or dated job-hunt content; the only numbers are public PR numbers and reference counts already published in this repo's own history.
+- commit: 1d0ca976
+  base: 883898f3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:e945e4bd21c2de82
+  finding: Instruction files only. Documented all three eval-gate discharge forms (ran / written skip / tracked debt) now that a sibling change makes the gate a blocking CI job, added gate 11 to the gate table, and kept every form in the PR template inside backticks with a bracketed placeholder so the unfilled template still fails the gate. No identity, employer, school, salary or dated job-hunt content.
+- commit: c59c44ef
+  base: 1d0ca976
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:e0f2251400b21e08
+  finding: One sentence in the skill's gate-11 "ran" form, recording that the checker reads the verdict line only up to its first backtick. Hit while writing this branch's own PR body. No identity or job-hunt content.
+- commit: 451fdbde
+  base: c59c44ef
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:efc692acd6e5909d
+  finding: Deletion only. The checker now blanks inline code spans on the verdict line instead of truncating at the first backtick, so the workaround sentence added by c59c44ef described a defect that no longer exists; item 2 still carries the residual rule. No identity or job-hunt content.
+- commit: 8fdd7585
+  base: 451fdbde
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:04ffefc3c6f251b7
+  finding: Merge of origin/main into this branch; the ledger conflict was resolved by concatenating both sides' rows, which is the append-only-legal resolution. Reviewed range covers this branch's own ci.yml, check_pr_body.py and its tests. No identity, employer, school, salary or dated job-hunt content.
+- commit: 98159137
+  base: 8fdd7585
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 6
+  digest: sha256:7a46605f301b43a1
+  finding: Merge of origin/main into the eval-record-pins branch; ledger conflict resolved by concatenating both sides' rows. Reviewed range covers the new automation/evals pin generator and its tests, the export allowlist entry, the eval-result template, and the CI line that discovers the new test directory. No identity, employer, school, salary or dated job-hunt content.
+- commit: 6b777866
+  base: 98159137
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 95
+  digest: sha256:eefd7f91fba8c003
+  finding: Merge of origin/main into the housekeeping branch; ledger conflict resolved by concatenating both sides' rows. The 95 files are almost entirely renames of completed task folders from 3_in-review to 4_done, plus the corrected github-workflow canary bullet, one new eval record, an appended supersession note, and a test fixture string. Grep hits on "salary" are the folder name of a JD-parsing bug task, not owner data. No identity, employer, school or dated job-hunt content.

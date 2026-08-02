@@ -7,7 +7,7 @@ status field to drift out of sync. Move a task between status folders with
 ```
 0_backlog/      filed, not started
 1_in-progress/  claimed and being worked
-2_blocked/      waiting on a Blocking: yes decision in message-queue/needs-human/
+2_blocked/      unused (`.gitkeep` only) — stopping lives in AGENTS.md's Guardrails now, which halt one action rather than route a task here; folder's fate is an open owner decision
 3_in-review/    work done, awaiting review/merge
 4_done/         merged/verified; pruned after ~90 days (learnings promoted to memory/ first)
 ```

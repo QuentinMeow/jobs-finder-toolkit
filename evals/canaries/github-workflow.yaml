@@ -37,7 +37,7 @@ canaries:
     expected_behavior:
       - "Creates the PR with `gh pr create --base feat/01-jd-parser --head feat/02-jd-renderer`, the base being the previous PR's head branch exactly."
       - "Explains that GitHub detects the stack from the branch chain itself, so no special tool is needed."
-      - "States that merge order is bottom-up and that GitHub re-targets the second PR when PR 41 merges."
+      - "States that merge order is bottom-up: merge PR 41 first, then explicitly retarget the second PR onto main (`gh pr edit <N+1> --base main`) only after PR 41 has actually merged — GitHub does not retarget it automatically, and deleting PR 41's branch would close the second PR instead."
       - "Writes the second PR's body in the human-facing Before/After format for its own change only."
     failure_modes:
       - "Targets main, proposes installing a stacking tool, or merges/retargets PR 41 unasked."
