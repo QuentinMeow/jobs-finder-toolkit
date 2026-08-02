@@ -3,6 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: harness
 - **Source**: noticed while fixing the search-recall-audit defects (adversarial audit #4), 2026-07-31
+- **Claimed-by**: agent session 2026-08-02 (fix/25-recall-audit-cli)
 
 ## Goal
 
@@ -35,6 +36,9 @@ shows `corpus` with no flags, so it needs no change either way.
 
 ## Definition of done
 
-- [ ] `corpus --limit 5` either emits at most 5 rows or the flag no longer exists.
-- [ ] The module docstring's description of `corpus` matches what it does.
-- [ ] A test pins whichever contract is chosen.
+- [x] `corpus --limit 5` either emits at most 5 rows or the flag no longer exists.
+      — the flag no longer exists; argparse refuses it (`verification.md`).
+- [x] The module docstring's description of `corpus` matches what it does. — and
+      two adjacent claims in the same paragraph that were also untrue.
+- [x] A test pins whichever contract is chosen. — `CorpusContractTests` in
+      `automation/search-recall-audit/tests/test_field_fidelity.py`.

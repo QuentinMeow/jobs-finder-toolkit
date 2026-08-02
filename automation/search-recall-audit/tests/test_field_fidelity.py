@@ -2,7 +2,7 @@
 
 This tool exists to catch the pipeline silently dropping location information, so
 every defect here is the same shape one level up: **the detector reporting a
-confident answer it did not compute.** Four of them, each pinned below:
+confident answer it did not compute.** Seven of them, each pinned below:
 
 * the "gate decision" it printed was not the gate's decision — it dropped the
   title, the workplace hint and the JD that ``scoring.location_ok`` passes, so it
@@ -12,7 +12,13 @@ confident answer it did not compute.** Four of them, each pinned below:
   of ``sample`` — a whole ATS reported clean without ever being looked at;
 * one unparseable index row truncated the rest of the index, silently;
 * two of the three writing commands skipped the ``local/`` containment guard the
-  third enforces.
+  third enforces;
+* every store-reading command tracebacked out of ``pathlib`` where no store is
+  configured — the shipped example config, i.e. every fresh clone and CI;
+* ``corpus`` declared ``--limit``/``--seed`` and read neither, so a run asked to
+  stay short quietly walked the whole store;
+* a source that truncates its own location list (`"Fairview, ST and 3 more"`) was
+  reported as a faithful copy, because raw and generated are the same lossy string.
 
 Isolation: every store test pins ``JOBHUNT_DATA_ROOT`` and ``JOBHUNT_CONFIG`` at
 throwaway paths, so no test reads the owner's store, config or applications tree.
@@ -79,6 +85,16 @@ class _Layout:
 
     def __init__(self, index: Path):
         self.index = index
+
+
+def _restore_env(prior: dict) -> None:
+    """Put ``{var: value-before-the-test}`` back, un-setting what was unset."""
+    for var, value in prior.items():
+        if value is None:
+            os.environ.pop(var, None)
+        else:
+            os.environ[var] = value
+    ff.config._load.cache_clear()
 
 
 # --------------------------------------------------------------------------- #
@@ -224,6 +240,18 @@ class IterIndexTests(unittest.TestCase):
 class OutputContainmentTests(unittest.TestCase):
     """`corpus`/`sample` wrote wherever they were pointed; only `todo` refused."""
 
+    def setUp(self):
+        # `main` refuses a store-reading command before dispatch when the store is
+        # unset, so the containment message is only reachable with one configured.
+        # Pinned at a throwaway path rather than inherited: a test that reads the
+        # ambient config asserts a different thing on a developer machine (store
+        # configured) than in CI (example config, store unset).
+        self._prior_data = os.environ.get("JOBHUNT_DATA_ROOT")
+        self.data_root = Path(tempfile.mkdtemp(prefix="ff-contain-")).resolve()
+        os.environ["JOBHUNT_DATA_ROOT"] = str(self.data_root)
+        self.addCleanup(shutil.rmtree, self.data_root, True)
+        self.addCleanup(_restore_env, {"JOBHUNT_DATA_ROOT": self._prior_data})
+
     def test_every_writing_command_refuses_a_path_outside_local(self):
         target = ff.REPO_ROOT / "skills" / "_ff_containment_probe"
         # A pre-fix run of this very test leaves the directory behind — which is
@@ -241,6 +269,121 @@ class OutputContainmentTests(unittest.TestCase):
                 self.assertIn(cmd, message)
         self.assertFalse(target.exists(),
                          "a rejected --out still created its directory")
+
+
+# --------------------------------------------------------------------------- #
+# No store configured is a SENTENCE, not a seven-frame TypeError
+# (backlog: 2026-07-31-field-fidelity-unconfigured-store)
+# --------------------------------------------------------------------------- #
+class UnconfiguredStoreTests(unittest.TestCase):
+    """The shipped example config leaves the store unset — i.e. every fresh clone.
+
+    `config.data_root()` returns None by design there, and every store-reading
+    command handed that None straight to `pathlib`, so the toolkit's own quickstart
+    commands died inside a stdlib frame. Pinned per command, because a guard that
+    covers `check` alone leaves the same traceback under `corpus` and `todo`.
+    """
+
+    def setUp(self):
+        self._prior = {var: os.environ.get(var)
+                       for var in ("JOBHUNT_DATA_ROOT", ff.config.ENV_VAR)}
+        self.addCleanup(_restore_env, self._prior)
+        os.environ.pop("JOBHUNT_DATA_ROOT", None)
+        os.environ[ff.config.ENV_VAR] = str(ff.REPO_ROOT / "config.example.yaml")
+        ff.config._load.cache_clear()
+        self.assertIsNone(ff.config.data_root(),
+                          "the shipped example config must leave the store unset")
+        scratch = ff.REPO_ROOT / "local"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.out = Path(tempfile.mkdtemp(prefix="ff-unconfigured-", dir=str(scratch)))
+        self.addCleanup(shutil.rmtree, self.out, True)
+
+    def _run(self, *argv):
+        """``(exit code, everything a user would see)`` for one CLI invocation.
+
+        Nothing is caught but `SystemExit`: an escaping traceback IS the defect,
+        so it must reach the test runner as an error.
+        """
+        out_buf, err = io.StringIO(), io.StringIO()
+        exit_message = ""
+        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err):
+            try:
+                code = ff.main(["--out", str(self.out), *argv])
+            except SystemExit as raised:      # a command's own `sys.exit(message)`
+                code = raised.code
+                if isinstance(code, str):     # the message IS the code; 1 on a shell
+                    exit_message, code = code, 1
+        return code, "\n".join((out_buf.getvalue(), err.getvalue(), exit_message))
+
+    def test_every_store_reading_command_names_what_to_configure(self):
+        for argv in (["corpus"], ["check", "--key", "anything"], ["todo"]):
+            with self.subTest(cmd=argv[0]):
+                code, message = self._run(*argv)
+                self.assertEqual(code, 2, message)
+                self.assertIn("store not configured", message)
+                self.assertIn("paths.data_root", message)
+                self.assertIn("JOBHUNT_DATA_ROOT", message)
+                self.assertIn(argv[0], message)
+
+    def test_the_refusal_leaves_the_scratch_dir_unwritten(self):
+        # Refusing after writing a half-run's artifacts would leave the next
+        # `sample` reading a corpus that no store backs.
+        self._run("corpus")
+        self.assertEqual(sorted(p.name for p in self.out.iterdir()), [])
+
+    def test_sample_reads_only_the_scratch_corpus_so_it_needs_no_store(self):
+        # `sample` never touches `data_root`; its honest refusal is the missing
+        # corpus file, and gating it on the store would be a lie about what it reads.
+        code, message = self._run("sample")
+        self.assertNotEqual(code, 0)
+        self.assertIn("run `corpus` first", message)
+
+
+# --------------------------------------------------------------------------- #
+# `corpus` advertises only the levers it reads
+# (backlog: 2026-07-31-field-fidelity-corpus-declares-flags-it-never-reads)
+# --------------------------------------------------------------------------- #
+class CorpusContractTests(unittest.TestCase):
+    """`corpus` declared `--limit`/`--seed` and read neither.
+
+    Harmless in effect — it always did MORE than asked — but a caller who passes
+    `--limit 50` to keep a run short gets the whole store, silently. `corpus` is a
+    full-store pass by design; the sampling levers belong to `sample`, which reads
+    both of its own.
+    """
+
+    def setUp(self):
+        scratch = ff.REPO_ROOT / "local"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.out = Path(tempfile.mkdtemp(prefix="ff-flags-", dir=str(scratch)))
+        self.addCleanup(shutil.rmtree, self.out, True)
+
+    def test_corpus_rejects_the_sampling_flags_it_never_read(self):
+        for flag in ("--limit", "--seed"):
+            with self.subTest(flag=flag):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), \
+                        self.assertRaises(SystemExit) as raised:
+                    ff.main(["--out", str(self.out), "corpus", flag, "5"])
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn("unrecognized arguments", err.getvalue())
+                self.assertIn(flag, err.getvalue())
+
+    def test_sample_keeps_the_sampling_levers_that_are_really_its_own(self):
+        # The levers are removed from the command that ignored them, not from the
+        # tool: `sample` still takes `--n`/`--seed` and uses both.
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+            ff.main(["--out", str(self.out), "sample", "--n", "5", "--seed", "3"])
+        self.assertIn("run `corpus` first", str(raised.exception))
+        self.assertNotIn("unrecognized arguments", err.getvalue())
+
+    def test_the_docstring_describes_the_full_pass_corpus_actually_runs(self):
+        corpus_doc = ff.__doc__.split("  corpus ", 1)[1].split("\n  sample ", 1)[0]
+        self.assertNotIn("sampled", corpus_doc,
+                         "the docstring still advertises a sampling step `corpus` "
+                         "does not have")
+        self.assertIn("every", corpus_doc)
 
 
 # --------------------------------------------------------------------------- #
@@ -321,8 +464,7 @@ class _StoreCase(unittest.TestCase):
     def _corpus(self):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            ff.cmd_corpus(argparse.Namespace(out=str(self.out), limit=600, seed=42,
-                                             cmd="corpus"))
+            ff.cmd_corpus(argparse.Namespace(out=str(self.out), cmd="corpus"))
         rows = [json.loads(ln) for ln
                 in (self.out / "corpus.jsonl").read_text().splitlines() if ln.strip()]
         return {r["source"]: r for r in rows}, buf.getvalue()
@@ -427,6 +569,74 @@ class WorkdayRawResolutionTests(_StoreCase):
         source, job = ff._RawStore(self.layout).job_for(entity)
         self.assertEqual(source, "workday")
         self.assertIsNone(job)
+
+
+class TruncatedLocationListTests(_StoreCase):
+    """A source that truncates its own location list is not a faithful copy.
+
+    Workday's search payload ships ONE `locationsText`, canonically
+    `"Fairview, ST and 3 more"`, and the generated `location` is a verbatim copy.
+    Raw and generated are then the SAME string and the hidden metros are in
+    neither, so `dropped_raw_tokens` is empty by construction and the posting reads
+    as faithful — a clean verdict over a source that admits, in the string itself,
+    that it withheld locations.
+    """
+
+    def test_the_and_n_more_tail_is_flagged_not_read_as_a_faithful_copy(self):
+        self._capture_workday([_wd_posting()])   # "Fairview, ST and 3 more"
+        self._build()
+        rows, _ = self._corpus()
+        row = rows["workday"]
+        self.assertEqual(row["generated_location"], "Fairview, ST and 3 more")
+        # The point of the defect: nothing was dropped BETWEEN raw and generated…
+        self.assertEqual(row["dropped_raw_tokens"], [])
+        # …and the posting is still not a faithful representation of the role.
+        self.assertEqual(row["flags"], ["truncated_location_list"])
+
+    def test_a_complete_location_list_is_not_flagged(self):
+        self._capture_workday([_wd_posting(locations="Fairview, ST")])
+        self._build()
+        rows, _ = self._corpus()
+        self.assertEqual(rows["workday"]["flags"], [])
+
+    def test_the_flagged_case_reaches_a_judge(self):
+        # A flag nobody samples is a flag nobody acts on: `sample` weights flagged
+        # cases, so the truncated posting must show up as a case file.
+        self._capture_workday([_wd_posting()])
+        self._build()
+        self._corpus()
+        with contextlib.redirect_stdout(io.StringIO()):
+            ff.cmd_sample(argparse.Namespace(out=str(self.out), n=32, seed=7,
+                                             source=None, cmd="sample"))
+        case = (self.out / "cases" / "workday-JR1980360.md").read_text()
+        self.assertIn("truncated_location_list", case)
+
+
+class FlagShapeTests(unittest.TestCase):
+    """The truncation detector fires on the source's shape and nothing else."""
+
+    def _flags(self, location):
+        return ff._flags_for(location, [], False)
+
+    def test_it_fires_on_the_workday_shape_whatever_the_metro(self):
+        for location in ("Fairview, ST and 3 more", "Austin, TX and 12 more",
+                         "Springfield, ST AND 1 MORE"):
+            with self.subTest(location=location):
+                self.assertIn("truncated_location_list", self._flags(location))
+
+    def test_it_does_not_fire_on_a_spelled_out_multi_location_string(self):
+        # A board that ships the whole list has hidden nothing — flagging it would
+        # bury the real cases, and `weird_separator` already covers odd shapes.
+        for location in ("Fairview, ST and Springfield, ST", "Portland, OR",
+                         "Grand Rapids, MI", "Remote - United States"):
+            with self.subTest(location=location):
+                self.assertNotIn("truncated_location_list", self._flags(location))
+
+    def test_it_leaves_the_four_existing_flags_alone(self):
+        self.assertEqual(ff._flags_for("Austin, TX", ["boston"], True),
+                         ["dropped_raw_token", "gate_decision_flip"])
+        self.assertEqual(ff._flags_for("SF/NYC and 2 more", [], False),
+                         ["truncated_location_list", "weird_separator"])
 
 
 class CorpusGateDecisionTests(_StoreCase):

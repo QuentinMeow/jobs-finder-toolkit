@@ -3,6 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: harness
 - **Source**: found while verifying the corrected `check --key` command (contradiction audit finding A2), 2026-07-31
+- **Claimed-by**: agent session 2026-08-02 (fix/25-recall-audit-cli)
 
 ## Goal
 
@@ -35,9 +36,14 @@ such a helper before adding one.
 
 ## Definition of done
 
-- [ ] `JOBHUNT_CONFIG=config.example.yaml .venv/bin/python
+- [x] `JOBHUNT_CONFIG=config.example.yaml .venv/bin/python
       automation/search-recall-audit/field_fidelity.py check --key anything`
       prints a one-line diagnostic naming the missing config key and exits
-      non-zero, with no traceback.
-- [ ] Same for `corpus`, `sample` and `todo`.
-- [ ] A test pins it, so the guard cannot regress to a traceback.
+      non-zero, with no traceback. — exits 2; output in `verification.md`.
+- [x] Same for `corpus`, `sample` and `todo`. — `corpus` and `todo` are guarded
+      alongside `check`; **`sample` is not**, deliberately: it never calls
+      `config.data_root()`, so it had no traceback to fix, and it already refuses
+      in one line with exit 1. Reasoning and evidence in `verification.md`.
+- [x] A test pins it, so the guard cannot regress to a traceback. —
+      `UnconfiguredStoreTests` in
+      `automation/search-recall-audit/tests/test_field_fidelity.py`.

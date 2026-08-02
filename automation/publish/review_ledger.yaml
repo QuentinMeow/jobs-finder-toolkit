@@ -2211,9 +2211,27 @@
 - base: e91f6cb7
   reviewed_by: agent
   date: 2026-08-02
+  files: 2
+  digest: sha256:4161c30332b7bf8f
+  finding: 'Guards the field-fidelity auditor against an unconfigured store. Every store-reading subcommand handed `config.data_root()`''s documented None straight to pathlib, so the toolkit''s own quickstart commands died seven frames deep in the stdlib on every fresh clone and in CI. One pre-dispatch guard in main, keyed off a `needs_store` default each store-reading subparser declares; `sample` deliberately has none because it reads only the scratch corpus. Exits 2 rather than the sibling store tools'' 0: an audit asked for a verdict and unable to read the store has not passed. The containment test now pins JOBHUNT_DATA_ROOT so it asserts the same thing on a maintainer machine and in CI. Tooling and test prose only - no identity, employer, school, salary or dated job-hunt content.'
+- base: 3e9af467
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:a95a5e8ed497ef80
+  finding: 'Drops `--limit`/`--seed` from the field-fidelity `corpus` subparser, which declared both and read neither, and rewrites the module docstring paragraph that called corpus a per-sampled-entity pass. Verified no caller anywhere in the tree passes either flag (the skill''s documented command takes none), so removal breaks nothing; the levers stay on `sample`, which reads both, and a test pins that they were not over-removed. The docstring rewrite also corrects two adjacent claims about the same command - it walks manifests, not the derived index, and reads no jd.md lines. Tooling and test prose only - no identity, employer, school, salary or dated job-hunt content.'
+- base: f0478c32
+  reviewed_by: agent
+  date: 2026-08-02
   files: 3
-  digest: sha256:e0e89976e12dcbc9
-  finding: This branch's own change - the review gate now refuses a ledger row that carries any key twice, which is the corruption a line-based union merge produced on 2026-08-02 and that a green --verify-all could not see. The check runs inside _LedgerLoader.construct_mapping because YAML collapses the duplicate before validate_row ever sees it; the failure names the row by its first line and says the ledger TEXT is damaged rather than the reader's commit. Tests drive a real union merge in a throwaway repo and pin that the commit-plus-base and pending base-only row shapes still pass. The module docstring's git add -A is replaced by explicit pathspecs. Tooling, tests and one backlog task file only. The publish suite carries one pre-existing failure inherited from base e91f6cb (the anchored /logs/ ignore rule), proven orthogonal here and already filed as a P0 backlog task on feat/19-examples-store. No identity, employer, school, salary or dated job-hunt content; the only shas named are this repo's own commits and synthetic test values.
+  digest: sha256:a6e7758e7ba075d3
+  finding: 'Adds a `truncated_location_list` flag to the field-fidelity auditor and names it in the skill''s field-fidelity section. Every other flag compares raw against generated and so can only see a loss the parser caused; a board that ships one truncated string ("Austin, TX and 3 more") copied verbatim into the generated field leaves raw and generated identical, so the tool reported a faithful copy of a lossy source. One regex on the generated string, source-agnostic, with negative controls pinning that a fully spelled-out multi-location string is not flagged. Example locations are the fictional metros the test module already uses; the ATS vendor name was already throughout the file. No identity, employer, school, salary or dated job-hunt content.'
+- base: cb7efe67
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 9
+  digest: sha256:d0fab7844e171569
+  finding: 'Files the three field-fidelity defects as done: each folder moves to tasks/4_done with a worklog and a verification page built only from commands actually run, and each definition-of-done bullet is ticked with what was done or, where the outcome differed, what was not. Two departures are stated rather than glossed - `sample` is deliberately left unguarded because it never reads the store, and the Workday task''s `_job_native_id` half was already fixed before this session and was not redone. The pages quote tool output over a throwaway store built from the test module''s fictional fixtures; the metros and requisition ids are the invented ones already in the tests. No identity, employer, school, salary or dated job-hunt content.'
 - base: 5fce4ba2
   reviewed_by: agent
   date: 2026-08-02
@@ -2303,3 +2321,9 @@
   files: 51
   digest: sha256:06736b1b40a19495
   finding: 'Stack merge only - brings in the gitignore base and its logs/ path-deny, the gate runner, the GitHub merge runbook, the repeated-mistake lesson, the dangling-symlink store fix and the three build-postings correctness fixes, each already reviewed on its own branch. This branch contributes nothing of its own to that diff. No identity, employer, school, salary or dated job-hunt content.'
+- base: fdcb7c95
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 54
+  digest: sha256:cf3487c036eab67c
+  finding: 'Stack merge only - brings in the gitignore base and its logs/ path-deny, the gate runner, the GitHub merge runbook, the repeated-mistake lesson, the dangling-symlink store fix, the three build-postings correctness fixes and the ledger duplicate-key refusal, each already reviewed on its own branch. This branch contributes nothing of its own to that diff. No identity, employer, school, salary or dated job-hunt content.'

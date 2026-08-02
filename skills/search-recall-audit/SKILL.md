@@ -172,6 +172,13 @@ a separate `address`/`allLocations` field), so the gate decides on a lossy strin
 .venv/bin/python automation/search-recall-audit/field_fidelity.py todo
 ```
 
+`corpus` flags are `dropped_raw_token`, `gate_decision_flip`, `duplicated_country`,
+`weird_separator` and `truncated_location_list` — the last fires on an `and N more`
+tail (Workday ships one `locationsText`, `"Austin, TX and 3 more"`, copied verbatim
+into `location`): raw and generated are the SAME lossy string, so no drop is
+detectable and the loss is the board's, not the parser's. Treat it as known-lossy at
+source, never as a faithful copy.
+
 Design (owner-approved 2026-07-25): **fix KNOWN formats in code, escalate WEIRD
 ones — never fold noisy fields.** Verify flags with **`composer-2.5`** subagents
 (judge each generated-vs-raw case: FAITHFUL / KNOWN_FORMAT_DROP / NOISY_FIELD /
