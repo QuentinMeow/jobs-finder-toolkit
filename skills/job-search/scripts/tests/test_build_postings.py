@@ -29,7 +29,7 @@ import build_postings as bp  # noqa: E402
 import config  # vendored toolkit config loader  # noqa: E402
 import postings_fold_state as fold_state  # noqa: E402
 from _vendor.store import serialization  # noqa: E402
-from _vendor.store.atomic import atomic_write_text  # noqa: E402
+from _vendor.store.atomic import atomic_write_text, read_jsonl  # noqa: E402
 from _vendor.store.capture import CaptureSession  # noqa: E402
 from _vendor.store.paths import domain_layout  # noqa: E402
 from _vendor.store.validation import validate_store  # noqa: E402
@@ -163,6 +163,22 @@ class _StoreCase(unittest.TestCase):
             status=200, payload_bytes=json.dumps(payload).encode(),
             content_type="application/json", fetched_at=dt,
             context={"company": company, "profile": "profile-01"})
+
+    def _capture_aggregator_row(self, company_name, title, dt, jid=7):
+        """One aggregator row — the capture shape that carries NO context company.
+
+        The partition is then derived from the row's own ``companyName``, which the
+        aggregator can change between sweeps while the URL-derived key stays put.
+        """
+        self._capture_scrape("jobicy", {"jobs": [{
+            "id": jid, "url": f"https://jobicy.com/jobs/{jid}-backend",
+            "jobTitle": title, "companyName": company_name,
+            "jobGeo": "Remote, USA", "jobDescription": "Own the ingestion pipeline.",
+            "pubDate": "2026-07-12"}]}, dt)
+
+    def _partitions(self):
+        root = self.layout.derived / "postings"
+        return sorted(p.name for p in root.iterdir()) if root.is_dir() else []
 
     def _annotate(self, key, facts):
         self.layout.annotations.mkdir(parents=True, exist_ok=True)
@@ -395,6 +411,50 @@ class IncrementalFoldTests(_StoreCase):
         out = self._summary()
         self.assertIn("fold=pending-only", out)
         self._assert_matches_rebuild()
+
+    # ── an entity that changes company MOVES; it must not fork ──
+    def test_a_company_rename_moves_the_derived_dir_instead_of_forking_it(self):
+        """One key, two partitions is a store a ``--rebuild`` cannot produce.
+
+        The aggregator renames the company between sweeps; the URL-derived key does
+        not move, so the entity belongs at a new partition. A writer that only ever
+        writes leaves BOTH — a duplicate posting with a frozen ``last_seen``, which
+        ``validate_store`` still calls ok.
+        """
+        self._capture_aggregator_row("Zeta Corp", "Backend Engineer", _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._partitions(), ["zeta-corp"])
+
+        self._capture_aggregator_row("Alpha Labs", "Senior Backend Engineer", _dt(15))
+        self.assertIn("fold=pending-only", self._summary())
+        self.assertEqual(self._partitions(), ["alpha-labs"])
+        self._assert_matches_rebuild()
+
+    def test_a_company_rename_moves_the_derived_dir_on_the_full_fold_too(self):
+        """The same defect on the fallback path — it is not a fast-path artifact."""
+        self._capture_aggregator_row("Zeta Corp", "Backend Engineer", _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._cache().unlink()                       # force the whole-raw-zone fold
+        self._capture_aggregator_row("Alpha Labs", "Senior Backend Engineer", _dt(15))
+        self.assertIn("fold=full", self._summary())
+        self.assertEqual(self._partitions(), ["alpha-labs"])
+        self._assert_matches_rebuild()
+
+    def test_a_key_at_two_partitions_refuses_the_fast_path(self):
+        """The cache holds ONE partition per key, so key sets cannot see a fork."""
+        self._capture_aggregator_row("Zeta Corp", "Backend Engineer", _dt(14))
+        self.assertEqual(self._build([]), 0)
+        entity = next((self.layout.derived / "postings" / "zeta-corp").iterdir())
+        shutil.copytree(entity, self.layout.derived / "postings" / "usco-inc"
+                        / entity.name)
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(15))
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            self.assertEqual(self._build([]), 0)
+        self.assertIn("fold=full", out.getvalue())
+        self.assertIn("derived zone no longer matches", err.getvalue())
+        # …and the full fold that follows heals the fork.
+        self.assertEqual(self._partitions(), ["examplecorp", "zeta-corp"])
 
     # ── the cross-entity reduction: a new manifest changing an OLD entity ──
     def test_new_manifest_stamps_duplicate_hint_on_an_untouched_entity(self):
@@ -679,6 +739,61 @@ class IncrementalFoldTests(_StoreCase):
         shutil.rmtree(self.layout.derived / "postings" / "examplecorp" / "gh-111")
         self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
         self.assertIn("fold=full", self._summary())
+        self._assert_matches_rebuild()
+
+    def test_a_manifest_replaced_in_place_falls_back(self):
+        """The refusal table promises this; a bare fetch-id digest cannot see it.
+
+        Raw is contractually append-only, so a manifest rewritten with the same
+        ``fetch_id`` and a different ``payload.blob`` is out-of-contract — but the
+        table says "a manifest was removed, or the raw zone was not synced" is
+        detected, and this was neither detected nor folded: the replaced manifest
+        is not pending, so its new rows never reached derived at all.
+        """
+        from _vendor.store.blobs import BlobStore
+        from _vendor.store.manifest import iter_manifests
+
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._index_keys(), {"gh-111"})
+
+        path, env = next(iter(iter_manifests(self.layout)))
+        before = env["payload"]["blob"]
+        ref = BlobStore(self.layout.blobs).write(
+            _gh_board([_job(111, "SWE", "Austin, TX"),
+                       _job(333, "Data Engineer", "NYC, NY")]), "application/json")
+        self.assertNotEqual(ref.sha256, before)
+        env["payload"] = ref.as_payload("application/json")
+        atomic_write_text(path, serialization.dumps_json(env))
+
+        self._capture_gh([_job(444, "Platform Engineer", "Remote, US")], _dt(15))
+        self.assertIn("fold=full", self._summary())
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-333", "gh-444"})
+        self._assert_matches_rebuild()
+
+    def test_a_deleted_event_log_falls_back(self):
+        """``posting.yaml`` alone is not "this entity's derived is intact".
+
+        ``_resume_fold`` reads ``events.jsonl`` too, so a deleted one silently
+        truncated the entity's whole event history: the resumed fold started from
+        an empty list and ``by-day/`` lost every earlier day, with no refusal.
+        """
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._capture_gh([_job(111, "SWE", "Seattle, WA")], _dt(15))
+        self.assertEqual(self._build([]), 0)
+        entity = self.layout.derived / "postings" / "examplecorp" / "gh-111"
+        before = [e["type"] for e in read_jsonl(entity / "events.jsonl")]
+        self.assertEqual(before, ["first_seen", "seen", "changed"])
+
+        (entity / "events.jsonl").unlink()
+        self._capture_gh([_job(111, "SWE", "Denver, CO")], _dt(16))
+        self.assertIn("fold=full", self._summary())
+        self.assertEqual([e["type"] for e in read_jsonl(entity / "events.jsonl")],
+                         before + ["seen", "changed"])
+        self.assertEqual(sorted(p.stem for p in
+                                (self.layout.index / "by-day").glob("*.jsonl")),
+                         ["2026-07-14", "2026-07-15", "2026-07-16"])
         self._assert_matches_rebuild()
 
     def test_ledger_ahead_of_cache_falls_back(self):
@@ -1088,6 +1203,33 @@ class CarryForwardTests(_StoreCase):
         self.assertEqual(self._build(["--rebuild"]), 0)
         self.assertIn("gh-222", self._index_keys())
 
+    def test_a_renamed_company_is_not_reinstated_by_carry_forward(self):
+        """The orphan partition does not just sit there — it can WIN the index.
+
+        ``_carry_forward`` walks ``sorted(rglob("posting.yaml"))`` assigning
+        ``out[key]``, so the alphabetically LAST partition wins. With the stale
+        ``zeta-corp/`` dir still present, the first build that cannot see raw
+        reinstates the OLD company and title into the index, silently reverting a
+        rename that already happened — and ``validate_store`` reports ``ok``.
+        """
+        self._capture_aggregator_row("Zeta Corp", "Backend Engineer", _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._capture_aggregator_row("Alpha Labs", "Senior Backend Engineer", _dt(15))
+        self.assertEqual(self._build([]), 0)
+        [row] = self._index_rows()
+        self.assertEqual((row["company"], row["title"]),
+                         ("Alpha Labs", "Senior Backend Engineer"))
+
+        shutil.rmtree(self.layout.raw)      # raw never synced to this machine
+        self.assertEqual(self._build([]), 0)
+        [row] = self._index_rows()
+        self.assertEqual((row["company"], row["title"]),
+                         ("Alpha Labs", "Senior Backend Engineer"),
+                         "carry-forward reinstated the pre-rename orphan")
+        self.assertEqual(self._partitions(), ["alpha-labs"])
+        report = validate_store(self.data_root)
+        self.assertTrue(report.ok, report.errors)
+
     def test_annotated_not_synced_entity_passes_verify(self):
         self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
         self._capture_gh([_job(222, "SRE", "Remote, US")], _dt(15))
@@ -1300,6 +1442,32 @@ class IndexPreservationTests(_StoreCase):
         self.assertNotIn("carried", row)
         self.assertNotEqual(row["seq"], 999)  # real computed seq, not the stale one
 
+    def test_a_row_deleted_from_the_committed_index_falls_back(self):
+        """The floor is the last zone with no invalidation signal of its own.
+
+        ``_patch_index_zone`` reads ``index/postings.jsonl`` as authoritative for
+        every row this run does not rebuild, so a row deleted from it stayed lost
+        across every subsequent fast build — in the zone the design calls
+        committed, durable history. Reproduces only for a row this sweep does not
+        re-observe; a re-observed one writes its own row back.
+        """
+        self._capture_gh([_job(111, "SWE", "Austin, TX"),
+                          _job(222, "SRE", "Remote, US")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-222"})
+
+        # Hand-delete gh-222's row. derived/ and raw/ are untouched.
+        idx = self.layout.index / "postings.jsonl"
+        rows = [json.loads(l) for l in idx.read_text().splitlines()]
+        atomic_write_text(idx, "".join(
+            json.dumps(r, sort_keys=True) + "\n" for r in rows
+            if r.get("key") != "gh-222"))
+        self.assertEqual(self._index_keys(), {"gh-111"})
+
+        self._capture_gh([_job(111, "SWE", "Seattle, WA")], _dt(15))  # gh-222 absent
+        self.assertIn("fold=full", self._summary())
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-222"})
+
     def test_full_current_input_remains_unchanged(self):
         """No index-only survivors on a full-raw machine — output is unaffected."""
         self._capture_gh([_job(111, "SWE", "Austin, TX"),
@@ -1473,6 +1641,84 @@ class EmptyStoreRebuildTests(_StoreCase):
         for key, row in rows.items():
             self.assertEqual(row["carried_from"], "index")
             self.assertEqual(row["seq"], floor[key]["seq"])
+
+
+class IndexRegenCrashTests(_StoreCase):
+    """The incremental regeneration must not delete the index zone before writing.
+
+    ``--rebuild`` writes the whole index into ``index.building`` and swaps, so a
+    failure anywhere before the swap leaves the live zone untouched. The default
+    (incremental) path regenerates in place, and it used to ``rmtree`` ``by-day/``
+    and ``triage/`` FIRST. ``postings.jsonl`` was already excluded and the crash
+    leaves the write-ahead marker that forces the next build to regenerate both
+    directories — so the hole is transient, not the permanent loss of a durable
+    floor. Transient is still a window ``--rebuild`` does not have.
+    """
+
+    def _ensure_index_zone(self):
+        """Two postings (by-day rows) plus one suppressed row (a triage row)."""
+        self._capture_gh([_job(111, "SWE", "Austin, TX"),
+                          _job(222, "SRE", "Remote, US")], _dt(14))
+        self._capture_scrape("jobicy", {"jobs": [
+            {"id": 2, "url": "https://jobicy.com/jobs/2-lon", "jobTitle": "UK Backend",
+             "companyName": "UkCo", "jobGeo": "London, United Kingdom",
+             "jobDescription": "d", "pubDate": "2026-07-12"}]}, _dt(15))
+        self.assertEqual(self._build([]), 0)
+        zone = self._zone()
+        self.assertTrue(zone["by-day"] and zone["triage"], zone)
+        return zone
+
+    def _zone(self):
+        out = {"postings.jsonl": (self.layout.index / "postings.jsonl").is_file()}
+        for sub in ("by-day", "triage"):
+            d = self.layout.index / sub
+            out[sub] = sorted(p.name for p in d.glob("*.jsonl")) if d.is_dir() \
+                else "MISSING"
+        return out
+
+    def _build_with_a_failing_index_write(self, *argv):
+        """ENOSPC inside the index write — the audit's demonstration."""
+        real = bp.atomic_write_text
+
+        def _fail(path, text):
+            if Path(path).name == "postings.jsonl":
+                raise OSError(28, "No space left on device")
+            return real(path, text)
+
+        bp.atomic_write_text = _fail
+        try:
+            with self.assertRaises(OSError):
+                self._build(list(argv))
+        finally:
+            bp.atomic_write_text = real
+
+    def test_a_failed_incremental_index_write_leaves_by_day_and_triage(self):
+        before = self._ensure_index_zone()
+        self._cache().unlink()          # force the whole-raw-zone fold (regen path)
+        self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(16))
+        self._build_with_a_failing_index_write()
+        self.assertEqual(self._zone(), before)
+
+    def test_rebuild_already_survives_the_same_failure(self):
+        """The behaviour the incremental path is being brought level with."""
+        before = self._ensure_index_zone()
+        self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(16))
+        self._build_with_a_failing_index_write("--rebuild")
+        self.assertEqual(self._zone(), before)
+
+    def test_a_bucket_that_empties_still_loses_its_file(self):
+        """Write-first must not turn into never-prune: a stale bucket still goes."""
+        self._ensure_index_zone()
+        orphan = self.layout.index / "by-day" / "2020-01-01.jsonl"
+        atomic_write_text(orphan, '{"_schema": 1}\n')
+        stray = self.layout.index / "leftovers.jsonl"
+        atomic_write_text(stray, '{"_schema": 1}\n')
+        self._cache().unlink()
+        self._capture_gh([_job(333, "Data Engineer", "NYC, NY")], _dt(16))
+        self.assertIn("fold=full", self._summary())
+        self.assertFalse(orphan.exists(), "a bucket with no rows kept its file")
+        self.assertFalse(stray.exists(), "a stale top-level index file survived")
+        self._assert_matches_rebuild()
 
 
 class SwapCrashRecoveryTests(_StoreCase):
