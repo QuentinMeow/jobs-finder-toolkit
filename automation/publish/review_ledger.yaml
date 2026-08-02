@@ -2110,3 +2110,10 @@
   files: 3
   digest: sha256:08cfb4e595f1631c
   finding: none
+- commit: 139db0b7
+  base: f474e478
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 6
+  digest: sha256:6facb40636c45ab7
+  finding: Folds an owner answer about a search-pipeline default into an ADR, a handbook row, a backlog task, and the deletion of the queue item. The lost postings that motivated it are described only by shape (US-remote, no visa denial, still open) and are never named, per the queue item's own leak note. No identity, employer, school, salary or dated job-hunt content.
