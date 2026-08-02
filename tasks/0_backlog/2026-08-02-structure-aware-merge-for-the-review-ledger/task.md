@@ -33,6 +33,32 @@ every existing check. It was found only by eye, while reading the file for an un
 `union` is now removed. Merges conflict again, which is safe but costs a manual resolution per
 convergence — the exact cost #198 set out to remove.
 
+## Status, 2026-08-02: the recurrence-prevention half is DONE; the merge driver is not
+
+The well-formedness check below shipped on `fix/24-ledger-row-validation`. `_LedgerLoader` in
+`review_gate.py` now overrides `construct_mapping` and rejects a repeated key **during
+construction** — which is the only place it is visible, because `yaml.safe_load` keeps the last
+duplicate and hands back an ordinary dict that passes every per-row rule the gate has
+(`DuplicateKeyTests.test_the_parsed_row_alone_shows_nothing_wrong` pins that). The failure names
+the row by its opening `- <key>: <value>` line, lists the repeated keys, and says the ledger TEXT
+is damaged rather than the reader's commit. Exit code is 2 (a ledger problem), unchanged.
+
+The "names at least one of `commit:`/`base:`" half was **already enforced** by `validate_row`
+before this task was filed (`a row with neither pins no range`, covered by
+`PendingRowTests.test_a_row_with_neither_anchor_is_rejected`); nothing was needed there.
+
+Regression tests: `LedgerValidationTests.test_a_line_based_merge_of_the_ledger_is_refused` drives a
+real `union` merge of two rows for one range in a throwaway repo — the merge still succeeds
+silently, and the gate now exits 2 on its output — plus `DuplicateKeyTests`, which pins the
+interleaved shape, the stray-line-in-a-neighbour shape, and the two legitimate row shapes
+(`commit:`+`base:`, and pending `base:`-only) that must not regress. All four refusal tests were
+run against the pre-change code and fail there.
+
+**Still open, and deliberately not bundled:** everything under "Pick one and implement it" — the
+row-granular merge driver (a) versus recording the manual resolution as an ADR (b). That is a
+larger decision about mechanism, not about detection, and the check above is what makes either
+choice safe to take slowly: a line-based merge can no longer corrupt a row *quietly*.
+
 ## Definition of done
 
 Pick one and implement it:
@@ -48,9 +74,12 @@ cost measured rather than guessed.
 
 Either way, also do this — it is the part that actually prevents recurrence:
 
-- **A well-formedness check on the ledger**, wherever the gate already parses it: every row carries
-  each key at most once and names at least one of `commit:`/`base:`. This is the check whose absence
-  let a corrupted row through a green `--verify-all`. It is a *validation* of an existing gate's own
-  input, not a new gate, so it does not conflict with `process-weight-what-to-cut.md`'s default path.
-- A regression test built from the real failure: two rows for the same range whose keys are in
-  different order, merged, asserting the result has no duplicate keys.
+- [x] **A well-formedness check on the ledger**, wherever the gate already parses it: every row
+  carries each key at most once and names at least one of `commit:`/`base:`. This is the check whose
+  absence let a corrupted row through a green `--verify-all`. It is a *validation* of an existing
+  gate's own input, not a new gate, so it does not conflict with
+  `process-weight-what-to-cut.md`'s default path. **Done 2026-08-02** — see Status above.
+- [x] A regression test built from the real failure: two rows for the same range whose keys are in
+  different order, merged, asserting the result has no duplicate keys. **Done 2026-08-02** — the
+  test performs the `union` merge itself rather than asserting on hand-written interleaved text,
+  so it cannot drift from what the driver actually produces.
