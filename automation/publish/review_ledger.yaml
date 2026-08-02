@@ -2393,3 +2393,9 @@
   files: 1
   digest: sha256:99df9afc3507e680
   finding: 'Session handover for the merge-runbook and folder-refactor session. Describes the work in shapes, not specifics: which decision fired, which defects were fixed, which gates caught what. Names only public repo paths, PR numbers and commit SHAs. The one private reference is the standing note that verify_links is red on refs inside private/, stated without naming any of those paths. No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 9
+  digest: sha256:b9158529143349b0
+  finding: 'Three fail-open fixes in the leak guard plus their task records. Read by hand, line by line. Every identity-shaped string ADDED is an invented test fixture - Ravenscroft, Bjornholm, Zurich, CafeCorp and Rowan Ashdown as scan tokens, Quarrenden and ZZPROBEZZ as probe tokens quoted in the verification records - and the single email-shaped literal follows this module''s existing split-fragment convention so it never appears contiguously in the source. The verification records quote real command output but every path in them is either a public repo path or a placeholder; no absolute home path, phone shape, salary, school or dated job-hunt fact appears. The advisory private-company cross-reference did NOT run (no overlay is mounted in this worktree), so the company-name pass was done by reading the diff; the only company-shaped tokens present are the invented ones above and the pre-existing AcmeRobotics / acme-robotics fixtures already in this test module. No identity, employer, school, salary or dated job-hunt content.'
