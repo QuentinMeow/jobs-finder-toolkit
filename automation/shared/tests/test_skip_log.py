@@ -526,11 +526,18 @@ class RecordPostingsTests(unittest.TestCase):
 class VendoringTests(unittest.TestCase):
     """The canonical module and both vendored copies must be byte-identical.
 
-    ``sync_vendored.check()`` iterates ``TARGETS`` and never enumerates a skill's
-    ``_vendor/`` to ask whether every file there is declared — so an undeclared
-    copy leaves the pre-commit vendor gate green forever while the copies drift.
-    The file that defines the identity and the normalizers is the worst one to
-    leave undeclared, hence this direct check.
+    Written when ``sync_vendored.check()`` walked ``TARGETS`` outward only, so an
+    undeclared copy was invisible to the vendor gate. That hole is closed — the
+    check now also audits inward (``undeclared_vendored_files``, pinned by
+    ``test_vendor_reverse_audit``), which would catch the copy this class was
+    working around.
+
+    Kept anyway, because it asserts something neither direction does: that
+    ``skip_log.py`` is vendored to EXACTLY these two skills. The generic audit
+    only proves nothing extra is present; deleting a needed copy AND its
+    ``TARGETS`` entry still passes it. This file defines the skip-log identity
+    and the normalizers, so losing a consumer's copy silently is worth a
+    dedicated pin.
     """
 
     SOURCE = "automation/shared/skip_log.py"
