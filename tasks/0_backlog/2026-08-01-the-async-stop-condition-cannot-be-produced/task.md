@@ -62,3 +62,20 @@ either direction today.
 - [ ] `grep -rn 'Blocking: yes' AGENTS.md docs/ templates/ message-queue/` returns nothing, or
       returns a sentinel that a live file actually uses.
 - [ ] `.venv/bin/python automation/reconcile/reconcile.py --check --require-roots` clean.
+
+## 2026-08-01 — superseded in place by PR #188
+
+PR #188 (`docs/05-queue-merge-then-answer`) shipped the opposite fix from the one this task
+recommends. Instead of restoring a producible stop condition, it removes queue-level stop
+authority entirely: `Blocking:` is renamed to `Blocks:`, a pure-prose field that never stops an
+agent (its value was always going to be "nothing" or a description, never a boolean sentinel),
+and the sole stop authority is now the `AGENTS.md` Guardrails, which halt one specific action
+(deleting owner data, sending mail, pushing over a red gate) rather than a whole batch.
+
+This task is marked **superseded in place** — not deleted, and no text above this note has been
+changed. Its audit of why the old `Blocking: yes` sentinel could never fire stands as the record
+of the problem; PR #188 just answers it differently than recommended here. The owner may still
+reverse this via
+`message-queue/needs-human/decisions/blocks-rename-supersedes-the-stop-condition-task.md`
+(status: awaiting-owner-input as of this note) — if answered Option B or C there, this task's
+fix ships after all.

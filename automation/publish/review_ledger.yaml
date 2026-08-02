@@ -1957,6 +1957,26 @@
   files: 5
   digest: sha256:668f332d60e36bcb
   finding: none — new automation/evals module plus its tests, the eval-result template's two commit rows and pin block, and one exporter allowlist entry; no name, employer, school, date, salary or job-hunt detail in any of the five files
+- commit: e876a423
+  base: 1144d288
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 92
+  digest: sha256:35993393865e278a
+  finding: none — 90 of 92 files are pure `git mv` renames (task.md/verification.md/worklog.md
+    for 31 tasks/3_in-review -> tasks/4_done moves; zero content bytes changed, confirmed via
+    `git diff --stat`), plus one canary-rubric wording fix (fictional PR 41/136 numbers only) and
+    one new eval-results record referencing the same fictional PR numbers and a public GitHub
+    branch name; no real name, employer, school, date, salary or job-hunt detail in any file
+- commit: b3441679
+  base: e876a423
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:4769b51bf67b9b0b
+  finding: none — a `tasks/README.md` routing sentence, one append-only dated note in a backlog
+    task.md pointing at two fictional-numbered PR/decision filenames, and one test-fixture string
+    literal in a gardener test; no real name, employer, school, date, salary or job-hunt detail
 - commit: 154d8354
   base: 1144d288
   reviewed_by: agent
@@ -2034,3 +2054,10 @@
   files: 6
   digest: sha256:7a46605f301b43a1
   finding: Merge of origin/main into the eval-record-pins branch; ledger conflict resolved by concatenating both sides' rows. Reviewed range covers the new automation/evals pin generator and its tests, the export allowlist entry, the eval-result template, and the CI line that discovers the new test directory. No identity, employer, school, salary or dated job-hunt content.
+- commit: 6b777866
+  base: 98159137
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 95
+  digest: sha256:eefd7f91fba8c003
+  finding: Merge of origin/main into the housekeeping branch; ledger conflict resolved by concatenating both sides' rows. The 95 files are almost entirely renames of completed task folders from 3_in-review to 4_done, plus the corrected github-workflow canary bullet, one new eval record, an appended supersession note, and a test fixture string. Grep hits on "salary" are the folder name of a JD-parsing bug task, not owner data. No identity, employer, school or dated job-hunt content.
