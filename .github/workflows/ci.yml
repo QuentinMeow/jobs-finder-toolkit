@@ -342,20 +342,24 @@ jobs:
       #
       # The body arrives through the environment, never interpolated into the shell:
       # a PR description is untrusted text and `${{ … }}` inside a run block would
-      # execute it. `local/` is the repo's gitignored scratch root.
+      # execute it.
+      #
+      # Scratch goes to $RUNNER_TEMP, not into the checkout. A path written inside
+      # the repo would have to be a path the EXPORT ships — the exported mirror runs
+      # this same workflow, and automation/publish/tests asserts that every repo path
+      # ci.yml names exists there. A runner temp dir is outside that contract.
       - name: Eval gate discharged in the PR body (blocking)
         env:
           BODY: ${{ github.event.pull_request.body }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          mkdir -p local/scratch
-          printf '%s' "$BODY" > local/scratch/pr-body.md
+          printf '%s' "$BODY" > "$RUNNER_TEMP/pr-body.md"
           MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
-          git diff --name-only "$MERGE_BASE" "$HEAD_SHA" > local/scratch/changed.txt
+          git diff --name-only "$MERGE_BASE" "$HEAD_SHA" > "$RUNNER_TEMP/changed.txt"
           python skills/github-workflow/scripts/check_pr_body.py \
-            local/scratch/pr-body.md \
-            --changed-files local/scratch/changed.txt \
+            "$RUNNER_TEMP/pr-body.md" \
+            --changed-files "$RUNNER_TEMP/changed.txt" \
             --eval-gate-only
 
   # Canonical tree-wide counts, published on main AFTER the merge.
@@ -404,12 +408,13 @@ jobs:
           # than failing on it — verify_links already gates in the build job on this
           # same commit, so a break is red there, and reporting it here keeps the
           # numbers next to the run that produced them.
-          mkdir -p local/scratch
+          # Scratch goes to $RUNNER_TEMP, never into the checkout — see the pr-body
+          # job for why a repo-relative scratch path would break the export test.
           set +e
-          python automation/gardener/verify_links.py > local/scratch/links.log 2>&1
+          python automation/gardener/verify_links.py > "$RUNNER_TEMP/links.log" 2>&1
           LINKS_EXIT=$?
           set -e
-          cat local/scratch/links.log >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/links.log" >> "$GITHUB_STEP_SUMMARY"
           {
             echo '```'
             echo
@@ -418,18 +423,26 @@ jobs:
             echo '### Review ledger and eval records'
             echo
           } >> "$GITHUB_STEP_SUMMARY"
-          python - >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          # Both repo paths are passed as ARGUMENTS rather than written inside the
+          # heredoc, so each is one clean shell token: automation/publish/tests reads
+          # this file to check that every path ci.yml names ships in the export, and
+          # a path glued to Python punctuation reaches it as `…review_gate.py")`,
+          # which resolves to nothing and fails that test for no real reason.
+          python - automation/publish/review_gate.py evals/results \
+            >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import importlib.util
+          import sys
           from pathlib import Path
 
+          gate_path, results_dir = sys.argv[1], sys.argv[2]
+
           # The ledger's own parser, so this count can never disagree with the gate's.
-          spec = importlib.util.spec_from_file_location(
-              "review_gate", "automation/publish/review_gate.py")
+          spec = importlib.util.spec_from_file_location("review_gate", gate_path)
           review_gate = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(review_gate)
           rows = review_gate.load_ledger(Path("."))
-          records = sorted(Path("evals/results").glob("*.md"))
+          records = sorted(Path(results_dir).glob("*.md"))
 
           print(f"- review-ledger rows (`{review_gate.LEDGER_REL}`): {len(rows)}")
-          print(f"- eval records (`evals/results/*.md`): {len(records)}")
+          print(f"- eval records (`{results_dir}`): {len(records)}")
           PY
