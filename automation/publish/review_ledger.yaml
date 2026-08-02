@@ -2117,3 +2117,9 @@
   files: 7
   digest: sha256:0833dd4ed26552d0
   finding: This branch's own change - the review gate learns a PENDING row shape (no commit key) and a --staged endpoint, plus its tests, the pre-commit hook line, the gate's commit protocol in the workflow skill/CONTRIBUTING/cookbook, and a .gitattributes union merge driver for the ledger. All tooling and process prose. No identity, employer, school, salary or dated job-hunt content; the only shas named are this repo's own commits.
+- base: 3e00e933
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:8a0be613a3dd884a
+  finding: One new tasks/0_backlog item, filing the github-workflow canary run this branch's SKILL.md protocol rewrite owes. Names only this repo's own files, commands and constants. No identity, employer, school, salary or dated job-hunt content.
