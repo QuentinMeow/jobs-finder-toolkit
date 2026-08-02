@@ -5,7 +5,7 @@
 - **Source**: adversarial review of the O(new) incremental store build, 2026-07-31 —
   **pre-existing** (confirmed present with the fast path disabled, so it belongs to the
   incremental path in general, not to that change); out of scope for that fix
-- **Claimed-by**:
+- **Claimed-by**: Claude, 2026-08-02, branch `fix/22-build-postings-correctness` (done)
 
 ## Goal
 

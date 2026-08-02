@@ -2248,3 +2248,17 @@
     fictional examplecorp/ghostworks/remoteworks universe. Test fixtures are the
     existing fictional shapes. No identity, employer, school, salary or dated
     job-hunt content.'
+- base: 54a5c692
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 9
+  digest: sha256:712cf94f4b8980b1
+  finding: 'Process files only: the three store-builder tasks move from
+    tasks/0_backlog/ to tasks/4_done/ with a worklog and a verification each, and
+    the index-rebuild task gains a dated in-place correction because its filed
+    evidence overstated the defect (postings.jsonl was never destroyed - only
+    by-day/ and triage/ were, transiently). Diff read in full. The verification
+    files quote real command output from a throwaway temp store built from
+    fictional fixtures; store keys and companies in them (gh-111, url-98453eb35413,
+    Zeta Corp, Alpha Labs, examplecorp) are invented for the tests. No identity,
+    employer, school, salary or dated job-hunt content.'
