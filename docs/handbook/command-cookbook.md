@@ -129,12 +129,14 @@ python automation/bootstrap_overlay.py
 
 # Public review gate by hand. Fails (exit 1) when the published tree changed since
 # the last row in automation/publish/review_ledger.yaml, and prints the row to add.
-# It reads HEAD (the PREVIOUS commit) and the WORKING-TREE ledger, so you satisfy it
-# by staging that row alongside your next change — one row per commit, always one
-# behind. Close a branch with a ledger-only commit before pushing: it changes no
-# watched file, so it acknowledges the tip without creating new work. Exit 2 means
-# the ledger itself is wrong (bad digest, malformed row, ack not an ancestor of HEAD).
-.venv/bin/python automation/publish/review_gate.py
+# --staged is what the pre-commit hook runs: it judges the STAGED INDEX, so the row
+# it prints carries no `commit:` (that SHA does not exist yet) and the change and its
+# review go in ONE commit — append the row, `git add` the ledger, commit. Without
+# --staged it judges HEAD and prints a `commit:`-carrying row, which is the shape for
+# history that already landed. Exit 2 means the ledger itself is wrong (bad digest,
+# malformed row, ack not an ancestor of HEAD).
+.venv/bin/python automation/publish/review_gate.py --staged      # what pre-commit runs
+.venv/bin/python automation/publish/review_gate.py               # judge HEAD instead
 .venv/bin/python automation/publish/review_gate.py --verify-all  # recompute EVERY row (CI)
 
 # Install dependencies

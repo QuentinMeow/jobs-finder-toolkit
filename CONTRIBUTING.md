@@ -23,9 +23,10 @@ fixture. (For PDF rendering, install LibreOffice — see `README.md`.)
 
 Optionally wire the tracked git hooks in one idempotent, stdlib-only step. The
 pre-commit hook runs nine gates — a staged-`private/` reject, the leak guard over
-the staged index, the public review gate, the vendored-copy drift check, the mail
-send-less policy, `compileall`, the instruction-file budget, the reconciler, and the
-reference/markdown link check — and `automation/hooks/pre-commit` is the list:
+the staged index, the public review gate over the staged index, the vendored-copy
+drift check, the mail send-less policy, `compileall`, the instruction-file budget,
+the reconciler, and the reference/markdown link check — and
+`automation/hooks/pre-commit` is the list:
 
 ```bash
 python automation/bootstrap_overlay.py        # installs automation/hooks/pre-commit + automation/hooks/pre-push

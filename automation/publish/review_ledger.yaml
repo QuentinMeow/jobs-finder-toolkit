@@ -15,13 +15,21 @@
 # allowlist — that excludes memory/, tasks/, message-queue/ and history/, which
 # is exactly where an agent writes prose about real work.
 #
-# HOW TO ADD A ROW: run the gate. When it fails it prints the exact row, already
-# filled in. Read the diff first — the digest forecloses guessing, it does not
-# prove reading. Then stage the row ALONGSIDE your next change and commit once:
-# the gate reads this file from the working tree, so the row acknowledges HEAD
-# (one row per commit, always one behind). One row may cover a range of commits.
-# An agent may sign its own review; `reviewed_by: human` is required only when
-# the advisory company detector fires.
+# HOW TO ADD A ROW: `git add` your change, then run the gate with --staged (what
+# pre-commit runs). When it fails it prints the exact row, already filled in. Read
+# the diff first — the digest forecloses guessing, it does not prove reading. Then
+# append the row, `git add` this file, and commit ONCE: the row travels in the same
+# commit as the change it reviews. One row may cover a range of commits. An agent
+# may sign its own review; `reviewed_by: human` is required only when the advisory
+# company detector fires.
+#
+# TWO ROW SHAPES, both valid, both verified the same way:
+#   * PENDING — `base:` + `digest:`, NO `commit:`. The commit being made has no sha
+#     yet, so the row cannot name it; the gate resolves the endpoint later as the
+#     commit that introduced the row into this file. This is what --staged prints.
+#   * NAMED — `commit:` (+ `base:`). For history that has ALREADY landed: a merge
+#     commit you did not make, or a reconciliation row after a rebase. A default
+#     (non---staged) gate run prints this shape.
 #
 # SEEDED, NOT RETROACTIVE: the first row records the HEAD at which the gate was
 # introduced (eb345e71, the phase-0d commit), so the gate never demands a review
@@ -2138,3 +2146,17 @@
   files: 1
   digest: sha256:c8975c2d725f5ad2
   finding: Two added lines in the root contract's Configuration section, naming search filter words alongside identity, paths and output stems as things that are never hardcoded, and pointing at the config accessor. No identity, employer, school, salary or dated job-hunt content.
+  finding: The base branch's own tip, unsigned when this branch was cut. Three message-queue decision files gain the owner's answers plus a verification note, and one gets whitespace/link-shape churn. Board names (Amazon, Apple, Meta, Workday) are ATS fetcher names already throughout skills/job-search/scripts/sources.py, not employers of anyone. No identity, employer, school, salary or dated job-hunt content.
+- base: 783d4fc3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 7
+  digest: sha256:0833dd4ed26552d0
+  finding: This branch's own change - the review gate learns a PENDING row shape (no commit key) and a --staged endpoint, plus its tests, the pre-commit hook line, the gate's commit protocol in the workflow skill/CONTRIBUTING/cookbook, and a .gitattributes union merge driver for the ledger. All tooling and process prose. No identity, employer, school, salary or dated job-hunt content; the only shas named are this repo's own commits.
+- base: 3e00e933
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:8a0be613a3dd884a
+  finding: One new tasks/0_backlog item, filing the github-workflow canary run this branch's SKILL.md protocol rewrite owes. Names only this repo's own files, commands and constants. No identity, employer, school, salary or dated job-hunt content.
+  finding: none. Three message-queue decision items gain the owner's recorded answers, dated and attributed, plus the verification evidence for the conditional one. Process text only — no identity, employer, school, salary or dated job-hunt content.

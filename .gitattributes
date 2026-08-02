@@ -1,0 +1,15 @@
+# The review ledger is APPEND-ONLY, so the only correct resolution of a conflict in
+# it is "keep both sides' rows" — which is exactly what git's built-in `union` merge
+# driver does. Every branch that changes the published tree appends here, so without
+# this line every parallel branch collides on this one file and each one is resolved
+# by hand; that hand-resolution is also the one place a row could be dropped, which
+# an append-only record cannot survive.
+#
+# This is safe ONLY because every row records its own `base:`. Concatenating two
+# branches' rows re-orders them, and a row whose range start is DERIVED from its
+# position in the list would silently be re-parented onto the other branch's last
+# commit — a range that never existed. A row that names its own base cannot be.
+# See "A ROW'S OWN BASE" in automation/publish/review_gate.py before removing this.
+#
+# `union` is a built-in driver: no `git config merge.*` is needed for it to work.
+automation/publish/review_ledger.yaml merge=union
