@@ -431,6 +431,147 @@ variants:
       verdict: likely
       confidence: high
 
+  - id: sponsorship-non-immigration-sponsee-is-not-a-denial
+    domain: sponsorship
+    # The opposite error, and the third shape of the same entry. Offer phrases
+    # carried an immigration-context gate; denial phrases carried none, so a
+    # bare-verb "sponsor" with an unrelated object matched `do not sponsor` and
+    # graded a confident refusal — and the default exclude_negative policy DROPS
+    # refusals, so the posting was deleted for a sentence about a street fair.
+    input:
+      text: We do not sponsor community events.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-bare-verb-denial-with-immigration-context-stands
+    domain: sponsorship
+    # The gate keeps the denials it is supposed to keep: the same bare verb with
+    # immigration wording beside it is a real refusal. Written with the PLURAL
+    # "visas", which is the wording these denials actually use and the reason
+    # the denial gate cannot reuse the offer side's singular-anchored pattern.
+    input:
+      text: We cannot sponsor visas at all for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-denial-naming-sponsorship-needs-no-context
+    domain: sponsorship
+    # The tripwire that makes a SYMMETRIC gate wrong, pinned beside the two rows
+    # above so the asymmetry cannot be "tidied up" later. This sentence carries
+    # no immigration word anywhere in it and is still a real refusal: the object
+    # of the verb IS sponsorship, so there is no other sponsee it could be
+    # about. Only the bare-verb phrases are gated.
+    input:
+      text: This role does not offer sponsorship for candidates.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-off-list-denial-with-a-coordinated-object
+    domain: sponsorship
+    # Detection, not polarity. The denial phrases need "offer sponsorship"
+    # contiguous and the offer phrases need "offer visa sponsorship" contiguous,
+    # so ONE coordinated object defeats both lists and the negation scope has
+    # nothing to act on — the JD said no in writing and the pipeline read it as
+    # silence. A negation reaching a bare sponsorship head through an OFFER VERB
+    # is a denial of that offer.
+    input:
+      text: We do not offer relocation or visa sponsorship.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-off-list-denial-other-offer-verbs
+    domain: sponsorship
+    # Same shape, different verb: the rule is about the offer relation, not
+    # about one word.
+    input:
+      text: We cannot extend visa sponsorship for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-eeo-copy-is-not-a-denial
+    domain: sponsorship
+    # The guardrail on the rule above, and the reason the OFFER VERB is required
+    # rather than merely helpful. This sentence puts a negation cue five tokens
+    # from the sponsorship head and is the OPPOSITE of a denial; a generic
+    # "cue ... sponsorship head" rule would drop an employer that sponsors.
+    input:
+      text: >-
+        We do not discriminate against candidates who need visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-off-list-denial-window-stays-tight
+    domain: sponsorship
+    # The second guardrail: a head far from the offer verb is no longer
+    # plausibly its object, so the rule declines rather than guessing.
+    input:
+      text: >-
+        We do not offer relocation or housing or transit or gym or childcare
+        or visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-unreachable-cue-is-not-an-offer
+    domain: sponsorship
+    # The high-severity shape. A clause break INSIDE a comma-delimited aside
+    # ("and the") truncates the negation scope before the token budget is ever
+    # consulted, so "unable" never reaches the offer phrase behind it — and an
+    # unreachable cue used to leave that phrase scored as an explicit OFFER.
+    # The posting graded `match`/`likely`/high, so `require_positive` handed an
+    # employer that refuses sponsorship in writing to the one candidate who
+    # cannot take it. Both bounds are unchanged; the reading is recorded as
+    # unsettled instead, and the posting is kept and flagged.
+    input:
+      text: >-
+        We are unable, given current headcount constraints and the timeline
+        for this particular opening, to offer visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-unreachable-cue-over-the-token-budget
+    domain: sponsorship
+    # The OTHER bound, on the same sentence with the coordinator removed: the
+    # cue is back in scope at a 9-token gap and refused by the budget. Pinned
+    # separately because a repair aimed at one bound leaves the other open.
+    input:
+      text: >-
+        We are unable, given current headcount constraints for this particular
+        opening, to offer visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-settled-denial-outranks-an-unreachable-cue
+    domain: sponsorship
+    # Guardrail: recording a reading as unsettled must never weaken a refusal
+    # the module CAN read.
+    input:
+      text: >-
+        This role does not offer sponsorship. We are unable, given current
+        headcount constraints and the timeline for this particular opening,
+        to offer visa sponsorship.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
   - id: sponsorship-silence-is-unknown
     domain: sponsorship
     # The baseline the two shapes above are graded against.

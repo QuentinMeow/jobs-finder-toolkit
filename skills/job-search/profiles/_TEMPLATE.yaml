@@ -41,6 +41,11 @@ keywords:
   good: []                 # medium weight (matched in description)
   negative: []             # reduce score for honest mis-fits
 
+# The SEARCH-time location gate reads THIS block and nothing else. config.yaml's
+# location_policy: is a separate, DRAFT-time gate (handoff.py, status.py
+# --check-locations, company_roles.py); editing it changes no search result.
+# Keep us_only explicit: the search reads an absent us_only as false (worldwide),
+# the draft-time gate reads an absent one as true.
 location:
   preferred: [remote]      # whole-word match against posting location
   allow_remote: true
@@ -53,6 +58,8 @@ visa:
   perm_greencard: false
   policy: exclude_negative # exclude_negative | require_positive
 
+# null = no posting-age filter, which is what the pipeline does when this key is
+# absent and what example.yaml ships. This template opts in to a 3-day window.
 max_age_days: 3            # only postings from the last N days
 
 # Company re-search window (NOT posting age), plus the first-search exception:

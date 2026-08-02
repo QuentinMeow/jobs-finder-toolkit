@@ -66,9 +66,22 @@ decision correctly rather than guessing at it.
   `config.applications_root()`, or the never-delete guardrail is relaxed for agents, this decision's
   premise is gone and the rule must be revisited — a folder that disappeared without the owner's
   say-so would silently and permanently skip a posting the owner still wanted. Pinning the premise
-  is filed as `tasks/0_backlog/2026-08-02-pin-the-never-delete-an-application-folder-premise/`.
+  is filed as `2026-08-02-pin-the-never-delete-an-application-folder-premise`.
 - One live defect already pushes against the premise:
-  `tasks/0_backlog/2026-08-01-forget-log-tells-the-agent-to-delete-owner-data` records that the
+  `2026-08-01-forget-log-tells-the-agent-to-delete-owner-data` records that the
   skip-log's own remediation message tells an agent to delete an application folder. That is now
   more than an instruction conflict — it is a threat to the reasoning this decision rests on.
 - **Revisit if** either condition stops holding. Nothing else about the rule needs re-deciding.
+
+### Status of the premise (2026-08-02, appended — the decision itself is unchanged)
+
+Both tasks above are done, on branch `fix/never-delete-application-folder`.
+
+- The instruction conflict is gone. `--forget-log`'s live-folder refusal, and handoff's
+  location-mismatch remedy, now name the existing application and route an actual removal to
+  `message-queue/needs-human/`; neither tells an agent to delete a folder.
+- The premise is now **enforced, not asserted**:
+  `automation/shared/tests/test_application_folder_never_deleted.py` fails if any non-test
+  module under `automation/` or `skills/` removes a path beneath `config.applications_root()`,
+  and its failure message names this file. If you are reading this because that test went red,
+  the "Revisit if" line above is the one that just fired — do not delete the assertion.

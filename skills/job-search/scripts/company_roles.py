@@ -4,10 +4,13 @@ This is a targeted re-search helper: given one company (by canonical name from
 ``companies.yaml`` or by an explicit ``--ats``/``--token``), it fetches that
 company's live ATS board and prints every open posting with the location category
 from the vendored ``_vendor/location.py`` (a byte-identical copy of the toolkit's
-``automation/shared/location.py`` — the same location policy the job profile enforces
-via ``config.location_policy``). Use it to re-check whether a specific employer currently has any
-posting that matches the location criteria — e.g. before redoing or ignoring a
-drafted application.
+``automation/shared/location.py``), applied to ``config.location_policy()``. That is the
+DRAFT-time policy — the one ``handoff.py`` and ``status.py --check-locations`` enforce.
+The SEARCH-time gate reads a different source: the active profile's ``location:`` block
+(``scoring.location_ok``). The two can disagree, and they default differently: ``us_only``
+is True when ``config.yaml`` omits it and False when the profile omits it. Use this script
+to re-check whether a specific employer currently has any posting that matches the
+draft-time location criteria — e.g. before redoing or ignoring a drafted application.
 
 It does NOT apply the role/seniority/visa title gate — it lists everything so a
 human (or agent) can judge role fit against the active job-matching profile

@@ -1,14 +1,19 @@
 # `classify_sponsorship()` still misses denials that match no phrase at all
 
-- **Status**: open (narrowed 2026-07-31; **severity corrected upward 2026-08-01** — the
-  2026-07-31 correction pass wrote a safety claim into this file that the code did not
-  have, see the note below)
-- **Severity**: **high** — a denial can still reach the candidate as an explicit
-  **offer**. `--visa-policy require_positive` is NOT safe: one denial shape below still
-  returns `verdict: likely`, `confidence: high`, `decision: match`, `classify_visa: yes`,
-  so a posting that refuses sponsorship in writing is shortlisted, unflagged, for the one
-  candidate who cannot take it. The `unclear` fall-through and the false-denial shape are
-  the lesser, still-open remainder.
+- **Status**: **CLOSED 2026-08-02** — all three remaining shapes fixed on
+  `fix/visa-classifier` (`5c51576`, `753fdda`, `f016aec`). Re-measured on that branch
+  tip, the three reproduction lines below now print `unlikely`, `unknown`, `unknown`.
+  (Narrowed 2026-07-31; **severity corrected upward 2026-08-01** — the 2026-07-31
+  correction pass wrote a safety claim into this file that the code did not have, see
+  the note below.)
+- **Severity**: **was high, now closed.** The high-severity shape — a denial reaching the
+  candidate as an explicit **offer** — no longer reproduces: `--visa-policy
+  require_positive` does not return a posting whose sentence carries an unreachable
+  negation cue. The `unclear` fall-through and the false-denial shape are closed in the
+  same branch. Before the fix this file read: a denial shape returned `verdict: likely`,
+  `confidence: high`, `decision: match`, `classify_visa: yes`, so a posting that refused
+  sponsorship in writing was shortlisted, unflagged, for the one candidate who cannot
+  take it.
 - **Area**: job-search
 - **Source**: GH issue #15 (comment thread); reconfirmed in
   `evals/results/stage2-canary-gate-19c3ff8-20260720.md` and
@@ -247,10 +252,97 @@ to be, the fix is the discourse-relation reading the decision record lists under
 alternatives, not a narrowing of the quantifier — which is what the three previous revisions
 each tried, in alternating directions.
 
-Also unchanged by design: the long-parenthetical denial is the open high-severity item
-described at the top of this entry, tracked here rather than closed.
+All three rows were re-measured on the fix branch tip `f016aec` and are byte-identical
+to the readings above. The long-parenthetical denial, which this section used to record
+as the open high-severity item, is closed — see the 2026-08-02 entry below.
 
-## Suggested fix
+## Fixed on 2026-08-02 (kept as history)
+
+All three remaining shapes, as three independent commits, each gated on a **frozen
+verdict matrix** of 51 rows — the three reproductions, all three "Deliberately NOT
+fixed" rows, every `domain: sponsorship` corpus case, and the named tripwires —
+measured BEFORE and AFTER every change, with "change nothing" an allowed outcome for a
+row. 35 of 35 pre-existing correct rows came out byte-identical; only the six target
+rows moved.
+
+1. **The unreachable negation cue (the high-severity one).** Repair **(b)** — fail
+   toward review — was implemented; **(a)** was not, and both bounds sit exactly where
+   they were, so `sponsorship-offer-after-clause-restart` is untouched. The evidence
+   layer records the cue as unreachable and only the verdict layer's confidence changes:
+   the posting lands `review` / `unknown` / low, kept and flagged. This closes the
+   token-budget bound as well as the clause break. Pinned by
+   `SponsorshipUnreachableCueTests`,
+   `test_require_positive_never_presents_an_unreachable_cue_as_an_offer`, and the
+   `sponsorship-unreachable-cue-*` corpus cases.
+
+   **Repair (b) as this file described it is not sufficient on its own.** Implemented
+   literally it demotes `sponsorship-offer-after-clause-restart`,
+   `test_contrastive_conjunction_ends_the_negation` and
+   `test_a_denial_beside_a_hedged_offer_is_a_conflict_not_a_drop`. Two exclusions are
+   required, both measured: an offer phrase that OPENS its own clause
+   (`_sponsor_clause_scope` returns `''` there, against
+   `' timeline for this particular opening, to '` for the filed sentence), and a
+   negation already SPENT by an unambiguous break — terminal punctuation, a dash, or a
+   contrastive conjunction. The comma and coordinator breaks are deliberately excluded
+   from that set: those are the ones that fire inside an aside.
+
+2. **Detection.** A negation reaching a bare sponsorship HEAD through an OFFER VERB is a
+   denial of that offer, resolved through the module's existing `_sponsor_negation`
+   scope — no third notion of "reach" — with a tight 5-token verb-to-head window. The
+   offer verb is what separates the denial from EEO copy: "we do not discriminate
+   against candidates who need visa sponsorship" puts a cue five tokens from the head
+   and is the OPPOSITE of a denial, so a cue-plus-head rule alone would have deleted
+   employers that sponsor. Pinned by `SponsorshipOffListDenialTests` and four corpus
+   cases.
+
+   Two integration constraints this entry did not name, both found by measurement. The
+   rule must be a **fallback only** — a head already covered by a listed phrase keeps
+   its existing path, or it steals `sponsorship-negated-offer-phrase`'s rule ids, which
+   `test_negated_offer_with_adverb_is_unlikely` pins exactly. And its synthetic denial
+   span must run from the CUE to the head, not from the head, or
+   `_sponsor_denial_is_negated` reads the rule's own cue as an outer negation and grades
+   a flat denial as a double negative.
+
+3. **The false-denial shape.** Only phrases whose "sponsor" is a bare transitive VERB
+   with no object of its own are gated on immigration context; every other denial names
+   "sponsorship" as the head noun, where the object IS sponsorship. Pinned by
+   `SponsorshipNonImmigrationDenialTests` and three corpus cases.
+
+   **This entry's own suggestion could not be implemented as written.** A
+   `_SPONSOR_STRONG_NEGATIVE` set defined as "phrases naming visa / H-1B / immigration /
+   green card explicitly" cannot contain `not offer sponsorship`, which names none of
+   them and is a real refusal — so under that definition the symmetric gate this entry
+   warned about is unavoidable. The dividing line is grammatical (bare verb vs. head
+   noun), not the strength of the wording, and it is pinned from both sides by
+   `sponsorship-denial-naming-sponsorship-needs-no-context` and
+   `sponsorship-non-immigration-sponsee-is-not-a-denial`.
+
+   The gate also could not reuse `_SPONSOR_CONTEXT_RE`: that pattern is anchored on
+   `\bvisa\b`, which does **not** match "visas", and these denials are routinely written
+   with the plural. Widening the shared pattern would have loosened the OFFER gate, so a
+   separate, deliberately wider `_SPONSOR_IMMIGRATION_RE` was added. It errs toward
+   KEEPING a denial, because dropping a real one hides it at high confidence while
+   keeping a non-immigration one costs only a review flag.
+
+**Two limits, pinned as tests rather than left implicit:**
+
+- the immigration gate's window is positional (±120 chars), so a real offer near a
+  non-immigration "sponsor" keeps that denial and the posting reads as a CONFLICT — kept
+  and flagged, never dropped and never promoted
+  (`test_the_context_window_errs_toward_keeping_the_denial`);
+- repair (b) costs recall on postings that put a negation and an unrelated offer in one
+  sentence, exactly as this entry predicted when it proposed the repair.
+
+**Recorded as method, extending the 2026-08-01 note.** This is the fifth pass over one
+classifier, and the first three alternated — each fixed one direction by reopening the
+other. What made passes four and five different is not a better cue list. It is two
+things: separating the evidence layer from the verdict layer, and a frozen verdict
+matrix measured before and after every single change, in which "change nothing" is an
+allowed outcome for a row. Three of this entry's own prescriptions turned out to be
+wrong in detail, and the matrix caught all three within minutes — none of them by
+review.
+
+## The repair options, as they stood before the fix (kept as history)
 
 Three independent pieces; any can ship alone.
 

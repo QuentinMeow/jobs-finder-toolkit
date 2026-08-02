@@ -257,19 +257,29 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
         ),
         Gate(
             name="verify-links",
-            argv=(py, "automation/gardener/verify_links.py"),
+            # --no-overlay is copied from the hook, not invented, and it is not a
+            # weakening. CI has no overlay, so the flag is a NO-OP there and this
+            # stays byte-equivalent to what CI enforces. In a maintainer checkout it
+            # is what stops the runner judging a SEPARATE repository at its own
+            # commit: without it this gate read the overlay's markdown and reported
+            # RED on a green tree. automation/hooks/pre-commit refuses the same thing
+            # in a comment that names the symptom — "the branch becomes uncommittable
+            # on the maintainer's own machine". Overlay link coverage is not dropped,
+            # it belongs to the deliberate gardener routine (flagless verify_links.py,
+            # whose output may name private/ paths and must never be pasted publicly).
+            argv=(py, "automation/gardener/verify_links.py", "--no-overlay"),
             what_it_proves="Every backticked path and [text](path) in a must-resolve "
                            "document resolves; no skill symlink dangles. CI form (no "
-                           "--require-roots, no --no-overlay).",
+                           "--require-roots) plus the hook's --no-overlay, a no-op in "
+                           "CI's overlay-free checkout.",
             group="both",
         ),
         Gate(
             name="verify-links-require-roots",
             argv=(py, "automation/gardener/verify_links.py", "--require-roots",
                   "--no-overlay"),
-            what_it_proves="Same, plus the named-root assertion, and judging THIS "
-                           "branch's docs alone (the overlay sits at its own commit). "
-                           "Hook-only, and only when private/ is mounted.",
+            what_it_proves="Same, plus the named-root assertion. Hook-only, and only "
+                           "when private/ is mounted.",
             group="hook",
             precondition=_needs_overlay("verify-links"),
         ),

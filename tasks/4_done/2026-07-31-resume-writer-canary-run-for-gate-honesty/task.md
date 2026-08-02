@@ -34,6 +34,11 @@ The authoring agent had no canary harness in its workspace and did not run them,
 so the PR body records the judgement rather than a result. Do not treat the
 absence of a canary line in `evals/results/` as a skip: the gate is open.
 
+**Accumulated since filing** (a gated run covers the state at head, not only its triggering diff —
+`evals/README.md`, "Every skip must be recorded"): the recorded skip from
+`2026-08-01-resume-writer-docs-misstate-what-check-py-enforces` (SKILL.md + reference.md threshold
+corrections, 2026-08-02). Judge the rubric against head, not against the gate-honesty diff alone.
+
 Run mechanics: `evals/README.md` -> "How to run a canary" (model-pinned; read
 `total_tokens` / `wall_clock_s` / `tool_calls` for the head SHA and compare with
 the last recorded resume-writer run — a large efficiency regression is a fail

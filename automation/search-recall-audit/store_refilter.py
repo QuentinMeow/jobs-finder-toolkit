@@ -8,6 +8,7 @@ folders, and the blacklist. Writes only to local/. This is the "re-evaluate all
 jobs stored locally" step after the location-fidelity parser rebuild.
 """
 from __future__ import annotations
+import argparse
 import sys
 from pathlib import Path
 
@@ -158,6 +159,23 @@ def is_blacklisted(company: str) -> bool:
         return False
 
 
+def build_parser() -> argparse.ArgumentParser:
+    """The CLI surface. There are no options — but ``--help`` must still answer.
+
+    The scan below used to sit under a bare ``if __name__ == "__main__":`` with no
+    parser at all, so ``--help`` did not print help: it ran the audit, and with no
+    store configured it tracebacked out of ``pathlib``. A ``--help`` that crashes is
+    not a help. Built in a function so importing this module still costs nothing.
+    """
+    return argparse.ArgumentParser(
+        prog="store_refilter.py",
+        description="Re-evaluate every STORED posting against the default profile's "
+                    "real gates. Read-only over the store; the only writes go to "
+                    f"{OUT.relative_to(ROOT).as_posix()}/.",
+        epilog="Takes no options: the profile comes from config.default_profile() "
+               "and the store root from paths.data_root / JOBHUNT_DATA_ROOT.")
+
+
 # ---- scan ---------------------------------------------------------------- #
 # Everything below runs ONLY as a script. Importing this module must not resolve a
 # private path, load the registry, walk the store, or create ``local/`` output —
@@ -168,6 +186,26 @@ def is_blacklisted(company: str) -> bool:
 # globals, exactly as they did before.
 if __name__ == "__main__":
     from collections import Counter
+
+    build_parser().parse_args()
+
+    # No store means no stored postings to re-filter — a sentence, not a seven-frame
+    # TypeError out of ``pathlib``. ``config.data_root()`` returns None BY DESIGN
+    # when the store is unconfigured, which is the shipped example config, i.e. every
+    # fresh clone and CI. Exit 0, like the store's own ``validate_store.py`` /
+    # ``gc_store.py`` ("nothing to validate" / "nothing to garbage-collect"): this
+    # tool hands back no verdict a caller could misread as clean, and "the store is
+    # empty because there is no store" is a complete answer. ``field_fidelity.py`` in
+    # this same folder deliberately exits 2 instead, and says why in its own comment:
+    # it was ASKED for a verdict and has none.
+    #
+    # The guard runs BEFORE ``OUT.mkdir`` and before the profile/registry load, so a
+    # refusal leaves no half-built output folder behind and resolves no overlay path.
+    _data_root = config.data_root()
+    if _data_root is None:
+        print("store not configured (set paths.data_root or JOBHUNT_DATA_ROOT); "
+              "nothing to re-filter.")
+        raise SystemExit(0)
 
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -180,8 +218,7 @@ if __name__ == "__main__":
 
     registry = load_registry()
 
-    data_root = Path(config.data_root())
-    derived = data_root / "jobs" / "derived" / "postings"
+    derived = Path(_data_root) / "jobs" / "derived" / "postings"
 
     covered_urls, covered_pairs = build_covered(
         Path(config.applications_jsonl_path()),
