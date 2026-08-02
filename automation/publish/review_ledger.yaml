@@ -2393,3 +2393,9 @@
   files: 1
   digest: sha256:99df9afc3507e680
   finding: 'Session handover for the merge-runbook and folder-refactor session. Describes the work in shapes, not specifics: which decision fired, which defects were fixed, which gates caught what. Names only public repo paths, PR numbers and commit SHAs. The one private reference is the standing note that verify_links is red on refs inside private/, stated without naming any of those paths. No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 3
+  digest: sha256:ebb51127d1a8aaac
+  finding: 'Corrects four resume-writer rules that disagreed with check.py, the gate meant to enforce them. Docs move to the gate, not the reverse. The direct-bullet line no longer reads as a 1-6 grant - the real ceiling is the baseline own count, and a project-only baseline allows zero. The cover-letter per-paragraph minimums rise from 70/80 to 100/110, because their old sum (175, or 150 without the optional closing) sat under the 200-word body floor the checker actually tests, so a letter written exactly to spec failed the render. The missing-bundle case is now described as what it is - a WARN, so a letterless render exits 0 - stated as a limitation, not a feature; promoting it to FAIL is left to the owner. One code change with no behaviour: the warning at check.py:417 named a bare jd.md that layout.find_jd_files can never match (it keeps only JD- prefixed names), so it named source/JD-*.md only; the --rules dump gained the missing-bundle warn. Reviewed the private-company hint as NOT INSPECTED (no overlay in this checkout) and read the diff directly. No identity, employer, school, salary or dated job-hunt content; the only persona text is the pre-existing fictional Jordan Rivers example, unchanged.'
