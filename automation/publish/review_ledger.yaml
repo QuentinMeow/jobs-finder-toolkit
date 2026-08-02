@@ -2146,7 +2146,6 @@
   files: 1
   digest: sha256:c8975c2d725f5ad2
   finding: Two added lines in the root contract's Configuration section, naming search filter words alongside identity, paths and output stems as things that are never hardcoded, and pointing at the config accessor. No identity, employer, school, salary or dated job-hunt content.
-  finding: The base branch's own tip, unsigned when this branch was cut. Three message-queue decision files gain the owner's answers plus a verification note, and one gets whitespace/link-shape churn. Board names (Amazon, Apple, Meta, Workday) are ATS fetcher names already throughout skills/job-search/scripts/sources.py, not employers of anyone. No identity, employer, school, salary or dated job-hunt content.
 - base: 783d4fc3
   reviewed_by: agent
   date: 2026-08-01
@@ -2165,3 +2164,16 @@
   files: 3
   digest: sha256:19da02107dd368c5
   finding: Turns OFF the ledger's union merge driver and adds the row-shape check whose absence let a corrupted row pass a green --verify-all. The union driver is line-based, so two rows for one range written with keys in different order interleaved and a finding line landed in a neighbouring row; YAML's last-duplicate-wins then made that row report a review nobody wrote. The stray line is removed, restoring the row to its authored text; no authored row is edited or dropped. Tooling and process prose only - no identity, employer, school, salary or dated job-hunt content.
+- commit: 783d4fc3
+  base: ad5e881d
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:224a50c39c89632e
+  finding: 'RESCUED from a union-merge artefact. This review covers the same range as the earlier 783d4fc3 row; the line-based union driver stranded its text inside the c4060e94 row, where YAML last-duplicate-wins silently overrode that row''s own finding. Restored verbatim rather than dropped. Original text follows. The base branch''s own tip, unsigned when this branch was cut. Three message-queue decision files gain the owner''s answers plus a verification note, and one gets whitespace/link-shape churn. Board names (Amazon, Apple, Meta, Workday) are ATS fetcher names already throughout skills/job-search/scripts/sources.py, not employers of anyone. No identity, employer, school, salary or dated job-hunt content.'
+- base: 783d4fc3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 25
+  digest: sha256:8f2b4a717eabeb63
+  finding: 'Repairs the second row the union merge driver corrupted. c4060e94 carried a stray finding line from another row; YAML last-duplicate-wins meant it silently reported a review its author never wrote. The stray text is restored as its own well-formed row rather than dropped. The range also re-covers content already reviewed on its branches (the queue folds, the stack discharge form, the search filter work, the lag fix) whose merge commits into main were never signed. Re-read here. No identity, employer, school, salary or dated job-hunt content.'
