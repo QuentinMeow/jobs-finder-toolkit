@@ -2854,19 +2854,44 @@ def forget_log(values: list[str]) -> None:
     # A tombstone on a posting that still has an application folder is undone by the
     # very next --sync-log, which rebuilds that row from the folder — and the tombstone
     # would have printed a success line on its way to being reverted. Refuse instead:
-    # a live folder is live evidence that the posting WAS handled, so the thing to fix
-    # is the folder, not the log. Same principle as refusing an unfolded key — an
-    # un-skip that quietly does nothing is worse than an error.
+    # a live folder is live evidence that the posting WAS handled, so there is nothing
+    # here to un-skip. Same principle as refusing an unfolded key — an un-skip that
+    # quietly does nothing is worse than an error.
+    #
+    # **The remedy must be one an agent may actually perform.** This message used to
+    # read "Move or delete the application folder first" and it was the ONLY exit from
+    # handoff's explicit-``--select`` duplicate chain, so an agent following it deleted
+    # an application folder — the one act AGENTS.md forbids outright ("application
+    # folders … are removed by the USER only — never by an agent, under any
+    # condition"). "Move" was never an out either: handoff's ``LIVE_STATUS_DIRS``
+    # covers all five status folders, so a move between them changes nothing.
+    #
+    # An opt-in flag that appended the tombstone anyway was considered and rejected:
+    # the next --sync-log rebuilds the row from the folder, so the flag would buy
+    # exactly the silent no-op un-skip this branch exists to refuse. The real remedy
+    # is that the application ALREADY EXISTS — use it — and, if it genuinely should
+    # go, the owner disposes of it (memory/decisions/handoff-records-every-folder-it-
+    # creates.md rests on a missing folder always meaning the owner removed it).
     backing = next(
         (r for r in build_log(collect_apps())["postings"]
          if skip_log.fold_key(r) == key), None)
     if backing is not None:
+        folder = find_application(backing["slug"])
+        where = str(folder) if folder else f"slug {backing['slug']!r}"
         print(f"Error: {target} is still backed by a live application folder "
               f"({backing['slug']!r}, status {backing['status']!r}). A tombstone would "
               "be undone by the next --sync-log, which rebuilds that row from the "
-              "folder.\n  Move or delete the application folder first, then re-run "
-              "--forget-log. (--forget-log is for repairing a row whose folder is "
-              "already gone — a typo, or an application you removed.)", file=sys.stderr)
+              "folder — the folder IS the record that this posting was handled, so "
+              "there is nothing to un-skip.\n"
+              f"  Work with the application that already exists: {where}\n"
+              "  Removing that folder is NOT the remedy and is not an agent's to "
+              "make: application folders are removed by the USER only, never by an "
+              "agent, under any condition (AGENTS.md, \"Agents never delete owner "
+              "data\"). If it truly should go, propose the removal in "
+              "message-queue/needs-human/ and stop; --forget-log repairs the row "
+              "afterwards, once the owner has acted.\n"
+              "  (--forget-log is for a row whose folder is already gone — a typo, "
+              "or an application the owner removed.)", file=sys.stderr)
         sys.exit(1)
 
     current = fold.get(key)

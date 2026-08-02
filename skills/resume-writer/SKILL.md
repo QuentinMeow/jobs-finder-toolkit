@@ -223,7 +223,9 @@ a legacy `employer:`/`experience:` layout, or a field the baseline doesn't show.
 
 **Fixed structure (validated by `skills/resume-writer/scripts/check.py`):**
 - Summary count matches the baseline (the shipped/default profile has 3).
-- Preserve all employers. Use 1-6 direct role bullets and 1-4 bullets per named project.
+- Preserve all employers. 1-4 bullets per named project. **Direct role bullets are capped by the
+  BASELINE's own count, not by the 1-6 range** — adding one FAILs, and a project-only baseline (the
+  shipped example) allows ZERO. Dropping all of an employer's baseline direct bullets FAILs too.
   Project-focused baselines may drop one project only for page fit (Step 6);
   hybrid/direct-bullet resumes are not forced into a five-project shape.
 - Each bullet 45-215 characters (bold markers excluded); project titles ≤ 95.
@@ -344,7 +346,9 @@ operational detail" and LESSONS.md → "Rendering / layout".**
 ### Cover letters & bundled application `.txt` (one per JD)
 
 Write the bundle(s) before running `render.py` (it renders each role's cover letter from the
-bundle and validates one per role). Research each JD's **product and that specific role** before
+bundle). **A role with no bundle only WARNs** — a run that produced zero cover letters still exits
+0, so count the rendered letters against the `meta.yaml` roles before calling a folder validated.
+Research each JD's **product and that specific role** before
 writing — **cap company/product research at 2 web fetches per letter unless the user asks for deep
 research** — and keep every candidate claim traceable to the profile / library (no fabrication, no
 generic flattery, no invented product claims). Each letter is individually researched and written
@@ -358,7 +362,8 @@ with **name + contact line, then the salutation** (`Dear <Company> Hiring Team,`
 company/role subject line**; its body is **at least two developed, full-sentence paragraphs** (not
 telegraphic fragments) and ends `Sincerely,` + name. check.py enforces the numbers: each main
 paragraph 60–180 words (≥2 such paragraphs) and total body 200–450 words — write to those bands up
-front. **COVER LETTER body = two main paragraphs:** (1) interest + *researched* understanding of the
+front. **The 200-word floor binds the two main paragraphs alone** (the closing is optional): aim
+~100–140 and ~110–150 words. **COVER LETTER body = two main paragraphs:** (1) interest + *researched* understanding of the
 company/product and why this specific role (name the role; concrete product specifics, never generic
 flattery); (2) your single most differentiating strength, proved with a real, quantified achievement
 mapped to the JD's top requirements (tell the story behind a bullet — don't relist). An optional

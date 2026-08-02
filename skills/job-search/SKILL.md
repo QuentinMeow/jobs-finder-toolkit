@@ -69,7 +69,8 @@ which may only ever hold `_TEMPLATE.yaml`, `example.yaml` and its README. The de
 `config.job_search.default_profile` (shipped demo: `example`). A configured profiles dir that
 resolves inside public `skills/` is dropped outright, so a personal profile can never be
 addressable at a public path. The profile — not the script — holds all criteria: **location**
-(`config.location_policy()`: `metro` + `allow_us_remote` + `us_only`; the profile's own `location:` block adds `preferred`/`allow_remote`/`require_match`), **roles/keywords**,
+(the profile's own `location:` block — `preferred` + `allow_remote` + `us_only` +
+`require_match`), **roles/keywords**,
 **seniority** the allowed band, **experience** (drop JDs stating a minimum above
 `max_years_experience`; keep if unstated), and **visa** policy (e.g. `policy: exclude_negative`
 when sponsorship is required). To change scope, edit the profile in
@@ -77,15 +78,29 @@ when sponsorship is required). To change scope, edit the profile in
 and never write the candidate's criteria into the public `profiles/` folder. Scope the run to the profile(s) the user asked
 for; add no unprompted extra sweeps.
 
+- **Two location gates, two different files.** The **search** gate (`scoring.location_ok`) reads
+  ONLY the active profile's `location:` block. The **draft** gate (`handoff.py`,
+  `status.py --check-locations`, `company_roles.py`) reads `config.location_policy()` from
+  `config.yaml`. To narrow a search — "make this US-only" — edit the profile; editing
+  `config.yaml` changes no search result. **The two default in opposite directions:** when the key
+  is absent, `us_only` is **`False`** for the search (`scoring.py`) and **`True`** for the draft
+  gate (`config.location_policy()`, and `automation/shared/location.py`'s own default). A profile
+  that omits `us_only` therefore searches worldwide, and its foreign picks are then rejected at
+  handoff. Set `us_only` explicitly in every profile — `_TEMPLATE.yaml` and `example.yaml` both
+  ship `us_only: true`. This asymmetry is documented, not resolved
+  (`message-queue/needs-human/decisions/job-search-us-only-default-asymmetry.md`).
 - **Seniority band:** a `[mid, senior]` profile demotes staff+/principal/manager/entry titles
   (per-step `seniority.fit_weight`, default 6.0; `0` disables) so they can't top the list.
   `exclude_neutralize` (e.g. `member of technical staff`) strips a phrase BEFORE the exclude
   check runs, so **Member of Technical Staff — the IC title OpenAI/Anthropic/Perplexity use — is
   KEPT, not dropped as "staff"** (MTS is NOT staff-level). If a user conflates the word "staff"
   with staff-level seniority, explain the distinction rather than dropping every "staff" title.
-- **Posting age is OFF by default** (`max_age_days: null`): every currently-open matching role
-  counts regardless of post date. Pass `--max-age-days N` only for an explicit "posted in the last
-  N days" run. Do **not** confuse this with the 7-day **company re-search** window
+- **Posting age is OFF by default** (`max_age_days: null` — the value the pipeline uses when the
+  key is absent): every currently-open matching role counts regardless of post date. Pass
+  `--max-age-days N` only for an explicit "posted in the last N days" run. **`_TEMPLATE.yaml`
+  ships an explicit `max_age_days: 3`**, so a profile copied from it DOES filter on posting age
+  until you set the key to `null` — read the profile's own value before reporting thin results.
+  Do **not** confuse this with the 7-day **company re-search** window
   (`company_search_log.skip_within_days`), which skips companies you already fully searched
   recently — it has nothing to do with posting age.
 - **A company's FIRST search is not age-filtered.** When an age window IS in force, an employer
@@ -203,7 +218,9 @@ carries the same `--digest`, plus `--out` to write the verbatim JD without print
 ```
 If no fetch works at all (e.g. HTTP 403), save the scraper-extracted text with a non-verbatim
 provenance note — see reference.md § "Recovering a JD when the page fetch is unusable".
-Only hand off postings that passed the location policy (`config.location_policy()`).
+Only hand off postings that passed the **draft-time** location policy
+(`config.location_policy()` — `config.yaml`, not the profile's `location:` block, so a posting the
+search kept can still fail here).
 
 **Group by company first — ONE application folder per company is the default.** Before scaffolding,
 group your selected postings by company. **All of a company's roles from ONE search session go into
@@ -278,8 +295,9 @@ To re-search **one** employer — e.g. to decide whether a drafted application s
 policy-matching role, or should be moved to `ignored/` — use `company_roles.py`, **NOT** the full
 search pipeline. It fetches that company's live ATS board and prints every open posting with the
 location verdict from this skill's vendored `_vendor/location.py` (a byte-identical copy of the
-toolkit's `automation/shared/location.py` — the same location policy the profile enforces via
-`config.location_policy()`). It does **not** apply the role/seniority/visa title gate — it lists
+toolkit's `automation/shared/location.py`), applied to **`config.location_policy()`** — the
+draft-time policy, so its verdict can differ from what a search kept under the profile's
+`location:` block. It does **not** apply the role/seniority/visa title gate — it lists
 everything so you judge role fit yourself — and its remote signal is a heuristic (some ATSs, e.g.
 SmartRecruiters, over-report `remote`), so always confirm a candidate's true location from the
 actual JD before acting.
