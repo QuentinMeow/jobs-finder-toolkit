@@ -2054,3 +2054,10 @@
   files: 6
   digest: sha256:7a46605f301b43a1
   finding: Merge of origin/main into the eval-record-pins branch; ledger conflict resolved by concatenating both sides' rows. Reviewed range covers the new automation/evals pin generator and its tests, the export allowlist entry, the eval-result template, and the CI line that discovers the new test directory. No identity, employer, school, salary or dated job-hunt content.
+- commit: 6b777866
+  base: 98159137
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 95
+  digest: sha256:eefd7f91fba8c003
+  finding: Merge of origin/main into the housekeeping branch; ledger conflict resolved by concatenating both sides' rows. The 95 files are almost entirely renames of completed task folders from 3_in-review to 4_done, plus the corrected github-workflow canary bullet, one new eval record, an appended supersession note, and a test fixture string. Grep hits on "salary" are the folder name of a JD-parsing bug task, not owner data. No identity, employer, school or dated job-hunt content.
