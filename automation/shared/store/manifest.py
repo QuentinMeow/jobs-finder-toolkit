@@ -18,6 +18,7 @@ delete the very payload that manifest protects.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -186,28 +187,52 @@ class DamagedManifest:
 
 
 def _iter_manifest_paths(layout: DomainLayout) -> Iterator[Path]:
-    """Every committed-manifest path under ``raw/`` (``_blobs`` is never a source)."""
+    """Every committed-manifest path under ``raw/`` (``_blobs`` is never a source).
+
+    Walks with :func:`os.walk` + :func:`os.path.lexists` rather than
+    ``raw.glob("*/**/manifest.json")`` because glob's treatment of a DANGLING
+    SYMLINK is CPython-version-dependent: 3.11 matches a literal component with
+    ``_PreciseSelector``, which tests ``Path.exists()`` and therefore DROPS a
+    dangling ``manifest.json``; 3.12 replaced it with a scandir-driven selector and
+    3.13 rewrote glob around ``lexists``, so both list it. A dangling manifest is a
+    directory entry that IS on disk whose contents cannot be read — damage, never
+    absence — and it must reach :func:`_read_manifest` on every supported
+    interpreter, not just the newest one.
+    """
     raw = layout.raw
     if not raw.is_dir():
         return
-    for path in sorted(raw.glob("*/**/manifest.json")):
-        if "_blobs" in path.parts:
+    found: list[Path] = []
+    for source in raw.iterdir():          # raw/<source>/ — never raw/manifest.json
+        if source.name == "_blobs" or not source.is_dir():
             continue
-        yield path
+        for dirpath, dirnames, _files in os.walk(source):
+            dirnames[:] = [d for d in dirnames if d != "_blobs"]
+            path = Path(dirpath) / "manifest.json"
+            if os.path.lexists(path):
+                found.append(path)
+    yield from sorted(found)
 
 
 def _read_manifest(path: Path) -> tuple[dict | None, str | None]:
     """Read one manifest: ``(envelope, None)``, ``(None, error)``, or ``(None, None)``.
 
     ``(None, None)`` means the file genuinely is not there any more (it vanished
-    between the glob and the read — an rsync mid-scan, say); anything else that
+    between the scan and the read — an rsync mid-scan, say); anything else that
     fails while the file IS on disk is DAMAGE, reported so callers cannot mistake
     it for "this manifest references nothing".
+
+    The absent test is :func:`os.path.lexists`, which does NOT follow symlinks.
+    ``Path.exists()`` does, so a manifest that is a symlink to a missing target
+    both raises ``FileNotFoundError`` on read and answers ``False`` to ``exists()``
+    — the one pair that reads as "genuinely gone", the single classification with
+    no consequences. The link is a directory entry that is on disk; only its
+    contents are unreadable, which is exactly the damaged case.
     """
     try:
         envelope = serialization.loads_json(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        if isinstance(exc, FileNotFoundError) and not path.exists():
+        if isinstance(exc, FileNotFoundError) and not os.path.lexists(path):
             return None, None  # truly absent now — not damage
         return None, f"{type(exc).__name__}: {exc}"
     if not isinstance(envelope, dict):

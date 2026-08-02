@@ -205,11 +205,12 @@ Nothing in this list can make a build *wrong*; it can only make one *slow*.
 | No cache, or a cache that fails its own line-count check | Nothing to resume from |
 | A module fingerprint changed (`build_postings.py`, the visa / job-metadata / location classifiers, the parsers, the identity canonicalizer, the registry module, the schema and normalizer versions, or the company registry content) | Code that decides an entity's bytes moved, so every historical posting must be re-derived — this is how a classifier fix still reaches the whole store |
 | The ledger's processed-fetch set does not match the cache's | A previous build got further than its cache did (see crash safety) |
-| The set of manifests in `raw/` changed other than by the pending ones | A manifest was removed, or the raw zone was not synced to this machine |
+| The set of `(fetch id, payload blob)` pairs in `raw/` changed other than by the pending ones | A manifest was removed, was not synced to this machine, or was rewritten in place to point at different bytes. Pairs rather than bare fetch ids: raw is contractually append-only so an in-place rewrite is out-of-contract, but it was also invisible — and because the fast path folds only the pending set, the replaced manifest's new rows never reached `derived/` at all |
 | The set of referenced-but-absent blobs changed | Retention pruned a blob, or a blob arrived; either changes which observations exist |
 | Any frozen-facts snapshot changed | Frozen facts are the authoritative pre-prune timeline and feed entity bytes directly |
 | A pending manifest sorts at or before the last folded one | The left fold cannot absorb an earlier observation |
-| The set of entity keys with a derived `posting.yaml` differs from the cache | Derived drifted — including the real "new laptop with only the committed index" case |
+| The set of `(partition, entity key)` pairs whose derived holds BOTH `posting.yaml` and `events.jsonl` differs from the cache | Derived drifted — including the real "new laptop with only the committed index" case. Pairs because the cache holds one partition per key, so comparing bare keys could not see one entity materialized at two partitions (what a company rename used to leave behind). `events.jsonl` as well because resuming a fold reads the event list too, so a deleted one silently truncated that entity's whole history |
+| The committed `index/postings.jsonl` is missing a row the cache accounts for | The index floor moved under the cache. Updating the index in place reads the committed file as authoritative for every row the run does not rebuild, so a deleted row stayed lost across every later fast build — in the zone this design calls committed, durable history |
 | A touched entity is carried, frozen-reconstructed, or frozen-merged | Its history is not fully in the raw this run can see, so its fold is not continuable |
 
 Every refusal prints one line to stderr naming the reason, so a store that has
@@ -356,6 +357,19 @@ incremental build re-derived and silently repaired it; now it is repaired by
 `--rebuild`. That is the honest cost of trusting derived between rebuilds, and
 `--rebuild` remains the full, verifying path (schema validation, the entity
 count check, the order-independence spot check, build-aside-and-swap).
+
+The same honest limit applies one zone over, and its consequence is worse.
+Updating the index in place trusts the committed `index/postings.jsonl` for
+every row the run does not rebuild, so **content** drift inside a surviving row —
+a hand-edited company, a corrupted `seq` — is invisible for the same reason and
+has the same repair (`--rebuild`). What is *not* left to `--rebuild` is a row
+that disappears: the index is this store's durable floor, rows whose raw blobs
+were pruned and whose derived is gone exist nowhere else, and a rebuild cannot
+bring back what it has nothing to rebuild from. Presence is therefore checked —
+the fast path refuses when the committed index is missing a row the cache
+accounts for (see [What forces a full fold](#what-forces-a-full-fold)) —
+while the *contents* of a present row stay on the same honest footing as an
+untouched `posting.yaml`.
 
 ## The SQLite escape hatch — evaluated, deferred
 

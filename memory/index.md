@@ -40,3 +40,7 @@
 ## facts
 
 - `memory/facts/overlay-root-follows-the-active-config.md` — `overlay_root()` follows whichever config is active, so an isolated config gets an isolated overlay
+
+## lessons
+
+- `memory/lessons/harness/broken-twice-build-the-check.md` — When a rule has been broken twice, stop rewriting it and build the check

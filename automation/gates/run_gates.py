@@ -1,0 +1,750 @@
+#!/usr/bin/env python3
+"""Run this repo's blocking gates locally — one command, one exit-code table.
+
+WHY THIS EXISTS
+---------------
+Roughly two dozen checks block a commit or a merge here: the ``automation/hooks/
+pre-commit`` chain and every ``run:`` step of ``.github/workflows/ci.yml``. There
+was no single local command for them, so each agent and the owner hand-rolled the
+invocations — and the recurring mistake was piping a gate into ``tail``/``grep`` to
+shorten its output and then reading ``$?``::
+
+    automation/reconcile/reconcile.py --check | tail -5 ; echo $?    # prints 0
+
+``$?`` after a pipeline is the LAST stage's status, so that reads ``tail``'s 0 for a
+gate that exited 1 — a RED gate read as GREEN. It has happened more than once, and
+prose in ``AGENTS.md`` did not stop it. So this runner makes the correct thing the
+easy thing:
+
+  * every gate is a subprocess with **no shell** and **no pipe** — stdout+stderr are
+    REDIRECTED into ``local/gates/<name>.log``, which preserves the real exit code
+    (a redirect is not a pipeline) and loses none of the output;
+  * the summary is an explicit ``NAME / EXIT / RESULT`` table plus one final line
+    that says ALL GREEN or names every gate that failed;
+  * a gate that cannot run (LibreOffice absent, ``private/`` not mounted) reports
+    **SKIP**, never PASS. A skip that reads as a pass is the same failure in a
+    different costume, so skips are counted and named separately, always.
+
+Usage::
+
+    .venv/bin/python automation/gates/run_gates.py               # everything
+    .venv/bin/python automation/gates/run_gates.py --list        # the table, no runs
+    .venv/bin/python automation/gates/run_gates.py --group hook  # what pre-commit runs
+    .venv/bin/python automation/gates/run_gates.py --only reconciler,verify-links
+    .venv/bin/python automation/gates/run_gates.py --skip tests-publish --fail-fast
+
+Exit code: 0 when every SELECTED gate exited 0 (skips are reported, not failures),
+1 otherwise.
+
+The gate table below is derived from ``automation/hooks/pre-commit`` and
+``.github/workflows/ci.yml`` — the invocations are copied, not invented. Drift is a
+test, not a promise: ``automation/gates/tests/test_run_gates.py`` re-parses
+``ci.yml`` on every run and fails when a step is neither in this table nor in the
+``NOT_RUN_LOCALLY`` mapping with a written reason.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable, Iterable, Sequence
+
+# ── repo root ────────────────────────────────────────────────────────────────
+# Resolved from THIS FILE, never from the working directory: a subagent's cwd
+# resets between calls, and the runner is routinely invoked from a git worktree.
+# In a worktree ``.git`` is a FILE (``gitdir: …``), not a directory, so the probe
+# is ``.exists()`` rather than ``.is_dir()``.
+
+
+def _find_repo_root(start: Path) -> Path:
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    raise SystemExit(
+        f"run_gates: no .git entry above {start} — cannot locate the repo root")
+
+
+REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
+LOG_DIR_REL = "local/gates"  # local/ is the gitignored scratch tree (AGENTS.md)
+GROUPS = ("hook", "ci", "both")
+
+
+# ── gate table ───────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Gate:
+    """One blocking check.
+
+    ``argv``            executed with NO shell, cwd = repo root. Python entries use
+                        ``sys.executable`` so the runner works from a worktree
+                        (which has no ``.venv`` of its own).
+    ``what_it_proves``  one line; where the hook and CI invoke the same script with
+                        DIFFERENT flags, this table carries the CI form and the line
+                        says so.
+    ``group``           ``hook`` (pre-commit only) · ``ci`` (CI only) · ``both``.
+    ``env``             extra environment for this gate only.
+    ``parallel_safe``   False = never run concurrently with anything, even under
+                        ``--jobs N`` (see ``_run_many``).
+    ``precondition``    returns a SKIP reason string, or None to run.
+    ``dirties``         a gate that REWRITES TRACKED FILES leaves that note here; the
+                        summary repeats it, because CI does this in a throwaway
+                        checkout and your working tree is not one.
+    """
+
+    name: str
+    argv: tuple[str, ...]
+    what_it_proves: str
+    group: str
+    env: dict[str, str] = field(default_factory=dict)
+    parallel_safe: bool = True
+    precondition: Callable[[Path], str | None] | None = None
+    dirties: str | None = None
+
+
+# ── preconditions ────────────────────────────────────────────────────────────
+# LibreOffice locations, copied from skills/resume-writer/scripts/pdf_convert.py so
+# the runner and the renderer can never disagree about what "installed" means.
+_LO_PATHS = [p for p in (os.environ.get("JOBHUNT_SOFFICE"),) if p] + [
+    str(Path.home() / "Applications/LibreOffice.app/Contents/MacOS/soffice"),
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+    "soffice",
+]
+
+
+def _needs_libreoffice(_root: Path) -> str | None:
+    for lo in _LO_PATHS:
+        if shutil.which(lo) or Path(lo).exists():
+            return None
+    return ("LibreOffice not found (JOBHUNT_SOFFICE / ~/Applications / /Applications / "
+            "PATH). CI installs libreoffice-writer, so this gate — including check.py's "
+            "one-page PDF validation — runs there and NOT here.")
+
+
+def _needs_overlay(plain_gate: str) -> Callable[[Path], str | None]:
+    """The hook adds ``--require-roots`` only when ``private/`` is mounted."""
+
+    def check(root: Path) -> str | None:
+        if (root / "private").is_dir():
+            return None
+        return (f"private/ is not mounted, so the pre-commit hook runs the PLAIN form "
+                f"here — covered by `{plain_gate}`. --require-roots is a "
+                f"maintainer-checkout assertion; CI never passes it either.")
+
+    return check
+
+
+def _leak_guard_is_armed() -> bool:
+    """Mirror of the guard's own arming rule: a real config.yaml, or the env tokens.
+
+    Only used to pick which of CI's two branches to reproduce. The guard remains the
+    authority — it prints its own unarmed report and exits 2 if this guess is wrong.
+    """
+    if os.environ.get("JOBHUNT_PERSONAL_TOKENS", "").strip():
+        return True
+    configured = os.environ.get("JOBHUNT_CONFIG")
+    if configured and Path(configured).is_file():
+        return True
+    return (REPO_ROOT / "config.yaml").is_file()
+
+
+def _skill_script_dirs(root: Path) -> list[str]:
+    """CI's ``skills/*/scripts`` glob, expanded here because there is no shell."""
+    return [p.relative_to(root).as_posix()
+            for p in sorted((root / "skills").glob("*/scripts")) if p.is_dir()]
+
+
+def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
+    """The gate table, in the order the pre-commit hook meets them, then CI-only."""
+    py = sys.executable
+    example_config = {"JOBHUNT_CONFIG": str(root / "config.example.yaml")}
+    # CI step 8 is an if/else on the identity tokens; reproduced, not invented.
+    leak_tree_argv = (py, "automation/publish/check_public.py")
+    if not _leak_guard_is_armed():
+        leak_tree_argv += ("--allow-unarmed",)
+
+    return [
+        # ── the pre-commit hook's chain, in its order ────────────────────────
+        Gate(
+            name="staged-private-paths",
+            # The hook spells this `git diff --cached --name-only --diff-filter=ACMRT
+            # | grep '^private/'`. A pipeline needs a shell and hides the exit code —
+            # the two things this runner refuses — so it is re-expressed shell-free:
+            # `--exit-code` makes git exit 1 exactly when the pathspec has staged
+            # additions/modifications, which is the hook's condition, and --name-only
+            # still prints the offending paths into the log.
+            argv=("git", "diff", "--cached", "--name-only", "--diff-filter=ACMRT",
+                  "--exit-code", "--", "private/"),
+            what_it_proves="No private/ overlay path is staged. Hook-only, and only "
+                           "meaningful with something staged: `git add -f private/` "
+                           "is silent, this is not.",
+            group="hook",
+            parallel_safe=False,  # reads the git index
+        ),
+        Gate(
+            name="leak-guard-staged",
+            argv=(py, "automation/publish/check_public.py", "--staged",
+                  "--allow-unarmed"),
+            what_it_proves="The blobs THIS commit would add carry no identity tokens, "
+                           "structural PII, or absolute home path. Judges the staged "
+                           "index, so run it with your change staged.",
+            group="hook",
+            parallel_safe=False,  # reads the git index
+        ),
+        Gate(
+            name="review-gate-staged",
+            argv=(py, "automation/publish/review_gate.py", "--staged"),
+            what_it_proves="The staged tree does not change the published tree without "
+                           "a row in automation/publish/review_ledger.yaml. Prints the "
+                           "PENDING row to append. CI runs --verify-all instead.",
+            group="hook",
+            parallel_safe=False,  # reads the git index
+        ),
+        Gate(
+            name="vendor-drift",
+            argv=(py, "automation/vendoring/sync_vendored.py", "--check"),
+            what_it_proves="Every skill's scripts/_vendor/ copy is byte-identical to "
+                           "its automation/shared/ source. Same flags in hook and CI.",
+            group="both",
+        ),
+        Gate(
+            name="mail-send-less",
+            argv=(py, "automation/shared/mail/check_mail_safety.py",
+                  "--consumer", "skills/email-assistant/scripts"),
+            what_it_proves="No mail provider folder or the email-assistant CLI exposes "
+                           "send capability. Same flags in hook and CI.",
+            group="both",
+        ),
+        Gate(
+            name="compileall",
+            # CI form: `compileall automation skills/*/scripts` (every skill). The hook
+            # runs a narrower `-q automation` + four named skills; the CI set is a
+            # superset, so passing here passes there.
+            argv=(py, "-m", "compileall", "automation", *_skill_script_dirs(root)),
+            what_it_proves="No toolkit or skill script has a syntax error. CI form "
+                           "(every skills/*/scripts); the hook compiles -q and four "
+                           "named skills only.",
+            group="both",
+        ),
+        Gate(
+            name="instruction-budget",
+            argv=(py, "automation/metrics/instruction_budget.py", "--strict"),
+            what_it_proves="No SKILL.md over 600 lines, LESSONS.md over 160, AGENTS.md "
+                           "over its tier. Same flags in hook and CI.",
+            group="both",
+        ),
+        Gate(
+            name="reconciler",
+            argv=(py, "automation/reconcile/reconcile.py", "--check"),
+            what_it_proves="Queue/task/memory items match their templates/ schema, the "
+                           "memory index is current, sessions have handovers, the "
+                           "roadmap date parses. CI form (no --require-roots).",
+            group="both",
+        ),
+        Gate(
+            name="reconciler-require-roots",
+            argv=(py, "automation/reconcile/reconcile.py", "--check", "--require-roots"),
+            what_it_proves="Same, plus: every process root the reconciler names still "
+                           "exists, so a rename breaks the check instead of disarming "
+                           "it. Hook-only, and only when private/ is mounted.",
+            group="hook",
+            precondition=_needs_overlay("reconciler"),
+        ),
+        Gate(
+            name="verify-links",
+            argv=(py, "automation/gardener/verify_links.py"),
+            what_it_proves="Every backticked path and [text](path) in a must-resolve "
+                           "document resolves; no skill symlink dangles. CI form (no "
+                           "--require-roots, no --no-overlay).",
+            group="both",
+        ),
+        Gate(
+            name="verify-links-require-roots",
+            argv=(py, "automation/gardener/verify_links.py", "--require-roots",
+                  "--no-overlay"),
+            what_it_proves="Same, plus the named-root assertion, and judging THIS "
+                           "branch's docs alone (the overlay sits at its own commit). "
+                           "Hook-only, and only when private/ is mounted.",
+            group="hook",
+            precondition=_needs_overlay("verify-links"),
+        ),
+
+        # ── CI-only: the unit suites of step 2c ──────────────────────────────
+        Gate(
+            name="tests-reconcile",
+            argv=(py, "-m", "unittest", "discover", "automation/reconcile/tests"),
+            what_it_proves="The reconciler's root handling and retry filing.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-gardener",
+            argv=(py, "-m", "unittest", "discover", "automation/gardener/tests"),
+            what_it_proves="The gardener routines: link/reference verification, skill "
+                           "drift, store report, the self-measure funnel.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-hooks",
+            argv=(py, "-m", "unittest", "discover", "automation/hooks/tests"),
+            what_it_proves="The private-overlay git hooks: the store-payload and "
+                           "staged-set-size guards, and the push-destination check.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-recall-audit",
+            argv=(py, "-m", "unittest", "discover", "automation/search-recall-audit/tests"),
+            what_it_proves="The search-recall-audit readers of the append-only "
+                           "applications skip-log.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-metrics",
+            argv=(py, "-m", "unittest", "discover", "automation/metrics/tests"),
+            what_it_proves="The instruction-budget gate's discovery and leaf tiers.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-evals",
+            argv=(py, "-m", "unittest", "discover", "automation/evals/tests"),
+            what_it_proves="The eval-record content pins: emit determinism, drift, "
+                           "rename detection, the --write round-trip.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-gates",
+            argv=(py, "-m", "unittest", "discover", "automation/gates/tests"),
+            what_it_proves="This runner: exit-code aggregation, SKIP is never a PASS, "
+                           "selection flags, and the CI-drift check that fails when a "
+                           "ci.yml step is neither in this table nor excused.",
+            group="ci",
+        ),
+
+        # ── CI-only: the rest of the build job ───────────────────────────────
+        Gate(
+            name="review-gate-verify-all",
+            # CI adds `--head <sha>` on a pull_request; that pins the gate to the PR's
+            # own tip instead of GitHub's merge preview and has no local meaning.
+            argv=(py, "automation/publish/review_gate.py", "--verify-all"),
+            what_it_proves="Recomputes EVERY historical ledger row's digest and file "
+                           "count — the full append-only check. The hook only "
+                           "recomputes a bounded tail.",
+            group="ci",
+            parallel_safe=False,  # walks the whole history with git
+        ),
+        Gate(
+            name="example-render",
+            argv=(py, "skills/resume-writer/scripts/render.py",
+                  "examples/applications/6_drafted/example-corp-senior-software-engineer/"),
+            what_it_proves="The worked example renders and passes check.py under the "
+                           "fake config.example.yaml persona: locked fields, real "
+                           "titles/skills, bullet lengths, one-page PDF.",
+            group="ci",
+            env=example_config,
+            parallel_safe=False,  # writes into examples/ and drives a headless soffice
+            precondition=_needs_libreoffice,
+            dirties="rewrites the four tracked example DOCX/PDF artifacts under "
+                    "examples/applications/6_drafted/example-corp-senior-software-engineer/ "
+                    "(binary output is not byte-reproducible). CI does this in a "
+                    "throwaway checkout; you are not in one — `git checkout -- examples/` "
+                    "unless the new bytes are the point of your change.",
+        ),
+        Gate(
+            name="tests-resume-writer",
+            argv=(py, "-m", "unittest", "discover",
+                  "-s", "skills/resume-writer/scripts/tests"),
+            what_it_proves="Canonical/legacy schema normalization, multi-employer "
+                           "extraction/render/layout, and one isolated "
+                           "_test_application_ search-to-PDF workflow.",
+            group="ci",
+            env=example_config,
+            parallel_safe=False,  # scaffolds under the example applications root
+        ),
+        Gate(
+            name="tests-shared",
+            argv=(py, "-m", "unittest", "discover", "automation/shared/tests"),
+            what_it_proves="Job-metadata extraction/validation, the metadata editor, "
+                           "company-levels import, layout/search/backfill, and the "
+                           "raw-data-layer store library.",
+            group="ci",
+        ),
+        Gate(
+            name="validate-example-store",
+            argv=(py, "automation/store/validate_store.py", "examples/data",
+                  "--check-fixture-size"),
+            what_it_proves="The fictional example store validates zone-by-zone; its "
+                           "size threshold warns rather than blocks.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-job-search",
+            argv=(py, "-m", "unittest", "discover",
+                  "-s", "skills/job-search/scripts/tests",
+                  "-t", "skills/job-search/scripts/tests"),
+            what_it_proves="The deterministic high-stakes filter corpus, "
+                           "snapshot/refilter parity, review preservation, handoff "
+                           "contracts.",
+            group="ci",
+            env=example_config,
+            parallel_safe=False,  # writes under the example applications root
+        ),
+        Gate(
+            name="filter-variants",
+            argv=(py, "skills/job-search/scripts/validate_filter_variants.py", "--check"),
+            what_it_proves="The recorded filter-variant corpus still matches what the "
+                           "filter actually does.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-application-tracker",
+            argv=(py, "-m", "unittest", "discover",
+                  "-s", "skills/application-tracker/scripts/tests"),
+            what_it_proves="The meta.yaml schema, the per-job status rollup, and the "
+                           "folder moves over owner data.",
+            group="ci",
+            env=example_config,
+            parallel_safe=False,  # moves folders under the example applications root
+        ),
+        Gate(
+            name="tests-email-assistant",
+            argv=(py, "-m", "unittest", "discover",
+                  "-s", "skills/email-assistant/scripts/tests"),
+            what_it_proves="The send-less mail path, the Graph client, store sync.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-behavioral-prep",
+            argv=(py, "-m", "unittest", "discover",
+                  "-s", "skills/behavioral-interview-prep/scripts/tests"),
+            what_it_proves="The behavioral-prep story bank and answer validation.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-github-workflow",
+            argv=(py, "-m", "unittest", "discover",
+                  "-s", "skills/github-workflow/scripts/tests"),
+            what_it_proves="The PR-body checker, including the eval-gate discharge "
+                           "forms CI's pr-body job blocks on.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-publish",
+            argv=(py, "-m", "unittest", "discover", "automation/publish/tests"),
+            what_it_proves="The leak guard's structural-PII / path-denylist / "
+                           "fail-closed logic and the allowlist exporter end to end.",
+            group="ci",
+            parallel_safe=False,  # runs a real export and mutates the process env
+        ),
+        Gate(
+            name="leak-guard-tree",
+            argv=leak_tree_argv,
+            what_it_proves="The whole tracked tree is publishable. CI's if/else, "
+                           "reproduced: armed (config.yaml / $JOBHUNT_PERSONAL_TOKENS) "
+                           "runs it bare; unarmed adds --allow-unarmed for the "
+                           "token-independent checks. Also the pre-push gate, which "
+                           "always demands the armed form.",
+            group="ci",
+        ),
+    ]
+
+
+# What CI runs that this runner deliberately does not. Every entry is asserted by
+# automation/gates/tests/test_run_gates.py, which fails when a ci.yml invocation is
+# in NEITHER the table above NOR this mapping — so CI cannot grow a gate the runner
+# silently stops covering.
+NOT_RUN_LOCALLY: dict[str, str] = {
+    "skills/github-workflow/scripts/check_pr_body.py":
+        "GitHub-only: the pr-body job reads the pull_request event's BODY, which does "
+        "not exist locally. Run it by hand against a draft body — see "
+        "skills/github-workflow/SKILL.md.",
+}
+
+# Not a `run:` step at all, so the drift test never sees it; named here because a
+# reader of this file is entitled to know what the runner still does not cover.
+NOT_RUN_LOCALLY_NON_PYTHON: dict[str, str] = {
+    "gitleaks (secret-scan job)":
+        "A GitHub Action, not a run: step. It scans the FULL history for credential "
+        "shapes; install gitleaks and run it by hand if you need it before a push.",
+    "canonical-counts job":
+        "Reports tree-wide totals into the job summary on main after a merge. It "
+        "gates nothing, and its numbers are only true post-merge.",
+}
+
+
+# ── selection ────────────────────────────────────────────────────────────────
+
+def _split(value: str | None) -> list[str]:
+    return [part.strip() for part in (value or "").split(",") if part.strip()]
+
+
+def select_gates(gates: Sequence[Gate], *, group: str = "both",
+                 only: str | None = None, skip: str | None = None) -> list[Gate]:
+    """Apply --group / --only / --skip. Unknown names are an error, never a no-op."""
+    known = {g.name for g in gates}
+    wanted, unwanted = _split(only), _split(skip)
+    for name in (*wanted, *unwanted):
+        if name not in known:
+            raise SystemExit(f"run_gates: unknown gate {name!r}. Try --list.")
+    if group not in GROUPS:
+        raise SystemExit(f"run_gates: unknown group {group!r} (one of {', '.join(GROUPS)})")
+
+    chosen = []
+    for gate in gates:
+        if group != "both" and gate.group not in (group, "both"):
+            continue
+        if wanted and gate.name not in wanted:
+            continue
+        if gate.name in unwanted:
+            continue
+        chosen.append(gate)
+    return chosen
+
+
+# ── execution ────────────────────────────────────────────────────────────────
+
+PASS, FAIL, SKIP, NOTRUN = "PASS", "FAIL", "SKIP", "NOTRUN"
+
+
+@dataclass
+class Result:
+    gate: Gate
+    status: str
+    exit_code: int | None = None
+    seconds: float = 0.0
+    log_path: Path | None = None
+    reason: str | None = None
+
+    @property
+    def name(self) -> str:
+        return self.gate.name
+
+
+def run_gate(gate: Gate, log_dir: Path, root: Path = REPO_ROOT) -> Result:
+    """Run one gate. stdout+stderr are REDIRECTED to a file — never piped."""
+    reason = gate.precondition(root) if gate.precondition else None
+    if reason:
+        return Result(gate, SKIP, reason=reason)
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{gate.name}.log"
+    env = {**os.environ, **gate.env}
+    started = time.monotonic()
+    try:
+        with log_path.open("wb") as log:
+            log.write(f"$ {' '.join(gate.argv)}\n\n".encode())
+            log.flush()
+            completed = subprocess.run(list(gate.argv), cwd=root, env=env,
+                                       stdout=log, stderr=subprocess.STDOUT)
+    except FileNotFoundError:
+        # The binary itself is missing (git, python, a converter). A missing tool is
+        # a SKIP with the reason named — never a silent pass.
+        return Result(gate, SKIP, seconds=time.monotonic() - started, log_path=log_path,
+                      reason=f"executable not found: {gate.argv[0]}")
+    elapsed = time.monotonic() - started
+    status = PASS if completed.returncode == 0 else FAIL
+    return Result(gate, status, completed.returncode, elapsed, log_path)
+
+
+def _run_many(gates: Sequence[Gate], log_dir: Path, *, jobs: int, fail_fast: bool,
+              root: Path, on_done: Callable[[Result], None]) -> list[Result]:
+    """Serial by default. --jobs N parallelises only the gates marked safe.
+
+    Forced serial (``parallel_safe=False``) and why: the three staged-index gates and
+    review-gate-verify-all read the git index/history; example-render and the
+    resume-writer / job-search / application-tracker suites all write into the SAME
+    examples/applications tree (and example-render drives a single headless
+    LibreOffice profile); tests-publish runs a real export and mutates its own
+    process environment. Those run first, one at a time, in table order.
+    """
+    results: list[Result] = []
+    serial = [g for g in gates if not g.parallel_safe or jobs <= 1]
+    parallel = [g for g in gates if g.parallel_safe and jobs > 1]
+    stopped = False
+
+    for gate in serial:
+        if stopped:
+            results.append(Result(gate, NOTRUN, reason="--fail-fast: an earlier gate failed"))
+            continue
+        result = run_gate(gate, log_dir, root)
+        results.append(result)
+        on_done(result)
+        if fail_fast and result.status == FAIL:
+            stopped = True
+
+    if parallel and not stopped:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = {pool.submit(run_gate, g, log_dir, root): g for g in parallel}
+            for future in as_completed(futures):
+                if future.cancelled():
+                    continue
+                result = future.result()
+                results.append(result)
+                on_done(result)
+                if fail_fast and result.status == FAIL:
+                    stopped = True
+                    for pending in futures:
+                        pending.cancel()
+
+    done = {r.name for r in results}
+    for gate in gates:
+        if gate.name not in done:
+            results.append(Result(gate, NOTRUN,
+                                  reason="--fail-fast: another gate failed first"))
+
+    order = {g.name: i for i, g in enumerate(gates)}
+    results.sort(key=lambda r: order[r.name])
+    return results
+
+
+# ── reporting ────────────────────────────────────────────────────────────────
+
+def _tail(path: Path | None, lines: int) -> list[str]:
+    if path is None or not path.is_file() or lines <= 0:
+        return []
+    text = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return text[-lines:]
+
+
+def _display_argv(argv: Sequence[str]) -> str:
+    shown = ["python" if part == sys.executable else part for part in argv]
+    return " ".join(shown)
+
+
+def print_listing(gates: Sequence[Gate], root: Path, out) -> None:
+    print(f"gate table — {len(gates)} gates    (interpreter: {sys.executable})", file=out)
+    print(f"repo root: {root}", file=out)
+    print(f"logs:      {root / LOG_DIR_REL}/<name>.log\n", file=out)
+    for gate in gates:
+        marks = [gate.group]
+        if not gate.parallel_safe:
+            marks.append("serial")
+        print(f"{gate.name}  [{' · '.join(marks)}]", file=out)
+        print(f"    $ {_display_argv(gate.argv)}", file=out)
+        for key, value in sorted(gate.env.items()):
+            print(f"      env {key}={value}", file=out)
+        print(f"    proves: {gate.what_it_proves}", file=out)
+        if gate.dirties:
+            print(f"    DIRTIES THE WORKTREE: {gate.dirties}", file=out)
+        reason = gate.precondition(root) if gate.precondition else None
+        if reason:
+            print(f"    SKIP HERE: {reason}", file=out)
+        print(file=out)
+    if NOT_RUN_LOCALLY or NOT_RUN_LOCALLY_NON_PYTHON:
+        print("not run locally (asserted by automation/gates/tests):", file=out)
+        for key, why in sorted({**NOT_RUN_LOCALLY, **NOT_RUN_LOCALLY_NON_PYTHON}.items()):
+            print(f"  - {key}: {why}", file=out)
+
+
+def summarise(results: Sequence[Result], out, *, tail: int, root: Path) -> int:
+    """Print the table + the one final line, and return the process exit code."""
+    failed = [r for r in results if r.status == FAIL]
+    skipped = [r for r in results if r.status == SKIP]
+    notrun = [r for r in results if r.status == NOTRUN]
+    passed = [r for r in results if r.status == PASS]
+
+    width = max((len(r.name) for r in results), default=4)
+    print("", file=out)
+    print(f"{'NAME'.ljust(width)}  EXIT  RESULT   TIME  LOG", file=out)
+    print(f"{'-' * width}  ----  ------  -----  ---", file=out)
+    for result in results:
+        code = "-" if result.exit_code is None else str(result.exit_code)
+        secs = "-" if result.status in (SKIP, NOTRUN) else f"{result.seconds:.1f}s"
+        log = ("-" if result.log_path is None
+               else result.log_path.relative_to(root).as_posix())
+        print(f"{result.name.ljust(width)}  {code:>4}  {result.status:<6}  {secs:>5}  {log}",
+              file=out)
+        if result.reason:
+            print(f"{' ' * width}        -> {result.reason}", file=out)
+
+    for result in failed:
+        lines = _tail(result.log_path, tail)
+        if not lines:
+            continue
+        print(f"\n--- {result.name} (exit {result.exit_code}) last {len(lines)} log "
+              f"lines: {result.log_path} ---", file=out)
+        for line in lines:
+            print(f"  {line}", file=out)
+
+    print("", file=out)
+    for result in results:
+        if result.gate.dirties and result.status in (PASS, FAIL):
+            print(f"note: {result.name} {result.gate.dirties}", file=out)
+    if skipped:
+        print("skipped (NOT passes): "
+              + ", ".join(r.name for r in skipped), file=out)
+    if notrun:
+        print("not run (--fail-fast): " + ", ".join(r.name for r in notrun), file=out)
+
+    if failed or notrun:
+        names = ", ".join(r.name for r in failed) or "none"
+        print(f"RED: {names} ({len(failed)} of {len(results)} failed)", file=out)
+        return 1
+    if skipped:
+        print(f"ALL GREEN ({len(passed)} gates, {len(skipped)} skipped: "
+              f"{', '.join(r.name for r in skipped)})", file=out)
+    else:
+        print(f"ALL GREEN ({len(passed)} gates)", file=out)
+    return 0
+
+
+# ── cli ──────────────────────────────────────────────────────────────────────
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="run_gates.py",
+        description="Run this repo's blocking gates locally, with an exit-code table "
+                    "you cannot misread.")
+    parser.add_argument("--list", action="store_true",
+                        help="print the gate table and exit 0 without running anything")
+    parser.add_argument("--only", metavar="NAME[,NAME...]",
+                        help="run only these gates")
+    parser.add_argument("--skip", metavar="NAME[,NAME...]",
+                        help="run everything except these gates")
+    parser.add_argument("--group", choices=GROUPS, default="both",
+                        help="hook = what pre-commit runs · ci = what CI runs · "
+                             "both = everything (default)")
+    parser.add_argument("--fail-fast", action="store_true",
+                        help="stop after the first failing gate")
+    parser.add_argument("--tail", type=int, default=15, metavar="N",
+                        help="log lines to print inline for a FAILING gate (default 15)")
+    parser.add_argument("--jobs", type=int, default=1, metavar="N",
+                        help="run this many gates concurrently (default 1 — serial; "
+                             "gates that share the git index or the examples/ tree "
+                             "always run serially, see _run_many)")
+    return parser
+
+
+def main(argv: Iterable[str] | None = None, out=None) -> int:
+    out = out or sys.stdout
+    args = build_parser().parse_args(list(argv) if argv is not None else None)
+    gates = select_gates(build_gates(REPO_ROOT), group=args.group,
+                         only=args.only, skip=args.skip)
+    if not gates:
+        print("run_gates: selection matched no gates.", file=out)
+        return 1
+    if args.list:
+        print_listing(gates, REPO_ROOT, out)
+        return 0
+
+    log_dir = REPO_ROOT / LOG_DIR_REL
+    log_dir.mkdir(parents=True, exist_ok=True)
+    print(f"running {len(gates)} gates (group: {args.group}, jobs: {args.jobs}) — "
+          f"full output in {LOG_DIR_REL}/", file=out)
+
+    def announce(result: Result) -> None:
+        secs = "" if result.status in (SKIP, NOTRUN) else f"  {result.seconds:6.1f}s"
+        code = "" if result.exit_code is None else f"  exit {result.exit_code}"
+        print(f"  {result.status:<6} {result.name}{code}{secs}", file=out)
+        out.flush()
+
+    results = _run_many(gates, log_dir, jobs=max(1, args.jobs),
+                        fail_fast=args.fail_fast, root=REPO_ROOT, on_done=announce)
+    return summarise(results, out, tail=args.tail, root=REPO_ROOT)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
