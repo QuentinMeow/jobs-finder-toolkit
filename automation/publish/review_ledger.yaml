@@ -2117,3 +2117,10 @@
   files: 1
   digest: sha256:14dd7d0e0c493352
   finding: none. One evals/results/ record for the github-workflow canary run (4/4), with its eval-pin block. Fictional example identities only; no real person, employer, school or posting.
+- commit: 03372edd
+  base: 7f9a3d9d
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:8cde74af78b38598
+  finding: none. One tasks/0_backlog/ item filing the audit for stacks whose named tip never ran its canaries — the detection path PR #196 documented but left without tooling or an owner. Process content only; no identity, employer, school, salary or dated job-hunt data.
