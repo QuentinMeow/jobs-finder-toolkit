@@ -319,6 +319,23 @@ CI additionally runs what no hook does: every unit suite, the example render, th
 example-store validation, and an independent `gitleaks` secret scan in its own
 job — plus gate 11, which reads the PR description itself.
 
+### Running the gates locally, in one command
+
+`.venv/bin/python automation/gates/run_gates.py` runs the whole table above **plus**
+every CI-only suite, each as a subprocess with no shell and **no pipe**: stdout+stderr
+are redirected to `local/gates/<name>.log`, so the exit code you read is the gate's
+own. Never shorten a gate with `| tail` and then read `$?` — that is the pager's
+status, and it has read a red gate as green here before. `--list` prints the table
+without running anything; `--group hook` runs just the pre-commit chain; `--only
+<name>,<name>` and `--skip <name>` narrow it; `--tail N` sets how much of a failing
+log prints inline. A gate that cannot run here — no LibreOffice, no `private/`
+overlay — reports **SKIP**, is named in the final line, and is never counted as a
+pass. `example-render` rewrites the tracked example DOCX/PDFs, so
+`git checkout -- examples/` after it unless those bytes are your change. The runner
+covers the hook and CI by construction: `automation/gates/tests` re-parses
+`.github/workflows/ci.yml` and fails when a step is neither in the table nor excused
+in writing.
+
 ### Gate 11 — discharging the eval gate in the body
 
 A PR that edits `skills/*/SKILL.md`, `LESSONS.md`, or `reference.md` must
