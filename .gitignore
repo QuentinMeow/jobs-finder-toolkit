@@ -1,7 +1,12 @@
 # Python
 __pycache__/
 *.pyc
-.venv/
+# No trailing slash: `.venv/` matches only a DIRECTORY, and a git worktree is
+# usually given its interpreter as a SYMLINK named .venv. That symlink is not
+# ignored, shows as untracked, and its blob is an absolute path under the
+# owner's home dir — which the leak guard cannot catch, because it scans file
+# CONTENTS and a symlink has none to scan.
+.venv
 # Scratch
 local/
 # Local machine config (copy config.example.yaml -> config.yaml and edit)
@@ -9,7 +14,13 @@ config.yaml
 # Local Claude Code settings (personal permissions + opt-in metrics hooks; see docs/handbook/metrics.md)
 .claude/settings.local.json
 # Local metrics collection output (opt-in metrics hooks; see docs/handbook/metrics.md)
-logs/
+# Anchored to the repo root, like the product rules below. The only writer is
+# automation/metrics/hook_collect.py, whose LOG_PATH is REPO_ROOT/"logs". Left
+# unanchored this matched a `logs/` directory at ANY depth, which silently made
+# examples/market/logs/** untrackable: `git mv` into it reports success, and the
+# files are then invisible to `git ls-files`, to export_public.py, and to the
+# leak guard — a tracked fixture that does not exist as far as any gate can tell.
+/logs/
 # Cross-session scratch memory (ephemeral; see AGENTS.md Memory Map)
 .cursor/MEMORY.md
 # Private overlay (personal data mounts here; never committed to the public repo).
