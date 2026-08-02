@@ -2,14 +2,16 @@
 
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
-- **Source**: [`_BIGTECH_TITLE_SKIP` / `_title_prefilter` in `sources.py`](../../../skills/job-search/scripts/sources.py) vs [`assess_title` in `scoring.py`](../../../skills/job-search/scripts/scoring.py), which disagree about who owns seniority. The fork was found while fixing the prefilter's unanchored-substring defect; the substring half is fixed, this half is not.
+- **Source**: `_BIGTECH_TITLE_SKIP` [/](../../../skills/job-search/scripts/sources.py) `_title_prefilter` [in](../../../skills/job-search/scripts/sources.py) `sources.py` vs `assess_title` [in](../../../skills/job-search/scripts/scoring.py) `scoring.py`, which disagree about who owns seniority. The fork was found while fixing the prefilter's unanchored-substring defect; the substring half is fixed, this half is not.
 - **Blocks**: nothing. Search runs unchanged.
 - **Default path**: **keep the hardcoded list.** The five words stay in `_BIGTECH_TITLE_SKIP`, boundary-matched like every other entry, and the deliberate exception is written into the code comment and pinned by `test_hardcoded_seniority_words_are_still_skipped_pending_the_decision` so it cannot drift silently while this is open.
 - **Cost if wrong**: recurring-loss
 - **Safe to merge because**: the five words are pinned by
-  `test_hardcoded_seniority_words_are_still_skipped_pending_the_decision` so they cannot drift
-  silently — but every search meanwhile drops matching big-tech titles, and only re-running search
-  after a list change recovers them.
+`test_hardcoded_seniority_words_are_still_skipped_pending_the_decision` so they cannot drift
+silently — but every search meanwhile drops matching big-tech titles, and only re-running search
+after a list change recovers them.
+
+
 
 ## Background
 
@@ -63,17 +65,17 @@ overlay, and this session was blocked from opening it. Two very different
 outcomes follow from what is in it:
 
 - If your profile's `titles.exclude` **already** lists those terms, removing them
-  from the fetcher changes nothing you would notice — the profile catches them one
-  gate later, and the fetcher stops duplicating a rule the profile owns.
+from the fetcher changes nothing you would notice — the profile catches them one
+gate later, and the fetcher stops duplicating a rule the profile owns.
 - If it **does not**, removing them widens the fetch, and that widening is not
-  free. `fetch_workday` is capped at `max_candidates=60`; `fetch_amazon`,
-  `fetch_apple` and `fetch_meta` at `80`. The cap is applied to the candidate list
-  in the order the search pages returned it, so newly-admitted Principal /
-  scientist titles **consume budget that wanted roles used to get**. The failure
-  is displacement, not noise: a role pushed past the cap is never fetched, so it
-  produces no filtered row, leaves no trace in the snapshot, and nothing reports
-  that it existed. That is the same silent-loss shape as the sponsorship and
-  location defects this round of work is fixing.
+free. `fetch_workday` is capped at `max_candidates=60`; `fetch_amazon`,
+`fetch_apple` and `fetch_meta` at `80`. The cap is applied to the candidate list
+in the order the search pages returned it, so newly-admitted Principal /
+scientist titles **consume budget that wanted roles used to get**. The failure
+is displacement, not noise: a role pushed past the cap is never fetched, so it
+produces no filtered row, leaves no trace in the snapshot, and nothing reports
+that it existed. That is the same silent-loss shape as the sponsorship and
+location defects this round of work is fixing.
 
 **What to check before answering.** Open your real search profile — the one a
 bare `--profile <label>` resolves to, which `search_jobs.profile_search_dirs()`
@@ -82,16 +84,19 @@ looks up in `config.search_profiles_dir()` (the overlay) before the tracked
 (the key `scoring.assess_title` reads at `scoring.py:168`). Two questions:
 
 1. Does `titles.exclude` already contain `principal`, `distinguished`, `fellow`,
-   `data scientist` and `research scientist`?
+  `data scientist` and `research scientist`?
 2. Do you *want* Principal-and-above or applied-scientist roles from Workday /
-   Amazon / Apple / Meta at all?
+  Amazon / Apple / Meta at all?
 
 If the answer to 2 is yes, the current code cannot give them to you, whatever your
 include list says.
 
 ## Options
 
+
+
 ### Option A — keep the hardcoded list (the default path)
+
 Zero change; the fetch stays as cheap and as narrowly targeted as it is today, and
 the per-board budgets keep going to the titles they go to now. **Cost:** the
 fetcher keeps a seniority policy that the profile is supposed to own, so the two
@@ -101,6 +106,7 @@ nothing will tell you why. The code comment now says this out loud, which conver
 an invisible bug into a documented limitation — but it is still a limitation.
 
 ### Option B — remove the five words; let `titles.exclude` decide
+
 One owner of the rule. The prefilter keeps only occupations the title gate could
 never keep, and seniority/discipline is entirely the profile's business — which is
 where every other title decision already lives. **Cost:** the candidate budgets
@@ -111,6 +117,7 @@ terms to your overlay profile's `titles.exclude` **first**, in a separate commit
 and only then remove them from the fetcher.
 
 ### Option C — remove the five words *and* raise the candidate budgets
+
 Removes the displacement risk that makes B costly, by giving the wider candidate
 set more room (say 60 → 100 Workday, 80 → 120 the others). **Cost:** more detail
 fetches per board on every run — slower searches and more request volume against
@@ -120,6 +127,7 @@ answer to B's precondition is "no, my profile does not exclude them, and yes, I 
 want those roles".
 
 ### Option D — pass the profile's exclude list into `fetch_company`
+
 The structurally correct version of B: the prefilter is built from
 `profile["titles"]["exclude"]` at call time via `common.term_matches`, so there is
 one list and it is yours. **Cost:** a signature change through `fetch_company` and
@@ -144,4 +152,4 @@ If you answer B or D, say so and I will also add the terms to the overlay
 profile's `titles.exclude` in the same change, so the widening is fenced by the
 gate that should have owned it all along.
 
-**Your answer:** ______
+**Your answer:** We should make this filter words profile based. I.e. multiple different people should have their own filter logic. So definitely not hardcoded in code. We should include at least several logic: 1. hard excluded word, for example intern; 2. soft excluded word, for example, manager (which could be a software engineer role, might just be some software called manager), so that we let AI read JD and decide whether or not it looks like something interesting 3. inclusion word, when we hit such word, we must check it out and let AI reason about it)

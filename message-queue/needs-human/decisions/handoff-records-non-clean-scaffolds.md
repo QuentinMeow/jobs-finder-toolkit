@@ -95,4 +95,22 @@ that pin the current behaviour are
 `CreationTimeSkipLogTests.test_a_location_mismatch_folder_is_recorded_with_the_un_skip_command`
 and `..._a_scaffold_with_no_fresh_jd_is_recorded_with_the_un_skip_command`.
 
-**Your answer:** ______
+**Your answer:** (2026-08-02, in chat) Option A — conditional on two things being true:
+if the code and agent behaviour never delete an application folder, and if a deleted folder
+therefore means *I* deleted it, then Option A is right, because my deleting a folder truly
+means I don't want to consider that posting any more.
+
+Both conditions were verified on 2026-08-02 before folding this answer:
+
+- **No production code deletes an application folder.** Every `rmtree`/`unlink` in
+  `automation/` and `skills/` that is not a test targets the postings cache
+  (`build_postings.py`, `postings_fold_state.py`), store debris (`retention.py`, which
+  explicitly skips `state/` and `_blobs/`), vendored copies, generated symlinks, or the
+  reconciler's own queue file. No file that imports `config.applications_root()` deletes
+  anything under it. The only `rmtree` of an application folder is in tests
+  (`test_skip_log_writers.py`, `test_handoff.py`) against temp fixtures.
+- **Agents are forbidden from deleting one**, by `AGENTS.md:233-236`: application folders
+  "are removed by the **user only** — never by an agent, under any condition".
+
+So a missing folder is always an owner decision, which is exactly the premise this answer
+rests on.
