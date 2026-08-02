@@ -37,7 +37,13 @@ import hashlib
 import json
 from pathlib import Path
 
-CACHE_SCHEMA = 1
+# Bumped whenever a header field's MEANING changes, not only its layout: a cache
+# whose digests were computed by an older rule cannot be compared against the new
+# one, and `load` returning None ("no usable fold cache") names the cause far
+# better than a bare digest mismatch would. Cost is one full fold per store, once.
+#   1 -> 2  `manifest_digest` covers (fetch_id, payload blob) pairs, not bare
+#           fetch ids, so a manifest replaced in place is detected.
+CACHE_SCHEMA = 2
 CACHE_NAME = "postings-fold-cache.jsonl"
 INCOMPLETE_NAME = "postings-build-incomplete.json"
 

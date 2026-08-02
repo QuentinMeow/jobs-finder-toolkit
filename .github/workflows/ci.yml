@@ -165,7 +165,12 @@ jobs:
       #     added in the same commit as the directory it names — and, because
       #     automation/publish/tests asserts every path this file invokes also
       #     SHIPS, in the same commit as its export_public.ALLOWLIST_DIRS entry.
-      - name: Reconciler + gardener + overlay-hook + recall-audit + metrics + eval-pin unit tests
+      #     automation/gates/tests is the one line here that is ABOUT this file: the
+      #     local gate runner (automation/gates/run_gates.py) declares what the hook
+      #     and this workflow run, and its drift test re-parses ci.yml and fails when
+      #     a step's invocation is neither in that table nor excused in writing. It
+      #     runs here so the runner cannot quietly fall behind CI.
+      - name: Reconciler + gardener + overlay-hook + recall-audit + metrics + eval-pin + gate-runner unit tests
         run: |
           python -m unittest discover automation/reconcile/tests
           python -m unittest discover automation/gardener/tests
@@ -173,6 +178,7 @@ jobs:
           python -m unittest discover automation/search-recall-audit/tests
           python -m unittest discover automation/metrics/tests
           python -m unittest discover automation/evals/tests
+          python -m unittest discover automation/gates/tests
 
       # 2d. Public review gate — every commit that changed the published tree must
       #     carry a row in automation/publish/review_ledger.yaml. This is the copy

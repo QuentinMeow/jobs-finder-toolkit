@@ -3,6 +3,7 @@
 - **Priority**: P2 (someday)
 - **Area**: job-search
 - **Source**: left behind by the search-recall-audit defect fixes (adversarial audit #4, finding 4), 2026-07-31
+- **Claimed-by**: agent session 2026-08-02 (fix/25-recall-audit-cli)
 
 ## Goal
 
@@ -45,8 +46,17 @@ precision/visibility gap, not a recall hole.
 
 ## Definition of done
 
-- [ ] A Workday posting whose `locationsText` ends in `and N more` is flagged (or
-      its hidden metros resolved), rather than reported as a faithful copy.
-- [ ] A test in `automation/search-recall-audit/tests/test_field_fidelity.py`
-      pins the new behaviour on a recorded Workday payload (no live fetch).
-- [ ] The skill's field-fidelity section names the new flag if one is added.
+- [x] A Workday posting whose `locationsText` ends in `and N more` is flagged (or
+      its hidden metros resolved), rather than reported as a faithful copy. —
+      flagged `truncated_location_list`; the hidden metros are NOT resolved, which
+      is this file's own second option (no per-posting detail fetch).
+- [x] A test in `automation/search-recall-audit/tests/test_field_fidelity.py`
+      pins the new behaviour on a recorded Workday payload (no live fetch). —
+      `TruncatedLocationListTests` + `FlagShapeTests`.
+- [x] The skill's field-fidelity section names the new flag if one is added. —
+      `skills/search-recall-audit/SKILL.md`; it named no flags at all, so the
+      added line names all five.
+
+Not redone: the `_job_native_id` half described in the Context above was already
+fixed before this task was picked up (`field_fidelity.py`'s `_DERIVED_NATIVE_ID`),
+and this change touched none of it. See `verification.md`.
