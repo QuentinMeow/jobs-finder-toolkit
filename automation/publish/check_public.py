@@ -188,6 +188,16 @@ _DENY_TREES = [
     (re.compile(r"^me/"), "me/"),
     (re.compile(r"^companies/"), "companies/"),
     (re.compile(r"^market/"), "market/"),
+    # Local opt-in metrics output (automation/metrics/hook_collect.py writes
+    # logs/metrics.jsonl). Denied rather than exempted via the test's
+    # NON_PRODUCT_ROOTS: today the payload is counters and ids — timestamps,
+    # session_id, model, git_sha, tool names, token sums, line counts — and
+    # carries no prompt text or file path, so it is not personal data as
+    # written. It is denied because the schema is explicitly version-brittle
+    # and grows with Claude Code releases; an exemption would publish a future
+    # field that carries a path, whereas a deny only ever inconveniences
+    # somebody deliberately tracking a root logs/ tree, which nothing wants.
+    (re.compile(r"^logs/"), "logs/"),
 ]
 
 

@@ -115,6 +115,19 @@ example config) — substitute the resolved path, never a literal folder at the 
 # overlay-pre-push (destination must be the configured private remote).
 python automation/bootstrap_overlay.py
 
+# Every blocking gate in one command — the whole pre-commit chain AND every CI `run:`
+# step. Each gate is a subprocess with no shell and NO PIPE: its stdout+stderr are
+# redirected to local/gates/<name>.log, so the exit code reported is the gate's own
+# (`<gate> | tail -5; echo $?` prints tail's 0 for a gate that exited 1). A gate that
+# cannot run here — no LibreOffice, no private/ overlay — reports SKIP, never PASS, and
+# is named in the final line. Exit 0 only when every selected gate exited 0.
+# Note: example-render rewrites the tracked example DOCX/PDFs (CI does that in a
+# throwaway checkout) — `git checkout -- examples/` after, unless those bytes are yours.
+.venv/bin/python automation/gates/run_gates.py                  # everything
+.venv/bin/python automation/gates/run_gates.py --list           # the table; runs nothing
+.venv/bin/python automation/gates/run_gates.py --group hook     # just the pre-commit chain
+.venv/bin/python automation/gates/run_gates.py --only reconciler,verify-links --tail 30
+
 # Reconciler by hand. Plain --check no-ops on a process folder that is absent (the
 # published export ships none of message-queue/, tasks/, memory/, docs/roadmap/,
 # history/). --require-roots is the maintainer-checkout assertion that they all
