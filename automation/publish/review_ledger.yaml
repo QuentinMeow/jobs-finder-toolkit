@@ -2549,3 +2549,9 @@
   files: 2
   digest: sha256:b5da1c95acd3f664
   finding: 'Merges two backlog tasks that two agents filed for the same problem in one session, keeping the richer of the two and folding in what the other added. Prose plus one deleted task folder. The five broken overlay paths are still not written down anywhere tracked — the folded text says so explicitly. No identity, employer, school, salary or dated job-hunt content.'
+- base: 222a3a50
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 3
+  digest: sha256:64a0e5910dd09e92
+  finding: 'Wrap-up records for the crashed 2026-08-02 session: a session handover and two backlog tasks. One task is the eval-gate debt this stack owes at its tip; the other records that two publish tests go red in a git worktree where private/ is a symlink, reproduced identically on main at f360aec and green in CI, which has no overlay. Repo-process prose only — branch names, task slugs, gate names, public queue-item slugs and repo-process dates. No private/ queue or task item is named or summarized. No identity, employer, school, salary or dated job-hunt content.'
