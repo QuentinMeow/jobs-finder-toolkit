@@ -57,7 +57,7 @@ each fact's `source` (provenance) so they never collide.
 Minimal creation-time skeleton (single posting — a one-element `jobs:` list; a multi-role
 folder is the same list with one entry per posting):
 ```yaml
-job_metadata_schema_version: 5
+job_metadata_schema_version: 6
 company: "Company Name"
 research_date: "YYYY-MM-DD"   # search date: when you generated this draft
 channel: ""                   # how you found it (linkedin | referral | recruiter | cold)
@@ -215,7 +215,7 @@ Calibrated constants and the font / margin / line-spacing levers: LESSONS.md →
 
 ## Render & validate — operational detail
 
-`check.py` strictly enforces schema version 5: `meta.yaml` must be `job_metadata_schema_version: 5`
+`check.py` strictly enforces schema version 6: `meta.yaml` must be `job_metadata_schema_version: 6`
 with a `jobs:` list, and each entry must carry a required per-job `status` and `progress` summary
 plus a valid `workplace`
 and `sponsorship` word and complete `job_level`, `required_yoe`, and `salary_range` structures. `salary_range`

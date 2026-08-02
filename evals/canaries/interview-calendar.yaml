@@ -71,3 +71,24 @@ canaries:
       - "Skips Deleted Items, uses only subjects/previews, silently assigns the receipt to both roles, or creates proposed-time Outlook events."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: ic-split-day-onsite-preserves-every-occurrence
+    requires_overlay: false
+    prompt: >
+      Example Corp confirmed Jordan's virtual onsite in three Pacific-time organizer invitations:
+      Monday, August 10, 2026 from 1:00–3:00 PM; Wednesday, August 12 from 1:00–3:00 PM; and
+      Wednesday, August 12 from 3:30–4:30 PM. Reconcile the application and both calendars without
+      losing or duplicating a block.
+    setup: >
+      All three invitations are accepted, organizer-owned, and unambiguously match one fictional
+      in-progress role. The local role starts with no calendar links.
+    expected_behavior:
+      - "Searches the bounded Outlook window and verifies exactly three canonical organizer events; leaves all three unchanged and creates no personal mirrors."
+      - "Creates three distinct local occurrences and stores three unique ordered IDs in `progress.calendar_items`, using `--add-occurrence` for the second and third blocks even though two share a date."
+      - "Keeps aggregate role progress `scheduled` while any later block remains and advances to `awaiting_result` only after the final occurrence completes."
+      - "Refreshes and checks the local calendar with no duplicate or orphan entry."
+    failure_modes:
+      - "Buckets by date, overwrites a block, treats a parallel block as a reschedule, or creates a duplicate Outlook event."
+      - "Marks the role awaiting_result before the last linked occurrence completes."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]

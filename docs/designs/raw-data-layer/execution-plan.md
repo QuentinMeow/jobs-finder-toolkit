@@ -182,9 +182,10 @@ hook paths updated in the same PR; skill renamed per the decision.
 Acceptance: conformance green on the synthetic mailbox; one read-only
 live run; every existing draft-only test preserved; **the new checker
 demonstrably fails a planted send-capable provider fixture.**
-- **5b — tracker progress + calendar foundation.** Ship schema v5, the
-  structured phase/workflow state, and one private `calendar.md` before
-  email evidence can propose scheduling changes.
+- **5b — tracker progress + calendar foundation.** Ship schema v6, the
+  structured phase/workflow state, ordered multi-occurrence calendar links,
+  and one private `calendar.md` before email evidence can propose scheduling
+  changes.
 - **5c — download-emails sync.** Full resync first (with inventory-diff
 tombstoning), delta sync second, per-account state in the state zone,
 provider-immutable-ID keys, the staleness tripwire, explicit

@@ -39,7 +39,7 @@ class ResumeMetadataValidationTests(unittest.TestCase):
             self.check.check_application_metadata(checker, app_dir)
 
         self.assertTrue(any(
-            "job_metadata_schema_version must be 5" in failure
+            "job_metadata_schema_version must be 6" in failure
             for failure in checker.failures))
 
     def test_legacy_v4_metadata_is_rejected(self):
@@ -57,14 +57,14 @@ class ResumeMetadataValidationTests(unittest.TestCase):
             self.check.check_application_metadata(checker, app_dir)
 
         self.assertTrue(any(
-            "job_metadata_schema_version must be 5" in failure
+            "job_metadata_schema_version must be 6" in failure
             for failure in checker.failures))
 
-    def test_v5_metadata_is_validated_strictly(self):
+    def test_v6_metadata_is_validated_strictly(self):
         with tempfile.TemporaryDirectory() as temporary:
             app_dir = Path(temporary)
             (app_dir / "meta.yaml").write_text(
-                "job_metadata_schema_version: 5\n"
+                "job_metadata_schema_version: 6\n"
                 'company: "Example Corp"\n'
                 "jobs:\n"
                 '  - role: "Software Engineer"\n'

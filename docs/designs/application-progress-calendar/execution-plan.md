@@ -1,7 +1,8 @@
 # Execution plan — application progress, interview scheduling, and calendar todos
 
-**Status:** planned on 2026-07-22; no implementation has started. The data
-model and safety rules live in [README.md](README.md). Delivery stays in
+**Status:** stages 1–4 are implemented or in review; stage 5 cutover remains pending. Schema v6
+multi-occurrence support was implemented on 2026-08-01. The data model and safety rules live in
+[README.md](README.md). Delivery stays in
 small, independently green changes; the first two stages are prerequisites
 that may be built in either order, while reconciliation waits for both.
 
@@ -43,6 +44,30 @@ checksum races fail without partial writes; manual unmarked content is
 preserved byte-for-byte; reschedule tests retain superseded times.
 
 Task: `tasks/1_in-progress/2026-07-22-application-progress-calendar/task.md`.
+
+## Stage 2A — tracker schema v6 and multiple interview occurrences
+
+Replace the scalar `jobs[].progress.calendar_item` with an ordered, duplicate-free
+`calendar_items` list. Treat every distinct confirmed block as one occurrence—even when two
+blocks share a date—and keep reschedule, cancellation, and completion history occurrence-local.
+Reduce all linked occurrences back to one role state: any remaining future scheduled block keeps
+the role `scheduled`; only completion of the final expected block advances it to
+`awaiting_result`.
+
+Commands added for this stage:
+
+```text
+status.py --update-progress <slug> <role-match> ... --add-occurrence
+status.py --update-progress <slug> <role-match> ... --calendar-item <cal-id>
+migrate_to_v6.py [applications_root] [--write]
+```
+
+**Acceptance:** the formatter-preserving v5→v6 fleet migration retains every existing scalar
+link; parallel blocks append stable IDs instead of being mistaken for reschedules; entry-targeted
+reschedule/cancel/complete updates never overwrite siblings; sync/check/refresh are idempotent and
+duplicate-free; the aggregate reducer stays scheduled until the final occurrence completes.
+
+Task: `tasks/4_done/2026-08-01-multiple-calendar-occurrences-per-role/task.md`.
 
 ## Stage 3 — email download sync
 

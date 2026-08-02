@@ -33,7 +33,7 @@ for _p in (SCRIPTS, SCRIPTS / "_vendor"):
         sys.path.insert(0, str(_p))
 
 HEALTHY_META = textwrap.dedent("""\
-    job_metadata_schema_version: 5
+    job_metadata_schema_version: 6
     company: Globex
     research_date: "2026-07-02"
     jobs:

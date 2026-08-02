@@ -27,7 +27,7 @@ from metadata_editor import (  # noqa: E402
 
 
 def _metadata(*, with_salary: bool = False) -> dict:
-    """A schema-v5 flat metadata fragment for one jobs entry."""
+    """A schema-v6 flat metadata fragment for one jobs entry."""
     return {
         "workplace": "remote",
         "sponsorship": "unknown",
@@ -79,7 +79,7 @@ class MetadataEditorTests(unittest.TestCase):
         self.assertIn(b'  - "Keep: quoted note"', plan.output_bytes)
         self.assertIn(("jobs", 0, "job_level"), plan.changed_field_paths)
         result = yaml.safe_load(plan.output_bytes)
-        self.assertEqual(result["job_metadata_schema_version"], 5)
+        self.assertEqual(result["job_metadata_schema_version"], 6)
         self.assertEqual(result["jobs"][0]["job_level"]["normalized"], "senior")
 
     def test_multi_role_metadata_is_anchored_to_exact_records(self):
@@ -345,10 +345,10 @@ class MetadataEditorTests(unittest.TestCase):
         self.assertEqual(second.output_bytes, first.output_bytes)
 
 
-def _valid_v5_meta_bytes() -> bytes:
-    """A fully valid schema-v5 meta.yaml (single posting) for set-field tests."""
+def _valid_v6_meta_bytes() -> bytes:
+    """A fully valid schema-v6 meta.yaml (single posting) for set-field tests."""
     return (
-        b"job_metadata_schema_version: 5\n"
+        b"job_metadata_schema_version: 6\n"
         b"company: Acme\n"
         b"jobs:\n"
         b"  - role: Senior Engineer  # exact title\n"
@@ -367,7 +367,7 @@ def _valid_v5_meta_bytes() -> bytes:
 
 class FieldUpdateEditorTests(unittest.TestCase):
     def test_overwrite_existing_status_preserves_comment_and_format(self):
-        raw = _valid_v5_meta_bytes()
+        raw = _valid_v6_meta_bytes()
         plan = plan_field_updates(
             raw, {("jobs", 0): {"status": "applied", "status_date": "2026-07-20",
                                 "progress": {"phase": "application_review",
@@ -393,7 +393,7 @@ class FieldUpdateEditorTests(unittest.TestCase):
             ("jobs", 0, "status_date"), plan.changed_field_paths)
 
     def test_progress_only_update_leaves_status_untouched(self):
-        raw = _valid_v5_meta_bytes()
+        raw = _valid_v6_meta_bytes()
         plan = plan_field_updates(raw, {("jobs", 0): {"progress": {
             "phase": "recruiter_screen", "state": "booking_required",
             "label": "Intro call"}}})
@@ -405,28 +405,28 @@ class FieldUpdateEditorTests(unittest.TestCase):
         self.assertIn(b"status: drafted  # created by handoff", plan.output_bytes)
 
     def test_retired_stage_update_is_rejected_by_the_gate(self):
-        raw = _valid_v5_meta_bytes()
+        raw = _valid_v6_meta_bytes()
         plan = plan_field_updates(raw, {("jobs", 0): {"stage": "onsite"}})
         self.assertTrue(plan.errors)
         self.assertFalse(plan.changed)
         self.assertEqual(plan.output_bytes, raw)
 
     def test_unknown_record_path_fails_closed(self):
-        raw = _valid_v5_meta_bytes()
+        raw = _valid_v6_meta_bytes()
         plan = plan_field_updates(raw, {("jobs", 3): {"status": "applied"}})
         self.assertTrue(plan.errors)
         self.assertFalse(plan.changed)
         self.assertEqual(plan.output_bytes, raw)
 
     def test_invalid_status_value_is_rejected_by_the_gate(self):
-        raw = _valid_v5_meta_bytes()
+        raw = _valid_v6_meta_bytes()
         plan = plan_field_updates(raw, {("jobs", 0): {"status": "offer"}})
         self.assertTrue(plan.errors)
         self.assertFalse(plan.changed)
         self.assertEqual(plan.output_bytes, raw)
 
     def test_setting_status_to_current_value_is_a_no_op(self):
-        raw = _valid_v5_meta_bytes()
+        raw = _valid_v6_meta_bytes()
         plan = plan_field_updates(raw, {("jobs", 0): {"status": "drafted"}})
         self.assertFalse(plan.errors)
         self.assertFalse(plan.changed)
@@ -499,10 +499,14 @@ class MigrationV4ToV5Tests(unittest.TestCase):
         self.assertNotIn(b"stage:", plan.output_bytes)
 
     def test_already_v5_fails_closed(self):
-        plan = plan_v4_to_v5_migration(_valid_v5_meta_bytes())
+        legacy_v5 = _valid_v6_meta_bytes().replace(
+            b"job_metadata_schema_version: 6",
+            b"job_metadata_schema_version: 5",
+        )
+        plan = plan_v4_to_v5_migration(legacy_v5)
         self.assertTrue(any("already schema v5" in e for e in plan.errors))
         self.assertFalse(plan.changed)
-        self.assertEqual(plan.output_bytes, _valid_v5_meta_bytes())
+        self.assertEqual(plan.output_bytes, legacy_v5)
 
     def test_pre_v4_fails_closed(self):
         raw = b"job_metadata_schema_version: 3\ncompany: Acme\n"
@@ -543,7 +547,7 @@ class BlockMappingBoundaryTests(unittest.TestCase):
         status_date) — the exact shape migrate_to_v5.py produces for a
         never-transitioned job, and the shipped example fixture's shape."""
         return (
-            b"job_metadata_schema_version: 5\n"
+            b"job_metadata_schema_version: 6\n"
             b"company: Acme\n"
             b"jobs:\n"
             b"  - role: Senior Engineer\n"
@@ -619,7 +623,7 @@ class BlockMappingBoundaryTests(unittest.TestCase):
         self.assertIn(b"\n    status_date: '2026-07-22'\n", plan.output_bytes)
 
     def test_insertion_stays_inside_a_block_style_entry(self):
-        raw = self._two_entry_block_facts_bytes(5, with_progress=True)
+        raw = self._two_entry_block_facts_bytes(6, with_progress=True)
         plan = plan_field_updates(
             raw, {("jobs", 0): {"status": "in_progress",
                                 "status_date": "2026-07-22",

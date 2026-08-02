@@ -1,7 +1,7 @@
-"""End-to-end tests for schema-v5 progress + the single calendar file.
+"""End-to-end tests for schema-v6 progress + the single calendar file.
 
 Covers: `status.py --update-progress` (transactional meta + calendar, never a
-folder move), `--check-calendar`, preview-first `--sync-calendar`, the v4->v5
+folder move), `--check-calendar`, preview-first `--sync-calendar`, the v5->v6
 fleet migration CLI, and the fail-closed behaviors (malformed markers,
 duplicate ids, missing entries, checksum races, one-sided writes).
 
@@ -26,7 +26,7 @@ import yaml
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 STATUS = SCRIPTS / "status.py"
-MIGRATE = SCRIPTS / "migrate_to_v5.py"
+MIGRATE = SCRIPTS / "migrate_to_v6.py"
 for _p in (SCRIPTS, SCRIPTS / "_vendor"):
     if str(_p) not in sys.path and _p.is_dir():
         sys.path.insert(0, str(_p))
@@ -36,6 +36,7 @@ from calendar_todos import (  # noqa: E402
     COMPANY_VIEW_START,
     SECTION_SCHEDULED,
     SECTION_WAITING,
+    parse_calendar,
     render_entry,
 )
 
@@ -87,7 +88,7 @@ class ProgressCalendarTests(unittest.TestCase):
 
     # -- harness ----------------------------------------------------------- #
     def _place(self, status_label: str, slug: str, jobs: list[dict],
-               *, version: int = 5, company: str = "Example Corp",
+               *, version: int = 6, company: str = "Example Corp",
                next_action: str | None = None) -> Path:
         app = self.apps / STATUS_DIRS[status_label] / slug
         (app / "source").mkdir(parents=True)
@@ -155,6 +156,13 @@ class ProgressCalendarTests(unittest.TestCase):
         return CALENDAR_SKELETON.replace(
             f"{section}\n", f"{section}\n\n{block}", 1)
 
+    def _check_calendar_entry(self, entry_id: str) -> None:
+        lines = self.calendar.read_text(encoding="utf-8").splitlines(keepends=True)
+        doc = parse_calendar("".join(lines))
+        entry = doc.entries[entry_id]
+        lines[entry.start_line] = lines[entry.start_line].replace("- [ ]", "- [x]", 1)
+        self.calendar.write_text("".join(lines), encoding="utf-8")
+
     # -- --update-progress -------------------------------------------------- #
     def test_update_progress_creates_calendar_entry_and_never_moves(self):
         slug = "example-corp-solo-20260720"
@@ -173,10 +181,11 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertEqual(progress["state"], "booking_required")
         self.assertEqual(progress["label"], "Virtual technical screen")
         self.assertEqual(progress["source"], {"kind": "manual", "ref": ""})
-        self.assertTrue(progress["calendar_item"].startswith("cal-example-corp"))
+        self.assertEqual(len(progress["calendar_items"]), 1)
+        self.assertTrue(progress["calendar_items"][0].startswith("cal-example-corp"))
         self.assertTrue(self.calendar.is_file())
         calendar_text = self.calendar.read_text()
-        self.assertIn(progress["calendar_item"], calendar_text)
+        self.assertIn(progress["calendar_items"][0], calendar_text)
         self.assertIn('"state":"booking_required"', calendar_text)
         self.assertIn("**Choose an interview time**", calendar_text)
         self.assertIn("[Example Corp · Backend Engineer]", calendar_text)
@@ -244,6 +253,108 @@ class ProgressCalendarTests(unittest.TestCase):
         text = self.calendar.read_text()
         self.assertIn("**Mon, Aug 3 · 10:00 AM PDT–11:00 AM PDT**", text)
         self.assertIn('"ends_at":"2026-08-03T11:00:00-07:00"', text)
+
+    def test_update_progress_refuses_to_overwrite_a_distinct_confirmed_occurrence(self):
+        slug = "example-corp-solo-20260720"
+        self._place("in_progress", slug, [_job(
+            "Backend Engineer", "in_progress", "JD-backend.md",
+            {"phase": "technical_interview", "state": "awaiting_schedule"})])
+        first = self._run(
+            STATUS, "--update-progress", slug, "backend",
+            "--phase", "interview_loop", "--state", "scheduled",
+            "--starts-at", "2026-08-11T10:00:00-07:00",
+            "--timezone", "America/Los_Angeles",
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        _label, app = self._find(slug)
+        before_meta = (app / "meta.yaml").read_bytes()
+        before_calendar = self.calendar.read_bytes()
+
+        second = self._run(
+            STATUS, "--update-progress", slug, "backend",
+            "--phase", "interview_loop", "--state", "scheduled",
+            "--starts-at", "2026-08-13T09:00:00-07:00",
+            "--timezone", "America/Los_Angeles",
+        )
+
+        self.assertNotEqual(second.returncode, 0)
+        self.assertIn("refusing to overwrite", second.stderr)
+        self.assertIn("--add-occurrence", second.stderr)
+        self.assertEqual((app / "meta.yaml").read_bytes(), before_meta)
+        self.assertEqual(self.calendar.read_bytes(), before_calendar)
+
+    def test_parallel_occurrences_append_and_reduce_only_after_the_last_completion(self):
+        slug = "example-corp-solo-20260720"
+        self._place("in_progress", slug, [_job(
+            "Backend Engineer", "in_progress", "JD-backend.md",
+            {"phase": "interview_loop", "state": "awaiting_schedule"})])
+        occurrences = (
+            ("2026-08-11T13:00:00-07:00", "2026-08-11T15:00:00-07:00"),
+            ("2026-08-13T13:00:00-07:00", "2026-08-13T15:00:00-07:00"),
+            ("2026-08-13T15:30:00-07:00", "2026-08-13T16:30:00-07:00"),
+        )
+        for index, (start, end) in enumerate(occurrences):
+            args = [
+                "--update-progress", slug, "backend",
+                "--phase", "interview_loop", "--state", "scheduled",
+                "--starts-at", start, "--ends-at", end,
+                "--timezone", "America/Los_Angeles",
+            ]
+            if index:
+                args.append("--add-occurrence")
+            result = self._run(STATUS, *args)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        _label, app = self._find(slug)
+        progress = self._meta(app)["jobs"][0]["progress"]
+        entry_ids = progress["calendar_items"]
+        self.assertEqual(len(entry_ids), 3)
+        self.assertEqual(len(set(entry_ids)), 3)
+        self.assertEqual(progress["state"], "scheduled")
+        calendar_text = self.calendar.read_text(encoding="utf-8")
+        for start, _end in occurrences:
+            self.assertIn(start, calendar_text)
+        self.assertEqual(self._run(STATUS, "--check-calendar").returncode, 0)
+
+        self._check_calendar_entry(entry_ids[0])
+        first_done = self._run(STATUS, "--sync-calendar", "--write")
+        self.assertEqual(first_done.returncode, 0, first_done.stderr)
+        progress = self._meta(app)["jobs"][0]["progress"]
+        self.assertEqual(progress["state"], "scheduled")
+        self.assertIn('"status":"completed"', self.calendar.read_text())
+
+        self._check_calendar_entry(entry_ids[1])
+        self._check_calendar_entry(entry_ids[2])
+        all_done = self._run(STATUS, "--sync-calendar", "--write")
+        self.assertEqual(all_done.returncode, 0, all_done.stderr)
+        progress = self._meta(app)["jobs"][0]["progress"]
+        self.assertEqual(progress["state"], "awaiting_result")
+        self.assertEqual(self._run(STATUS, "--check-calendar").returncode, 0)
+
+    def test_update_progress_allows_same_occurrence_enrichment(self):
+        slug = "example-corp-solo-20260720"
+        self._place("in_progress", slug, [_job(
+            "Backend Engineer", "in_progress", "JD-backend.md",
+            {"phase": "technical_interview", "state": "awaiting_schedule"})])
+        common = (
+            STATUS, "--update-progress", slug, "backend",
+            "--phase", "technical_interview", "--state", "scheduled",
+            "--starts-at", "2026-08-11T10:00:00-07:00",
+            "--timezone", "America/Los_Angeles",
+        )
+        first = self._run(*common)
+        self.assertEqual(first.returncode, 0, first.stderr)
+
+        enriched = self._run(
+            *common,
+            "--ends-at", "2026-08-11T11:00:00-07:00",
+        )
+
+        self.assertEqual(enriched.returncode, 0, enriched.stderr)
+        self.assertIn(
+            '"ends_at":"2026-08-11T11:00:00-07:00"',
+            self.calendar.read_text(),
+        )
 
     # -- the CLI's own prose must not contradict the CLI ------------------- #
     # Both cases below were real drift: the docstring told agents to pre-record
@@ -316,7 +427,7 @@ class ProgressCalendarTests(unittest.TestCase):
         self._place("in_progress", slug, [_job(
             "Backend Engineer", "in_progress", "JD-backend.md",
             {"phase": "technical_interview", "state": "scheduled",
-             "calendar_item": entry_id})])
+             "calendar_items": [entry_id]})])
         before = self.calendar.read_bytes()
         preview = self._run(STATUS, "--refresh-calendar")
         self.assertEqual(preview.returncode, 0, preview.stderr)
@@ -534,7 +645,7 @@ class ProgressCalendarTests(unittest.TestCase):
         app = self._place("in_progress", slug, [_job(
             "Backend Engineer", "in_progress", "JD-backend.md",
             {"phase": "technical_interview", "state": "booking_required",
-             "calendar_item": "cal-example-corp-solo-01"})])
+             "calendar_items": ["cal-example-corp-solo-01"]})])
         before = (app / "meta.yaml").read_bytes()
         self.assertNotEqual(self._run(STATUS, "--check-calendar").returncode, 0)
         update = self._run(STATUS, "--update-job", slug, "backend", "rejected")
@@ -548,7 +659,7 @@ class ProgressCalendarTests(unittest.TestCase):
         app = self._place("in_progress", slug, [_job(
             "Backend Engineer", "in_progress", "JD-backend.md",
             {"phase": "technical_interview", "state": "booking_required",
-             "calendar_item": "cal-example-corp-solo-99"})])
+             "calendar_items": ["cal-example-corp-solo-99"]})])
         before = (app / "meta.yaml").read_bytes()
         proc = self._run(STATUS, "--update-job", slug, "backend", "rejected")
         self.assertNotEqual(proc.returncode, 0)
@@ -568,7 +679,7 @@ class ProgressCalendarTests(unittest.TestCase):
         app = self._place("in_progress", slug, [_job(
             "Backend Engineer", "in_progress", "JD-backend.md",
             {"phase": "technical_interview", "state": "booking_required",
-             "calendar_item": entry_id})])
+             "calendar_items": [entry_id]})])
         driver = self.root / "race_driver.py"
         driver.write_text(textwrap.dedent(f"""\
             import importlib.util, json, sys
@@ -582,9 +693,12 @@ class ProgressCalendarTests(unittest.TestCase):
             spec.loader.exec_module(status)
             meta_path = Path({str(app / 'meta.yaml')!r})
             raw = meta_path.read_bytes()
-            plan = status.plan_field_updates(raw, {{("jobs", 0): {{"progress": {{
+            new_progress = {{
                 "phase": "technical_interview", "state": "awaiting_schedule",
-                "calendar_item": {entry_id!r}}}}}}})
+                "calendar_items": [{entry_id!r}],
+            }}
+            plan = status.plan_field_updates(
+                raw, {{("jobs", 0): {{"progress": new_progress}}}})
             assert not plan.errors, plan.errors
             cal_path = status._calendar_path()
             cal_raw = cal_path.read_bytes()
@@ -624,7 +738,7 @@ class ProgressCalendarTests(unittest.TestCase):
         app = self._place("in_progress", slug, [_job(
             "Backend Engineer", "in_progress", "JD-backend.md",
             {"phase": "technical_interview", "state": "booking_required",
-             "calendar_item": entry_id})])
+             "calendar_items": [entry_id]})])
         before_meta = (app / "meta.yaml").read_bytes()
         before_calendar = self.calendar.read_bytes()
 
@@ -657,7 +771,7 @@ class ProgressCalendarTests(unittest.TestCase):
         app = self._place("in_progress", slug, [_job(
             "Backend Engineer", "in_progress", "JD-backend.md",
             {"phase": "technical_interview", "state": "scheduled",
-             "calendar_item": entry_id})])
+             "calendar_items": [entry_id]})])
         apply = self._run(STATUS, "--sync-calendar", "--write")
         self.assertEqual(apply.returncode, 0, apply.stderr)
         text = self.calendar.read_text()
@@ -680,7 +794,7 @@ class ProgressCalendarTests(unittest.TestCase):
         app = self._place("in_progress", slug, [_job(
             "Backend Engineer", "in_progress", "JD-backend.md",
             {"phase": "technical_interview", "state": "scheduled",
-             "calendar_item": entry_id})])
+             "calendar_items": [entry_id]})])
         apply = self._run(STATUS, "--sync-calendar", "--write")
         self.assertEqual(apply.returncode, 0, apply.stderr)
         text = self.calendar.read_text()
@@ -705,7 +819,7 @@ class ProgressCalendarTests(unittest.TestCase):
         self._place("in_progress", slug_wait, [_job(
             "Backend Engineer", "in_progress", "JD-backend.md",
             {"phase": "technical_interview", "state": "awaiting_schedule",
-             "calendar_item": entry_id})])
+             "calendar_items": [entry_id]})])
         proc = self._run(STATUS)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("Action needed", proc.stdout)
@@ -738,50 +852,53 @@ class ProgressCalendarTests(unittest.TestCase):
 
     # -- migration CLI ------------------------------------------------------- #
     def test_fleet_migration_is_preview_first_then_writes(self):
-        def v4_job(role, status, jd, stage):
-            job = _job(role, status, jd, {})
-            del job["progress"]
-            job["stage"] = stage
-            return job
-
         slug_a = "example-corp-a-20260720"
         app_a = self._place("in_progress", slug_a, [
-            v4_job("Backend Engineer", "in_progress", "JD-backend.md", "onsite"),
-        ], version=4)
+            _job(
+                "Backend Engineer", "in_progress", "JD-backend.md",
+                {
+                    "phase": "interview_loop",
+                    "state": "scheduled",
+                    "calendar_item": "cal-example-corp-a-01",
+                },
+            ),
+        ], version=5)
         slug_b = "example-corp-b-20260720"
         app_b = self._place("drafted", slug_b, [
-            v4_job("Platform Engineer", "drafted", "JD-platform.md", ""),
-        ], version=4)
+            _job(
+                "Platform Engineer", "drafted", "JD-platform.md",
+                {"phase": "application_prep", "state": "action_required"},
+            ),
+        ], version=5)
 
-        # After the cutover the validators only accept v5.
+        # After the cutover the validators only accept v6.
         check = self._run(STATUS, "--check-metadata")
         self.assertNotEqual(check.returncode, 0)
-        self.assertIn("must be 5", check.stdout)
+        self.assertIn("must be 6", check.stdout)
 
         before_a = (app_a / "meta.yaml").read_bytes()
         preview = self._run(MIGRATE)
         self.assertEqual(preview.returncode, 0, preview.stderr)
         self.assertIn("would migrate", preview.stdout)
-        self.assertIn("-  stage: onsite", preview.stdout)  # diff shown
+        self.assertIn("calendar_items: [cal-example-corp-a-01]", preview.stdout)
         self.assertEqual((app_a / "meta.yaml").read_bytes(), before_a)
 
         write = self._run(MIGRATE, "--write", "--quiet-diff")
         self.assertEqual(write.returncode, 0, write.stderr)
         meta_a = self._meta(app_a)
-        self.assertEqual(meta_a["job_metadata_schema_version"], 5)
-        self.assertEqual(meta_a["jobs"][0]["progress"],
-                         {"phase": "interview_loop", "state": "unknown",
-                          "label": "onsite"})
-        self.assertNotIn("stage", meta_a["jobs"][0])
+        self.assertEqual(meta_a["job_metadata_schema_version"], 6)
+        self.assertEqual(
+            meta_a["jobs"][0]["progress"]["calendar_items"],
+            ["cal-example-corp-a-01"],
+        )
+        self.assertNotIn("calendar_item", meta_a["jobs"][0]["progress"])
         meta_b = self._meta(app_b)
-        self.assertEqual(meta_b["jobs"][0]["progress"],
-                         {"phase": "application_prep",
-                          "state": "action_required"})
+        self.assertNotIn("calendar_items", meta_b["jobs"][0]["progress"])
         self.assertEqual(self._run(STATUS, "--check-metadata").returncode, 0)
         # Idempotence guard: a second write run fails loudly, changing nothing.
         again = self._run(MIGRATE, "--write")
         self.assertNotEqual(again.returncode, 0)
-        self.assertIn("already schema v5", again.stdout)
+        self.assertIn("already schema v6", again.stdout)
 
 
 if __name__ == "__main__":

@@ -73,7 +73,7 @@ glob, so labeled names count.
 **Per-job `status` is the fine-grained source of truth; the status folder is the DERIVED overall
 status.** Each `jobs:` entry carries a required `status`
 (`drafted|applied|in_progress|rejected|ignored` — the same labels as the folders), a required
-structured **`progress`** summary (see "Per-job progress" below — schema v5 replaced the retired
+structured **`progress`** summary (see "Per-job progress" below — schema v6 uses ordered calendar links and retains the structured summary that replaced the retired
 free-text `stage` with it), and an optional `status_date` (`YYYY-MM-DD`, stamped by tooling on
 each transition). The parent folder is the overall status rolled up from those per-job values
 (see "Overall status" below); the validator errors when the folder and the rollup disagree, and
@@ -95,7 +95,7 @@ company-scope `channel` (how you found the lead) is named apart from the per-fac
 (provenance) on purpose, so the two never collide.
 
 ```yaml
-job_metadata_schema_version: 5
+job_metadata_schema_version: 6
 company: "Google"
 company_key: null            # optional, top-level ONLY: the owner's company-index key.
                            # A FILING key (research/interview material lives under it), never a
@@ -118,7 +118,7 @@ jobs:
       phase: application_review        # which hiring step (see "Per-job progress")
       state: waiting_employer          # what is happening now / who acts next
       # label: "Virtual technical screen"       # optional employer wording (required for phase: other)
-      # calendar_item: "cal-google-ml-infrastructure-engineer-01"  # links the calendar.md entry
+      # calendar_items: ["cal-google-ml-infrastructure-engineer-01"]  # ordered links to distinct calendar.md occurrences
       # updated_at: "2026-04-20T17:03:00Z"      # tool-stamped; agents never invent timestamps
       # source: {kind: manual, ref: ""}         # manual | email (email requires the stored message key)
     location: "Remote (US)"
@@ -150,11 +150,12 @@ jobs:
 rendering the pipeline table.
 
 Metadata rules:
-- Metadata uses the integer top-level `job_metadata_schema_version: 5`. There is **no
-  backward compatibility**: validators only accept version 5, and `status.py --check-metadata`
+- Metadata uses the integer top-level `job_metadata_schema_version: 6`. There is **no
+  backward compatibility**: validators only accept version 6, and `status.py --check-metadata`
   validates **every** status folder by default (`--statuses <labels>` narrows to a subset).
-  Migrate a v4 file with the preview-first `migrate_to_v5.py` (dry-run fleet diff; `--write`
-  applies checksum-guarded atomic edits).
+  Migrate a v5 file with the preview-first `migrate_to_v6.py` (dry-run fleet diff; `--write`
+  applies an all-preflight, checksum-guarded fleet edit). The retired v4-to-v5 tool is historical,
+  not a runtime compatibility path.
 - Each `jobs:` entry carries a required `status` (`drafted|applied|in_progress|rejected|ignored`),
   a required `progress` mapping (see "Per-job progress"), and an optional `status_date`
   (`YYYY-MM-DD`, written by `status.py` transitions — never fabricate it; absent is valid). The
@@ -194,12 +195,12 @@ Metadata rules:
   `JD-*.md` in the folder must be associated with one role. There is no positional or
   sorted-filename fallback.
 
-### Per-job progress (phase + state + calendar link)
+### Per-job progress (phase + state + ordered calendar links)
 
 `jobs[].progress` is the normalized "where is this role, and who acts next?" summary
 (design: `docs/designs/application-progress-calendar/README.md`). `label` preserves employer-specific
 wording so the enums never grow per company. Fields: required `phase` + `state`; optional
-`label`, `calendar_item` (the linked `calendar.md` entry id), tool-stamped `updated_at`,
+`label`, `calendar_items` (an ordered list of linked `calendar.md` occurrence ids), tool-stamped `updated_at`,
 and `source` (`{kind: manual|email, ref}` — an email source requires the neutral stored
 message key, never a subject/sender/body).
 
@@ -284,7 +285,7 @@ position-labeled filenames). The folder holds one `source/JD-<job title>.md` per
 each mapped one-to-one to a `jobs:` entry:
 
 ```yaml
-job_metadata_schema_version: 5
+job_metadata_schema_version: 6
 company: "Cohere"
 research_date: "2026-07-15"
 channel: "cold"
@@ -299,7 +300,7 @@ jobs:
       phase: interview_loop
       state: awaiting_schedule
       label: "Virtual onsite"
-      calendar_item: "cal-cohere-senior-software-engineer-01"
+      calendar_items: ["cal-cohere-senior-software-engineer-01"]
     location: "Remote (US)"
     workplace: "remote"
     url: "https://..."
@@ -396,7 +397,7 @@ level/experience/compensation facts:
 
 The editor preserves comments, quotes, blank lines, newline style, and unrelated fields.
 Unknown or unstated facts remain `null`/`not_stated`—never fabricate them. Validation is
-strict: only schema version 5 is accepted, and `--check-metadata` validates **every** status
+strict: only schema version 6 is accepted, and `--check-metadata` validates **every** status
 folder by default (`--statuses <labels>` narrows the scope).
 
 ### Update Status
@@ -444,6 +445,10 @@ status.py --update-progress <slug> <role-match> --phase <phase> --state <state> 
   [--label TEXT] [--action TEXT] [--due-at ISO_DATE_OR_TIME] \
   [--starts-at ISO_TIME --ends-at ISO_TIME --timezone IANA_ZONE] \
   [--follow-up-at ISO_DATE_OR_TIME] [--email-ref acct-01/<neutral-message-key>]
+
+# Append a distinct confirmed block instead of replacing an existing occurrence:
+status.py --update-progress <slug> <role-match> --phase interview_loop --state scheduled \
+  --add-occurrence --starts-at ISO_TIME --ends-at ISO_TIME --timezone IANA_ZONE
 ```
 
 Sets one posting's structured progress (with a tool-stamped `updated_at` and manual provenance by
@@ -451,9 +456,15 @@ default); `--email-ref` records neutral email provenance in metadata. The calend
 that record instead of duplicating evidence identifiers.
 The command writes `meta.yaml` and `calendar.md` together — both or neither.
 Entering a calendar-relevant action, wait, or scheduled state creates the calendar entry when the
-job has none and records its stable id as `progress.calendar_item`. `--state scheduled` requires
+job has none and records its stable id in `progress.calendar_items`. `--state scheduled` requires
 `--starts-at` plus `--timezone`; `--ends-at` records duration when known. Close a role via
 `--update-job ... rejected|ignored`, never via `--state closed`.
+
+Each distinct confirmed interview block gets its own ID, even when several blocks share a day.
+Use `--add-occurrence` for a parallel block and `--calendar-item <cal-id>` to enrich one item when
+a role has several. A reschedule retains the same ID and appends `superseded` history. Completion
+and cancellation are occurrence-local; the role stays `scheduled` while any later linked block is
+still scheduled and becomes `awaiting_result` only after the last expected block completes.
 
 ### Calendar check & sync (human edits are proposals, preview-first)
 

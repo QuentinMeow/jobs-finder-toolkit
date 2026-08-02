@@ -49,7 +49,7 @@ For each resulting folder the tool:
    (imported, never subprocessed; exactly one fetch per posting). If a fetch fails
    the folder is still scaffolded, but the tool exits non-zero telling the agent to
    save that JD manually.
-3. Writes ``meta.yaml`` (schema v5) with one ``jobs:`` entry per posting, each
+3. Writes ``meta.yaml`` (schema v6) with one ``jobs:`` entry per posting, each
    with its OWN ``role`` label: two postings that share a title get the second
    one's location appended (``Software Engineer (Austin, TX)``), because ``role``
    is the key for both per-JD artifacts — ``<COVER_STEM>_<role>`` and
@@ -625,10 +625,10 @@ def warn_if_stale(store_key: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# meta.yaml (schema v5)
+# meta.yaml (schema v6)
 # --------------------------------------------------------------------------- #
 def carry_metadata(row: dict) -> dict:
-    """Carry the row's structured metadata into the schema-v5 posting shape.
+    """Carry the row's structured metadata into the schema-v6 posting shape.
 
     Every one of ``POSTING_METADATA_FIELDS`` is present (the editor requires the
     full set), but values are only carried when the row actually provides them:
@@ -690,7 +690,7 @@ def build_meta_bytes(
         job_entry = {
             "role": role,
             "jd_file": jd_file,
-            # Handoff always creates a fresh DRAFTED application; schema v5 pairs
+            # Handoff always creates a fresh DRAFTED application; schema v6 pairs
             # that with the deterministic drafted progress summary.
             "status": "drafted",
             "progress": {"phase": "application_prep", "state": "action_required"},
@@ -1202,7 +1202,7 @@ def _run_group(
         # Stale-posting hint (local store lookup by the copied store_key; never blocks).
         warn_if_stale(str(row.get("store_key") or "").strip())
 
-    # --- meta.yaml (schema v5, facts carried from every row) -------------- #
+    # --- meta.yaml (schema v6, facts carried from every row) -------------- #
     meta_bytes, editor_errors = build_meta_bytes(
         rows, roles=roles, jd_files=jd_files, research_date=research_date)
     (folder / "meta.yaml").write_bytes(meta_bytes)

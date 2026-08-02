@@ -194,7 +194,7 @@ The owner resolved the two follow-up git-policy questions on 2026-07-22:
 - **The shipped jobs-store integration changed the application pipeline
   only additively:** `meta.yaml` may carry the posting's store key. The
   planned [application-progress and calendar design](../application-progress-calendar/README.md)
-  is a separate schema-v5 change for the email scheduling track.
+  is a separate schema-v6 change for the email scheduling track.
 - **Every hard guardrail survives:** draft-only email (structurally
   strengthened), the leak guard (plus new content-egress rules for store
   data), no fabricated postings, the location gate, blacklist/log

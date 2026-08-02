@@ -247,7 +247,7 @@ SKIP_SET_READERS: tuple[tuple[str, str, str, str], ...] = (
      "build_covered", "log-first"),
 )
 
-_META = """job_metadata_schema_version: 5
+_META = """job_metadata_schema_version: 6
 company: {company}
 research_date: 2026-07-30
 jobs:

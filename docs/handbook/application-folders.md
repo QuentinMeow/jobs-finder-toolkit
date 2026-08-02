@@ -70,7 +70,7 @@ The `<Role>` suffix is the role's slug (underscores, via `layout.slugify_label`,
 `cover_letter.py` emit these names automatically — never hand-name or hand-place them.
 
 Root files:
-- `meta.yaml` — human-readable tracking metadata. Top-level `job_metadata_schema_version: 5`,
+- `meta.yaml` — human-readable tracking metadata. Top-level `job_metadata_schema_version: 6`,
  an optional top-level `company_key` (the owner's company-index key — a **filing** key beside
  `company`, never a match key, and rejected inside a `jobs:` entry; coverage is reported by
  `status.py --company-keys`, never gated — but a key that is PRESENT and malformed (`""`,

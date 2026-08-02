@@ -829,6 +829,32 @@ def record_cancellation(fields: dict, *, next_state: str = "action_required") ->
     return out
 
 
+def record_completion(fields: dict) -> dict:
+    """Complete one confirmed occurrence while retaining its exact facts."""
+    out = dict(fields)
+    history = [dict(item) for item in out.get("history") or []]
+    if out.get("starts_at"):
+        occurrence = {
+            "starts_at": out.get("starts_at"),
+            "timezone": out.get("timezone"),
+            "status": "completed",
+        }
+        if out.get("ends_at"):
+            occurrence["ends_at"] = out["ends_at"]
+        history.append(occurrence)
+    out.update({
+        "starts_at": None,
+        "ends_at": None,
+        "timezone": None,
+        "state": "awaiting_result",
+        "reschedule_to": None,
+        "reschedule_timezone": None,
+        "cancel": False,
+        "history": history,
+    })
+    return out
+
+
 def _section_bounds(doc: CalendarDocument, heading: str) -> tuple[int, int]:
     """(start, end) line indexes of a section's content (after its heading)."""
     start = doc.sections[heading] + 1
@@ -895,7 +921,14 @@ def plan_calendar_update(
     for entry_id, fields in sorted(upserts.items()):
         state = str(fields.get("state") or "")
         existing = doc.entries.get(entry_id)
-        checked = state in CHECKED_STATES or (
+        history = fields.get("history") or []
+        terminal_occurrence = bool(
+            history
+            and isinstance(history[-1], dict)
+            and history[-1].get("status") in {"completed", "cancelled"}
+            and not fields.get("starts_at")
+        )
+        checked = state in CHECKED_STATES or terminal_occurrence or (
             existing.checked if existing and state == existing.state else False
         )
         company = str(fields.get("_company") or "")

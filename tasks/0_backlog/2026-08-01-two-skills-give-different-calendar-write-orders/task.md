@@ -23,7 +23,7 @@ Outlook capability, the search-first dedup, the no-external-attendees rule and m
 `calendar: confirmed` (`:241`) — but never mentions `calendar.md`, `config.calendar_path()`, or
 `status.py --update-progress --state scheduled`.
 
-That matters because the local entry and its `progress.calendar_item` id are created **only** by
+That matters because local entries and their `progress.calendar_items` links are created **only** by
 `--update-progress` (`skills/application-tracker/SKILL.md:454`; `--state scheduled` requires
 `--starts-at` and `--timezone`). Following email-assistant alone leaves a remote event with no local
 record, which `status.py --check-calendar` then reports as drift — the exact condition

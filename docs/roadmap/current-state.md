@@ -1,6 +1,6 @@
 # Current state
 
-- **Last-updated**: 2026-07-31
+- **Last-updated**: 2026-08-01
 
 *Groomed 2026-07-31 after an audit found this page four merges stale under a fresh
 date. Every claim below was re-derived from the tree that day — task folders read
@@ -31,7 +31,7 @@ only re-measurement can keep true, it was replaced by the command that produces 
   (`automation/shared/mail/`), Outlook relocated behind it unchanged,
   folder-walking `check_mail_safety.py` in pre-commit, skill renamed
   `skills/email-assistant/` (no alias; the overlay's `references_private`
-  folder is already renamed). Stage 2 (tracker schema v5 + the single
+  folder is already renamed). Stage 2 (tracker schema v6 + the single
   calendar file) is merged; its owner-review UX revision makes events and
   todos scannable while retaining broad reporting phases. **Stages 3–5, re-checked
   against `tasks/` on 2026-07-31** — this page previously called them "not started",
@@ -51,10 +51,10 @@ only re-measurement can keep true, it was replaced by the command that produces 
 - **Token-usage modes**: R1+R2 complete and merged (draft legs −29% tokens /
   −27% time at equal blind-graded quality); stage-benchmark fixtures v1 +
   harness live.
-- **Tracker**: meta.yaml schema v5 (per-job status + folder rollup +
-  structured `jobs[].progress` + the single `calendar.md` via
-  `config.calendar_path()`) is current; v4 is rejected after the preview-first
-  migration cutover. Calendar rows lead with the time or action, link to role
+- **Tracker**: meta.yaml schema v6 (per-job status + folder rollup +
+  structured `jobs[].progress` + ordered multi-occurrence `calendar_items` links
+  into the single `calendar.md` via `config.calendar_path()`) is current; v5 is
+  rejected after the preview-first migration cutover. Calendar rows lead with the time or action, link to role
   context, and keep machine metadata to one hidden compact line.
 - **Quality gates**: CI's `build` job is four environment steps followed by
   verification steps in four families — structural (vendor drift, compileall),
