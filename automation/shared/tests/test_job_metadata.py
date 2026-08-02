@@ -780,6 +780,74 @@ class SponsorshipNegationScopeTests(unittest.TestCase):
         self.assertFalse(assessment["signal_present"])
 
 
+class SponsorshipNonImmigrationDenialTests(unittest.TestCase):
+    """A "sponsor" that is not about immigration must not read as a visa denial.
+
+    Offer phrases carried an immigration-context gate; denial phrases carried
+    none, so "we do not sponsor community events" matched ``do not sponsor`` and
+    graded a confident refusal — and the default ``exclude_negative`` policy
+    DROPS refusals, so the posting was deleted for a sentence about a street
+    fair.  Every sentence here is fictional.
+    """
+
+    def test_a_non_immigration_sponsee_is_not_a_denial(self):
+        for text in (
+            "We do not sponsor community events.",
+            "We do not sponsor conference booths.",
+            "We will not sponsor youth sports leagues in our marketing budget.",
+            "We sponsor community events and do not sponsor local sports teams.",
+        ):
+            with self.subTest(text=text):
+                assessment = assess_sponsorship(text)
+                self.assertEqual(assessment["verdict"], "unknown")
+                self.assertEqual(assessment["decision"], "review")
+
+    def test_a_denial_naming_sponsorship_itself_needs_no_context(self):
+        # The tripwire that makes a SYMMETRIC gate wrong. This sentence carries
+        # no immigration word anywhere in it, and it is a real refusal — the
+        # object of the verb IS sponsorship, so there is no other sponsee for it
+        # to be about. Gating it would delete a denial the module can read.
+        assessment = assess_sponsorship("This role does not offer sponsorship.")
+        self.assertEqual(assessment["verdict"], "unlikely")
+        self.assertEqual(assessment["confidence"], "high")
+        self.assertEqual(assessment["decision"], "no_match")
+
+    def test_a_bare_verb_denial_with_immigration_beside_it_still_lands(self):
+        for text in (
+            "Applicants must already hold a work visa; we do not sponsor.",
+            "We cannot sponsor visas at all for this position.",
+            "We do not sponsor. Applicants must be authorized to work in the "
+            "United States.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(classify_sponsorship(text), "unlikely")
+
+    def test_the_gate_runs_after_the_quantifier_reads_not_before(self):
+        # Structural guard: the gate protects the bucket that produces
+        # `unlikely`/`no_match`, and nothing else. A scope-limited or unsettled
+        # reading is decided first and is unaffected, so this sentence keeps the
+        # low-confidence review the quantifier rules give it rather than
+        # silently losing its evidence.
+        assessment = assess_sponsorship(
+            "We are not able to sponsor every candidate who applies.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["confidence"], "low")
+        self.assertIn("sponsorship.scope_limit.not able to sponsor",
+                      assessment["rule_ids"])
+
+    def test_the_context_window_errs_toward_keeping_the_denial(self):
+        # The gate's known limit, pinned so it is not mistaken for a defect: the
+        # window is positional, so a real sponsorship offer near a
+        # non-immigration "sponsor" keeps that denial in the evidence. The
+        # result is a CONFLICT — kept and flagged — never a drop and never a
+        # promotion, which is the direction this module resolves ambiguity in.
+        assessment = assess_sponsorship(
+            "Our charitable giving programme does not sponsor political "
+            "campaigns. Visa sponsorship is available for this role.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+
 class SponsorshipOffListDenialTests(unittest.TestCase):
     """A denial phrased in words NEITHER phrase list contains must still land.
 

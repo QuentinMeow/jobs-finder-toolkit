@@ -218,6 +218,29 @@ class VisaPolicyBindingTests(unittest.TestCase):
                     self.assertFalse(visa_ok(posting, profile))
                     self.assertEqual(posting.visa_label, "no")
 
+    def test_a_non_immigration_sponsor_is_never_dropped_as_a_denial(self):
+        # The false-denial shape end to end. `do not sponsor` carried no
+        # immigration-context gate, so a sentence about a street fair graded a
+        # confident refusal and the default policy DELETED the posting.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting("We do not sponsor community events.")
+                self.assertTrue(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "unclear")
+                self.assertIn("sponsorship_requires_review",
+                              posting.review_reasons)
+
+    def test_a_denial_naming_sponsorship_itself_is_still_dropped(self):
+        # The tripwire: this sentence carries no immigration word either, and a
+        # symmetric gate would turn a real refusal into `unclear`.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting("This role does not offer sponsorship.")
+                self.assertFalse(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "no")
+
     def test_an_off_list_denial_is_dropped_under_both_policies(self):
         # Detection, end to end. The denial matched no phrase in either list, so
         # the posting reached the candidate as if sponsorship were merely

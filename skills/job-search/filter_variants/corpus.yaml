@@ -431,6 +431,47 @@ variants:
       verdict: likely
       confidence: high
 
+  - id: sponsorship-non-immigration-sponsee-is-not-a-denial
+    domain: sponsorship
+    # The opposite error, and the third shape of the same entry. Offer phrases
+    # carried an immigration-context gate; denial phrases carried none, so a
+    # bare-verb "sponsor" with an unrelated object matched `do not sponsor` and
+    # graded a confident refusal — and the default exclude_negative policy DROPS
+    # refusals, so the posting was deleted for a sentence about a street fair.
+    input:
+      text: We do not sponsor community events.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-bare-verb-denial-with-immigration-context-stands
+    domain: sponsorship
+    # The gate keeps the denials it is supposed to keep: the same bare verb with
+    # immigration wording beside it is a real refusal. Written with the PLURAL
+    # "visas", which is the wording these denials actually use and the reason
+    # the denial gate cannot reuse the offer side's singular-anchored pattern.
+    input:
+      text: We cannot sponsor visas at all for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-denial-naming-sponsorship-needs-no-context
+    domain: sponsorship
+    # The tripwire that makes a SYMMETRIC gate wrong, pinned beside the two rows
+    # above so the asymmetry cannot be "tidied up" later. This sentence carries
+    # no immigration word anywhere in it and is still a real refusal: the object
+    # of the verb IS sponsorship, so there is no other sponsee it could be
+    # about. Only the bare-verb phrases are gated.
+    input:
+      text: This role does not offer sponsorship for candidates.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
   - id: sponsorship-off-list-denial-with-a-coordinated-object
     domain: sponsorship
     # Detection, not polarity. The denial phrases need "offer sponsorship"

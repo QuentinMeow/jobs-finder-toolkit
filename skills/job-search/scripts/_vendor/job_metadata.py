@@ -1381,6 +1381,46 @@ _SPONSOR_POSITIVE = (
     "cap-exempt", "cap exempt",
 )
 
+# The denial phrases whose "sponsor" is a bare transitive VERB with no object of
+# its own.  Those are the only ones that can attach to something that is not
+# immigration at all — "we do not sponsor community events" matched `do not
+# sponsor` and graded a confident denial, and the default policy DROPS denials,
+# so a posting was deleted for a sentence about a street fair.
+#
+# Every OTHER phrase in ``_SPONSOR_NEGATIVE`` names "sponsorship" as the head
+# noun (or names citizenship/green-card status outright), and there the object IS
+# sponsorship, so no gate applies.  That asymmetry is measured, not stylistic:
+# "This role does not offer sponsorship." carries no immigration word ANYWHERE in
+# it, so gating every denial on context — the symmetric-looking rule — turns a
+# real refusal into ``unknown``.  The dividing line is the bare verb, not the
+# strength of the wording.
+_SPONSOR_GENERIC_NEGATIVE = frozenset({
+    "unable to sponsor", "not able to sponsor", "cannot sponsor",
+    "can not sponsor", "will not sponsor", "does not sponsor", "do not sponsor",
+})
+# Immigration context for that gate.  Separate from ``_SPONSOR_CONTEXT_RE``
+# because that one is anchored on "visa" SINGULAR, and the denials being gated
+# here are routinely written with the plural ("we cannot sponsor visas at all").
+# Widening the shared pattern instead would loosen the OFFER side's gate too,
+# which is the direction this module does not move.
+#
+# It is deliberately the WIDER of the two patterns.  The two errors this gate can
+# make are not equal: dropping a real denial hides it from the candidate at high
+# confidence, while keeping a non-immigration one costs a ``review`` flag, so the
+# gate is written to err toward keeping.  US work-authorization boilerplate is
+# included for exactly that reason ("we do not sponsor. applicants must be
+# authorized to work in the United States") — on its own that boilerplate is
+# still never a denial, which ``_SPONSOR_NEGATIVE`` decides, not this pattern.
+_SPONSOR_IMMIGRATION_RE = re.compile(
+    r"\b(?:visas?|h-?1bs?|immigration|work\s+authoriz\w+|"
+    r"authoriz\w+\s+to\s+work|green\s+cards?|permanent\s+residen(?:t|ts|cy)|"
+    r"perm\s+process|employment\s+sponsorship|citizens?(?:hip)?|"
+    r"sponsorship\s+transfers?)\b",
+    re.I,
+)
+# How far either context gate reads around a phrase.
+_SPONSOR_CONTEXT_WINDOW_CHARS = 120
+
 _SPONSOR_CONTEXT_RE = re.compile(
     r"\b(?:visa|h-?1b|immigration|work authorization|green card|"
     r"permanent residency|perm process|employment sponsorship)\b",
@@ -1858,6 +1898,25 @@ def _sponsor_scope_unsettled(source: str, start: int, end: int) -> bool:
                                       _SPONSOR_AMBIGUOUS_SCOPE_RE)
 
 
+def _sponsor_window(source: str, start: int, end: int) -> str:
+    """The text either context gate reads around a phrase match."""
+    return source[max(0, start - _SPONSOR_CONTEXT_WINDOW_CHARS):
+                  end + _SPONSOR_CONTEXT_WINDOW_CHARS]
+
+
+def _sponsor_denial_is_immigration(phrase: str, source: str,
+                                   start: int, end: int) -> bool:
+    """Whether a DENIAL phrase is about immigration rather than some other sponsee.
+
+    Only the bare-verb phrases are gated (see ``_SPONSOR_GENERIC_NEGATIVE``);
+    every other denial names sponsorship itself and passes unconditionally.
+    """
+    if phrase not in _SPONSOR_GENERIC_NEGATIVE:
+        return True
+    return bool(_SPONSOR_IMMIGRATION_RE.search(
+        _sponsor_window(source, start, end)))
+
+
 def _sponsor_offer_is_hedged(source: str, start: int, end: int) -> bool:
     """True when an OFFER phrase is stated only under a hedge.
 
@@ -2028,6 +2087,13 @@ def assess_sponsorship(text: str | None) -> dict:
             if phrase not in unsettled:
                 unsettled.append(phrase)
             continue
+        if not _sponsor_denial_is_immigration(
+                phrase, source, negative_match.start(), negative_match.end()):
+            # A bare-verb "sponsor" with no immigration anywhere near it is
+            # about something else entirely. Dropped from the evidence exactly
+            # as a non-immigration OFFER phrase is, so the posting reads
+            # `unknown` — kept and flagged — instead of being deleted.
+            continue
         if phrase not in negative:
             negative.append(phrase)
     positive: list[str] = []
@@ -2044,10 +2110,8 @@ def assess_sponsorship(text: str | None) -> dict:
         ):
             continue
         if phrase not in _SPONSOR_STRONG_POSITIVE:
-            window = source[
-                max(0, positive_match.start() - 120):positive_match.end() + 120
-            ]
-            if not _SPONSOR_CONTEXT_RE.search(window):
+            if not _SPONSOR_CONTEXT_RE.search(_sponsor_window(
+                    source, positive_match.start(), positive_match.end())):
                 continue
         negation = _sponsor_negation(source, positive_match.start())
         if negation is not None:
