@@ -209,7 +209,7 @@ exits non-zero with a "stale sources" message if re-run against changed sources
 without `--write`.
 
 **Tests**: deterministic generation from the public example-candidate fixture
-(`examples/profile/`); size ceiling; Never-list verbatim-inclusion test; staleness
+(`examples/me/`); size ceiling; Never-list verbatim-inclusion test; staleness
 detection.
 
 **Instruction delta (eval-gated)**: resume-writer SKILL.md — drafting agents read

@@ -1,4 +1,4 @@
-"""Generate the tracked fictional fixture store under ``examples/data/``.
+"""Generate the tracked fictional fixture store under ``examples/store/``.
 
 **Single source of truth:** the raw/annotations/state-identity zones are written
 here by hand, but the ``derived/`` and ``index/`` zones are produced by RUNNING THE
@@ -20,7 +20,7 @@ task requires:
 
 Usage:
     .venv/bin/python automation/store/generate_fixture_store.py
-    .venv/bin/python automation/store/generate_fixture_store.py --root examples/data
+    .venv/bin/python automation/store/generate_fixture_store.py --root examples/store
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ from store.blobs import BlobStore, sha256_hex  # noqa: E402
 from store.paths import domain_layout  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_ROOT = REPO_ROOT / "examples" / "data"
+DEFAULT_ROOT = REPO_ROOT / "examples" / "store"
 BUILDER = (REPO_ROOT / "skills" / "job-search" / "scripts"
            / "build_postings.py")
 

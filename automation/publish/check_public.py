@@ -188,6 +188,18 @@ _DENY_TREES = [
     (re.compile(r"^me/"), "me/"),
     (re.compile(r"^companies/"), "companies/"),
     (re.compile(r"^market/"), "market/"),
+    # Local opt-in metrics output (automation/metrics/hook_collect.py writes
+    # logs/metrics.jsonl). Denied rather than exempted via the test's
+    # NON_PRODUCT_ROOTS: today the payload is counters and ids — timestamps,
+    # session_id, model, git_sha, tool names, token sums, line counts — and
+    # carries no prompt text or file path, so it is not personal data as
+    # written. It is denied because the schema is explicitly version-brittle
+    # and grows with Claude Code releases; an exemption would publish a future
+    # field that carries a path, whereas a deny only ever inconveniences
+    # somebody deliberately tracking a root logs/ tree, which nothing wants.
+    # The `^` anchor is what keeps the tracked examples/market/logs/** fixture
+    # in scope for tracking while a root logs/ stays denied.
+    (re.compile(r"^logs/"), "logs/"),
 ]
 
 
@@ -345,8 +357,16 @@ FAIL_CLOSED_EXTENSIONS = frozenset({
 # dataset (the "Jordan Rivers" placeholder resume/cover binaries) ships publicly
 # by design; the private product trees that hold real binaries are path-denied
 # above, so exempting the example dataset here cannot mask a real leak.
+#
+# The one entry below is REDUNDANT today: ``_binary_allowed`` already exempts
+# everything under ``examples/``, so the set only matters for a binary that ships
+# from somewhere else. It is kept — repointed, not dropped, when the reference
+# DOCX moved to ``me/resume/`` — because it is the worked example of the escape
+# hatch's shape; an empty frozenset reads like an unused mechanism and invites
+# deleting the hatch itself. Being unreachable is also why it went stale unnoticed,
+# so anything added here needs a test, not just a line.
 BINARY_ALLOWLIST = frozenset({
-    "examples/templates/reference.example.docx",
+    "examples/me/resume/reference.example.docx",
 })
 
 

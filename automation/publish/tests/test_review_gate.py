@@ -35,6 +35,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
+import yaml
+
 # Make the sibling modules importable (automation/publish/).
 _PUBLISH_DIR = Path(__file__).resolve().parents[1]
 if str(_PUBLISH_DIR) not in sys.path:
@@ -469,6 +471,52 @@ class LedgerValidationTests(GateTestCase):
                 proc = self.repo.gate()
                 self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
                 self.assertIn(needle, proc.stderr)
+
+    def test_a_line_based_merge_of_the_ledger_is_refused(self):
+        """The 2026-08-02 corruption, driven through the driver that caused it.
+
+        ``union`` is enabled here in ``.git/info/attributes`` — LOCAL to this
+        throwaway repo, never tracked, so it cannot re-arm the real one (which
+        ``ThisRepoTests.test_the_ledger_does_not_merge_by_union`` keeps off). The
+        merge succeeding SILENTLY is the defect being reproduced: no conflict is
+        raised, and every per-row rule the gate had still passed.
+        """
+        self.bootstrap()
+        (self.repo.root / ".git/info/attributes").write_text(
+            f"{LEDGER_REL} merge=union\n", encoding="utf-8")
+        authored = (self.repo.root / LEDGER_REL).read_text(encoding="utf-8")
+        row = ("  reviewed_by: agent\n"
+               "  date: 2026-08-02\n")
+
+        self.repo.git("checkout", "-q", "-b", "side-a")
+        self.repo.write(LEDGER_REL, authored + "- base: 76dc0cbd\n" + row
+                        + "  files: 4\n"
+                        + "  digest: sha256:" + "a" * 16 + "\n"
+                        + "  finding: Side A read the diff.\n")
+        self.repo.commit("side A reviews the range")
+
+        self.repo.git("checkout", "-q", "main")
+        self.repo.git("checkout", "-q", "-b", "side-b")
+        self.repo.write(LEDGER_REL, authored + "- base: 76dc0cbd\n" + row
+                        + "  finding: Side B read the diff.\n"
+                        + "  files: 9\n"
+                        + "  digest: sha256:" + "b" * 16 + "\n")
+        self.repo.commit("side B reviews the same range")
+
+        merge = self.repo.git("merge", "--no-edit", "side-a", check=False)
+        self.assertEqual(merge.returncode, 0,
+                         "the union driver merges without a conflict — that silence "
+                         "is the whole defect; if git now conflicts, say so here")
+        merged = (self.repo.root / LEDGER_REL).read_text(encoding="utf-8")
+        self.assertEqual(2, merged.count("  finding: Side"),
+                         "the two rows interleaved into one; both findings are in it")
+        self.assertEqual(1, merged.count("- base: 76dc0cbd"),
+                         "line-based merging cannot honour the row boundary")
+
+        proc = self.repo.gate("--verify-all")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("- base: 76dc0cbd", proc.stderr)
+        self.assertIn("finding", proc.stderr)
 
     def test_full_length_digest_is_accepted(self):
         """The spec prints 16 hex chars; a full sha256 must still verify."""
@@ -1587,6 +1635,122 @@ class ScalarTypingTests(unittest.TestCase):
     def test_quoted_values_still_work(self):
         rows = review_gate.parse_ledger(self._ledger('"65069829"'))
         self.assertEqual(rows[0]["commit"], "65069829")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A row that carries a key TWICE is a DAMAGED row.
+# ─────────────────────────────────────────────────────────────────────────────
+class DuplicateKeyTests(unittest.TestCase):
+    """Regression for the 2026-08-02 ledger corruption.
+
+    A ``union`` merge driver was configured for this append-only file on the
+    reasoning that "keep both sides' rows" is the only correct resolution. It is
+    LINE-based, not row-based: two rows written for the SAME range by different
+    agents with their keys in a different ORDER interleaved into one row instead of
+    concatenating, and a ``finding:`` line landed inside a neighbouring row. YAML
+    keeps the LAST duplicate, so the surviving row silently reported a review nobody
+    wrote — and ``--verify-all`` stayed exit 0 throughout, because a row's digest
+    pins the RANGE it names, never its own text.
+
+    The check therefore cannot live after the load: by the time ``yaml.safe_load``
+    returns, the duplicate is gone and what is left is an ordinary, perfectly valid
+    row (``test_the_parsed_row_alone_shows_nothing_wrong`` pins exactly that). It
+    runs during CONSTRUCTION, on the raw node's key list.
+    """
+
+    # Verbatim `git merge` output with `merge=union` configured for the ledger and
+    # two branches each appending their own row for base 76dc0cbd — reproduced end
+    # to end by LedgerValidationTests.test_a_line_based_merge_of_the_ledger_is_refused.
+    INTERLEAVED = (
+        "- base: 3e00e933\n"
+        "  reviewed_by: agent\n"
+        "  date: 2026-08-01\n"
+        "  files: 1\n"
+        "  digest: sha256:1111111111111111\n"
+        "  finding: The seed row.\n"
+        "- base: 76dc0cbd\n"
+        "  reviewed_by: agent\n"
+        "  date: 2026-08-02\n"
+        "  finding: Side B read the diff.\n"
+        "  files: 9\n"
+        "  digest: sha256:bbbbbbbbbbbbbbbb\n"
+        "  files: 4\n"
+        "  digest: sha256:aaaaaaaaaaaaaaaa\n"
+        "  finding: Side A read the diff.\n"
+    )
+
+    # The other shape the same merge produces: one stray line from a neighbour,
+    # landing inside a row that is otherwise exactly as its author wrote it.
+    STRAY_LINE = (
+        "- base: 3e00e933\n"
+        "  reviewed_by: agent\n"
+        "  date: 2026-08-01\n"
+        "  files: 1\n"
+        "  digest: sha256:1111111111111111\n"
+        "  finding: What this row's author actually reviewed.\n"
+        "  finding: Side B read the diff.\n"
+        "- base: 76dc0cbd\n"
+        "  reviewed_by: agent\n"
+        "  date: 2026-08-02\n"
+        "  files: 4\n"
+        "  digest: sha256:aaaaaaaaaaaaaaaa\n"
+        "  finding: Side A read the diff.\n"
+    )
+
+    def test_the_parsed_row_alone_shows_nothing_wrong(self):
+        """Why a post-load check cannot work — the damaged row validates clean."""
+        collapsed = yaml.safe_load(self.INTERLEAVED)[1]
+        self.assertEqual(collapsed["finding"], "Side A read the diff.",
+                         "YAML keeps the LAST duplicate, so side B's review vanished")
+        self.assertEqual(review_gate.validate_row(collapsed, 2)["files"], 4,
+                         "the collapsed row passes every per-row rule the gate has")
+
+    def test_an_interleaved_row_is_refused(self):
+        with self.assertRaises(review_gate.GateError) as caught:
+            review_gate.parse_ledger(self.INTERLEAVED)
+        message = str(caught.exception)
+        self.assertIn("- base: 76dc0cbd", message, "the row must be named by its first line")
+        for key in ("digest", "files", "finding"):
+            self.assertIn(key, message)
+
+    def test_a_stray_line_in_a_neighbouring_row_is_refused(self):
+        with self.assertRaises(review_gate.GateError) as caught:
+            review_gate.parse_ledger(self.STRAY_LINE)
+        message = str(caught.exception)
+        self.assertIn("- base: 3e00e933", message,
+                      "the DAMAGED row is the neighbour, not the row that donated the line")
+        self.assertIn("finding", message)
+
+    def test_the_message_says_the_ledger_was_damaged_not_the_commit(self):
+        with self.assertRaises(review_gate.GateError) as caught:
+            review_gate.parse_ledger(self.INTERLEAVED)
+        self.assertIn("review_ledger.yaml", str(caught.exception))
+        self.assertIn("merge", str(caught.exception).lower(),
+                      "a reader must be pointed at the cause, not at their own commit")
+
+    def test_a_row_carrying_both_anchors_still_parses(self):
+        rows = review_gate.parse_ledger(
+            "- commit: abcdef12\n"
+            "  base: 76dc0cbd\n"
+            "  reviewed_by: agent\n"
+            "  date: 2026-08-02\n"
+            "  files: 4\n"
+            "  digest: sha256:aaaaaaaaaaaaaaaa\n"
+            "  finding: none\n")
+        self.assertEqual(rows[0]["commit"], "abcdef12")
+        self.assertEqual(rows[0]["base"], "76dc0cbd")
+
+    def test_a_pending_row_with_base_only_still_parses(self):
+        """Load-bearing shape: the row a single commit carries for itself."""
+        rows = review_gate.parse_ledger(
+            "- base: 76dc0cbd\n"
+            "  reviewed_by: agent\n"
+            "  date: 2026-08-02\n"
+            "  files: 4\n"
+            "  digest: sha256:aaaaaaaaaaaaaaaa\n"
+            "  finding: none\n")
+        self.assertNotIn("commit", rows[0])
+        self.assertEqual(rows[0]["base"], "76dc0cbd")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

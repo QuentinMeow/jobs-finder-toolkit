@@ -1,7 +1,7 @@
 """Tests for build_tailoring_card.py — deterministic, no network, no real config.yaml.
 
 Each test builds a temp overlay: copies of the public Jordan Rivers fixture
-(``examples/profile/``) plus a throwaway ``config.yaml`` whose ``applications_root``
+(``examples/me/``) plus a throwaway ``config.yaml`` whose ``applications_root``
 is the temp dir. The script is driven by subprocess with ``JOBHUNT_CONFIG`` pointing at
 that temp config, so config discovery never reaches a real overlay and every run is
 deterministic on the fixture (timestamp aside).
@@ -27,8 +27,8 @@ import yaml
 _HERE = Path(__file__).resolve()
 REPO_ROOT = _HERE.parents[4]
 BUILD_SCRIPT = _HERE.parents[1] / "build_tailoring_card.py"
-PROFILE_FIXTURE = REPO_ROOT / "examples" / "profile" / "profile.example.md"
-BASELINE_FIXTURE = REPO_ROOT / "examples" / "profile" / "baseline.example.yaml"
+PROFILE_FIXTURE = REPO_ROOT / "examples" / "me" / "profile.example.md"
+BASELINE_FIXTURE = REPO_ROOT / "examples" / "me" / "baseline.example.yaml"
 
 CEILING_BYTES = 8192
 

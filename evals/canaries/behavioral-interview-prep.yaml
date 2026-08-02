@@ -11,7 +11,7 @@
 skill: behavioral-interview-prep
 default_setup: >
   config.yaml unset -> config.example.yaml + examples/** fallback; the profile is
-  examples/profile/profile.example.md (projects tagged [draft]/[backup] are the real material).
+  examples/me/profile.example.md (projects tagged [draft]/[backup] are the real material).
   Behavioral output lands under config.story_bank_path() and the question bank beside it —
   me/interviews/{story-bank,question-bank}/ in the overlay, the examples/ fallback in a public
   checkout (scratch/git-ignored there; the transcript is judged, not a commit). No network,

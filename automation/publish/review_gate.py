@@ -71,10 +71,17 @@ That is what makes a single commit able to carry its own review row. Under
 STAGED INDEX, reached with ``git diff --cached <base>`` — byte-for-byte the diff
 the commit about to be made will have against ``<base>``. So:
 
-    git add -A && review_gate.py --staged   # prints a PENDING row for the index
-    <read the diff, append the row>         # the ledger is EXCLUDED from the
-    git add <ledger> && git commit          # pathspec, so the row cannot move
-                                            # the digest it records
+    git add <your paths> && review_gate.py --staged   # prints a PENDING row for
+    <read the diff, append the row>                   # the index. The ledger is
+    git add <ledger> && git commit                    # EXCLUDED from the pathspec,
+                                                      # so the row cannot move the
+                                                      # digest it records.
+
+``git add -A`` is NOT the way to reach that index. This repo's ``.gitignore``
+excludes ``.venv`` as a DIRECTORY, and a git worktree is handed its interpreter as
+a SYMLINK — which that rule does not match, so ``-A`` stages a link whose blob is
+an absolute path under the owner's home directory. The leak guard scans file
+CONTENT and cannot see it. Name your paths.
 
 One commit, its own row, no follow-up. After it lands, the row seals: the gate
 finds the commit that introduced it and recomputes ``<base>..<that commit>``,
@@ -201,8 +208,28 @@ EXIT_REVIEW_REQUIRED = 1
 EXIT_LEDGER_PROBLEM = 2
 
 
+class GateError(Exception):
+    """A ledger or repository problem: the gate cannot decide, so it stops (exit 2)."""
+
+
+def _row_first_line(node: yaml.MappingNode) -> str:
+    """How the ledger's TEXT names a row: its opening ``- <key>: <value>`` line.
+
+    A damaged row has no index a reader can trust and may have no valid anchor at
+    all, so it is named the way it appears in the file.
+    """
+    if not node.value:
+        return "- (an empty row)"
+    key_node, value_node = node.value[0]
+    value = str(getattr(value_node, "value", ""))
+    if len(value) > 48:
+        value = value[:48] + "..."
+    return f"- {getattr(key_node, 'value', '?')}: {value}".rstrip()
+
+
 class _LedgerLoader(yaml.SafeLoader):
-    """SafeLoader with implicit typing of PLAIN scalars switched off.
+    """SafeLoader with implicit typing of PLAIN scalars switched off, and a
+    REPEATED key rejected.
 
     A short sha is 7-12 hex characters, which YAML is happy to mis-type three
     different ways: ``commit: 65069829`` (all digits) becomes an int,
@@ -210,14 +237,48 @@ class _LedgerLoader(yaml.SafeLoader):
     entirely — and ``commit: 12e45678`` becomes a float. Each one turns a correct
     row into a rejected or, worse, a silently wrong one. Every scalar in the ledger
     is therefore read as text, and ``validate_row`` does the typing.
+
+    THE REPEATED KEY, AND WHY THE CHECK IS HERE AND NOT IN ``validate_row``
+    ----------------------------------------------------------------------
+    YAML keeps the LAST of a repeated key and says nothing, so by the time
+    ``yaml.load`` returns there is nothing left to detect: the damaged row arrives
+    as an ordinary dict that passes every per-row rule the gate has. The check has
+    to run during CONSTRUCTION, against the raw node's key list — which is what this
+    override does, before ``SafeConstructor`` collapses the pairs into a dict.
+
+    That is the hole a real corruption went through on 2026-08-02: a line-based
+    ``union`` merge driver, configured for this append-only file, interleaved two
+    rows written for the SAME range with their keys in a different ORDER, and a
+    ``finding:`` line landed inside a neighbouring row. No conflict was raised and
+    ``--verify-all`` stayed exit 0, because a row's digest is computed from the
+    RANGE it names, never from its own text. See ``.gitattributes``.
     """
+
+    def construct_mapping(self, node, deep=False):
+        seen: set[str] = set()
+        repeated: list[str] = []
+        for key_node, _value_node in node.value:
+            key = getattr(key_node, "value", None)
+            if not isinstance(key, str):
+                continue                    # a non-scalar key is not a ledger row's
+            if key in seen and key not in repeated:
+                repeated.append(key)
+            seen.add(key)
+        if repeated:
+            raise GateError(
+                f"review_ledger.yaml row `{_row_first_line(node)}` carries "
+                + ", ".join(sorted(repeated)) + " more than once. Each key appears "
+                "at most once in a row; YAML keeps the LAST one, so this row now "
+                "reports a review its author never wrote. The ledger TEXT is damaged "
+                "— nothing is wrong with the commit you are making. A line-based "
+                "merge of this append-only file interleaves rows exactly this way. "
+                "Recover the authored rows from git history and re-append them whole, "
+                "at ROW granularity; never rewrite a digest to clear this."
+            )
+        return super().construct_mapping(node, deep=deep)
 
 
 _LedgerLoader.yaml_implicit_resolvers = {}
-
-
-class GateError(Exception):
-    """A ledger or repository problem: the gate cannot decide, so it stops (exit 2)."""
 
 
 class NotApplicable(Exception):

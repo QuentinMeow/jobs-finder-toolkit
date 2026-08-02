@@ -372,7 +372,7 @@ def _resolve_configured(key: str, derived: Path) -> Path:
 
 def profile_md_path() -> Path:
     return _resolve(_paths().get("profile_md"),
-                    "examples/profile/profile.example.md")
+                    "examples/me/profile.example.md")
 
 
 def baseline_path() -> Path:
@@ -382,7 +382,7 @@ def baseline_path() -> Path:
 
 def reference_docx_path() -> Path:
     return _resolve(_paths().get("reference_docx"),
-                    "examples/templates/reference.example.docx")
+                    "examples/me/resume/reference.example.docx")
 
 
 def company_levels_path() -> Path:
@@ -394,7 +394,9 @@ def company_levels_path() -> Path:
     """
     configured = _paths().get("company_levels_yaml")
     if configured:
-        return _resolve(configured, "examples/profile/company-levels.example.yaml")
+        # No default literal: ``_resolve`` only reads its second argument when the
+        # first is falsy, so a default written here is unreachable by construction.
+        return _resolve(str(configured), "")
     # Derived from candidate_dir(), NOT from the profile's parent. Both resolve to
     # the same folder in a default layout, but the lifetime taxonomy moves the
     # profile to ``me/`` while this file belongs with the market logs — and riding

@@ -113,7 +113,7 @@ jobs-finder-toolkit/
 │   ├── protocols/                         # ab-protocol + stage-benchmark protocol
 │   ├── rubrics/  canaries/<skill>.yaml  results/
 ├── examples/                              # the fake candidate, mirroring private/'s shape
-│   ├── me/  companies/  applications/  store/  fixtures/  screenshots/
+│   ├── me/  companies/  market/  applications/  store/  fixtures/  screenshots/
 ├── templates/                             # process-file schemas
 ├── memory/  message-queue/  tasks/        # toolkit-scope process layer
 ├── local/                                 # git-ignored scratch (was tmp/)

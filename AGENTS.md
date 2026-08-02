@@ -115,6 +115,9 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
    `interview-calendar` (reconcile email evidence, tracker progress, and Outlook interview events),
    `search-recall-audit` (spot-check whether job-search is missing/over-keeping roles),
    `github-workflow` (PR descriptions, stacked PRs, CI, the push gates).
+   **Every GitHub operation — opening, stacking, retargeting, merging or closing a PR —
+   follows `skills/github-workflow/`; merging in particular goes through its runbook
+   (`skills/github-workflow/scripts/merge_stack.py`), never a hand-typed merge command.**
    Overlay-only skills live at `private/skills/<name>/`; their names are deliberately
    absent from the public tree and are listed by the runtime when the overlay is mounted.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context, and skim `memory/index.md`

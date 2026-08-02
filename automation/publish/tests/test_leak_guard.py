@@ -662,7 +662,7 @@ class UnreadableFileTests(unittest.TestCase):
     def test_binary_blob_without_a_known_extension_skips_quietly(self):
         # A NUL-bearing blob (the tracked ``*.json.zst`` job payloads look like
         # this): no text exists to substring-scan.
-        result = self._scan({"examples/data/blob.zst": b"\x28\xb5\x2f\xfd\x00\x00raw"})
+        result = self._scan({"examples/store/blob.zst": b"\x28\xb5\x2f\xfd\x00\x00raw"})
         self.assertTrue(result["ok"], result["violations"])
         self.assertEqual(self._reasons(result, "files_skipped"),
                          {check_public.SKIP_BINARY_SNIFF: 1})
@@ -726,7 +726,7 @@ class UnreadableFileTests(unittest.TestCase):
         result = self._scan({
             "docs/real.md": "clean\n",
             "docs/notes.md": b"caf\xe9\n",
-            "examples/data/blob.zst": b"\x00raw",
+            "examples/store/blob.zst": b"\x00raw",
             "examples/screenshot.png": b"\x89PNG\r\n not-real",
         }, extra=plant)
         self.assertEqual(
