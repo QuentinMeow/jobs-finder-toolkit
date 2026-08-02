@@ -2543,3 +2543,9 @@
   files: 79
   digest: sha256:4924e17db577ab22
   finding: 'Stack rung 9 merge commit, the tip. Brings rungs 1-8 into this branch. The 79 files are the union of the ranges already certified below, plus ONE hand-resolved content conflict outside the ledger: skills/job-search/profiles/README.md, where this branch documented the first-search recency exception and rung 6 documented the pipeline default plus the explicit 3 that _TEMPLATE.yaml ships. Both statements are true and independent, so the resolution keeps both rather than choosing; re-read after resolving. Everything else is the append-only union of this ledger. Toolkit paths, public skill names, the fictional Jordan Rivers example, invented JD sentences written for tests, and repo-process dates only. No identity, employer, school, salary or dated job-hunt content.'
+- base: cbe866b4
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:b5da1c95acd3f664
+  finding: 'Merges two backlog tasks that two agents filed for the same problem in one session, keeping the richer of the two and folding in what the other added. Prose plus one deleted task folder. The five broken overlay paths are still not written down anywhere tracked — the folded text says so explicitly. No identity, employer, school, salary or dated job-hunt content.'

@@ -70,3 +70,33 @@ Plausible shapes, in increasing cost:
       might paste publicly — checked the same way `queue_hygiene.py` is
 - [ ] `automation/gardener/verify_links.py --require-roots --no-overlay` still exits 0 and the
       pre-commit hook is unchanged in the overlay-mounted branch
+
+## Folded in, 2026-08-02 — a duplicate filed the same day
+
+Two agents in one session filed this independently: this file, from the records-hygiene
+pass, and `2026-08-02-overlay-broken-references-unseen-by-gates`, from the pass that
+stopped `run_gates.py` judging the overlay. The second is deleted; what it added is here.
+
+**One fact this file did not have.** `automation/gates/run_gates.py` no longer reads the
+overlay at all — its `verify-links` gate now passes `--no-overlay`, matching what
+pre-commit and CI enforce. Before that change, a maintainer checkout with `private/`
+mounted saw `run_gates.py` exit 1 on these five references, which is how they kept
+surfacing. That accidental visibility is gone, so nothing surfaces them now unless
+someone runs the gardener by hand. `automation/gardener/gardener.py --all` was
+deliberately left reading the overlay for exactly this reason — it is the only remaining
+coverage, and it is a report, not a blocking gate.
+
+**Two acceptance criteria worth carrying over:**
+
+- [ ] `.venv/bin/python automation/gardener/verify_links.py` exits 0 in a maintainer
+      checkout with `private/` mounted (currently 1).
+- [ ] `.venv/bin/python automation/gardener/gardener.py --all` exits 0 there for the same
+      reason — no change to the gardener is expected or wanted.
+
+**And one constraint on where the work happens.** The repairs belong in the overlay
+repository, not this one. If a watcher is wanted, the candidate named by the deleted file
+is the overlay's own pre-commit hook, which can judge its own documents against its own
+commit without the cross-repo mismatch. That is a design choice, not a mechanical repair —
+which is why this stays a task rather than a `message-queue/needs-agent/retries/` item.
+
+The five broken paths are deliberately not written here or in any tracked public file.
