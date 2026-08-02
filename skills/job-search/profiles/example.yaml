@@ -53,6 +53,44 @@ titles:
     # technical occupation) are preserved to the review queue in one run. Overflow
     # beyond the cap is counted and printed to stderr, never silently dropped.
 
+  # ---- Coarse title word classes (YOURS to choose; nothing is hardcoded) ----
+  # Three classes, applied to the TITLE ALONE before a posting costs anything.
+  # Matching is case-insensitive and whole-word: "intern" does not match
+  # "Internal", "manager" does not match "management", but a short English
+  # inflection still counts, so "recruit" matches "Recruiter"/"Recruiting".
+  # A LEADING/TRAILING SPACE is a rule, not formatting: it demands literal
+  # whitespace on that edge, so " manager" drops "Engineering Manager" while
+  # keeping "Software Engineer (Manager Tools)".
+  # PRECEDENCE: hard_exclude > include > soft_exclude. A word in two classes is a
+  # mistake and the run prints a warning naming the winner.
+  # Leave the whole block out and the coarse filter does nothing — include/exclude
+  # above then decides alone. There is no built-in fallback list.
+  word_filter:
+    hard_exclude:          # ALWAYS drop, before the posting costs a detail fetch.
+      - intern             # Occupations this profile could never want.
+      - internship
+      - co-op
+      - new grad
+      - graduate program
+      - apprentice
+      - director
+      - vice president
+      - " vp "             # padded ON PURPOSE — keeps "Software Engineer (VP)"
+      - sales
+      - marketing
+      - recruit            # inflection: also matches Recruiter / Recruiting
+      - designer
+      - account executive
+      - customer success
+    soft_exclude:          # NEVER dropped — kept and MARKED so the AI reads the JD
+      - " manager"         # padded ON PURPOSE — "Manager Tools" is a product
+      - data scientist     # could be an applied ML engineering role in disguise
+      - research scientist
+    include:               # NEVER dropped — "check this one out", the AI reasons
+      - principal          # the seniority words this filter used to drop silently
+      - distinguished
+      - fellow
+
 seniority:
   target: [mid, senior]    # desired level band (mid..senior here)
   # Level-fit penalty: roles whose parsed Google-equivalent level sits OUTSIDE the
@@ -134,6 +172,13 @@ max_age_days: null
 # is within this many days.
 company_search_log:
   skip_within_days: 7
+  # First-ever search at an employer: there is no prior coverage to protect, so the
+  # whole board is new information and max_age_days above would hide older-but-
+  # unseen roles that are still open. On that one run the window widens; every
+  # later run uses max_age_days again.
+  widen_first_search: true          # false = one window for every run
+  first_search_max_age_days: null   # null = no posting-age filter at all on a first
+                                    # search ("find all available roles"); or a number
 
 # ---- Compensation (optional) ----
 comp:

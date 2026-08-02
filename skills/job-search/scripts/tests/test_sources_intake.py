@@ -30,8 +30,17 @@ for _p in (_SCRIPTS, _SCRIPTS / "_vendor"):
 import capture_hooks  # noqa: E402
 import common  # noqa: E402
 import sources  # noqa: E402
+import title_filter  # noqa: E402
+import yaml  # noqa: E402
 from common import HttpResult  # noqa: E402
 from scoring import title_ok  # noqa: E402
+
+# The prefilter has NO list of its own any more: the words are the candidate's,
+# read from the profile. These tests drive it with the PUBLIC example profile, so
+# a change to that profile's word_filter shows up here instead of in a live search.
+_EXAMPLE_PROFILE = yaml.safe_load(
+    (_SCRIPTS.parent / "profiles" / "example.yaml").read_text())
+EXAMPLE_FILTER = title_filter.load_word_lists(_EXAMPLE_PROFILE)
 
 
 def _result(body: bytes) -> HttpResult:
@@ -42,7 +51,15 @@ def _result(body: bytes) -> HttpResult:
 
 
 class TitlePrefilterTests(unittest.TestCase):
-    """The prefilter's documented promise: never drop a title the gate would keep."""
+    """The prefilter's documented promise: never drop a title the gate would keep.
+
+    Driven by the public example profile's ``titles.word_filter`` — the prefilter
+    holds no words of its own (owner decision 2026-08-01), so what these assert is
+    the MATCHING behaviour plus the example persona's own choices.
+    """
+
+    def _keeps(self, title):
+        return sources._title_prefilter(title, EXAMPLE_FILTER)
 
     # Each of these carries a skip token as a SUBSTRING of a longer, unrelated
     # word: intern/Internal, intern/Internationalization, director/Directory,
@@ -57,10 +74,10 @@ class TitlePrefilterTests(unittest.TestCase):
     )
     # A seniority word sitting inside a QUALIFIER — a parenthetical, a hybrid
     # "engineer/manager" row, an appositive after a comma — is not the title's
-    # head noun, and the two space-padded entries in _BIGTECH_TITLE_SKIP exist to
-    # keep these. Word-anchoring alone (no padding) drops all four, which is a
-    # silent recall loss: a title dropped here is never fetched, so it leaves no
-    # filtered row and no snapshot trace.
+    # head noun, and the two space-padded entries in the profile's word_filter
+    # exist to keep these. Word-anchoring alone (no padding) drops all four, which
+    # is a silent recall loss: a title dropped here is never fetched, so it leaves
+    # no filtered row and no snapshot trace.
     QUALIFIER_POSITION = (
         "Software Engineer (Manager Tools)",     # a product, not a report line
         "Software Engineer (VP)",                # the investment-bank IC level
@@ -68,13 +85,12 @@ class TitlePrefilterTests(unittest.TestCase):
         "VP, Engineering",                       # "vp" is not whitespace-delimited
     )
     # Genuinely non-matching occupations must still be dropped before the fetch.
+    # `hard_exclude` in the example profile. The manager-family rows moved to
+    # `soft_exclude` there (they are kept and marked, not dropped) and are
+    # asserted in test_title_word_filter.py instead.
     STILL_SKIPPED = (
         "Software Engineering Intern",
-        "Engineering Manager",
-        "Manager, Software Engineering",
-        "Senior Manager, Software Engineering",
         "VP Engineering",
-        "Engineering Manager, Platform",
         "Director of Engineering",
         "Enterprise Sales Executive",
         "Technical Recruiter",
@@ -84,11 +100,12 @@ class TitlePrefilterTests(unittest.TestCase):
         "New Grad Software Engineer",
         "VP of Engineering",
     )
-    # The one deliberate exception to "never drops a title the title gate would
-    # keep": hardcoded seniority/discipline words. Pinned so the exception stays
-    # visible and cannot drift silently while the owner decision is pending —
-    # message-queue/needs-human/decisions/title-prefilter-hardcoded-seniority-words.md
-    HARDCODED_SENIORITY = (
+    # The five words that USED to be hardcoded, and were the one deliberate
+    # exception to "never drops a title the title gate would keep". They are now
+    # profile-owned and the example persona files them as include (principal /
+    # distinguished / fellow) or soft_exclude (the two scientist titles) — either
+    # way, never dropped before the fetch.
+    FORMERLY_HARDCODED_SENIORITY = (
         "Principal Infrastructure Engineer",
         "Distinguished Engineer, Distributed Systems",
         "Research Scientist, Machine Learning",
@@ -98,45 +115,70 @@ class TitlePrefilterTests(unittest.TestCase):
     def test_substring_of_a_longer_word_is_not_a_skip(self):
         for title in self.GLUED:
             with self.subTest(title=title):
-                self.assertTrue(sources._title_prefilter(title))
+                self.assertTrue(self._keeps(title))
 
     def test_a_seniority_word_inside_a_qualifier_is_not_a_skip(self):
         for title in self.QUALIFIER_POSITION:
             with self.subTest(title=title):
                 self.assertTrue(
-                    sources._title_prefilter(title),
+                    self._keeps(title),
                     f"prefilter drops {title!r}; 'manager'/'vp' need a WHITESPACE "
                     f"boundary, not just a word boundary")
 
     def test_the_padded_entries_keep_their_padding(self):
-        """Pin the encoding itself — the spaces are the rule, not formatting."""
-        self.assertIn(" manager", sources._BIGTECH_TITLE_SKIP)
-        self.assertIn(" vp ", sources._BIGTECH_TITLE_SKIP)
+        """Pin the encoding itself — the spaces are the rule, not formatting.
+
+        The words moved out of code into the profile, so this now pins the
+        PROFILE's spelling: strip the padding there and the two qualifier-position
+        titles above start being dropped before they are ever fetched.
+        """
+        self.assertIn(" manager", EXAMPLE_FILTER.soft_exclude)
+        self.assertIn(" vp ", EXAMPLE_FILTER.hard_exclude)
 
     def test_odd_board_whitespace_does_not_smuggle_a_title_past_the_skip(self):
-        for title in ("VP\tEngineering", "Engineering  Manager",
-                      "VP Engineering", " Engineering Manager "):
+        # "Engineering Manager" is soft in the example profile, so it is KEPT for
+        # review rather than dropped; " vp " is hard, so it is dropped.
+        for title in ("VP\tEngineering", "VP Engineering"):
             with self.subTest(title=title):
-                self.assertFalse(sources._title_prefilter(title))
+                self.assertFalse(self._keeps(title))
+        for title in ("Engineering  Manager", " Engineering Manager "):
+            with self.subTest(title=title):
+                verdict = EXAMPLE_FILTER.classify(title)
+                self.assertEqual(verdict.action, title_filter.ACTION_REVIEW)
+                self.assertEqual(verdict.soft_hits, (" manager",))
 
     def test_real_non_matching_occupations_are_still_skipped(self):
         for title in self.STILL_SKIPPED:
             with self.subTest(title=title):
-                self.assertFalse(sources._title_prefilter(title))
+                self.assertFalse(self._keeps(title))
 
-    def test_hardcoded_seniority_words_are_still_skipped_pending_the_decision(self):
-        for title in self.HARDCODED_SENIORITY:
+    def test_formerly_hardcoded_seniority_words_now_reach_the_fetch(self):
+        """The decision's whole point: these five stop being a silent loss."""
+        for title in self.FORMERLY_HARDCODED_SENIORITY:
             with self.subTest(title=title):
-                self.assertFalse(sources._title_prefilter(title))
+                self.assertTrue(
+                    self._keeps(title),
+                    f"prefilter still drops {title!r}; the profile files it as "
+                    f"include/soft_exclude, neither of which may drop")
+                self.assertEqual(EXAMPLE_FILTER.classify(title).action,
+                                 title_filter.ACTION_REVIEW)
+
+    def test_an_unconfigured_profile_drops_nothing(self):
+        """No word lists = no coarse filter, never a built-in fallback list."""
+        inert = title_filter.load_word_lists({})
+        self.assertFalse(inert.configured)
+        for title in self.STILL_SKIPPED + self.FORMERLY_HARDCODED_SENIORITY:
+            with self.subTest(title=title):
+                self.assertTrue(sources._title_prefilter(title, inert))
+                self.assertTrue(sources._title_prefilter(title))   # default = inert
 
     def test_prefilter_agrees_with_the_pipeline_title_gate(self):
         """The promise above _BIGTECH_TITLE_SKIP, asserted rather than asserted-in-prose.
 
         Scope: no title may be dropped merely because a skip token is glued
-        inside a longer, unrelated word. The hardcoded seniority/discipline
-        words are the one KNOWN exception to the wider promise and are excluded
-        here on purpose — they are pinned by the test above and carry an open
-        owner decision, so they are a documented gap, not an undetected one.
+        inside a longer, unrelated word. The former exception — five hardcoded
+        seniority/discipline words — is gone: those words are the profile's now,
+        and the test above asserts they reach the fetch.
         """
         profile = {"titles": {"include": ["software engineer",
                                           "infrastructure engineer"]}}
@@ -146,7 +188,7 @@ class TitlePrefilterTests(unittest.TestCase):
                                             title=title, url="https://example.test/1")
                 if title_ok(posting, profile):
                     self.assertTrue(
-                        sources._title_prefilter(title),
+                        self._keeps(title),
                         f"prefilter drops {title!r} that the title gate keeps")
 
 

@@ -267,6 +267,38 @@ Two guardrails on the bare-remote rule, both deliberate:
 `max_age_days` drops anything older. Postings with an **unknown** date are kept
 and flagged (rare) rather than dropped.
 
+**First search at an employer widens the window** (owner decision 2026-08-01).
+An employer with no row in `config.company_search_log_path()` has never been
+searched, so there is no prior coverage to protect: the whole board is new
+information and the narrow window would hide older-but-unseen roles that are
+still open on the ATS. On that one run the window widens; every later run uses
+`max_age_days` again. Profile keys (`company_search_log`):
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `widen_first_search` | `true` | `false` = one window for every run |
+| `first_search_max_age_days` | `null` | `null` = no posting-age filter at all on a first search; a number = a wider bounded window |
+
+Consequences worth knowing before you rely on it:
+
+- Two runs of the same command against the same company legitimately return
+  different sets — the first one is wider, by design.
+- The whole thing is a **no-op when `max_age_days` is null** (the shipped
+  default), because nothing is age-filtered then anyway.
+- "First search" is defined against a log that nothing regenerates, so an
+  employer whose row was never written reads as first-search and gets the wide
+  window once more. That costs one over-wide run; the opposite error costs the
+  roles.
+- `--include-recent` does **not** disable it: that flag means "don't skip
+  recently-searched companies", not "pretend the log is empty".
+- Postings kept only by the widening are counted in the run summary
+  (`First search: N posting(s) kept by the widened window`), and the markdown
+  report's `Filters:` line names the widened window.
+
+This is also what removes the old disagreement with `company_roles.py
+--match-only`, which has never applied a recency filter to a single company's
+board.
+
 ## Visa sponsorship heuristic
 
 `visa.py` classifies the JD text into `yes` / `no` / `unclear`:
@@ -422,6 +454,18 @@ Three kinds of sources feed one pipeline, split across two stages:
    US-remote pass. Needs `pip install python-jobspy` (already installed in the venv);
    LinkedIn is slow and often 429s, which is why it's stage 2.
 
+- **Title word classes (`titles.word_filter`)**: three candidate-owned lists,
+  applied to the TITLE ALONE — `hard_exclude` (always drop; on Workday/Amazon/
+  Apple/Meta the drop happens before the per-posting detail fetch, everywhere else
+  at the first gate, and it is counted either way), `soft_exclude` and `include`
+  (never dropped — kept, marked, and routed to the review report if the ordinary
+  title gate would have hard-dropped them, so the JD reaches AI judgement).
+  Precedence `hard_exclude > include > soft_exclude`; matching is case-insensitive
+  and whole-word with a short English inflection (`recruit` matches *Recruiter*;
+  `manager` does not match *management*); a leading/trailing space demands literal
+  whitespace on that edge (`" manager"` keeps *Software Engineer (Manager Tools)*).
+  **A profile with no `word_filter` block filters nothing** — there is no built-in
+  fallback list, and the run says so on stderr. See `scripts/title_filter.py`.
 - **Filters**: title gate, optional `max_years_experience` (drops JDs only when a
   high-confidence general required-YOE minimum exceeds the cap; preferred or
   tool-specific/contextual YOE is display-only), US/location gate (`us_only` drops clearly-foreign roles —

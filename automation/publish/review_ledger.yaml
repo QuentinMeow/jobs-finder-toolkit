@@ -2096,3 +2096,10 @@
   finding: Same range and digest as row ed12469b, which reviewed this content pre-merge; ed12469b is not an ancestor of main, so that row is orphaned and this one re-records the identical range at the merge commit. Re-read the diff independently. PRs #191/#192 - Outlook draft/raw-store hardening and schema-v6 multiple interview occurrences. Grep hits on "canonical" are the adjective (canonical schema/extractor), "Google" is the industry leveling scale and one commented-out generic example slug, "meta" is metadata. No identity, employer, school, salary or dated job-hunt content.
   files: 64
   digest: sha256:44fc1afeadff6cec
+- commit: 783d4fc3
+  base: ad5e881d
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:224a50c39c89632e
+  finding: none

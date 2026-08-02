@@ -12,6 +12,23 @@ titles:
     - manager
     - intern
 
+  # Coarse title word classes, applied to the TITLE ALONE before a posting costs
+  # anything. Three classes, all yours — nothing here is hardcoded in the scripts,
+  # and leaving the block out makes the coarse filter INERT (include/exclude above
+  # then decides alone; there is no built-in fallback list).
+  #   hard_exclude  always drop, and the drop is counted in the run summary
+  #   soft_exclude  never dropped: kept and marked so the AI reads the JD and decides
+  #   include       never dropped: "check this one out", the AI reasons about it
+  # Matching is case-insensitive and whole-word ("intern" does not match "Internal",
+  # "manager" does not match "management"), with a short English inflection allowed
+  # ("recruit" matches "Recruiter"). A leading/trailing space demands literal
+  # whitespace on that edge, so " manager" keeps "Software Engineer (Manager Tools)".
+  # Precedence: hard_exclude > include > soft_exclude (a word in two classes warns).
+  word_filter:
+    hard_exclude: [intern, new grad, sales, recruit, designer]
+    soft_exclude: [" manager", data scientist]
+    include: [principal, distinguished]
+
 seniority:
   target: [mid, senior, staff]   # desired level band; roles outside it are demoted
   fit_weight: 6.0                # level-fit penalty per ladder step outside the band (0 = off)
@@ -37,6 +54,14 @@ visa:
   policy: exclude_negative # exclude_negative | require_positive
 
 max_age_days: 3            # only postings from the last N days
+
+# Company re-search window (NOT posting age), plus the first-search exception:
+# an employer with no row in company-search-log.yaml has never been searched, so
+# the narrow window above would hide older-but-unseen roles that are still open.
+company_search_log:
+  skip_within_days: 7               # skip a company searched within N days
+  widen_first_search: true          # false = one window for every run
+  first_search_max_age_days: null   # null = no age filter at all on a first search
 
 # Optional: drop JDs that state a minimum YOE above this (keep if unstated; see scoring.experience_ok)
 max_years_experience: null
