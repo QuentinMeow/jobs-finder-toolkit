@@ -1950,3 +1950,10 @@
   files: 2
   digest: sha256:4e22e59e33aeafec
   finding: none
+- commit: 1144d288
+  base: 72d0a5b3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 5
+  digest: sha256:668f332d60e36bcb
+  finding: none — new automation/evals module plus its tests, the eval-result template's two commit rows and pin block, and one exporter allowlist entry; no name, employer, school, date, salary or job-hunt detail in any of the five files
