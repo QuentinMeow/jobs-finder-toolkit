@@ -61,7 +61,10 @@ example config) — substitute the resolved path, never a literal folder at the 
 
 # Un-skip ONE posting by appending a tombstone — the only way to repair a wrong row,
 # since nothing rewrites the log. One value = the posting URL, two = COMPANY ROLE.
-# Refuses when that key is not currently folded.
+# Refuses when that key is not currently folded. This is also the undo for an
+# abandoned scaffold: handoff records every folder it creates, whatever exit code
+# the run returned, and prints this command with its argument filled in on a
+# non-zero exit.
 .venv/bin/python skills/application-tracker/scripts/status.py --forget-log '<posting-url>'
 
 # Record a successful company search with no application folder (no suitable role)

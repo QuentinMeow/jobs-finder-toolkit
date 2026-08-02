@@ -2110,6 +2110,42 @@
   date: 2026-08-01
   files: 3
   digest: sha256:224a50c39c89632e
+  finding: The owner's answers to three open decisions, appended to the queue items themselves, plus a refreshed quotation of a code constant and a verification note about which code paths delete directories. The answers are about tooling policy — a recency window, where filter vocabulary lives, and whether an incomplete scaffold is recorded. No real name, employer, school, posting, salary or dated job-hunt fact.
+- commit: f474e478
+  base: 783d4fc3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:08cfb4e595f1631c
+  finding: none
+- commit: 139db0b7
+  base: f474e478
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 6
+  digest: sha256:6facb40636c45ab7
+  finding: Folds an owner answer about a search-pipeline default into an ADR, a handbook row, a backlog task, and the deletion of the queue item. The lost postings that motivated it are described only by shape (US-remote, no visa denial, still open) and are never named, per the queue item's own leak note. No identity, employer, school, salary or dated job-hunt content.
+- commit: 85102cbd
+  base: 139db0b7
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 6
+  digest: sha256:2aa0649df9ac5f32
+  finding: Folds an owner answer about where a search's filter vocabulary lives into an ADR, a handbook bullet, a conformance task, and the deletion of the queue item. The named employer boards that appeared in the deleted item are removed by this diff and are not reintroduced; the retained examples are generic title words. No identity, employer, school, salary or dated job-hunt content.
+- commit: 1c9853e2
+  base: 85102cbd
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 9
+  digest: sha256:d9724d6396a857a5
+  finding: Folds an owner answer about when the append-only skip-log records a posting into an ADR, three handbook rows, two backlog tasks, and the deletion of the queue item. The verification it quotes is about which code paths delete directories; no posting, employer or application is named. No identity, employer, school, salary or dated job-hunt content.
+- commit: c4060e94
+  base: 1c9853e2
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:c8975c2d725f5ad2
+  finding: Two added lines in the root contract's Configuration section, naming search filter words alongside identity, paths and output stems as things that are never hardcoded, and pointing at the config accessor. No identity, employer, school, salary or dated job-hunt content.
   finding: The base branch's own tip, unsigned when this branch was cut. Three message-queue decision files gain the owner's answers plus a verification note, and one gets whitespace/link-shape churn. Board names (Amazon, Apple, Meta, Workday) are ATS fetcher names already throughout skills/job-search/scripts/sources.py, not employers of anyone. No identity, employer, school, salary or dated job-hunt content.
 - base: 783d4fc3
   reviewed_by: agent

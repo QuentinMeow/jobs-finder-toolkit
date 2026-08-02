@@ -10,6 +10,8 @@
 - `memory/decisions/docs-parent-for-the-human-read-trees.md` — Give the human-read trees one docs/ parent
 - `memory/decisions/email-git-policy.md` — Track only safe email index headers and annotations
 - `memory/decisions/fine-grained-stage-benchmarks.md` — Benchmark at stage granularity with pinned fixtures, not only end-to-end
+- `memory/decisions/first-search-finds-every-open-role.md` — A company's first-ever search finds every open role, not just the fresh ones
+- `memory/decisions/handoff-records-every-folder-it-creates.md` — Handoff records every folder it creates — because only the owner can delete one
 - `memory/decisions/interview-material-moves-by-company-only.md` — Phase 5 moves company-specific interview material into company folders and reorganises nothing else
 - `memory/decisions/interview-screenshot-inbox-moves-to-personal-practice.md` — Move the coding interview screenshot inbox into personal practice
 - `memory/decisions/job-filter-triage-and-lineage.md` — Preserve ambiguous job roles and source metadata for review
@@ -18,6 +20,7 @@
 - `memory/decisions/process-folders-v2-todo-queue.md` — Process folders v2: the message-queue/ queue family
 - `memory/decisions/raw-data-layer-decisions.md` — Raw-data-layer design family: owner decisions
 - `memory/decisions/salary-range-carries-annual-pay-or-nothing.md` — `salary_range` carries annual pay or nothing — never a converted or unlabelled band
+- `memory/decisions/search-filter-vocabulary-is-profile-owned.md` — The words a search filters on live in the profile, never in code
 - `memory/decisions/sponsorship-an-unsettled-denial-is-review-not-a-silent-drop.md` — Sponsorship: an ambiguous quantifier unsettles a denial, it does not decide one
 - `memory/decisions/sponsorship-offer-versus-denial.md` — Sponsorship: an offer plus a limit on that offer is not a denial
 - `memory/decisions/sponsorship-scope-limits-need-a-distributive-quantifier.md` — Sponsorship: only a distributive quantifier makes a negation a scope limit

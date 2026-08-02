@@ -19,6 +19,15 @@ filename stems are never hardcoded — they come from a config file loaded by
   applications root is `config.applications_root()` (`applications/` by default), and the
   discoveries dir is `config.discoveries_dir()`. Real data mounts under `private/` and the
   public example under `examples/`; the function always returns the configured absolute path.
+- **Search filter vocabulary** comes from the candidate's search profile
+  (`config.search_profiles_dir()`), never from a constant in a script — several people run this
+  toolkit and each one's filter logic is their own. It carries at least three classes, which do
+  not behave alike: **hard-exclude** (example: `intern`) always drops, and the posting is never
+  fetched; **soft-exclude** (example: `manager`) never drops on the title alone, because the role
+  may be a genuine software-engineering role or the title may name a product literally called a
+  manager, so the JD is read and judged; **inclusion** means a hit must be examined and reasoned
+  about rather than quietly kept. Decision:
+  `memory/decisions/search-filter-vocabulary-is-profile-owned.md`.
 - **Output filename stems** come from `config.resume_stem()` / `config.cover_stem()` /
   `config.application_stem()` — each built from `name_slug` + `title_slug` (plus an optional
   target-position label via `layout.compose_stem`). Never hardcode a concrete person's filename
