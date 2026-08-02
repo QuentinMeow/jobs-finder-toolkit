@@ -174,8 +174,12 @@ jobs:
       #     the full append-only check. The pre-commit hook only recomputes a bounded
       #     tail, so integrity of older rows is verified here, where the seconds are
       #     affordable.
-      #     On a pull_request the checkout is a MERGE commit whose ledger is a merge
-      #     of both sides; --head pins the gate to the PR's own branch tip instead.
+      #     --head is KEPT even though the checkout above is now pinned to the PR's
+      #     own tip. It used to be the only thing standing between this gate and
+      #     GitHub's merge preview, whose ledger is a merge of both sides; it is now
+      #     the second of two independent pins, and it is the one that also decides
+      #     which revision the LEDGER is read from. Removing it would make this gate
+      #     depend on the checkout step staying right.
       #     No-ops (exit 0, loudly) in a checkout whose history the ledger does not
       #     describe, which is what keeps the exported public mirror's CI green.
       - name: Public review gate (unreviewed public changes)
