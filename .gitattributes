@@ -1,15 +1,25 @@
 # The review ledger is APPEND-ONLY, so the only correct resolution of a conflict in
-# it is "keep both sides' rows" — which is exactly what git's built-in `union` merge
-# driver does. Every branch that changes the published tree appends here, so without
-# this line every parallel branch collides on this one file and each one is resolved
-# by hand; that hand-resolution is also the one place a row could be dropped, which
-# an append-only record cannot survive.
+# it is "keep both sides' rows". Git's built-in `union` merge driver looks like it
+# does exactly that, and it was configured here for one merge — but it is LINE-based,
+# not row-based, and that difference corrupts the file.
 #
-# This is safe ONLY because every row records its own `base:`. Concatenating two
-# branches' rows re-orders them, and a row whose range start is DERIVED from its
-# position in the list would silently be re-parented onto the other branch's last
-# commit — a range that never existed. A row that names its own base cannot be.
-# See "A ROW'S OWN BASE" in automation/publish/review_gate.py before removing this.
+# What happened, 2026-08-02, on the first real convergence:
 #
-# `union` is a built-in driver: no `git config merge.*` is needed for it to work.
-automation/publish/review_ledger.yaml merge=union
+#   Two rows for the same range were written by different agents with their keys in
+#   different ORDER — one put `finding:` last (the file's convention), the other put
+#   it before `files:`/`digest:`. `union` keeps every line from both sides in place,
+#   so the two rows interleaved instead of concatenating, and a `finding:` line landed
+#   inside a NEIGHBOURING row. YAML takes the last duplicate key, so that row silently
+#   began reporting a different review than the one its author wrote. No conflict was
+#   raised and no gate failed: `--verify-all` stayed exit 0, because a row's digest is
+#   computed from the range it names, not from its own text.
+#
+# A silent, undetected rewrite of an audit record is strictly worse than a merge
+# conflict. A conflict stops you and demands a decision; this did neither. So the
+# driver is OFF, and a ledger conflict is resolved deliberately, at ROW granularity —
+# see tasks/0_backlog/2026-08-02-structure-aware-merge-for-the-review-ledger/.
+#
+# Note this is NOT an argument against `base:` (see "A ROW'S OWN BASE" in
+# automation/publish/review_gate.py). Self-describing rows are what make concatenation
+# *semantically* legal at all. The defect is purely that `union` concatenates lines
+# rather than rows, so it cannot honour the row boundary the semantics depend on.
