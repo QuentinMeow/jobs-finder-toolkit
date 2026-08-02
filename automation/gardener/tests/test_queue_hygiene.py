@@ -66,7 +66,7 @@ class TempTree(unittest.TestCase):
     def decision(self, name: str, filed: str, status: str = "awaiting-owner-input",
                  revisit: str | None = None, root: Path | None = None) -> None:
         body = (f"# A question\n\n- **Status**: {status}\n- **Filed**: {filed}\n"
-                "- **Blocking**: nothing\n- **Default path**: carry on\n")
+                "- **Blocks**: nothing\n- **Default path**: carry on\n")
         if revisit is not None:
             body += f"- **Revisit when**: {revisit}\n"
         body += "\n**Your answer:** ______\n"
