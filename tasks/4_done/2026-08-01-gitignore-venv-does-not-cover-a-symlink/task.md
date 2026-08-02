@@ -5,7 +5,7 @@
 - **Source**: hit while working a fix in a git worktree
   (branch `fix/45-us-remote-residency`, 2026-08-01). Owner spotted it and asked
   for it to be filed rather than fixed in that PR.
-- **Claimed-by**:
+- **Claimed-by**: records-match-the-tree pass, 2026-08-02 (retro-closure; see verification.md)
 
 ## Goal
 

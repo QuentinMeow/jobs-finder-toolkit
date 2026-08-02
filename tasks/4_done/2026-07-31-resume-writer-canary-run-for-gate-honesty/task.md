@@ -3,6 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: resume-writer
 - **Source**: the PR that made `check.py` report `PDF NOT INSPECTED` / `SKILL VOCABULARY NOT INSPECTED` (branch `wip/09-resume-validation-gates`)
+- **Claimed-by**: records-match-the-tree pass, 2026-08-02 (retro-closure; see verification.md)
 
 ## Goal
 

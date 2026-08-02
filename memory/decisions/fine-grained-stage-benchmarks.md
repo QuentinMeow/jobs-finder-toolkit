@@ -16,7 +16,8 @@ explicit confound paragraphs to be readable).
 
 ## Decision
 
-Adopt `design/stage-benchmarks/protocol.md`: decompose each leg into
+Adopt `evals/protocols/stage-benchmarks.md` (path re-pointed 2026-08-02: this line named a
+design-family path the protocol was never filed under; nothing else changed): decompose each leg into
 stages with observable boundaries, freeze intermediate artifacts as fixtures
 under `private/benchmark/fixtures/` (versioned, capture-once), and A/B each
 lever on the one stage it touches (matched pairs, pinned model, one primary

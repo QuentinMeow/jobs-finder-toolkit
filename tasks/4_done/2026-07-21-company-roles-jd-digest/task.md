@@ -4,6 +4,7 @@
 - **Area**: job-search
 - **Source**: confirmation-round search leg, 2026-07-21
   (`evals/results/confirmation-round-20260721.md`)
+- **Claimed-by**: records-match-the-tree pass, 2026-08-02 (retro-closure; see verification.md)
 
 ## Goal
 

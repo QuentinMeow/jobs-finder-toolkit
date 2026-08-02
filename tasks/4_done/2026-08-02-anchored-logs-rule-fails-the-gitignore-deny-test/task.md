@@ -5,7 +5,7 @@
 - **Source**: found running `automation/publish/tests` while renaming
   `examples/data` → `examples/store` (branch `feat/19-examples-store`); the
   failure is inherited from that branch's base and is unrelated to the rename
-- **Claimed-by**:
+- **Claimed-by**: records-match-the-tree pass, 2026-08-02 (retro-closure; see verification.md)
 
 ## Goal
 

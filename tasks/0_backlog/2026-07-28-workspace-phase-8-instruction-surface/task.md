@@ -141,7 +141,7 @@ assertion carves `skill_references_dir()` out instead (decision D4 in the item a
 - [ ] `examples/` mirrors the private tree; `data/` and `templates/` violations fixed;
       `ci.yml`'s `examples/data` pin updated in the same PR
 - [ ] **Inherited 2026-07-31** from
-      [the config-defaults task](../../3_in-review/2026-07-30-config-defaults-still-name-the-pre-phase-5-layout/verification.md):
+      [the config-defaults task](../../4_done/2026-07-30-config-defaults-still-name-the-pre-phase-5-layout/verification.md):
       the four accessor defaults now derive the lifetime layout, but under the example config
       `overlay_root()` is `examples/`, so `blacklist_path()`, `story_bank_path()`,
       `search_profiles_dir()` and `skill_references_dir()` still resolve to directories that do

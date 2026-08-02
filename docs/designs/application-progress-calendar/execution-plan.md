@@ -43,7 +43,7 @@ updates never move status folders; malformed/duplicate calendar markers and
 checksum races fail without partial writes; manual unmarked content is
 preserved byte-for-byte; reschedule tests retain superseded times.
 
-Task: `tasks/1_in-progress/2026-07-22-application-progress-calendar/task.md`.
+Task: `tasks/4_done/2026-07-22-application-progress-calendar/task.md`.
 
 ## Stage 2A — tracker schema v6 and multiple interview occurrences
 

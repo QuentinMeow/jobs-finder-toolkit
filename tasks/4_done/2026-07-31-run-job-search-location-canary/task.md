@@ -4,7 +4,7 @@
 - **Area**: benchmarks
 - **Source**: branch `wip/17-location-gate-jd-body` — the eval gate was REQUIRED
   for that PR and could not be run in the session that wrote it.
-- **Claimed-by**: <(set when work starts, before the first change)>
+- **Claimed-by**: records-match-the-tree pass, 2026-08-02 (retro-closure; see verification.md)
 
 ## Goal
 

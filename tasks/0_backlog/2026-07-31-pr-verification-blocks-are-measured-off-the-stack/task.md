@@ -44,10 +44,10 @@ each PR's own substantive commit in a pristine clone:
   455/actual 489). Same shape in `skills/job-search/scripts/tests` (#153 claims 356,
   actual 406) and `automation/publish/tests` (157 claimed, 188 actual).
 
-It is not confined to PR bodies. `tasks/3_in-review/2026-07-21-store-incremental-build-o-new/verification.md`
+It is not confined to PR bodies. `tasks/4_done/2026-07-21-store-incremental-build-o-new/verification.md`
 shipped the same five wrong numbers **into the repo** (its "whole store test surface"
 block; corrected there 2026-07-31, with the wrong and right figures both kept). And
-`tasks/0_backlog/2026-07-31-word-anchor-the-remaining-substring-keyword-lists/task.md`
+`tasks/4_done/2026-07-31-word-anchor-the-remaining-substring-keyword-lists/task.md`
 asserted that `_title_prefilter` "still drops Software Engineer, Internal Developer
 Platform" in commit `8699726`, whose own ancestor `6bec7a3` had already fixed it
 (`git show 8699726:skills/job-search/scripts/sources.py` line 339 is already
@@ -147,7 +147,7 @@ each is a real gap in the original scope:
    every field on the line, together.
 4. **Tracked records are not PR bodies.** The corrections pass wrote a reference count no
    commit reports into
-   `tasks/3_in-review/2026-07-31-gate-documented-commands/verification.md`. `check_pr_body.py`
+   `tasks/4_done/2026-07-31-gate-documented-commands/verification.md`. `check_pr_body.py`
    is never pointed at a tracked `verification.md`, so nothing in the original scope could
    have seen it — even though the Context above already noted the defect "is not confined to
    PR bodies". That gap is now a DoD item.

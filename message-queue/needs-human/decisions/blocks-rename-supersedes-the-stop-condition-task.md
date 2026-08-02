@@ -2,7 +2,7 @@
 
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-08-01
-- **Source**: [task: the async stop condition cannot be produced](../../../tasks/0_backlog/2026-08-01-the-async-stop-condition-cannot-be-produced/task.md)
+- **Source**: [task: the async stop condition cannot be produced](../../../tasks/4_done/2026-08-01-the-async-stop-condition-cannot-be-produced/task.md)
 - **Blocks**: nothing today, but the two changes must not ship independently — they move
   the same rule in opposite directions.
 - **Default path**: **ship the rename; treat the task as superseded.** No agent starts the

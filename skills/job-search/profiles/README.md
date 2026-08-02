@@ -44,7 +44,10 @@ Then point `config.job_search.default_profile` at the label to make it the defau
   drops only postings that explicitly deny sponsorship; `require_positive` keeps only those
   that explicitly offer it. `h1b_transfer` / `perm_greencard` add soft scoring boosts.
 - **max_age_days** — only postings published within the last N days (`null` = don't
-  filter on posting age).
+  filter on posting age). **It does not apply to a company's FIRST search**: an employer
+  with no row in the company-search log has no prior coverage to protect, so that run
+  widens to `company_search_log.first_search_max_age_days` (`null` = no age gate at all).
+  See `reference.md` § Recency filter.
 - **ai_company** — AI-native / AI-transitioning company fit. `signals` = JD-text phrases
   (each found adds `boost_per_hit`, capped at `max_boost`); `company_tags` = registry tags
   (e.g. `ai-lab`/`ai-infra`/`ai-native`) whose employers get `company_boost`. `require: true`

@@ -4,7 +4,7 @@
 - **Area**: harness
 - **Source**: doc-vs-code audit finding folded into `skills/behavioral-interview-prep/SKILL.md`
   (PR "the instruction surface matches the code"); pre-scoped as PR 7 of the phase-8 plan
-- **Claimed-by**:
+- **Claimed-by**: records-match-the-tree pass, 2026-08-02 (retro-closure; see verification.md)
 
 ## Goal
 

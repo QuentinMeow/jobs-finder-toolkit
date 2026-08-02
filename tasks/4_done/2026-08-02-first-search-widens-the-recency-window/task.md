@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: job-search
 - **Source**: owner decision 2026-08-02, recorded as `memory/decisions/first-search-finds-every-open-role.md` (folded from the queue item first-search-recency-window, deleted in the folding commit — git history is the archive)
-- **Claimed-by**:
+- **Claimed-by**: records-match-the-tree pass, 2026-08-02 (retro-closure; see verification.md)
 
 ## Goal
 

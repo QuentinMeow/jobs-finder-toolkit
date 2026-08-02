@@ -2393,3 +2393,9 @@
   files: 1
   digest: sha256:99df9afc3507e680
   finding: 'Session handover for the merge-runbook and folder-refactor session. Describes the work in shapes, not specifics: which decision fired, which defects were fixed, which gates caught what. Names only public repo paths, PR numbers and commit SHAs. The one private reference is the standing note that verify_links is red on refs inside private/, stated without naming any of those paths. No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 39
+  digest: sha256:bf59ed2d352af649
+  finding: 'Records-hygiene pass, part 1 of 2. Read the whole staged diff. Nine backlog tasks and one in-progress task move to their true status folders, each gaining a verification.md written from commands actually run in this worktree; five memory/decisions ADR links and eight cross-references are re-pointed at paths that exist. Two content residuals: skills/job-search/profiles/README.md now states the first-search recency exception, and skills/github-workflow/SKILL.md no longer justifies the never-git-add-dash-A rule with a .gitignore claim that the .venv fix made false. Content is repo process prose, public repo paths, PR numbers and commit SHAs only. No identity, employer, school, salary or dated job-hunt content.'

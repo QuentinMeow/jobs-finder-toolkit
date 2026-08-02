@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: repo
 - **Source**: instruction-conflict audit, 2026-08-01
-- **Claimed-by**:
+- **Claimed-by**: records-match-the-tree pass, 2026-08-02 (retro-closure; see verification.md)
 
 ## Goal
 

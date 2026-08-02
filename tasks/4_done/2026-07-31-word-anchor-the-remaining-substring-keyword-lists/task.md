@@ -4,7 +4,7 @@
 - **Area**: job-search
 - **Source**: adversarial audit #2, findings 3 / 7 / 9 / 12 / 23 / 29 / 33; split
   out of the branch that fixed the same class in `automation/shared/location.py`
-- **Claimed-by**: <(set when work starts, before the first change)>
+- **Claimed-by**: records-match-the-tree pass, 2026-08-02 (retro-closure; see verification.md)
 
 ## Goal
 

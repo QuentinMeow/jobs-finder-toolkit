@@ -17,9 +17,10 @@ and then from the loader's own directory → the tracked `config.example.yaml`. 
 used to return unconditionally, so a maintainer who ran a tool from the wrong directory
 silently operated on the fictional "Jordan Rivers" persona while their real data sat on disk
 one directory away. A malformed (rather than missing) `config.yaml` degraded the same way,
-into every hardcoded default, with no signal at all. A filed instance of the same family is
-[`memory/known-issues/worktree-config-discovery-escape.md`](../known-issues/worktree-config-discovery-escape.md),
-where the upward walk escaped a git worktree and resolved the parent checkout's config.
+into every hardcoded default, with no signal at all. A filed instance of the same family was
+the worktree config-discovery escape, where the upward walk escaped a git worktree and
+resolved the parent checkout's config (its known-issue entry was closed as fixed and deleted
+in `8e4816f`; git history is the archive).
 
 The execution plan asked for an unconditional raise. That is stricter than it sounds, because
 the example fallback is a **documented public feature**: `README.md` and

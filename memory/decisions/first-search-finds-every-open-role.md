@@ -58,7 +58,7 @@ looks different from a repeat run.
   reads as never-searched and gets a second wide run. That is the safe direction for this error to
   fall — over-collection, not silent loss.
 - Implementation and the matching skill-doc contract are filed as
-  `tasks/0_backlog/2026-08-02-first-search-widens-the-recency-window/`.
+  `tasks/4_done/2026-08-02-first-search-widens-the-recency-window/`.
 - **Revisit if** the wide first set becomes unmanageable in practice. The lever then is a bounded
   first-search window (a large explicit number of days), never a return to the profile default on
   run one — that is the behaviour this decision replaced.

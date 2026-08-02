@@ -3,8 +3,9 @@
 - **Priority**: P1 (this round)
 - **Area**: job-search
 - **Source**: branch `feat/11-search-recency-and-title-filter`, which implemented
-  the owner's answer on
-  `message-queue/needs-human/decisions/title-prefilter-hardcoded-seniority-words.md`
+  the owner's answer on the title-prefilter question, recorded as
+  `memory/decisions/search-filter-vocabulary-is-profile-owned.md` (the queue item it was
+  folded from was deleted in `85102cb`; git history is the archive)
   (three profile-owned title word classes). Both items below were deliberately
   left out of that PR: one is in a repository that branch may not touch, the other
   needs a measurement nobody has taken.
