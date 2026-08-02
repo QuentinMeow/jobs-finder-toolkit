@@ -205,6 +205,13 @@ gh pr create --base feat/01-parser  --head feat/02-renderer --title '...' --body
 gh pr create --base feat/02-renderer --head feat/03-cli     --title '...' --body-file local/pr-3.md
 ```
 
+**Accepting that offer changes which merge commands work.** A native stack is a
+first-class server-side object with its own number; its members **cannot** be
+merged by `gh pr merge` (HTTP 403), they merge through
+`PUT repos/{owner}/{repo}/pulls/<n>/merge-async`, one entry merges every entry
+below it atomically, and GitHub rebases the next entry itself. This repo has ten
+such stacks, so "is this PR in a stack?" is a live question on every merge here.
+
 **When to split at all.** A long task with several separable concerns, where each
 piece is one reviewable idea and the lower piece makes sense on its own. If a
 reviewer cannot approve the bottom PR without reading the top one, it is one PR,
@@ -224,34 +231,77 @@ touched. Read form 3 under gate 11 before using it: the tip's own `pr-body` job
 sees only the tip's own commits, so it is bound by the gate only if that diff
 itself touches an instruction file.
 
-**Merge order is bottom-up, with a merge commit and an explicit retarget.** Merge
-the PR that targets `main` first (`gh pr merge <N> --merge`), then — only once it
-has actually merged — retarget the next one (`gh pr edit <N+1> --base main`).
-Merging out of order strands the content of the PRs below. **Never delete a head
-branch on merge:** deleting a stacked PR's base does not retarget that PR, it
-**closes** it. Any SHA rewrite here orphans the review-ledger rows written on those
-branches — see "A stacked PR's row does not survive the merge" below. Full recipe
-and the reasons: the next block.
+**Classify first: the two worlds need opposite commands.** `gh pr list`,
+`gh pr view` and the UI look identical for a stack member and an ordinary PR. Two
+probes tell them apart: `gh api repos/{owner}/{repo}/stacks` lists every stack
+(`?state=open` is ignored — filter on `.open`), and GraphQL's
+`pullRequest { baseRefName stackEntry { position stack { number size } } }` says
+whether *this* PR is in one and where. A **stack member** merges only through
+`PUT .../pulls/<n>/merge-async` (`gh pr merge` answers HTTP 403) and needs
+`stackEntry.position == 1` — inside a stack `baseRefName` reads `main` for entries
+that are not at the bottom, so it proves nothing there. An **ordinary PR** merges
+with `gh pr merge <n> --merge` and needs `baseRefName` to be the branch you intend;
+nothing retargets it but you. Merging out of order strands the PRs below, and
+**deleting a head branch on merge closes** the PR above it rather than retargeting
+it (`#136`). Any SHA rewrite orphans the review-ledger rows written on those
+branches — see "A stacked PR's row does not survive the merge" below.
 
-**The merge recipe, and why `delete_branch_on_merge` stays off.** Check the repo's
-setting rather than assuming GitHub's auto-retarget applies: `gh api
-repos/<owner>/<repo> -q .delete_branch_on_merge`. It is `false` here and stays
-that way. With it off (and squash/rebase merge still enabled), merging without an
-explicit retarget lands each PR on the *previous* branch, not `main` — silent, not
-red, and nothing in the UI flags it. The recipe for a ledger-tracked stack (each
-branch tip carries its own review row, and the review gate's `WATCHED_PATHSPEC`
-excludes the ledger file — see "The review gate: one commit carries its own row"
-below) is a **merge commit**, which preserves every SHA, plus a manual retarget,
-one PR at a time, bottom-up:
+**Merging a stack is atomic.** Merging entry *k* merges entries 1…*k* into **one**
+merge commit, titled after entry *k*: in stack `#88`, PRs `#81`, `#84` and `#87`
+all carry merge commit `281bc9333e8f84c8c5049aef808f438df0f335cd` ("Merge pull
+request #87"), so merging the top would have landed all seven. Merge entry 1
+unless you want the whole group.
+
+**The merge recipe, and why `delete_branch_on_merge` stays off.** Auto-retarget is
+a **stack** behaviour and has nothing to do with `delete_branch_on_merge`: inside a
+native stack GitHub rebases the next entry itself, and **outside one nothing
+retargets a PR, ever**. Check the setting anyway — `gh api repos/<owner>/<repo> -q
+.delete_branch_on_merge` is `false` here and stays that way — because deleting a
+base branch closes the PR above it. For a non-stacked PR, merging without an
+explicit retarget lands the work on the *previous* branch, wherever that ref now
+points: silent, not red, nothing in the UI flags it. That is exactly how `#198`
+merged — its base still read `chore/08-capture-answers-and-sign-merges` 84 seconds
+after `#194` merged that branch into `main`, so GitHub merged it into the stale
+branch as `a6b5a7da` (first parent the pre-merge tip, not `main`) and rescue PR
+`#199` had to drag it onto the trunk. CI passed, the API returned success, the UI
+said "Merged"; the only signal was `baseRefName`, which nobody read. Full timeline
+with SHAs: `skills/github-workflow/reference.md`. Either way the merge is a **merge
+commit**, which preserves every SHA — each branch tip carries its own review row,
+and the review gate's `WATCHED_PATHSPEC` excludes the ledger file (see "The review
+gate: one commit carries its own row" below) — one PR at a time, bottom-up:
 
 ```bash
-gh pr merge <N>   --merge     # merge commit: every SHA on <N> survives
-gh pr edit  <N+1> --base main # only AFTER <N> has merged
+# Do all of this with the driver, which classifies first and refuses rather than
+# guessing. Dry run is the DEFAULT — nothing merges without --execute.
+.venv/bin/python skills/github-workflow/scripts/merge_stack.py <N> <N+1>
+
+# By hand, TRACK A — a stack member (stackEntry != null), position 1:
+gh api --method PUT repos/{owner}/{repo}/pulls/<N>/merge-async \
+    -f merge_method=merge -f sha=<headRefOid>   # 202 + exit 0 is a RECEIPT
+gh api repos/{owner}/{repo}/pulls/<N>/merge-async/<uuid>   # poll to merged/failed/enqueued
+gh api repos/{owner}/{repo}/pulls/<N>/merge; echo "EXIT=$?"  # 0 = 204 = merged
+# GitHub rebases the next entry itself — do NOT hand-edit a stack member's base.
+
+# By hand, TRACK B — an ordinary PR (stackEntry == null):
+gh pr view <N> --json baseRefName            # THE GUARD: must be `main`
+gh pr merge <N> --merge --match-head-commit <headRefOid>
+gh api repos/{owner}/{repo}/pulls/<N>/merge; echo "EXIT=$?"  # 0 = 204 = merged
+gh pr edit <N+1> --base main                 # only AFTER <N> has merged
+gh pr view <N+1> --json baseRefName          # READ IT BACK — must now say `main`
 ```
 
-Do the two in that order. Retargeting `<N+1>` **before** `<N>` merges makes the
-child's diff include its parent's commits, so the PR under review is no longer the
-change you wrote.
+**The exit code is not the result.** The async PUT returns HTTP 202
+`{"status":"pending",…}` and `gh` exits 0 with nothing merged; of its terminal
+states, `enqueued` (a merge queue took it) is terminal *without* being merged. A
+409 on the PUT means a request is already in flight — poll it, never re-fire.
+`gh api …/pulls/<n>/merge` is the independent check that outlives the async
+record: exit 0 (HTTP 204) merged, exit 1 (404) not.
+
+For the **non-stacked** case, do the merge and the retarget in that order.
+Retargeting `<N+1>` **before** `<N>` merges makes the child's diff include its
+parent's commits, so the PR under review is no longer the change you wrote. And an
+unverified retarget is the same bug as no retarget — read `baseRefName` back.
+Long runbook, failure catalogue and the evidence: `skills/github-workflow/reference.md`.
 
 Never `--squash`, never `--rebase`, never GitHub's "Update branch" button on such a
 stack — each rewrites SHAs, and this repo's ledger rows are keyed to commit ranges,
@@ -321,20 +371,13 @@ job — plus gate 11, which reads the PR description itself.
 
 ### Running the gates locally, in one command
 
-`.venv/bin/python automation/gates/run_gates.py` runs the whole table above **plus**
-every CI-only suite, each as a subprocess with no shell and **no pipe**: stdout+stderr
-are redirected to `local/gates/<name>.log`, so the exit code you read is the gate's
-own. Never shorten a gate with `| tail` and then read `$?` — that is the pager's
-status, and it has read a red gate as green here before. `--list` prints the table
-without running anything; `--group hook` runs just the pre-commit chain; `--only
-<name>,<name>` and `--skip <name>` narrow it; `--tail N` sets how much of a failing
-log prints inline. A gate that cannot run here — no LibreOffice, no `private/`
-overlay — reports **SKIP**, is named in the final line, and is never counted as a
-pass. `example-render` rewrites the tracked example DOCX/PDFs, so
-`git checkout -- examples/` after it unless those bytes are your change. The runner
-covers the hook and CI by construction: `automation/gates/tests` re-parses
-`.github/workflows/ci.yml` and fails when a step is neither in the table nor excused
-in writing.
+`.venv/bin/python automation/gates/run_gates.py` runs the table above **plus** every
+CI-only suite — no shell, **no pipe**, output redirected per gate, so the exit code
+you read is the gate's own. Never shorten a gate with `| tail` and then read `$?`:
+that is the pager's status, and it has read a red gate as green here before. SKIP is
+never a PASS. **Run it before every PR**, not just before committing: the hook is a
+strict subset of CI, so a branch can commit clean and still be red. Flags, skip cases
+and the CI-drift test: `skills/github-workflow/reference.md`.
 
 ### Gate 11 — discharging the eval gate in the body
 
@@ -383,11 +426,14 @@ Every commit that changes the public tree needs a row in
 will have — not HEAD. The loop is one step:
 
 ```bash
-git add -A
+git add <the paths this commit changes>   # explicit pathspecs; never -A or .
 .venv/bin/python automation/publish/review_gate.py --staged   # prints the row
 # read the diff it prints, append the row, then:
 git add automation/publish/review_ledger.yaml && git commit
 ```
+
+`git add -A` is wrong here for a reason beyond tidiness: `.gitignore` lists
+`.venv/`, which does not cover a `.venv` **symlink**, so `-A` stages it.
 
 The row it prints carries **no `commit:`** — the commit has no SHA yet. That is a
 **pending row**: `base:` + `digest:` pin the range, and the gate resolves its
@@ -480,8 +526,13 @@ check to make a commit pass.
 | Find the failing run | `gh run list --branch <branch> --limit 5` |
 | Read a failing run's log | `gh run view <id> --log-failed` |
 | Merge state | `gh pr view <n> --json state,mergeable,mergeStateStatus,baseRefName` |
-| Merge the bottom of a stack | `gh pr merge <n> --merge` — never `--squash`, `--rebase`, or `--delete-branch` on a stack |
-| Retarget the next PR up, **after** its base has merged | `gh pr edit <n+1> --base main` |
+| **Is this PR in a stack?** (nothing else answers it) | `gh api graphql -f query='query { repository(owner:"<o>", name:"<r>") { pullRequest(number:<n>) { baseRefName stackEntry { position stack { number size } } } } }'` |
+| List the repo's stacks | `gh api repos/{owner}/{repo}/stacks --jq '.[] \| {number, open, prs: [.pull_requests[].number]}'` — `?state=open` is ignored, filter on `.open` |
+| Merge a **stacked** PR (`gh pr merge` = HTTP 403) | `gh api --method PUT repos/{owner}/{repo}/pulls/<n>/merge-async -f merge_method=merge -f sha=<headRefOid>`, then poll `…/merge-async/<uuid>` |
+| Merge a **non-stacked** PR | `gh pr merge <n> --merge --match-head-commit <headRefOid>` — never `--squash`, `--rebase`, or `--delete-branch` |
+| **Did it actually merge?** | `gh api repos/{owner}/{repo}/pulls/<n>/merge; echo "EXIT=$?"` — 0 (204) merged, 1 (404) not. Never through a pipe |
+| Retarget (**non-stacked only**), after its base merged | `gh pr edit <n+1> --base main` then `gh pr view <n+1> --json baseRefName` to read it back |
+| Do all of the above safely | `.venv/bin/python skills/github-workflow/scripts/merge_stack.py <n> …` (dry run by default) |
 
 **`gh pr list` and `gh pr view` disagree with reality in a useful way.** Both keep
 reporting `baseRefName: feat/01-parser` after that PR merged and its branch was
@@ -491,6 +542,13 @@ at creation time: `gh pr create --base feat/01-parser` fails with
 it wrong. Fix it by rebasing onto `main` with `--onto` (above) and retargeting
 with `gh pr edit <n> --base main`.
 
+**Neither one surfaces stack membership at all** — there is no flag for it, which
+is why the table's first row goes to GraphQL. And a **failing `gh pr view <n>` may
+mean `<n>` is a stack**: stacks draw their numbers from the same sequence as pull
+requests, so `gh pr view 190` answers "Could not resolve to a PullRequest" because
+190 names a stack, not because a PR was deleted. Check `/stacks` before concluding
+anything is missing.
+
 ## Guardrails (inviolable)
 
 - **Never `--no-verify`**, and never bypass or weaken a gate to make a commit
@@ -498,10 +556,15 @@ with `gh pr edit <n> --base main`.
 - **Never force-push a branch someone has reviewed without saying so** — comment
   on the PR with what changed and why the history moved, before or immediately
   after the push. A silent force-push destroys the review's line anchors.
-- **Never merge your own stack out of order.** Bottom-up, one at a time,
-  confirming each merge before the next.
-- **Never `--squash`, `--rebase`, or `--delete-branch` a stacked PR** — merge
-  commit plus an explicit retarget after the parent merges (§2).
+- **Never merge a stack without classifying it first.** A stacked PR and an
+  ordinary one need opposite commands and look identical in `gh` and the UI.
+  Bottom-up, one at a time, and confirm each merge before the next: for a stack
+  member the confirmation is a terminal `merged` from `…/merge-async/<uuid>`
+  (`enqueued` is not merged); for an ordinary PR it is `baseRefName` read *before*
+  and `gh api …/pulls/<n>/merge` → 204 read *after*. Never a green exit code alone.
+- **Never `--squash`, `--rebase`, or `--delete-branch` a stacked PR** — a merge
+  commit in both worlds; the retarget is yours to do only when the PR is *not* in
+  a native stack, and inside one it is GitHub's (§2).
 - **Never put an absolute tree-wide count in a PR body** — exit codes and this
   PR's deltas only; totals come from the post-merge canonical counts job (§1).
 - **A PR whose CI is red is not ready, regardless of local results.** Do not ask
@@ -527,6 +590,8 @@ with `gh pr edit <n> --base main`.
 | Path | Purpose |
 |------|---------|
 | `skills/github-workflow/SKILL.md` | This router — format, stacking, gates, `gh` recipes |
+| `skills/github-workflow/reference.md` | The long two-track merge runbook: classification, Track A, Track B, the failure catalogue, and the verified evidence |
+| `skills/github-workflow/scripts/merge_stack.py` | Classifies a PR (stack member vs ordinary) and merges it the way that world requires; dry run by default, refuses rather than guessing |
 | `skills/github-workflow/scripts/check_pr_body.py` | Validates a PR body against the human-facing format (file or stdin; exit 1 with findings) |
 | `skills/github-workflow/scripts/tests/` | `unittest` suite for the checker |
 | `evals/canaries/github-workflow.yaml` | Canary set for this skill (`evals/README.md`) |
