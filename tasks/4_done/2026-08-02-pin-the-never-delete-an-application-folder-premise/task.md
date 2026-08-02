@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: tracker
 - **Source**: owner decision 2026-08-02, recorded as `memory/decisions/handoff-records-every-folder-it-creates.md` (folded from the queue item handoff-records-non-clean-scaffolds, deleted in the folding commit — git history is the archive)
-- **Claimed-by**:
+- **Claimed-by**: agent, session 2026-08-02 (branch `fix/never-delete-application-folder`)
 
 ## Goal
 
@@ -13,14 +13,32 @@ it should fail loudly the day it stops being true.
 
 ## Definition of done
 
-- [ ] A test fails if any non-test module that resolves `config.applications_root()` removes a path
+- [x] A test fails if any non-test module that resolves `config.applications_root()` removes a path
       beneath it (`shutil.rmtree`, `Path.unlink`, `os.remove`, `os.rmdir`, or an equivalent).
-- [ ] The check names `memory/decisions/handoff-records-every-folder-it-creates.md` in its failure
+- [x] The check names `memory/decisions/handoff-records-every-folder-it-creates.md` in its failure
       message, so whoever trips it learns which decision they just invalidated rather than
       deleting the assertion.
-- [ ] `tasks/0_backlog/2026-08-01-forget-log-tells-the-agent-to-delete-owner-data` is resolved or
+- [x] `tasks/0_backlog/2026-08-01-forget-log-tells-the-agent-to-delete-owner-data` is resolved or
       explicitly sequenced against this one — its remediation message currently instructs an agent
       to do the thing this check exists to make impossible.
+
+## Resolution (2026-08-02)
+
+`automation/shared/tests/test_application_folder_never_deleted.py` — an AST guard, scoped to
+the applications root rather than a tree-wide `rmtree` ban. Scope-aware taint from
+`config.applications_root()` through assignments, `for` targets and module-level helpers that
+return a tree path, plus a name backstop for a folder arriving as a function parameter (the
+shape the taint pass cannot see). The failure message names the ADR and says not to delete the
+assertion.
+
+The premise was **re-verified** before the guard was written: the only non-test removal calls
+under `automation/` and `skills/` target the postings cache, store debris, the export
+destination and the reconciler's queue file. The one path-mutating call inside the tree is
+`status.py:_move_application`'s `shutil.move` between two status folders — a documented
+status transition, both endpoints inside the root, not a removal.
+
+Sequencing held: the sibling task's message was fixed first, in the same branch, so the guard
+never had to be merged over a live instruction telling an agent to do the forbidden thing.
 
 ## Context
 
