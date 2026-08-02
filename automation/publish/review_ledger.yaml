@@ -2208,3 +2208,9 @@
   files: 1
   digest: sha256:bea7c8d3cfca8daf
   finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 3
+  digest: sha256:e0e89976e12dcbc9
+  finding: This branch's own change - the review gate now refuses a ledger row that carries any key twice, which is the corruption a line-based union merge produced on 2026-08-02 and that a green --verify-all could not see. The check runs inside _LedgerLoader.construct_mapping because YAML collapses the duplicate before validate_row ever sees it; the failure names the row by its first line and says the ledger TEXT is damaged rather than the reader's commit. Tests drive a real union merge in a throwaway repo and pin that the commit-plus-base and pending base-only row shapes still pass. The module docstring's git add -A is replaced by explicit pathspecs. Tooling, tests and one backlog task file only. The publish suite carries one pre-existing failure inherited from base e91f6cb (the anchored /logs/ ignore rule), proven orthogonal here and already filed as a P0 backlog task on feat/19-examples-store. No identity, employer, school, salary or dated job-hunt content; the only shas named are this repo's own commits and synthetic test values.
