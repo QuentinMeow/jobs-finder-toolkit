@@ -12,4 +12,8 @@
 
 <Enough context to answer cold, self-contained.>
 
+<Answer in plain words — one sentence is enough. No need to copy anything back
+or use any particular vocabulary; the agent that folds your answer does the
+bookkeeping, and it will show you how it read your answer before acting on it.>
+
 **Your answer:** ______

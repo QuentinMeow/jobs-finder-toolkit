@@ -3,7 +3,7 @@
 - **Priority**: P0 (blocks work)
 - **Area**: job-search
 - **Source**: instruction-conflict audit, 2026-08-01
-- **Claimed-by**:
+- **Claimed-by**: agent (docs/job-search-location-routing, 2026-08-02)
 
 ## Goal
 

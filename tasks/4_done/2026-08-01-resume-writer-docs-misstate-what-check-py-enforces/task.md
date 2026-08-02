@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: resume-writer
 - **Source**: instruction-conflict audit, 2026-08-01
-- **Claimed-by**:
+- **Claimed-by**: agent session 2026-08-02 (`docs/resume-writer-gate-truth`)
 
 ## Goal
 
@@ -68,10 +68,22 @@ Items 1-3 and the two extras are `SKILL.md`/`reference.md` edits: behavioral, so
 
 ## Definition of done
 
-- [ ] `SKILL.md`'s direct-bullet line states the baseline cap, not only `DIRECT_BULLETS_RANGE`.
-- [ ] `reference.md`'s per-paragraph word targets cannot sum below `COVER_TOTAL_WORD_RANGE[0]`.
-- [ ] The missing-bundle case is described exactly as the code treats it, or the code is promoted to
-      FAIL and both surfaces say so.
-- [ ] `check.py:417`'s message names only `JD-*.md`.
-- [ ] resume-writer canaries run and recorded per `evals/README.md`; `render.py` + `check.py` green
-      on `examples/applications/6_drafted/example-corp-senior-software-engineer/`.
+- [x] `SKILL.md`'s direct-bullet line states the baseline cap, not only `DIRECT_BULLETS_RANGE`.
+- [x] `reference.md`'s per-paragraph word targets cannot sum below `COVER_TOTAL_WORD_RANGE[0]`.
+- [x] The missing-bundle case is described exactly as the code treats it, or the code is promoted to
+      FAIL and both surfaces say so. — took the FIRST branch: the docs (and `check.py --rules`)
+      now state the WARN as a limitation. The promotion is an owner decision, filed at
+      `message-queue/needs-human/decisions/missing-cover-letter-warn-or-fail.md`.
+- [x] `check.py:417`'s message names only `JD-*.md`.
+- [x] resume-writer canaries run and recorded per `evals/README.md`; `render.py` + `check.py` green
+      on `examples/applications/6_drafted/example-corp-senior-software-engineer/`. — render/check
+      green (see `verification.md`). Canaries **skipped with a recorded rationale**, which is what
+      the risk-based rule in `evals/README.md` allows for this edit shape: every change is
+      "correcting … labels to match code reality", 2 instruction files, 21 added / 10 removed
+      lines (5 of them numeric substitutions). Debt
+      accumulates onto `tasks/0_backlog/2026-07-31-resume-writer-canary-run-for-gate-honesty`,
+      which is annotated to cover it.
+
+Split out, not done here: the Step-6 ordering item from the "Also seen" paragraph is now
+`tasks/0_backlog/2026-08-02-cover-letter-section-sits-after-the-render-step`. It is a restructure,
+which is a MUST-run under the eval gate, so it does not belong in a skip-discharged change.

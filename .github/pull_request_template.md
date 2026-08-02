@@ -14,6 +14,29 @@
 **What you'll notice.** <the practical day-to-day effect, including friction, extra
 steps, or slowdown — a PR that lists only benefits is under-reported>
 
+## What needs you
+
+<!-- The reader's own to-do list. One numbered item per LIVE message-queue item this PR
+     filed or relied on, ranked by `Cost if wrong` worst-first. Each item links the
+     canonical queue file and carries `Why this matters` and `If you do nothing`.
+
+     This section PROJECTS queue items; it never originates an ask. An ask that exists
+     only in a PR body is not an ask — nothing sweeps it, nothing ranks it, and it is
+     gone once the PR merges. File the queue item first, then project it here.
+
+     When there is genuinely nothing, this section is exactly this one sentence:
+     No queued action requested.
+
+     Never name or summarize a `private/message-queue/` item here — this repo is PUBLIC.
+
+     Filled shape:
+
+     1. [Should the store keep raw fetches forever?](message-queue/needs-human/decisions/2026-08-01-raw-retention.md)
+        — **Why this matters:** disk grows about 2 GB a month and nothing prunes it.
+        **If you do nothing:** the default path keeps everything, which is the
+        reversible choice; you can delete later, you cannot un-delete.
+     2. … -->
+
 ## What & why
 
 <!-- Briefly describe the change and the motivation. -->

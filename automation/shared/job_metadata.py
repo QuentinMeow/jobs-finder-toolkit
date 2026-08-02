@@ -1381,6 +1381,46 @@ _SPONSOR_POSITIVE = (
     "cap-exempt", "cap exempt",
 )
 
+# The denial phrases whose "sponsor" is a bare transitive VERB with no object of
+# its own.  Those are the only ones that can attach to something that is not
+# immigration at all — "we do not sponsor community events" matched `do not
+# sponsor` and graded a confident denial, and the default policy DROPS denials,
+# so a posting was deleted for a sentence about a street fair.
+#
+# Every OTHER phrase in ``_SPONSOR_NEGATIVE`` names "sponsorship" as the head
+# noun (or names citizenship/green-card status outright), and there the object IS
+# sponsorship, so no gate applies.  That asymmetry is measured, not stylistic:
+# "This role does not offer sponsorship." carries no immigration word ANYWHERE in
+# it, so gating every denial on context — the symmetric-looking rule — turns a
+# real refusal into ``unknown``.  The dividing line is the bare verb, not the
+# strength of the wording.
+_SPONSOR_GENERIC_NEGATIVE = frozenset({
+    "unable to sponsor", "not able to sponsor", "cannot sponsor",
+    "can not sponsor", "will not sponsor", "does not sponsor", "do not sponsor",
+})
+# Immigration context for that gate.  Separate from ``_SPONSOR_CONTEXT_RE``
+# because that one is anchored on "visa" SINGULAR, and the denials being gated
+# here are routinely written with the plural ("we cannot sponsor visas at all").
+# Widening the shared pattern instead would loosen the OFFER side's gate too,
+# which is the direction this module does not move.
+#
+# It is deliberately the WIDER of the two patterns.  The two errors this gate can
+# make are not equal: dropping a real denial hides it from the candidate at high
+# confidence, while keeping a non-immigration one costs a ``review`` flag, so the
+# gate is written to err toward keeping.  US work-authorization boilerplate is
+# included for exactly that reason ("we do not sponsor. applicants must be
+# authorized to work in the United States") — on its own that boilerplate is
+# still never a denial, which ``_SPONSOR_NEGATIVE`` decides, not this pattern.
+_SPONSOR_IMMIGRATION_RE = re.compile(
+    r"\b(?:visas?|h-?1bs?|immigration|work\s+authoriz\w+|"
+    r"authoriz\w+\s+to\s+work|green\s+cards?|permanent\s+residen(?:t|ts|cy)|"
+    r"perm\s+process|employment\s+sponsorship|citizens?(?:hip)?|"
+    r"sponsorship\s+transfers?)\b",
+    re.I,
+)
+# How far either context gate reads around a phrase.
+_SPONSOR_CONTEXT_WINDOW_CHARS = 120
+
 _SPONSOR_CONTEXT_RE = re.compile(
     r"\b(?:visa|h-?1b|immigration|work authorization|green card|"
     r"permanent residency|perm process|employment sponsorship)\b",
@@ -1456,6 +1496,18 @@ _SPONSOR_EXPORT_CONTROL_RE = re.compile(
     re.I,
 )
 _SPONSOR_SENTENCE_BREAK_RE = re.compile(r"[.;:!?•|]")
+# The subset of clause breaks that end a negation UNAMBIGUOUSLY: terminal
+# punctuation, a dash, or a contrastive conjunction. Used only to decide whether
+# a cue the bounded scope failed to reach was genuinely spent (see
+# ``_sponsor_cue_out_of_reach``) — the comma/coordinator alternatives of
+# ``_SPONSOR_CLAUSE_BREAK_RE`` are deliberately excluded, because those are the
+# ones that fire inside an aside and strand a cue mid-sentence.
+_SPONSOR_HARD_BREAK_RE = re.compile(
+    r"[.;:!?•|]|--|—|–"
+    r"|\b(?:but|however|although|though|yet|whereas|while|nevertheless|"
+    r"nonetheless|unless|otherwise|instead)\b",
+    re.I,
+)
 _SPONSOR_TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9'’./-]*", re.I)
 _SPONSOR_TOPIC_RE = re.compile(
     r"\b(?:sponsor(?:s|ed|ing|ship)?|visas?|immigration|h-?1b|green\s+card|perm|"
@@ -1568,6 +1620,47 @@ _SPONSOR_SCOPE_LIMIT_MAX_GAP_TOKENS = 6
 # bounding it — "we cannot sponsor visas at all" is a flat refusal.
 _SPONSOR_AMBIGUOUS_SCOPE_RE = re.compile(r"(?<!\bat\s)\ball\b", re.I)
 
+# --- detection: a denial phrased in words neither list contains --------------
+# Polarity is decided structurally, but DETECTION was still purely lexical: if no
+# phrase from either tuple matched, the negation scope had nothing to act on and
+# the posting classified ``unknown``.  "We do not offer relocation or visa
+# sponsorship." is that hole — the denial phrases need "offer sponsorship"
+# contiguous and the offer phrases need "offer visa sponsorship" contiguous, and
+# a single coordinated object defeats both.
+#
+# The denial side gets the structural treatment the offer side already has: a
+# bare sponsorship HEAD whose governing negation reaches it THROUGH AN OFFER VERB
+# is a denial of that offer, whatever words sit between them.  Three bounds keep
+# it from becoming a generic "cue … sponsorship" rule, which misfires badly:
+#
+#   * the OFFER VERB is required.  EEO copy — "we do not discriminate against
+#     candidates who need visa sponsorship" — puts a cue five tokens from the
+#     head and is NOT a denial; it has no offer verb between the two, and that is
+#     the only thing that separates the two shapes;
+#   * the window between the verb and the head is TIGHT (5 tokens), so the verb
+#     has to plausibly govern the head;
+#   * the scope is the module's existing ``_sponsor_negation`` — same clause
+#     break, same budget — so a clause restart ends this rule exactly as it ends
+#     every other one, and no third notion of "reach" enters the module.
+#
+# It is a FALLBACK only: a head already covered by a phrase from either tuple is
+# left to the existing paths, byte for byte, so no wording that already had an
+# answer gets a new one.
+_SPONSOR_HEAD_RE = re.compile(
+    r"\b(?:(?:visa|immigration|employment|employer|h-?1b|green\s+card)\s+)?"
+    r"sponsorship\b",
+    re.I,
+)
+_SPONSOR_OFFER_VERB_RE = re.compile(
+    r"\b(?:offer(?:s|ed|ing)?|provid(?:e|es|ed|ing)|extend(?:s|ed|ing)?|"
+    r"grant(?:s|ed|ing)?|support(?:s|ed|ing)?)\b",
+    re.I,
+)
+# How far the offer verb may sit from the head it offers ("offer relocation or
+# visa sponsorship" is 2).  Deliberately tighter than the negation budget.
+_SPONSOR_OFFER_VERB_MAX_GAP_TOKENS = 5
+_SPONSOR_OFFER_VERB_DENIAL = "negated offer verb"
+
 # --- hedged offers: modality is not a guarantee ------------------------------
 # The mirror error the same canary found: "limited immigration sponsorship may be
 # available" graded `likely` while the unhedged offer above graded `unknown`, so
@@ -1641,6 +1734,52 @@ def _sponsor_double_negated(scope: str, cue) -> bool:
     before = scope[:cue.start()]
     prior = _sponsor_last_cue(before)
     return prior is not None and _sponsor_gap_is_bare(before[prior.end():])
+
+
+def _sponsor_sentence_head(source: str, start: int) -> str:
+    """The text from the start of ``start``'s sentence up to ``start``."""
+    left = 0
+    for break_match in _SPONSOR_SENTENCE_BREAK_RE.finditer(source, 0, start):
+        left = break_match.end()
+    return source[left:start]
+
+
+def _sponsor_cue_out_of_reach(source: str, start: int) -> bool:
+    """True when a negation cue precedes an OFFER phrase but cannot govern it.
+
+    Both bounds on the negation scope — the clause break and the token budget —
+    can put a cue the sentence plainly contains out of the phrase's reach, and
+    the failure was NOT symmetric: an unreachable cue left the offer phrase
+    scored as an explicit OFFER rather than as silence, so a denial written with
+    a parenthetical in the middle of it ("We are unable, given <clause>, to
+    offer visa sponsorship.") graded ``likely``/``high``/``match``.
+
+    This is the EVIDENCE half of the repair — the same separation the
+    quantifier fix used: the reading is recorded as unsettled here, and only the
+    VERDICT layer's confidence changes.  Neither bound is widened, so the
+    clause break still does the job it was written for.
+
+    Two shapes must NOT be demoted, and both are measured rather than assumed:
+
+    * the offer phrase OPENS its own clause ("There is no relocation budget, and
+      visa sponsorship is available"). There the break that cut the scope is the
+      phrase's own subject boundary and the earlier cue belongs to the previous
+      clause.  Measured, that shape leaves ``_sponsor_clause_scope`` EMPTY,
+      while a phrase stranded mid-clause leaves a non-empty remnant;
+    * the negation is SPENT before the phrase by an unambiguous clause break —
+      terminal punctuation, a dash, or a contrastive conjunction ("we cannot
+      guarantee an outcome, but we do provide visa sponsorship"). Those breaks
+      end a negation on any reading, so the cue is not "out of reach", it is
+      finished.  The comma/coordinator breaks are excluded from that set on
+      purpose: they are exactly the ones that fire inside an aside.
+    """
+    if not _sponsor_clause_scope(source, start).strip():
+        return False
+    head = _sponsor_sentence_head(source, start)
+    cue = _sponsor_last_cue(head)
+    if cue is None:
+        return False
+    return not _SPONSOR_HARD_BREAK_RE.search(head[cue.end():])
 
 
 def _sponsor_sentence(source: str, start: int, end: int) -> str:
@@ -1759,6 +1898,25 @@ def _sponsor_scope_unsettled(source: str, start: int, end: int) -> bool:
                                       _SPONSOR_AMBIGUOUS_SCOPE_RE)
 
 
+def _sponsor_window(source: str, start: int, end: int) -> str:
+    """The text either context gate reads around a phrase match."""
+    return source[max(0, start - _SPONSOR_CONTEXT_WINDOW_CHARS):
+                  end + _SPONSOR_CONTEXT_WINDOW_CHARS]
+
+
+def _sponsor_denial_is_immigration(phrase: str, source: str,
+                                   start: int, end: int) -> bool:
+    """Whether a DENIAL phrase is about immigration rather than some other sponsee.
+
+    Only the bare-verb phrases are gated (see ``_SPONSOR_GENERIC_NEGATIVE``);
+    every other denial names sponsorship itself and passes unconditionally.
+    """
+    if phrase not in _SPONSOR_GENERIC_NEGATIVE:
+        return True
+    return bool(_SPONSOR_IMMIGRATION_RE.search(
+        _sponsor_window(source, start, end)))
+
+
 def _sponsor_offer_is_hedged(source: str, start: int, end: int) -> bool:
     """True when an OFFER phrase is stated only under a hedge.
 
@@ -1774,6 +1932,57 @@ def _sponsor_offer_is_hedged(source: str, start: int, end: int) -> bool:
             _sponsor_clause_tail(source, end), _SPONSOR_HEDGE_RE,
             _SPONSOR_HEDGE_MAX_GAP_TOKENS, backward=False)
     )
+
+
+class _SponsorSpan:
+    """A structurally detected denial, duck-typing the ``re.Match`` API used here.
+
+    Only ``start()``/``end()`` are read by the sponsorship code, and the span has
+    to run from the negation CUE to the head — not from the head — or
+    ``_sponsor_denial_is_negated`` reads this rule's own cue as an outer negation
+    and grades the denial as a double negative.
+    """
+
+    __slots__ = ("_start", "_end")
+
+    def __init__(self, start: int, end: int) -> None:
+        self._start, self._end = start, end
+
+    def start(self) -> int:
+        return self._start
+
+    def end(self) -> int:
+        return self._end
+
+
+def _sponsor_offer_verb_denials(source: str, covered: list[tuple[int, int]]):
+    """Denials the phrase lists cannot see: a negated OFFER VERB plus a bare head.
+
+    ``covered`` is the span of every ``_SPONSOR_NEGATIVE``/``_SPONSOR_POSITIVE``
+    match in ``source``.  A head inside one of those spans already has an answer
+    from the existing paths and is left to them, so this rule only ever ADDS
+    detection for wordings that previously matched nothing at all.
+    """
+    for head in _SPONSOR_HEAD_RE.finditer(source):
+        if any(head.start() < end and start < head.end()
+               for start, end in covered):
+            continue
+        negation = _sponsor_negation(source, head.start())
+        if negation is None:
+            continue
+        scope, cue = negation
+        between = scope[cue.end():]
+        verb = None
+        for verb in _SPONSOR_OFFER_VERB_RE.finditer(between):
+            pass
+        if verb is None:
+            continue
+        if (len(_SPONSOR_TOKEN_RE.findall(between[verb.end():]))
+                > _SPONSOR_OFFER_VERB_MAX_GAP_TOKENS):
+            continue
+        # ``scope`` ends exactly at the head, so the cue's absolute offset is
+        # measured back from there.
+        yield _SponsorSpan(head.start() - len(scope) + cue.start(), head.end())
 
 
 def _bounded_phrase_matches(text: str, phrases):
@@ -1827,6 +2036,11 @@ def assess_sponsorship(text: str | None) -> dict:
     * an offer stated only under a possibility modal, a discretion clause or a
       quantity hedge is a HEDGED offer and lands ``unknown``, not ``likely``.
 
+    An offer phrase whose sentence carries a negation cue the bounded scope
+    cannot REACH is not an offer either: neither bound is widened, the cue is
+    recorded as unreachable, and the posting lands ``unknown`` — kept and
+    flagged — instead of being asserted as an explicit offer.
+
     So an unhedged offer outranks a hedged one, a hedged one outranks silence, and
     a scope limit moves nothing — while a SETTLED denial still wins over
     everything.
@@ -1841,9 +2055,18 @@ def assess_sponsorship(text: str | None) -> dict:
             return False
         return True
 
+    listed = [
+        *_bounded_phrase_matches(source, _SPONSOR_NEGATIVE),
+        *_bounded_phrase_matches(source, _SPONSOR_POSITIVE),
+    ]
+    covered = [(match.start(), match.end()) for _phrase, match in listed]
     negative_matches = [
         (phrase, match)
         for phrase, match in _bounded_phrase_matches(source, _SPONSOR_NEGATIVE)
+        if _immigration_sense(match)
+    ] + [
+        (_SPONSOR_OFFER_VERB_DENIAL, match)
+        for match in _sponsor_offer_verb_denials(source, covered)
         if _immigration_sense(match)
     ]
     negative: list[str] = []
@@ -1864,11 +2087,19 @@ def assess_sponsorship(text: str | None) -> dict:
             if phrase not in unsettled:
                 unsettled.append(phrase)
             continue
+        if not _sponsor_denial_is_immigration(
+                phrase, source, negative_match.start(), negative_match.end()):
+            # A bare-verb "sponsor" with no immigration anywhere near it is
+            # about something else entirely. Dropped from the evidence exactly
+            # as a non-immigration OFFER phrase is, so the posting reads
+            # `unknown` — kept and flagged — instead of being deleted.
+            continue
         if phrase not in negative:
             negative.append(phrase)
     positive: list[str] = []
     hedged_offer: list[str] = []
     negated_offer: list[str] = []
+    unreachable_cue: list[str] = []
     for phrase, positive_match in _bounded_phrase_matches(source, _SPONSOR_POSITIVE):
         if not _immigration_sense(positive_match):
             continue
@@ -1879,10 +2110,8 @@ def assess_sponsorship(text: str | None) -> dict:
         ):
             continue
         if phrase not in _SPONSOR_STRONG_POSITIVE:
-            window = source[
-                max(0, positive_match.start() - 120):positive_match.end() + 120
-            ]
-            if not _SPONSOR_CONTEXT_RE.search(window):
+            if not _SPONSOR_CONTEXT_RE.search(_sponsor_window(
+                    source, positive_match.start(), positive_match.end())):
                 continue
         negation = _sponsor_negation(source, positive_match.start())
         if negation is not None:
@@ -1900,6 +2129,13 @@ def assess_sponsorship(text: str | None) -> dict:
             elif phrase not in negated_offer:
                 negated_offer.append(phrase)
             continue
+        if _sponsor_cue_out_of_reach(source, positive_match.start()):
+            # A cue the sentence contains but the bounded scope cannot reach.
+            # Not an offer, and not asserted as a denial either: recorded as
+            # unsettled so the verdict layer keeps and flags the posting.
+            if phrase not in unreachable_cue:
+                unreachable_cue.append(phrase)
+            continue
         if _sponsor_offer_is_hedged(
                 source, positive_match.start(), positive_match.end()):
             if phrase not in hedged_offer:
@@ -1914,7 +2150,12 @@ def assess_sponsorship(text: str | None) -> dict:
                  if phrase not in negative and phrase not in negated_offer]
     settled = [*negative, *negated_offer]
     denial = [*settled, *unsettled]
-    if denial and (positive or hedged_offer):
+    # An offer phrase with an unreachable cue in front of it is a POSSIBLE
+    # denial, so it conflicts with a real offer elsewhere the way a denial does.
+    # It is deliberately NOT part of ``denial``: a settled refusal must keep
+    # winning outright, and letting an unsettled reading weaken one would be the
+    # promotion this module refuses to make.
+    if (denial or unreachable_cue) and (positive or hedged_offer):
         decision, verdict, confidence = "review", "unknown", "low"
         reason = "Conflicting sponsorship offer and denial language."
     elif settled:
@@ -1938,6 +2179,11 @@ def assess_sponsorship(text: str | None) -> dict:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = ("The posting's only sponsorship offer is hedged (discretionary "
                   "or limited), so it is not read as an offer.")
+    elif unreachable_cue:
+        decision, verdict, confidence = "review", "unknown", "low"
+        reason = ("The posting's only sponsorship offer sits behind a negation "
+                  "the clause scope cannot resolve, so it is not read as an "
+                  "offer.")
     elif scope_limited:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = ("The posting limits the SCOPE of sponsorship without saying "
@@ -1953,6 +2199,7 @@ def assess_sponsorship(text: str | None) -> dict:
         *(f"sponsorship.negative.{phrase}" for phrase in negative),
         *(f"sponsorship.negated_offer.{phrase}" for phrase in negated_offer),
         *(f"sponsorship.unsettled_denial.{phrase}" for phrase in unsettled),
+        *(f"sponsorship.unreachable_cue.{phrase}" for phrase in unreachable_cue),
         *(f"sponsorship.scope_limit.{phrase}" for phrase in scope_limited),
         *(["sponsorship.ambiguous.double_negation"] if ambiguous else []),
         *(["sponsorship.non_immigration.export_control"] if export_control else []),
@@ -1978,6 +2225,7 @@ def assess_sponsorship(text: str | None) -> dict:
             *negative,
             *(f"negated: {phrase}" for phrase in negated_offer),
             *(f"unsettled: {phrase}" for phrase in unsettled),
+            *(f"unreachable-cue: {phrase}" for phrase in unreachable_cue),
             *(f"scope-limited: {phrase}" for phrase in scope_limited),
             *(f"hedged: {phrase}" for phrase in hedged_offer),
             *positive,

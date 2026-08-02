@@ -160,9 +160,13 @@ records live in **`memory/`**.
 5. Sweep `message-queue/needs-human/reviews/`: delete items with a filled Resolution, or older
    than 30 days.
 
-**Always:** end your reply with one line per `needs-human/` item you filed **this session**, plus
-one standing line — `N pending · top: <slug>` (highest `Cost if wrong`). Before opening a PR that
-relied on a pending default path, re-check that item. Never name or summarize
+**Always:** end your reply in the five parts of `docs/handbook/reporting-to-the-owner.md` — blocked
+first, outcomes, **what was decided for you** (never optional: `async` settles every reversible fork
+alone, so an unreported decision is an unseen one), what you owe, where it is. Each filed
+`needs-human/` item gets a link + why it matters + what happens if you do nothing — a bare slug is
+not an entry — plus one standing line: `N pending · top: <slug> — <its consequence in a clause>`
+(highest `Cost if wrong`). A PR relying on a pending default path re-checks that item and carries a
+`## What needs you` section projecting the same items. Never name or summarize
 `private/message-queue/` or `private/tasks/` items in public PR descriptions or commit messages.
 
 **End of session** (any session that did real work): write
@@ -306,6 +310,9 @@ Each expands in a named `docs/handbook/` doc; the bolded name is the canonical s
   leak-guarded content): one self-contained item per file, schemas in `templates/` (copy, never
   restate). Hit an owner-owned fork? File it in `message-queue/needs-human/decisions/` (with
   options + a default path) and continue — don't block, don't guess.
+- **Reporting to the Owner** — the prose every human-read surface owes: the five-part session reply,
+  the PR `## What needs you` section, the handover. Effect not mechanism; a before with every after;
+  uncertainty as a number or "not measured". Full detail: `docs/handbook/reporting-to-the-owner.md`.
 - **Shell & Paths** — the shell is **zsh**; always use **absolute paths** in bash calls (a subagent's
   working directory resets between calls, so relative paths break), and **quote** any `=`-leading
   argument or glob (`'--flag=val'`, `'*.md'`) so zsh does not mis-split or expand it.
