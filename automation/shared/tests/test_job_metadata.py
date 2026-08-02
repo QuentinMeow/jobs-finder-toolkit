@@ -780,6 +780,253 @@ class SponsorshipNegationScopeTests(unittest.TestCase):
         self.assertFalse(assessment["signal_present"])
 
 
+class SponsorshipNonImmigrationDenialTests(unittest.TestCase):
+    """A "sponsor" that is not about immigration must not read as a visa denial.
+
+    Offer phrases carried an immigration-context gate; denial phrases carried
+    none, so "we do not sponsor community events" matched ``do not sponsor`` and
+    graded a confident refusal — and the default ``exclude_negative`` policy
+    DROPS refusals, so the posting was deleted for a sentence about a street
+    fair.  Every sentence here is fictional.
+    """
+
+    def test_a_non_immigration_sponsee_is_not_a_denial(self):
+        for text in (
+            "We do not sponsor community events.",
+            "We do not sponsor conference booths.",
+            "We will not sponsor youth sports leagues in our marketing budget.",
+            "We sponsor community events and do not sponsor local sports teams.",
+        ):
+            with self.subTest(text=text):
+                assessment = assess_sponsorship(text)
+                self.assertEqual(assessment["verdict"], "unknown")
+                self.assertEqual(assessment["decision"], "review")
+
+    def test_a_denial_naming_sponsorship_itself_needs_no_context(self):
+        # The tripwire that makes a SYMMETRIC gate wrong. This sentence carries
+        # no immigration word anywhere in it, and it is a real refusal — the
+        # object of the verb IS sponsorship, so there is no other sponsee for it
+        # to be about. Gating it would delete a denial the module can read.
+        assessment = assess_sponsorship("This role does not offer sponsorship.")
+        self.assertEqual(assessment["verdict"], "unlikely")
+        self.assertEqual(assessment["confidence"], "high")
+        self.assertEqual(assessment["decision"], "no_match")
+
+    def test_a_bare_verb_denial_with_immigration_beside_it_still_lands(self):
+        for text in (
+            "Applicants must already hold a work visa; we do not sponsor.",
+            "We cannot sponsor visas at all for this position.",
+            "We do not sponsor. Applicants must be authorized to work in the "
+            "United States.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(classify_sponsorship(text), "unlikely")
+
+    def test_the_gate_runs_after_the_quantifier_reads_not_before(self):
+        # Structural guard: the gate protects the bucket that produces
+        # `unlikely`/`no_match`, and nothing else. A scope-limited or unsettled
+        # reading is decided first and is unaffected, so this sentence keeps the
+        # low-confidence review the quantifier rules give it rather than
+        # silently losing its evidence.
+        assessment = assess_sponsorship(
+            "We are not able to sponsor every candidate who applies.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["confidence"], "low")
+        self.assertIn("sponsorship.scope_limit.not able to sponsor",
+                      assessment["rule_ids"])
+
+    def test_the_context_window_errs_toward_keeping_the_denial(self):
+        # The gate's known limit, pinned so it is not mistaken for a defect: the
+        # window is positional, so a real sponsorship offer near a
+        # non-immigration "sponsor" keeps that denial in the evidence. The
+        # result is a CONFLICT — kept and flagged — never a drop and never a
+        # promotion, which is the direction this module resolves ambiguity in.
+        assessment = assess_sponsorship(
+            "Our charitable giving programme does not sponsor political "
+            "campaigns. Visa sponsorship is available for this role.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+
+class SponsorshipOffListDenialTests(unittest.TestCase):
+    """A denial phrased in words NEITHER phrase list contains must still land.
+
+    Polarity was decided structurally, but detection was still lexical: with no
+    phrase matching, the negation scope had nothing to act on and the posting
+    classified ``unknown`` — the JD said no in writing and the pipeline read it
+    as silence.  A negation that reaches a bare sponsorship head THROUGH AN
+    OFFER VERB is a denial of that offer.  Every sentence here is fictional.
+    """
+
+    def test_coordinated_object_defeats_both_phrase_lists(self):
+        # The filed reproduction: the denial phrases need "offer sponsorship"
+        # contiguous and the offer phrases need "offer visa sponsorship"
+        # contiguous, and one coordinated object defeats both.
+        assessment = assess_sponsorship(
+            "We do not offer relocation or visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unlikely")
+        self.assertEqual(assessment["confidence"], "high")
+        self.assertEqual(assessment["decision"], "no_match")
+
+    def test_other_offer_verbs_are_read_the_same_way(self):
+        for text in (
+            "We cannot extend visa sponsorship for this position.",
+            "We are unable to provide relocation or employment sponsorship "
+            "for this opening.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(classify_sponsorship(text), "unlikely")
+
+    def test_eeo_copy_is_not_a_denial(self):
+        # The misfire a generic "cue ... sponsorship head" rule produces, and the
+        # reason the OFFER VERB is required rather than merely helpful: this
+        # sentence puts a cue five tokens from the head and is the OPPOSITE of a
+        # denial.  Reading it as one would drop an employer that sponsors.
+        assessment = assess_sponsorship(
+            "We do not discriminate against candidates who need visa "
+            "sponsorship.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+    def test_the_verb_to_head_window_stays_tight(self):
+        # A head far enough from the offer verb is no longer plausibly its
+        # object; the rule declines rather than guessing.
+        self.assertEqual(
+            classify_sponsorship(
+                "We do not offer relocation or housing or transit or gym or "
+                "childcare or visa sponsorship."),
+            "unknown",
+        )
+
+    def test_a_later_sentences_offer_is_untouched(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We do not offer relocation. Visa sponsorship is available "
+                "for this role."),
+            "likely",
+        )
+
+    def test_a_discretionary_offer_has_no_cue_to_negate(self):
+        self.assertEqual(
+            classify_sponsorship(
+                "We will consider visa sponsorship for exceptional "
+                "candidates."),
+            "unknown",
+        )
+
+    def test_the_fallback_never_steals_a_wording_the_lists_already_read(self):
+        # The rule only ADDS detection: a head already covered by a phrase from
+        # either tuple keeps its existing path, evidence and rule id.
+        assessment = assess_sponsorship(
+            "This role does not currently offer visa sponsorship.")
+        self.assertEqual(
+            assessment["rule_ids"],
+            ["sponsorship.negated_offer.offer visa sponsorship"],
+        )
+
+    def test_an_off_list_denial_obeys_the_double_negation_rule(self):
+        assessment = assess_sponsorship(
+            "It is not true that we do not offer relocation or visa "
+            "sponsorship.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertIn(
+            "sponsorship.ambiguous.double_negation", assessment["rule_ids"])
+
+    def test_an_off_list_denial_beside_an_offer_is_a_conflict(self):
+        assessment = assess_sponsorship(
+            "We do not offer relocation or visa sponsorship. We sponsor H-1B "
+            "transfers for senior hires.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+
+class SponsorshipUnreachableCueTests(unittest.TestCase):
+    """A cue the scope cannot reach must not leave the offer phrase asserted.
+
+    Two independent bounds — the clause break and the token budget — can put a
+    negation the sentence plainly contains out of an offer phrase's reach, and
+    the failure was not symmetric: the phrase kept scoring as an explicit OFFER.
+    A denial written with a parenthetical in the middle of it therefore graded
+    ``likely``/``high``/``match``, so ``--visa-policy require_positive`` — the
+    policy chosen by the one candidate who needs sponsorship — returned an
+    employer that refuses it in writing, unflagged.
+
+    The repair leaves both bounds exactly where they were and fails toward
+    review instead, so the guardrail that keeps a clause restart readable is
+    untouched. Every sentence here is fictional.
+    """
+
+    def test_clause_break_inside_a_parenthetical_no_longer_asserts_an_offer(self):
+        # The filed reproduction. `_SPONSOR_CLAUSE_BREAK_RE` matches the "and the"
+        # INSIDE the aside, which truncates the scope before the token budget is
+        # ever consulted, so `unable` is not in scope at all.
+        assessment = assess_sponsorship(
+            "We are unable, given current headcount constraints and the "
+            "timeline for this particular opening, to offer visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["confidence"], "low")
+        self.assertEqual(assessment["decision"], "review")
+        self.assertIn(
+            "sponsorship.unreachable_cue.offer visa sponsorship",
+            assessment["rule_ids"])
+
+    def test_the_token_budget_bound_is_closed_by_the_same_repair(self):
+        # The OTHER bound, on the same sentence with the coordinator removed:
+        # `unable` is back in scope, 9 tokens away, and refused by the budget. A
+        # repair aimed at only one bound would leave this one open.
+        assessment = assess_sponsorship(
+            "We are unable, given current headcount constraints for this "
+            "particular opening, to offer visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+    def test_an_unreachable_cue_is_never_promoted_to_a_denial(self):
+        # The asymmetry that keeps the safety posture in BOTH directions: an
+        # unreadable sentence is not evidence of refusal either, so it must not
+        # drop the posting.
+        assessment = assess_sponsorship(
+            "We are unable, given current headcount constraints and the "
+            "timeline for this particular opening, to offer visa sponsorship.")
+        self.assertNotEqual(assessment["verdict"], "unlikely")
+        self.assertNotEqual(assessment["decision"], "no_match")
+
+    def test_an_offer_that_opens_its_own_clause_still_stands(self):
+        # The guardrail the widening repair would have put at risk. The cue "no"
+        # belongs to the relocation clause; the offer starts a new one, which is
+        # measurable as an EMPTY clause scope, so no demotion applies.
+        assessment = assess_sponsorship(
+            "There is no relocation budget, and visa sponsorship is available "
+            "for this role.")
+        self.assertEqual(assessment["verdict"], "likely")
+        self.assertEqual(assessment["confidence"], "high")
+
+    def test_an_offer_in_a_later_sentence_is_out_of_the_cues_sentence(self):
+        assessment = assess_sponsorship(
+            "We are unable, given headcount and the timeline, to expand the "
+            "team this quarter. Visa sponsorship is available for this role.")
+        self.assertEqual(assessment["verdict"], "likely")
+
+    def test_a_settled_denial_still_outranks_an_unreachable_cue(self):
+        # Recording a reading as unsettled must never weaken a refusal the
+        # module CAN read — the property the quantifier pass exists to protect.
+        assessment = assess_sponsorship(
+            "This role does not offer sponsorship. We are unable, given "
+            "current headcount constraints and the timeline for this "
+            "particular opening, to offer visa sponsorship.")
+        self.assertEqual(assessment["verdict"], "unlikely")
+        self.assertEqual(assessment["decision"], "no_match")
+
+    def test_an_unreachable_cue_beside_a_real_offer_is_a_conflict(self):
+        # An unreadable sentence is a POSSIBLE denial, so it conflicts with a
+        # real offer rather than being ignored beside one.
+        assessment = assess_sponsorship(
+            "We are unable, given current headcount constraints and the "
+            "timeline for this particular opening, to offer visa sponsorship. "
+            "We sponsor H-1B transfers for senior hires.")
+        self.assertEqual(assessment["verdict"], "unknown")
+        self.assertEqual(assessment["decision"], "review")
+
+
 class SponsorshipScopeLimitTests(unittest.TestCase):
     """An offer plus a limit ON that offer is a sponsor, not a refusal.
 

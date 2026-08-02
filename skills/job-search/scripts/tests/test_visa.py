@@ -218,6 +218,84 @@ class VisaPolicyBindingTests(unittest.TestCase):
                     self.assertFalse(visa_ok(posting, profile))
                     self.assertEqual(posting.visa_label, "no")
 
+    def test_a_non_immigration_sponsor_is_never_dropped_as_a_denial(self):
+        # The false-denial shape end to end. `do not sponsor` carried no
+        # immigration-context gate, so a sentence about a street fair graded a
+        # confident refusal and the default policy DELETED the posting.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting("We do not sponsor community events.")
+                self.assertTrue(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "unclear")
+                self.assertIn("sponsorship_requires_review",
+                              posting.review_reasons)
+
+    def test_a_denial_naming_sponsorship_itself_is_still_dropped(self):
+        # The tripwire: this sentence carries no immigration word either, and a
+        # symmetric gate would turn a real refusal into `unclear`.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting("This role does not offer sponsorship.")
+                self.assertFalse(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "no")
+
+    def test_an_off_list_denial_is_dropped_under_both_policies(self):
+        # Detection, end to end. The denial matched no phrase in either list, so
+        # the posting reached the candidate as if sponsorship were merely
+        # unstated. Fictional wording.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting(
+                    "We do not offer relocation or visa sponsorship.")
+                self.assertFalse(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "no")
+
+    def test_eeo_copy_is_never_dropped_as_a_denial(self):
+        # The misfire the tight window and the offer-verb requirement exist to
+        # prevent: this sentence is the OPPOSITE of a denial, and reading it as
+        # one would delete an employer that sponsors.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting(
+                    "We do not discriminate against candidates who need visa "
+                    "sponsorship.")
+                self.assertTrue(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "unclear")
+
+    def test_require_positive_never_presents_an_unreachable_cue_as_an_offer(self):
+        # The high-severity reproduction end to end. The clause break inside the
+        # parenthetical cut `unable` out of the offer phrase's scope, and an
+        # unreachable cue used to leave the phrase scored as an explicit OFFER —
+        # so the strictest policy returned a posting that refuses sponsorship in
+        # writing, with no review flag on it. Fictional wording.
+        profile = {"visa": {"needs_sponsorship": True, "policy": "require_positive"}}
+        posting = self._posting(
+            "We are unable, given current headcount constraints and the "
+            "timeline for this particular opening, to offer visa sponsorship.")
+        visa_ok(posting, profile)
+        self.assertNotEqual(posting.visa_label, "yes")
+        self.assertEqual(posting.sponsorship, "unknown")
+        self.assertIn("sponsorship_requires_review", posting.review_reasons)
+
+    def test_an_unreachable_cue_is_kept_and_flagged_under_both_policies(self):
+        # The mirror: an unreadable sentence is not a refusal either, so neither
+        # policy may drop it silently.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting(
+                    "We are unable, given current headcount constraints and "
+                    "the timeline for this particular opening, to offer visa "
+                    "sponsorship.")
+                self.assertTrue(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "unclear")
+                self.assertIn("sponsorship_requires_review",
+                              posting.review_reasons)
+
     def test_require_positive_still_keeps_an_offer_with_a_distributive_limit(self):
         # The counterpart: an employer that sponsors but not universally is still
         # a sponsor, and the strict policy must still surface it.

@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: tracker
 - **Source**: instruction-conflict audit, 2026-08-01
-- **Claimed-by**:
+- **Claimed-by**: agent, session 2026-08-02 (branch `fix/never-delete-application-folder`)
 
 ## Goal
 
@@ -50,9 +50,22 @@ those is a behaviour change in `status.py`, which is why this is filed rather th
 
 ## Definition of done
 
-- [ ] The `forget_log` refusal no longer instructs deletion of an application folder; it names an
+- [x] The `forget_log` refusal no longer instructs deletion of an application folder; it names an
       action an agent may take under `AGENTS.md:232-235`.
-- [ ] The duplicate chain (`handoff.py` explicit-`--select` refusal → `--forget-log`) terminates in
+- [x] The duplicate chain (`handoff.py` explicit-`--select` refusal → `--forget-log`) terminates in
       that action, verified by running it against a scratch applications tree.
-- [ ] `grep -rn 'delete the application folder' skills/ automation/` returns nothing addressed to an
+- [x] `grep -rn 'delete the application folder' skills/ automation/` returns nothing addressed to an
       agent.
+
+## Resolution (2026-08-02)
+
+Message rewritten in place; the chain now terminates in "use the application that already
+exists, and propose a removal in `message-queue/needs-human/` if it truly should go". The
+opt-in-flag option was **rejected in code, with the reason recorded beside the branch**: a
+tombstone appended over a live folder is rebuilt by the very next `--sync-log`, so the flag
+would have bought exactly the silent no-op un-skip that branch exists to refuse.
+
+A **second offender** turned up on the same sweep and is fixed here too:
+`handoff.py`'s location-mismatch remedy opened with "delete the folder (<path>)" — the folder
+is deliberately left on disk for review, not as a deletion cue. Both messages now name the
+guardrail explicitly, and both are pinned by a test. Evidence in `verification.md`.
