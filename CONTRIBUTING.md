@@ -125,10 +125,19 @@ audience decides: fork → this file, maintainer branch → the skill.
    base-first. A fork's branches are not in this repo, so a stack built there is
    one the maintainer cannot rebase or retarget for you when the bottom merges.
    **This rule does not bind the maintainer**, who stacks branches inside this
-   repo — the procedure is `skills/github-workflow/SKILL.md` §2, and `AGENTS.md`
-   routes "stacked PRs" there. (Either way, stacked PRs merge bottom-up with a
-   merge commit — `gh pr merge <n> --merge` — and the next PR is retargeted
-   explicitly with `gh pr edit <n+1> --base main` *after* its base has merged.
+   repo — the procedure is `skills/github-workflow/SKILL.md` §2 and the runbook in
+   `skills/github-workflow/reference.md`, and `AGENTS.md` routes "stacked PRs"
+   there. (Either way, stacked PRs merge bottom-up with a merge commit, one at a
+   time. Which *command* does the merge depends on whether the PRs were converted
+   into one of GitHub's native stacks: a stack member refuses `gh pr merge` with
+   HTTP 403 and merges through the repository's `merge-async` endpoint, where one
+   entry lands every entry below it in a single commit and GitHub retargets the
+   next entry itself; an ordinary PR merges with `gh pr merge <n> --merge` and is
+   never retargeted by anything, so the next PR up needs an explicit
+   `gh pr edit <n+1> --base main` *after* its base has merged. Checking which case
+   you are in is the first step, not a detail — the two are indistinguishable in
+   `gh pr view` and on the web page, and merging an unretargeted PR lands it on a
+   dead branch with green checks and no warning anywhere.
    Head branches are **not** deleted on merge and `delete_branch_on_merge` stays
    off: deleting a base branch closes the stacked PR above it instead of
    retargeting it, and it makes the rewritten commits unreachable, which turns the

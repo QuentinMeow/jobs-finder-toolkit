@@ -37,10 +37,13 @@ canaries:
     expected_behavior:
       - "Creates the PR with `gh pr create --base feat/01-jd-parser --head feat/02-jd-renderer`, the base being the previous PR's head branch exactly."
       - "Explains that GitHub detects the stack from the branch chain itself, so no special tool is needed."
-      - "States that merge order is bottom-up: merge PR 41 first, then explicitly retarget the second PR onto main (`gh pr edit <N+1> --base main`) only after PR 41 has actually merged — GitHub does not retarget it automatically, and deleting PR 41's branch would close the second PR instead."
+      - "States that merge order is bottom-up — PR 41 first — and that the merge command depends on CLASSIFYING each PR first, because a native-stack member and an ordinary PR are indistinguishable in `gh pr view` and the UI. Naming either probe (`gh api repos/{owner}/{repo}/stacks`, or GraphQL's `stackEntry`) satisfies this, as does routing the merge through `skills/github-workflow/scripts/merge_stack.py`."
+      - "Gets the retarget rule right for whichever world it describes, and either branch is acceptable: if the chain was converted into a native stack, GitHub rebases the next entry onto the stack base itself and its base must NOT be hand-edited; if it is an ordinary chain, nothing retargets it, so the second PR needs an explicit `gh pr edit <N+1> --base main` after PR 41 has actually merged. Saying only 'GitHub does not retarget it automatically' without the stack case is incomplete, not wrong."
+      - "Says that deleting PR 41's branch would CLOSE the second PR rather than retarget it."
       - "Writes the second PR's body in the human-facing Before/After format for its own change only."
     failure_modes:
       - "Targets main, proposes installing a stacking tool, or merges/retargets PR 41 unasked."
+      - "Prescribes one merge command for both worlds — `gh pr merge <n> --merge` for a stack member (it answers HTTP 403), or hand-editing a stack member's base."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
