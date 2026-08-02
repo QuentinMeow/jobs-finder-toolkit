@@ -2393,3 +2393,9 @@
   files: 1
   digest: sha256:99df9afc3507e680
   finding: 'Session handover for the merge-runbook and folder-refactor session. Describes the work in shapes, not specifics: which decision fired, which defects were fixed, which gates caught what. Names only public repo paths, PR numbers and commit SHAs. The one private reference is the standing note that verify_links is red on refs inside private/, stated without naming any of those paths. No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 8
+  digest: sha256:dc311623023db643
+  finding: 'Owner-reporting standard: a new docs/handbook/reporting-to-the-owner.md, its index row, the AGENTS.md Always paragraph plus one Conventions bullet, prose-only additions to templates/handover.md and templates/queue/{decision,clarification}.md, a What-needs-you section in .github/pull_request_template.md, and a deferred-line note on the github-workflow budget backlog task. Read the full diff: every example is invented (a fictional raw-retention queue item, a made-up disk-growth figure) and every name is a public repo path, a template placeholder or a script name. The only dates are process dates on tracked task/ledger files. No identity, employer, school, salary or dated job-hunt content.'

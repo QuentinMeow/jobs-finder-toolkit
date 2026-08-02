@@ -22,4 +22,5 @@ folder. Active design programs live in `docs/designs/`, not here.
 | `docs/handbook/private-overlay.md` | Setting up and maintaining the private overlay repo |
 | `docs/handbook/metrics.md` | Opt-in local metrics collection |
 | `docs/handbook/doc-style.md` | Style contract for human-read documents (decision blocks, async fields) |
+| `docs/handbook/reporting-to-the-owner.md` | What the session reply, the PR ask section, and the handover must say |
 | `docs/handbook/comparisons/` | Research comparing this toolkit to external tools |
