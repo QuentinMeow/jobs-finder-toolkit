@@ -5,8 +5,8 @@
 #   1. any path under the private overlay (private/) is STAGED, or
 #   2. the leak guard finds a violation in the STAGED INDEX content
 #      (automation/publish/check_public.py --staged), or
-#   3. the published tree changed without a review row in
-#      automation/publish/review_ledger.yaml (automation/publish/review_gate.py), or
+#   3. the STAGED tree changes the published tree without a review row in
+#      automation/publish/review_ledger.yaml (review_gate.py --staged), or
 #   4. a vendored copy has drifted from its canonical source
 #      (see automation/vendoring/sync_vendored.py + .../job-search/scripts/_vendor/), or
 #   5. any mail provider folder or the email-assistant CLI exposes email-sending
@@ -87,16 +87,23 @@ echo "pre-commit: leak guard over the staged index..."
 
 # ── 3. Public review gate ────────────────────────────────────────────────────
 # Fails when the published tree changed without a row in
-# automation/publish/review_ledger.yaml. It reads HEAD (the PREVIOUS commit) and
-# the WORKING-TREE ledger, so the way to satisfy it is to stage the row for HEAD
-# alongside the change you are making now — one row per commit, always one
-# behind. The gate prints the exact row when it fails. It is SILENT on a pass —
-# except for listing any ledger row that a rebase moved out of this history, which
-# it skips rather than fails on — and a no-op in a checkout whose history the ledger
-# does not describe (an exported mirror), so a public clone's own pre-commit stays green.
+# automation/publish/review_ledger.yaml.
+#
+# --staged points it at the STAGED INDEX — the tree THIS commit will have — rather
+# than at HEAD, which is the previous commit. That is what lets one commit carry its
+# own review: the gate prints a PENDING row (no `commit:`, because the commit has no
+# SHA yet), you append it, `git add` the ledger, and commit once. The ledger is
+# excluded from the watched pathspec, so staging the row cannot change the digest the
+# row records. No follow-up ledger-only commit, so no second edit to the one file
+# every parallel branch also edits.
+#
+# The gate is SILENT on a pass — except for listing any ledger row that a rebase
+# moved out of this history, which it skips rather than fails on — and a no-op in a
+# checkout whose history the ledger does not describe (an exported mirror), so a
+# public clone's own pre-commit stays green.
 # Default run: bounded ledger-integrity tail (~tens of ms). CI runs --verify-all.
 echo "pre-commit: public review gate..."
-"$PY" automation/publish/review_gate.py
+"$PY" automation/publish/review_gate.py --staged
 
 echo "pre-commit: checking vendored copies are in sync..."
 "$PY" automation/vendoring/sync_vendored.py --check

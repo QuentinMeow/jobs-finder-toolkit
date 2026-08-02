@@ -51,14 +51,40 @@ and the digest uses the SAME exclusion so a row can be recomputed by hand:
 
     git diff <a>..<b> -- . ':!automation/publish/review_ledger.yaml' | shasum -a 256
 
-THE ONE-COMMIT LAG
-------------------
-At ``pre-commit`` time HEAD is still the PREVIOUS commit, so the gate always
-reports on already-committed work. That is usable because the ledger is read from
-the WORKING TREE: you satisfy the gate by staging the acknowledgment row for HEAD
-*alongside* your next change and committing once. One row per commit, always one
-behind. A ledger-only commit changes no watched file, so it acknowledges the tip
-without creating new work — that is how you land a branch green before pushing.
+THE ONE-COMMIT LAG, AND THE PENDING ROW THAT REMOVES IT
+-------------------------------------------------------
+A row records the commit it reviewed, so it can only be written once that commit
+has a SHA. At ``pre-commit`` time HEAD is still the PREVIOUS commit, so the gate
+reports on already-committed work and every content commit needs a SECOND,
+ledger-only commit behind it to acknowledge the tip. That second commit is the
+lag, and it is expensive: every branch then edits the one file every other branch
+also edits, and a tip merged by GitHub's button (which cannot append anything)
+lands on the trunk unsigned.
+
+``commit:`` is therefore OPTIONAL. A row that omits it is a PENDING row: it pins
+its range with ``base:`` and ``digest:`` alone, and its END is resolved from
+history as *the commit that introduced this row into the ledger* — which the row
+never has to name, so it does not have to exist yet.
+
+That is what makes a single commit able to carry its own review row. Under
+``--staged`` (what the pre-commit hook runs) the endpoint is not HEAD but the
+STAGED INDEX, reached with ``git diff --cached <base>`` — byte-for-byte the diff
+the commit about to be made will have against ``<base>``. So:
+
+    git add -A && review_gate.py --staged   # prints a PENDING row for the index
+    <read the diff, append the row>         # the ledger is EXCLUDED from the
+    git add <ledger> && git commit          # pathspec, so the row cannot move
+                                            # the digest it records
+
+One commit, its own row, no follow-up. After it lands, the row seals: the gate
+finds the commit that introduced it and recomputes ``<base>..<that commit>``,
+which is the same range and therefore the same digest.
+
+The classic ``commit:``-carrying row is unchanged and still verifies — a row for
+history that ALREADY landed (a merge commit, an orphan reconciliation) can only be
+written that way, and a default (non-``--staged``) run still prints that shape.
+A ledger-only commit changes no watched file, so it still acknowledges a tip
+without creating new work.
 
 NOT APPLICABLE IS NOT A FREE PASS
 ---------------------------------
@@ -80,7 +106,8 @@ EXIT CODES
        or no row resolving in a tree that should be the ledger's own repository)
 
 Run:
-    .venv/bin/python automation/publish/review_gate.py             # pre-commit / on demand
+    .venv/bin/python automation/publish/review_gate.py               # on demand, vs HEAD
+    .venv/bin/python automation/publish/review_gate.py --staged      # pre-commit: vs the index
     .venv/bin/python automation/publish/review_gate.py --verify-all  # CI: full ledger integrity
 """
 from __future__ import annotations
@@ -144,11 +171,14 @@ HINT_EXCLUDE = [":!examples", ":!skills/job-search/companies.yaml", ":!private"]
 # COMPANY_INDEX_REL above).
 EXPORT_ABSENT_ROOTS = ("tasks", "memory", "message-queue", "history", "docs/roadmap")
 
-REQUIRED_KEYS = ("commit", "reviewed_by", "date", "files", "digest", "finding")
+REQUIRED_KEYS = ("reviewed_by", "date", "files", "digest", "finding")
 # ``base`` is OPTIONAL and additive: a row without it is read exactly as before
 # (its range starts at ``RowChain.base_index``). See A ROW'S OWN BASE above.
-OPTIONAL_KEYS = ("base",)
-ALLOWED_KEYS = REQUIRED_KEYS + OPTIONAL_KEYS
+# ``commit`` is OPTIONAL too — a row without it is a PENDING row whose endpoint is
+# resolved from history (see THE PENDING ROW above). A row must carry at least one
+# of the two, which ``validate_row`` enforces: a row with neither pins nothing.
+OPTIONAL_KEYS = ("commit", "base")
+ALLOWED_KEYS = OPTIONAL_KEYS + REQUIRED_KEYS
 REVIEWERS = ("agent", "human")
 DIGEST_SCHEME = "sha256:"
 DIGEST_MIN_HEX = 16          # 64 bits of the sha256; the spec's rows print 16 hex chars
@@ -243,21 +273,43 @@ def is_ancestor(repo: Path, older: str, newer: str) -> bool:
     return _git_ok(["merge-base", "--is-ancestor", older, newer], repo)
 
 
-def changed_files(repo: Path, a: str, b: str) -> list[str]:
-    """Watched files that differ between ``a`` and ``b`` (ledger excluded)."""
-    out = _git_out(["diff", "--name-only", "-z", f"{a}..{b}", "--", *WATCHED_PATHSPEC], repo)
+def _range_args(a: str, b: str | None) -> list[str]:
+    """git-diff selector for ``a..b``, or for ``a``-vs-the-INDEX when ``b`` is None.
+
+    The index endpoint is what makes a commit able to carry its own row: at
+    pre-commit time the content being reviewed is the staged tree and the commit
+    has no SHA yet. ``git diff --cached <a>`` and ``git diff <a>..<the commit that
+    index becomes>`` are the same tree-to-tree diff and emit the SAME BYTES, so a
+    digest recorded against the index verifies unchanged against the commit —
+    which is the whole basis of the pending row.
+    """
+    return ["--cached", a] if b is None else [f"{a}..{b}"]
+
+
+def _range_label(repo: Path, a: str, b: str | None) -> str:
+    return f"{short(repo, a)}..{'<staged index>' if b is None else short(repo, b)}"
+
+
+def changed_files(repo: Path, a: str, b: str | None) -> list[str]:
+    """Watched files that differ between ``a`` and ``b`` (ledger excluded).
+
+    ``b=None`` compares ``a`` against the STAGED INDEX (see ``_range_args``).
+    """
+    out = _git_out(["diff", "--name-only", "-z", *_range_args(a, b), "--",
+                    *WATCHED_PATHSPEC], repo)
     return [p for p in out.split("\0") if p]
 
 
-def range_digest(repo: Path, a: str, b: str) -> str:
+def range_digest(repo: Path, a: str, b: str | None) -> str:
     """sha256 of the watched diff between ``a`` and ``b`` (ledger excluded).
 
     Hashes RAW BYTES so a binary file in the diff cannot change the answer by way
-    of a decoding error.
+    of a decoding error. ``b=None`` hashes ``a``-vs-the-INDEX instead.
     """
-    proc = _git(["diff", f"{a}..{b}", "--", *WATCHED_PATHSPEC], repo, binary=True)
+    proc = _git(["diff", *_range_args(a, b), "--", *WATCHED_PATHSPEC], repo, binary=True)
     if proc.returncode != 0:
-        raise GateError(f"git diff {a}..{b} failed: {proc.stderr.decode('utf-8', 'replace').strip()}")
+        raise GateError(f"git diff {_range_label(repo, a, b)} failed: "
+                        f"{proc.stderr.decode('utf-8', 'replace').strip()}")
     return hashlib.sha256(proc.stdout).hexdigest()
 
 
@@ -288,12 +340,21 @@ def validate_row(raw: object, index: int) -> dict:
         raise _row_error(index, "unknown key(s): " + ", ".join(unknown)
                          + f" (allowed: {', '.join(ALLOWED_KEYS)})")
 
-    commit = raw["commit"]
-    if not isinstance(commit, str) or not HEX_RE.match(commit.lower()) or len(commit) < 7:
+    # Both anchors are optional INDIVIDUALLY and validated only when present — a row
+    # written before either key existed must keep parsing to the identical dict it
+    # always did — but a row carrying NEITHER pins no range at all and is rejected.
+    if "commit" not in raw and "base" not in raw:
+        raise _row_error(index, "a row must carry `commit:` (the commit it reviewed) "
+                                "or `base:` (a PENDING row, whose commit is resolved "
+                                "as the commit that introduced it into the ledger); "
+                                "a row with neither pins no range")
+
+    commit = raw.get("commit")
+    if "commit" in raw and (not isinstance(commit, str)
+                            or not HEX_RE.match(str(commit).lower())
+                            or len(str(commit)) < 7):
         raise _row_error(index, f"commit must be >= 7 hex characters, got {commit!r}")
 
-    # Optional, and validated only when the key is actually there: a row written
-    # before this key existed must keep parsing to the identical dict it always did.
     base = raw.get("base")
     if "base" in raw and (not isinstance(base, str) or not HEX_RE.match(str(base).lower())
                           or len(str(base)) < 7):
@@ -336,15 +397,17 @@ def validate_row(raw: object, index: int) -> dict:
 
     row = {
         "index": index,
-        "commit": commit,
         "reviewed_by": reviewer,
         "date": day,
         "files": files,
         "digest": hexpart.lower(),
         "finding": finding_text,
     }
-    # Added only when the row carries it, so `row.get("base")` is exactly the
-    # "did the author record a base?" question and a legacy row's dict is unchanged.
+    # Each anchor is added only when the row carries it, so `row.get("commit")` /
+    # `row.get("base")` are exactly the "did the author record one?" questions and a
+    # legacy row's dict is unchanged apart from key order (which nothing reads).
+    if "commit" in raw:
+        row["commit"] = commit
     if "base" in raw:
         row["base"] = base
     return row
@@ -395,6 +458,20 @@ def load_ledger(repo: Path, ledger_rev: str | None = None) -> list[dict]:
 ANCESTOR = "ancestor"
 NOT_ANCESTOR = "not-an-ancestor"
 UNKNOWN = "unknown-object"
+# A PENDING row names no commit and no commit has introduced it yet: it is the row
+# staged for the commit being made right now. Not an error and not an orphan — it is
+# the normal state of a row for exactly as long as its commit does not exist.
+PENDING = "pending"
+
+
+def row_ref(row: dict) -> str:
+    """How a row names itself in a message: its commit, or its pending anchor.
+
+    A pending row has no commit to print, and printing an empty string where a sha
+    belongs is how a reader is told the wrong thing about which row failed.
+    """
+    commit = row.get("commit")
+    return commit if commit else f"pending row based on {row.get('base')}"
 
 
 class RowChain:
@@ -429,22 +506,75 @@ class RowChain:
         self._by_index = {row["index"]: row for row in rows}
         self._seen: dict[int, tuple[str, str | None]] = {}
         self._skipped: dict[int, str] = {}
+        self._pending: dict[int, dict] = {}
+        self._blobs: dict[str, str] = {}
 
     def classify(self, index: int) -> tuple[str, str | None]:
         """(status, full sha or None) for row ``index``; memoised."""
         if index not in self._seen:
             row = self._by_index[index]
-            rev = resolve(self.repo, row["commit"])
-            if rev is None:
-                status = UNKNOWN
-            elif is_ancestor(self.repo, rev, self.head_rev):
-                status = ANCESTOR
-            else:
-                status = NOT_ANCESTOR
+            status, rev = (self._classify_named(row) if "commit" in row
+                           else self._classify_pending(row))
             self._seen[index] = (status, rev)
-            if status != ANCESTOR:
+            if status == PENDING:
+                self._pending[index] = row
+            elif status != ANCESTOR:
                 self._skipped[index] = status
         return self._seen[index]
+
+    def _classify_named(self, row: dict) -> tuple[str, str | None]:
+        rev = resolve(self.repo, row["commit"])
+        if rev is None:
+            return (UNKNOWN, None)
+        if is_ancestor(self.repo, rev, self.head_rev):
+            return (ANCESTOR, rev)
+        return (NOT_ANCESTOR, rev)
+
+    def _classify_pending(self, row: dict) -> tuple[str, str | None]:
+        """A row with no ``commit:``: find the commit that INTRODUCED it, if any.
+
+        The search is bounded by the row's own ``base:``, which a pending row always
+        carries (``validate_row``): a row cannot have been introduced before the
+        commit its range starts at, so ``<base>..<head>`` is the whole search space
+        and it is the SHORT one — a row's base is the review point immediately
+        before it. The walk stops at the first hit, so the common cases cost one
+        ``git log`` and zero-to-one ``git show``: nothing since the base has touched
+        the ledger (the row is genuinely pending), or exactly the commit that just
+        landed did.
+
+        Resolution is SELF-VALIDATING, which is why a cheap containment test is
+        enough: whatever commit comes back, ``verify_rows`` then recomputes
+        ``<base>..<that commit>`` and compares it to the row's digest. A resolution
+        that is too early or too late does not match and fails loudly (exit 2); it
+        can never quietly certify a range the row did not record.
+
+        A base that is not an ancestor of HEAD is the ORPHAN case, and it is
+        reported exactly as an orphaned ``commit:`` row is: the row's range starts
+        outside this history, so its digest cannot be recomputed here.
+        """
+        base_rev = resolve(self.repo, row["base"])
+        if base_rev is None:
+            return (UNKNOWN, None)
+        if not is_ancestor(self.repo, base_rev, self.head_rev):
+            return (NOT_ANCESTOR, None)
+
+        needles = (f"{DIGEST_SCHEME}{row['digest']}", f"base: {row['base']}")
+        proc = _git(["log", "--format=%H", "--reverse", "--topo-order", "--full-history",
+                     f"{base_rev}..{self.head_rev}", "--", LEDGER_REL], self.repo)
+        if proc.returncode != 0:
+            return (PENDING, None)
+        for rev in proc.stdout.split():
+            text = self._ledger_at(rev)
+            if all(needle in text for needle in needles):
+                return (ANCESTOR, rev)
+        return (PENDING, None)
+
+    def _ledger_at(self, rev: str) -> str:
+        """The ledger's text at ``rev``; cached, because rows share candidates."""
+        if rev not in self._blobs:
+            proc = _git(["show", f"{rev}:{LEDGER_REL}"], self.repo)
+            self._blobs[rev] = proc.stdout if proc.returncode == 0 else ""
+        return self._blobs[rev]
 
     def status(self, index: int) -> str:
         return self.classify(index)[0]
@@ -475,8 +605,36 @@ class RowChain:
         return any(self.rev(row["index"]) is not None for row in self.rows)
 
     def skipped(self) -> list[tuple[dict, str]]:
-        """(row, status) for every row EXAMINED this run and found off-chain."""
+        """(row, status) for every row EXAMINED this run and found off-chain.
+
+        PENDING rows are deliberately NOT here. Off-chain means "records a change
+        this history does not have"; pending means "records the change about to be
+        committed". Reporting the second as the first turns the normal shape of
+        every commit into a standing warning, which is how a real warning stops
+        being read.
+        """
         return [(self._by_index[i], self._skipped[i]) for i in sorted(self._skipped)]
+
+    def pending(self) -> list[dict]:
+        """Rows EXAMINED this run that no commit has introduced yet."""
+        return [self._pending[i] for i in sorted(self._pending)]
+
+    def unsealed(self) -> dict | None:
+        """The trailing pending row — the one written for the commit being made.
+
+        Only the LAST row can be one. A pending row is authored for the very next
+        commit, so the moment another row follows it in the ledger it has either
+        been sealed by history or fallen off-chain like any other row, and either
+        way it is no longer a claim about an uncommitted tree. Restricting the
+        lookup to the last row also keeps it cheap: it classifies ONE row rather
+        than the whole ledger.
+        """
+        if not self.rows:
+            return None
+        row = self.rows[-1]
+        if "commit" in row:
+            return None
+        return row if self.status(row["index"]) == PENDING else None
 
 
 # ── the advisory detector ────────────────────────────────────────────────────
@@ -527,7 +685,7 @@ def company_display_names(repo: Path) -> list[str] | None:
     return sorted(names)
 
 
-def company_hints(repo: Path, a: str, b: str) -> tuple[bool, list[str]]:
+def company_hints(repo: Path, a: str, b: str | None) -> tuple[bool, list[str]]:
     """(inspected, hints) — company display names NEWLY introduced by ``a..b``.
 
     Narrowed on four axes, and advisory: it never fails the gate by itself.
@@ -543,7 +701,8 @@ def company_hints(repo: Path, a: str, b: str) -> tuple[bool, list[str]]:
         # of a detector that found nothing to look at, never of a clean index.
         return (False, [])
 
-    proc = _git(["diff", f"{a}..{b}", "--", ".", LEDGER_EXCLUDE, *HINT_EXCLUDE], repo)
+    proc = _git(["diff", *_range_args(a, b), "--", ".", LEDGER_EXCLUDE, *HINT_EXCLUDE],
+                repo)
     if proc.returncode != 0:
         return (True, [])
     added = "\n".join(
@@ -582,51 +741,54 @@ def _hint_block(inspected: bool, hints: list[str]) -> list[str]:
                "  `reviewed_by: human`."])
 
 
-def review_required_message(repo: Path, base: str, head: str, files: list[str],
-                            digest: str, inspected: bool, hints: list[str],
-                            today: str) -> str:
-    base_s, head_s = short(repo, base), short(repo, head)
+def _range_headline(repo: Path, base: str, head: str | None, n_files: int) -> list[str]:
+    base_s = short(repo, base)
+    n_files_s = f"{n_files} file{'' if n_files == 1 else 's'}"
+    if head is None:
+        return [f"The STAGED tree changed the published tree since the last recorded "
+                f"review",
+                f"({base_s} → the commit you are about to make), touching {n_files_s}:"]
     n_commits = commit_count(repo, base, head)
-    listed = files[:MAX_LISTED_FILES]
-    file_lines = [f"    {f}" for f in listed]
-    if len(files) > len(listed):
-        file_lines.append(f"    ... and {len(files) - len(listed)} more")
-    reviewer = "human" if hints else "agent          # or: human"
-    reviewer_note = ("human          # REQUIRED — the advisory detector fired"
-                     if hints else reviewer)
+    return [f"{n_commits} commit{'' if n_commits == 1 else 's'} changed the published "
+            f"tree since the last recorded review",
+            f"({base_s} → {short(repo, head)}), touching {n_files_s}:"]
 
-    lines = [
-        "PUBLIC REVIEW GATE — not a test failure. Action required.",
-        "",
-        f"{n_commits} commit{'' if n_commits == 1 else 's'} changed the published tree "
-        f"since the last recorded review",
-        f"({base_s} → {head_s}), touching {len(files)} "
-        f"file{'' if len(files) == 1 else 's'}:",
-        "",
-        *file_lines,
-        "",
-        "These files ship to a public repository. Read the diff and confirm none of it",
-        "contains a real name, employer, school, date, salary, or anything about the",
-        "owner's actual job hunt.",
-        "",
-        f"    git diff {base_s}..{head_s} -- . ':!{LEDGER_REL}'",
-        "",
-        *_hint_block(inspected, hints),
-        "",
-        f"Then append to {LEDGER_REL}:",
-        "",
-        f"    - commit: {head_s}",
-        f"      base: {base_s}",
+
+def _row_to_append(base_s: str, head_s: str | None, reviewer_note: str, today: str,
+                   n_files: int, digest: str) -> list[str]:
+    """The row the gate hands the reviewer — pending when there is no commit yet.
+
+    The list-item dash sits on whichever anchor comes first, so the row is
+    copy-pasteable as printed in both shapes.
+    """
+    anchor = ([f"    - commit: {head_s}", f"      base: {base_s}"] if head_s
+              else [f"    - base: {base_s}"])
+    return [
+        *anchor,
         f"      reviewed_by: {reviewer_note}",
         f"      date: {today}",
-        f"      files: {len(files)}",
+        f"      files: {n_files}",
         f"      digest: {DIGEST_SCHEME}{digest[:DIGEST_MIN_HEX]}",
         "      finding: none               # or a description of what you found and fixed",
-        "",
-        "Keep `base:` as printed — it pins this row to the range you just read, so a",
-        "later merge that appends other rows around it cannot re-point it at a diff you",
-        "never saw. Do not guess it; it is the left side of the git diff above.",
-        "",
+    ]
+
+
+def _how_to_land(staged: bool) -> list[str]:
+    if staged:
+        return [
+            "That row carries NO `commit:` — it cannot, the commit does not exist yet.",
+            "It is a PENDING row: `base:` and `digest:` pin the range, and the gate",
+            "resolves its commit later as the commit that introduced it into the ledger.",
+            "",
+            "Append it, `git add` the ledger, and commit ONCE. The ledger is excluded",
+            "from the watched pathspec, so staging the row cannot change the digest the",
+            "row records — the commit carries its own review and needs no follow-up.",
+            "",
+            "A row naming an already-landed commit (`commit:` + `base:`) still works and",
+            "is the only shape for history that is already in — a merge commit you did",
+            "not make, or a reconciliation row after a rebase orphaned one.",
+        ]
+    return [
         "Stage that row ALONGSIDE your next change and commit once. The gate reads the",
         "ledger from your WORKING TREE, so the row you just added acknowledges HEAD and",
         "the commit goes through — one row per commit, always one behind.",
@@ -634,6 +796,53 @@ def review_required_message(repo: Path, base: str, head: str, files: list[str],
         "Nothing else to commit? A ledger-only commit is the way to close a branch: it",
         "changes no watched file, so it acknowledges the tip without creating new work.",
         "Do that before you push — CI runs this same gate on the tip.",
+        "",
+        "To skip the follow-up commit entirely, stage your change and run the gate with",
+        "--staged: it prints a PENDING row (no `commit:`) that the same commit carries.",
+    ]
+
+
+def review_required_message(repo: Path, base: str, head: str | None, files: list[str],
+                            digest: str, inspected: bool, hints: list[str],
+                            today: str, staged: bool = False,
+                            preamble: list[str] | None = None) -> str:
+    base_s = short(repo, base)
+    head_s = None if head is None else short(repo, head)
+    listed = files[:MAX_LISTED_FILES]
+    file_lines = [f"    {f}" for f in listed]
+    if len(files) > len(listed):
+        file_lines.append(f"    ... and {len(files) - len(listed)} more")
+    reviewer = "human" if hints else "agent          # or: human"
+    reviewer_note = ("human          # REQUIRED — the advisory detector fired"
+                     if hints else reviewer)
+    diff_cmd = (f"git diff --cached {base_s}" if head_s is None
+                else f"git diff {base_s}..{head_s}")
+
+    lines = [
+        "PUBLIC REVIEW GATE — not a test failure. Action required.",
+        "",
+        *(preamble + [""] if preamble else []),
+        *_range_headline(repo, base, head, len(files)),
+        "",
+        *file_lines,
+        "",
+        "These files ship to a public repository. Read the diff and confirm none of it",
+        "contains a real name, employer, school, date, salary, or anything about the",
+        "owner's actual job hunt.",
+        "",
+        f"    {diff_cmd} -- . ':!{LEDGER_REL}'",
+        "",
+        *_hint_block(inspected, hints),
+        "",
+        f"Then append to {LEDGER_REL}:",
+        "",
+        *_row_to_append(base_s, head_s, reviewer_note, today, len(files), digest),
+        "",
+        "Keep `base:` as printed — it pins this row to the range you just read, so a",
+        "later merge that appends other rows around it cannot re-point it at a diff you",
+        "never saw. Do not guess it; it is the left side of the git diff above.",
+        "",
+        *_how_to_land(staged),
     ]
     return "\n".join(lines)
 
@@ -647,11 +856,16 @@ def _off_chain_lines(skipped: list[tuple[dict, str]]) -> list[str]:
     width = max((len(str(row["index"])) for row, _ in skipped), default=1)
     lines = []
     for row, status in skipped:
+        # A pending row's sha IS its `base:` — say so, rather than let a reader go
+        # looking for a commit the row never named. The wording for a `commit:` row is
+        # unchanged, so an existing ledger's report is byte-for-byte what it always was.
+        tail = "" if "commit" in row else " (this row's base)"
         if status == UNKNOWN:
-            note = "UNKNOWN OBJECT — not in this checkout at all"
+            note = f"UNKNOWN OBJECT — not in this checkout at all{tail}"
         else:
-            note = "EXISTS here but is NOT an ancestor of HEAD"
-        lines.append(f"    row {str(row['index']).rjust(width)}  {row['commit']}  {note}")
+            note = f"EXISTS here but is NOT an ancestor of HEAD{tail}"
+        sha = row.get("commit") or row.get("base")
+        lines.append(f"    row {str(row['index']).rjust(width)}  {sha}  {note}")
     return lines
 
 
@@ -675,6 +889,58 @@ def _skipped_rows_note(chain: RowChain) -> str:
         "means the commit is unreachable in this clone (a fresh CI clone carries only",
         "reachable objects, so a deleted branch's commits are simply gone).",
     ])
+
+
+def _pending_rows_note(chain: RowChain) -> str:
+    """Informational: rows written for a commit that does not exist yet.
+
+    Normal at pre-commit and normal in a dirty working tree; NOT normal in CI, where
+    every row in the ledger came out of a commit. Saying which rows they are is what
+    tells those two apart, so it is printed rather than swallowed. Never an exit code:
+    a pending row contributes nothing to the chain, so nothing rests on it.
+    """
+    pending = chain.pending()
+    return "\n".join([
+        f"public review gate: {len(pending)} ledger row(s) are PENDING — no commit has "
+        f"introduced them yet",
+        "(they review the commit you are about to make, so they cannot be verified "
+        "against history):",
+        "",
+        *[f"    row {row['index']}  base {row['base']}  digest "
+          f"{DIGEST_SCHEME}{row['digest']}" for row in pending],
+        "",
+        "A pending row seals itself the moment its commit lands: the gate then resolves",
+        "it to the commit that introduced it and recomputes <base>..<that commit>.",
+        "Run the gate with --staged to have this row checked against the STAGED tree.",
+    ])
+
+
+def _pending_row_covers(repo: Path, base_rev: str, row: dict,
+                        files: list[str]) -> str | None:
+    """None when ``row`` reviews exactly ``base_rev``..INDEX; else why it does not.
+
+    Three independent claims, each checked against the repository rather than
+    trusted: the row starts where the unreviewed range starts, it counts the files
+    the range touches, and its digest is the sha256 of that range's diff. The digest
+    is the one that cannot be produced without running ``git diff`` over the range —
+    the same standard every landed row is held to.
+    """
+    declared = resolve(repo, row["base"])
+    if declared is None:
+        return (f"The last ledger row is a PENDING row whose base ({row['base']}) is not "
+                f"a commit in this checkout.")
+    if declared != base_rev:
+        return (f"The last ledger row is a PENDING row based on {row['base']}, but the "
+                f"unreviewed range starts at {short(repo, base_rev)}. A pending row must "
+                f"start where the last recorded review ended, or it certifies a range "
+                f"nobody read.")
+    if len(files) != row["files"]:
+        return (f"The last ledger row is a PENDING row recording files: {row['files']}, "
+                f"but the staged range touches {len(files)}.")
+    if not range_digest(repo, base_rev, None).startswith(row["digest"]):
+        return ("The last ledger row is a PENDING row whose digest does not match the "
+                "staged range. Read the diff below and record the digest it prints.")
+    return None
 
 
 def _stale_ack_message(repo: Path, chain: RowChain, head: str) -> str:
@@ -774,7 +1040,7 @@ def _digest_mismatch_message(repo: Path, row: dict, base: str, head: str,
     lines = [
         f"PUBLIC REVIEW GATE — ledger row {row['index']} does not match the repository.",
         "",
-        f"Row {row['index']} (commit {row['commit']}, reviewed_by: {row['reviewed_by']}) records",
+        f"Row {row['index']} (commit {row_ref(row)}, reviewed_by: {row['reviewed_by']}) records",
         f"    digest: {DIGEST_SCHEME}{row['digest']}",
         "but the diff it claims to cover hashes to",
         f"    digest: {DIGEST_SCHEME}{recomputed[:len(row['digest'])]}",
@@ -798,8 +1064,8 @@ def _digest_mismatch_message(repo: Path, row: dict, base: str, head: str,
             "re-points the second branch's first row at the first branch's last commit — a",
             "range that never existed. Tell the two causes apart before you touch anything:",
             "",
-            f"    git merge-base {row['commit']} {base_s}      # the branch point B",
-            f"    git diff B..{row['commit']} -- . ':!{LEDGER_REL}' | shasum -a 256",
+            f"    git merge-base {row_ref(row)} {base_s}      # the branch point B",
+            f"    git diff B..{row_ref(row)} -- . ':!{LEDGER_REL}' | shasum -a 256",
             "",
             "  * The digest matches over B..this row  ->  RE-PARENTED RANGE. The review was",
             "    real and the diff was read; only the derived start is wrong. Recover by",
@@ -836,7 +1102,7 @@ def _unknown_base_message(repo: Path, row: dict, this_rev: str) -> str:
         f"PUBLIC REVIEW GATE — ledger row {row['index']} names a base this checkout does "
         f"not have.",
         "",
-        f"Row {row['index']} (commit {row['commit']}) records base: {row['base']}, which is not a",
+        f"Row {row['index']} (commit {row_ref(row)}) records base: {row['base']}, which is not a",
         f"known commit here — yet {short(repo, this_rev)} IS an ancestor of HEAD, so the row "
         f"describes",
         "this history and its base should be reachable too.",
@@ -855,7 +1121,7 @@ def _files_mismatch_message(repo: Path, row: dict, base: str, head: str,
     return "\n".join([
         f"PUBLIC REVIEW GATE — ledger row {row['index']} does not match the repository.",
         "",
-        f"Row {row['index']} (commit {row['commit']}) records files: {row['files']}, but",
+        f"Row {row['index']} (commit {row_ref(row)}) records files: {row['files']}, but",
         f"{base_s}..{head_s} touches {recomputed} watched file(s).",
         "",
         f"    git diff --name-only {base_s}..{head_s} -- . ':!{LEDGER_REL}'",
@@ -916,11 +1182,17 @@ def verify_rows(repo: Path, chain: RowChain, to_verify: list[dict],
 def check(repo: Path = REPO_ROOT, head: str = "HEAD", ledger_rev: str | None = None,
           verify_tail: int = DEFAULT_VERIFY_TAIL, verify_all: bool = False,
           today: str | None = None, out=None, err=None,
-          allow_not_applicable: bool = False) -> int:
+          allow_not_applicable: bool = False, staged: bool = False) -> int:
     """Run the gate. Returns an exit code.
 
     Prints nothing on a clean pass, except the off-chain row report when the ledger
     carries rows that are not part of this history — those are never dropped silently.
+
+    ``staged`` moves the endpoint from HEAD to the STAGED INDEX, which is what the
+    pre-commit hook runs: the tree being judged is then the one the commit will have,
+    and a PENDING row staged alongside it satisfies the gate in the SAME commit. The
+    default (HEAD) behaviour is untouched, so CI and any manual run decide exactly as
+    they always did.
     """
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
@@ -977,14 +1249,39 @@ def check(repo: Path = REPO_ROOT, head: str = "HEAD", ledger_rev: str | None = N
             if chain.skipped():
                 print(_skipped_rows_note(chain), file=out)
 
-        files = changed_files(repo, base_rev, head_rev)
+        # The endpoint. None means the STAGED INDEX — the tree the commit about to be
+        # made will have, which is the only thing a row can review before its commit
+        # exists. Everything downstream reads it through ``_range_args``.
+        endpoint = None if staged else head_rev
+
+        files = changed_files(repo, base_rev, endpoint)
         if not files:
+            if chain.pending():
+                print(_pending_rows_note(chain), file=out)
             return EXIT_OK
 
-        digest = range_digest(repo, base_rev, head_rev)
-        inspected, hints = company_hints(repo, base_rev, head_rev)
-        print(review_required_message(repo, base_rev, head_rev, files, digest,
-                                      inspected, hints, today), file=err)
+        # A pending row staged alongside the change is what removes the follow-up
+        # commit. It is accepted only when it reviews EXACTLY the unreviewed range:
+        # same start, same file count, same digest.
+        preamble = None
+        if staged:
+            unsealed = chain.unsealed()
+            if unsealed is not None:
+                preamble_line = _pending_row_covers(repo, base_rev, unsealed, files)
+                if preamble_line is None:
+                    return EXIT_OK
+                preamble = [preamble_line]
+
+        # In --staged mode a pending row that did not cover the range is explained by
+        # the preamble below; anywhere else it is unexplained, so it is named here.
+        if chain.pending() and not staged:
+            print(_pending_rows_note(chain), file=out)
+
+        digest = range_digest(repo, base_rev, endpoint)
+        inspected, hints = company_hints(repo, base_rev, endpoint)
+        print(review_required_message(repo, base_rev, endpoint, files, digest,
+                                      inspected, hints, today, staged=staged,
+                                      preamble=preamble), file=err)
         return EXIT_REVIEW_REQUIRED
 
     except NotApplicable as exc:
@@ -1014,6 +1311,12 @@ def main(argv: list[str] | None = None) -> int:
                         metavar="N",
                         help=f"how many trailing rows a default run recomputes "
                              f"(default: {DEFAULT_VERIFY_TAIL})")
+    parser.add_argument("--staged", action="store_true",
+                        help="judge the STAGED INDEX instead of HEAD — the tree the "
+                             "commit about to be made will have. A PENDING row (no "
+                             "`commit:`) staged alongside it satisfies the gate in "
+                             "that same commit, so no follow-up ledger commit is "
+                             "needed. What the pre-commit hook runs")
     parser.add_argument("--allow-not-applicable", action="store_true",
                         help="exit 0 when NO ledger row names a commit this checkout "
                              "has. Only for a tree you know is a mirror: it is also "
@@ -1026,7 +1329,7 @@ def main(argv: list[str] | None = None) -> int:
     head = args.head or "HEAD"
     return check(repo=repo, head=head, ledger_rev=args.head,
                  verify_tail=args.verify_tail, verify_all=args.verify_all,
-                 allow_not_applicable=args.allow_not_applicable)
+                 allow_not_applicable=args.allow_not_applicable, staged=args.staged)
 
 
 if __name__ == "__main__":
