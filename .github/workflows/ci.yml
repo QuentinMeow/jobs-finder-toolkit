@@ -132,14 +132,23 @@ jobs:
       #     skill drift, store report, the self-measure funnel), the private-overlay
       #     git hooks, and the search-recall-audit readers of the applications
       #     skip-log (whose log branch had no test at all before it was fixed),
-      #     and the instruction-budget gate's discovery + leaf tiers.
-      - name: Reconciler + gardener + overlay-hook + recall-audit + metrics unit tests
+      #     and the instruction-budget gate's discovery + leaf tiers, and the
+      #     eval-record content pins (emit determinism, drift, rename detection,
+      #     and the --write round-trip that must not corrupt a record).
+      #     NOTE: this is a `run: |` block under `bash -e`, so a directory named
+      #     here that does not exist in the tree exits 1 ("Start directory is not
+      #     importable") and reds the whole step. A line may therefore only be
+      #     added in the same commit as the directory it names — and, because
+      #     automation/publish/tests asserts every path this file invokes also
+      #     SHIPS, in the same commit as its export_public.ALLOWLIST_DIRS entry.
+      - name: Reconciler + gardener + overlay-hook + recall-audit + metrics + eval-pin unit tests
         run: |
           python -m unittest discover automation/reconcile/tests
           python -m unittest discover automation/gardener/tests
           python -m unittest discover automation/hooks/tests
           python -m unittest discover automation/search-recall-audit/tests
           python -m unittest discover automation/metrics/tests
+          python -m unittest discover automation/evals/tests
 
       # 2d. Public review gate — every commit that changed the published tree must
       #     carry a row in automation/publish/review_ledger.yaml. This is the copy
