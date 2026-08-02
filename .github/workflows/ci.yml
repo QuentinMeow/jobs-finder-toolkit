@@ -32,12 +32,28 @@
 #
 # The `secret-scan` job (gitleaks) is an independent gate that catches credential
 # shapes the identity guard does not target.
+#
+# The `pr-body` job reads the PR BODY as a gate input: a diff touching a skill's
+# instruction files must discharge the risk-based eval gate in the description.
+# The `canonical-counts` job runs on main AFTER a merge and publishes the tree-wide
+# totals to the job summary — see each job for why.
 
 name: CI
 
+# push is filtered to main. Every other branch reaches CI through `pull_request`,
+# and an unfiltered `push:` ran the whole suite TWICE for any branch with an open
+# PR — measured at 74 runs where 26 were needed. `branches-ignore` cannot express
+# "unless a PR is open" (it takes static globs only), so the split is by trigger:
+# pull_request covers branches, push covers main (post-merge).
+#
+# `types:` is spelled out because the DEFAULT (opened, synchronize, reopened) does
+# not include `edited` — so a PR body fixed after the pr-body job failed would
+# never be re-checked, and the fix could only be picked up by pushing a commit.
 on:
   push:
+    branches: [main]
   pull_request:
+    types: [opened, edited, synchronize, reopened]
 
 jobs:
   build:
@@ -48,10 +64,18 @@ jobs:
       # diffs from there, which a depth-1 clone cannot do. The gate detects a shallow
       # checkout and FAILS rather than pass silently, so removing this line turns CI
       # red instead of disarming the gate.
+      #
+      # `ref:` pins the checkout to the PR's OWN tip. Without it a pull_request run
+      # checks out GitHub's merge preview (branch merged into the base), so every
+      # gate below measured a tree that exists nowhere — a base that moved could
+      # turn a branch red or green on its own. The review gate (2d) was already
+      # immune because it passes --head; nothing else was. On a push the expression
+      # is empty, which actions/checkout treats as "the ref that triggered the run".
       - name: Check out repository (full history — the review gate needs it)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
 
       # The toolkit requires Python 3.11+; the requirements (pyyaml, python-docx,
       # pypdf) are tested on 3.12 here.
@@ -132,14 +156,23 @@ jobs:
       #     skill drift, store report, the self-measure funnel), the private-overlay
       #     git hooks, and the search-recall-audit readers of the applications
       #     skip-log (whose log branch had no test at all before it was fixed),
-      #     and the instruction-budget gate's discovery + leaf tiers.
-      - name: Reconciler + gardener + overlay-hook + recall-audit + metrics unit tests
+      #     and the instruction-budget gate's discovery + leaf tiers, and the
+      #     eval-record content pins (emit determinism, drift, rename detection,
+      #     and the --write round-trip that must not corrupt a record).
+      #     NOTE: this is a `run: |` block under `bash -e`, so a directory named
+      #     here that does not exist in the tree exits 1 ("Start directory is not
+      #     importable") and reds the whole step. A line may therefore only be
+      #     added in the same commit as the directory it names — and, because
+      #     automation/publish/tests asserts every path this file invokes also
+      #     SHIPS, in the same commit as its export_public.ALLOWLIST_DIRS entry.
+      - name: Reconciler + gardener + overlay-hook + recall-audit + metrics + eval-pin unit tests
         run: |
           python -m unittest discover automation/reconcile/tests
           python -m unittest discover automation/gardener/tests
           python -m unittest discover automation/hooks/tests
           python -m unittest discover automation/search-recall-audit/tests
           python -m unittest discover automation/metrics/tests
+          python -m unittest discover automation/evals/tests
 
       # 2d. Public review gate — every commit that changed the published tree must
       #     carry a row in automation/publish/review_ledger.yaml. This is the copy
@@ -150,8 +183,12 @@ jobs:
       #     the full append-only check. The pre-commit hook only recomputes a bounded
       #     tail, so integrity of older rows is verified here, where the seconds are
       #     affordable.
-      #     On a pull_request the checkout is a MERGE commit whose ledger is a merge
-      #     of both sides; --head pins the gate to the PR's own branch tip instead.
+      #     --head is KEPT even though the checkout above is now pinned to the PR's
+      #     own tip. It used to be the only thing standing between this gate and
+      #     GitHub's merge preview, whose ledger is a merge of both sides; it is now
+      #     the second of two independent pins, and it is the one that also decides
+      #     which revision the LEDGER is read from. Removing it would make this gate
+      #     depend on the checkout step staying right.
       #     No-ops (exit 0, loudly) in a checkout whose history the ledger does not
       #     describe, which is what keeps the exported public mirror's CI green.
       - name: Public review gate (unreviewed public changes)
@@ -271,8 +308,150 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Same pin as the build job: scan the branch's own history, not the
+          # merge preview's.
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Run gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The PR BODY is a gate input, not decoration. AGENTS.md ("Risk-based eval gate
+  # on harness edits") and evals/README.md both require that a change to a skill's
+  # SKILL.md / LESSONS.md / reference.md either passes that skill's canaries or
+  # records a rationale — but nothing read the description, so the rule held only
+  # as far as an agent remembered it, and a behavioral edit merged inside a large
+  # stack with the gate neither run, skipped, nor owed.
+  #
+  # This job runs ONLY the eval-gate property (--eval-gate-only). The three format
+  # properties (human-first section, Before/After, marketing words) stay where they
+  # were — checked by an author running check_pr_body.py locally, as
+  # skills/github-workflow/SKILL.md already instructs. Turning those into a merge
+  # blocker is a separate decision, and this job does not make it.
+  pr-body:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 so the merge-base with the PR's base branch exists locally;
+      # the diff decides whether the gate applies at all.
+      - name: Check out repository (full history — needed for the merge-base)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # check_pr_body.py is stdlib-only and imports nothing from the repo root, so
+      # this job needs no dependency install.
+      #
+      # The body arrives through the environment, never interpolated into the shell:
+      # a PR description is untrusted text and `${{ … }}` inside a run block would
+      # execute it.
+      #
+      # Scratch goes to $RUNNER_TEMP, not into the checkout. A path written inside
+      # the repo would have to be a path the EXPORT ships — the exported mirror runs
+      # this same workflow, and automation/publish/tests asserts that every repo path
+      # ci.yml names exists there. A runner temp dir is outside that contract.
+      - name: Eval gate discharged in the PR body (blocking)
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          printf '%s' "$BODY" > "$RUNNER_TEMP/pr-body.md"
+          MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          git diff --name-only "$MERGE_BASE" "$HEAD_SHA" > "$RUNNER_TEMP/changed.txt"
+          python skills/github-workflow/scripts/check_pr_body.py \
+            "$RUNNER_TEMP/pr-body.md" \
+            --changed-files "$RUNNER_TEMP/changed.txt" \
+            --eval-gate-only
+
+  # Canonical tree-wide counts, published on main AFTER the merge.
+  #
+  # An absolute count measured on a branch ("2669 references", "74 ledger rows") is
+  # already wrong by the time the branch above it merges, so PR bodies report exit
+  # codes and their own deltas instead. That leaves nowhere for the totals to be
+  # true — this job is that place. It reuses the scripts that already compute the
+  # numbers and invents no metric of its own; it REPORTS, and gates nothing, so it
+  # cannot make a merged main red on its own.
+  canonical-counts:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # verify_links.py and review_gate.py both read YAML (config, the ledger).
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Canonical counts -> job summary
+        run: |
+          {
+            echo "## Canonical counts — \`${GITHUB_SHA:0:12}\` on main"
+            echo
+            echo "Measured on this tree, after the merge. A total here is true;"
+            echo "the same total in a PR body was measured on a branch that has"
+            echo "since moved."
+            echo
+            echo '### References + markdown links'
+            echo
+            echo '`automation/gardener/verify_links.py`'
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Redirected, never piped: the exit code read below is the checker's own
+          # (a pipeline's $? is the LAST stage's). This job REPORTS that code rather
+          # than failing on it — verify_links already gates in the build job on this
+          # same commit, so a break is red there, and reporting it here keeps the
+          # numbers next to the run that produced them.
+          # Scratch goes to $RUNNER_TEMP, never into the checkout — see the pr-body
+          # job for why a repo-relative scratch path would break the export test.
+          set +e
+          python automation/gardener/verify_links.py > "$RUNNER_TEMP/links.log" 2>&1
+          LINKS_EXIT=$?
+          set -e
+          cat "$RUNNER_TEMP/links.log" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '```'
+            echo
+            echo "verify_links.py exit code: ${LINKS_EXIT}"
+            echo
+            echo '### Review ledger and eval records'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Both repo paths are passed as ARGUMENTS rather than written inside the
+          # heredoc, so each is one clean shell token: automation/publish/tests reads
+          # this file to check that every path ci.yml names ships in the export, and
+          # a path glued to Python punctuation reaches it as `…review_gate.py")`,
+          # which resolves to nothing and fails that test for no real reason.
+          python - automation/publish/review_gate.py evals/results \
+            >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import importlib.util
+          import sys
+          from pathlib import Path
+
+          gate_path, results_dir = sys.argv[1], sys.argv[2]
+
+          # The ledger's own parser, so this count can never disagree with the gate's.
+          spec = importlib.util.spec_from_file_location("review_gate", gate_path)
+          review_gate = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(review_gate)
+          rows = review_gate.load_ledger(Path("."))
+          records = sorted(Path(results_dir).glob("*.md"))
+
+          print(f"- review-ledger rows (`{review_gate.LEDGER_REL}`): {len(rows)}")
+          print(f"- eval records (`{results_dir}`): {len(records)}")
+          PY
