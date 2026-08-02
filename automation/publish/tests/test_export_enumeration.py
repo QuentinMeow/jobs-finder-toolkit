@@ -374,7 +374,7 @@ class CIPathsExistInExportTests(unittest.TestCase):
 
     def test_store_validator_runs_against_the_exported_example_store(self):
         proc = subprocess.run(
-            [sys.executable, "automation/store/validate_store.py", "examples/data",
+            [sys.executable, "automation/store/validate_store.py", "examples/store",
              "--check-fixture-size"],
             cwd=self.export, capture_output=True, text=True,
             env={**os.environ,
