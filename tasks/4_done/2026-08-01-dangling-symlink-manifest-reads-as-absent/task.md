@@ -5,7 +5,7 @@
 - **Source**: disclosed by the store-guard stack's landing plan; no PR in that
   stack fixes it. Re-confirmed while fixing the location residency regression
   (branch `fix/45-us-remote-residency`).
-- **Claimed-by**:
+- **Claimed-by**: agent, 2026-08-02 (branch `fix/21-store-dangling-symlink`; work complete, in review)
 
 ## Goal
 
@@ -71,3 +71,20 @@ and touching the store's delete path needs its own tests and its own review.
   it would otherwise collect.
 - `python -m unittest discover automation/shared/tests` passes.
 - Vendored copies re-synced with `automation/vendoring/sync_vendored.py`.
+
+## Scope correction (found while fixing, 2026-08-02)
+
+Two things above are wrong; both are covered by the fix and recorded in
+`verification.md`.
+
+1. **The blast radius is wider than the manifest.** `retention.py::find_debris_dirs`
+   tests `(fetch_dir / "manifest.json").exists()` with the identical blind spot, so a
+   LIVE fetch directory is classified as crash debris and `execute_sweep` removes it
+   with `shutil.rmtree(..., ignore_errors=True)` once it is >24h old. One broken
+   symlink loses the observation record as well as the blob.
+2. **"The bug is only in the classification" is interpreter-dependent.** Whether
+   `raw.glob("*/**/manifest.json")` even LISTS a dangling symlink was measured as:
+   3.11.15 no (a literal component goes through `pathlib._PreciseSelector`, which
+   tests `Path.exists()`), 3.12.13 yes, 3.13.13 yes. The repo floor is 3.11, so a
+   `_read_manifest`-only fix would have been dead code there. `_iter_manifest_paths`
+   now walks with `os.walk` + `os.path.lexists`, removing the version dependence.
