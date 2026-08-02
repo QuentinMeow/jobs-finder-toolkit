@@ -27,9 +27,12 @@ steps, or slowdown — a PR that lists only benefits is under-reported>
 - [ ] Reported those runs as **exit codes plus this PR's deltas**, each beside the
       SHA it was run on — **no absolute tree-wide counts** ("2669 references", "43
       records"); totals come from the post-merge canonical counts job on `main`
-- [ ] If any `skills/*/SKILL.md` / `LESSONS.md` / `reference.md` changed: per the risk-based gate, either ran that skill's canaries in `evals/canaries/<skill>.yaml` and pasted results below, or recorded a one-line skip rationale (`Eval gate: skipped — <intention + size>`) — see `evals/README.md`
+- [ ] If any `skills/*/SKILL.md` / `LESSONS.md` / `reference.md` changed: discharge the risk-based eval gate in this body — CI's `pr-body` job blocks on it. Exactly one of: that skill's canary results from `evals/canaries/<skill>.yaml` pasted below (or the `evals/results/` record named); `Eval gate: skipped — <intention + size>` with the rationale actually written out; `Eval gate: debt — <why not now>` plus a `tasks/0_backlog/` item named here and added by this same diff. The bracketed placeholders are not rationales — see `evals/README.md`
 - [ ] **No personal data** (no real names, emails, phones, employer/school names, or home paths) — this repo is PUBLIC
 
-## Canary results / skip rationale (only if skill-instruction files changed)
+## Canary results / skip rationale / eval-gate debt (only if skill-instruction files changed)
 
-<!-- Paste eval results per evals/README.md, or a one-line skip rationale, or write "N/A". -->
+<!-- Paste eval results per evals/README.md, or an `Eval gate: skipped — <…>` line
+     with the rationale spelled out, or an `Eval gate: debt — <…>` line plus the
+     tasks/0_backlog/ item this diff adds. "N/A" and "TBD" fail the gate; if the
+     diff touches no skill instruction file, delete this section. -->

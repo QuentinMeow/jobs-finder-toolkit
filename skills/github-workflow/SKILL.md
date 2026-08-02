@@ -117,11 +117,18 @@ gh pr view <n> --json body --jq .body | \
     .venv/bin/python skills/github-workflow/scripts/check_pr_body.py
 ```
 
-It checks three mechanical properties and nothing else: the first `##` heading is
+It checks three mechanical properties of the format: the first `##` heading is
 the human-facing one, that section carries at least one `**Before.**` and one
 `**After.**`, and no banned word appears in prose (code fences are skipped
 entirely; backticking a word lets you name it). Exit 1 lists every
-finding with its line. **A pass is not a review** — whether the downsides are
+finding with its line.
+
+A fourth property — whether the body discharges the eval gate — needs to know
+what the diff touched, so it runs only when the caller passes the changed paths:
+CI's `pr-body` job invokes this same script with `--changed-files` (the output of
+`git diff --name-only` against the merge-base) and `--eval-gate-only`. That is
+gate 11 below, and it is the only one of the four that CI blocks on; run it the
+same way before you push. **A pass is not a review** — whether the downsides are
 actually stated is a judgment the checker cannot make, so re-read the draft for
 that yourself. It does **not** check your numbers; that is the next section.
 
@@ -292,6 +299,7 @@ both places is often invoked with different flags in each.
 | 8 | Reconciler (`automation/reconcile/reconcile.py --check`) | hook + CI; the hook adds `--require-roots` **only when `private/` is mounted**, CI never does | a queue/task/memory item breaks its `templates/` schema, the memory index is stale, a session has no handover, `skill-manifests` drifted, the roadmap's `Last-updated` line is missing/unparseable/in the future (an OLD date does not gate — that is the gardener's `roadmap-staleness` report) |
 | 9 | References + markdown links (`automation/gardener/verify_links.py`) | hook + CI; the hook adds `--require-roots --no-overlay` **only when `private/` is mounted**, CI never does | a backticked path or `[text](path)` in a must-resolve document does not resolve, a skill symlink dangles, or a vendored copy drifted |
 | 10 | Leak guard, armed | `automation/hooks/pre-push` | the guard is UNARMED (no identity tokens), or a tracked file could not be OPENED (dangling symlink, permission error) — either way it refuses rather than certify bytes it did not read. A file it opened but cannot text-extract (image, non-UTF-8 blob) is counted in the `content read: N of M` summary line, not a failure |
+| 11 | Eval gate discharged in the PR body (`skills/github-workflow/scripts/check_pr_body.py --eval-gate-only`) | CI only — the `pr-body` job, blocking | the diff touches a skill's `SKILL.md`, `LESSONS.md`, or `reference.md` and the body carries none of the three discharge forms below |
 
 `--require-roots` asserts that every root a checker names in a constant still
 exists, so a rename breaks the check instead of silently disarming it. It is a
@@ -301,9 +309,34 @@ failure is gate 9, not a reason to reach for `--no-verify`.
 
 CI additionally runs what no hook does: every unit suite, the example render, the
 example-store validation, and an independent `gitleaks` secret scan in its own
-job. A PR that edits `skills/*/SKILL.md`, `LESSONS.md`, or `reference.md` must
-carry canary results or the line `Eval gate: skipped — <intention + size>` in its
-body (`evals/README.md`).
+job — plus gate 11, which reads the PR description itself.
+
+### Gate 11 — discharging the eval gate in the body
+
+A PR that edits `skills/*/SKILL.md`, `LESSONS.md`, or `reference.md` must
+discharge the risk-based eval gate (`evals/README.md`) **in the PR body**. This is
+no longer self-policed: CI's `pr-body` job runs the checker with
+`--eval-gate-only` over the description and the diff, and fails the PR when the
+body carries none of these three forms:
+
+1. **Ran** — paste the canary results, or name the recorded run under
+   `evals/results/`, or write `Eval gate: ran — <what ran, how it went>` with the
+   detail filled in.
+2. **Skipped** — `Eval gate: skipped — <intention + size>` with the rationale
+   **actually written**. The bare placeholder fails by design, and so do `N/A`
+   and `TBD`; quoting the form is not discharging the gate.
+3. **Debt** — `Eval gate: debt — <why not now>` **plus** the `tasks/0_backlog/`
+   item you name in the body, added by the **same diff**. Debt that is not filed
+   is a skip without a rationale, and the job says so. This form exists because
+   pre-merge canary discharge is not always reachable at batch size — one measured
+   canary run cost about a session's worth of turns and tokens, and roughly half
+   the PRs in a recent batch touched a skill instruction file — so the gate takes
+   tracked debt over a meaningless skip.
+
+The job reads the whole body, fences included: a pasted canary table is evidence.
+It checks only this property — the three format properties stay yours to run
+locally. The workflow lists `edited` among its `pull_request` types, so fixing the
+description after the job goes red re-runs it; no empty commit is needed.
 
 ### The review gate and the one-commit lag
 

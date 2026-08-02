@@ -109,9 +109,9 @@ audience decides: fork → this file, maintainer branch → the skill.
    above before committing; the tracked pre-commit hook (installed by
    `automation/bootstrap_overlay.py`) re-runs the cheap ones.
 4. **Open the PR against `main`** and fill in the pull-request template — it
-   mirrors the gates: checks pass, eval canaries run or a recorded skip
-   rationale per the risk-based gate if you touched skill instruction files,
-   no personal data. **Report gate results as exit codes plus the deltas your PR
+   mirrors the gates: checks pass, the eval gate discharged in the body (ran,
+   skipped-with-a-written-rationale, or tracked debt) if you touched skill
+   instruction files, no personal data. **Report gate results as exit codes plus the deltas your PR
    caused — never an absolute tree-wide count** ("2669 references", "43
    records"): a count measured on your branch is wrong the moment anything else
    lands under it, so totals come from the post-merge canonical counts job that
@@ -148,6 +148,21 @@ rewording) may skip with a **one-line skip rationale recorded in the PR**. See
 `evals/README.md` for the full run/skip criteria and how to record either
 outcome. Instruction edits are delta-only, and consolidation must not drop a
 domain edge case.
+
+**CI blocks on this, and takes three forms.** The `pr-body` job runs
+`skills/github-workflow/scripts/check_pr_body.py --eval-gate-only` over your
+description and the diff; a PR touching those files fails unless the body says
+one of:
+
+1. **Ran** — pasted canary results, or the recorded run under `evals/results/`,
+   or `Eval gate: ran — <what ran, how it went>`.
+2. **Skipped** — `Eval gate: skipped — <intention + size>` with the rationale
+   filled in. The bare placeholder, `N/A`, and `TBD` all fail: quoting the form
+   is not discharging the gate.
+3. **Debt** — `Eval gate: debt — <why not now>` **plus** a `tasks/0_backlog/`
+   item, named in the body and added by the same diff. Running a skill's canaries
+   costs about a session, so tracked debt is a real option; untracked debt is a
+   skip with no rationale and fails.
 
 ## No personal data — ever
 
