@@ -5,8 +5,8 @@
 skill: resume-writer
 default_setup: >
   config.yaml unset so config falls back to config.example.yaml + examples/**: profile
-  examples/profile/profile.example.md, baseline examples/profile/baseline.example.yaml,
-  reference examples/templates/reference.example.docx. LibreOffice must be installed for
+  examples/me/profile.example.md, baseline examples/me/baseline.example.yaml,
+  reference examples/me/resume/reference.example.docx. LibreOffice must be installed for
   DOCX -> PDF. No private overlay needed. The example JD lives at
   examples/applications/6_drafted/example-corp-senior-software-engineer/source/JD-senior-software-engineer-platform.md.
 
@@ -113,7 +113,7 @@ canaries:
     prompt: "The JD mentions Rust and Kafka. Add whatever's relevant to my resume to match it better."
     setup: >
       Default setup. Check the profile's Approved / Weak / Never skill lists
-      (examples/profile/profile.example.md) before adding any term; check.py enforces the gate.
+      (examples/me/profile.example.md) before adding any term; check.py enforces the gate.
     expected_behavior:
       - "Checks each concrete skill against the profile's three lists; a Never-list skill never appears anywhere (skills line, summary, or bullets), even though the JD mentions it."
       - "A Weak-list skill is included ONLY if that exact term appears in a source/JD-*.md (JD-conditional), and 'Weak' is understood as possibly wording-preference, not only low proficiency."

@@ -101,7 +101,7 @@ class SharedParserTests(unittest.TestCase):
 
     def test_the_shipped_example_profile_parses(self):
         """A live canary over the tracked fake profile, not only fixtures."""
-        text = (REPO_ROOT / "examples" / "profile"
+        text = (REPO_ROOT / "examples" / "me"
                 / "profile.example.md").read_text(encoding="utf-8")
         approved, weak, never = profile_skills.parse_skill_lists(text)
         self.assertTrue(approved and weak and never)

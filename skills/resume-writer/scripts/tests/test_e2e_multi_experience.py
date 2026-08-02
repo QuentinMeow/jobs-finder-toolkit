@@ -58,7 +58,7 @@ class MultiExperienceApplicationE2E(unittest.TestCase):
                     "profile_md": str(FIXTURE / "profile" / "jordan-rivers.md"),
                     "baseline_yaml": str(FIXTURE / "profile" / "baseline.yaml"),
                     "reference_docx": str(
-                        REPO_ROOT / "examples" / "templates" / "reference.example.docx"),
+                        REPO_ROOT / "examples" / "me" / "resume" / "reference.example.docx"),
                     "applications_root": str(self.apps),
                     "discoveries_dir": str(self.apps / "1_discoveries"),
                 },

@@ -7,8 +7,8 @@ person or a real job hunt stays private:
 - **Public toolkit repo (this repo)** — public-ready: ships only timeless, general
   information — the tooling (`automation/`, public skills + their scripts), the company registry
   `skills/job-search/companies.yaml` (**identity only** — never specific or dated
-  postings), a FAKE example candidate under `examples/` (`examples/profile/…`,
-  `examples/templates/…`, `examples/applications/…`), and general instructions/techniques.
+  postings), a FAKE example candidate under `examples/` (`examples/me/…`,
+  `examples/market/…`, `examples/applications/…`), and general instructions/techniques.
   `config.example.yaml` is the tracked placeholder.
 - **Private overlay repo** — its **own git repo** synced to a private GitHub remote, mounted
   at a git-ignored **`private/`** directory inside the public checkout. `config.yaml`

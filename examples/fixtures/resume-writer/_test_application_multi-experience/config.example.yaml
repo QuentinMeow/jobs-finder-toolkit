@@ -6,7 +6,7 @@ candidate:
 paths:
   profile_md: "profile/jordan-rivers.md"
   baseline_yaml: "profile/baseline.yaml"
-  reference_docx: "../../../templates/reference.example.docx"
+  reference_docx: "../../../me/resume/reference.example.docx"
   applications_root: "work/applications"
   discoveries_dir: "work/applications/1_discoveries"
 job_search:

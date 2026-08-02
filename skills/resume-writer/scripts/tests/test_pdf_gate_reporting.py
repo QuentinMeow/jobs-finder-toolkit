@@ -37,13 +37,13 @@ import check  # noqa: E402
 
 CONFIG = REPO_ROOT / "config.example.yaml"
 RENDER = SCRIPTS / "render.py"
-REFERENCE = REPO_ROOT / "examples" / "templates" / "reference.example.docx"
+REFERENCE = REPO_ROOT / "examples" / "me" / "resume" / "reference.example.docx"
 EXAMPLE_APP = (REPO_ROOT / "examples" / "applications" / "6_drafted"
                / "example-corp-senior-software-engineer")
 # Passed explicitly so these tests never resolve the config layer (which on a
 # maintainer checkout points at the private overlay).
-BASELINE = REPO_ROOT / "examples" / "profile" / "baseline.example.yaml"
-PROFILE = REPO_ROOT / "examples" / "profile" / "profile.example.md"
+BASELINE = REPO_ROOT / "examples" / "me" / "baseline.example.yaml"
+PROFILE = REPO_ROOT / "examples" / "me" / "profile.example.md"
 
 # The exact string a fully-inspected run prints. Asserting its ABSENCE is the
 # point of this file: a partially-run gate set must not be able to emit it.

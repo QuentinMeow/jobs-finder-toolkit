@@ -2211,9 +2211,9 @@
 - base: e91f6cb7
   reviewed_by: agent
   date: 2026-08-02
-  files: 30
-  digest: sha256:e349b4a04907edc7
-  finding: 'Pure `git mv` of the example fixture store, examples/data -> examples/store; no reference edits in this commit (they are the next one) so `git log --follow` works across the rename. Verified rename-only: `git diff --cached --numstat -M` is 0/0 on all 27 text files and `-`/`-` on the 3 zstd blobs, and `--summary` lists 30 renames and nothing else, so this commit ships no new content at all. The fixture is the fictional Jordan-Rivers universe (examplecorp / ghostworks / remoteworks / profile-01 / example.com); the blob filenames are sha256 of their uncompressed bytes and are unchanged by the move. Confirmed the fixture content is path-independent (grep for "examples" inside it: no hits) and that no gitignore rule matches the new prefix (git check-ignore exit 1). check_public.py _DENY_TREES is root-anchored, so the new examples/store/ prefix is not hit by the ^store/ deny. No identity, employer, school, salary or dated job-hunt content.'
+  files: 34
+  digest: sha256:a02647ebf1ffe255
+  finding: 'Read the whole 661-line staged diff. Five files move by 100% similarity rename (examples/profile -> examples/me, the reference DOCX to examples/me/resume/, company-levels to examples/market/logs/, calendar.md to examples/me/interviews/) with zero content change, so the shipped example mirrors the lifetime taxonomy the private overlay already uses; examples/templates/ and examples/applications/0_profile/ disappear. Everything else re-points a reference to the new path - config.example.yaml (plus a new explicit candidate_dir), the shared config accessors and their five vendored copies, eight test-module constants, the leak guard binary allowlist, a fixture config, a tailored.yaml comment, a gitignore comment, two canary definitions, seven handbook/design/README passages and one backlog task line. Two non-path deltas, both narrowing rather than widening - a dead unreachable default literal in company_levels_path is dropped, and the fail-closed deny list gains ^logs/ so the local metrics output the base commit just root-anchored in gitignore can never be published (the ^ keeps the tracked examples/market/logs fixture out of scope). All persona content is the fictional Jordan Rivers dataset that already shipped. No identity, employer, school, salary or dated job-hunt content is introduced, and nothing crosses into or out of the published tree.'
 - base: 8c8112ac
   reviewed_by: agent
   date: 2026-08-02
@@ -2351,3 +2351,15 @@
   files: 1
   digest: sha256:9fc901bfdaa7979c
   finding: 'Repoints the gate runner at the renamed example store. Two branches in this stack changed the same fact from opposite ends - one renamed examples/data to examples/store and updated the CI step, the other declared the CI gate table - and merging them left the table naming a path that no longer exists. Found by the runner own CI-drift test, on its first real outing. One argv string. No identity, employer, school, salary or dated job-hunt content.'
+- base: 261b4f0b
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 106
+  digest: sha256:458e7a8fc9fc6a6b
+  finding: 'Stack merge only for this branch content - brings in the whole stack below, each part already reviewed on its own branch: the gitignore base and its logs/ path-deny, the gate runner, the GitHub merge runbook, the repeated-mistake lesson, the dangling-symlink store fix, the build-postings correctness fixes, the ledger duplicate-key refusal, the recall-audit CLI fixes and the examples/data to examples/store rename. Both sides had independently added the same root logs/ deny entry; the duplicate was collapsed to one. No identity, employer, school, salary or dated job-hunt content.'
+- base: e8a62b80
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:e6e9ed2aad60c605
+  finding: 'CORRECTS THE ROW IMMEDIATELY ABOVE (base e8a62b80 predecessor, the examples/me merge), which asserted that the duplicate root logs/ deny entry had been collapsed. It had not - git kept both, because each side added its entry at a different point in the list, so there was no textual conflict. That row is left exactly as written: the ledger is append-only and a row digest pins a diff someone read, so a wrong finding is corrected by appending, never by editing. Two identical (re.compile(r caret logs/), logs/) entries are now one. Kept the comment that describes the payload accurately - counters and ids, no prompt text or file path - and dropped the one claiming it summarizes session transcripts, which overstates what hook_collect.py records. Probed both ways again after the collapse: root logs/ denied, examples/market/logs/ not. No identity, employer, school, salary or dated job-hunt content.'
