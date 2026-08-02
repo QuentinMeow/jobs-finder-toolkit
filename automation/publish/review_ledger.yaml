@@ -2399,3 +2399,9 @@
   files: 2
   digest: sha256:f4c6fce0a3811785
   finding: 'The local gate runner stops judging the private overlay: the verify-links gate now passes --no-overlay, copied from the pre-commit hook, plus a regression test that no verify_links gate may omit it. Toolkit-only diff — gate argv, an explanatory comment, and a unittest class. No identity, employer, school, salary or dated job-hunt content; no private/ path is named beyond the literal directory prefix already used throughout this file.'
+- base: 279847cd
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:7d12f0901741e084
+  finding: 'build_sponsor_index.py gains the same scripts/_vendor sys.path bootstrap its sibling entry points already carry, so the documented command no longer dies at import; plus a new unit file that sweeps --help across every job-search script with a __main__ block. Toolkit code and test prose only. No identity, employer, school, salary or dated job-hunt content; the only named data files are the public DOL disclosure XLSX names already in the script docstring.'

@@ -28,7 +28,12 @@ import json
 import sys
 from pathlib import Path
 
-from scoring import _norm_company
+_SKILL_SCRIPTS = Path(__file__).resolve().parent
+for _p in (str(_SKILL_SCRIPTS), str(_SKILL_SCRIPTS / "_vendor")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from scoring import _norm_company  # noqa: E402
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 
