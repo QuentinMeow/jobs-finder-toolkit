@@ -5,7 +5,7 @@ The store holds real personal data in the PRIVATE overlay data root
 sign-off requires:
 
 1. a personal token seeded into a fake overlay data root is NOT present in any
-   tracked public file (the tracked ``examples/data`` fixture passes the guard even
+   tracked public file (the tracked ``examples/store`` fixture passes the guard even
    with that token active); and
 2. the overlay data path is denied on path alone, so if such a file were ever
    accidentally tracked the guard fails closed.
@@ -29,7 +29,7 @@ if str(_PUBLISH_DIR) not in sys.path:
 import check_public  # noqa: E402
 
 REPO_ROOT = check_public.REPO_ROOT
-FIXTURE = REPO_ROOT / "examples" / "data"
+FIXTURE = REPO_ROOT / "examples" / "store"
 
 # A personal-identity token that lives ONLY in the overlay (assembled so this file
 # stays guard-clean — see module docstring).
@@ -38,14 +38,22 @@ SEEDED_TOKEN = "Dana" + "Harrison" + "OverlaySecret"
 
 class StoreLeakGuardTests(unittest.TestCase):
     def setUp(self):
-        if not FIXTURE.is_dir():
-            self.skipTest("fixture store missing; run generate_fixture_store.py")
+        # HARD failure, never a skip. The fixture is TRACKED, so its absence is a
+        # defect — a stale pin after a rename, or a botched move — not a local
+        # environment gap. As a skip this read as a PASS: all three tests would
+        # vanish from the run and CI would stay green while the leak-guard proof
+        # the raw-data-layer sign-off depends on was no longer being made.
+        self.assertTrue(
+            FIXTURE.is_dir(),
+            f"tracked fixture store missing at {FIXTURE} — the pin is stale or "
+            "the tree moved; regenerate with automation/store/"
+            "generate_fixture_store.py or fix FIXTURE")
 
     def test_overlay_token_never_reaches_public_and_fixture_passes(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             # Public tracked tree: a copy of the committed fixture store.
-            shutil.copytree(FIXTURE, root / "examples" / "data")
+            shutil.copytree(FIXTURE, root / "examples" / "store")
             # Private overlay data root holding the seeded personal token — this is
             # git-ignored in the real repo, so it is NOT in the tracked list below.
             overlay = root / "private" / "data" / "jobs" / "state"
@@ -78,7 +86,7 @@ class StoreLeakGuardTests(unittest.TestCase):
     def test_fixture_is_guard_clean_with_no_tokens(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            shutil.copytree(FIXTURE, root / "examples" / "data")
+            shutil.copytree(FIXTURE, root / "examples" / "store")
             result = check_public.scan(root=root, tokens=[])
             self.assertTrue(result["ok"], result["violations"])
 

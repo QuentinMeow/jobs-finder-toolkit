@@ -10,8 +10,8 @@ The data root is the positional argument, or (when omitted) ``config.data_root()
 if neither is available the tool prints "store not configured" and exits 0.
 
 Usage:
-    .venv/bin/python automation/store/validate_store.py examples/data
-    .venv/bin/python automation/store/validate_store.py examples/data --check-fixture-size
+    .venv/bin/python automation/store/validate_store.py examples/store
+    .venv/bin/python automation/store/validate_store.py examples/store --check-fixture-size
     .venv/bin/python automation/store/validate_store.py            # uses config.data_root()
 """
 from __future__ import annotations

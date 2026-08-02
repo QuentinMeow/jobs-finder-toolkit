@@ -2211,9 +2211,21 @@
 - base: e91f6cb7
   reviewed_by: agent
   date: 2026-08-02
-  files: 2
-  digest: sha256:4161c30332b7bf8f
-  finding: 'Guards the field-fidelity auditor against an unconfigured store. Every store-reading subcommand handed `config.data_root()`''s documented None straight to pathlib, so the toolkit''s own quickstart commands died seven frames deep in the stdlib on every fresh clone and in CI. One pre-dispatch guard in main, keyed off a `needs_store` default each store-reading subparser declares; `sample` deliberately has none because it reads only the scratch corpus. Exits 2 rather than the sibling store tools'' 0: an audit asked for a verdict and unable to read the store has not passed. The containment test now pins JOBHUNT_DATA_ROOT so it asserts the same thing on a maintainer machine and in CI. Tooling and test prose only - no identity, employer, school, salary or dated job-hunt content.'
+  files: 30
+  digest: sha256:e349b4a04907edc7
+  finding: 'Pure `git mv` of the example fixture store, examples/data -> examples/store; no reference edits in this commit (they are the next one) so `git log --follow` works across the rename. Verified rename-only: `git diff --cached --numstat -M` is 0/0 on all 27 text files and `-`/`-` on the 3 zstd blobs, and `--summary` lists 30 renames and nothing else, so this commit ships no new content at all. The fixture is the fictional Jordan-Rivers universe (examplecorp / ghostworks / remoteworks / profile-01 / example.com); the blob filenames are sha256 of their uncompressed bytes and are unchanged by the move. Confirmed the fixture content is path-independent (grep for "examples" inside it: no hits) and that no gitignore rule matches the new prefix (git check-ignore exit 1). check_public.py _DENY_TREES is root-anchored, so the new examples/store/ prefix is not hit by the ^store/ deny. No identity, employer, school, salary or dated job-hunt content.'
+- base: 8c8112ac
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 14
+  digest: sha256:45ab7a8a42946369
+  finding: 'Every reference to the renamed fixture store, moved in one commit: the ci.yml executed pin, the argv literal in the export-enumeration test that runs the validator INSIDE the built export, four FIXTURE / DEFAULT_ROOT split-segment pins, five docstring recipes, a comment in the vendored store constants (edited in automation/shared/ and re-vendored with sync_vendored.py, never hand-edited in _vendor/), two synthetic in-memory paths in the leak-guard tests, and two design-doc lines. Read the whole diff: it is the string examples/data -> examples/store and nothing else, plus one behavior change described next. Also converts a fail-open skip to a hard assertion - test_store_leak_guard.setUp used to skipTest when the fixture directory was missing, so a stale pin would have made all three tests vanish from the run with CI still green, a skip reading as a pass on the leak-guard proof itself. Left deliberately untouched: the ^data/ entry in check_public._DENY_TREES (root-anchored, never matched examples/data/, and the list is documented append-only), and the dated records under tasks/4_done, tasks/3_in-review, the phase-8 backlog task and the workspace-restructure plan that still name examples/data because they describe the before-state. No identity, employer, school, salary or dated job-hunt content; the only names are the fictional examplecorp / Jordan-Rivers fixtures.'
+- base: 51bb75b2
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:5dea8dca3bcb7d8c
+  finding: 'One new backlog task file, no code. Files a CI failure found while running the publish suite for the examples/store rename but caused by this branch''s BASE commit, not by the rename: anchoring the .gitignore rule logs/ to /logs/ made it match the root-anchored shape that test_every_root_anchored_gitignore_product_rule_is_denied requires _DENY_TREES to cover, and nothing covers it. The task states both sanctioned fixes, the question that decides between them (whether the metrics log can carry personal data), and explicitly forbids the three ways of making the test pass by weakening it. Names only repo paths, module names and a public commit SHA. No identity, employer, school, salary or dated job-hunt content.'
 - base: 3e9af467
   reviewed_by: agent
   date: 2026-08-02
@@ -2327,3 +2339,15 @@
   files: 54
   digest: sha256:cf3487c036eab67c
   finding: 'Stack merge only - brings in the gitignore base and its logs/ path-deny, the gate runner, the GitHub merge runbook, the repeated-mistake lesson, the dangling-symlink store fix, the three build-postings correctness fixes and the ledger duplicate-key refusal, each already reviewed on its own branch. This branch contributes nothing of its own to that diff. No identity, employer, school, salary or dated job-hunt content.'
+- base: 595a12ba
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 66
+  digest: sha256:010d2a57561d2446
+  finding: 'Stack merge only - brings in the gitignore base and its logs/ path-deny, the gate runner, the GitHub merge runbook, the repeated-mistake lesson, the dangling-symlink store fix, the build-postings correctness fixes, the ledger duplicate-key refusal and the recall-audit CLI fixes, each already reviewed on its own branch. The four example fixture files this branch renamed were also regenerated on the build-postings branch; git applied the content change to the renamed path. No identity, employer, school, salary or dated job-hunt content.'
+- base: 3cea5e5a
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:9fc901bfdaa7979c
+  finding: 'Repoints the gate runner at the renamed example store. Two branches in this stack changed the same fact from opposite ends - one renamed examples/data to examples/store and updated the CI step, the other declared the CI gate table - and merging them left the table naming a path that no longer exists. Found by the runner own CI-drift test, on its first real outing. One argv string. No identity, employer, school, salary or dated job-hunt content.'

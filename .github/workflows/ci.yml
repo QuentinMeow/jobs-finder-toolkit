@@ -249,7 +249,7 @@ jobs:
       #     threshold. The store validator is zone-aware; the size check WARNS a
       #     human over 100 KB and exits 0 (never a silent grow, never a hard block).
       - name: Validate example store + fixture size
-        run: python automation/store/validate_store.py examples/data --check-fixture-size
+        run: python automation/store/validate_store.py examples/store --check-fixture-size
 
       # 6. Job-search tests include the deterministic high-stakes filter corpus,
       #    snapshot/refilter parity, review preservation, and handoff contracts.

@@ -7,8 +7,8 @@ blob, decompresses it, and pretty-prints it. When the blob is ``not-synced-here`
 blob and the manual-sync remedy — it never pretends the bytes are here.
 
 Usage:
-    .venv/bin/python automation/store/store_show.py gh-1234567 --data-root examples/data
-    .venv/bin/python automation/store/store_show.py gh-1234567 --raw --data-root examples/data
+    .venv/bin/python automation/store/store_show.py gh-1234567 --data-root examples/store
+    .venv/bin/python automation/store/store_show.py gh-1234567 --raw --data-root examples/store
 """
 from __future__ import annotations
 
