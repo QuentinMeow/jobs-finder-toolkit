@@ -4,10 +4,18 @@
 > The owner directed the session to "continue the work of the folder refactor". The
 > remaining folder refactor *is* this reshape, and the **Default path** below already
 > said that a later "just do it" means *the recommendation under each item is what gets
-> built*. So D1, D2, D3, D6 and D7 were built to their recommendations. **The questions
+> built*. So D1, D2, D3 and D6 were built to their recommendations. **The questions
 > below are unchanged and no `Your answer:` line was filled in** — what changed is that
 > declining now costs a revert instead of costing nothing. Each piece landed as its own
 > PR, so a decline is a `git revert` of one commit range, not a rebuild.
+>
+> **Correction, 2026-08-02: this note originally also listed D7 as built. It was not.**
+> `examples/companies/` does not exist and no file was ever tracked under it
+> (`git ls-files examples/companies` returns 0 rows), so `companies_root()` still resolves
+> to nothing under the example config — the exact gap D7 exists to close. **D7 is the one
+> reshape call still unbuilt**, and it is a decision, not an oversight: building it means
+> authoring a fictional company into a public tree. It is unaffected by ratify-or-revert on
+> the other four; answering it still costs one small fixture (or `_index.yaml` alone).
 >
 > Three destinations the seven calls never stated had to be chosen to build at all. Each
 > was derived from the private tree it mirrors rather than invented, and each is named
@@ -59,18 +67,24 @@ done and is in the task file; what stopped it is that every remaining piece rena
 deletes, or invents a **published** path in a public repository, or changes what a
 generator writes into your private tree. None of those is an agent's call.
 
-`examples/` today is 95 tracked files in six directories: `applications/`, `data/`,
-`fixtures/`, `profile/`, `screenshots/`, `templates/`. Two of those names are the
-violations the phase exists to fix:
+**`examples/` today (2026-08-02) is six directories: `applications/`, `fixtures/`,
+`market/`, `me/`, `screenshots/`, `store/`** — the shape D1/D2/D3/D6 built. `companies/`
+is absent, which is D7.
 
-- **`examples/data/` is a generic bucket.** It is the example *store*; the private tree
+*When this item was filed (2026-07-31) the six were `applications/`, `data/`, `fixtures/`,
+`profile/`, `screenshots/`, `templates/`, and two of those names were the violations the
+phase exists to fix. Both are now gone; the paragraphs are kept because D2 and D3 are
+ratify-or-revert, and these are the reasons you would be ratifying:*
+
+- **`examples/data/` was a generic bucket.** It is the example *store*; the private tree
   calls it `store/` and the accessor is `config.data_root()`. `data/` is also a name
-  `check_public._DENY_TREES` rejects at the public root — the example set escapes only
-  because that deny is anchored at `^data/`.
-- **`examples/templates/` collides with the root `templates/`**, which is this repo's
+  `check_public._DENY_TREES` rejects at the public root — the example set escaped only
+  because that deny is anchored at `^data/`. **Renamed to `examples/store/` in `8c8112a`
+  (D2's recommendation, no shim).**
+- **`examples/templates/` collided with the root `templates/`**, which is this repo's
   single source of truth for process-file schemas. Two directories, one name, two
   unrelated meanings — and `check_public.py` already carries a bespoke rule to tell them
-  apart.
+  apart. **Deleted in `261b4f0` after its one DOCX moved (D3's recommendation).**
 
 The target shape is the one `docs/designs/workspace-restructure/README.md` already
 states: `examples/` mirrors the private tree (`me/`, `companies/`, `market/`, `store/`)
@@ -149,7 +163,12 @@ alone. The code default is load-bearing for benchmark isolation; the example con
 not.
 **Your answer:** ______
 
-### D7 — does `examples/` get a `companies/` counterpart?
+### D7 — does `examples/` get a `companies/` counterpart? — **THE ONE CALL NOT BUILT**
+
+*(2026-08-02: D1, D2, D3 and D6 were built to their recommendations when the fallback
+fired. This one was not, so it is still a plain unanswered question, not a ratify-or-revert.
+Re-measured today: `git ls-files examples/companies` → 0 rows, and `companies_root()`
+resolves to a path that does not exist under the example config.)*
 
 `companies_root()`'s default already resolves to `examples/companies/`, which does not
 exist; three documents already name it. Populating it means authoring a fictional company.

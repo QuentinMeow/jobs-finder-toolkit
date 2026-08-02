@@ -21,9 +21,16 @@ on 2026-08-01. Three are not live decisions and are called out separately below 
   execution-plan stage 3 to ship and run for a few weeks.
 - `private-scope-reconciler.md` — asked once (2026-07-29), the owner said "leave the other one
   undecided," and the file itself says **"do not re-ask it."**
-- `sponsorship-classifier-hedged-offer-shapes.md` — **Status: resolved-by-implementation
-  (2026-07-31)**. Nothing pending; it carries one optional residual question only (a
-  `yes_conditional` label), not a blocking one.
+- ~~`sponsorship-classifier-hedged-offer-shapes.md`~~ — **DELETED 2026-08-02**, per
+  `message-queue/needs-human/decisions/README.md` ("resolved/handled items are deleted in the
+  resolving commit — git history is the archive"). It was
+  `resolved-by-implementation (2026-07-31)` and all three ADRs that record it were verified
+  present first: `memory/decisions/sponsorship-offer-versus-denial.md` and its two successors
+  `sponsorship-scope-limits-need-a-distributive-quantifier.md` and
+  `sponsorship-an-unsettled-denial-is-review-not-a-silent-drop.md`. Its one optional residual
+  (a `yes_conditional` label) was not lost — it survives in the first ADR's *Alternatives
+  considered*: *"Still available if the owner wants hedged rows findable under
+  `require_positive`."*
 
 The remaining 23 are ordered below by **cost of leaving the default path running longer**, not by
 filed date. Concretely: does the default path (a) silently do something a user would only notice
