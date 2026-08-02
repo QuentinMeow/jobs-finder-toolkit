@@ -65,6 +65,32 @@ change nobody made. Concretely:
 - The hard `the ledger is out of sync with this branch` error now fires only when **no row at
   all** is an ancestor — the genuine "this ledger describes another repository" case.
 
+**Correction (2026-08-02): the shipped gate splits "no ancestor row" into several outcomes,
+and some of them exit 0** — so the sentence above describes only one of them.
+`automation/publish/review_gate.py` cites this file as its spec and
+`automation/publish/tests/test_review_gate.py` says its scenarios mirror it, so the spec has
+to say what actually happens when nothing resolves:
+
+| Situation | What the gate does | Exit |
+|---|---|---|
+| Some rows resolve, but none is an ancestor of `HEAD` | `the ledger is out of sync with this branch` (`_stale_ack_message`) — this is the error the bullet above is about | 2 |
+| No row resolves at all, and the checkout carries the roots the export drops (`tasks/`, `memory/`, `message-queue/`, `history/`, `docs/roadmap/` — the gate's `EXPORT_ABSENT_ROOTS`) | `the ledger describes a history this checkout does not have` (`_no_resolvable_row_message`) — the genuine "another repository" case | 2 |
+| No row resolves and NONE of those roots is present | `NOT APPLICABLE` — this is the published-export mirror, and its own pre-commit must stay green | 0 |
+| `--allow-not-applicable` passed for a tree you know is a mirror that carries those roots anyway | `NOT APPLICABLE` | 0 |
+| Not a git repository, or `HEAD` does not resolve (an empty repo) | `NOT APPLICABLE` | 0 |
+| Shallow clone | shallow-clone error: the ancestry needed to decide is not present | 2 |
+
+So the **shape of the checkout**, not the ledger alone, decides whether an unresolvable
+ledger is a failure — that is what lets a public clone stay green while the maintainer
+checkout still fails closed. Neither exit-0 flag is passed by this repo's tracked hook or its
+CI workflow, deliberately: a flag those files passed would disarm the maintainer checkout too.
+
+**Invocations.** This document shows the bare command, but the gate has three modes and CI
+depends on two flags: `--staged` (pre-commit — check the index, i.e. the tree this commit
+will have), `--verify-all` (CI — full ledger integrity rather than the bounded tail), and
+`--head <rev>` (check a revision other than `HEAD`). Exit `1` is "unreviewed public changes,
+action required"; exit `2` is a ledger or repository problem.
+
 Two ways a row falls off the chain, and the report distinguishes them because they mean
 different things to whoever is reading:
 
@@ -181,9 +207,9 @@ probably mistuned, and that is a task, not a crisis.
 
 | Surface | Behaviour |
 |---|---|
-| `pre-commit` | Runs alongside the leak guard. Fast — one `git log`, one `git diff` |
-| CI | Same check; this is the one `--no-verify` cannot skip |
-| On demand | `.venv/bin/python automation/publish/review_gate.py` |
+| `pre-commit` | `review_gate.py --staged` — checks the STAGED INDEX, i.e. the tree this commit will have, so one commit can carry its own review row. Fast: a bounded ledger tail |
+| CI | `review_gate.py --verify-all` (plus `--head <pr head>` on a pull request) — every row re-verified, not just the tail. This is the one `--no-verify` cannot skip |
+| On demand | `.venv/bin/python automation/publish/review_gate.py` (vs `HEAD`; add `--head <rev>` for another revision) |
 | A contributor without the overlay | Gate runs; the advisory detector reports "not inspected" rather than silently passing |
 
 ## Decided (2026-07-29): what counts as "the public tree"

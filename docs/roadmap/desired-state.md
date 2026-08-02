@@ -37,8 +37,10 @@
    the tree it would police is 2 tracked `AGENTS.md` and 0
    `agents-references/` directories, and its own owner-decided ADR
    (`memory/decisions/tree-instruction-growth-policy.md`) holds that surface
-   near zero on purpose. Its one item with a live consequence was re-filed as
-   `tasks/0_backlog/2026-07-31-leak-guard-silently-skips-an-unreadable-file`.
+   near zero on purpose. Its one item with a live consequence was re-filed and is
+   now done (`tasks/4_done/2026-07-31-leak-guard-silently-skips-an-unreadable-file`;
+   the one path it was told not to change is open as
+   `tasks/0_backlog/2026-07-31-leak-guard-cannot-read-non-utf8-text`).
    How much of this layer to keep at all is now an open owner decision:
    `message-queue/needs-human/decisions/process-weight-what-to-cut.md`.
 5. **Benchmark and eval depth**: stage-fixtures v2, and the two remaining canary

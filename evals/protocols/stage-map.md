@@ -17,21 +17,47 @@ are exact.
 - **Self-audit byte deltas** from `stage2-benchmark-20260720.md`: post-tiering boot reads were
   AGENTS 13,449 B + job-search skill 17,299 B (search) / AGENTS 13,449 B + resume skill 24,844 B
   (draft); the draft leg additionally read **reference.md + validator source ≈ 59–70 KB**.
-- **Live instruction/context file sizes** (bytes; `tok ≈ bytes/4`, the repo convention from
-  `automation/metrics/instruction_budget.py`):
+- **Instruction/context file sizes, MEASURED at a named commit** (bytes; `tok ≈ bytes/4`, the
+  repo convention from `automation/metrics/instruction_budget.py`). This table was labelled
+  "Live … file sizes" and was stale in **every** public row — by 1.9x on `AGENTS.md` and by
+  **18x** on the handbook index, in the overstating direction. A size table cannot be live, so
+  it now carries a commit and the command that reproduces it. **Re-measure before sizing any
+  decision off it:**
 
-  | Instruction / context file | bytes | ~tok | Boot? |
+  ```bash
+  wc -c AGENTS.md docs/handbook/README.md skills/job-search/SKILL.md \
+        skills/job-search/reference.md skills/job-search/LESSONS.md \
+        skills/resume-writer/SKILL.md skills/resume-writer/reference.md \
+        skills/resume-writer/LESSONS.md skills/resume-writer/scripts/check.py \
+        skills/application-tracker/SKILL.md
+  ```
+
+  Measured 2026-08-02 at commit `e91f6cb`, with the figure this table used to claim beside it:
+
+  | Instruction / context file | bytes | ~tok | was claimed | Boot? |
+  |---|---:|---:|---:|---|
+  | `AGENTS.md` (core) | 27,496 | 6.9k | 14,282 | yes, both legs |
+  | `docs/handbook/README.md` | 2,077 | 0.5k | 37,645 | on-demand |
+  | job-search `SKILL.md` | 28,907 | 7.2k | 18,689 | yes, search |
+  | job-search `reference.md` | 46,656 | 11.7k | 25,219 | on-demand |
+  | job-search `LESSONS.md` | 12,204 | 3.1k | 6,921 | yes, search |
+  | resume-writer `SKILL.md` | 32,317 | 8.1k | 26,950 | yes, draft |
+  | resume-writer `reference.md` | 34,942 | 8.7k | 34,539 | **discretionary (full-read observed)** |
+  | resume-writer `LESSONS.md` | 8,314 | 2.1k | 6,937 | yes, draft (render internals) |
+  | `check.py` **source** | 46,754 | 11.7k | 36,824 | **discretionary (full-read observed)** |
+  | application-tracker `SKILL.md` | 30,851 | 7.7k | 19,724 | discretionary (schema owner) |
+
+  The handbook index is the row that governs how you should read the old table. It did not grow
+  and shrink: `docs/handbook/README.md` is a 2 KB index that ROUTES to the handbook's documents,
+  so a boot-tax lever sized off 37,645 B was reasoning about ~9.4k tokens of on-demand text that
+  never existed in one file. Every other public row moved in the opposite direction — the
+  instruction surface is roughly 1.2–1.9x larger than this table claimed.
+
+  The rows below are OVERLAY artifacts and are **not measurable from the public tree**. Their
+  2026-07-20 figures are kept as the last recorded measurement, unverified since:
+
+  | Overlay artifact | bytes (2026-07-20, unverified) | ~tok | Boot? |
   |---|---:|---:|---|
-  | `AGENTS.md` (core) | 14,282 | 3.6k | yes, both legs |
-  | `docs/handbook/README.md` | 37,645 | 9.4k | on-demand |
-  | job-search `SKILL.md` | 18,689 | 4.7k | yes, search |
-  | job-search `reference.md` | 25,219 | 6.3k | on-demand |
-  | job-search `LESSONS.md` | 6,921 | 1.7k | yes, search |
-  | resume-writer `SKILL.md` | 26,950 | 6.7k | yes, draft |
-  | resume-writer `reference.md` | 34,539 | 8.6k | **discretionary (full-read observed)** |
-  | resume-writer `LESSONS.md` | 6,937 | 1.7k | yes, draft (render internals) |
-  | `check.py` **source** | 36,824 | 9.2k | **discretionary (full-read observed)** |
-  | application-tracker `SKILL.md` | 19,724 | 4.9k | discretionary (schema owner) |
   | tailoring card | 9,307 | 2.3k | yes, draft (card-first) |
   | baseline resume yaml | 4,320 | 1.1k | yes, draft |
   | candidate profile (`<profile>.md`) | 13,557 | 3.4k | on-trigger only |

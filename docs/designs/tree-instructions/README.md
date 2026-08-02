@@ -1,8 +1,14 @@
 # Tree-scoped instructions: per-folder AGENTS.md loaded only on entry
 
-**Status:** core mechanism implemented in PR #48; validator/exporter
-hardening remains queued. Designed, adversarially reviewed, and revised
-(2026-07-21). The
+**Status (corrected 2026-08-02):** core mechanism implemented in PR #48.
+~~validator/exporter hardening remains queued~~ — **the validator is DROPPED**, by
+`docs/roadmap/desired-state.md`: the tree it would police is 2 tracked `AGENTS.md` files and
+0 `agents-references/` directories, and the owner-decided
+[`memory/decisions/tree-instruction-growth-policy.md`](../../../memory/decisions/tree-instruction-growth-policy.md)
+holds that surface near zero on purpose. Its one item with a live consequence was re-filed on
+its own and is now closed
+(`tasks/4_done/2026-07-31-leak-guard-silently-skips-an-unreadable-file`). Designed,
+adversarially reviewed, and revised (2026-07-21). The
 review empirically confirmed the core mechanism in a live session (the
 folder shim really does lazy-load) and overturned four v1 mistakes, all
 fixed below and listed in [What the review changed](#6-what-the-review-changed).
@@ -155,8 +161,16 @@ the tree covers *folders*; the two must not double-instruct.
 
 ## 5. Validation and export
 
-The corrected validator spec lives in
-`tasks/0_backlog/2026-07-21-tree-instructions-validator/task.md`: repo-root-relative path
+**Superseded 2026-08-02 — this validator was never built and is not queued.** The task
+folder this section pointed at, `tasks/0_backlog/2026-07-21-tree-instructions-validator/`,
+exists in no status directory; `docs/roadmap/desired-state.md` records the validator as
+**dropped**, for the reason in the status line at the top of this file. The spec below is
+kept as the design record of what such a validator *would* have checked, not as queued work
+— do not start it from here. The one item that had a live consequence (broken-symlink
+hard-fail, where the leak guard failed open) was re-filed separately and is closed in
+`tasks/4_done/2026-07-31-leak-guard-silently-skips-an-unreadable-file`.
+
+The spec, as designed: repo-root-relative path
 existence; ≥1 pointer per reference file (v1's "exactly one" was the wrong
 cardinality); shim + router-line presence with absent-folder skip (public
 exports omit `message-queue/`, and routed-but-absent must not fail public CI); leaf

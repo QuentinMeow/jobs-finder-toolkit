@@ -162,6 +162,15 @@ for the directional quality half of an A/B.
    Read `total_tokens` and `wall_clock_s` for the run's SHA; note `tool_calls`. Copy the
    pass/fail + numbers into a `evals/results/` file from the template.
 
+   **The metrics hooks are OPT-IN and are not wired in a fresh checkout.** `logs/` is
+   gitignored and absent until you wire the SessionStart / PostToolUse / Stop hooks from your
+   own `.claude/settings.local.json` — see [`../docs/handbook/metrics.md`](../docs/handbook/metrics.md)
+   for the wiring and the metric set. Unwired, `report.py --by-sha` prints nothing; that is
+   the expected state, not a bug. When it does, **write down where your numbers came from**
+   (the harness's own per-session counters are the usual fallback, and several records under
+   `evals/results/` do exactly that) or write `not measured` — never a number you inferred.
+   Subagent runs are a standing case of this: no per-SHA metric fires for them.
+
 ## Matched-pair A/B protocol (summary — full steps in `evals/protocols/ab-protocol.md`)
 
 - **Frozen canary set.** Use the same `evals/canaries/<skill>.yaml` prompts for both variants; never edit a

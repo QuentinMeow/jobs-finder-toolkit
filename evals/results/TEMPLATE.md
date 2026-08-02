@@ -105,13 +105,18 @@ is a loss):** `check.py` `<PASS/PASS>` · `--check-metadata` `<ok/ok>` · `--che
 with `evals/rubrics/artifact-quality.md`): `<e.g. B non-worse; 2 ties>` — direction only, no
 significance claim.
 
-**Failure telemetry** (transcript miner over each run's session transcript): tool calls A/B `<n/n>`,
-failures by tool `<...>`, retry classification `<meaningless / transient / adaptive>`, tokens burned
-in failed + meaningless-retry turns `<n>`. Target: meaningless-retry = 0 (nonzero → file in
-`memory/known-issues/`, not accepted as noise).
+**Failure telemetry:** tool calls A/B `<n/n>`, plus in prose any failed tool calls or retries you
+observed, and `not measured` where you did not. There is **no transcript miner** — the fields it
+used to feed (failure count by tool, retry classification, tokens burned in retry turns) were
+struck from `evals/protocols/stage-benchmarks.md` on 2026-08-02 because no tool produces them.
+A run that thrashed on failed calls is still not a clean efficiency win, and a repeated
+meaningless retry is a bug to file in `memory/known-issues/` — that is now your judgement from
+the transcript, not a number to fill in.
 
-**Artifacts:** stage output for A and B saved under `private/evals/artifacts/<row-id>/` for the
-pairwise quality read.
+**Artifacts:** stage output for A and B saved under `private/evals/runs/artifacts/<row-id>/` for
+the pairwise quality read — the same path `evals/protocols/stage-benchmarks.md` names, inside the
+overlay's sanctioned `evals/{canaries,fixtures,runs}/` tree.
 
 **Ship decision:** apply the pre-registered rule — ship B as one revertible commit / no change. A
-shipped slate is still confirmed later by one end-to-end confirmation row (`protocol.md`).
+shipped slate is still confirmed later by one end-to-end confirmation row
+(`docs/designs/token-usage-modes/benchmark-scenario.md`).

@@ -42,7 +42,12 @@ counts. Therefore:
    few canaries). That is enough to resolve an efficiency delta; it is NOT enough for a quality
    delta — do not try.
 8. **Log every run to `logs/metrics.jsonl`** (Phase-3 hooks, keyed by git SHA). Keep the
-   pairing recorded (which A run matches which B run on which prompt).
+   pairing recorded (which A run matches which B run on which prompt). **Those hooks are
+   OPT-IN**: `logs/` is gitignored and does not exist until you wire SessionStart /
+   PostToolUse / Stop from your own `.claude/settings.local.json` — see
+   [`../../docs/handbook/metrics.md`](../../docs/handbook/metrics.md). Wire them BEFORE the A
+   runs, not after: an A/B whose A half has no numbers is not a matched pair. If you cannot,
+   record the fallback source explicitly on every row rather than mixing sources silently.
 
 ## Analyze
 
