@@ -116,6 +116,8 @@ class Sandbox:
         body = ["# throwaway ledger"]
         for row in rows:
             body.append(f"- commit: {row['commit']}")
+            if row.get("base") is not None:      # optional key; omitted = legacy row
+                body.append(f"  base: {row['base']}")
             body.append(f"  reviewed_by: {row.get('reviewed_by', 'agent')}")
             body.append(f"  date: {row.get('date', '2026-07-29')}")
             body.append(f"  files: {row['files']}")
@@ -123,13 +125,22 @@ class Sandbox:
             body.append(f"  finding: {row.get('finding', 'none')}")
         self.write(LEDGER_REL, "\n".join(body) + "\n")
 
-    def row_for(self, commit: str, base: str | None = None) -> dict:
-        """A correct row acknowledging ``commit`` over ``base..commit``."""
+    def row_for(self, commit: str, base: str | None = None,
+                record_base: bool = False) -> dict:
+        """A correct row acknowledging ``commit`` over ``base..commit``.
+
+        ``record_base`` writes that range start into the row's own ``base:`` key —
+        what the gate now prints. Default off, so every pre-existing caller keeps
+        producing the positional (legacy) row shape.
+        """
         base = base if base is not None else commit
         digest = review_gate.range_digest(self.root, base, commit)
         files = review_gate.changed_files(self.root, base, commit)
-        return {"commit": self.short(commit), "files": len(files),
-                "digest": digest[:16]}
+        row = {"commit": self.short(commit), "files": len(files),
+               "digest": digest[:16]}
+        if record_base:
+            row["base"] = self.short(base)
+        return row
 
     # ── an honest rebase ─────────────────────────────────────────────────
     def rebase_onto(self, branch: str, base: str) -> tuple[str, str]:
@@ -777,6 +788,187 @@ class RebasedRowTests(GateTestCase):
         self.assertIn(f"row 3  {self.repo.short(s['orphan'])}  UNKNOWN OBJECT",
                       proc.stdout)
         self.assertEqual(proc.stderr, "")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The convergence case: two branches cut from ONE base each append rows at the end
+# of the same list, so merging both CONCATENATES them and re-parents the second
+# branch's first row onto the first branch's last commit. A row that records its
+# own `base:` states its range instead of deriving it, so it cannot be re-parented.
+# ─────────────────────────────────────────────────────────────────────────────
+class ParallelBranchConvergenceTests(GateTestCase):
+
+    def converge(self, record_base: bool) -> dict:
+        """Two branches off one base, both merged into main. Real merges, real conflict.
+
+        main:  README → ledger(S) → M1(merge A) → ack1 → M2(merge B)
+        a:                     S → change A → ack A
+        b:                     S → change B → ack B
+
+        Both branches wrote their row against S. After M2 the list reads
+        [seed(S), A, M1, B] — so B, appended last on its own branch, now sits AFTER
+        M1 and the positional rule starts its range at M1 instead of S.
+        """
+        seed = self.bootstrap()
+
+        self.repo.git("checkout", "-q", "-b", "branch-a", "main")
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        a_change = self.repo.commit("change A")
+        row_a = self.repo.row_for(a_change, base=seed, record_base=record_base)
+        self.repo.write_ledger([self.seed_row(seed, record_base), row_a])
+        a_tip = self.repo.commit("acknowledge change A")
+
+        # Cut from the SAME base — this branch never sees branch-a's row.
+        self.repo.git("checkout", "-q", "-b", "branch-b", "main")
+        self.repo.write("docs/handbook/b.md", "change B\n")
+        b_change = self.repo.commit("change B")
+        row_b = self.repo.row_for(b_change, base=seed, record_base=record_base)
+        self.repo.write_ledger([self.seed_row(seed, record_base), row_b])
+        self.repo.commit("acknowledge change B")
+
+        # Merge 1 lands cleanly: only branch-a touched the ledger.
+        self.repo.git("checkout", "-q", "main")
+        self.repo.git("merge", "-q", "--no-ff", "-m", "Merge branch A", "branch-a")
+        m1 = self.repo.git("rev-parse", "HEAD").stdout.strip()
+        row_m1 = self.repo.row_for(m1, base=a_tip, record_base=record_base)
+        self.repo.write_ledger([self.seed_row(seed, record_base), row_a, row_m1])
+        self.repo.commit("acknowledge merge A")
+
+        # Merge 2 conflicts on the ledger. Resolving it the only sensible way —
+        # keep both sides' rows — is what performs the silent re-parenting.
+        merge = self.repo.git("merge", "--no-ff", "-m", "Merge branch B", "branch-b",
+                              check=False)
+        self.assertNotEqual(merge.returncode, 0,
+                            "the ledger did not conflict; this is not the real case")
+        rows = [self.seed_row(seed, record_base), row_a, row_m1, row_b]
+        self.repo.write_ledger(rows)
+        m2 = self.repo.commit("Merge branch B")
+
+        return {"seed": seed, "a_change": a_change, "b_change": b_change,
+                "m1": m1, "m2": m2, "rows": rows}
+
+    def seed_row(self, seed: str, record_base: bool) -> dict:
+        row = {"commit": self.repo.short(seed), "files": 0, "digest": EMPTY_DIGEST16,
+               "finding": "seed row"}
+        if record_base:
+            row["base"] = self.repo.short(seed)      # the seed's zero-width range
+        return row
+
+    def test_bare_rows_are_re_parented_by_the_second_merge(self):
+        """The defect: row 4 was reviewed over seed..B and is now read as M1..B."""
+        s = self.converge(record_base=False)
+
+        proc = self.repo.gate("--verify-all")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("ledger row 4 does not match the repository", proc.stderr)
+        # The range it is being held to starts at merge 1, not at the shared base.
+        self.assertIn(f"git diff {self.repo.short(s['m1'])}..", proc.stderr)
+        # Every row is an ancestor of HEAD, so nothing was skipped: the failure is
+        # the derived range, not a rebase.
+        self.assertNotIn("not part of this history", proc.stdout)
+
+    def test_the_mismatch_message_explains_re_parenting_and_never_says_edit_the_row(self):
+        self.converge(record_base=False)
+
+        msg = self.repo.gate("--verify-all").stderr
+        self.assertIn("records no `base:`", msg)
+        self.assertIn("RE-PARENTED RANGE", msg)
+        self.assertIn("git merge-base", msg)
+        # The escape hatch that used to be here: rewriting a landed row's evidence.
+        self.assertNotIn("Correct the digest", msg)
+        self.assertIn("Never restate a row's evidence", msg)
+
+    def test_rows_carrying_their_own_base_survive_the_convergence(self):
+        """The fix: the same history, the same merge, with `base:` on every row."""
+        s = self.converge(record_base=True)
+
+        # Verification passes; what is left is the ordinary unreviewed merge commit.
+        proc = self.repo.gate("--verify-all")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("PUBLIC REVIEW GATE — not a test failure", proc.stderr)
+
+        # Close the trunk the normal way: one row for the merge, ledger-only commit.
+        rows = s["rows"] + [self.repo.row_for(s["m2"], base=s["b_change"],
+                                              record_base=True)]
+        self.repo.write_ledger(rows)
+        self.repo.commit("acknowledge merge B")
+
+        for args in ((), ("--verify-all",)):
+            with self.subTest(args=args):
+                proc = self.repo.gate(*args)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stderr, "")
+
+    def test_the_printed_row_carries_the_base_it_tells_you_to_diff(self):
+        """The row the gate hands an agent must be re-parent-proof as printed."""
+        self.bootstrap()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        head = self.repo.commit("public change")
+
+        msg = self.repo.gate().stderr
+        self.assertIn(f"    - commit: {self.repo.short(head)}", msg)
+        # The printed `base:` IS the left side of the printed git diff — the row
+        # states the range the reviewer was told to read, rather than deriving it.
+        diff_line = next(line for line in msg.splitlines()
+                         if line.strip().startswith("git diff "))
+        base_s = diff_line.split("git diff ", 1)[1].split("..", 1)[0]
+        self.assertNotEqual(base_s, self.repo.short(head))
+        self.assertIn(f"      base: {base_s}", msg)
+        self.assertIn(f"git diff {base_s}..{self.repo.short(head)} "
+                      f"-- . ':!{LEDGER_REL}'", msg)
+
+        # And the row it printed verifies as printed.
+        rows = [self.seed_row(base_s, True),
+                self.repo.row_for(head, base=base_s, record_base=True)]
+        self.repo.write_ledger(rows)
+        self.repo.commit("acknowledge the change")
+        self.assertEqual(self.repo.gate("--verify-all").returncode, 0)
+
+    def test_a_base_that_is_not_a_commit_here_is_named_not_guessed_around(self):
+        seed = self.bootstrap()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        head = self.repo.commit("public change")
+        row = self.repo.row_for(head, base=seed, record_base=True)
+        row["base"] = "dead" * 10
+        self.repo.write_ledger([self.seed_row(seed, True), row])
+
+        proc = self.repo.gate("--verify-all")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("names a base this checkout does not have", proc.stderr)
+        self.assertIn("deaddeaddeaddeaddeaddeaddeaddeaddeaddead", proc.stderr)
+        self.assertNotIn("Traceback", proc.stdout + proc.stderr)
+
+    def test_base_is_optional_and_the_two_shapes_mix_in_one_ledger(self):
+        """Additive: the 161 rows written before this key must keep verifying."""
+        seed = self.bootstrap()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        a = self.repo.commit("change A")
+        self.repo.write_ledger([self.seed_row(seed, False),
+                                self.repo.row_for(a, base=seed)])   # legacy shape
+        b = self.repo.commit("acknowledge A")
+
+        self.repo.write("docs/handbook/b.md", "change B\n")
+        c = self.repo.commit("change B")
+        rows = [self.seed_row(seed, False),
+                self.repo.row_for(a, base=seed),                     # legacy
+                self.repo.row_for(c, base=a, record_base=True)]      # new shape
+        self.repo.write_ledger(rows)
+        self.repo.commit("acknowledge B")
+
+        proc = self.repo.gate("--verify-all")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(proc.stderr, "")
+        self.assertIsNotNone(b and c)
+
+    def test_a_malformed_base_is_rejected_by_the_schema(self):
+        seed = self.bootstrap()
+        row = self.seed_row(seed, True)
+        row["base"] = "nothex!"
+        self.repo.write_ledger([row])
+
+        proc = self.repo.gate()
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("base must be >= 7 hex characters", proc.stderr)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
