@@ -4,7 +4,7 @@
 - **Area**: job-search
 - **Source**: adversarial store audit, finding 4's "aggravating factor" (the same
   audit's `_swap_dir` crash-remnant half is fixed in the store-data-loss PR)
-- **Claimed-by**:
+- **Claimed-by**: Claude, 2026-08-02, branch `fix/22-build-postings-correctness` (done)
 
 ## Goal
 
@@ -30,12 +30,32 @@ after : index dir contents = []
 after : postings.jsonl exists? False
 ```
 
-That matters more than a normal lost-cache would, because the committed index is
-the store's **durable floor**: rows whose raw blobs were pruned and whose derived is
-gone exist nowhere else (`memory/decisions/job-index-durable-floor.md`).
-`build_incremental` also skips the `_verify_schemas` pass that `build_rebuild` runs
-before its swap, so the incremental path writes with less checking as well as less
-safety.
+**Correction, 2026-08-02 — the block above is overstated; this is what actually
+happens.** `postings.jsonl` is NOT destroyed and never was: `_regen_index_zone`
+excludes it explicitly (`if stale.name != "postings.jsonl"`), precisely because it
+is the durable floor and the write below replaces it wholesale. Re-running the
+audit's own injected ENOSPC, on both paths:
+
+```
+incremental: index zone AFTER the failed write:
+    {'postings.jsonl': True, 'by-day': 'MISSING', 'triage': 'MISSING'}
+--rebuild  : index zone AFTER the failed write:
+    {'postings.jsonl': True, 'by-day': [...], 'triage': [...]}
+```
+
+What is lost is `by-day/` and `triage/`, both re-derived from this build's entities
+and suppressed rows — and the crashed build leaves the write-ahead
+`postings-build-incomplete.json` marker, which forces the NEXT build into a full
+fold that regenerates both. The hole is one crashed build wide and self-repairing:
+a transient gap `--rebuild` does not have, not the loss of durable history. Worth
+closing, not worth alarm.
+
+The committed index IS the store's **durable floor**: rows whose raw blobs were
+pruned and whose derived is gone exist nowhere else
+(`memory/decisions/job-index-durable-floor.md`) — which is why it was already the
+one file the unlink skipped. `build_incremental` also skips the `_verify_schemas`
+pass that `build_rebuild` runs before its swap, so the incremental path writes with
+less checking as well as less safety; that half is NOT addressed here.
 
 The shape of the fix already exists in the file: write the new index zone into
 `index.building` and reuse `_swap_dir`, which now also restores a crash remnant

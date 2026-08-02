@@ -5,7 +5,7 @@
 - **Source**: adversarial review of the O(new) incremental store build, 2026-07-31 —
   findings 4 and 5 of that report; both are doc-vs-code gaps rather than live corruptions,
   so they were filed rather than folded into the three-defect fix
-- **Claimed-by**:
+- **Claimed-by**: Claude, 2026-08-02, branch `fix/22-build-postings-correctness` (done)
 
 ## Goal
 
