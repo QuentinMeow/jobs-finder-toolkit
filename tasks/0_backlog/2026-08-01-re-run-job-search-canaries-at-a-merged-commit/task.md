@@ -14,7 +14,7 @@ skill has gate evidence at head instead of evidence about a commit nobody can re
 ## Context
 
 The only job-search canary record below the store rewrite is pinned to `70a620f32968`, which
-is **not** an ancestor of merged history. It exists solely on `origin/wip/07-company-roles-jd-digest`
+is **not** an ancestor of merged history. It exists solely under the annotated tag `archive/jd-digest-70a620f` (until 2026-08-02 this was the branch `wip/07-company-roles-jd-digest`)
 (pushed 2026-08-01 specifically so this record stays checkable — before that it was on one
 unpushed local branch). The landed equivalent is `1e4b7c1` (PR #152).
 
