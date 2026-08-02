@@ -29,7 +29,7 @@ import build_postings as bp  # noqa: E402
 import config  # vendored toolkit config loader  # noqa: E402
 import postings_fold_state as fold_state  # noqa: E402
 from _vendor.store import serialization  # noqa: E402
-from _vendor.store.atomic import atomic_write_text  # noqa: E402
+from _vendor.store.atomic import atomic_write_text, read_jsonl  # noqa: E402
 from _vendor.store.capture import CaptureSession  # noqa: E402
 from _vendor.store.paths import domain_layout  # noqa: E402
 from _vendor.store.validation import validate_store  # noqa: E402
@@ -741,6 +741,61 @@ class IncrementalFoldTests(_StoreCase):
         self.assertIn("fold=full", self._summary())
         self._assert_matches_rebuild()
 
+    def test_a_manifest_replaced_in_place_falls_back(self):
+        """The refusal table promises this; a bare fetch-id digest cannot see it.
+
+        Raw is contractually append-only, so a manifest rewritten with the same
+        ``fetch_id`` and a different ``payload.blob`` is out-of-contract — but the
+        table says "a manifest was removed, or the raw zone was not synced" is
+        detected, and this was neither detected nor folded: the replaced manifest
+        is not pending, so its new rows never reached derived at all.
+        """
+        from _vendor.store.blobs import BlobStore
+        from _vendor.store.manifest import iter_manifests
+
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._index_keys(), {"gh-111"})
+
+        path, env = next(iter(iter_manifests(self.layout)))
+        before = env["payload"]["blob"]
+        ref = BlobStore(self.layout.blobs).write(
+            _gh_board([_job(111, "SWE", "Austin, TX"),
+                       _job(333, "Data Engineer", "NYC, NY")]), "application/json")
+        self.assertNotEqual(ref.sha256, before)
+        env["payload"] = ref.as_payload("application/json")
+        atomic_write_text(path, serialization.dumps_json(env))
+
+        self._capture_gh([_job(444, "Platform Engineer", "Remote, US")], _dt(15))
+        self.assertIn("fold=full", self._summary())
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-333", "gh-444"})
+        self._assert_matches_rebuild()
+
+    def test_a_deleted_event_log_falls_back(self):
+        """``posting.yaml`` alone is not "this entity's derived is intact".
+
+        ``_resume_fold`` reads ``events.jsonl`` too, so a deleted one silently
+        truncated the entity's whole event history: the resumed fold started from
+        an empty list and ``by-day/`` lost every earlier day, with no refusal.
+        """
+        self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self._capture_gh([_job(111, "SWE", "Seattle, WA")], _dt(15))
+        self.assertEqual(self._build([]), 0)
+        entity = self.layout.derived / "postings" / "examplecorp" / "gh-111"
+        before = [e["type"] for e in read_jsonl(entity / "events.jsonl")]
+        self.assertEqual(before, ["first_seen", "seen", "changed"])
+
+        (entity / "events.jsonl").unlink()
+        self._capture_gh([_job(111, "SWE", "Denver, CO")], _dt(16))
+        self.assertIn("fold=full", self._summary())
+        self.assertEqual([e["type"] for e in read_jsonl(entity / "events.jsonl")],
+                         before + ["seen", "changed"])
+        self.assertEqual(sorted(p.stem for p in
+                                (self.layout.index / "by-day").glob("*.jsonl")),
+                         ["2026-07-14", "2026-07-15", "2026-07-16"])
+        self._assert_matches_rebuild()
+
     def test_ledger_ahead_of_cache_falls_back(self):
         """A crash between the derived/index writes and the cache write."""
         self._capture_gh([_job(111, "SWE", "Austin, TX")], _dt(14))
@@ -1386,6 +1441,32 @@ class IndexPreservationTests(_StoreCase):
         self.assertEqual(row["location"], "Seattle, WA")
         self.assertNotIn("carried", row)
         self.assertNotEqual(row["seq"], 999)  # real computed seq, not the stale one
+
+    def test_a_row_deleted_from_the_committed_index_falls_back(self):
+        """The floor is the last zone with no invalidation signal of its own.
+
+        ``_patch_index_zone`` reads ``index/postings.jsonl`` as authoritative for
+        every row this run does not rebuild, so a row deleted from it stayed lost
+        across every subsequent fast build — in the zone the design calls
+        committed, durable history. Reproduces only for a row this sweep does not
+        re-observe; a re-observed one writes its own row back.
+        """
+        self._capture_gh([_job(111, "SWE", "Austin, TX"),
+                          _job(222, "SRE", "Remote, US")], _dt(14))
+        self.assertEqual(self._build([]), 0)
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-222"})
+
+        # Hand-delete gh-222's row. derived/ and raw/ are untouched.
+        idx = self.layout.index / "postings.jsonl"
+        rows = [json.loads(l) for l in idx.read_text().splitlines()]
+        atomic_write_text(idx, "".join(
+            json.dumps(r, sort_keys=True) + "\n" for r in rows
+            if r.get("key") != "gh-222"))
+        self.assertEqual(self._index_keys(), {"gh-111"})
+
+        self._capture_gh([_job(111, "SWE", "Seattle, WA")], _dt(15))  # gh-222 absent
+        self.assertIn("fold=full", self._summary())
+        self.assertEqual(self._index_keys(), {"gh-111", "gh-222"})
 
     def test_full_current_input_remains_unchanged(self):
         """No index-only survivors on a full-raw machine — output is unaffected."""

@@ -1501,16 +1501,28 @@ def _manifest_sort_key(env: dict) -> tuple:
 
 
 def _store_state(manifests, blobstore, registry, present=None) -> dict:
-    """Digests of everything the per-entity cache does not model itself."""
+    """Digests of everything the per-entity cache does not model itself.
+
+    ``manifest_digest`` covers ``(fetch_id, payload blob)`` PAIRS, not bare fetch
+    ids. Raw is contractually append-only and immutable, so a manifest rewritten
+    in place is out-of-contract — but the refusal table promises that "a manifest
+    was removed, or the raw zone was not synced" is detected, and a bare fetch-id
+    digest cannot see a folded manifest re-pointed at different bytes: the fast
+    path folds only the pending set, so the replaced manifest's new rows never
+    reach derived and no refusal fires. Widening the digest is what makes the code
+    match the promise; it costs one full fold for every store built by the
+    narrower version (``postings_fold_state.CACHE_SCHEMA`` is bumped alongside so
+    the refusal names the cause).
+    """
     ids, absent, cap = [], [], ("", "")
     present = blobstore.present_shas() if present is None else present
     for _path, env in manifests:
-        ids.append(env.get("fetch_id") or "")
-        cap = max(cap, _manifest_sort_key(env))
         payload = env.get("payload")
-        if isinstance(payload, dict) and payload.get("blob") \
-                and payload["blob"] not in present:
-            absent.append(payload["blob"])
+        blob = payload.get("blob") if isinstance(payload, dict) else None
+        ids.append(f"{env.get('fetch_id') or ''}\x1f{blob or ''}")
+        cap = max(cap, _manifest_sort_key(env))
+        if blob and blob not in present:
+            absent.append(blob)
     return {
         "fingerprint": _module_fingerprint(registry),
         "manifest_digest": fold_state.digest_strings(ids),
@@ -1577,15 +1589,27 @@ def _frozen_digest(layout) -> str:
         (p.name, p.read_bytes()) for p in sorted(fdir.glob("*.yaml")))
 
 
+_DERIVED_REQUIRED = ("posting.yaml", "events.jsonl")
+
+
 def _derived_keys(derived_root: Path) -> set:
-    """Every ``(partition, key)`` with a derived ``posting.yaml`` — the same
-    predicate :func:`_carry_forward` uses, as a stat-only two-level scan.
+    """Every ``(partition, key)`` whose derived files are all present, as a
+    stat-only two-level scan.
 
     PAIRS, not bare keys: the cache holds exactly one partition per key
     (``entry["p"]``), so comparing key SETS cannot see a key materialized at two
     partitions at once — the shape a company rename used to leave behind. The pair
     comparison refuses the fast path on any such pre-existing mess, and the full
     fold that follows heals it (:func:`_drop_stale_partitions`).
+
+    ``events.jsonl`` as well as ``posting.yaml``: this answers "is this entity's
+    derived intact enough to resume its fold from?", and :func:`_resume_fold`
+    reads the event list too. ``posting.yaml`` alone as the proxy meant a deleted
+    ``events.jsonl`` silently truncated that entity's event history — the resumed
+    fold started from an empty list, ``by-day/`` lost every earlier day, and
+    nothing refused. (:func:`_carry_forward` keeps ``posting.yaml`` as ITS
+    predicate on purpose: it answers a different question — "is there an entity
+    here to keep?" — where a missing event list is not a reason to drop a posting.)
 
     ``os.scandir`` rather than ``rglob`` on purpose: at 15k entities the pathlib
     walk measured 2.25s and this measures 0.23s for the identical answer, and
@@ -1599,8 +1623,9 @@ def _derived_keys(derived_root: Path) -> set:
         if not partition.is_dir():
             continue
         for entity in os.scandir(partition.path):
-            if entity.is_dir() and \
-                    os.path.exists(os.path.join(entity.path, "posting.yaml")):
+            if entity.is_dir() and all(
+                    os.path.exists(os.path.join(entity.path, name))
+                    for name in _DERIVED_REQUIRED):
                 pairs.add((partition.name, entity.name))
     return pairs
 
@@ -1659,6 +1684,16 @@ def _fast_plan(layout, registry, ledger, manifests, pending, blobstore):
     derived = _derived_keys(layout.derived)
     if derived != {(entry.get("p") or "", key) for key, entry in entries.items()}:
         return _refuse("derived zone no longer matches the fold cache")
+
+    # The committed index is the last zone with no signal of its own. `_patch_index_zone`
+    # reads it as authoritative for every row this run does not rebuild, so a row
+    # deleted from it stays lost across every subsequent fast build — in the zone the
+    # design calls committed, durable history. The cache says which rows must be
+    # there: every cached entity was written to derived AND given an index row by the
+    # same build. A PROPER SUBSET means the index moved under the cache. (A superset
+    # is normal and stays allowed — those are the index-only floor survivors.)
+    if set(entries) - set(_read_index_rows(layout.index)):
+        return _refuse("the committed index is missing rows the fold cache holds")
 
     return {"header": header, "entries": entries, "derived": derived,
             "state": _store_state(manifests, blobstore, registry, present),
