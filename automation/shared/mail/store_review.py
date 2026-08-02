@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable
 
 from ..store.blobs import BlobCorrupt, BlobStore
 from ..store.identifiers import IdentifierRegistry
@@ -152,6 +153,7 @@ class EmailStoreReader:
         self.account = account
         self._blobs = BlobStore(self.root / "raw" / "_blobs")
         self._state: dict[str, Any] | None = None
+        self._envelopes: dict[str, dict[str, Any]] | None = None
         self._manifests: dict[str, tuple[Path, dict[str, Any]]] | None = None
         self._manifest_errors: list[dict[str, str]] | None = None
         self._raw_payloads: dict[str, dict[str, Any]] = {}
@@ -187,9 +189,20 @@ class EmailStoreReader:
             self._state = data
         return self._state
 
+    def _envelope_map(self) -> dict[str, dict[str, Any]]:
+        """Build one private, read-only-in-practice snapshot for keyed lookups."""
+        if self._envelopes is None:
+            messages = self.state().get("messages") or {}
+            self._envelopes = {
+                str(key): dict(record)
+                for key, record in messages.items()
+                if isinstance(record, dict)
+            }
+        return self._envelopes
+
     def envelopes(self) -> dict[str, dict[str, Any]]:
-        messages = self.state().get("messages") or {}
-        return {str(key): dict(record) for key, record in messages.items() if isinstance(record, dict)}
+        """Return defensive copies without rebuilding the snapshot from sync state."""
+        return {key: dict(record) for key, record in self._envelope_map().items()}
 
     def _manifest_map(self) -> dict[str, tuple[Path, dict[str, Any]]]:
         if self._manifests is not None:
@@ -266,7 +279,10 @@ class EmailStoreReader:
 
     def hydrate(self, message_key: str) -> dict[str, Any]:
         """Deliberately resolve one raw message into memory, never for direct output."""
-        envelope = self.envelopes().get(message_key)
+        # A complete all-history review calls this once per message. Looking up
+        # through ``envelopes()`` rebuilt the complete defensive-copy map on
+        # every call, turning review into O(messages^2) work.
+        envelope = self._envelope_map().get(message_key)
         if envelope is None:
             raise StoreReviewError("stored message key was not found")
         payload = self._raw_payload(envelope)
@@ -573,9 +589,10 @@ class EmailStoreReader:
     ) -> dict[str, Any]:
         """Categorize every stored message locally and return only safe projections."""
         integrity = self.integrity()
+        envelopes = self.envelopes()
         hydrated: list[dict[str, Any]] = []
         unavailable: list[str] = []
-        for key in sorted(self.envelopes()):
+        for key in sorted(envelopes):
             try:
                 hydrated.append(self.hydrate(key))
             except StoreReviewError:
@@ -592,10 +609,10 @@ class EmailStoreReader:
         )
         output = {
             "account": self.account,
-            "review_complete": integrity.ok and not unavailable and len(records) == len(self.envelopes()),
+            "review_complete": integrity.ok and not unavailable and len(records) == len(envelopes),
             "integrity": integrity.as_dict(),
             "counts": {
-                "stored_messages": len(self.envelopes()),
+                "stored_messages": len(envelopes),
                 "hydrated_messages": len(hydrated),
                 "unavailable_messages": len(unavailable),
                 "categorized_messages": len(records),

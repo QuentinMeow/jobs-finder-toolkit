@@ -2,8 +2,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
+import tempfile
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -19,6 +25,9 @@ OAUTH_SCOPES = ("openid", "profile", "offline_access", *DELEGATED_SCOPES)
 # email-assistant; changing it would orphan every user's cached login.
 KEYRING_SERVICE = "jobs-finder-combined.outlook-email-assistant.oauth"
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
+
+_THREAD_LOCKS_GUARD = threading.Lock()
+_THREAD_LOCKS: dict[str, threading.Lock] = {}
 
 
 class AuthError(RuntimeError):
@@ -78,6 +87,87 @@ def dependency_status() -> dict[str, str]:
         return {"keyring": str(getattr(module, "__version__", "installed"))}
     except ImportError:
         return {"keyring": "missing"}
+
+
+def _thread_lock(cache_key: str) -> threading.Lock:
+    """One in-process lock per account-bound keyring credential."""
+    with _THREAD_LOCKS_GUARD:
+        return _THREAD_LOCKS.setdefault(cache_key, threading.Lock())
+
+
+def _lock_file(handle) -> None:
+    """Acquire the platform's blocking exclusive advisory lock."""
+    if os.name == "nt":  # pragma: no cover - exercised on Windows hosts.
+        import msvcrt
+
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        return
+
+    import fcntl
+
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+
+
+def _unlock_file(handle) -> None:
+    """Release a lock acquired by :func:`_lock_file`."""
+    if os.name == "nt":  # pragma: no cover - exercised on Windows hosts.
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+
+    import fcntl
+
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def _oauth_cache_lock(cache_key: str):
+    """Serialize refresh-token rotation across threads and local processes.
+
+    Microsoft may rotate the refresh token on every grant. The protected unit
+    is therefore load -> refresh -> keyring save, not merely ``set_password``.
+    The lock file contains no OAuth state; refresh tokens remain OS-keyring-only.
+    """
+    lock_identity = f"{KEYRING_SERVICE}\0{cache_key.casefold()}"
+    digest = hashlib.sha256(lock_identity.encode("utf-8")).hexdigest()[:24]
+    uid = str(os.getuid()) if hasattr(os, "getuid") else "user"
+    lock_dir = Path(tempfile.gettempdir()) / f"jobs-finder-outlook-oauth-{uid}"
+    lock_path = lock_dir / f"{digest}.lock"
+
+    with _thread_lock(lock_identity):
+        try:
+            lock_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            flags = os.O_CREAT | os.O_RDWR
+            flags |= getattr(os, "O_CLOEXEC", 0)
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(lock_path, flags, 0o600)
+        except OSError as exc:
+            raise AuthError(
+                f"could not create the local OAuth refresh lock: {exc}"
+            ) from exc
+        with os.fdopen(descriptor, "a+b") as handle:
+            try:
+                _lock_file(handle)
+            except (ImportError, OSError) as exc:
+                raise AuthError(
+                    f"could not acquire the local OAuth refresh lock: {exc}"
+                ) from exc
+            try:
+                yield
+            finally:
+                try:
+                    _unlock_file(handle)
+                except OSError as exc:
+                    raise AuthError(
+                        f"could not release the local OAuth refresh lock: {exc}"
+                    ) from exc
 
 
 def _post_form(url: str, values: dict[str, str]) -> dict[str, Any]:
@@ -148,6 +238,17 @@ class AuthManager:
         try:
             keyring.set_password(KEYRING_SERVICE, self.settings.cache_key, state)
         except Exception as exc:
+            # Some keyring backends can report a duplicate-item race after the
+            # intended value has already landed. Accept only an exact read-back;
+            # a missing, stale, or unreadable value remains a genuine failure.
+            try:
+                persisted = keyring.get_password(
+                    KEYRING_SERVICE, self.settings.cache_key
+                )
+            except Exception:
+                persisted = None
+            if persisted == state:
+                return
             raise AuthError(f"could not save OAuth state in the OS keyring: {exc}") from exc
 
     @staticmethod
@@ -156,23 +257,24 @@ class AuthManager:
         raise AuthError(f"Microsoft authentication failed: {description}")
 
     def access_token(self) -> str:
-        refresh_token = self._load_refresh_token()
-        result = _post_form(
-            self.settings.token_endpoint,
-            {
-                "client_id": self.settings.client_id,
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "scope": self._scope_value(),
-            },
-        )
-        if "access_token" not in result:
-            error = str(result.get("error") or "")
-            if error in {"invalid_grant", "interaction_required"}:
-                raise LoginRequired("cached login expired or was revoked; run login")
-            self._raise_result_error(result)
-        self._save_refresh_token(str(result.get("refresh_token") or refresh_token))
-        return str(result["access_token"])
+        with _oauth_cache_lock(self.settings.cache_key):
+            refresh_token = self._load_refresh_token()
+            result = _post_form(
+                self.settings.token_endpoint,
+                {
+                    "client_id": self.settings.client_id,
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "scope": self._scope_value(),
+                },
+            )
+            if "access_token" not in result:
+                error = str(result.get("error") or "")
+                if error in {"invalid_grant", "interaction_required"}:
+                    raise LoginRequired("cached login expired or was revoked; run login")
+                self._raise_result_error(result)
+            self._save_refresh_token(str(result.get("refresh_token") or refresh_token))
+            return str(result["access_token"])
 
     def login(self, printer: Callable[[str], None] = print) -> str:
         flow = _post_form(
@@ -195,7 +297,8 @@ class AuthManager:
                 },
             )
             if "access_token" in result:
-                self._save_refresh_token(str(result.get("refresh_token") or ""))
+                with _oauth_cache_lock(self.settings.cache_key):
+                    self._save_refresh_token(str(result.get("refresh_token") or ""))
                 return str(result["access_token"])
             error = str(result.get("error") or "")
             if error == "authorization_pending":
@@ -207,12 +310,13 @@ class AuthManager:
         raise AuthError("Microsoft device login expired; run login again")
 
     def logout(self) -> bool:
-        keyring = _keyring()
-        try:
-            existing = keyring.get_password(KEYRING_SERVICE, self.settings.cache_key)
-            if existing is None:
-                return False
-            keyring.delete_password(KEYRING_SERVICE, self.settings.cache_key)
-            return True
-        except Exception as exc:
-            raise AuthError(f"could not clear OAuth state from the OS keyring: {exc}") from exc
+        with _oauth_cache_lock(self.settings.cache_key):
+            keyring = _keyring()
+            try:
+                existing = keyring.get_password(KEYRING_SERVICE, self.settings.cache_key)
+                if existing is None:
+                    return False
+                keyring.delete_password(KEYRING_SERVICE, self.settings.cache_key)
+                return True
+            except Exception as exc:
+                raise AuthError(f"could not clear OAuth state from the OS keyring: {exc}") from exc

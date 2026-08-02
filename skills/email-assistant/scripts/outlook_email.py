@@ -53,6 +53,7 @@ CLI_COMMANDS = (
     "match-application",
     "create-draft",
     "create-reply-draft",
+    "update-draft",
 )
 
 STORE_REVIEW_SUMMARY_KEY_LIMIT = 20
@@ -355,6 +356,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reply.add_argument("--message-id", required=True)
     reply.add_argument("--body-file", required=True)
+
+    update = subparsers.add_parser(
+        "update-draft", help="replace the body of an existing unsent Outlook draft"
+    )
+    update.add_argument("--message-id", required=True)
+    update.add_argument("--body-file", required=True)
     return parser
 
 
@@ -665,6 +672,13 @@ def main(argv: list[str] | None = None) -> int:
         _json(
             client.create_reply_draft(
                 source_message_id=args.message_id,
+                body_text=_read_body(args.body_file),
+            )
+        )
+    elif args.command == "update-draft":
+        _json(
+            client.update_draft(
+                draft_message_id=args.message_id,
                 body_text=_read_body(args.body_file),
             )
         )

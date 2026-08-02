@@ -705,11 +705,20 @@ class EmailStoreSync:
         stale = False
         for folder in FOLDERS:
             live = self.provider.probe_folder(folder)
-            stored = state["folders"][folder].get("watermark")
+            folder_state = state["folders"][folder]
+            stored = folder_state.get("watermark")
             live_at = live.get("latest_at")
             reason = None
-            if live_at and not stored:
+            inventory = folder_state.get("inventory")
+            sync_completed = bool(folder_state.get("last_successful_sync")) and isinstance(
+                inventory, list
+            )
+            if not sync_completed:
+                reason = "folder has never completed a sync"
+            elif live_at and not stored:
                 reason = "store has no watermark"
+            elif not live_at and (stored or inventory):
+                reason = "provider folder is empty but local folder state is not"
             else:
                 live_dt = _parse_provider_time(str(live_at) if live_at else None)
                 stored_dt = _parse_provider_time(str(stored) if stored else None)
@@ -720,6 +729,7 @@ class EmailStoreSync:
             details[folder] = {
                 "live_latest_at": live_at,
                 "stored_watermark": stored,
+                "sync_completed": sync_completed,
                 "stale": bool(reason),
                 "reason": reason,
             }

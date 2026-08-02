@@ -367,6 +367,35 @@ class DraftOnlyGraphClient(MailProvider):
         created = self._request("POST", "/me/messages", payload=payload)
         return self._assert_draft(created)
 
+    def update_draft(self, *, draft_message_id: str, body_text: str) -> dict[str, Any]:
+        """Replace one existing draft's body after verifying draft evidence.
+
+        This is intentionally an exact-body replacement.  Callers that are
+        revising an Outlook reply draft must not prepend a second reply above
+        stale text or create another draft for the same conversation.
+        """
+        if not body_text.strip():
+            raise GraphError("draft body must not be empty")
+        draft_path = self._message_path(draft_message_id)
+        current = self._request(
+            "GET",
+            draft_path,
+            params={"$select": "id,isDraft"},
+        )
+        self._assert_draft(current)
+        updated = self._request(
+            "PATCH",
+            draft_path,
+            payload={"body": {"contentType": "Text", "content": body_text}},
+        )
+        self._assert_draft(updated)
+        verified = self._request(
+            "GET",
+            draft_path,
+            params={"$select": "id,subject,toRecipients,ccRecipients,isDraft,body,webLink"},
+        )
+        return self._assert_draft(verified)
+
     @staticmethod
     def _prepend_reply(reply_text: str, existing_body: dict[str, Any]) -> dict[str, str]:
         content_type = str(existing_body.get("contentType") or "Text")

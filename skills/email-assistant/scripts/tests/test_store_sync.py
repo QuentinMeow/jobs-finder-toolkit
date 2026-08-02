@@ -334,6 +334,34 @@ class EmailStoreSyncTests(unittest.TestCase):
         self.assertEqual(stale["banner"], STALE_BANNER)
         self.assertFalse(stale["review_complete"])
 
+    def test_successfully_synced_empty_folders_are_fresh_but_never_synced_are_not(self):
+        syncer = self._syncer()
+        never_synced = syncer.staleness_probe()
+        self.assertTrue(never_synced["store_stale"])
+        self.assertTrue(all(
+            detail["reason"] == "folder has never completed a sync"
+            for detail in never_synced["folders"].values()
+        ))
+
+        syncer.sync(days=None, force_full=True)
+        fresh = syncer.staleness_probe()
+        self.assertFalse(fresh["store_stale"], fresh)
+        self.assertTrue(fresh["review_complete"])
+        self.assertTrue(all(
+            detail["sync_completed"]
+            and detail["live_latest_at"] is None
+            and detail["stored_watermark"] is None
+            and detail["reason"] is None
+            for detail in fresh["folders"].values()
+        ))
+
+        reader = EmailStoreReader.for_account_label(
+            data_root=self.root, account_label="owner@example.com"
+        )
+        search = reader.search_raw(queries=["no matches expected"])
+        self.assertTrue(search["audit_complete"], search)
+        self.assertEqual(search["unsynced_folders"], [])
+
     def test_message_keys_are_partitioned_by_neutral_account(self):
         self.mailbox.seed(message_id="same-provider-id", at=self.recent)
         self._syncer("first@example.com").sync(days=30, force_full=True)
@@ -400,6 +428,48 @@ class EmailStoreSyncTests(unittest.TestCase):
         self.assertNotIn("Synthetic workflow notice", rendered)
         self.assertNotIn("recruiter@example.com", rendered)
         self.assertNotIn("<message-1@example.com>", rendered)
+
+    def test_all_folder_review_builds_the_envelope_snapshot_constant_times(self):
+        bodies = {
+            "inbox": "We would like to invite you to interview.",
+            "sentitems": "I submitted my availability for the interview.",
+            "drafts": "Draft response about interview scheduling.",
+            "deleteditems": "We decided not to proceed with your application.",
+        }
+        for folder, body in bodies.items():
+            self.mailbox.seed(
+                folder=folder,
+                at=self.recent,
+                sender=(
+                    "owner@example.com"
+                    if folder in {"sentitems", "drafts"}
+                    else "recruiter@example.com"
+                ),
+                body=body,
+            )
+        self._syncer().sync(days=30, force_full=True)
+        reader = EmailStoreReader.for_account_label(
+            data_root=self.root, account_label="owner@example.com"
+        )
+
+        with (
+            patch.object(reader, "envelopes", wraps=reader.envelopes) as envelopes,
+            patch.object(reader, "hydrate", wraps=reader.hydrate) as hydrate,
+        ):
+            report = reader.review(applications=[], company_domains={})
+
+        # Hydration must remain complete across all four folders, including raw
+        # bodies, while keyed lookup stays linear. The old hydrate() rebuilt all
+        # N defensive envelope copies N times, making all-history review O(N^2).
+        self.assertTrue(report["review_complete"], report)
+        self.assertEqual(hydrate.call_count, 4)
+        self.assertEqual(envelopes.call_count, 2)
+        self.assertEqual(
+            {record["folder"] for record in report["records"]},
+            {"inbox", "sentitems", "drafts", "deleteditems"},
+        )
+        self.assertEqual(report["counts"]["categories"].get("rejection"), 1)
+        self.assertTrue(_content_free(report))
 
     def test_full_body_search_covers_all_four_folders_and_preserves_direction(self):
         for folder, sender in (
