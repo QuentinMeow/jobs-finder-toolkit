@@ -37,6 +37,12 @@ applications tree clears the duplicate.
 `skills/job-search/SKILL.md:218-219` states the intended rule correctly: "the undo for a skip-log
 row is a tombstone, never deleting a folder."
 
+**2026-08-02 — this is now load-bearing beyond the instruction conflict.** The owner's answer on
+whether handoff records a non-clean scaffold (`memory/decisions/handoff-records-every-folder-it-creates.md`)
+is conditional on nothing but the owner ever deleting an application folder. A message that routes
+an agent into deleting one attacks that premise directly, so fixing it protects a decision as well
+as a guardrail.
+
 The guardrail should win, so the fix is a remedy the agent can actually perform — e.g. `--forget-log`
 accepting the live-folder case behind an explicit flag, or the message routing the agent to
 `message-queue/needs-human/` for an owner deletion the way `AGENTS.md` prescribes. Picking between

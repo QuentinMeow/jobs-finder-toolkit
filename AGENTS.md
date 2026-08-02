@@ -62,7 +62,7 @@ Full detail: `docs/handbook/public-private-split.md`.
 
 ## Configuration
 
-Identity, paths, and output-filename stems are never hardcoded — they load via
+Identity, paths, output-filename stems, and search filter words are never hardcoded — they load via
 `automation/shared/config.py` (vendored into each skill's `scripts/_vendor/config.py`). `config.yaml`
 (git-ignored) holds real values; `config.example.yaml` (tracked) is the neutral **"Jordan Rivers"**
 placeholder + fallback (discovery: `$JOBHUNT_CONFIG` → nearest `config.yaml` up from cwd then the
@@ -70,7 +70,9 @@ loader dir → `config.example.yaml`). **Paths** always come from `config.*_path
 baseline, reference DOCX, company-levels, applications root, discoveries), never literals — real data
 under `private/`, the public example under `examples/`. **Output stems** come from
 `config.resume_stem()`/`cover_stem()`/`application_stem()`; never hardcode a person's filename stem —
-use `<RESUME_STEM>`. **Generation mode**: `config.generation_mode()` returns `token_saving`
+use `<RESUME_STEM>`. **Search filter words** come from the candidate's profile via
+`config.search_profiles_dir()`, never a literal list in a script — one person's filter logic must
+not sit in tooling everyone runs. **Generation mode**: `config.generation_mode()` returns `token_saving`
 (default) or `full` — a token-usage dial for search + drafting; hard gates run identically in both.
 Full function/path detail: `docs/handbook/configuration.md`.
 
@@ -245,7 +247,10 @@ Router:
   canaries (`evals/canaries/<skill>.yaml`) by judging the edit's **intention and size** —
   behavioral or large edits must pass canaries before merge where a set exists (no large efficiency
   regression, model-pinned, run/skip criteria + records per `evals/README.md`); mechanical or small
-  edits — and skills with no canary set — skip **with a recorded one-line rationale**. Harness
+  edits — and skills with no canary set — skip **with a recorded one-line rationale**. An
+  **intermediate PR of a stack** may instead defer to the run at the tip, in a line that NAMES that
+  tip (`Eval gate: stack — <why>; tip: <#PR or branch>`) — the tip then reports a run covering the
+  whole stack; naming nothing is not a discharge. Harness
   self-edits are delta-only — never full-file rewrites, and **consolidation never deletes a domain
   edge case.**
 

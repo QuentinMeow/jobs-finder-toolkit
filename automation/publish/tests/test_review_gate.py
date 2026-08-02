@@ -108,6 +108,14 @@ class Sandbox:
         self.git("commit", "-q", "-m", message)
         return self.git("rev-parse", "HEAD").stdout.strip()
 
+    def stage(self) -> None:
+        """Stage the worktree WITHOUT committing — the pre-commit hook's world."""
+        self.git("add", "-A")
+
+    def files_in(self, commit: str) -> list[str]:
+        out = self.git("show", "--name-only", "--format=", commit).stdout
+        return [line for line in out.splitlines() if line]
+
     def short(self, rev: str = "HEAD") -> str:
         return self.git("rev-parse", "--short=8", rev).stdout.strip()
 
@@ -115,9 +123,12 @@ class Sandbox:
     def write_ledger(self, rows: list[dict]) -> None:
         body = ["# throwaway ledger"]
         for row in rows:
-            body.append(f"- commit: {row['commit']}")
-            if row.get("base") is not None:      # optional key; omitted = legacy row
-                body.append(f"  base: {row['base']}")
+            if row.get("commit") is not None:
+                body.append(f"- commit: {row['commit']}")
+                if row.get("base") is not None:  # optional key; omitted = legacy row
+                    body.append(f"  base: {row['base']}")
+            else:                                # a PENDING row: base is its only anchor
+                body.append(f"- base: {row['base']}")
             body.append(f"  reviewed_by: {row.get('reviewed_by', 'agent')}")
             body.append(f"  date: {row.get('date', '2026-07-29')}")
             body.append(f"  files: {row['files']}")
@@ -141,6 +152,18 @@ class Sandbox:
         if record_base:
             row["base"] = self.short(base)
         return row
+
+    def pending_row(self, base: str) -> dict:
+        """A correct PENDING row reviewing ``base``..THE STAGED INDEX.
+
+        No ``commit:`` — the commit it reviews does not exist yet. Must be built
+        AFTER staging the content and BEFORE (or after; it cannot matter) staging the
+        ledger: the ledger is excluded from the watched pathspec, which is what lets
+        the row travel in the same commit as the change it records.
+        """
+        return {"base": self.short(base),
+                "files": len(review_gate.changed_files(self.root, base, None)),
+                "digest": review_gate.range_digest(self.root, base, None)[:16]}
 
     # ── an honest rebase ─────────────────────────────────────────────────
     def rebase_onto(self, branch: str, base: str) -> tuple[str, str]:
@@ -1085,6 +1108,325 @@ class WorkflowTests(GateTestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 6 / 7. The PENDING row: one commit carries its own review, no follow-up.
+#
+# A row records the commit it reviewed, so it could only ever be written after that
+# commit existed — which is what made every content commit need a second, ledger-only
+# commit behind it. A pending row omits `commit:` and is anchored by `base:` +
+# `digest:` alone; the gate resolves its endpoint from history as the commit that
+# introduced it. Under --staged the endpoint is the STAGED INDEX, so the row can be
+# written, staged and committed WITH the change it reviews.
+#
+# The load-bearing property is that `git diff --cached <base>` and
+# `git diff <base>..<the commit that index becomes>` are the same bytes, so the
+# digest a row records against the index verifies unchanged against the commit.
+# ─────────────────────────────────────────────────────────────────────────────
+class PendingRowTests(GateTestCase):
+
+    def start(self) -> tuple[str, dict]:
+        """(the reviewed tip, its seed row) — an ordinary bootstrapped repo.
+
+        ``bootstrap`` seeds the ledger at the commit BEFORE the ledger commit, so
+        that seed commit is the range start every following row is measured from.
+        """
+        self.bootstrap()
+        seed_commit = self.repo.git("rev-parse", "HEAD~1").stdout.strip()
+        return seed_commit, {"commit": self.repo.short(seed_commit), "files": 0,
+                             "digest": EMPTY_DIGEST16, "finding": "seed row"}
+
+    # ── the mechanism ────────────────────────────────────────────────────
+    def test_a_single_commit_carries_its_own_review_row(self):
+        """The defect this exists to remove: no second, ledger-only commit."""
+        seed, seed_row = self.start()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+
+        # Pre-commit: the staged change is unreviewed, and the row printed names NO
+        # commit — the commit it reviews does not exist yet.
+        blocked = self.repo.gate("--staged")
+        self.assertEqual(blocked.returncode, 1, blocked.stdout + blocked.stderr)
+        self.assertIn(f"    - base: {self.repo.short(seed)}", blocked.stderr)
+        self.assertNotIn("- commit:", blocked.stderr)
+        self.assertIn(f"git diff --cached {self.repo.short(seed)}", blocked.stderr)
+
+        # Append the row, stage it, and the SAME commit goes through.
+        self.repo.write_ledger([seed_row, self.repo.pending_row(seed)])
+        self.repo.stage()
+        passed = self.repo.gate("--staged")
+        self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+        self.assertEqual(passed.stderr, "")
+        head = self.repo.commit("change A, carrying its own review row")
+
+        # ONE commit holds both the change and the row that reviews it.
+        self.assertEqual(sorted(self.repo.files_in(head)),
+                         sorted([LEDGER_REL, "docs/handbook/a.md"]))
+
+        # And it verifies from history alone, with nothing appended afterwards.
+        for args in ((), ("--verify-all",), ("--staged",)):
+            with self.subTest(args=args):
+                proc = self.repo.gate(*args)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stderr, "")
+
+    def test_staging_the_row_cannot_move_the_digest_it_records(self):
+        """Why one commit can hold both: the ledger is outside the watched pathspec."""
+        seed, seed_row = self.start()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+        before = review_gate.range_digest(self.repo.root, seed, None)
+
+        self.repo.write_ledger([seed_row, self.repo.pending_row(seed)])
+        self.repo.stage()
+        self.assertEqual(review_gate.range_digest(self.repo.root, seed, None), before)
+
+        # ... and the committed range hashes to the same thing the index did.
+        head = self.repo.commit("change A + its row")
+        self.assertEqual(review_gate.range_digest(self.repo.root, seed, head), before)
+
+    def test_the_endpoint_resolves_to_the_commit_that_introduced_the_row(self):
+        """The row never names its commit; later commits must not re-point it."""
+        seed, seed_row = self.start()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+        rows = [seed_row, self.repo.pending_row(seed)]
+        self.repo.write_ledger(rows)
+        self.repo.stage()
+        introduced_by = self.repo.commit("change A + its row")
+
+        # Two more signed commits pile on top. Row 2's range must still end where it
+        # ended — at the commit that introduced it, not at whatever HEAD is now.
+        for name in ("b", "c"):
+            self.repo.write(f"docs/handbook/{name}.md", f"change {name}\n")
+            self.repo.stage()
+            rows = rows + [self.repo.pending_row(
+                self.repo.git("rev-parse", "HEAD").stdout.strip())]
+            self.repo.write_ledger(rows)
+            self.repo.stage()
+            self.repo.commit(f"change {name} + its row")
+
+        proc = self.repo.gate("--verify-all")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(proc.stderr, "")
+
+        chain = review_gate.RowChain(
+            self.repo.root, review_gate.parse_ledger(
+                (self.repo.root / LEDGER_REL).read_text(encoding="utf-8")),
+            self.repo.git("rev-parse", "HEAD").stdout.strip())
+        status, rev = chain.classify(2)
+        self.assertEqual(status, review_gate.ANCESTOR)
+        self.assertEqual(rev, introduced_by)
+
+    # ── it still gates ───────────────────────────────────────────────────
+    def test_an_unreviewed_staged_change_is_still_caught(self):
+        seed, seed_row = self.start()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+
+        proc = self.repo.gate("--staged")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("PUBLIC REVIEW GATE — not a test failure", proc.stderr)
+        self.assertIn("docs/handbook/a.md", proc.stderr)
+        self.assertIsNotNone(seed_row)
+
+    def test_staged_mode_catches_what_head_mode_lets_through(self):
+        """HEAD-mode judges the previous commit, so staged content is invisible to it."""
+        seed, seed_row = self.start()
+        self.repo.write_ledger([seed_row])
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+
+        self.assertEqual(self.repo.gate().returncode, 0,
+                         "HEAD is reviewed, so the default run passes — the lag")
+        self.assertEqual(self.repo.gate("--staged").returncode, 1,
+                         "the tree about to be committed is NOT reviewed")
+        self.assertIsNotNone(seed)
+
+    def test_a_wrong_digest_on_a_pending_row_does_not_pass(self):
+        seed, seed_row = self.start()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+        row = self.repo.pending_row(seed)
+        row["digest"] = "0" * 16
+        self.repo.write_ledger([seed_row, row])
+        self.repo.stage()
+
+        proc = self.repo.gate("--staged")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("digest does not match the staged range", proc.stderr)
+        self.assertNotIn("Traceback", proc.stdout + proc.stderr)
+
+    def test_a_pending_row_cannot_start_somewhere_the_reviewer_did_not_read(self):
+        """A row based further along would certify a range nobody was shown."""
+        seed, seed_row = self.start()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+        row = self.repo.pending_row(seed)
+        row["base"] = self.repo.short(self.repo.git("rev-parse", "HEAD").stdout.strip())
+        self.repo.write_ledger([seed_row, row])
+        self.repo.stage()
+
+        proc = self.repo.gate("--staged")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("the unreviewed range starts at", proc.stderr)
+
+    def test_a_wrong_file_count_on_a_pending_row_does_not_pass(self):
+        seed, seed_row = self.start()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+        row = self.repo.pending_row(seed)
+        row["files"] = row["files"] + 1
+        self.repo.write_ledger([seed_row, row])
+        self.repo.stage()
+
+        proc = self.repo.gate("--staged")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("but the staged range touches", proc.stderr)
+
+    def test_a_row_for_one_change_does_not_cover_the_next_one(self):
+        """The row is not a standing licence: the following commit needs its own."""
+        seed, seed_row = self.start()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+        rows = [seed_row, self.repo.pending_row(seed)]
+        self.repo.write_ledger(rows)
+        self.repo.stage()
+        self.repo.commit("change A + its row")
+
+        self.repo.write("docs/handbook/b.md", "change B\n")
+        self.repo.stage()
+        proc = self.repo.gate("--staged")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("docs/handbook/b.md", proc.stderr)
+        self.assertNotIn("docs/handbook/a.md", proc.stderr)
+
+    # ── it composes with what is already there ───────────────────────────
+    def test_the_two_commit_shape_still_verifies_beside_pending_rows(self):
+        """Requirement: the classic `commit:` row keeps working, in the same ledger."""
+        seed, seed_row = self.start()
+
+        # 1. The classic shape: change, then a ledger-only commit acknowledging it.
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        a = self.repo.commit("change A")
+        legacy = self.repo.row_for(a, base=seed, record_base=True)
+        self.repo.write_ledger([seed_row, legacy])
+        self.repo.commit("acknowledge change A")
+
+        # 2. The classic shape without `base:` at all — the oldest rows in the real
+        #    ledger look like this, and they must keep verifying positionally.
+        self.repo.write("docs/handbook/b.md", "change B\n")
+        b = self.repo.commit("change B")
+        bare = self.repo.row_for(b, base=a)
+        self.repo.write_ledger([seed_row, legacy, bare])
+        ack_b = self.repo.commit("acknowledge change B")
+
+        # 3. The new shape, in the same ledger, on the same branch.
+        self.repo.write("docs/handbook/c.md", "change C\n")
+        self.repo.stage()
+        rows = [seed_row, legacy, bare, self.repo.pending_row(ack_b)]
+        self.repo.write_ledger(rows)
+        self.repo.stage()
+        self.repo.commit("change C, carrying its own review row")
+
+        for args in ((), ("--verify-all",)):
+            with self.subTest(args=args):
+                proc = self.repo.gate(*args)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stderr, "")
+
+    def test_parallel_branches_carrying_pending_rows_converge(self):
+        """Two branches, one row each, merged — the case `base:` was added for."""
+        seed, seed_row = self.start()
+
+        tips, branch_rows = {}, {}
+        for name in ("a", "b"):
+            self.repo.git("checkout", "-q", "-b", f"branch-{name}", "main")
+            self.repo.write(f"docs/handbook/{name}.md", f"change {name}\n")
+            self.repo.stage()
+            branch_rows[name] = self.repo.pending_row(seed)
+            self.repo.write_ledger([seed_row, branch_rows[name]])
+            self.repo.stage()
+            tips[name] = self.repo.commit(f"change {name} + its own row")
+            self.assertEqual(self.repo.gate("--verify-all").returncode, 0,
+                             f"branch-{name} must be green on its own tip")
+
+        # Rebuild the ledger the way a real ledger conflict is resolved: keep both
+        # sides' rows. Concatenation is what used to re-parent the second branch's
+        # first row; a row that declares its own base cannot be re-parented.
+        self.repo.git("checkout", "-q", "main")
+        self.repo.git("merge", "-q", "--no-ff", "-m", "Merge branch a", "branch-a")
+        self.repo.git("merge", "--no-ff", "-m", "Merge branch b", "branch-b",
+                      check=False)
+        rows = [seed_row, branch_rows["a"], branch_rows["b"]]
+        self.repo.write_ledger(rows)
+        merge = self.repo.commit("Merge branch b")
+
+        # Both rows still verify over the range each branch actually reviewed.
+        proc = self.repo.gate("--verify-all")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertNotIn("does not match the repository", proc.stderr)
+        self.assertNotIn("not part of this history", proc.stdout)
+
+        # What is left is the ordinary unreviewed merge commit; sign it and it closes.
+        self.repo.write_ledger(rows + [self.repo.row_for(merge, base=tips["b"],
+                                                         record_base=True)])
+        self.repo.commit("acknowledge the merge")
+        for args in ((), ("--verify-all",)):
+            with self.subTest(args=args):
+                proc = self.repo.gate(*args)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    # ── off-chain and malformed pending rows ─────────────────────────────
+    def test_a_rebase_orphans_a_pending_row_through_its_base_and_says_so(self):
+        seed, seed_row = self.start()
+        self.repo.git("checkout", "-q", "-b", "feature")
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        a = self.repo.commit("change A")
+        self.repo.write("docs/handbook/b.md", "change B\n")
+        self.repo.stage()
+        row = self.repo.pending_row(a)
+        self.repo.write_ledger([seed_row, self.repo.row_for(a, base=seed,
+                                                            record_base=True), row])
+        self.repo.stage()
+        self.repo.commit("change B + its own row")
+
+        # main moves; the feature branch is replayed onto it. Every SHA changes,
+        # including the one the pending row named as its base.
+        self.repo.git("checkout", "-q", "main")
+        self.repo.write("docs/handbook/trunk.md", "trunk\n")
+        self.repo.commit("trunk moves")
+        self.repo.rebase_onto("feature", "main")
+
+        proc = self.repo.gate("--verify-all")
+        self.assertNotIn("Traceback", proc.stdout + proc.stderr)
+        self.assertIn("not part of this history", proc.stdout)
+        self.assertIn("(this row's base)", proc.stdout)
+
+    def test_a_row_with_neither_anchor_is_rejected(self):
+        self.start()
+        self.repo.write(LEDGER_REL,
+                        "- reviewed_by: agent\n"
+                        "  date: 2026-07-29\n"
+                        "  files: 0\n"
+                        "  digest: sha256:" + "0" * 16 + "\n"
+                        "  finding: none\n")
+        proc = self.repo.gate()
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("a row must carry `commit:`", proc.stderr)
+        self.assertIn("a row with neither pins no range", proc.stderr)
+
+    def test_an_uncommitted_pending_row_is_named_not_silently_ignored(self):
+        seed, seed_row = self.start()
+        self.repo.write("docs/handbook/a.md", "change A\n")
+        self.repo.stage()
+        self.repo.write_ledger([seed_row, self.repo.pending_row(seed)])
+
+        proc = self.repo.gate()           # no --staged: nothing to resolve it against
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("are PENDING", proc.stdout)
+        self.assertIn("--staged", proc.stdout)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # The advisory detector.
 # ─────────────────────────────────────────────────────────────────────────────
 class AdvisoryDetectorTests(GateTestCase):
@@ -1267,6 +1609,59 @@ class ThisRepoTests(unittest.TestCase):
     def test_pre_commit_hook_runs_the_gate(self):
         hook = (review_gate.REPO_ROOT / "automation/hooks/pre-commit").read_text()
         self.assertIn("automation/publish/review_gate.py", hook)
+
+    def test_pre_commit_hook_judges_the_staged_tree(self):
+        """Without --staged the hook judges the PREVIOUS commit, and the lag is back."""
+        hook = (review_gate.REPO_ROOT / "automation/hooks/pre-commit").read_text()
+        self.assertIn("automation/publish/review_gate.py --staged", hook)
+
+    def test_the_ledger_does_not_merge_by_union(self):
+        """`union` is LINE-based, so it interleaves rows instead of concatenating them.
+
+        Concatenation is the only legal resolution and rows carrying their own
+        ``base:`` make it *semantically* safe — but ``union`` cannot honour a row
+        boundary. On 2026-08-02 two rows for one range, written with their keys in
+        different order, interleaved: a ``finding:`` line landed inside a neighbouring
+        row, and YAML's last-duplicate-wins made that row report a review nobody wrote.
+        Nothing failed, because a row's digest covers the range it names, not its prose.
+        A conflict is worse ergonomically and far better honestly.
+        """
+        attrs = review_gate.REPO_ROOT / ".gitattributes"
+        if attrs.is_file():
+            self.assertNotIn(
+                f"{LEDGER_REL} merge=union",
+                attrs.read_text(encoding="utf-8"),
+                "the union driver silently corrupts rows — see the task in tasks/0_backlog/",
+            )
+
+    def test_every_ledger_row_is_well_formed(self):
+        """The check whose absence let a corrupted row through a green --verify-all.
+
+        A digest proves a row's *range*; nothing proved the row's own shape. A row
+        carrying a key twice is a merge artefact, and YAML resolves it silently.
+        """
+        ledger = review_gate.REPO_ROOT / LEDGER_REL
+        rows, cur = [], []
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            if line.startswith("- ") and cur:
+                rows.append(cur)
+                cur = []
+            if line.startswith("- ") or cur:
+                cur.append(line)
+        if cur:
+            rows.append(cur)
+        self.assertTrue(rows, "the ledger parsed to zero rows")
+
+        known = ("commit", "base", "reviewed_by", "date", "files", "digest", "finding")
+        for row in rows:
+            keys = [l.split(":", 1)[0].strip("- ").strip() for l in row if ":" in l]
+            keys = [k for k in keys if k in known]
+            dupes = sorted({k for k in keys if keys.count(k) > 1})
+            self.assertEqual([], dupes, f"row {row[0].strip()!r} repeats {dupes}")
+            self.assertTrue(
+                "commit" in keys or "base" in keys,
+                f"row {row[0].strip()!r} names neither commit nor base",
+            )
 
     def test_ci_runs_the_gate_with_full_history(self):
         ci = (review_gate.REPO_ROOT / ".github/workflows/ci.yml").read_text()

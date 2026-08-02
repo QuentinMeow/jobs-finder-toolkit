@@ -324,6 +324,12 @@ jobs:
   # as far as an agent remembered it, and a behavioral edit merged inside a large
   # stack with the gate neither run, skipped, nor owed.
   #
+  # One of the four discharge forms — `Eval gate: stack — …; tip: <#PR or branch>`,
+  # for an intermediate PR of a stack — is a DECLARATION this job cannot verify: the
+  # named tip's run does not exist yet when the intermediate PR is checked, and this
+  # job never reads another PR's body. It gates that the tip is NAMED; a stack whose
+  # tip never ran is caught by auditing merged bodies (evals/README.md).
+  #
   # This job runs ONLY the eval-gate property (--eval-gate-only). The three format
   # properties (human-first section, Before/After, marketing words) stay where they
   # were — checked by an author running check_pr_body.py locally, as
