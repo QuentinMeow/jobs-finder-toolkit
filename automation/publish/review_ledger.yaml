@@ -2399,3 +2399,9 @@
   files: 9
   digest: sha256:b9158529143349b0
   finding: 'Three fail-open fixes in the leak guard plus their task records. Read by hand, line by line. Every identity-shaped string ADDED is an invented test fixture - Ravenscroft, Bjornholm, Zurich, CafeCorp and Rowan Ashdown as scan tokens, Quarrenden and ZZPROBEZZ as probe tokens quoted in the verification records - and the single email-shaped literal follows this module''s existing split-fragment convention so it never appears contiguously in the source. The verification records quote real command output but every path in them is either a public repo path or a placeholder; no absolute home path, phone shape, salary, school or dated job-hunt fact appears. The advisory private-company cross-reference did NOT run (no overlay is mounted in this worktree), so the company-name pass was done by reading the diff; the only company-shaped tokens present are the invented ones above and the pre-existing AcmeRobotics / acme-robotics fixtures already in this test module. No identity, employer, school, salary or dated job-hunt content.'
+- base: 051ff3cb
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:c17f1dd8b02f6d9c
+  finding: 'Repairs an omission in the commit immediately above: `git mv` stages a rename from the INDEX, so the working-tree edits to that task.md - the recorded decision, the Claimed-by line and the ticked Definition of done - were never staged and the commit recorded a 100% rename of the original. This adds them, so the backlog task that specified defect 1 carries its own decision record rather than leaving it only in the commit message. Prose only: the decision, why decode-and-scan beat fail-closed, and why neither single codec is sufficient (the two mojibake examples are ASCII escape sequences). No identity, employer, school, salary or dated job-hunt content.'
