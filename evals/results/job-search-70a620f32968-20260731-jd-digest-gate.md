@@ -265,3 +265,19 @@ depends on them. Every canary had enough evidence to judge; none was scored on t
 
 Not applicable — run kind is `regression pre-merge`, not A/B. No variants, no paired runs, no
 quality comparison, and therefore no significance claim.
+
+### Update — 2026-08-02: the branch is now a tag
+
+`wip/07-company-roles-jd-digest` no longer exists. `70a620f32968` is now held by the annotated tag
+**`archive/jd-digest-70a620f`**, local and on `origin`. Nothing about this record's evidence changed —
+`git show 70a620f32968` still works, and `git tag --contains 70a620f32968` names that tag — but the
+ref is no longer shaped like work in progress, because it never was: it is an archive.
+
+The owner asked for a repository with one long-lived branch. A branch implies something is being
+built on it; a tag says "this is kept so it can be read". The two earlier notes above still stand
+unchanged, including the warning that this record bounds `70a620f32968`'s behaviour only.
+
+Whether to drop the ref altogether is still open:
+`message-queue/needs-human/decisions/delete-the-company-roles-jd-digest-wip-branch.md`. Deleting the
+tag would make this record permanently uncheckable, which is exactly what PR #182 was written to
+prevent, so nothing here has been decided on the owner's behalf.

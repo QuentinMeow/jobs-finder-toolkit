@@ -1,10 +1,18 @@
-# Should `wip/07-company-roles-jd-digest` be deleted?
+# Should the `70a620f` archive ref be deleted?
+
+> **2026-08-02 — the ref changed shape, the question did not.** The owner asked for a
+> repository with one long-lived branch. `wip/07-company-roles-jd-digest` was not work in
+> progress; it was an archive keeping `70a620f` reachable. It is now the annotated tag
+> **`archive/jd-digest-70a620f`** (local and on `origin`), and the branch is deleted.
+> Nothing was lost — `git show 70a620f32968` still resolves, and `git tag --contains` names
+> the tag. **The question below is unchanged**: whether to drop the ref *at all* is still
+> the owner's, and the default is still to keep it. Read "branch" below as "ref".
 
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-08-01
-- **Source**: [the branch's only commit, `70a620f` "Give the ATS-API JD path a digest mode"](../../../skills/job-search/scripts/fetch_jd.py)
-- **Blocks**: nothing. The branch is not in any stack and nothing builds on it.
-- **Default path**: **keep it.** No agent deletes the branch, locally or on the remote.
+- **Source**: [the ref's only commit, `70a620f` "Give the ATS-API JD path a digest mode"](../../../skills/job-search/scripts/fetch_jd.py)
+- **Blocks**: nothing. The ref is not in any stack and nothing builds on it.
+- **Default path**: **keep it.** No agent deletes the ref, locally or on the remote.
 - **Cost if wrong**: ratify
 - **Safe to merge because**: keeping a branch writes nothing and costs one ref; the
   decision that is expensive is the *other* one, and it stays available.

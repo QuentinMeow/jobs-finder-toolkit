@@ -2196,3 +2196,9 @@
   files: 32
   digest: sha256:b06c2df516defb64
   finding: 'Merge of main into the search-filter branch. The ledger conflict was resolved at ROW granularity (the union driver is off) and every resulting row checked well-formed before writing. The range re-covers the two ledger repairs, the folded owner decisions and the stack discharge form already reviewed on their own branches, plus this branch''s profile-owned title word filter and first-search recency window. Example filter words are generic title tokens; no employer board or posting is named. No identity, employer, school, salary or dated job-hunt content.'
+- base: fdd593f0
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:e4ea4bb5c8faf6f6
+  finding: 'Re-points three live references from the deleted wip branch to the annotated tag that now holds the same commit. The eval record gets a dated appended note (its earlier notes are untouched); the backlog task''s pointer is corrected; the open decision keeps its question and its default and only restates the ref shape. The dated handover and the completed task that also name the branch are left alone - they are historical records and rewriting them to match the present would falsify them. No identity, employer, school, salary or dated job-hunt content.'
