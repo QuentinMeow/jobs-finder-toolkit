@@ -1971,3 +1971,10 @@
   files: 1
   digest: sha256:e0f2251400b21e08
   finding: One sentence in the skill's gate-11 "ran" form, recording that the checker reads the verdict line only up to its first backtick. Hit while writing this branch's own PR body. No identity or job-hunt content.
+- commit: 451fdbde
+  base: c59c44ef
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:efc692acd6e5909d
+  finding: Deletion only. The checker now blanks inline code spans on the verdict line instead of truncating at the first backtick, so the workaround sentence added by c59c44ef described a defect that no longer exists; item 2 still carries the residual rule. No identity or job-hunt content.
