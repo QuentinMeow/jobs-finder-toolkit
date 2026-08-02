@@ -2399,3 +2399,93 @@
   files: 11
   digest: sha256:a5167c0d13c15916
   finding: 'Read the full 504-line staged diff. Documentation-only correction of which file the job-search location gate reads: SKILL.md, reference.md, profiles/README.md, _TEMPLATE.yaml comments, the company_roles.py module docstring, one repo-map row and one canary expectation string, plus the task move and a new decision item. Company names appearing in the diff (Cloudflare, Sentry, CodeRabbit, OpenAI, Anthropic, Perplexity) are pre-existing registry/example references in untouched context lines, not applied-to employers. Test data is fictional (Acme, Berlin, Germany). No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 3
+  digest: sha256:ebb51127d1a8aaac
+  finding: 'Corrects four resume-writer rules that disagreed with check.py, the gate meant to enforce them. Docs move to the gate, not the reverse. The direct-bullet line no longer reads as a 1-6 grant - the real ceiling is the baseline own count, and a project-only baseline allows zero. The cover-letter per-paragraph minimums rise from 70/80 to 100/110, because their old sum (175, or 150 without the optional closing) sat under the 200-word body floor the checker actually tests, so a letter written exactly to spec failed the render. The missing-bundle case is now described as what it is - a WARN, so a letterless render exits 0 - stated as a limitation, not a feature; promoting it to FAIL is left to the owner. One code change with no behaviour: the warning at check.py:417 named a bare jd.md that layout.find_jd_files can never match (it keeps only JD- prefixed names), so it named source/JD-*.md only; the --rules dump gained the missing-bundle warn. Reviewed the private-company hint as NOT INSPECTED (no overlay in this checkout) and read the diff directly. No identity, employer, school, salary or dated job-hunt content; the only persona text is the pre-existing fictional Jordan Rivers example, unchanged.'
+- base: cb3e0561
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 6
+  digest: sha256:16306a8f4992b342
+  finding: 'Process bookkeeping for the commit below it. Moves the docs-vs-gate task to 4_done with its Definition of done checked off, a worklog, and a verification file holding the real probe output for each of the four items, files the WARN-to-FAIL promotion as an owner decision with leave-it-a-WARN as the default path, splits the untouched Step-6 ordering item into its own backlog task so closing the parent does not lose it, and annotates the open resume-writer canary-debt task with the skip that now accumulates onto it. All these roots are export-absent, so none of it publishes, but it was read against the leak rules anyway. The only persona strings are the fictional Jordan Rivers example filenames quoted from real check.py output. No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 11
+  digest: sha256:3fe0301d71888a0a
+  finding: 'Sponsorship classifier: an offer phrase whose governing negation cue the bounded scope cannot reach is recorded as unsettled instead of asserted as an offer. Code, comments, unit tests and three filter-variant corpus cases, all written from fictional JD sentences invented for the tests; four example-store posting.yaml files change only the embedded job_metadata.py content hash, no verdict. No identity, employer, school, salary or dated job-hunt content.'
+- base: 5c515762
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 11
+  digest: sha256:43e38e9351780c57
+  finding: 'Sponsorship classifier: detection for a denial phrased in words neither substring list contains (a negation reaching a bare sponsorship head through an offer verb). Code, comments, unit tests and four filter-variant corpus cases, all written from fictional JD sentences invented for the tests; four example-store posting.yaml files change only the embedded job_metadata.py content hash, no verdict. No identity, employer, school, salary or dated job-hunt content.'
+- base: 753fddac
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 11
+  digest: sha256:fb5f6934c89619bf
+  finding: 'Sponsorship classifier: an immigration-context gate on the bare-verb denial phrases, so a non-immigration "sponsor" stops reading as a visa denial. Code, comments, unit tests and three filter-variant corpus cases, all written from fictional JD sentences invented for the tests; four example-store posting.yaml files change only the embedded job_metadata.py content hash, no verdict. No identity, employer, school, salary or dated job-hunt content.'
+- base: f016aecc
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:61beed16366ad821
+  finding: 'Closes the known-issue record for the three sponsorship shapes fixed in this branch. Prose, test names and regex identifiers only. The company cross-reference reported NOT INSPECTED (no overlay index present), so the diff was screened by eye: no company name appears, and the only `corp` matches are the word `corpus`. No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 13
+  digest: sha256:4e06ec726d1166a0
+  finding: 'Nothing tells an agent to delete an application folder, plus a test that pins it. Two tool messages rewritten (status.py --forget-log live-folder refusal, handoff.py location-mismatch remedy), their tests tightened, a new AST guard under automation/shared/tests, a dated additive note on the handoff-records-every-folder ADR, both task folders moved to 4_done with worklog + verification, and one session handover. Every identifier in the diff is public repo machinery or the repo fixture Example Corp / jobs.example.com; the scratch tree used for the end-to-end run was synthetic and is gitignored. Private-company cross-reference was NOT INSPECTED (no overlay mounted), so the diff was read manually for company names — none beyond the fixture. No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 9
+  digest: sha256:b9158529143349b0
+  finding: 'Three fail-open fixes in the leak guard plus their task records. Read by hand, line by line. Every identity-shaped string ADDED is an invented test fixture - Ravenscroft, Bjornholm, Zurich, CafeCorp and Rowan Ashdown as scan tokens, Quarrenden and ZZPROBEZZ as probe tokens quoted in the verification records - and the single email-shaped literal follows this module''s existing split-fragment convention so it never appears contiguously in the source. The verification records quote real command output but every path in them is either a public repo path or a placeholder; no absolute home path, phone shape, salary, school or dated job-hunt fact appears. The advisory private-company cross-reference did NOT run (no overlay is mounted in this worktree), so the company-name pass was done by reading the diff; the only company-shaped tokens present are the invented ones above and the pre-existing AcmeRobotics / acme-robotics fixtures already in this test module. No identity, employer, school, salary or dated job-hunt content.'
+- base: 051ff3cb
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:c17f1dd8b02f6d9c
+  finding: 'Repairs an omission in the commit immediately above: `git mv` stages a rename from the INDEX, so the working-tree edits to that task.md - the recorded decision, the Claimed-by line and the ticked Definition of done - were never staged and the commit recorded a 100% rename of the original. This adds them, so the backlog task that specified defect 1 carries its own decision record rather than leaving it only in the commit message. Prose only: the decision, why decode-and-scan beat fail-closed, and why neither single codec is sufficient (the two mojibake examples are ASCII escape sequences). No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 8
+  digest: sha256:4995628ff1c9e176
+  finding: 'Closes a gate that failed open. sync_vendored.py --check now also audits INWARD: every file under a skills/*/scripts/_vendor/ root must be a declared TARGETS copy, inside a declared DIR_TARGETS tree, or one of two exempt shapes. Read the whole diff. The exemption list is two names, README.md and __init__.py, and only directly in a _vendor/ root - a README is the hand-written generated-do-not-edit notice with no canonical source to match, an __init__.py is the package marker; the same names one level down still fail, since there they would mean an unmirrored subtree. That is the entire set the first run surfaced (7 files across 5 skills), decided one by one and recorded in the task, not a blanket glob. The audit is scoped to skills/*/scripts/_vendor rather than a bare rglob so third-party vendor trees such as .venv pip/_vendor are not swept in; there is a test for that. The failure message names the offending path and states both remedies inline. Also corrects a docstring in test_skip_log.py::VendoringTests that asserted the hole as a standing fact, and adds a handbook bullet for the inward direction. Content is toolkit paths, public skill names and repo-process dates only - no identity, employer, school, salary or dated job-hunt content, and the task/worklog/verification files sit under tasks/, which the exporter leaves out anyway.'
+- base: 0811cf22
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 8
+  digest: sha256:4995628ff1c9e176
+  finding: 'Stack rung 2 merge commit. Brings fix/vendor-reverse-audit into this branch; the diff is byte-identical to the row already recorded for b29dcf04 (same digest sha256:4995628ff1c9e176), re-pinned to this branch''s range. No new content is introduced by the merge itself — the ledger union is the only resolved conflict. Content is toolkit paths, public skill names and repo-process dates only. No identity, employer, school, salary or dated job-hunt content.'
+- base: d85ae28e
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 18
+  digest: sha256:e36438b7422ef303
+  finding: 'Stack rung 3 merge commit. Brings the vendor reverse audit and the three leak-guard fail-open fixes into this branch. The 18 files are exactly the union of the two ranges already certified below (rows for b29dcf04, 051ff3cb, 0811cf22); the merge itself adds no content, and the only resolved conflict was the append-only union of this ledger. File list checked against those two rows before certifying. Toolkit paths, public skill names, invented test fixtures and repo-process dates only. No identity, employer, school, salary or dated job-hunt content.'
+- base: f3ee6683
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 31
+  digest: sha256:4fd3034117414f45
+  finding: 'Stack rung 4 merge commit. Brings the vendor reverse audit, the three leak-guard fail-open fixes, and the never-delete-an-application-folder work into this branch. The 31 files are exactly the union of the ranges already certified below (rows for b29dcf04, 051ff3cb, 0811cf22, d85ae28e); the merge adds no content, and the only resolved conflict was the append-only union of this ledger. File list checked against those rows before certifying. Toolkit paths, public skill names, invented test fixtures and repo-process dates only. No identity, employer, school, salary or dated job-hunt content.'
+- base: daccc427
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 43
+  digest: sha256:676f72b0b0452643
+  finding: 'Stack rung 5 merge commit. Brings rungs 1-4 (vendor reverse audit, leak-guard fail-opens, never-delete-an-application-folder, sponsorship classifier) into this branch. The 43 files are exactly the union of the ranges already certified below (rows for b29dcf04, 051ff3cb, 0811cf22, d85ae28e, 5c515762, 753fddac, f016aecc, f3ee6683); the merge adds no content, and the only resolved conflict was the append-only union of this ledger. File list checked against those rows before certifying — the three _vendor/job_metadata.py copies are the re-vendored classifier, byte-identical to automation/shared. Toolkit paths, public skill names, invented JD sentences written for tests, and repo-process dates only. No identity, employer, school, salary or dated job-hunt content.'
+- base: 71539b1b
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 52
+  digest: sha256:12be6169a0297a6c
+  finding: 'Stack rung 6 merge commit. Brings rungs 1-5 into this branch, adding the resume-writer doc corrections to the four already carried. The 52 files are exactly the union of the ranges already certified below; the merge adds no content, and the only resolved conflict was the append-only union of this ledger. File list checked against those rows before certifying. Toolkit paths, public skill names, the fictional Jordan Rivers example, invented JD sentences written for tests, and repo-process dates only. No identity, employer, school, salary or dated job-hunt content.'

@@ -671,7 +671,8 @@ class HandoffTests(unittest.TestCase):
         row = _row(url=self.jd_url, location="Austin, TX (Hybrid)", remote="hybrid")
         code, folder, stdout, err = self._run([row], "rank 1")
         self.assertEqual(code, 3, err)
-        # Folder is NOT deleted — left for the agent to inspect / override / remove.
+        # Folder is NOT deleted — left for the agent to inspect / override, and for
+        # the OWNER alone to dispose of.
         self.assertTrue(folder.is_dir())
         self.assertTrue((folder / "meta.yaml").is_file())
         # Verdict + offending location string + a remedy hint, all on stderr.
@@ -679,7 +680,12 @@ class HandoffTests(unittest.TestCase):
         self.assertIn("other_us", err)
         self.assertIn("Austin", err)
         self.assertIn("--allow-location-mismatch", err)
-        self.assertIn("delete the folder", err.lower())
+        # The remedy names the folder so it can be reviewed, and must never tell
+        # an agent to remove it: application folders are the USER's to delete
+        # (AGENTS.md, "Agents never delete owner data").
+        self.assertIn(str(folder), err)
+        self.assertNotIn("delete the folder", err.lower())
+        self.assertIn("removed by the USER only", err)
         # Stdout keeps its two-line contract (folder + meta status only).
         self.assertNotIn("MISMATCH", stdout)
 

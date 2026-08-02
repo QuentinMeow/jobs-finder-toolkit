@@ -366,9 +366,12 @@ def _report_explicit_duplicate(row: dict, reason: str) -> None:
     over: the caller is told nothing, and the preflight it just failed is the
     AGENTS.md blacklist/log guardrail, not a suggestion.
 
-    "Delete the folder" is not the undo here — the applications skip-log is
-    append-only and authoritative, and nothing regenerates it — so the remedy
-    printed is the tombstone, with its argument already filled in.
+    Removing the folder is not the undo here — the applications skip-log is
+    append-only and authoritative, nothing regenerates it, and an agent may not
+    remove an application folder at all (AGENTS.md) — so the remedy printed is
+    the tombstone, with its argument already filled in. When the duplicate is a
+    LIVE folder rather than a log row, ``status.py --forget-log`` refuses and
+    names the existing application instead; that refusal is the chain's terminus.
     """
     url = str(row.get("url") or "").strip()
     target = f'"{url}"' if url else f'"{row.get("company")}" "{row.get("title")}"'
@@ -942,10 +945,18 @@ def report_location(
             file=sys.stderr,
         )
         return False
+    # The remedy names only actions an AGENT may take. It used to open with "delete
+    # the folder", which is the one act AGENTS.md forbids outright — application
+    # folders "are removed by the USER only — never by an agent, under any
+    # condition" — and the folder is deliberately left on disk for review, not as a
+    # deletion cue.
     print(
-        f"handoff: remedy — delete the folder ({folder}), re-run the selection "
-        "without the offending posting(s), or rerun with "
-        "--allow-location-mismatch if these locations are intentional.",
+        f"handoff: remedy — the folder is left on disk at {folder} for review; "
+        "re-run the selection without the offending posting(s), or rerun with "
+        "--allow-location-mismatch if these locations are intentional. Do NOT "
+        "remove the folder: application folders are removed by the USER only, "
+        "never by an agent (AGENTS.md, \"Agents never delete owner data\") — "
+        "propose the removal in message-queue/needs-human/ if it should go.",
         file=sys.stderr,
     )
     return True
@@ -1019,8 +1030,8 @@ def _record_created_postings(
 
     ``code`` is the exit this scaffold is about to return. Every created folder is
     recorded regardless of it (see the note below); a non-zero code additionally
-    prints the un-skip command, because the remedy those paths already print
-    ("delete the folder") no longer un-skips the posting on its own.
+    prints the un-skip command, because a folder that later goes away — and only
+    the OWNER may make it go away — no longer un-skips the posting on its own.
     """
     # Must equal what ``load_application`` derives from the same slug, or the next
     # --sync-log sees a differing row and appends a redundant line for every
