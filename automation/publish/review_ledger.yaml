@@ -2202,3 +2202,9 @@
   files: 3
   digest: sha256:e4ea4bb5c8faf6f6
   finding: 'Re-points three live references from the deleted wip branch to the annotated tag that now holds the same commit. The eval record gets a dated appended note (its earlier notes are untouched); the backlog task''s pointer is corrected; the open decision keeps its question and its default and only restates the ref shape. The dated handover and the completed task that also name the branch are left alone - they are historical records and rewriting them to match the present would falsify them. No identity, employer, school, salary or dated job-hunt content.'
+- base: 5e40070f
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 7
+  digest: sha256:8ac823210898f91c
+  finding: 'Adds automation/gates/ — a local runner for the ~30 blocking gates (the pre-commit chain plus every CI run: step) that executes each one shell-free and redirects its output to the gitignored local/gates/, so no gate is ever read through a pipe''s exit code — with its unit + CI-drift suite, a ci.yml line and export allowlist entry so the drift test runs and the tree ships, and two small delta-only doc additions. Read the whole diff: the only proper nouns are this repo''s own paths, flags and constants plus the fictional "Example Corp" / config.example.yaml persona already public. No identity, employer, school, salary or dated job-hunt content; no absolute home path (the LibreOffice probe calls Path.home() at runtime, as pdf_convert.py does).'
