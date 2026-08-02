@@ -2393,3 +2393,9 @@
   files: 1
   digest: sha256:99df9afc3507e680
   finding: 'Session handover for the merge-runbook and folder-refactor session. Describes the work in shapes, not specifics: which decision fired, which defects were fixed, which gates caught what. Names only public repo paths, PR numbers and commit SHAs. The one private reference is the standing note that verify_links is red on refs inside private/, stated without naming any of those paths. No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:f4c6fce0a3811785
+  finding: 'The local gate runner stops judging the private overlay: the verify-links gate now passes --no-overlay, copied from the pre-commit hook, plus a regression test that no verify_links gate may omit it. Toolkit-only diff — gate argv, an explanatory comment, and a unittest class. No identity, employer, school, salary or dated job-hunt content; no private/ path is named beyond the literal directory prefix already used throughout this file.'
