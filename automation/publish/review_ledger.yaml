@@ -2205,9 +2205,15 @@
 - base: 5e40070f
   reviewed_by: agent
   date: 2026-08-02
-  files: 2
-  digest: sha256:0792ac98be70efab
-  finding: 'Two new files under skills/github-workflow/scripts/: a merge driver that classifies a PR as a native-stack member or an ordinary PR before merging it, and its unittest suite. Read both in full. The driver shells out to `gh` only, imports no repo-root Python, writes no file, and is dry-run by default. Every fact it cites is this repo''s own public GitHub state - PR numbers 87/136/190/198, stack number 88, and merge commit 281bc933 - all of which are already visible in the repository''s own history and in the existing SKILL.md. The tests mock `gh` entirely and make no network call; their branch names and SHAs are invented placeholders. No identity, employer, school, salary or dated job-hunt content.'
+  files: 1
+  digest: sha256:bea7c8d3cfca8daf
+  finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 6
+  digest: sha256:f8aecd0fbc2a8628
+  finding: 'Records a repeated mistake and re-frames one pending decision. The lesson names two rules that existed in writing and were broken anyway - the piped exit code, closed with prose on 2026-07-31 and repeated on 2026-08-01, and the stacked-PR base check - and concludes that a rule broken twice needs a check rather than better wording. The decision item gets a dated note saying its own pre-registered fallback fired: no owner answer line was filled in, no owner text removed, and the superseded default path is kept verbatim as the record it depends on. The new backlog task proposes auditing which contract rules have a check behind them. No identity, employer, school, salary or dated job-hunt content; the only names are commit SHAs and repo paths.'
 - base: 9141247c
   reviewed_by: agent
   date: 2026-08-02
@@ -2220,12 +2226,6 @@
   files: 4
   digest: sha256:563b1388739e4c9b
   finding: 'Propagates the two-track merge correction to the three surfaces that repeated the old single recipe, plus the backlog item the eval gate owes. Read the full diff. AGENTS.md gains one three-line routing invariant under Read Order and restates no procedure. CONTRIBUTING.md stays human-facing (no agent instructions) and keeps the delete_branch_on_merge and ledger reasoning that follows it, which was already sound. The canary gw-second-pr-stacks-on-the-first previously REQUIRED the answer "GitHub does not retarget it automatically", which is true only outside a native stack, so the rubric would have failed correct behaviour; it now requires the classification step and accepts either retarget branch, and a matching failure mode was added. The new tasks/0_backlog item files the canary run for this behavioural instruction edit and cross-references the existing pending-row canary task rather than duplicating it. Process and tooling prose only - no identity, employer, school, salary or dated job-hunt content.'
-- base: e91f6cb7
-  reviewed_by: agent
-  date: 2026-08-02
-  files: 1
-  digest: sha256:b64741a49e00873c
-  finding: 'Adds a root-anchored logs/ entry to the leak guard path denylist, repairing an invariant the previous commit on this branch broke. A root-anchored gitignore rule is required to be path-denied as well, because gitignore is not a guard - git add -f overrides it - and anchoring logs/ to /logs/ made it match that shape. Denied rather than exempted: the payload today is counters and ids only, but its schema is version-brittle, and an exemption would silently publish a future field carrying a path. Probed both ways - logs/ denied, examples/market/logs/ not matched. No identity, employer, school, salary or dated job-hunt content.'
 - base: bc1a8956
   reviewed_by: agent
   date: 2026-08-02
@@ -2238,3 +2238,9 @@
   files: 13
   digest: sha256:7453d401f0ad1629
   finding: 'Stack merge of the gate-runner branch into the merge-runbook branch, plus the budget repair the merge forced. Both branches had added a section to github-workflow SKILL.md; together they put it at 607 against a 600-line budget. Resolved by compressing the gate-runner section to seven lines and moving its detail into reference.md, which has no budget - not by deleting a domain edge case, which the contract forbids. The file now sits at exactly 600, so a task is filed for a real consolidation pass. Ledger conflict resolved at ROW granularity, whole rows from both sides, never git union; 198 base + 3 + 3 = 203 rows, all well-formed. No identity, employer, school, salary or dated job-hunt content.'
+- base: 24048d85
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 18
+  digest: sha256:93a6e65e3f4fd1b6
+  finding: 'Stack merge only - brings in the gate runner, the two-track GitHub merge runbook and merge_stack.py, the AGENTS.md routing invariant, and the gitignore base, each already reviewed on its own branch. This branch adds nothing of its own to that diff. Ledger conflict resolved at ROW granularity, whole rows from both sides, never git union. No identity, employer, school, salary or dated job-hunt content.'

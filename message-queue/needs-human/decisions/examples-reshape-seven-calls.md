@@ -1,16 +1,51 @@
 # Workspace phase 8 — seven calls the `examples/` reshape cannot make on its own
 
-- **Status**: awaiting-owner-input
+> **2026-08-02 — the pre-registered fallback fired; this is now ratify-or-revert.**
+> The owner directed the session to "continue the work of the folder refactor". The
+> remaining folder refactor *is* this reshape, and the **Default path** below already
+> said that a later "just do it" means *the recommendation under each item is what gets
+> built*. So D1, D2, D3, D6 and D7 were built to their recommendations. **The questions
+> below are unchanged and no `Your answer:` line was filled in** — what changed is that
+> declining now costs a revert instead of costing nothing. Each piece landed as its own
+> PR, so a decline is a `git revert` of one commit range, not a rebuild.
+>
+> Three destinations the seven calls never stated had to be chosen to build at all. Each
+> was derived from the private tree it mirrors rather than invented, and each is named
+> here so a disagreement is cheap to spot:
+> - reference DOCX → `examples/me/resume/` (mirrors `private/me/resume/reference.docx`)
+> - `calendar.md` → `examples/me/interviews/` (mirrors `private/me/interviews/calendar.md`;
+>   `config.example.yaml` sets `calendar_md` explicitly, so it does not ride `candidate_dir`)
+> - company-levels → `examples/market/logs/` (mirrors `private/market/logs/company-levels.yaml`;
+>   `config.company_levels_path()`'s own docstring says it rides `candidate_dir()`, not the
+>   profile's parent)
+>
+> **D5 is not open work and never was.** It shipped in `ac34371` — `answer_bank.py:742`
+> already returns `<companies_root>/<key>/derived/<slug>.md`, which is D5's recommendation
+> verbatim, and `../reviews/answer-bank-company-render-target.md` says so outright. D5
+> wants ratification, not a decision, and it touches no `examples/` path.
+>
+> **What the reshape could not have worked without, found while measuring it:**
+> `.gitignore`'s `logs/` was unanchored, so it matched a `logs/` directory at any depth
+> and made every file under `examples/market/logs/` untrackable — `git mv` into it
+> reports success, and the files are then invisible to `git ls-files`, to
+> `export_public.py`, and to the leak guard. D6 puts `candidate_dir` exactly there.
+> Fixed first, as its own commit, with a negative control.
+
+- **Status**: awaiting-owner-input — built to the recommendations; ratify or revert
 - **Filed**: 2026-07-31
 - **Source**: [workspace phase 8 task](../../../tasks/0_backlog/2026-07-28-workspace-phase-8-instruction-surface/task.md)
 - **Blocks**: the `examples/` half of workspace phase 8. Its instruction-surface half is
   already measured at zero work, so this is what is left of the phase.
-- **Default path**: nothing moves. The phase stays in `tasks/0_backlog/` and `examples/`
-  keeps its current shape. If you answer nothing and later say "just do it", the
-  recommendation under each item below is what gets built.
+- **Default path**: *(superseded 2026-08-02 — kept as the dated record of what the default
+  was, because the note above depends on it having said this)* nothing moves. The phase
+  stays in `tasks/0_backlog/` and `examples/` keeps its current shape. If you answer
+  nothing and later say "just do it", the recommendation under each item below is what
+  gets built. **Now in force:** the recommendations are built; no further move happens
+  without an answer here.
 - **Cost if wrong**: ratify
-- **Safe to merge because**: nothing moves, so no path breaks and no file is rewritten; the
-  reshape stays fully available.
+- **Safe to merge because**: every move is a `git mv` plus its references in the same
+  commit, on a branch of its own — `git revert` of that range restores the previous shape
+  exactly, and no owner data is touched at any point (`examples/` is entirely fictional).
 
 **Filed as ONE item, not seven, on purpose.** The seven are not independent: D1 fixes the
 naming convention every other move uses, and D2/D3/D6/D7 each move or delete a path that
