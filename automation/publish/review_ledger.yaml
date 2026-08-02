@@ -2123,4 +2123,9 @@
   files: 1
   digest: sha256:8a0be613a3dd884a
   finding: One new tasks/0_backlog item, filing the github-workflow canary run this branch's SKILL.md protocol rewrite owes. Names only this repo's own files, commands and constants. No identity, employer, school, salary or dated job-hunt content.
-  finding: none. Three message-queue decision items gain the owner's recorded answers, dated and attributed, plus the verification evidence for the conditional one. Process text only — no identity, employer, school, salary or dated job-hunt content.
+- base: 76dc0cbd
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:19da02107dd368c5
+  finding: Turns OFF the ledger's union merge driver and adds the row-shape check whose absence let a corrupted row pass a green --verify-all. The union driver is line-based, so two rows for one range written with keys in different order interleaved and a finding line landed in a neighbouring row; YAML's last-duplicate-wins then made that row report a review nobody wrote. The stray line is removed, restoring the row to its authored text; no authored row is edited or dropped. Tooling and process prose only - no identity, employer, school, salary or dated job-hunt content.

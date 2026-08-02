@@ -1615,15 +1615,53 @@ class ThisRepoTests(unittest.TestCase):
         hook = (review_gate.REPO_ROOT / "automation/hooks/pre-commit").read_text()
         self.assertIn("automation/publish/review_gate.py --staged", hook)
 
-    def test_the_ledger_merges_by_union(self):
-        """Parallel branches all append here; concatenation is the only legal merge.
+    def test_the_ledger_does_not_merge_by_union(self):
+        """`union` is LINE-based, so it interleaves rows instead of concatenating them.
 
-        Safe only while rows carry their own ``base:`` — a positional row would be
-        re-parented by the re-ordering a union merge performs.
+        Concatenation is the only legal resolution and rows carrying their own
+        ``base:`` make it *semantically* safe — but ``union`` cannot honour a row
+        boundary. On 2026-08-02 two rows for one range, written with their keys in
+        different order, interleaved: a ``finding:`` line landed inside a neighbouring
+        row, and YAML's last-duplicate-wins made that row report a review nobody wrote.
+        Nothing failed, because a row's digest covers the range it names, not its prose.
+        A conflict is worse ergonomically and far better honestly.
         """
         attrs = review_gate.REPO_ROOT / ".gitattributes"
-        self.assertTrue(attrs.is_file(), ".gitattributes is missing")
-        self.assertIn(f"{LEDGER_REL} merge=union", attrs.read_text(encoding="utf-8"))
+        if attrs.is_file():
+            self.assertNotIn(
+                f"{LEDGER_REL} merge=union",
+                attrs.read_text(encoding="utf-8"),
+                "the union driver silently corrupts rows — see the task in tasks/0_backlog/",
+            )
+
+    def test_every_ledger_row_is_well_formed(self):
+        """The check whose absence let a corrupted row through a green --verify-all.
+
+        A digest proves a row's *range*; nothing proved the row's own shape. A row
+        carrying a key twice is a merge artefact, and YAML resolves it silently.
+        """
+        ledger = review_gate.REPO_ROOT / LEDGER_REL
+        rows, cur = [], []
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            if line.startswith("- ") and cur:
+                rows.append(cur)
+                cur = []
+            if line.startswith("- ") or cur:
+                cur.append(line)
+        if cur:
+            rows.append(cur)
+        self.assertTrue(rows, "the ledger parsed to zero rows")
+
+        known = ("commit", "base", "reviewed_by", "date", "files", "digest", "finding")
+        for row in rows:
+            keys = [l.split(":", 1)[0].strip("- ").strip() for l in row if ":" in l]
+            keys = [k for k in keys if k in known]
+            dupes = sorted({k for k in keys if keys.count(k) > 1})
+            self.assertEqual([], dupes, f"row {row[0].strip()!r} repeats {dupes}")
+            self.assertTrue(
+                "commit" in keys or "base" in keys,
+                f"row {row[0].strip()!r} names neither commit nor base",
+            )
 
     def test_ci_runs_the_gate_with_full_history(self):
         ci = (review_gate.REPO_ROOT / ".github/workflows/ci.yml").read_text()
