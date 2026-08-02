@@ -3,12 +3,17 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [handoff.py creates application folders without recording the posting in the skip-log](../../../tasks/3_in-review/2026-07-30-handoff-does-not-record-created-postings/task.md)
-- **Blocking**: nothing
+- **Blocks**: nothing
 - **Default path**: `handoff.py` records **every** posting whose folder it actually
   created, whatever exit code the run returns — including the location-mismatch exit (3)
   and the incomplete-scaffold exit (1, a failed or skipped JD fetch, or metadata gaps). On
   a non-zero exit it prints the `--forget-log` command, with the URL already filled in, so
   the un-skip is one copy-paste away. Nothing is recorded when no folder was created.
+- **Cost if wrong**: data
+- **Safe to merge because**: it is NOT cheaply reversible — the default appends permanent rows to
+  the append-only, authoritative `applications-log.jsonl`, and the only undo is the owner running
+  `status.py --forget-log <url>` per row, which `handoff.py` prints on every non-zero exit. This
+  is the weakest default in the queue.
 
 ## Background
 

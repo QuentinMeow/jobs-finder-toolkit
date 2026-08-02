@@ -3,11 +3,14 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [raw-data-layer store core, §9 retention + the GC config](../../../docs/designs/raw-data-layer/01-store-core.md)
-- **Blocking**: nothing. The store is not near any size limit; a GC that never runs
+- **Blocks**: nothing. The store is not near any size limit; a GC that never runs
   costs disk, not correctness.
 - **Default path**: agents run `automation/store/gc_store.py` in its dry-run default
   only, never pass `--execute` or `--remove-orphans`, and hand the printed plan to
   you. This is the literal reading of the guardrail and it is what agents do today.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the default is `gc_store.py`'s dry-run, which deletes nothing; no
+  payload can be lost while this is open.
 
 ## Background
 

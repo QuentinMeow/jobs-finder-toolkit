@@ -3,10 +3,14 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [store locking](../../../automation/shared/store/locking.py)
-- **Blocking**: nothing — the data-loss half of this is already fixed (`release()` now
+- **Blocks**: nothing — the data-loss half of this is already fixed (`release()` now
   verifies the lock is still ours before unlinking it).
 - **Default path**: leave `LOCK_STALE_SECONDS = 300` and the mtime-only staleness test
   exactly as they are. Agents do not add a heartbeat or change the constant.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the default is the shipped constant; changing `LOCK_STALE_SECONDS` is
+  a one-line edit that persists nothing, and the data-loss half this could have caused is already
+  fixed.
 
 ## Background
 

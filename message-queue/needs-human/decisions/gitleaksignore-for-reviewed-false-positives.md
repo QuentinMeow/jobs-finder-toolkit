@@ -3,10 +3,13 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [PR 07 verification](../../../tasks/3_in-review/2026-07-31-company-index-validators-disagree/verification.md)
-- **Blocking**: nothing — PR #128 is green on the default path below
+- **Blocks**: nothing — PR #128 is green on the default path below
 - **Default path**: a `.gitleaksignore` exists at the repo root with exactly two
   commit-pinned fingerprints and a header stating the rule for adding a third. Agents add an
   entry only after reading the flagged line and confirming it is not a credential.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the file holds exactly two reviewed entries; deleting it re-arms
+  gitleaks in one commit, and no unreviewed finding is suppressed.
 
 ## Background
 

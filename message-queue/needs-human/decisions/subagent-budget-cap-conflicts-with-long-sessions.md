@@ -3,8 +3,11 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [the cap itself](../../../docs/handbook/subagent-budget.md) · [`AGENTS.md`](../../../AGENTS.md) "Subagent Budget" · [a canary record that measured a fan-out against it](../../../evals/results/company-research-046a1f17e5f5-20260730-reference-retier.md)
-- **Blocking**: nothing. Work continues either way; the cap is unenforced, so today the conflict resolves itself silently in whichever direction the session happens to go.
+- **Blocks**: nothing. Work continues either way; the cap is unenforced, so today the conflict resolves itself silently in whichever direction the session happens to go.
 - **Default path**: **follow the cap as written for search and application fan-out — the case it was written for.** Where you have explicitly directed a long autonomous session that cannot be done inside 8 subagents, exceed it and say so in the session's report. Do not delete or weaken the text meanwhile.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the cap is unenforced text; following it writes nothing, and
+  exceeding it is reported in the session's own report.
 
 ## Background
 

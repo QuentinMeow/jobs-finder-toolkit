@@ -3,19 +3,22 @@
 All human↔agent coordination goes through this folder: each side writes
 files; the other side picks them up on its next visit, **across sessions,
 without a live conversation**. Queues are split by **who acts next** — a
-stable property — never by topic or urgency (urgency lives in each item's
-`Blocking` field; files never move between queues, so links never break).
+stable property — never by topic or urgency (a decision's urgency lives in its
+`Cost if wrong` key; files never move between queues, so links never break).
 The full behavioral contract agents follow is `AGENTS.md` → "Async
 Collaboration"; this README is the map. Work items themselves live in
 `tasks/`, not here — this folder holds *messages about* work.
 
 | Queue | Who acts next | Contains |
 |-------|---------------|----------|
-| `needs-human/decisions/` | **owner** | Choices only the owner may make — options, recommendation, and a default path agents follow while pending (format: `needs-human/decisions/README.md`) |
+| `needs-human/decisions/` | **owner** | Choices only the owner may make — options, recommendation, and a default path agents follow while pending, ranked by `Cost if wrong` (format: `needs-human/decisions/README.md`) |
 | `needs-human/clarifications/` | **owner** | Questions that will matter soon; the filing agent states an assumption and proceeds on it meanwhile (format: `needs-human/clarifications/README.md`) |
 | `needs-human/reviews/` | **owner** | Optional human-eyes items — doing nothing must be safe (format: `needs-human/reviews/README.md`) |
 | `needs-agent/requests/` | **any agent** | The owner's free-form drop box — any shape, even one line; the only queue with no required format |
 | `needs-agent/retries/` | **any agent** | Repair work filed by automated checks or a failed job, one finding per file |
+
+Beside the queues, `ANSWERS.md` is the owner's batch answering surface — one
+`## <slug>` block per decision, filled whenever a batch has merged.
 
 ## Rules that apply to every queue
 
@@ -26,12 +29,14 @@ Collaboration"; this README is the map. Work items themselves live in
 - **Public tree ⇒ leak-guard rules apply.** Items about the owner's real
   pipeline/identity go in the same-shape private mirror
   `private/message-queue/`.
-- Nothing here blocks by default: every `decisions/` item states a default
+- **Nothing here ever stops work.** Every `decisions/` item states a default
   path, every `clarifications/` item states an assumption, every `reviews/`
-  item is safe to ignore. Only an explicit `Blocking: yes` stops work.
+  item is safe to ignore. Items ship merged and unanswered; the owner answers
+  in batch afterwards, in `ANSWERS.md`. The only stop authority is the
+  Guardrails list in `AGENTS.md`, which stops an *action*, never the batch.
 - **Claim before resolving**: commit a one-line `Status` edit
-  (e.g. `folding`) before folding an answer, so parallel sessions don't
-  collide.
+  (e.g. `folding`) before folding an answer — one such commit per batch pass,
+  not per item — so parallel sessions don't collide.
 - Resolved/handled items are **deleted in the resolving commit** — git
   history is the archive. No done/ subfolders.
 - An answer the owner gives in chat is written into the queue file in the

@@ -3,8 +3,11 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [the ADR's own revisit trigger](../../../memory/decisions/workspace-layout-public-root-plus-review-gate.md) — *"Revisit if the review-gate row rate proves unworkable in practice"* — plus [the review ledger](../../../automation/publish/review_ledger.yaml), which is the artifact that rate produced
-- **Blocking**: nothing. Seven sub-decisions, each with its own default path. Answer them independently; they are not a package.
+- **Blocks**: nothing. Seven sub-decisions, each with its own default path. Answer them independently; they are not a package.
 - **Default path**: **status quo on every rule.** Nothing is deleted, no gate is weakened or disarmed, and no new gate is added while this is open. The two exceptions need no permission because an existing decision already covers them: D1's batching (already permitted by `docs/designs/workspace-restructure/review-gate.md`) and D4's "fix it in the PR" preference (already the observed best practice).
+- **Cost if wrong**: ratify
+- **Safe to merge because**: status quo deletes nothing, weakens no gate, and adds none; all seven
+  sub-decisions stay open in full.
 
 ## Background
 
@@ -271,6 +274,13 @@ empty directory is itself an instance of the problem this document is about.
 - **Option B — keep it, and fold the removal into the next change that already touches
   `tasks/README.md` or `STATUS_DIRS`** *(recommended)*. Costs nothing either way.
 - **Option C — keep it permanently**, as the parking spot the `Blocking: yes` path requires.
+
+*Note appended 2026-08-01:* `Blocking: yes` no longer exists. The queue's stop semantic was
+retired in favour of prose `Blocks:` plus the `AGENTS.md` Guardrails, so **Option C has lost
+its premise** — nothing now routes a task into `2_blocked/`. The two paragraphs above are
+unchanged and still hold: the folder is empty by design, and D3's `Depends-on` field is the
+real fix. Only the "parking spot" justification is gone. See
+`blocks-rename-supersedes-the-stop-condition-task.md`.
 
 **Default path while unanswered:** leave it. Do not open a PR for it.
 

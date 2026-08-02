@@ -3,10 +3,13 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [tied-sort-key task](../../../tasks/0_backlog/2026-07-31-store-spot-equivalence-fails-on-a-tied-sort-key/task.md)
-- **Blocking**: nothing. The store builds and serves normally today; only
+- **Blocks**: nothing. The store builds and serves normally today; only
   `--rebuild` refuses, and only on a store that actually contains a tie.
 - **Default path**: leave the tie unfixed. The task stays in `tasks/0_backlog/`
   and no agent changes the canonical fold order without an answer here.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the tie is left unfixed and the store re-derives deterministically
+  from the raw records, so no data is lost — only a rebuild is wasted.
 
 ## Background
 

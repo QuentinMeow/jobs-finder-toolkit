@@ -3,12 +3,15 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [public/private split handbook](../../../docs/handbook/public-private-split.md)
-- **Blocking**: nothing. The line has shipped since the skill was written and no gate
+- **Blocks**: nothing. The line has shipped since the skill was written and no gate
   fires on it.
 - **Default path**: leave the sentence exactly as it is, and name no *additional*
   overlay-only skill anywhere in the public tree. Agents do not remove it unilaterally
   — it is an instruction-file edit that deletes a real affordance, and deleting an
   affordance is not a mechanical fix.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: the sentence stays as shipped; changing it is a one-line doc edit and
+  the leak guard already passes on it.
 
 ## Background
 

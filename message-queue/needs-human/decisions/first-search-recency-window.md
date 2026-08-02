@@ -3,8 +3,12 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31 (public surface for a question first raised in the overlay on 2026-07-26)
 - **Source**: [`search_jobs.py`'s recency gate](../../../skills/job-search/scripts/search_jobs.py) vs [`company_roles.py --match-only`](../../../skills/job-search/scripts/company_roles.py), which disagree by design
-- **Blocking**: nothing. Every run still works; the cost is silent, not loud.
+- **Blocks**: nothing. Every run still works; the cost is silent, not loud.
 - **Default path**: **no code change.** Keep the narrow recency default for every run, and hand-run a wide refilter when a company is being searched for the first time. This is the only open default in either queue whose cost is *missed opportunities* rather than tidiness — that is why it is surfaced here rather than left to age.
+- **Cost if wrong**: recurring-loss
+- **Safe to merge because**: the narrow window is the shipped behaviour and a wide refilter can be
+  hand-run per company at any time — but a posting that ages out between runs is not recoverable,
+  which is why this ranks above every other open item.
 
 ## Background
 

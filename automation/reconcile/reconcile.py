@@ -160,8 +160,13 @@ def check_queue_schema() -> list[Finding]:
     if not mq.is_dir():
         return findings
     for item in _items(mq / "needs-human/decisions"):
-        _require_keys(item, ["Status", "Filed"], "queue-schema", findings,
-                      extra_line="**Your answer:**")
+        # A decision ships merged and unanswered, so its default path is what runs in
+        # main meanwhile. The two cost keys make that default reviewable rather than
+        # implicit; without them the queue cannot be ranked (see the queue's README).
+        _require_keys(item,
+                      ["Status", "Filed", "Default path", "Cost if wrong",
+                       "Safe to merge because"],
+                      "queue-schema", findings, extra_line="**Your answer:**")
     for item in _items(mq / "needs-human/clarifications"):
         _require_keys(item, ["Status", "Assumption", "Matters-by", "Filed"],
                       "queue-schema", findings, extra_line="**Your answer:**")

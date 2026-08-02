@@ -3,11 +3,14 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-29
 - **Source**: [workspace-restructure execution plan, item 0.10](../../../docs/designs/workspace-restructure/execution-plan.md)
-- **Blocking**: nothing. The overlay's new pre-commit hook already picks up an
+- **Blocks**: nothing. The overlay's new pre-commit hook already picks up an
   answer of "yes" with no further edit — it probes for the flag and uses it the
   moment it exists.
 - **Default path**: no private-scope reconciler runs. The overlay hook reports the
   skip on every commit rather than staying silent about it.
+- **Cost if wrong**: ratify
+- **Safe to merge because**: no reconciler runs in the overlay, so nothing is written there; the
+  overlay's pre-commit hook already reports what it catches.
 - **Deferred**: 2026-07-29 — the owner read this and chose to leave it undecided
   for now (see the dated note at the bottom). Still open, still on the default
   path; **do not re-ask it**.

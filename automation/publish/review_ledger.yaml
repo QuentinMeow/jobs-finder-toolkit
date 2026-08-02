@@ -1957,6 +1957,13 @@
   files: 5
   digest: sha256:668f332d60e36bcb
   finding: none — new automation/evals module plus its tests, the eval-result template's two commit rows and pin block, and one exporter allowlist entry; no name, employer, school, date, salary or job-hunt detail in any of the five files
+- commit: a68ea96b
+  base: 1144d288
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 39
+  digest: sha256:dae9b94909c15745
+  finding: none — queue schema keys, contract prose in AGENTS.md/collaboration-modes/evals README, and 30 process-decision items. Company cross-reference run by hand against the overlay index (222 display names, added lines only); the single hit was `meta.yaml`/`--enrich-metadata`, the toolkit's own vocabulary, not a company. No name, employer, school, date, salary or job-hunt detail.
 - commit: e876a423
   base: 1144d288
   reviewed_by: agent
@@ -2061,3 +2068,10 @@
   files: 95
   digest: sha256:eefd7f91fba8c003
   finding: Merge of origin/main into the housekeeping branch; ledger conflict resolved by concatenating both sides' rows. The 95 files are almost entirely renames of completed task folders from 3_in-review to 4_done, plus the corrected github-workflow canary bullet, one new eval record, an appended supersession note, and a test fixture string. Grep hits on "salary" are the folder name of a JD-parsing bug task, not owner data. No identity, employer, school or dated job-hunt content.
+- commit: 0c422554
+  base: 6b777866
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 40
+  digest: sha256:eb315e1e4b3eada8
+  finding: Merge of origin/main into the queue-protocol branch; ledger conflict resolved by concatenating both sides' rows. Reviewed range covers the AGENTS.md boot-ritual and guardrail rewrite, the queue-schema keys added to the existing reconciler check, the collaboration-modes doc, the queue templates and READMEs, and the backfilled decision items. Decision items are process questions about tooling; none names a real company, posting or person. No identity, employer, school, salary or dated job-hunt content.

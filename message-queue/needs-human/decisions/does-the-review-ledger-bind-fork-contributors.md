@@ -3,12 +3,15 @@
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
 - **Source**: [CONTRIBUTING.md — the section that binds outside contributors](../../../CONTRIBUTING.md)
-- **Blocking**: nothing today, because no fork PR has hit it. It becomes blocking for
+- **Blocks**: nothing today, because no fork PR has hit it. It becomes blocking for
   one outside contributor the moment the first one does, and they will have no
   instruction to follow.
 - **Default path**: if a fork PR arrives before this is decided, the maintainer appends
   the ledger row at merge and tells the contributor to ignore the red gate. Nothing in
   the repository says so, which is the point of this item.
+- **Cost if wrong**: one-time
+- **Safe to merge because**: no fork PR has hit this yet; the first one is handled by a maintainer
+  appending the row inside that PR, which is reviewable and revertible before it merges.
 
 ## Background
 
