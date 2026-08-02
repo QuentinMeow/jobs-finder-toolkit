@@ -67,7 +67,7 @@ def _progress(status: str) -> dict:
 
 
 def _job(role: str, status: str, jd_file: str, url: str) -> dict:
-    """A fully valid schema-v5 posting (fictional data)."""
+    """A fully valid schema-v6 posting (fictional data)."""
     return {
         "role": role,
         "jd_file": jd_file,
@@ -110,7 +110,7 @@ class SkipLogWriterTests(unittest.TestCase):
             if jd:
                 (app / "source" / jd).write_text("Fictional JD.", encoding="utf-8")
         meta = {
-            "job_metadata_schema_version": 5,
+            "job_metadata_schema_version": 6,
             "company": company,
             "research_date": research_date,
             "jobs": jobs,

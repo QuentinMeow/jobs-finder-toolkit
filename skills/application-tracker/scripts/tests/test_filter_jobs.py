@@ -136,7 +136,7 @@ class FilterJobsTests(unittest.TestCase):
         self.assertEqual(recs[0]["folder_status"], "applied")
         self.assertEqual(recs[0]["status"], "rejected")
 
-    # ── structured progress filtering (schema v5) ──────────────
+    # ── structured progress filtering (schema v6) ──────────────
     def test_phase_and_progress_state_filters(self):
         tree = {"in_progress": {
             "aurora-screen": _meta("Aurora Dynamics", [_job(

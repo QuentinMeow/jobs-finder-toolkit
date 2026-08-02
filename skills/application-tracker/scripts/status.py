@@ -26,11 +26,13 @@ several roles at one company: those applications carry a `jobs:` list in meta.ya
 and one JD-<job-title>.md file per posting. Non-application folders under
 applications/ (0_profile/, 1_discoveries/) are skipped.
 
-Schema v5 adds a structured per-job ``progress`` summary ({phase, state,
-label?, calendar_item?}) and ONE private calendar/todo file resolved by
+Schema v6 adds a structured per-job ``progress`` summary ({phase, state,
+label?, calendar_items?}) and ONE private calendar/todo file resolved by
 ``config.calendar_path()``. This tracker is the only writer that updates
 metadata and calendar together — transactionally, both or neither. Changing
-only phase/state NEVER moves an application between status folders.
+only phase/state NEVER moves an application between status folders. One role
+may link several distinct calendar occurrences through the ordered
+``calendar_items`` list.
 
 Usage:
     python skills/application-tracker/scripts/status.py
@@ -38,7 +40,8 @@ Usage:
     python skills/application-tracker/scripts/status.py --update google-ml-engineer-20260416 applied
     python skills/application-tracker/scripts/status.py --update-job <slug> "Backend Engineer" in_progress
     python skills/application-tracker/scripts/status.py --update-job <slug> 2 rejected
-    python skills/application-tracker/scripts/status.py --update-progress <slug> <role-match> --phase technical_interview --state scheduled --starts-at <ISO> --timezone <IANA>
+    python skills/application-tracker/scripts/status.py --update-progress <slug> <role-match> --phase interview_loop --state scheduled --starts-at <ISO> --timezone <IANA>
+    python skills/application-tracker/scripts/status.py --update-progress <slug> <role-match> --phase interview_loop --state scheduled --add-occurrence --starts-at <ISO> --timezone <IANA>
     python skills/application-tracker/scripts/status.py --check-calendar
     python skills/application-tracker/scripts/status.py --sync-calendar [--write]
     python skills/application-tracker/scripts/status.py --refresh-calendar [--write]
@@ -84,6 +87,7 @@ from calendar_todos import (
     plan_calendar_update,
     generate_entry_id,
     record_cancellation,
+    record_completion,
     record_reschedule,
     render_company_view,
 )
@@ -141,7 +145,7 @@ def _resolve_statuses(args) -> list[str]:
     """Resolve the status scope shared by the metadata/location subcommands.
 
     Default scope is the full fleet (every status folder) — the whole fleet is
-    uniformly schema v5. ``--statuses`` selects an explicit comma-separated subset.
+    uniformly at the current metadata schema. ``--statuses`` selects an explicit subset.
     Exits non-zero on an unknown status label.
     """
     if args.statuses:
@@ -531,7 +535,7 @@ def _resolve_application_target(target: str | Path) -> Path | None:
 
 
 def enrich_application_metadata(target: str | Path, *, overwrite: bool = False) -> Path:
-    """Safely insert missing schema-v5 job metadata into one ``meta.yaml``."""
+    """Safely insert missing current-schema job metadata into one ``meta.yaml``."""
     if overwrite:
         raise ValueError(
             "overwrite is disabled: the formatting-preserving editor only inserts "
@@ -554,7 +558,7 @@ def backfill_metadata(
     if overwrite:
         message = (
             "overwrite is disabled: bulk metadata editing may only insert missing "
-            "schema-v5 fields"
+            "current-schema fields"
         )
         if as_json:
             print(json.dumps({"mode": "error", "rows": [], "failures": [message]}, indent=2))
@@ -942,8 +946,8 @@ def find_application(slug: str) -> Path | None:
     return None
 
 
-def _load_v5_meta(meta_path: Path) -> tuple[dict, bytes]:
-    """Load a meta.yaml, failing loud (exit non-zero) unless it is parseable v5."""
+def _load_current_meta(meta_path: Path) -> tuple[dict, bytes]:
+    """Load meta.yaml, failing loud unless it matches the current schema."""
     if not meta_path.is_file():
         print(f"Error: {meta_path} not found; cannot update per-job status",
               file=sys.stderr)
@@ -957,7 +961,8 @@ def _load_v5_meta(meta_path: Path) -> tuple[dict, bytes]:
     if (not isinstance(meta, dict)
             or meta.get("job_metadata_schema_version") != APPLICATION_SCHEMA_VERSION):
         print(f"Error: {meta_path} is not schema v{APPLICATION_SCHEMA_VERSION}; "
-              "run migrate_to_v5.py before updating status", file=sys.stderr)
+              f"run migrate_to_v{APPLICATION_SCHEMA_VERSION}.py before updating status",
+              file=sys.stderr)
         sys.exit(1)
     jobs = meta.get("jobs")
     if not isinstance(jobs, list) or not jobs:
@@ -1166,14 +1171,14 @@ def _read_calendar_raw(*, create: bool = False) -> bytes | None:
 
 def _entry_fields_for_progress(
     entry, *, slug: str, job: dict, progress: dict, company: str,
-    meta_path: Path,
+    meta_path: Path, calendar_item: str,
 ) -> dict:
     """Merge a job's new progress summary into its calendar entry fields."""
     if entry is not None:
         fields = entry.fields()
     else:
         fields = {
-            "id": progress.get("calendar_item"),
+            "id": calendar_item,
             "application": slug,
             "role": str(job.get("role") or ""),
             "action": None,
@@ -1202,6 +1207,78 @@ def _entry_fields_for_progress(
         fields["source"] = f"email:{str(source['ref']).strip()}"
     fields["_company"] = company
     return fields
+
+
+def _progress_calendar_items(progress: dict | None) -> list[str]:
+    """Return the ordered occurrence ids from one schema-v6 progress mapping."""
+    if not isinstance(progress, dict):
+        return []
+    values = progress.get("calendar_items")
+    if not isinstance(values, list):
+        return []
+    return [str(value).strip() for value in values if str(value).strip()]
+
+
+_CALENDAR_STATE_PRIORITY = (
+    "reschedule_required",
+    "booking_required",
+    "action_required",
+    "decision_required",
+    "follow_up_required",
+    "in_progress",
+    "scheduled",
+    "reschedule_pending",
+    "awaiting_schedule",
+    "awaiting_result",
+    "waiting_employer",
+    "paused",
+    "unknown",
+    "closed",
+)
+
+
+def _occurrence_terminal_status(fields) -> str | None:
+    """Return completed/cancelled for a terminal occurrence, else ``None``."""
+    history = (
+        fields.get("history")
+        if isinstance(fields, dict)
+        else getattr(fields, "history", ())
+    ) or []
+    starts_at = (
+        fields.get("starts_at")
+        if isinstance(fields, dict)
+        else getattr(fields, "starts_at", None)
+    )
+    if starts_at or not history or not isinstance(history[-1], dict):
+        return None
+    status = history[-1].get("status")
+    return status if status in {"completed", "cancelled"} else None
+
+
+def _reduce_calendar_occurrences(occurrences: list, *, fallback: str) -> str:
+    """Reduce occurrence-local lifecycle into one role-level progress state.
+
+    Owner action outranks a confirmed future slot; otherwise any remaining
+    scheduled occurrence keeps the role scheduled.  The role reaches
+    ``awaiting_result`` only after every linked occurrence has advanced there.
+    """
+    active = [item for item in occurrences if _occurrence_terminal_status(item) is None]
+    normalized = [
+        str(item.get("state") if isinstance(item, dict) else getattr(item, "state", ""))
+        for item in active
+    ]
+    normalized = [state for state in normalized if state in PROGRESS_STATES]
+    if not normalized:
+        terminal = [_occurrence_terminal_status(item) for item in occurrences]
+        if "completed" in terminal:
+            return "awaiting_result"
+        if "cancelled" in terminal:
+            return "action_required"
+        return fallback
+    for candidate in _CALENDAR_STATE_PRIORITY:
+        if candidate in normalized:
+            return candidate
+    return fallback
 
 
 def _commit_meta_and_calendar(
@@ -1299,7 +1376,7 @@ def _record_log_events(slug: str) -> None:
     log = build_log([info])
     if log["unreadable"]:
         # Belt and braces: --update / --update-job already fail loud through
-        # _load_v5_meta, so an unparseable file cannot reach this point today. The
+        # _load_current_meta, so an unparseable file cannot reach this point today. The
         # guard stays because the cost of it being wrong is a permanent log row.
         print(f"Warning: no skip-log row recorded for {slug} — "
               f"{log['unreadable'][0]['error']}", file=sys.stderr)
@@ -1322,8 +1399,9 @@ def _transition_calendar_plan(
     view is empty.
     """
     referencing = [
-        (job, progress) for job, progress in jobs_progress
-        if str((progress or {}).get("calendar_item") or "").strip()
+        (job, progress, item)
+        for job, progress in jobs_progress
+        for item in _progress_calendar_items(progress)
     ]
     overrides = {source_meta_path: (prospective_meta, target_meta_path)}
     company_view, company_count, view_errors = _company_view_markdown(overrides)
@@ -1345,8 +1423,7 @@ def _transition_calendar_plan(
             print(f"  - {error}", file=sys.stderr)
         sys.exit(1)
     upserts: dict[str, dict] = {}
-    for job, progress in referencing:
-        item = progress["calendar_item"]
+    for job, progress, item in referencing:
         entry = doc.entries.get(item)
         if entry is None:
             print(f"Error: {slug} references missing calendar entry '{item}'; "
@@ -1354,7 +1431,7 @@ def _transition_calendar_plan(
             sys.exit(1)
         upserts[item] = _entry_fields_for_progress(
             entry, slug=slug, job=job, progress=progress, company=company,
-            meta_path=target_meta_path)
+            meta_path=target_meta_path, calendar_item=item)
     plan = plan_calendar_update(raw, upserts, company_view=company_view)
     if plan.errors:
         print("Error: could not plan the calendar update (nothing written):",
@@ -1373,7 +1450,7 @@ def update_status(slug: str, new_status: str):
     `progress` summary for the new status) BEFORE moving the folder to match the
     derived rollup. Jobs whose progress references a calendar entry get that
     entry updated in the same transaction. Fails loud (no move, no partial
-    write) if meta.yaml is missing, unparseable, or not schema v5.
+    write) if meta.yaml is missing, unparseable, or not the current schema.
     """
     if new_status not in STATUS_FOLDERS:
         print(f"Error: invalid status '{new_status}'. Must be one of: "
@@ -1387,7 +1464,7 @@ def update_status(slug: str, new_status: str):
         sys.exit(1)
 
     meta_path = src / "meta.yaml"
-    meta, raw = _load_v5_meta(meta_path)
+    meta, raw = _load_current_meta(meta_path)
     today = date.today().isoformat()
     updates: dict = {}
     jobs_progress: list[tuple[dict, dict]] = []
@@ -1441,7 +1518,7 @@ def update_job_status(slug: str, role_match: str, status: str):
         sys.exit(1)
 
     meta_path = src / "meta.yaml"
-    meta, raw = _load_v5_meta(meta_path)
+    meta, raw = _load_current_meta(meta_path)
     jobs = meta["jobs"]
     index = _resolve_job_index(jobs, role_match)
 
@@ -1494,6 +1571,7 @@ def update_progress(
     action: str | None = None, due_at: str | None = None,
     starts_at: str | None = None, ends_at: str | None = None,
     timezone_name: str | None = None, follow_up_at: str | None = None,
+    calendar_item: str | None = None, add_occurrence: bool = False,
 ):
     """Set ONE posting's structured progress; never moves the status folder.
 
@@ -1501,10 +1579,13 @@ def update_progress(
     ``updated_at``, ``source: manual``) and the calendar entry together,
     transactionally. Entering a scheduling state (booking/waiting/scheduled/
     reschedule) creates the calendar entry when the job has none — with a fresh
-    stable id recorded as ``progress.calendar_item``. ``--state scheduled``
+    stable id appended to ``progress.calendar_items``. ``--state scheduled``
     requires an exact ``--starts-at`` plus ``--timezone`` on the SAME
     invocation (they land on the entry before it is validated); ``--ends-at``
-    is optional. Nothing has to be recorded in calendar.md first.
+    is optional. ``--add-occurrence`` appends a parallel confirmed slot instead
+    of overwriting a prior occurrence. With several linked occurrences,
+    ``--calendar-item`` targets exactly one; omitting it applies a pure
+    phase/state change to all linked entries.
     """
     if phase not in PROGRESS_PHASES:
         print(f"Error: --phase must be one of {', '.join(PROGRESS_PHASES)}",
@@ -1519,6 +1600,18 @@ def update_progress(
         print("Error: --email-ref must be a neutral acct-NN/<64-lowercase-hex> "
               "stored-message reference", file=sys.stderr)
         sys.exit(1)
+    requested_item = str(calendar_item or "").strip()
+    if add_occurrence and requested_item:
+        print("Error: --add-occurrence and --calendar-item are mutually exclusive",
+              file=sys.stderr)
+        sys.exit(1)
+    if add_occurrence and state != "scheduled":
+        print("Error: --add-occurrence requires --state scheduled", file=sys.stderr)
+        sys.exit(1)
+    if add_occurrence and (not starts_at or not timezone_name):
+        print("Error: --add-occurrence requires --starts-at and --timezone",
+              file=sys.stderr)
+        sys.exit(1)
 
     src = find_application(slug)
     if src is None:
@@ -1527,7 +1620,7 @@ def update_progress(
         sys.exit(1)
 
     meta_path = src / "meta.yaml"
-    meta, raw = _load_v5_meta(meta_path)
+    meta, raw = _load_current_meta(meta_path)
     jobs = meta["jobs"]
     index = _resolve_job_index(jobs, role_match)
     job = jobs[index] if isinstance(jobs[index], dict) else {}
@@ -1543,14 +1636,19 @@ def update_progress(
         if normalized_email_ref
         else {"kind": "manual", "ref": ""}
     )
-    calendar_item = str(current.get("calendar_item") or "").strip()
+    calendar_items = _progress_calendar_items(current)
 
     company = str(meta.get("company") or "")
     calendar_plan = None
     raw_calendar = None
-    fields = None
-    entry = None
-    needs_entry = state in PROGRESS_CALENDAR_STATES or calendar_item
+    upserts: dict[str, dict] = {}
+    create_missing = False
+    needs_entry = (
+        state in PROGRESS_CALENDAR_STATES
+        or bool(calendar_items)
+        or add_occurrence
+        or bool(requested_item)
+    )
     if needs_entry:
         raw_calendar = _read_calendar_raw(create=True)
         doc = parse_calendar(raw_calendar.decode("utf-8"))
@@ -1560,24 +1658,77 @@ def update_progress(
             for error in doc.errors:
                 print(f"  - {error}", file=sys.stderr)
             sys.exit(1)
-        entry = doc.entries.get(calendar_item) if calendar_item else None
-        if calendar_item and entry is None:
-            print(f"Error: {slug} references missing calendar entry "
-                  f"'{calendar_item}'; run --check-calendar", file=sys.stderr)
+        missing = [item for item in calendar_items if item not in doc.entries]
+        if missing:
+            print(f"Error: {slug} references missing calendar entr"
+                  f"{'y' if len(missing) == 1 else 'ies'}: "
+                  f"{', '.join(missing)}; run --check-calendar", file=sys.stderr)
             sys.exit(1)
-        if entry is None:
-            calendar_item = generate_entry_id(doc.entries, slug)
-        progress["calendar_item"] = calendar_item
-        fields = _entry_fields_for_progress(
-            entry, slug=slug, job=job, progress=progress, company=company,
-            meta_path=meta_path)
-        for key, value in (
-            ("action", action), ("due_at", due_at),
-            ("starts_at", starts_at), ("ends_at", ends_at),
-            ("timezone", timezone_name), ("follow_up_at", follow_up_at),
-        ):
-            if value is not None:
-                fields[key] = value or None
+        if requested_item and requested_item not in calendar_items:
+            print(f"Error: --calendar-item '{requested_item}' is not linked to "
+                  f"{slug} [{role}]", file=sys.stderr)
+            sys.exit(1)
+
+        occurrence_values = any(value is not None for value in (
+            action, due_at, starts_at, ends_at, timezone_name, follow_up_at,
+        ))
+        if add_occurrence:
+            target_items = [generate_entry_id(doc.entries, slug)]
+            calendar_items.append(target_items[0])
+            create_missing = True
+        elif requested_item:
+            target_items = [requested_item]
+        elif not calendar_items:
+            target_items = [generate_entry_id(doc.entries, slug)]
+            calendar_items.append(target_items[0])
+            create_missing = True
+        elif len(calendar_items) == 1:
+            target_items = list(calendar_items)
+        elif occurrence_values:
+            print("Error: this role has multiple calendar occurrences; pass "
+                  "--calendar-item to update one or --add-occurrence to append "
+                  "a parallel confirmed slot", file=sys.stderr)
+            sys.exit(1)
+        else:
+            target_items = list(calendar_items)
+
+        progress["calendar_items"] = list(calendar_items)
+        for item in target_items:
+            entry = doc.entries.get(item)
+            if entry is not None and starts_at is not None \
+                    and entry.starts_at is not None \
+                    and starts_at != entry.starts_at:
+                print(
+                    f"Error: calendar entry '{item}' already records confirmed "
+                    f"occurrence {entry.starts_at}; refusing to overwrite it "
+                    f"with {starts_at}. For a replacement, edit that entry's "
+                    "reschedule_to proposal and run --sync-calendar --write. "
+                    "For a parallel slot, use --add-occurrence.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            fields = _entry_fields_for_progress(
+                entry, slug=slug, job=job, progress=progress, company=company,
+                meta_path=meta_path, calendar_item=item)
+            for key, value in (
+                ("action", action), ("due_at", due_at),
+                ("starts_at", starts_at), ("ends_at", ends_at),
+                ("timezone", timezone_name), ("follow_up_at", follow_up_at),
+            ):
+                if value is not None:
+                    fields[key] = value or None
+            upserts[item] = fields
+
+        occurrence_fields = {
+            item: doc.entries[item].fields()
+            for item in calendar_items
+            if item in doc.entries
+        }
+        occurrence_fields.update(upserts)
+        progress["state"] = _reduce_calendar_occurrences(
+            [occurrence_fields[item] for item in calendar_items],
+            fallback=state,
+        )
 
     progress["updated_at"] = _utc_now_stamp()
 
@@ -1603,11 +1754,10 @@ def update_progress(
         if raw_calendar is None and company_count:
             raw_calendar = _read_calendar_raw(create=True)
     if raw_calendar is not None:
-        upserts = {calendar_item: fields} if fields is not None else {}
         calendar_plan = plan_calendar_update(
             raw_calendar,
             upserts,
-            create_missing=entry is None and fields is not None,
+            create_missing=create_missing,
             company_view=company_view,
         )
         if calendar_plan.errors:
@@ -1627,8 +1777,9 @@ def update_progress(
         bits.append(f"label -> {label!r}")
     print(f"{slug} posting [{index + 1}] {role}: {'; '.join(bits)}")
     if calendar_plan is not None and calendar_plan.changed:
-        print(f"Updated calendar entry {progress['calendar_item']} -> "
-              f"{_calendar_path()}")
+        print(f"Updated calendar entr"
+              f"{'y' if len(upserts) == 1 else 'ies'} "
+              f"{', '.join(upserts)} -> {_calendar_path()}")
     print("Progress-only update: the status folder is unchanged.")
 
 
@@ -1636,7 +1787,7 @@ def update_progress(
 # Calendar verification + preview-first human-edit sync
 # --------------------------------------------------------------------------- #
 def _fleet_calendar_refs() -> dict[str, list[tuple[Path, dict, int, dict]]]:
-    """calendar_item -> [(meta_path, meta, job_index, job)] across the fleet."""
+    """Calendar item id -> owning job rows across the schema-v6 fleet."""
     refs: dict[str, list[tuple[Path, dict, int, dict]]] = {}
     for status in STATUS_FOLDERS:
         status_dir = _status_dir(status)
@@ -1655,9 +1806,7 @@ def _fleet_calendar_refs() -> dict[str, list[tuple[Path, dict, int, dict]]]:
                 if not isinstance(job, dict):
                     continue
                 progress = job.get("progress")
-                item = str((progress or {}).get("calendar_item") or "").strip() \
-                    if isinstance(progress, dict) else ""
-                if item:
+                for item in _progress_calendar_items(progress):
                     refs.setdefault(item, []).append((meta_path, meta, index, job))
     return refs
 
@@ -1695,6 +1844,7 @@ def check_calendar(as_json: bool = False) -> bool:
             f"compan{'y' if company_count == 1 else 'ies'} require the generated view")
 
     entries = doc.entries if doc is not None else {}
+    grouped_occurrences: dict[tuple[Path, int], list] = {}
     for item, holders in sorted(refs.items()):
         if len(holders) > 1:
             findings.append(
@@ -1704,7 +1854,7 @@ def check_calendar(as_json: bool = False) -> bool:
         if entry is None:
             if doc is not None:
                 findings.append(
-                    f"{holders[0][0].parent.name}: progress.calendar_item "
+                    f"{holders[0][0].parent.name}: progress.calendar_items "
                     f"'{item}' has no calendar entry")
             continue
         meta_path, _meta, index, job = holders[0]
@@ -1718,18 +1868,17 @@ def check_calendar(as_json: bool = False) -> bool:
             findings.append(
                 f"entry '{item}': role '{entry.role}' does not match "
                 f"jobs[{index}].role of {slug}")
-        for field in ("phase", "state"):
-            if getattr(entry, field) != progress.get(field):
-                findings.append(
-                    f"entry '{item}': {field} '{getattr(entry, field)}' drifted "
-                    f"from meta progress '{progress.get(field)}' "
-                    "(run --sync-calendar)")
+        if entry.phase != progress.get("phase"):
+            findings.append(
+                f"entry '{item}': phase '{entry.phase}' drifted from meta "
+                f"progress '{progress.get('phase')}' (run --sync-calendar)")
+        grouped_occurrences.setdefault((meta_path, index), []).append(entry)
         expected_section = STATE_SECTIONS.get(entry.state)
         if expected_section and entry.section != expected_section:
             findings.append(
                 f"entry '{item}': sits under '{entry.section}' but state "
                 f"'{entry.state}' belongs under '{expected_section}'")
-        if entry.checked and progress.get("state") in CHECKED_BOX_TRANSITIONS:
+        if entry.checked and entry.state in CHECKED_BOX_TRANSITIONS:
             findings.append(
                 f"entry '{item}': box is checked — run --sync-calendar to fold "
                 "it into progress")
@@ -1741,8 +1890,24 @@ def check_calendar(as_json: bool = False) -> bool:
     for item, entry in sorted(entries.items()):
         if item not in refs:
             findings.append(
-                f"entry '{item}': no job's progress.calendar_item references it "
+                f"entry '{item}': no job's progress.calendar_items references it "
                 f"(application '{entry.application}', role '{entry.role}')")
+
+    for (meta_path, index), occurrences in sorted(
+        grouped_occurrences.items(), key=lambda row: (str(row[0][0]), row[0][1])
+    ):
+        meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+        job = meta["jobs"][index]
+        progress = job.get("progress") or {}
+        reduced = _reduce_calendar_occurrences(
+            occurrences,
+            fallback=str(progress.get("state") or "unknown"),
+        )
+        if progress.get("state") != reduced:
+            findings.append(
+                f"{meta_path.parent.name} jobs[{index}]: aggregate progress.state "
+                f"'{progress.get('state')}' does not reduce from linked "
+                f"occurrences to '{reduced}' (run --sync-calendar)")
 
     if as_json:
         print(json.dumps({"calendar": str(path), "findings": findings}, indent=2))
@@ -1801,9 +1966,13 @@ def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
             continue
         meta_path, meta, _index, job = holders[0]
         progress = job.get("progress") if isinstance(job.get("progress"), dict) else {}
+        occurrence_progress = dict(progress)
+        occurrence_progress["state"] = entry.state
         upserts[item] = _entry_fields_for_progress(
-            entry, slug=meta_path.parent.name, job=job, progress=progress,
-            company=str(meta.get("company") or ""), meta_path=meta_path)
+            entry, slug=meta_path.parent.name, job=job,
+            progress=occurrence_progress,
+            company=str(meta.get("company") or ""), meta_path=meta_path,
+            calendar_item=item)
     for item in sorted(doc.entries):
         if item not in refs:
             errors.append(f"entry '{item}' is not referenced by application metadata")
@@ -1859,6 +2028,9 @@ def _sync_proposals(doc, refs):
     """
     proposals = []
     errors = []
+    final_fields: dict[str, dict] = {}
+    owners: dict[tuple[Path, int], tuple[dict, dict, str]] = {}
+    descriptions: dict[str, str] = {}
     for item, entry in sorted(doc.entries.items()):
         holders = refs.get(item)
         if not holders:
@@ -1872,56 +2044,100 @@ def _sync_proposals(doc, refs):
         meta_path, meta, index, job = holders[0]
         slug = meta_path.parent.name
         progress = dict(job.get("progress") or {})
-        meta_state = progress.get("state")
         company = str(meta.get("company") or "")
         fields = entry.fields()
         fields["_company"] = company
         fields["details"] = _details_reference(meta_path)
+        owners[(meta_path, index)] = (job, progress, slug)
 
-        if meta_state == "closed":
-            new_state = None  # never reopen a closed role from the calendar
+        if progress.get("state") == "closed":
+            fields["phase"] = progress.get("phase")
+            fields["state"] = "closed"  # never reopen a closed role here
+            if (entry.phase, entry.state) != (fields["phase"], fields["state"]):
+                descriptions[item] = (
+                    f"{slug} [{entry.role}]: re-render closed occurrence from "
+                    "canonical metadata")
         elif entry.cancel:
             fields = record_cancellation(fields)
             fields["_company"] = company
-            new_state = fields["state"]
-            description = (f"{slug} [{entry.role}]: cancellation recorded — "
-                           f"occurrence kept in history, state -> {new_state}")
+            fields["phase"] = progress.get("phase")
+            fields["details"] = _details_reference(meta_path)
+            descriptions[item] = (
+                f"{slug} [{entry.role}]: cancellation recorded — occurrence "
+                f"kept in history, occurrence state -> {fields['state']}")
         elif entry.reschedule_to:
             fields = record_reschedule(
                 fields, entry.reschedule_to, entry.reschedule_timezone)
             fields["_company"] = company
-            new_state = "scheduled"
-            description = (f"{slug} [{entry.role}]: confirmed reschedule to "
-                           f"{fields['starts_at']} {fields['timezone']} — old "
-                           "occurrence kept as superseded, state -> scheduled")
-        elif entry.checked and meta_state in CHECKED_BOX_TRANSITIONS:
-            new_state = CHECKED_BOX_TRANSITIONS[meta_state]
-            fields["state"] = new_state
-            description = (f"{slug} [{entry.role}]: checked box — state "
-                           f"{meta_state} -> {new_state}")
+            fields["phase"] = progress.get("phase")
+            fields["details"] = _details_reference(meta_path)
+            descriptions[item] = (
+                f"{slug} [{entry.role}]: confirmed reschedule to "
+                f"{fields['starts_at']} {fields['timezone']} — old occurrence "
+                "kept as superseded")
+        elif entry.checked and entry.state in CHECKED_BOX_TRANSITIONS:
+            new_state = CHECKED_BOX_TRANSITIONS[entry.state]
+            if entry.state == "scheduled":
+                fields = record_completion(fields)
+                fields["_company"] = company
+                fields["details"] = _details_reference(meta_path)
+            else:
+                fields["state"] = new_state
+            fields["phase"] = progress.get("phase")
+            descriptions[item] = (
+                f"{slug} [{entry.role}]: checked occurrence — state "
+                f"{entry.state} -> {new_state}")
         else:
-            new_state = None
-
-        if new_state is None:
-            # Drift repair only: re-render the marker from canonical meta.
-            if (entry.phase, entry.state) != (
-                progress.get("phase"), progress.get("state")
-            ):
+            if entry.phase != progress.get("phase"):
                 fields["phase"] = progress.get("phase")
-                fields["state"] = progress.get("state")
-                proposals.append((
-                    item, meta_path, index, None, fields,
-                    f"{slug} [{entry.role}]: re-render entry from meta progress "
-                    f"({progress.get('phase')}/{progress.get('state')})"))
-            continue
+                descriptions[item] = (
+                    f"{slug} [{entry.role}]: re-render occurrence phase from "
+                    f"meta progress ({progress.get('phase')})")
+        final_fields[item] = fields
 
-        new_progress = dict(progress)
-        new_progress["state"] = new_state
-        new_progress["phase"] = progress.get("phase")
-        new_progress["updated_at"] = _utc_now_stamp()
-        new_progress["source"] = {"kind": "manual", "ref": ""}
-        fields["phase"] = new_progress["phase"]
-        proposals.append((item, meta_path, index, new_progress, fields, description))
+    for (meta_path, index), (_job, progress, slug) in sorted(
+        owners.items(), key=lambda row: (str(row[0][0]), row[0][1])
+    ):
+        occurrence_ids = _progress_calendar_items(progress)
+        missing = [item for item in occurrence_ids if item not in final_fields]
+        if missing:
+            errors.append(
+                f"{slug} jobs[{index}] references missing occurrence(s): "
+                + ", ".join(missing))
+            continue
+        reduced = (
+            "closed"
+            if progress.get("state") == "closed"
+            else _reduce_calendar_occurrences(
+                [final_fields[item] for item in occurrence_ids],
+                fallback=str(progress.get("state") or "unknown"),
+            )
+        )
+        new_progress = None
+        if reduced != progress.get("state"):
+            new_progress = dict(progress)
+            new_progress["state"] = reduced
+            new_progress["phase"] = progress.get("phase")
+            new_progress["updated_at"] = _utc_now_stamp()
+            new_progress["source"] = {"kind": "manual", "ref": ""}
+
+        changed_items = [
+            item for item in occurrence_ids
+            if item in descriptions
+        ]
+        if new_progress is not None and not changed_items and occurrence_ids:
+            changed_items = [occurrence_ids[0]]
+            descriptions[occurrence_ids[0]] = (
+                f"{slug}: aggregate occurrence state -> {reduced}")
+        for position, item in enumerate(changed_items):
+            proposals.append((
+                item,
+                meta_path,
+                index,
+                new_progress if position == 0 else None,
+                final_fields[item],
+                descriptions[item],
+            ))
     return proposals, errors
 
 
@@ -2183,8 +2399,12 @@ def _progress_attention(apps: list[dict]) -> tuple[list[str], list[str]]:
             if state in PROGRESS_ACTION_STATES:
                 action.append(f"{who}: {state}{suffix}")
             elif state in PROGRESS_WAITING_STATES:
-                follow = follow_ups.get(
-                    str(progress.get("calendar_item") or ""), "")[:10]
+                linked_follow_ups = sorted(
+                    follow_ups[item]
+                    for item in _progress_calendar_items(progress)
+                    if item in follow_ups
+                )
+                follow = linked_follow_ups[0][:10] if linked_follow_ups else ""
                 if follow and follow < today:
                     overdue.append(f"{who}: {state}, follow-up was {follow}")
     return action, overdue
@@ -2771,6 +2991,13 @@ def main():
     parser.add_argument("--follow-up-at", default=None,
                         metavar="ISO_DATE_OR_TIME",
                         help="When to follow up if the current wait is unresolved.")
+    parser.add_argument("--calendar-item", default=None, metavar="CAL_ID",
+                        help="Target one linked occurrence when a role has more "
+                             "than one calendar item.")
+    parser.add_argument("--add-occurrence", action="store_true",
+                        help="Append a distinct confirmed occurrence to the "
+                             "role's calendar_items list; requires scheduled "
+                             "state, --starts-at, and --timezone.")
     parser.add_argument("--check-calendar", action="store_true",
                         help="Verify calendar.md (markers, duplicate ids, "
                              "scheduled time+timezone) and its cross-links with "
@@ -2809,7 +3036,7 @@ def main():
                              "Refuses when that key is not currently folded — a "
                              "row that carries a URL is addressed by its URL.")
     parser.add_argument("--enrich-metadata", metavar="SLUG_OR_PATH",
-                        help="Safely insert missing schema-v5 per-posting metadata "
+                        help="Safely insert missing current-schema per-posting metadata "
                              "(workplace, sponsorship, job level, YOE, salary).")
     parser.add_argument("--backfill-metadata", action="store_true",
                         help="Preview metadata enrichment across --statuses without "
@@ -2867,7 +3094,9 @@ def main():
                         email_ref=args.email_ref, action=args.action,
                         due_at=args.due_at, starts_at=args.starts_at,
                         ends_at=args.ends_at, timezone_name=args.timezone,
-                        follow_up_at=args.follow_up_at)
+                        follow_up_at=args.follow_up_at,
+                        calendar_item=args.calendar_item,
+                        add_occurrence=args.add_occurrence)
         return
 
     if args.check_calendar:

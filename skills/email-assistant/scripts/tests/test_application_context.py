@@ -52,7 +52,7 @@ jobs:
             app = root / "5_applied" / "example-corp-platform-engineer-20260720"
             (app / "source").mkdir(parents=True)
             (app / "meta.yaml").write_text(
-                f"""job_metadata_schema_version: 5
+                f"""job_metadata_schema_version: 6
 company: Example Corp
 recruiter_email: {recruiter}
 jobs:
@@ -89,7 +89,7 @@ jobs:
             app = root / "5_applied" / "unrelated-senior-engineer"
             app.mkdir(parents=True)
             (app / "meta.yaml").write_text(
-                "job_metadata_schema_version: 5\n"
+                "job_metadata_schema_version: 6\n"
                 "company: Unrelated Inc\n"
                 "jobs:\n"
                 "  - role: Senior Software Engineer\n"
@@ -108,7 +108,7 @@ jobs:
         app = root / "5_applied" / "short-company-backend-20260720"
         app.mkdir(parents=True)
         (app / "meta.yaml").write_text(
-            "job_metadata_schema_version: 5\n"
+            "job_metadata_schema_version: 6\n"
             f"company: {company}\n"
             "jobs:\n"
             "  - role: Backend Engineer\n"
@@ -147,7 +147,7 @@ jobs:
             app = root / "4_in_progress" / "north-star-labs-multi-role-20260710"
             app.mkdir(parents=True)
             (app / "meta.yaml").write_text(
-                f"""job_metadata_schema_version: 5
+                f"""job_metadata_schema_version: 6
 company: North Star Labs
 recruiter_email: {recruiter}
 jobs:
@@ -223,7 +223,7 @@ jobs:
             app = root / "not_a_status_folder" / "quirky-labs-role"
             app.mkdir(parents=True)
             (app / "meta.yaml").write_text(
-                f"""job_metadata_schema_version: 5
+                f"""job_metadata_schema_version: 6
 company: Quirky Labs
 recruiter_email: {recruiter}
 jobs:

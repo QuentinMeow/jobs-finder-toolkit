@@ -4,7 +4,8 @@
 human calendar and expanded transition coverage is recorded in
 [the calendar UX revision](ux-revision.md). This original design remains the
 record of the data-ownership and safety decisions; the ordered delivery plan
-is in [execution-plan.md](execution-plan.md).
+is in [execution-plan.md](execution-plan.md). Schema v6 extended the link on
+2026-08-01 so one role can reference several distinct interview occurrences.
 
 ## For the human reviewer
 
@@ -65,7 +66,7 @@ the same timestamp in three files would create drift.
 | --- | --- | --- |
 | Coarse application outcome | `jobs[].status` in `meta.yaml`; status folder remains its derived rollup | Preserves the current pipeline and folder commands |
 | Current hiring phase and workflow state | `jobs[].progress` in `meta.yaml` | Small, filterable, one summary per role |
-| Exact interview time, timezone, scheduling todo, and reschedule history | The entry in `calendar.md` referenced by `progress.calendar_item` | One owner-facing schedule file; old times remain auditable |
+| Exact interview time, timezone, scheduling todo, and reschedule history | Each entry in `calendar.md` referenced by the ordered `progress.calendar_items` list | One owner-facing schedule file; parallel blocks and old times remain auditable |
 | Narrative interview notes | The application's `notes.md` | Long-form preparation and outcomes do not belong in metadata |
 | Message evidence | Email store message key plus a minimal paraphrase; never a copied body | Keeps mailbox content private and re-verifiable |
 
@@ -74,15 +75,17 @@ defaults to `<applications_root>/0_profile/calendar.md`, which naturally
 resolves to the private overlay for a real configuration and to the
 fictional example tree for `config.example.yaml`.
 
-## 2. Application metadata v5
+## 2. Application metadata v6
 
-Schema v5 retains `jobs[].status` and the status-folder rollup exactly as
+Schema v6 retains `jobs[].status` and the status-folder rollup exactly as
 they work today. It replaces the ambiguous free-text-only stage with a
 structured `progress` summary; `label` preserves employer-specific wording
-without expanding enums whenever a company invents a new round name.
+without expanding enums whenever a company invents a new round name. The v6
+change replaces the scalar calendar link with an ordered list so one interview
+process can retain every distinct block.
 
 ```yaml
-job_metadata_schema_version: 5
+job_metadata_schema_version: 6
 jobs:
   - role: "Senior Software Engineer"
     status: in_progress
@@ -91,7 +94,9 @@ jobs:
       phase: technical_interview
       state: awaiting_schedule
       label: "Virtual technical screen"
-      calendar_item: "cal-examplecorp-01"
+      calendar_items:
+        - "cal-examplecorp-01"
+        - "cal-examplecorp-02"
       updated_at: "<ISO-8601 timestamp>"
       source:
         kind: email
@@ -149,6 +154,21 @@ tracker cannot tell whether the owner still needs to choose a time.
 `reschedule_required`, and `reschedule_pending` all roll up to the existing
 coarse `in_progress` status once the employer has engaged. Changing only
 phase or state never moves an application between status folders.
+
+### 2c. Multiple interview occurrences
+
+`calendar_items` is optional. When present it is an ordered, duplicate-free list
+of stable `cal-*` IDs. Order records evidence discovery/appending, while
+`calendar.md` sorts visible scheduled rows chronologically. One local item maps
+to one confirmed interview block or Outlook event: three panels across two days
+are three items, not two day buckets. An additional block appends a fresh ID; a
+reschedule keeps the same ID and writes the prior time to `superseded` history.
+
+Occurrence lifecycle is local to each calendar entry. Checking/completing one
+entry records `completed`; cancelling records `cancelled`. Aggregate
+`progress.state` is reduced across the full list: owner action wins, then any
+remaining scheduled occurrence keeps the role `scheduled`, and only completion
+of the final expected block advances it to `awaiting_result`.
 
 ## 3. The single calendar todo file
 
@@ -260,9 +280,10 @@ to apply the proposal.
 
 ## 6. Migration and compatibility
 
-The repository's no-backward-compatibility rule applies: when this ships,
-schema v5 becomes the only valid application metadata schema. Migration is
-deterministic and dry-run by default:
+The repository's no-backward-compatibility rule applies: schema v6 is now the
+only valid application metadata schema. The historical v4-to-v5 migration
+retains the phase/state mapping below; the v5-to-v6 migration is deterministic
+and dry-run by default:
 
 - `drafted` maps to `application_prep` plus `action_required`.
 - `applied` maps to `application_review` plus `waiting_employer`.
@@ -272,11 +293,14 @@ deterministic and dry-run by default:
 - `rejected` and `ignored` map to state `closed`, retaining any known phase.
 - No migration invents a calendar time, timezone, email source, or
   completion event.
+- Every scalar `calendar_item` becomes a singleton `calendar_items` list with
+  the exact same ID; roles without a link receive no synthetic empty list.
 
-The migration previews every change, preserves formatting, and refuses to
-write if any role cannot retain its existing facts. After the fleet is
-converted, the retired free-text `stage` key is rejected rather than read
-forever through a compatibility branch.
+The migration preflights every file before writing, previews every change,
+preserves formatting, and refuses to write if any role cannot retain its
+existing facts. After the fleet is converted, v5, the retired scalar link, and
+the free-text `stage` key are rejected rather than read forever through a
+compatibility branch.
 
 ## 7. Queries and pipeline health
 

@@ -1,4 +1,4 @@
-"""End-to-end tests for `status.py --update` / `--update-job` (schema v5).
+"""End-to-end tests for `status.py --update` / `--update-job` (schema v6).
 
 status.py resolves its applications root from config at import time, so each case
 runs it as a subprocess with JOBHUNT_CONFIG pointed at a throwaway config +
@@ -34,7 +34,7 @@ STATUS_DIRS = {
 
 
 def _progress(status: str) -> dict:
-    """A valid progress summary for the given coarse status (v5 coupling)."""
+    """A valid progress summary for the given coarse status (v6 coupling)."""
     if status == "drafted":
         return {"phase": "application_prep", "state": "action_required"}
     if status == "applied":
@@ -45,7 +45,7 @@ def _progress(status: str) -> dict:
 
 
 def _job(role: str, status: str, jd_file: str) -> dict:
-    """A fully valid schema-v5 posting (fictional data)."""
+    """A fully valid schema-v6 posting (fictional data)."""
     return {
         "role": role,
         "jd_file": jd_file,
@@ -73,7 +73,7 @@ class StatusTransitionTests(unittest.TestCase):
             """), encoding="utf-8")
 
     def _place(self, status_label: str, slug: str, jobs: list[dict],
-               *, version: int = 5) -> Path:
+               *, version: int = 6) -> Path:
         app = self.apps / STATUS_DIRS[status_label] / slug
         (app / "source").mkdir(parents=True)
         for job in jobs:
@@ -126,13 +126,13 @@ class StatusTransitionTests(unittest.TestCase):
             self.assertEqual(job["progress"]["phase"], "application_review")
             self.assertEqual(job["progress"]["state"], "waiting_employer")
 
-    def test_update_refuses_non_v5_meta_without_moving(self):
+    def test_update_refuses_non_v6_meta_without_moving(self):
         slug = "example-corp-legacy-20260720"
         self._place("drafted", slug,
                     [{"role": "Legacy", "jd_file": "JD-legacy.md"}], version=4)
         proc = self._run("--update", slug, "applied")
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("schema v5", proc.stderr)
+        self.assertIn("schema v6", proc.stderr)
         self.assertEqual(self._find(slug)[0], "drafted")  # not moved
 
     # -- --update-job ------------------------------------------------------ #

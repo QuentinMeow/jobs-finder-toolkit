@@ -34,7 +34,7 @@ from job_metadata import (  # noqa: E402
 
 
 def _valid_job(**overrides) -> dict:
-    """A schema-v5 jobs entry that passes validation, with optional overrides."""
+    """A schema-v6 jobs entry that passes validation, with optional overrides."""
     job = {
         "role": "Senior Engineer",
         "jd_file": "JD-senior-engineer.md",
@@ -1476,7 +1476,7 @@ class DeriveStatusTests(unittest.TestCase):
             derive_status([{"role": "no status here"}])
 
 
-class SchemaV5JobFieldTests(unittest.TestCase):
+class SchemaV6JobFieldTests(unittest.TestCase):
     def test_missing_status_is_rejected(self):
         job = _valid_job()
         del job["status"]
@@ -1498,7 +1498,7 @@ class SchemaV5JobFieldTests(unittest.TestCase):
     def test_retired_stage_key_is_rejected(self):
         errors = validate_meta(_valid_meta(jobs=[_valid_job(stage="onsite")]))
         self.assertTrue(any(
-            "jobs[0].stage was removed in schema v5" in error for error in errors))
+            "jobs[0].stage was removed in schema v6" in error for error in errors))
 
     def test_bad_status_date_format_is_rejected(self):
         errors = validate_meta(_valid_meta(jobs=[_valid_job(status_date="07/20/2026")]))
@@ -1748,15 +1748,15 @@ class ProgressValidationTests(unittest.TestCase):
             "source": {"kind": "manual", "ref": ""}})
         self.assertEqual(ok, [])
 
-    def test_calendar_item_pattern_and_unknown_keys_are_gated(self):
+    def test_calendar_items_pattern_uniqueness_and_unknown_keys_are_gated(self):
         errors = self._errors(progress={
             "phase": "technical_interview", "state": "awaiting_schedule",
-            "calendar_item": "CAL 7!", "surprise": True})
-        self.assertTrue(any("calendar_item must be" in e for e in errors))
+            "calendar_items": ["CAL 7!"], "surprise": True})
+        self.assertTrue(any("calendar_items[0] must be" in e for e in errors))
         self.assertTrue(any("unknown key(s): surprise" in e for e in errors))
         ok = self._errors(progress={
             "phase": "technical_interview", "state": "awaiting_schedule",
-            "calendar_item": "cal-acme-senior-engineer-01",
+            "calendar_items": ["cal-acme-senior-engineer-01"],
             "updated_at": "2026-07-22T10:00:00Z"})
         self.assertEqual(ok, [])
 
@@ -1817,12 +1817,14 @@ class ProgressMappingTests(unittest.TestCase):
     def test_default_progress_for_status_transitions(self):
         from job_metadata import default_progress_for_status
         current = {"phase": "technical_interview", "state": "scheduled",
-                   "label": "Virtual screen", "calendar_item": "cal-acme-01"}
+                   "label": "Virtual screen",
+                   "calendar_items": ["cal-acme-01", "cal-acme-02"]}
         # Closing keeps phase + label + calendar link, state -> closed.
         self.assertEqual(
             default_progress_for_status("rejected", current=current),
             {"phase": "technical_interview", "state": "closed",
-             "label": "Virtual screen", "calendar_item": "cal-acme-01"})
+             "label": "Virtual screen",
+             "calendar_items": ["cal-acme-01", "cal-acme-02"]})
         # Reopening to in_progress never resurrects 'closed' — state unknown.
         closed = {"phase": "offer", "state": "closed"}
         self.assertEqual(
@@ -1832,7 +1834,8 @@ class ProgressMappingTests(unittest.TestCase):
         self.assertEqual(
             default_progress_for_status("in_progress", current=current),
             {"phase": "technical_interview", "state": "scheduled",
-             "label": "Virtual screen", "calendar_item": "cal-acme-01"})
+             "label": "Virtual screen",
+             "calendar_items": ["cal-acme-01", "cal-acme-02"]})
         # A known employer wait also survives; the status change alone should
         # not erase who owns the next action.
         self.assertEqual(
@@ -1845,7 +1848,7 @@ class ProgressMappingTests(unittest.TestCase):
         self.assertEqual(
             default_progress_for_status("drafted", current=current),
             {"phase": "application_prep", "state": "action_required",
-             "calendar_item": "cal-acme-01"})
+             "calendar_items": ["cal-acme-01", "cal-acme-02"]})
         self.assertEqual(
             default_progress_for_status("applied", current={}),
             {"phase": "application_review", "state": "waiting_employer"})

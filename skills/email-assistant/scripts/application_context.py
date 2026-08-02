@@ -106,7 +106,7 @@ def _records(applications_root: Path):
         roles = tuple(str(job.get("role", "")).strip() for job in jobs)
         if not roles and meta.get("role"):
             roles = (str(meta["role"]).strip(),)
-        # Per-job view for schema v5 (status + structured progress live on each
+        # Per-job view for schema v6 (status + structured progress live on each
         # job entry). Older files simply lack the keys — degrade to null, never
         # crash.
         job_views = tuple(

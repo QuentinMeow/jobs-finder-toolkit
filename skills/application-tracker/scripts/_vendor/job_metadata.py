@@ -1,4 +1,4 @@
-"""Pure helpers for structured, human-readable job metadata (schema v5).
+"""Pure helpers for structured, human-readable job metadata (schema v6).
 
 An application ``meta.yaml`` is something a person reads to decide "what is this
 posting and should I apply?". The per-posting facts are deliberately flat and
@@ -66,9 +66,10 @@ POSTING_METADATA_FIELDS = (
     "sponsorship",
     *METADATA_FIELDS,
 )
-APPLICATION_SCHEMA_VERSION = 5
+APPLICATION_SCHEMA_VERSION = 6
+LEGACY_APPLICATION_SCHEMA_VERSION = 5
 
-# Canonical schema-v5 keys for one ``jobs:`` record. Unknown scalar keys remain
+# Canonical schema-v6 keys for one ``jobs:`` record. Unknown scalar keys remain
 # tolerated for older local annotations, but unknown mappings/lists are rejected:
 # structured extensions are otherwise easy to mistake for supported schema.
 JOB_SCHEMA_FIELDS = frozenset({
@@ -129,7 +130,7 @@ def derive_status(jobs: list[dict]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Structured per-job progress (schema v5). ``jobs[].progress`` replaces the
+# Structured per-job progress (schema v6). ``jobs[].progress`` replaces the
 # retired free-text ``stage`` with a normalized {phase, state} summary; ``label``
 # preserves employer-specific wording without expanding the enums.
 # ---------------------------------------------------------------------------
@@ -247,13 +248,14 @@ def default_progress_for_status(status: str, *, current: dict | None = None) -> 
     application_review + waiting_employer; ``rejected``/``ignored`` keep the
     last known phase with state ``closed``; ``in_progress`` keeps the current
     phase (and any still-valid active state) but NEVER guesses — an unknown or
-    closed prior state becomes ``unknown``. ``label``/``calendar_item`` from the
+    closed prior state becomes ``unknown``. ``label``/``calendar_items`` from the
     current progress are preserved except on the drafted/applied resets.
     """
     current = current if isinstance(current, dict) else {}
-    keep_calendar = {
-        key: current[key] for key in ("calendar_item",) if current.get(key)
-    }
+    keep_calendar: dict[str, list] = {}
+    calendar_items = current.get("calendar_items")
+    if isinstance(calendar_items, list):
+        keep_calendar["calendar_items"] = list(calendar_items)
     if status == "drafted":
         return {"phase": "application_prep", "state": "action_required", **keep_calendar}
     if status == "applied":
@@ -2005,7 +2007,7 @@ def classify_sponsorship(text: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Application meta.yaml layer (the flat, human-facing schema v5).
+# Application meta.yaml layer (the flat, human-facing schema v6).
 # ---------------------------------------------------------------------------
 def _google_range(normalized: str, level_entry: dict | None) -> tuple[float | None, float | None]:
     if isinstance(level_entry, dict):
@@ -2034,7 +2036,7 @@ def _salary_envelope(fact: dict) -> tuple[int | float | None, int | float | None
     resolve from the JD, instead of a band the posting does not contain.
 
     The unit is part of the value. ``salary_range`` is defined as posted pay in
-    USD/**year** (``METADATA_FIELDS`` / the schema-v5 ``meta.yaml`` field), so a
+    USD/**year** (``METADATA_FIELDS`` / the schema-v6 ``meta.yaml`` field), so a
     band stated for any other period is not a value this field can carry, and the
     only correct answer is REFUSAL — not the hourly number, and not an annualised
     one. Annualising would have to invent an hours-per-year figure the posting
@@ -2226,7 +2228,8 @@ def metadata_field_gaps(record: dict, metadata: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Validation (schema v5 is strict; there is no legacy/compat path).
+# Validation (schema v6 is strict; legacy v5 validation exists only for the
+# checksum-guarded v5 -> v6 migration planner).
 # ---------------------------------------------------------------------------
 _STATUS_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 def _validate_numeric_range(
@@ -2309,11 +2312,18 @@ _ISO_TIMESTAMP_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)?$")
 
 
-def _validate_progress(value: Any, status: Any, path: str) -> list[str]:
-    """Validate the required per-job ``progress`` summary (schema v5).
+def _validate_progress(
+    value: Any,
+    status: Any,
+    path: str,
+    *,
+    schema_version: int = APPLICATION_SCHEMA_VERSION,
+) -> list[str]:
+    """Validate the required per-job ``progress`` summary.
 
     ``phase``/``state`` are enum-gated; phase ``other`` requires a non-empty
-    ``label``; ``calendar_item`` must look like a calendar entry id;
+    ``calendar_items`` is an ordered list of unique calendar entry ids in v6;
+    legacy v5 accepts the retired scalar ``calendar_item`` only for migration;
     ``updated_at`` (tool-stamped, never invented) must be ISO-8601;
     ``source.kind`` is manual|email and an email source requires a ``ref``
     (the neutral stored message key). The workflow state must agree with the
@@ -2321,7 +2331,10 @@ def _validate_progress(value: Any, status: Any, path: str) -> list[str]:
     are never ``closed``.
     """
     if not isinstance(value, dict):
-        return [f"{path} is required and must be a mapping (schema v5)"]
+        return [
+            f"{path} is required and must be a mapping "
+            f"(schema v{schema_version})"
+        ]
     errors: list[str] = []
     phase = value.get("phase")
     if phase not in PROGRESS_PHASES:
@@ -2334,12 +2347,45 @@ def _validate_progress(value: Any, status: Any, path: str) -> list[str]:
         errors.append(f"{path}.label must be a string")
     if phase == "other" and not str(label or "").strip():
         errors.append(f"{path}.label is required when phase is 'other'")
-    calendar_item = value.get("calendar_item")
-    if calendar_item not in (None, ""):
-        if not isinstance(calendar_item, str) or not CALENDAR_ITEM_RE.match(calendar_item):
+    calendar_keys: tuple[str, ...]
+    if schema_version == LEGACY_APPLICATION_SCHEMA_VERSION:
+        calendar_keys = ("calendar_item",)
+        calendar_item = value.get("calendar_item")
+        if calendar_item not in (None, ""):
+            if (
+                not isinstance(calendar_item, str)
+                or not CALENDAR_ITEM_RE.match(calendar_item)
+            ):
+                errors.append(
+                    f"{path}.calendar_item must be a calendar entry id "
+                    "(cal-<lowercase-slug>)")
+    else:
+        calendar_keys = ("calendar_items",)
+        if "calendar_item" in value:
             errors.append(
-                f"{path}.calendar_item must be a calendar entry id "
-                "(cal-<lowercase-slug>)")
+                f"{path}.calendar_item is not allowed in schema v6; use the "
+                "ordered calendar_items list (migrate_to_v6.py)")
+        calendar_items = value.get("calendar_items")
+        if calendar_items is not None:
+            if not isinstance(calendar_items, list):
+                errors.append(f"{path}.calendar_items must be a list")
+            else:
+                seen_calendar_items: set[str] = set()
+                for index, calendar_id in enumerate(calendar_items):
+                    item_path = f"{path}.calendar_items[{index}]"
+                    if (
+                        not isinstance(calendar_id, str)
+                        or not CALENDAR_ITEM_RE.match(calendar_id)
+                    ):
+                        errors.append(
+                            f"{item_path} must be a calendar entry id "
+                            "(cal-<lowercase-slug>)")
+                        continue
+                    if calendar_id in seen_calendar_items:
+                        errors.append(
+                            f"{item_path} duplicates calendar entry id "
+                            f"{calendar_id!r}")
+                    seen_calendar_items.add(calendar_id)
     updated_at = value.get("updated_at")
     if updated_at not in (None, ""):
         if not isinstance(updated_at, str) or not _ISO_TIMESTAMP_RE.match(updated_at):
@@ -2361,9 +2407,13 @@ def _validate_progress(value: Any, status: Any, path: str) -> list[str]:
                 errors.append(
                     f"{path}.source.ref is required for an email source "
                     "(the neutral stored message key)")
-    unknown = [key for key in value
-               if key not in ("phase", "state", "label", "calendar_item",
-                              "updated_at", "source")]
+    unknown = [
+        key for key in value
+        if key not in ("phase", "state", "label", *calendar_keys,
+                       "updated_at", "source")
+        and not (schema_version == APPLICATION_SCHEMA_VERSION
+                 and key == "calendar_item")
+    ]
     if unknown:
         errors.append(f"{path} has unknown key(s): {', '.join(sorted(unknown))}")
     # Coarse-status coupling: closed <=> rejected/ignored.
@@ -2431,14 +2481,19 @@ def _validate_salary_range(value: Any, lead: str) -> list[str]:
     return errors
 
 
-def validate_job_metadata(record: dict, *, prefix: str = "") -> list[str]:
+def validate_job_metadata(
+    record: dict,
+    *,
+    prefix: str = "",
+    schema_version: int = APPLICATION_SCHEMA_VERSION,
+) -> list[str]:
     """Validate the per-posting metadata of one ``jobs`` entry."""
     lead = f"{prefix}." if prefix else ""
     errors: list[str] = []
     if UNSUPPORTED_COMPENSATION_FIELD in record:
         errors.append(
             f"{lead}{UNSUPPORTED_COMPENSATION_FIELD} is not supported in "
-            "schema v5; use salary_range for posted base salary and "
+            f"schema v{schema_version}; use salary_range for posted base salary and "
             "company-scope comp_notes for other compensation details"
         )
     unknown_structured = sorted(
@@ -2465,10 +2520,11 @@ def validate_job_metadata(record: dict, *, prefix: str = "") -> list[str]:
     errors.extend(_validate_status(record.get("status"), f"{lead}status"))
     if "stage" in record:
         errors.append(
-            f"{lead}stage was removed in schema v5 — migrate it to the "
+            f"{lead}stage was removed in schema v{schema_version} — migrate it to the "
             f"structured {lead}progress summary (migrate_to_v5.py)")
     errors.extend(_validate_progress(
-        record.get("progress"), record.get("status"), f"{lead}progress"))
+        record.get("progress"), record.get("status"), f"{lead}progress",
+        schema_version=schema_version))
     errors.extend(_validate_status_date(record.get("status_date"), f"{lead}status_date"))
     errors.extend(_validate_store_key(record.get("store_key"), f"{lead}store_key"))
     if "company_key" in record:
@@ -2597,12 +2653,17 @@ def _role_label_key(role: str) -> str:
     return "_".join(re.sub(r"[^0-9A-Za-z]+", " ", str(role)).split()).casefold()
 
 
-def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]:
-    """Validate schema-v5 application metadata (a uniform ``jobs`` list).
+def _validate_meta_for_schema(
+    meta: dict,
+    *,
+    schema_version: int,
+    app_dir: str | Path | None = None,
+) -> list[str]:
+    """Validate one explicitly selected application metadata schema.
 
     Each ``jobs`` entry carries a required per-job ``status`` (one of
     ``STATUS_VALUES``) and a required structured ``progress`` summary
-    ({phase, state, label?, calendar_item?, updated_at?, source?}); the retired
+    ({phase, state, label?, calendar_items?, updated_at?, source?} in v6); the retired
     free-text ``stage`` key (per-job or top-level) is rejected. When ``app_dir``
     sits inside a known status folder, the folder label must equal
     ``derive_status(jobs)`` — a manual folder move that skipped the CLI is
@@ -2612,10 +2673,10 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
     if (
         isinstance(version, bool)
         or not isinstance(version, int)
-        or version != APPLICATION_SCHEMA_VERSION
+        or version != schema_version
     ):
         return [
-            f"job_metadata_schema_version must be {APPLICATION_SCHEMA_VERSION}"
+            f"job_metadata_schema_version must be {schema_version}"
         ]
 
     errors: list[str] = []
@@ -2627,16 +2688,18 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
     errors.extend(_validate_company_key(meta.get("company_key")))
     if "stage" in meta:
         errors.append(
-            "top-level stage is not allowed in schema v5 (stage was replaced by "
+            f"top-level stage is not allowed in schema v{schema_version} "
+            "(stage was replaced by "
             "per-job progress)")
     if "status" in meta:
         errors.append(
-            "top-level status is not allowed in schema v5 (status is per-job, "
+            f"top-level status is not allowed in schema v{schema_version} "
+            "(status is per-job, "
             "under jobs:)")
     if UNSUPPORTED_COMPENSATION_FIELD in meta:
         errors.append(
             f"top-level {UNSUPPORTED_COMPENSATION_FIELD} is not supported in "
-            "schema v5; use jobs[].salary_range for posted base salary and "
+            f"schema v{schema_version}; use jobs[].salary_range for posted base salary and "
             "comp_notes for other compensation details"
         )
 
@@ -2667,7 +2730,8 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
                 seen_role_labels[label] = role
         if not str(job.get("jd_file") or "").strip():
             errors.append(f"jobs[{index}].jd_file is required")
-        errors.extend(validate_job_metadata(job, prefix=f"jobs[{index}]"))
+        errors.extend(validate_job_metadata(
+            job, prefix=f"jobs[{index}]", schema_version=schema_version))
 
     if app_dir is not None:
         errors.extend(validate_jd_file_associations(meta, app_dir))
@@ -2687,3 +2751,20 @@ def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]
                     f"`status.py --update <slug> {derived}` or `status.py --update-job`"
                 )
     return errors
+
+
+def validate_meta(meta: dict, *, app_dir: str | Path | None = None) -> list[str]:
+    """Validate the current schema-v6 application metadata contract."""
+    return _validate_meta_for_schema(
+        meta, schema_version=APPLICATION_SCHEMA_VERSION, app_dir=app_dir)
+
+
+def validate_legacy_v5_meta(meta: dict) -> list[str]:
+    """Validate v5 input immediately before a checksum-guarded v6 migration.
+
+    This intentionally has no application-directory mode and is not a runtime
+    compatibility path: normal readers and writers call :func:`validate_meta`,
+    which accepts only the current schema.
+    """
+    return _validate_meta_for_schema(
+        meta, schema_version=LEGACY_APPLICATION_SCHEMA_VERSION)

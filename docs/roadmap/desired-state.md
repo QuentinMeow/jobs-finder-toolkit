@@ -19,7 +19,7 @@
    zero-mismatch store-vs-live runs **and** ≥300 job-related messages through
    both paths), for which no comparison-run record exists anywhere yet.
 2. **Structured progress + calendar as first-class tracker state**
-   (meta.yaml schema v5, `calendar.md`, `status.py --update-progress` /
+   (meta.yaml schema v6 with multi-occurrence calendar links, `calendar.md`, `status.py --update-progress` /
    `--sync-calendar`) without changing the coarse status-folder pipeline.
 3. **Raw-data-layer store as the single job-postings substrate**
    (`docs/designs/raw-data-layer/execution-plan.md`): remaining work is the

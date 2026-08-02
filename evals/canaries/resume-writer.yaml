@@ -161,7 +161,7 @@ canaries:
       any folder — the run must decide the folder layout. No private overlay/identity.
     expected_behavior:
       - "Runs Preflight, then creates ONE application folder for Example Corp (the one-folder-per-company default) — NOT one folder per role — because the two roles share a coherent platform/infra theme."
-      - "meta.yaml is a schema-v5 jobs: list with TWO entries (one per posting), each with its own jd_file (one source/JD-<title>.md per posting); JDs are never paired by index/sorted filename."
+      - "meta.yaml is a schema-v6 jobs: list with TWO entries (one per posting), each with its own jd_file (one source/JD-<title>.md per posting); JDs are never paired by index/sorted filename."
       - "Produces exactly ONE tailored resume (DOCX in source/ + PDF at root) covering the folder, tailored to the shared theme across both JDs."
       - "Produces one bundled '..._Application_<job title>.txt' AND one '..._Cover_Letter_<job title>.pdf' PER role (two of each), each individually researched for its own role — never one shared/boilerplate letter."
       - "Categorizes any new JD skills across the union of BOTH JDs in one batched Step 7 interaction."

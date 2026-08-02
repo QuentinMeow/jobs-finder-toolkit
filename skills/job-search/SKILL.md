@@ -234,11 +234,11 @@ silently after the fact. The gate classifies **each posting on its own**: a fold
 US and one foreign posting is not "OK".
 
 It creates `applications/6_drafted/<slug>/`, saves one `source/JD-<job title>.md` per posting
-**verbatim** (via `fetch_jd`), and writes a schema-v5 `meta.yaml` carrying each posting's
+**verbatim** (via `fetch_jd`), and writes a schema-v6 `meta.yaml` carrying each posting's
 `status: "drafted"` (with its drafted `progress` summary), `location`, `url`, `posted_date`,
 `workplace`, `sponsorship`, `job_level`, `required_yoe`, and `salary_range` — so nothing is
 hand-transcribed (refuses to overwrite an existing folder). `meta.yaml` is always
-`job_metadata_schema_version: 5` with a uniform **`jobs:` list — one entry per posting** (a grouped
+`job_metadata_schema_version: 6` with a uniform **`jobs:` list — one entry per posting** (a grouped
 company folder has several entries; a single-role folder has one), each created `status: "drafted"`
 and carrying an exact `jd_file`; never pair roles and JDs by index or sorted filename. If
 `handoff.py` reports gaps, run
@@ -322,7 +322,7 @@ An ordinary search stops above. Reach for `reference.md` only for these:
 | `scripts/search_jobs.py` | Main pipeline (two-stage fetch → filter → score → rank → output); `--stage`, `--ai-native-only`, `--no-jobspy`, `--max-per-company`, `--top-k`, `--max-age-days`, `--visa-policy`, `--refilter latest`, `--print-full` |
 | `scripts/company_roles.py` | Re-check ONE company's live board with a location-policy verdict (single-company re-search + JD dump) |
 | `scripts/fetch_jd.py` | Fetch one posting page and save its readable text **verbatim** (`<URL> --out <path>`; no summarization) |
-| `scripts/handoff.py` | Scaffold application folder(s) from selected search rows (`--json <search.json> --select <"rank N"\|"rank N,M"\|"Company"\|"Company/Title">` or `--all`): **one folder per company by default** (multi-role `jobs:` list, one JD + cover letter per posting; `--split` forces one-per-posting for divergent roles) + verbatim JD (via `fetch_jd`) + schema-v5 `meta.yaml` (each posting `status: "drafted"`); validates before exit, refuses to overwrite; appends every created posting to `applications-log.jsonl` last, so the skip survives deleting the folder |
+| `scripts/handoff.py` | Scaffold application folder(s) from selected search rows (`--json <search.json> --select <"rank N"\|"rank N,M"\|"Company"\|"Company/Title">` or `--all`): **one folder per company by default** (multi-role `jobs:` list, one JD + cover letter per posting; `--split` forces one-per-posting for divergent roles) + verbatim JD (via `fetch_jd`) + schema-v6 `meta.yaml` (each posting `status: "drafted"`); validates before exit, refuses to overwrite; appends every created posting to `applications-log.jsonl` last, so the skip survives deleting the folder |
 | `scripts/validate_companies.py` | Check that company tokens still resolve (skips identity-only rows) |
 | `scripts/validate_filter_variants.py` | Check the deterministic corpus and strictly audit a private pre-filter snapshot; exits nonzero with label stubs for new/conflicting high-stakes variants |
 | `filter_variants/corpus.yaml` | Public-safe fictional regressions for location/workplace, sponsorship, title/seniority, and required YOE |

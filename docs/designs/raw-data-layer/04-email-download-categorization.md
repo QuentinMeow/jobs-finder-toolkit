@@ -255,8 +255,8 @@ about this application" — the question you'll ask under stress, right after
 a rejection lands — is one file read, not a grep across the whole message
 index. Application slugs join applications↔messages; posting store keys
 join messages↔postings.
-When scheduling reconciliation lands, `jobs[].progress.calendar_item`
-adds the role↔calendar link without duplicating exact times in
+Scheduling reconciliation uses the ordered `jobs[].progress.calendar_items`
+list for role↔occurrence links without duplicating exact times in
 `meta.yaml`.
 
 ## 4. Reply-state and queues

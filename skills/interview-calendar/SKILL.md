@@ -84,14 +84,17 @@ temporarily unavailable. A repeated run must search first and converge without c
   email-assistant protocol. Preserve hand-written content, deduplicate people, and update an
   existing message entry instead of appending it again.
 - Put exact interview time and reschedule history in the tracker's marked local calendar entry;
-  link it from `jobs[].progress.calendar_item`. Do not duplicate timestamps into free-text metadata.
+  link each distinct occurrence from the ordered `jobs[].progress.calendar_items` list. Multiple
+  blocks for one role—including several on the same day—remain separate entries. Do not duplicate
+  timestamps into free-text metadata.
 
 Map evidence conservatively:
 
 - Proposed availability, an uncompleted booking link, or “we will schedule” -> no Outlook event;
   record `booking_required` or `awaiting_schedule` and an open note/calendar todo.
 - Explicit confirmed start, timezone, and duration/end -> `scheduled`; eligible for Outlook
-  reconciliation.
+  reconciliation. Append a new occurrence for an additional confirmed block; never classify a
+  parallel block as a reschedule merely because another time is already linked.
 - Explicit reschedule with a confirmed replacement -> append local history and reconcile the
   replacement. Preserve the old local occurrence as superseded.
 - Cancellation without a replacement -> record the cancelled occurrence; never infer rejection.

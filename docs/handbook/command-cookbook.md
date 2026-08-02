@@ -29,15 +29,17 @@ example config) — substitute the resolved path, never a literal folder at the 
 # Show all applications and their status (status = which folder each app lives in)
 .venv/bin/python skills/application-tracker/scripts/status.py
 
-# Populate/validate schema-v5 level, required YOE, salary + approximate Google-equiv from JD + cache.
+# Populate/validate schema-v6 level, required YOE, salary + approximate Google-equiv from JD + cache.
 .venv/bin/python skills/application-tracker/scripts/status.py --enrich-metadata applications/6_drafted/<slug>/
-# Fleet preview: dry-run, covers ALL status folders (strict schema v5). Use --statuses <labels> to
+# Fleet preview: dry-run, covers ALL status folders (strict schema v6). Use --statuses <labels> to
 # narrow to a set; add --write only after reviewing the dry-run preview.
 .venv/bin/python skills/application-tracker/scripts/backfill_job_metadata.py
 # Validate structured metadata — ALL status folders by default; --statuses <labels> to narrow.
 .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata
 # Migrate v4 meta.yaml files to schema v5 (fleet dry-run diff; --write applies atomically)
 .venv/bin/python skills/application-tracker/scripts/migrate_to_v5.py
+# Migrate v5 scalar calendar links to schema v6 ordered lists (fleet dry-run; all files preflight before --write)
+.venv/bin/python skills/application-tracker/scripts/migrate_to_v6.py
 
 # Import user-supplied/licensed company-level facts (YAML/JSON/CSV; dry-run by default)
 .venv/bin/python automation/company-levels/import_company_levels.py INPUT <company-levels.yaml>

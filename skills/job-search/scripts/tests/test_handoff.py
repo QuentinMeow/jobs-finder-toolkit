@@ -213,10 +213,10 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(job["required_yoe"]["min"], 5)
         self.assertEqual(job["salary_range"]["max"], 230000)
 
-    def test_scaffold_emits_schema_v5_and_status_drafted(self):
+    def test_scaffold_emits_schema_v6_and_status_drafted(self):
         _code, folder, _out, _err = self._run([_row(url=self.jd_url)], "rank 1")
         meta = yaml.safe_load((folder / "meta.yaml").read_text())
-        self.assertEqual(meta["job_metadata_schema_version"], 5)
+        self.assertEqual(meta["job_metadata_schema_version"], 6)
         # Handoff always creates a fresh DRAFTED application with the
         # deterministic drafted progress summary.
         self.assertEqual(meta["jobs"][0]["status"], "drafted")
@@ -1141,7 +1141,7 @@ class PostingIdentityTests(unittest.TestCase):
             "progress": {"phase": "application_prep", "state": "action_required"},
         }
         meta = {
-            "job_metadata_schema_version": 5,
+            "job_metadata_schema_version": 6,
             "company": "Nimbus Robotics",
             "jobs": [dict(job), dict(job, jd_file="JD-software-engineer-2.md")],
         }

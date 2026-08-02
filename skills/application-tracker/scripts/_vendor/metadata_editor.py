@@ -1,4 +1,4 @@
-"""Formatting-preserving edits for schema-v5 application job metadata."""
+"""Formatting-preserving edits for schema-v6 application job metadata."""
 
 from __future__ import annotations
 
@@ -17,18 +17,22 @@ from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 try:
     from .job_metadata import (
         APPLICATION_SCHEMA_VERSION,
+        LEGACY_APPLICATION_SCHEMA_VERSION,
         POSTING_METADATA_FIELDS,
         metadata_field_gaps,
         migrate_job_progress,
         validate_meta,
+        validate_legacy_v5_meta,
     )
 except ImportError:  # Direct script/shared import used by the existing CLI tools.
     from job_metadata import (
         APPLICATION_SCHEMA_VERSION,
+        LEGACY_APPLICATION_SCHEMA_VERSION,
         POSTING_METADATA_FIELDS,
         metadata_field_gaps,
         migrate_job_progress,
         validate_meta,
+        validate_legacy_v5_meta,
     )
 
 RecordPath = tuple[str | int, ...]
@@ -770,10 +774,10 @@ def plan_v4_to_v5_migration(raw: bytes) -> MetadataEditPlan:
             ["metadata document must be a top-level YAML mapping"])
 
     version = document.get("job_metadata_schema_version")
-    if version == APPLICATION_SCHEMA_VERSION:
+    if version == LEGACY_APPLICATION_SCHEMA_VERSION:
         return _error_plan(
             raw, before_sha256,
-            [f"already schema v{APPLICATION_SCHEMA_VERSION}; nothing to migrate"])
+            [f"already schema v{LEGACY_APPLICATION_SCHEMA_VERSION}; nothing to migrate"])
     if isinstance(version, bool) or version != 4:
         return _error_plan(
             raw, before_sha256,
@@ -789,7 +793,7 @@ def plan_v4_to_v5_migration(raw: bytes) -> MetadataEditPlan:
     edits: list[_Edit] = []
     changed_paths: list[FieldPath] = [("job_metadata_schema_version",)]
     expected_document = copy.deepcopy(document)
-    expected_document["job_metadata_schema_version"] = APPLICATION_SCHEMA_VERSION
+    expected_document["job_metadata_schema_version"] = LEGACY_APPLICATION_SCHEMA_VERSION
 
     version_key_node, version_value_node = root_items["job_metadata_schema_version"]
     if not isinstance(version_value_node, ScalarNode) or (
@@ -803,7 +807,7 @@ def plan_v4_to_v5_migration(raw: bytes) -> MetadataEditPlan:
         _Edit(
             version_value_node.start_mark.index,
             version_value_node.end_mark.index,
-            str(APPLICATION_SCHEMA_VERSION),
+            str(LEGACY_APPLICATION_SCHEMA_VERSION),
         )
     )
 
@@ -887,6 +891,181 @@ def plan_v4_to_v5_migration(raw: bytes) -> MetadataEditPlan:
             raw, before_sha256,
             ["planned migration changed values outside the version, stage, and "
              "progress fields"])
+
+    validation_errors = validate_legacy_v5_meta(output_document)
+    if validation_errors:
+        return _error_plan(
+            raw, before_sha256,
+            [f"planned output validation failed: {error}"
+             for error in validation_errors])
+
+    return MetadataEditPlan(
+        before_sha256=before_sha256,
+        output_bytes=output_bytes,
+        changed_field_paths=tuple(changed_paths),
+        errors=(),
+        changed=output_bytes != raw,
+    )
+
+
+def plan_v5_to_v6_migration(raw: bytes) -> MetadataEditPlan:
+    """Plan a formatting-preserving, deterministic v5 -> v6 migration.
+
+    The version scalar is rewritten from ``5`` to ``6``. Each present legacy
+    ``jobs[].progress.calendar_item`` scalar becomes a one-element ordered
+    ``calendar_items`` list; an explicitly empty legacy placeholder becomes an
+    empty list; and progress mappings without the legacy key remain untouched.
+    No calendar reference is reordered, synthesized, or removed.
+
+    The planner validates the complete v5 input, applies only checksum-bound
+    scalar edits, reparses the result, compares it with an independently built
+    expected document, and validates the complete v6 output. Any problem fails
+    closed with the original bytes.
+    """
+    before_sha256 = hashlib.sha256(raw).hexdigest()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return _error_plan(
+            raw, before_sha256, [f"metadata is not valid UTF-8: {exc}"])
+
+    try:
+        document = yaml.safe_load(text)
+        root_node = yaml.compose(text)
+    except yaml.YAMLError as exc:
+        return _error_plan(raw, before_sha256, [f"invalid YAML: {exc}"])
+
+    if not isinstance(document, dict) or not isinstance(root_node, MappingNode):
+        return _error_plan(
+            raw, before_sha256,
+            ["metadata document must be a top-level YAML mapping"])
+
+    version = document.get("job_metadata_schema_version")
+    if version == APPLICATION_SCHEMA_VERSION:
+        return _error_plan(
+            raw, before_sha256,
+            [f"already schema v{APPLICATION_SCHEMA_VERSION}; nothing to migrate"])
+    if isinstance(version, bool) or version != LEGACY_APPLICATION_SCHEMA_VERSION:
+        return _error_plan(
+            raw, before_sha256,
+            [f"only schema v5 can be migrated to v6; found {version!r}"])
+
+    input_errors = validate_legacy_v5_meta(document)
+    if input_errors:
+        return _error_plan(
+            raw, before_sha256,
+            [f"schema v5 input validation failed: {error}" for error in input_errors])
+
+    root_items, errors = _mapping_nodes(root_node, path=())
+    records, record_errors = _posting_records(document, root_node, root_items)
+    errors.extend(record_errors)
+    if errors:
+        return _error_plan(raw, before_sha256, errors)
+
+    edits: list[_Edit] = []
+    changed_paths: list[FieldPath] = [("job_metadata_schema_version",)]
+    expected_document = copy.deepcopy(document)
+    expected_document["job_metadata_schema_version"] = APPLICATION_SCHEMA_VERSION
+
+    version_key_node, version_value_node = root_items["job_metadata_schema_version"]
+    if not isinstance(version_value_node, ScalarNode) or (
+        version_value_node.start_mark.index < version_key_node.end_mark.index
+    ):
+        return _error_plan(
+            raw, before_sha256,
+            ["job_metadata_schema_version is not a plain scalar; "
+             "manual migration is required"])
+    edits.append(_Edit(
+        version_value_node.start_mark.index,
+        version_value_node.end_mark.index,
+        str(APPLICATION_SCHEMA_VERSION),
+    ))
+
+    for path in sorted(records, key=repr):
+        record, record_node = records[path]
+        record_items, item_errors = _mapping_nodes(record_node, path=path)
+        errors.extend(item_errors)
+        progress = record.get("progress")
+        progress_pair = record_items.get("progress")
+        if not isinstance(progress, dict) or progress_pair is None or not isinstance(
+            progress_pair[1], MappingNode
+        ):
+            errors.append(
+                f"{_path_text(path + ('progress',))} is not represented by a "
+                "YAML mapping; manual migration is required")
+            continue
+
+        progress_node = progress_pair[1]
+        progress_items, progress_errors = _mapping_nodes(
+            progress_node, path=path + ("progress",))
+        errors.extend(progress_errors)
+        if "calendar_item" not in progress:
+            continue
+
+        calendar_pair = progress_items.get("calendar_item")
+        if calendar_pair is None:
+            errors.append(
+                f"{_path_text(path + ('progress', 'calendar_item'))} cannot be "
+                "located in YAML; manual migration is required")
+            continue
+        calendar_key_node, calendar_value_node = calendar_pair
+        if not isinstance(calendar_value_node, ScalarNode) or (
+            calendar_value_node.start_mark.index < calendar_key_node.end_mark.index
+        ):
+            errors.append(
+                f"{_path_text(path + ('progress', 'calendar_item'))} is not a "
+                "plain scalar; manual migration is required")
+            continue
+
+        legacy_value = progress.get("calendar_item")
+        calendar_items = [] if legacy_value in (None, "") else [legacy_value]
+        expected_progress = _record_at(expected_document, path)["progress"]
+        expected_progress.pop("calendar_item")
+        expected_progress["calendar_items"] = calendar_items
+        changed_paths.extend((
+            path + ("progress", "calendar_item"),
+            path + ("progress", "calendar_items"),
+        ))
+
+        rendered_list = yaml.safe_dump(
+            calendar_items,
+            allow_unicode=True,
+            default_flow_style=True,
+            sort_keys=False,
+            width=4096,
+        ).strip()
+        edits.extend((
+            _Edit(
+                calendar_key_node.start_mark.index,
+                calendar_key_node.end_mark.index,
+                "calendar_items",
+            ),
+            _Edit(
+                calendar_value_node.start_mark.index,
+                calendar_value_node.end_mark.index,
+                rendered_list,
+            ),
+        ))
+
+    if errors:
+        return _error_plan(raw, before_sha256, errors)
+
+    try:
+        output_bytes = _apply_edits(raw, text, edits)
+    except (IndexError, ValueError) as exc:
+        return _error_plan(
+            raw, before_sha256, [f"could not apply planned YAML edits: {exc}"])
+
+    try:
+        output_document = yaml.safe_load(output_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        return _error_plan(
+            raw, before_sha256, [f"planned output is not valid YAML: {exc}"])
+    if output_document != expected_document:
+        return _error_plan(
+            raw, before_sha256,
+            ["planned migration changed values outside the version and calendar "
+             "reference fields"])
 
     validation_errors = validate_meta(output_document)
     if validation_errors:

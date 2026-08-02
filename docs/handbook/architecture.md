@@ -89,7 +89,7 @@ DOCX files). `AGENTS.md` → "Application Folder Convention" is the canonical sp
 
 `meta.yaml` carries per-posting facts (a required `status`, a structured `progress`
 summary, level, required YOE, salary,
-workplace, sponsorship) under a `jobs:` list — schema v5, the only supported application schema.
+workplace, sponsorship) under a `jobs:` list — schema v6, the only supported application schema.
 The `application-tracker` skill owns the schema; its scripts insert and validate the
 facts with a formatting-preserving, checksum-guarded editor, and are the sole
 transactional writer of the single `calendar.md` resolved by `config.calendar_path()`.

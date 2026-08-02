@@ -1,5 +1,5 @@
 # Canary set — application-tracker skill
-# Grounded in skills/application-tracker/{SKILL.md,LESSONS.md} (meta.yaml schema v5;
+# Grounded in skills/application-tracker/{SKILL.md,LESSONS.md} (meta.yaml schema v6;
 # each jobs: entry carries a per-job status plus a structured progress summary, and the folder
 # is the DERIVED rollup by precedence in_progress > applied > drafted > rejected > ignored;
 # --check-metadata validates every status folder by default; no total_compensation_range; every
@@ -8,7 +8,7 @@
 skill: application-tracker
 default_setup: >
   config.yaml unset -> config.example.yaml + examples/** fallback. The example drafted app is
-  examples/applications/6_drafted/example-corp-senior-software-engineer/ with a valid v5
+  examples/applications/6_drafted/example-corp-senior-software-engineer/ with a valid v6
   meta.yaml (each jobs entry status: drafted with progress application_prep/action_required).
   No network, no LibreOffice, no private overlay needed (pyyaml only).
 
@@ -33,7 +33,7 @@ canaries:
     setup: "Default setup. Uses status.py --check-metadata (now validates every status folder by default; --statuses drafted narrows to the drafted queue)."
     expected_behavior:
       - "Runs `status.py --check-metadata`, which now validates EVERY status folder by default (`--statuses drafted` narrows to just the drafted queue the user asked about)."
-      - "Confirms each meta.yaml is `job_metadata_schema_version: 5` with a `jobs:` LIST (even a single role is a one-element list), and rejects a legacy v4 file (or the retired per-job `stage` key) or a `total_compensation_range` key."
+      - "Confirms each meta.yaml is `job_metadata_schema_version: 6` with a `jobs:` LIST (even a single role is a one-element list), and rejects legacy v5 scalar `calendar_item`, a retired per-job `stage` key, or a `total_compensation_range` key."
       - "Confirms each jobs entry carries a REQUIRED per-job `status` (drafted|applied|in_progress|rejected|ignored) and a REQUIRED structured `progress` summary (valid phase + state; rejected/ignored jobs are state `closed`), plus valid `workplace` + `sponsorship` words and complete `job_level` / `required_yoe` / `salary_range` structures ({min,max,confidence,source}; job_level adds `normalized`); `salary_range` may be null but the level/YOE structures must exist."
       - "Confirms every jobs entry has a unique, existing basename-only `jd_file` and every JD-*.md maps to one role (no positional/sorted-filename fallback), and that the folder label equals the rollup of the per-job statuses."
     failure_modes:
@@ -108,5 +108,25 @@ canaries:
       - "Does not change metadata progress, move application folders, or create Outlook events."
     failure_modes:
       - "Omits an in-progress role, invents a role stage, duplicates rows, or turns the company view into status authority."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: at-multiple-interview-occurrences
+    requires_overlay: false
+    prompt: >
+      My virtual onsite has three confirmed blocks in Pacific Time: Monday, August 10, 2026 from
+      1:00–3:00 PM; Wednesday, August 12 from 1:00–3:00 PM; and Wednesday, August 12 from
+      3:30–4:30 PM. Record all three without losing any earlier time.
+    setup: >
+      A fictional in-progress role starts with no calendar links. Two of the three exact blocks
+      share the second day.
+    expected_behavior:
+      - "Creates the first scheduled occurrence with `status.py --update-progress` and appends each additional block with `--add-occurrence`; never overwrites a confirmed start or treats a parallel block as a reschedule."
+      - "Stores three unique IDs in the ordered `progress.calendar_items` list and three distinct managed calendar entries, even though the blocks span only two dates."
+      - "Keeps aggregate progress `scheduled` after the first occurrence completes while later blocks remain, and moves to `awaiting_result` only after the final expected occurrence completes."
+      - "Runs `status.py --check-calendar` and preserves duplicate-free, idempotent calendar output."
+    failure_modes:
+      - "Buckets events by day, overwrites the first slot, reuses one calendar ID, or calls an additional confirmed block a reschedule."
+      - "Marks the role awaiting_result while another linked occurrence remains scheduled."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
