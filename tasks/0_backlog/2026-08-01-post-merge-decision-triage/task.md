@@ -37,7 +37,8 @@ is not urgent just because it is long; its default is full status quo on every s
 Two items are recurring, silent, job-search-result losses and are ranked highest for that reason:
 `title-prefilter-hardcoded-seniority-words.md` and `first-search-recency-window.md` both describe
 real postings the pipeline would have kept, dropped with zero trace, on every run the condition
-recurs (not a one-off).
+recurs (not a one-off). **2026-08-02: both are now answered and folded** — see rows 1 and 2; the
+work each authorizes is in `tasks/0_backlog/`, not in this queue.
 
 **If you disagree with the ordering**, the fix is cheap: each queue file is unaffected by this
 table's position — reorder your own pass through them and this file goes stale, which is fine,
@@ -47,7 +48,7 @@ it is a worklist, not a record.
 
 | # | Decision file | Question | Default while pending | What changes when answered | Min. |
 |---|---|---|---|---|---|
-| 1 | `title-prefilter-hardcoded-seniority-words.md` | Should the big-tech title prefilter keep its hardcoded seniority skip list, or defer to the profile's `titles.exclude`? | Keep the hardcoded list — Workday/Amazon/Apple/Meta silently never fetch Principal/Distinguished/Fellow/Data-Scientist/Research-Scientist titles, no matter what the profile's include list says, no filtered row, no count. | Either confirms the current silent loss is intentional, or (Option B/D) widens the fetch — safely, only after the five terms are added to the private profile's `titles.exclude` first. | 10–15 (needs opening the private profile's `titles.exclude` first) |
+| 1 | ~~`title-prefilter-hardcoded-seniority-words.md`~~ **ANSWERED + FOLDED 2026-08-02** | Should the big-tech title prefilter keep its hardcoded seniority skip list, or defer to the profile's `titles.exclude`? | — | Owner rejected the binary: filter words become profile-owned in three classes (hard-exclude / soft-exclude / inclusion). Recorded in `memory/decisions/search-filter-vocabulary-is-profile-owned.md`; conformance checklist filed as `tasks/0_backlog/2026-08-02-profile-owned-search-filter-vocabulary/`. | 0 |
 | 2 | ~~`first-search-recency-window.md`~~ **ANSWERED + FOLDED 2026-08-02** | Should a company's FIRST-ever automated search use a wider recency window? | — | Owner chose Option B. Recorded in `memory/decisions/first-search-finds-every-open-role.md`; implementation filed as `tasks/0_backlog/2026-08-02-first-search-widens-the-recency-window/`. | 0 |
 | 3 | `may-a-mailbox-review-move-your-applications.md` | May a mailbox review move applications on its own, or must every status change be asked for? | The QUEUE FILE says "ask first," but the underlying `email-assistant/SKILL.md` text still says "automatically reconcile" — the two disagree, so the safe behavior depends on which doc an agent reads first, not on this file. | Fixes the underlying SKILL.md/tracker/AGENTS.md text so the safe behavior is guaranteed, not just documented as a default. | 5 |
 | 4 | `2026-07-31-re-enrich-yoe-after-attribution-fix.md` | Should already-enriched applications be re-run now that third-party years no longer count as a requirement? | Nothing is rewritten — any `meta.yaml` enriched before the fix can carry a fabricated `required_yoe`/`job_level` (e.g. "senior_staff" inferred from a founder's 25-year bio line) that's already sitting in your tracker today. | Recommended Option C re-enriches only the folders whose `required_yoe.min` looks implausible for the role — a spot-check, not a blanket rewrite. | 10 |
