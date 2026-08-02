@@ -492,6 +492,16 @@ def _run_guard(dest_root: Path, tokens: list[str]) -> int:
 
     env = dict(os.environ)
     env[check_public.TOKENS_ENV_VAR] = "\n".join(tokens)
+    # Never forward an ABSOLUTE $JOBHUNT_CONFIG into a subprocess whose cwd is a
+    # DIFFERENT tree. It would point the guard's config discovery back at THIS
+    # checkout while everything else it resolves — including its own
+    # config.example.yaml — lives in the export, and a config that belongs to
+    # another tree is not this tree's config. The guard needs no config here: the
+    # real token set is forwarded explicitly above, which is exactly how CI arms
+    # it. Dropping the var lets discovery fall back to the export's own
+    # config.example.yaml, so the fictional persona contributes nothing.
+    shared_config = check_public._load_shared_config()
+    env.pop(getattr(shared_config, "ENV_VAR", "JOBHUNT_CONFIG"), None)
     # Keep the freshly copied tree byte-for-byte what the allowlist produced: the
     # guard imports sibling/shared modules, and CPython would otherwise leave
     # __pycache__/*.pyc behind INSIDE the export (git-ignored, so invisible to the

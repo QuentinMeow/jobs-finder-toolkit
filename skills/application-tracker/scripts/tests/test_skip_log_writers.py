@@ -363,7 +363,7 @@ class SkipLogWriterTests(unittest.TestCase):
         --sync-log rebuilds every row from the folders, so forgetting a posting whose
         folder is still there is undone within one command — silently, because both
         commands report success. A live folder is live evidence the posting was
-        handled, so the thing to fix is the folder.
+        handled, so there is nothing to un-skip.
         """
         self._place("drafted", "example-corp-backend-20260716",
                     [_job("Backend Engineer", "drafted", "JD-backend.md", URL_A)])
@@ -376,6 +376,32 @@ class SkipLogWriterTests(unittest.TestCase):
         self.assertIn("example-corp-backend-20260716", proc.stderr)
         self.assertEqual(len(self._events()), before, "the refusal still appended")
         self.assertEqual(len(self._fold()), 1)
+
+    def test_the_live_folder_refusal_never_tells_an_agent_to_delete_the_folder(self):
+        """The refusal is the terminus of handoff's explicit-``--select`` duplicate
+        chain, so whatever it names is what an agent does next. It used to name
+        "Move or delete the application folder", which is the one act AGENTS.md
+        forbids outright — and the premise of
+        ``memory/decisions/handoff-records-every-folder-it-creates.md`` is that a
+        missing application folder always means the OWNER removed it.
+        """
+        slug = "example-corp-backend-20260716"
+        app = self._place(
+            "drafted", slug,
+            [_job("Backend Engineer", "drafted", "JD-backend.md", URL_A)])
+        self._sync()
+
+        proc = self._run("--forget-log", URL_A)
+        self.assertNotEqual(proc.returncode, 0)
+        err = proc.stderr
+        for banned in ("delete the application folder", "delete the folder",
+                       "remove the folder", "rm -rf"):
+            self.assertNotIn(banned, err.lower(), f"remedy still says {banned!r}")
+        # It refuses on the owner's behalf, points at the folder that already
+        # exists, and routes an actual removal to the human queue.
+        self.assertIn("removed by the USER only", err)
+        self.assertIn("message-queue/needs-human/", err)
+        self.assertIn(str(app), err)
 
     def test_a_forgotten_posting_is_not_resurrected_by_a_force_reseed(self):
         """--force re-seeds from the retired YAML, which still holds the forgotten row.

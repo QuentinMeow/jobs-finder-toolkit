@@ -37,6 +37,14 @@ module is **vendored** (copied) into the skill:
   source. It runs in the tracked `automation/hooks/pre-commit` hook (install once with
   `python automation/bootstrap_overlay.py`), so copies can never
   silently drift.
+- **It checks both directions.** As well as "does each declared copy still match its
+  source", it audits every file under a `skills/*/scripts/_vendor/` root and fails on
+  any that no `TARGETS`/`DIR_TARGETS` entry names — otherwise a module copied in and
+  never declared is compared to nothing and rots while the gate stays green. Only
+  `README.md` and `__init__.py`, directly in a `_vendor/` root, are exempt (see the
+  previous bullet: they are the notice and the package marker, not generated code).
+  So the fix for the failure is to declare the file or delete it — re-running the sync
+  will not clear it.
 - Skill scripts import the vendored module locally, e.g.
   `from _vendor.location import classify_location`.
 

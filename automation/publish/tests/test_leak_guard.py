@@ -391,6 +391,93 @@ class ArmingTests(unittest.TestCase):
         self.assertIn(check_public.TOKENS_ENV_VAR, text)
 
 
+class _PathStubConfig:
+    """A config layer whose active + example paths the test chooses."""
+
+    def __init__(self, active: Path, example: Path):
+        self._active = active
+        self.EXAMPLE_CONFIG = example
+        self.CONFIG_FILENAME = "config.yaml"
+        self.ENV_VAR = "JOBHUNT_CONFIG"
+
+    def config_path(self) -> Path:
+        return self._active
+
+    @staticmethod
+    def candidate_name() -> str:
+        return "Rowan Ashdown"
+
+    @staticmethod
+    def contact_line() -> str:
+        return "rowan.ashdown" + "@" + "acme-robotics" + ".io"
+
+
+_EXAMPLE_YAML = "candidate:\n  name: Jordan Rivers\n"
+_REAL_YAML = "candidate:\n  name: Rowan Ashdown\n"
+
+
+class ExampleConfigIdentityTests(unittest.TestCase):
+    """"Is this the fictional example?" must be about IDENTITY, not location.
+
+    Comparing two ABSOLUTE paths only works while both live in the same tree. The
+    exporter runs this guard with ``cwd`` inside a freshly copied export while an
+    inherited absolute ``$JOBHUNT_CONFIG`` still points at the SOURCE checkout, so
+    the two paths differ, the example persona is taken for the owner's real
+    identity, and a clean export fails on every "Jordan Rivers" in its own docs.
+    """
+
+    def _two_trees(self, td: str, active_name: str, active_text: str):
+        example = Path(td) / "source" / "config.example.yaml"
+        example.parent.mkdir(parents=True, exist_ok=True)
+        example.write_text(_EXAMPLE_YAML, encoding="utf-8")
+        active = Path(td) / "export" / active_name
+        active.parent.mkdir(parents=True, exist_ok=True)
+        active.write_text(active_text, encoding="utf-8")
+        return _PathStubConfig(active=active, example=example)
+
+    def test_a_copy_of_the_example_in_another_tree_is_still_the_example(self):
+        with tempfile.TemporaryDirectory() as td:
+            stub = self._two_trees(td, "config.example.yaml", _EXAMPLE_YAML)
+            self.assertEqual(check_public._identity_tokens(stub), set())
+
+    def test_a_copy_under_a_different_filename_is_still_the_example(self):
+        # Content is the test, so the name never decides.
+        with tempfile.TemporaryDirectory() as td:
+            stub = self._two_trees(td, "config.yaml", _EXAMPLE_YAML)
+            self.assertEqual(check_public._identity_tokens(stub), set())
+
+    def test_a_real_config_named_config_example_yaml_is_still_real(self):
+        # The safety requirement on the other side: this must NOT become a way for
+        # an owner's real config to disarm the guard by being named the example.
+        with tempfile.TemporaryDirectory() as td:
+            stub = self._two_trees(td, "config.example.yaml", _REAL_YAML)
+            toks = check_public._identity_tokens(stub)
+        # assertTrue, not assertIn: a failure must not dump a token set that
+        # carries the machine's home-directory name.
+        self.assertTrue("Rowan" in toks,
+                        "a real config must still contribute identity tokens")
+        self.assertTrue("Ashdown" in toks)
+
+    def test_the_report_does_not_call_a_copied_example_a_real_config(self):
+        with tempfile.TemporaryDirectory() as td:
+            stub = self._two_trees(td, "config.example.yaml", _EXAMPLE_YAML)
+            with mock.patch.object(check_public, "_load_shared_config",
+                                   return_value=stub):
+                status = check_public.config_identity_status()
+                unarmed = "\n".join(check_public.unarmed_report())
+        self.assertIn("fictional example config", status)
+        self.assertIn("the TRACKED example fallback", unarmed)
+
+    def test_an_unreadable_config_is_not_silently_declared_the_example(self):
+        # Fail toward "real": a config the guard cannot compare must not be waved
+        # through as the fictional persona.
+        with tempfile.TemporaryDirectory() as td:
+            stub = self._two_trees(td, "config.yaml", _REAL_YAML)
+            Path(stub.EXAMPLE_CONFIG).unlink()
+            toks = check_public._identity_tokens(stub)
+        self.assertTrue("Rowan" in toks)
+
+
 class ArmingCLITests(unittest.TestCase):
     """End-to-end: the CLI exits non-zero when config discovery finds no identity."""
 
@@ -651,13 +738,15 @@ class UnreadableFileTests(unittest.TestCase):
                          ["examples/doc.docx"])
 
     # ── opened, nothing to scan: counted, not fatal ──────────────────────────
-    def test_undecodable_file_skips_quietly(self):
-        # latin-1 text: opened fine, decodes as neither UTF-8 nor a binary blob.
+    def test_undecodable_file_is_read_not_skipped(self):
+        # latin-1 text: opened fine, and NOT a binary blob. It used to land in the
+        # skip bucket, which meant a real name inside it was never searched for.
+        # The coverage that proves the scan now sees it lives in
+        # NonUtf8TextScanTests; this pins which bucket it belongs to.
         result = self._scan({"docs/notes.md": b"caf\xe9 r\xe9sum\xe9\n"})
         self.assertTrue(result["ok"], result["violations"])
-        self.assertEqual(self._reasons(result, "files_skipped"),
-                         {check_public.SKIP_NOT_UTF8: 1})
-        self.assertEqual(result["files_read"], 0)
+        self.assertEqual(self._reasons(result, "files_skipped"), {})
+        self.assertEqual(result["files_read"], 1)
 
     def test_binary_blob_without_a_known_extension_skips_quietly(self):
         # A NUL-bearing blob (the tracked ``*.json.zst`` job payloads look like
@@ -735,14 +824,208 @@ class UnreadableFileTests(unittest.TestCase):
             result["tracked_file_count"])
 
     def test_summary_reports_how_much_was_actually_read(self):
-        result = self._scan({"docs/notes.md": b"caf\xe9\n", "docs/real.md": "ok\n"})
+        result = self._scan({"examples/screenshot.png": b"\x89PNG\r\n not-real",
+                             "docs/real.md": "ok\n"})
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             check_public.print_report(result)
         out = buf.getvalue()
         self.assertIn("content read:   1 of 2 file(s)", out)
         self.assertIn("not inspected:  1", out)
-        self.assertIn(check_public.SKIP_NOT_UTF8, out)
+        self.assertIn(check_public.SKIP_NO_EXTRACTOR, out)
+
+
+class NonUtf8TextScanTests(unittest.TestCase):
+    """A tracked text file that is not valid UTF-8 must still be SCANNED.
+
+    Counting it as "opened, no text to scan" made the guard certify bytes it had
+    never searched: a NUL-free latin-1 ``.md`` carrying the owner's name passed.
+    The fix decodes every undecodable byte as latin-1 and leaves valid UTF-8
+    sequences alone, so no byte is dropped and no token is split by a replacement
+    character. Both halves of that are asserted below, because each single-codec
+    fallback misses the case the other one catches.
+    """
+
+    def _scan(self, files: dict, tokens=()) -> dict:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, files)
+            return check_public.scan(root=root, tracked=tracked, tokens=list(tokens))
+
+    def _reasons(self, result: dict) -> dict:
+        out: dict[str, int] = {}
+        for item in result["files_skipped"]:
+            out[item["reason"]] = out.get(item["reason"], 0) + 1
+        return out
+
+    def test_ascii_token_in_a_latin1_file_is_caught(self):
+        # The realistic leak: a note pasted in from a non-UTF-8 source. The name
+        # is plain ASCII; one accented byte elsewhere is all it took to hide it.
+        blob = "Reviewed by Ravenscroft over café\n".encode("latin-1")
+        result = self._scan({"docs/notes.md": blob}, tokens=["Ravenscroft"])
+        self.assertFalse(result["ok"])
+        hits = result["violations"]["personal_token"]
+        self.assertEqual([h["where"] for h in hits], ["content"])
+        self.assertEqual(hits[0]["path"], "docs/notes.md")
+        self.assertEqual(hits[0]["token"], "Ravenscroft")
+
+    def test_latin1_encoded_non_ascii_token_is_caught(self):
+        # utf-8 + errors="replace" turns the 0xF8 byte into U+FFFD and SPLITS this
+        # token, which is exactly the objection the backlog task raised. Decoding
+        # the rejected byte as latin-1 keeps the character, so the match holds.
+        blob = "contact Bjørnholm today\n".encode("latin-1")
+        result = self._scan({"docs/notes.md": blob}, tokens=["Bjørnholm"])
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["violations"]["personal_token"][0]["token"],
+                         "Bjørnholm")
+
+    def test_utf8_token_survives_a_stray_latin1_byte(self):
+        # The mirror case: decoding the WHOLE file as latin-1 would mojibake this
+        # UTF-8 token into "ZÃ¼rich" and miss it. Only the bytes UTF-8 rejects are
+        # decoded as latin-1; everything it accepts keeps its real characters.
+        blob = "office in Zürich\n".encode("utf-8") + b"stray \xe9 byte\n"
+        result = self._scan({"docs/notes.md": blob}, tokens=["Zürich"])
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["violations"]["personal_token"][0]["token"],
+                         "Zürich")
+
+    def test_structural_pii_in_a_latin1_file_is_caught_with_zero_tokens(self):
+        blob = f"café owner {REAL_EMAIL}\n".encode("latin-1")
+        result = self._scan({"docs/notes.md": blob}, tokens=[])
+        self.assertFalse(result["ok"])
+        self.assertIn("email",
+                      {v["kind"] for v in result["violations"]["structural_pii"]})
+
+    def test_a_non_utf8_file_counts_as_read_not_skipped(self):
+        result = self._scan({"docs/notes.md": b"caf\xe9 r\xe9sum\xe9\n"}, tokens=[])
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(result["files_read"], 1)
+        self.assertEqual(self._reasons(result), {})
+        self.assertEqual([i["path"] for i in result["fallback_decoded"]],
+                         ["docs/notes.md"])
+
+    def test_line_numbers_stay_true_to_the_file(self):
+        blob = b"first\n" + "café\n".encode("latin-1") + b"Ravenscroft here\n"
+        result = self._scan({"docs/notes.md": blob}, tokens=["Ravenscroft"])
+        self.assertEqual(result["violations"]["personal_token"][0]["line"], 3)
+
+    def test_report_names_the_fallback_decode_instead_of_a_skip(self):
+        result = self._scan({"docs/notes.md": b"caf\xe9\n", "docs/real.md": "ok\n"},
+                            tokens=[])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        out = buf.getvalue()
+        self.assertIn("content read:   2 of 2 file(s)", out)
+        self.assertNotIn("not inspected:", out)
+        self.assertIn("mixed encoding:", out)
+        self.assertIn("docs/notes.md", out)
+
+    def test_binary_blobs_are_still_skipped_not_decoded(self):
+        # The NUL sniff runs FIRST and must keep doing so: decoding a compressed
+        # payload as latin-1 would produce megabytes of noise to substring-scan.
+        result = self._scan({"examples/store/blob.zst": b"\x28\xb5\x2f\xfd\x00\x00raw"},
+                            tokens=[])
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(self._reasons(result), {check_public.SKIP_BINARY_SNIFF: 1})
+        self.assertEqual(result["fallback_decoded"], [])
+
+
+class TokenSourceUnreadableTests(unittest.TestCase):
+    """The guard's own ARMING INPUT must fail closed, like the files it scans.
+
+    ``private/leak_tokens.txt`` supplies the employer/school/product tokens. A
+    permission error or an I/O error used to return an empty set, silently
+    NARROWING the scan while the guard still printed "Safe to publish". A file
+    that is simply ABSENT stays legitimate — the overlay may not be mounted.
+    """
+
+    def _clean_tree_scan(self, leak_files: list) -> dict:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, {"docs/real.md": "clean\n"})
+            with mock.patch.object(check_public, "LEAK_TOKENS_FILES", leak_files), \
+                 mock.patch.object(check_public, "_overlay_skill_name_tokens",
+                                   return_value=set()), \
+                 mock.patch.object(check_public, "identity_tokens",
+                                   return_value={"Ravenscroft"}):
+                return check_public.scan(root=root, tracked=tracked)
+
+    def test_absent_token_file_is_legitimate(self):
+        with tempfile.TemporaryDirectory() as td:
+            missing = Path(td) / "leak_tokens.txt"
+            self.assertEqual(check_public.token_source_errors([missing]), [])
+            result = self._clean_tree_scan([missing])
+        self.assertTrue(result["ok"], result["violations"])
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "root can read a 0o000 file, so the condition cannot be planted")
+    def test_unreadable_token_file_refuses_to_certify(self):
+        with tempfile.TemporaryDirectory() as td:
+            leak_file = Path(td) / "leak_tokens.txt"
+            leak_file.write_text("AcmeRobotics\n", encoding="utf-8")
+            leak_file.chmod(0o000)
+            try:
+                errors = check_public.token_source_errors([leak_file])
+                result = self._clean_tree_scan([leak_file])
+            finally:
+                leak_file.chmod(0o644)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("PermissionError", errors[0]["detail"])
+        self.assertFalse(result["ok"])
+        self.assertEqual(len(result["violations"]["token_source_unreadable"]), 1)
+
+    def test_dangling_token_file_symlink_is_a_finding_not_an_absence(self):
+        with tempfile.TemporaryDirectory() as td:
+            leak_file = Path(td) / "leak_tokens.txt"
+            os.symlink(Path(td) / "nowhere.txt", leak_file)
+            errors = check_public.token_source_errors([leak_file])
+            result = self._clean_tree_scan([leak_file])
+        self.assertEqual(len(errors), 1)
+        self.assertFalse(result["ok"])
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "root can read a 0o000 file, so the condition cannot be planted")
+    def test_unreadable_token_file_is_named_in_the_report(self):
+        with tempfile.TemporaryDirectory() as td:
+            leak_file = Path(td) / "leak_tokens.txt"
+            leak_file.write_text("AcmeRobotics\n", encoding="utf-8")
+            leak_file.chmod(0o000)
+            try:
+                result = self._clean_tree_scan([leak_file])
+            finally:
+                leak_file.chmod(0o644)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        out = buf.getvalue()
+        self.assertNotIn("OK: no public-repo leaks detected", out)
+        self.assertIn("[9] Unreadable personal-token source", out)
+        self.assertIn("leak_tokens.txt", out)
+
+    def test_non_utf8_token_file_keeps_every_token(self):
+        # One stray byte used to drop the WHOLE token set. It must not.
+        with tempfile.TemporaryDirectory() as td:
+            leak_file = Path(td) / "leak_tokens.txt"
+            leak_file.write_bytes("AcmeRobotics\nCaféCorp\n".encode("latin-1"))
+            with mock.patch.object(check_public, "LEAK_TOKENS_FILES", [leak_file]), \
+                 mock.patch.object(check_public, "_overlay_skill_name_tokens",
+                                   return_value=set()):
+                self.assertEqual(check_public.supplementary_tokens(),
+                                 {"AcmeRobotics", "CaféCorp"})
+                self.assertEqual(check_public.token_source_errors([leak_file]), [])
+
+    def test_caller_supplied_tokens_never_touch_the_token_files(self):
+        # Fixture scans pass ``tokens=[...]`` and must stay deterministic: the
+        # guard did not resolve its own tokens, so there is nothing to report.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, {"docs/real.md": "clean\n"})
+            missing = Path(td) / "nope" / "leak_tokens.txt"
+            with mock.patch.object(check_public, "LEAK_TOKENS_FILES", [missing]):
+                result = check_public.scan(root=root, tracked=tracked, tokens=[])
+        self.assertTrue(result["ok"], result["violations"])
+        self.assertEqual(result["violations"]["token_source_unreadable"], [])
 
 
 class RealTreeStructuralTests(unittest.TestCase):
@@ -886,6 +1169,35 @@ class ExporterEndToEndTests(unittest.TestCase):
         # every checkout.
         os.environ[check_public.TOKENS_ENV_VAR] = self.PROBE_TOKEN
         self.addCleanup(lambda: os.environ.pop(check_public.TOKENS_ENV_VAR, None))
+
+    def test_export_survives_an_absolute_jobhunt_config_in_the_environment(self):
+        """A maintainer with ``$JOBHUNT_CONFIG`` exported must still be able to publish.
+
+        ``_run_guard`` forwards the environment wholesale to a guard whose ``cwd``
+        is the freshly copied export. An inherited ABSOLUTE ``$JOBHUNT_CONFIG``
+        then names the SOURCE checkout's config while the guard's own
+        ``EXAMPLE_CONFIG`` resolves inside the export — the same file at two
+        absolute paths. Path equality said "not the example", so ``Jordan`` and
+        ``Rivers`` became personal-identity tokens and a clean tree failed with a
+        hundred-odd hits on the toolkit's own documentation.
+        """
+        saved = os.environ.get("JOBHUNT_CONFIG")
+        os.environ["JOBHUNT_CONFIG"] = str(REPO_ROOT / "config.example.yaml")
+
+        def _restore():
+            if saved is None:
+                os.environ.pop("JOBHUNT_CONFIG", None)
+            else:
+                os.environ["JOBHUNT_CONFIG"] = saved
+
+        self.addCleanup(_restore)
+        with tempfile.TemporaryDirectory() as td:
+            dest = Path(td) / "export"
+            rc = export_public.export(dest, git_init=False, force=False)
+        self.assertEqual(
+            rc, 0,
+            "the fictional example persona must never arm the guard, however "
+            "$JOBHUNT_CONFIG is spelled")
 
     def test_export_passes_guard_and_excludes_private_trees(self):
         with tempfile.TemporaryDirectory() as td:
