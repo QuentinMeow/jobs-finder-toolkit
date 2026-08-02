@@ -2357,3 +2357,9 @@
   files: 106
   digest: sha256:458e7a8fc9fc6a6b
   finding: 'Stack merge only for this branch content - brings in the whole stack below, each part already reviewed on its own branch: the gitignore base and its logs/ path-deny, the gate runner, the GitHub merge runbook, the repeated-mistake lesson, the dangling-symlink store fix, the build-postings correctness fixes, the ledger duplicate-key refusal, the recall-audit CLI fixes and the examples/data to examples/store rename. Both sides had independently added the same root logs/ deny entry; the duplicate was collapsed to one. No identity, employer, school, salary or dated job-hunt content.'
+- base: e8a62b80
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:e6e9ed2aad60c605
+  finding: 'CORRECTS THE ROW IMMEDIATELY ABOVE (base e8a62b80 predecessor, the examples/me merge), which asserted that the duplicate root logs/ deny entry had been collapsed. It had not - git kept both, because each side added its entry at a different point in the list, so there was no textual conflict. That row is left exactly as written: the ledger is append-only and a row digest pins a diff someone read, so a wrong finding is corrected by appending, never by editing. Two identical (re.compile(r caret logs/), logs/) entries are now one. Kept the comment that describes the payload accurately - counters and ids, no prompt text or file path - and dropped the one claiming it summarizes session transcripts, which overstates what hook_collect.py records. Probed both ways again after the collapse: root logs/ denied, examples/market/logs/ not. No identity, employer, school, salary or dated job-hunt content.'

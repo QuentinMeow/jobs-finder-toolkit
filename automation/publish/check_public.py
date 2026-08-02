@@ -183,13 +183,6 @@ _DENY_TREES = [
     (re.compile(r"^\.agents/inputs/"), ".agents/inputs/"),
     (re.compile(r"^data/"), "data/"),
     (re.compile(r"^job-search-profiles/"), "job-search-profiles/"),
-    # Local metrics output (automation/metrics/hook_collect.py writes
-    # REPO_ROOT/logs/metrics.jsonl, which summarizes session transcripts). It is
-    # opt-in and local-only, so nothing tracked ever lives here — but it is
-    # session telemetry about a real person's work and must never be published.
-    # Added when `.gitignore` anchored the rule to `/logs/`; the `^` keeps the
-    # tracked `examples/market/logs/**` fixture out of scope.
-    (re.compile(r"^logs/"), "logs/"),
     # names the planned private-tree renames introduce (denied before they exist)
     (re.compile(r"^store/"), "store/"),
     (re.compile(r"^me/"), "me/"),
@@ -204,6 +197,8 @@ _DENY_TREES = [
     # and grows with Claude Code releases; an exemption would publish a future
     # field that carries a path, whereas a deny only ever inconveniences
     # somebody deliberately tracking a root logs/ tree, which nothing wants.
+    # The `^` anchor is what keeps the tracked examples/market/logs/** fixture
+    # in scope for tracking while a root logs/ stays denied.
     (re.compile(r"^logs/"), "logs/"),
 ]
 
