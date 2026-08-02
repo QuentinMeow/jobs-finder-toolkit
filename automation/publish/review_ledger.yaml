@@ -2405,3 +2405,15 @@
   files: 1
   digest: sha256:c17f1dd8b02f6d9c
   finding: 'Repairs an omission in the commit immediately above: `git mv` stages a rename from the INDEX, so the working-tree edits to that task.md - the recorded decision, the Claimed-by line and the ticked Definition of done - were never staged and the commit recorded a 100% rename of the original. This adds them, so the backlog task that specified defect 1 carries its own decision record rather than leaving it only in the commit message. Prose only: the decision, why decode-and-scan beat fail-closed, and why neither single codec is sufficient (the two mojibake examples are ASCII escape sequences). No identity, employer, school, salary or dated job-hunt content.'
+- base: 6e638036
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 8
+  digest: sha256:4995628ff1c9e176
+  finding: 'Closes a gate that failed open. sync_vendored.py --check now also audits INWARD: every file under a skills/*/scripts/_vendor/ root must be a declared TARGETS copy, inside a declared DIR_TARGETS tree, or one of two exempt shapes. Read the whole diff. The exemption list is two names, README.md and __init__.py, and only directly in a _vendor/ root - a README is the hand-written generated-do-not-edit notice with no canonical source to match, an __init__.py is the package marker; the same names one level down still fail, since there they would mean an unmirrored subtree. That is the entire set the first run surfaced (7 files across 5 skills), decided one by one and recorded in the task, not a blanket glob. The audit is scoped to skills/*/scripts/_vendor rather than a bare rglob so third-party vendor trees such as .venv pip/_vendor are not swept in; there is a test for that. The failure message names the offending path and states both remedies inline. Also corrects a docstring in test_skip_log.py::VendoringTests that asserted the hole as a standing fact, and adds a handbook bullet for the inward direction. Content is toolkit paths, public skill names and repo-process dates only - no identity, employer, school, salary or dated job-hunt content, and the task/worklog/verification files sit under tasks/, which the exporter leaves out anyway.'
+- base: 0811cf22
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 8
+  digest: sha256:4995628ff1c9e176
+  finding: 'Stack rung 2 merge commit. Brings fix/vendor-reverse-audit into this branch; the diff is byte-identical to the row already recorded for b29dcf04 (same digest sha256:4995628ff1c9e176), re-pinned to this branch''s range. No new content is introduced by the merge itself — the ledger union is the only resolved conflict. Content is toolkit paths, public skill names and repo-process dates only. No identity, employer, school, salary or dated job-hunt content.'
