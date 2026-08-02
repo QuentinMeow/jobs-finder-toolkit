@@ -2208,3 +2208,9 @@
   files: 1
   digest: sha256:bea7c8d3cfca8daf
   finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
+- base: e91f6cb7
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 10
+  digest: sha256:cf2e2bc47bb1de52
+  finding: 'A store data-loss fix: a manifest.json that is a dangling symlink read as ABSENT, because Path.exists() follows the link. Three presence tests now ask os.path.lexists instead - the raw-zone traversal, the damaged/absent classification, and the crash-debris test - so such a manifest is classified DAMAGED and the sweep is suspended rather than deleting the blob it references and rmtree-ing its live fetch directory. Every hunk moves a file from the delete bucket to the keep bucket; no code path deletes anything it did not delete before. Four of the ten files are the byte-identical _vendor/store mirrors written by sync_vendored.py; three are the task record moving to 4_done. The only names in the diff are the technical source slug greenhouse and the fixture literal examplecorp; the dates are process dates on the task record. No identity, employer, school, salary or dated job-hunt content.'

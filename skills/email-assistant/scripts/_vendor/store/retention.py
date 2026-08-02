@@ -34,6 +34,7 @@ which :meth:`BlobStore.state` still reads as ``present`` (re-sweepable, never
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -476,6 +477,13 @@ def find_debris_dirs(layout: DomainLayout, *, now: datetime | None = None,
     Scope is ``raw/<source>/`` ONLY — never ``state/``, never ``_blobs/`` (a fetch
     dir holds exactly a ``manifest.json``; its absence past the window is crash
     debris). Age comes from the dir mtime. Reported in dry-run, removed under execute.
+
+    Presence is tested with :func:`os.path.lexists`, which does NOT follow symlinks.
+    ``Path.exists()`` does, so a manifest that is a symlink to a missing target
+    reads as no manifest at all and a LIVE fetch dir is classified as crash debris —
+    then ``rmtree``'d under ``--execute`` once it is past the window, destroying the
+    observation record. A manifest that is on disk but unreadable is damage, handled
+    by ``find_damaged_manifests``; it is never debris.
     """
     now = now or datetime.now(timezone.utc)
     raw = layout.raw
@@ -486,7 +494,7 @@ def find_debris_dirs(layout: DomainLayout, *, now: datetime | None = None,
     for fetch_dir in sorted(raw.glob("*/*/*/*/*")):
         if not fetch_dir.is_dir() or "_blobs" in fetch_dir.parts:
             continue
-        if (fetch_dir / "manifest.json").exists():
+        if os.path.lexists(fetch_dir / "manifest.json"):
             continue
         age_hours = (now.timestamp() - fetch_dir.stat().st_mtime) / 3600.0
         if age_hours >= max_age_hours:
