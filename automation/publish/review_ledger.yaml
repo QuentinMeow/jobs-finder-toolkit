@@ -2202,3 +2202,9 @@
   files: 3
   digest: sha256:e4ea4bb5c8faf6f6
   finding: 'Re-points three live references from the deleted wip branch to the annotated tag that now holds the same commit. The eval record gets a dated appended note (its earlier notes are untouched); the backlog task''s pointer is corrected; the open decision keeps its question and its default and only restates the ref shape. The dated handover and the completed task that also name the branch are left alone - they are historical records and rewriting them to match the present would falsify them. No identity, employer, school, salary or dated job-hunt content.'
+- base: 5e40070f
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 1
+  digest: sha256:bea7c8d3cfca8daf
+  finding: 'Two gitignore rules corrected, both trailing-slash semantics bugs, both proven with a negative control. `logs/` was unanchored so it matched a logs directory at ANY depth, silently making examples/market/logs/** untrackable - git mv into it reports success and the files are then invisible to git ls-files, the exporter and the leak guard. `.venv/` matched only a directory, so the symlink a git worktree is given as its interpreter stayed UNtracked and its blob is an absolute path under the owner home dir, which the content-scanning leak guard cannot see. Comments only, plus the two patterns. No identity, employer, school, salary or dated job-hunt content.'
