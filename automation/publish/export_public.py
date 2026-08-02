@@ -88,6 +88,12 @@ ALLOWLIST_DIRS = [
     "automation/metrics",
     "automation/publish",
     "automation/store",
+    # Ships next to ``evals`` because it is that tree's tooling. The exported
+    # ``evals/results/TEMPLATE.md`` tells its reader to run
+    # ``automation/evals/record_pins.py``, so a mirror without this entry would
+    # ship a template naming a command it does not contain — and the exported
+    # copy of ``verify_links.py`` reads that fence, so it would go red there.
+    "automation/evals",
     "evals",
     "automation/hooks",
     "automation/reconcile",

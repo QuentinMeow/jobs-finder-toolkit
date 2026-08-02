@@ -1950,6 +1950,20 @@
   files: 2
   digest: sha256:4e22e59e33aeafec
   finding: none
+- commit: 1144d288
+  base: 72d0a5b3
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 5
+  digest: sha256:668f332d60e36bcb
+  finding: none — new automation/evals module plus its tests, the eval-result template's two commit rows and pin block, and one exporter allowlist entry; no name, employer, school, date, salary or job-hunt detail in any of the five files
+- commit: 154d8354
+  base: 1144d288
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:845a95b9a4041b17
+  finding: none — one test directory added to the CI maintenance-tooling step plus the comment explaining why that line and the allowlist entry must ship together; no personal data
 - commit: 3b091e1e
   base: 72d0a5b3
   reviewed_by: agent
@@ -2013,3 +2027,10 @@
   files: 3
   digest: sha256:04ffefc3c6f251b7
   finding: Merge of origin/main into this branch; the ledger conflict was resolved by concatenating both sides' rows, which is the append-only-legal resolution. Reviewed range covers this branch's own ci.yml, check_pr_body.py and its tests. No identity, employer, school, salary or dated job-hunt content.
+- commit: 98159137
+  base: 8fdd7585
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 6
+  digest: sha256:7a46605f301b43a1
+  finding: Merge of origin/main into the eval-record-pins branch; ledger conflict resolved by concatenating both sides' rows. Reviewed range covers the new automation/evals pin generator and its tests, the export allowlist entry, the eval-result template, and the CI line that discovers the new test directory. No identity, employer, school, salary or dated job-hunt content.

@@ -10,11 +10,40 @@ gitignored later. Pull tokens/wall-clock from: .venv/bin/python automation/metri
 | Skill | `<skill>` |
 | Canary set | `evals/canaries/<skill>.yaml` |
 | Run kind | regression baseline / regression pre-merge / A/B |
-| Git SHA | `<12-char sha>` |
+| Run commit | `<12-char sha>` — where the runs happened, in whatever words are TRUE: a branch tip, a PR head, "plus uncommitted working tree". Informational; nothing checks it |
+| Anchor commit | `<12-char sha>` — an ancestor of `main` carrying EXACTLY the pinned bytes below, or `none` |
 | Model version | `<claude model id>` |
 | Config mode | examples fallback (config.yaml unset) / private overlay mounted |
 | Date | `YYYY-MM-DD` |
 | Judge | manual / skill-creator comparator / `<judge model + rubric>` |
+
+```eval-pin v1
+skill <skill>
+pin sha256=<16 hex> bytes=<n> path=skills/<skill>/SKILL.md
+pin sha256=<16 hex> bytes=<n> path=skills/<skill>/LESSONS.md
+pin sha256=<16 hex> bytes=<n> path=skills/<skill>/reference.md
+pin sha256=<16 hex> bytes=<n> path=evals/canaries/<skill>.yaml
+```
+
+**Fill the block by running it, never by hand** (it inserts or refreshes in place, and
+leaves the rest of this file alone):
+
+```bash
+.venv/bin/python automation/evals/record_pins.py --write evals/results/<this file>.md
+# later, to ask whether those bytes are still at HEAD:
+.venv/bin/python automation/evals/record_pins.py --report evals/results/<this file>.md
+```
+
+Why two commit rows and a digest block. The old single `Git SHA` cell was prose, so
+nothing could check it: the honest entries said "`<sha>` + uncommitted working tree",
+which is the case where the tested bytes were in **no commit at all** — an ancestry check
+on that sha passes while proving nothing about what ran. **Run commit** keeps that honesty
+and claims nothing. **Anchor commit** is the checkable half, and `none` is a correct answer
+— write it rather than naming a commit whose bytes the block does not match. The block
+itself is the measurement: sha256 (first 64 bits) + length of each instruction file the
+run was a test of, canary set included, because editing a prompt changes a verdict just as
+surely as editing the SKILL.md does. Records are evidence; **never edit an old one to add a
+block it never had.**
 
 ## Per-canary results
 
