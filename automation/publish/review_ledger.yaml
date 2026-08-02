@@ -2110,3 +2110,10 @@
   files: 8
   digest: sha256:066a848a577c17b7
   finding: none. The eval gate's fourth discharge form (Eval gate:stack naming the tip) in check_pr_body.py plus its tests, and the matching prose in AGENTS.md, CONTRIBUTING.md, evals/README.md, the github-workflow SKILL.md, the PR template and a CI comment. Tooling and process text only - no identity, employer, school, salary or dated job-hunt content; the branch and PR names used as examples are fictional (feat/04-jd-renderer, #137).
+- commit: 7f9a3d9d
+  base: b44710fd
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 1
+  digest: sha256:14dd7d0e0c493352
+  finding: none. One evals/results/ record for the github-workflow canary run (4/4), with its eval-pin block. Fictional example identities only; no real person, employer, school or posting.
