@@ -2006,3 +2006,10 @@
   files: 1
   digest: sha256:efc692acd6e5909d
   finding: Deletion only. The checker now blanks inline code spans on the verdict line instead of truncating at the first backtick, so the workaround sentence added by c59c44ef described a defect that no longer exists; item 2 still carries the residual rule. No identity or job-hunt content.
+- commit: 8fdd7585
+  base: 451fdbde
+  reviewed_by: agent
+  date: 2026-08-01
+  files: 3
+  digest: sha256:04ffefc3c6f251b7
+  finding: Merge of origin/main into this branch; the ledger conflict was resolved by concatenating both sides' rows, which is the append-only-legal resolution. Reviewed range covers this branch's own ci.yml, check_pr_body.py and its tests. No identity, employer, school, salary or dated job-hunt content.
