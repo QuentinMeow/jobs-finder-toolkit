@@ -2214,3 +2214,39 @@
   files: 10
   digest: sha256:cf2e2bc47bb1de52
   finding: 'A store data-loss fix: a manifest.json that is a dangling symlink read as ABSENT, because Path.exists() follows the link. Three presence tests now ask os.path.lexists instead - the raw-zone traversal, the damaged/absent classification, and the crash-debris test - so such a manifest is classified DAMAGED and the sweep is suspended rather than deleting the blob it references and rmtree-ing its live fetch directory. Every hunk moves a file from the delete bucket to the keep bucket; no code path deletes anything it did not delete before. Four of the ten files are the byte-identical _vendor/store mirrors written by sync_vendored.py; three are the task record moving to 4_done. The only names in the diff are the technical source slug greenhouse and the fixture literal examplecorp; the dates are process dates on the task record. No identity, employer, school, salary or dated job-hunt content.'
+- base: 9141247c
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:c14051bfcc2f5995
+  finding: 'Corrects the merge recipe in skills/github-workflow/SKILL.md (delta edits only, no section rewritten wholesale) and adds skills/github-workflow/reference.md with the long two-track runbook. Read the full diff. Every concrete claim is a reading of this repository''s own public GitHub state, taken with read-only `gh` and reproducible from the commands printed beside it: PR numbers 81/84/87/113/114/115/95/96/136/190/194/198/199, the ten stack numbers, merge commits 281bc933 / 562655f8 / 5adfb1f8 / a6b5a7da / c3af637b / 14aec2ae, and this repo''s own branch names. All of that is already visible in the repository''s history and its existing SKILL.md; none of it is owner data. The `git add -A` line in the review-gate loop became explicit pathspecs. A section records what is NOT verified, so no unbacked claim ships as fact. No identity, employer, school, salary or dated job-hunt content.'
+- base: 9bbd1dde
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 4
+  digest: sha256:563b1388739e4c9b
+  finding: 'Propagates the two-track merge correction to the three surfaces that repeated the old single recipe, plus the backlog item the eval gate owes. Read the full diff. AGENTS.md gains one three-line routing invariant under Read Order and restates no procedure. CONTRIBUTING.md stays human-facing (no agent instructions) and keeps the delete_branch_on_merge and ledger reasoning that follows it, which was already sound. The canary gw-second-pr-stacks-on-the-first previously REQUIRED the answer "GitHub does not retarget it automatically", which is true only outside a native stack, so the rubric would have failed correct behaviour; it now requires the classification step and accepts either retarget branch, and a matching failure mode was added. The new tasks/0_backlog item files the canary run for this behavioural instruction edit and cross-references the existing pending-row canary task rather than duplicating it. Process and tooling prose only - no identity, employer, school, salary or dated job-hunt content.'
+- base: bc1a8956
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 2
+  digest: sha256:1b60937565fd1cfe
+  finding: 'Stack merge of the gitignore-anchoring base into the gate-runner branch. Brings two files - the two anchored gitignore patterns and the root logs/ path-deny that keeps the leak guard invariant intact. The ledger conflict was resolved at ROW granularity with whole rows kept from both sides, never git union, which is line-based and silently interleaved rows once before; 198 base + 1 ours + 2 theirs = 200 rows, all checked well-formed. No identity, employer, school, salary or dated job-hunt content.'
+- base: 4182956d
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 13
+  digest: sha256:7453d401f0ad1629
+  finding: 'Stack merge of the gate-runner branch into the merge-runbook branch, plus the budget repair the merge forced. Both branches had added a section to github-workflow SKILL.md; together they put it at 607 against a 600-line budget. Resolved by compressing the gate-runner section to seven lines and moving its detail into reference.md, which has no budget - not by deleting a domain edge case, which the contract forbids. The file now sits at exactly 600, so a task is filed for a real consolidation pass. Ledger conflict resolved at ROW granularity, whole rows from both sides, never git union; 198 base + 3 + 3 = 203 rows, all well-formed. No identity, employer, school, salary or dated job-hunt content.'
+- base: 24048d85
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 18
+  digest: sha256:93a6e65e3f4fd1b6
+  finding: 'Stack merge only - brings in the gate runner, the two-track GitHub merge runbook and merge_stack.py, the AGENTS.md routing invariant, and the gitignore base, each already reviewed on its own branch. This branch adds nothing of its own to that diff. Ledger conflict resolved at ROW granularity, whole rows from both sides, never git union. No identity, employer, school, salary or dated job-hunt content.'
+- base: 7b8cab82
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 24
+  digest: sha256:7fb552668684f0c9
+  finding: 'Stack merge only - brings in the gitignore base and its logs/ path-deny, the gate runner, the two-track GitHub merge runbook, and the repeated-mistake lesson, each already reviewed on its own branch. This branch contributes nothing of its own to that diff. No identity, employer, school, salary or dated job-hunt content.'
