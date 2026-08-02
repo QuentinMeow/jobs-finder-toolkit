@@ -625,6 +625,114 @@ class DamagedManifestTests(unittest.TestCase):
             self.assertEqual(result.deleted, 0)
             self.assertEqual(blobs.state(ref.sha256, "json"), PRESENT)
 
+    def _dangle(self, layout):
+        """Repoint the first manifest at a target that does not exist."""
+        path = sorted(layout.raw.glob("*/**/manifest.json"))[0]
+        path.unlink()
+        path.symlink_to("manifest.json.gone")   # target is never created
+        return path
+
+    def test_dangling_symlink_manifest_is_damage_and_its_blob_is_not_an_orphan(self):
+        """A ``manifest.json`` symlinked to a missing target is damage, not absence.
+
+        ``Path.exists()`` FOLLOWS symlinks, so a dangling one both raises
+        ``FileNotFoundError`` on read and answers ``False`` to ``exists()`` — the one
+        pair that used to read as "the file genuinely is not there any more", the
+        single classification with no consequences. The link is a directory entry
+        that IS on disk; only its contents are unreadable. Getting this wrong made
+        the blob it references look unreferenced, and the GC deleted the only copy.
+
+        VERSION CAVEAT — reachability here is CPython-version-sensitive, so the
+        assumption is pinned rather than left to a future reader. Under the previous
+        ``raw.glob("*/**/manifest.json")`` traversal, whether a dangling symlink even
+        REACHED the classifier depended on the interpreter (measured, not inferred):
+
+        * 3.11.15 — NOT listed: a literal path component is matched by
+          ``pathlib._PreciseSelector``, which tests ``Path.exists()``.
+        * 3.12.13 — listed: ``_PreciseSelector`` is gone, and literal components are
+          matched against ``os.scandir()`` entries, which include dangling links.
+        * 3.13.13 — listed: glob was rewritten around ``os.path.lexists``.
+
+        The repo floor is 3.11 and CI pins 3.12 (``.github/workflows/ci.yml``), so
+        the fix could not live in ``_read_manifest`` alone — on the floor the path
+        never got there. ``_iter_manifest_paths`` now walks with ``os.walk`` +
+        ``os.path.lexists``, which makes this test interpreter-independent: it is
+        expected to pass on 3.11, 3.12 and 3.13 alike and needs no version skip.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            blobs = BlobStore(layout.blobs)
+            ref = _write_fetch(layout, blobs, "20260701T000000Z-000001-aaaaaa",
+                               _days_ago(40), source="greenhouse", operation="board",
+                               payload=b'{"job": "only-copy"}')
+            dangling = self._dangle(layout)
+            self.assertTrue(dangling.is_symlink())
+            self.assertFalse(dangling.exists())   # the blind spot, stated out loud
+
+            from store.manifest import audit_refcounts, find_damaged_manifests
+            found = find_damaged_manifests(layout)
+            self.assertEqual([d.path for d in found], [dangling])
+
+            audit = audit_refcounts(layout, blobs)
+            self.assertEqual(audit["orphans"], [])          # NOT [ref.sha256]
+            self.assertTrue(audit["orphans_undetermined"])
+            self.assertEqual(len(audit["damaged"]), 1)
+
+            plan = retention.plan_sweep(layout, blobs, retention.RetentionConfig(),
+                                        now=NOW)
+            self.assertEqual(len(plan.damaged), 1)
+            self.assertEqual(plan.orphans, [])
+            self.assertEqual(plan.candidates, [])
+
+            # The GC must REFUSE to collect the blob, exactly as for a truncated one.
+            result = retention.execute_sweep(plan, blobs, remove_orphans=True)
+            self.assertEqual(result.blocked_by_damaged, 1)
+            self.assertEqual(result.orphans_removed, 0)
+            self.assertEqual(result.deleted, 0)
+            self.assertEqual(blobs.state(ref.sha256, "json"), PRESENT)
+
+    def test_live_fetch_dir_with_a_dangling_manifest_is_not_crash_debris(self):
+        """The same blind spot in ``find_debris_dirs`` deletes the whole fetch dir.
+
+        ``find_debris_dirs`` tested ``(fetch_dir / "manifest.json").exists()``, so a
+        dangling manifest symlink read as "no commit marker" — crash debris — and
+        ``execute_sweep`` ``rmtree``s debris past the 24h window. One broken symlink
+        therefore lost the observation record as well as the blob. Manifest presence
+        is a DIRECTORY-ENTRY question (``os.path.lexists``); an entry that is present
+        but unreadable is damage, never debris.
+
+        Reachability is not version-sensitive here: the fetch dir is a real directory
+        listed by a wildcard glob component on every supported interpreter.
+        """
+        import os
+        with tempfile.TemporaryDirectory() as td:
+            layout = domain_layout(Path(td), "jobs")
+            blobs = BlobStore(layout.blobs)
+            _write_fetch(layout, blobs, "20260701T000000Z-000001-aaaaaa",
+                         _days_ago(40), source="greenhouse", operation="board",
+                         payload=b'{"job": "only-copy"}')
+            fetch_dir = self._dangle(layout).parent
+            # Genuine debris (no manifest at all) as the control: the presence test
+            # must still SEE real crash debris, not just stop reporting everything.
+            debris_dir = (layout.raw / "greenhouse" / "2026" / "07" / "02"
+                          / "20260702T000000Z-000002-bbbbbb")
+            debris_dir.mkdir(parents=True)
+            (debris_dir / ".tmp-partial").write_text("junk")
+            t = NOW.timestamp() - 48 * 3600          # both well past the 24h window
+            for d in (fetch_dir, debris_dir):
+                os.utime(d, (t, t))
+
+            reported = {d.path for d in retention.find_debris_dirs(layout, now=NOW)}
+            self.assertNotIn(fetch_dir, reported)    # live fetch — never debris
+            self.assertIn(debris_dir, reported)      # control still detected
+
+            plan = retention.plan_sweep(layout, blobs, retention.RetentionConfig(),
+                                        now=NOW)
+            self.assertNotIn(fetch_dir, {d.path for d in plan.debris})
+            retention.execute_sweep(plan, blobs)
+            self.assertTrue(fetch_dir.is_dir())
+            self.assertTrue(os.path.lexists(fetch_dir / "manifest.json"))
+
     def test_damaged_keep_class_manifest_does_not_evaporate_its_veto(self):
         # Same fixture as test_keep_class_reference_vetoes_shared_blob, with the
         # keep-class (board) manifest damaged: the veto must survive its unreadability.

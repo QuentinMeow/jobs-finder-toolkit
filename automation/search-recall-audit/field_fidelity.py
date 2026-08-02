@@ -15,13 +15,14 @@ ONLY to a gitignored scratch dir (default ``local/field_fidelity_audit/``).
 
 Subcommands
 -----------
-  corpus   Walk the derived store index, resolve each sampled entity's RAW blob,
-           extract a per-source ``raw_location_view`` (EVERY location-bearing
-           field in the raw job object) + the ``jd.md`` location lines, compare
-           against the stored generated ``location``, and flag deterministic
-           suspicions (dropped raw location token, gate-decision flip, weird
-           format). Blobs are decompressed once and cached (many entities share
-           one board blob), so a few-hundred sample is cheap.
+  corpus   Walk the RAW zone WHOLE — every manifest, deduped by blob sha — re-run
+           the builder's own parser over each blob, extract a per-source
+           ``raw_location_view`` (EVERY location-bearing field in the raw job
+           object), compare it against the generated ``location``, and flag
+           deterministic suspicions (dropped raw location token, gate-decision
+           flip, truncated location list, weird format). It takes no sampling
+           flags: blobs are decompressed once and cached (many manifests share one
+           board blob), so the full pass is cheap, and choosing N is ``sample``'s job.
   sample   Pick N per source (weighting the suspicious ones) and write one
            self-contained comparison file per entity for a composer subagent to
            judge: raw view + generated field + jd lines + both gate decisions.
@@ -486,12 +487,27 @@ def cmd_todo(args) -> None:
           f"({skipped_rows} unparseable) -> {todo_path}")
 
 
+# "Austin, TX and 3 more" — a source that counts the locations it did NOT ship.
+_TRUNCATED_LOCATIONS_RE = re.compile(r"\band \d+ more\b", re.I)
+
+
 def _flags_for(gen_loc: str, dropped: list[str], flip: bool) -> list[str]:
     flags = []
     if dropped:
         flags.append("dropped_raw_token")
     if flip:
         flags.append("gate_decision_flip")
+    # Every other flag here compares raw against generated, so it can only see a
+    # loss the PARSER caused. Workday's search list ships one ``locationsText``
+    # whose tail counts the metros it withheld, and the generated ``location`` is a
+    # verbatim copy: raw and generated are the same string, the hidden metros are
+    # in NEITHER, and `dropped_raw_tokens` is empty BY CONSTRUCTION. Without this
+    # the auditor reports a faithful copy of a lossy source — the one verdict it
+    # exists to never give. The count in the string is the evidence, so say
+    # known-lossy-at-source and let a judge see it. Matched on the generated
+    # string, not on Workday: any board shipping the same shape is caught.
+    if _TRUNCATED_LOCATIONS_RE.search(gen_loc):
+        flags.append("truncated_location_list")
     if (gen_loc.count("United States") > 1
             or re.search(r"\b(\w+)\b of america \1\b", gen_loc, re.I)):
         flags.append("duplicated_country")
@@ -733,11 +749,16 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="scratch dir (gitignored)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
+    # No `--limit`/`--seed` here: `corpus` is a full-store pass and always was, so
+    # the two flags it used to declare read as a promise the code never kept — a
+    # caller passing `--limit 50` to keep a run short got the whole store. The
+    # sampling levers are `sample`'s, which reads both of its own.
     c = sub.add_parser("corpus", help="resolve raw + compare vs generated location")
-    c.add_argument("--limit", type=int, default=600)
-    c.add_argument("--seed", type=int, default=42)
-    c.set_defaults(func=cmd_corpus)
+    c.set_defaults(func=cmd_corpus, needs_store=True)
 
+    # `sample` reads the corpus file `corpus` already wrote, never the store, so it
+    # deliberately carries no `needs_store`: gating it would claim a dependency it
+    # does not have.
     s = sub.add_parser("sample", help="write per-entity comparison files for subagents")
     s.add_argument("--n", type=int, default=32)
     s.add_argument("--seed", type=int, default=7)
@@ -747,12 +768,26 @@ def main(argv=None) -> int:
 
     t = sub.add_parser("check", help="deterministic single-entity re-parse root-cause")
     t.add_argument("--key", action="append", required=True)
-    t.set_defaults(func=cmd_check)
+    t.set_defaults(func=cmd_check, needs_store=True)
 
     d = sub.add_parser("todo", help="write weird-location reviews for AI follow-up")
-    d.set_defaults(func=cmd_todo)
+    d.set_defaults(func=cmd_todo, needs_store=True)
 
     args = ap.parse_args(argv)
+    # No store, no audit. ``config.data_root()`` is ``None`` BY DESIGN wherever
+    # ``paths.data_root`` is unset — which is `config.example.yaml`, i.e. every
+    # fresh clone and CI — and each store-reading command handed that ``None``
+    # straight to ``pathlib``, so the quickstart commands died seven frames deep in
+    # the stdlib. One guard, before dispatch: a new store-reading subcommand
+    # declares ``needs_store=True`` beside its ``func`` instead of repeating it.
+    # Non-zero, unlike the store's own gc/validate tools that exit 0 on "nothing to
+    # do": this tool was ASKED for a verdict and has none, and exiting 0 would
+    # report an audit that never ran as a clean one.
+    if getattr(args, "needs_store", False) and config.data_root() is None:
+        print(f"{args.cmd}: store not configured (set paths.data_root in config.yaml "
+              f"or export JOBHUNT_DATA_ROOT) — this command reads the raw zone.",
+              file=sys.stderr)
+        return 2
     args.func(args)
     return 0
 

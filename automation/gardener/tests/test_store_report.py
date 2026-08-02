@@ -46,7 +46,7 @@ def _find_repo_root(start: Path) -> Path:
 
 
 REPO_ROOT = _find_repo_root(GARDENER_DIR)
-FIXTURE = REPO_ROOT / "examples" / "data"
+FIXTURE = REPO_ROOT / "examples" / "store"
 
 
 class StoreReportTests(unittest.TestCase):

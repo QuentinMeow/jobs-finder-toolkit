@@ -27,7 +27,7 @@ from store.constants import FIXTURE_SIZE_OVERRIDE_FILENAME  # noqa: E402
 from store.manifest import build_envelope, write_manifest  # noqa: E402
 from store.paths import domain_layout  # noqa: E402
 
-FIXTURE = REPO_ROOT / "examples" / "data"
+FIXTURE = REPO_ROOT / "examples" / "store"
 
 
 class MinimalValidatorTests(unittest.TestCase):

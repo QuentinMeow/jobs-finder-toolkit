@@ -18,7 +18,7 @@ ZSTD_LEVEL = 10
 # that handles both — never a silent bump.
 ENVELOPE_SCHEMA = 1
 
-# Soft size ceiling for the tracked example fixture store (examples/data/).
+# Soft size ceiling for the tracked example fixture store (examples/store/).
 # Exceeding it prints a loud human-facing WARNING and exits 0 — never a silent
 # grow, never a hard block. A deliberate, visible ``<data_root>/FIXTURE_SIZE_LIMIT_KB``
 # file may raise it (the sanctioned human-approved path).
