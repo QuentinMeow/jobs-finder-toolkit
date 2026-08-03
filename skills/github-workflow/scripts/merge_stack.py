@@ -39,9 +39,12 @@ DRY RUN IS THE DEFAULT. Nothing merges without `--execute`.
 Refusals (all non-zero, never best-effort — this script has no "try anyway" path):
 
   * a non-stacked PR whose base is not the intended base (the `#198` guard);
-  * a stacked PR whose `position` is not 1, unless `--atomic` says so on purpose;
+  * a stacked PR whose `position` is not 1, unless `--atomic` names the complete
+    contiguous prefix (positions 1..k) that will be swept on purpose;
   * a head SHA that moved between classification and merge;
   * a PR that is draft, closed, or already merged;
+  * an atomic sweep member whose latest-commit check rollup is not `SUCCESS`,
+    or whose rollup cannot be proven from GraphQL;
   * the poll ceiling reached while the request is still `pending`;
   * a terminal `enqueued` — the merge queue has it, it is not on the trunk;
   * the async record and the merge-confirmation endpoint disagreeing;
@@ -112,6 +115,14 @@ query($owner: String!, $name: String!, $number: Int!) {
       baseRefName
       headRefOid
       mergeable
+      commits(last: 1) {
+        nodes {
+          commit {
+            oid
+            statusCheckRollup { state }
+          }
+        }
+      }
       stackEntry {
         position
         stack { number size }
@@ -333,6 +344,49 @@ def assert_head_unmoved(classified: dict, fresh: dict) -> None:
             "that would land. Re-run and read the new plan.")
 
 
+def assert_atomic_checks_succeeded(pull: dict) -> None:
+    """Require the current head's combined check rollup to be ``SUCCESS``.
+
+    This is deliberately atomic-only. Ordinary PR merges continue to rely on
+    GitHub's branch-protection decision, while a top-entry atomic request needs
+    an explicit proof for every lower PR it will sweep without naming in the
+    request itself. Any absent or unexpected GraphQL shape is unsafe here.
+    """
+    number = pull["number"]
+    commits = pull.get("commits")
+    nodes = commits.get("nodes") if isinstance(commits, dict) else None
+    if not isinstance(nodes, list) or len(nodes) != 1:
+        raise Refusal(
+            f"#{number}: cannot prove the latest commit's check status because "
+            "GraphQL did not return exactly one commits(last: 1) node. Refusing "
+            "the atomic sweep before its single irreversible request.")
+    node = nodes[0]
+    commit = node.get("commit") if isinstance(node, dict) else None
+    if not isinstance(commit, dict):
+        raise Refusal(
+            f"#{number}: cannot prove the latest commit's check status because "
+            "the GraphQL commit node is unavailable. Refusing the atomic sweep "
+            "before its single irreversible request.")
+    if commit.get("oid") != pull["headRefOid"]:
+        raise Refusal(
+            f"#{number}: the status-check rollup belongs to commit "
+            f"{str(commit.get('oid') or '?')[:8]}, not the classified head "
+            f"{pull['headRefOid'][:8]}. Refusing the atomic sweep before its "
+            "single irreversible request.")
+    rollup = commit.get("statusCheckRollup")
+    if not isinstance(rollup, dict) or "state" not in rollup:
+        raise Refusal(
+            f"#{number}: the latest commit has no usable statusCheckRollup. "
+            "The atomic path fails closed when checks are absent or their "
+            "GraphQL shape is unavailable.")
+    state = rollup["state"]
+    if state != "SUCCESS":
+        raise Refusal(
+            f"#{number}: the latest commit's status-check rollup is {state!r}, "
+            "not 'SUCCESS'. Every explicitly named swept member must be green "
+            "before the atomic PUT.")
+
+
 def assert_bottom_of_stack(pull: dict, atomic: bool) -> None:
     entry = pull["stackEntry"]
     position = entry.get("position")
@@ -347,6 +401,74 @@ def assert_bottom_of_stack(pull: dict, atomic: bool) -> None:
         "it too. Pass --atomic if that is what you want. Note that for a stacked "
         "PR `baseRefName` proves nothing here: entries read `main` whether or not "
         "they are at the bottom.")
+
+
+def validate_atomic_sweep(pulls: list[dict]) -> None:
+    """Prove that `pulls` names one stack's complete swept prefix, 1..k.
+
+    GitHub's atomic endpoint accepts only the selected top entry; it does not
+    accept the lower entries as request parameters. Requiring callers to name
+    the full prefix gives the driver something concrete to preflight before that
+    one irreversible request, instead of silently trusting unnamed swept PRs.
+    """
+    if not pulls:
+        raise Refusal("--atomic needs at least one pull request.")
+    if any(track_of(pull) != "A" for pull in pulls):
+        ordinary = [f"#{pull['number']}" for pull in pulls
+                    if track_of(pull) != "A"]
+        raise Refusal(
+            "--atomic is only for one native GitHub stack; these named pull "
+            f"requests are ordinary: {', '.join(ordinary)}.")
+
+    for pull in pulls:
+        assert_open(pull)
+
+    stack_numbers = {
+        (pull["stackEntry"].get("stack") or {}).get("number")
+        for pull in pulls
+    }
+    if len(stack_numbers) != 1 or None in stack_numbers:
+        cells = ", ".join(f"#{pull['number']}={_stack_cell(pull)}"
+                          for pull in pulls)
+        raise Refusal(f"--atomic names members of different stacks: {cells}.")
+
+    positions = [pull["stackEntry"].get("position") for pull in pulls]
+    expected = list(range(1, len(pulls) + 1))
+    if positions != expected:
+        top = max((position for position in positions
+                   if isinstance(position, int)), default="?")
+        raise Refusal(
+            "--atomic must name every swept member in bottom-to-top order, "
+            f"positions 1..k. Named positions are {positions}; selected top is "
+            f"position {top}. Name the complete contiguous prefix {expected}.")
+
+
+def format_atomic_sweep(repo: str, pulls: list[dict]) -> str:
+    """Explain the one-request effect of a validated atomic prefix."""
+    top = pulls[-1]
+    entry = top["stackEntry"]
+    stack = entry.get("stack") or {}
+    numbers = ", ".join(f"#{pull['number']}" for pull in pulls)
+    return (
+        "Atomic fast path (one top-entry async request):\n"
+        f"  stack #{stack.get('number', '?')}: merging #{top['number']} at "
+        f"position {entry.get('position')} sweeps positions 1.."
+        f"{entry.get('position')} ({numbers}) into one merge commit.\n"
+        f"  {planned_command(repo, top)}"
+    )
+
+
+def preflight_atomic_sweep(repo: str, classified: list[dict]) -> list[dict]:
+    """Freshly validate and head-pin every named member before the one PUT."""
+    fresh = [classify(repo, pull["number"]) for pull in classified]
+    validate_atomic_sweep(fresh)
+    for before, after in zip(classified, fresh):
+        assert_head_unmoved(before, after)
+        assert_atomic_checks_succeeded(after)
+    print("  atomic preflight passed: every named member is in the same stack, "
+          "OPEN, non-draft, green, contiguous through the selected top, and "
+          "head-pinned.")
+    return fresh
 
 
 def assert_intended_base(pull: dict, base: str) -> None:
@@ -440,15 +562,20 @@ def wait_for_confirmation(repo: str, number: int, interval: float,
         time.sleep(interval)
 
 
-def merge_track_a(repo: str, pull: dict, opts) -> None:
-    """A stack member: `merge-async`, poll, then confirm independently."""
+def merge_track_a(repo: str, pull: dict, opts, *, preflighted: bool = False) -> None:
+    """A stack member: `merge-async`, poll, then confirm independently.
+
+    The atomic path supplies the just-preflighted top entry so no extra network
+    read can replace the state that the full-prefix validation approved.
+    """
     number = pull["number"]
-    fresh = classify(repo, number)
+    fresh = pull if preflighted else classify(repo, number)
     if track_of(fresh) != "A":
         raise Refusal(f"#{number} left its stack between classification and "
                       "merge; re-run and read the new plan.")
     assert_open(fresh)
-    assert_head_unmoved(pull, fresh)
+    if not preflighted:
+        assert_head_unmoved(pull, fresh)
     assert_bottom_of_stack(fresh, opts.atomic)
 
     code, out, err = _run_gh([
@@ -526,6 +653,16 @@ def retarget(repo: str, number: int, base: str) -> None:
     stale base with nothing red anywhere, and the only field that would have said
     so was one nobody read.
     """
+    before = classify(repo, number)
+    if track_of(before) != "B":
+        raise Refusal(
+            f"#{number}: joined a native stack before retargeting. Stack "
+            "members are rebased by GitHub and must never be hand-edited.")
+    if before["baseRefName"] == base:
+        print(f"  #{number} already targets {base}; retarget is a no-op "
+              "(`gh pr edit` not called, so no duplicate CI was triggered).")
+        return
+
     code, out, err = _run_gh(["pr", "edit", str(number), "--repo", repo,
                               "--base", base])
     if code != 0:
@@ -592,8 +729,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="actually merge; without it this prints the plan "
                              "and stops")
     parser.add_argument("--atomic", action="store_true",
-                        help="allow merging a stack entry above position 1, "
-                             "which lands every entry below it in one commit")
+                        help="merge one native stack prefix with one request; "
+                             "name every swept PR in positions 1..k, bottom to "
+                             "top")
     parser.add_argument("--poll-interval", type=float,
                         default=DEFAULT_POLL_INTERVAL_S, metavar="SECONDS",
                         help=f"async poll interval (default: "
@@ -627,26 +765,50 @@ def main(argv: list[str] | None = None) -> int:
         repo = resolve_repo(opts.repo)
         classified = [classify(repo, number) for number in opts.prs]
 
+        if opts.atomic:
+            validate_atomic_sweep(classified)
+
         mode = "EXECUTE" if opts.execute else "DRY RUN (nothing merges without --execute)"
         print(f"merge_stack.py: {repo} -- {mode}")
         print(format_table(classified))
         print()
-        print("Plan, in the order given:")
-        for index, pull in enumerate(classified):
-            world = ("stack member -- `gh pr merge` answers HTTP 403 here"
-                     if track_of(pull) == "A"
-                     else "not stacked -- nothing retargets it but you")
-            print(f"  #{pull['number']} ({world})")
-            print(f"      {planned_command(repo, pull)}")
-            following = classified[index + 1:index + 2]
-            if track_of(pull) == "B" and following:
-                print(f"      then, only after it merges: gh pr edit "
-                      f"{following[0]['number']} --repo {repo} "
-                      f"--base {opts.base}")
+        if opts.atomic:
+            print(format_atomic_sweep(repo, classified))
+        else:
+            print("Plan, in the order given:")
+            for index, pull in enumerate(classified):
+                world = ("stack member -- `gh pr merge` answers HTTP 403 here"
+                         if track_of(pull) == "A"
+                         else "not stacked -- nothing retargets it but you")
+                print(f"  #{pull['number']} ({world})")
+                print(f"      {planned_command(repo, pull)}")
+                following = classified[index + 1:index + 2]
+                if track_of(pull) == "B" and following:
+                    print(f"      then, only after it merges: read "
+                          f"#{following[0]['number']}'s base; if needed, "
+                          f"gh pr edit {following[0]['number']} --repo {repo} "
+                          f"--base {opts.base}")
         print()
 
         if not opts.execute:
             print("Dry run: stopping here. Re-run with --execute to merge.")
+            return 0
+
+        if opts.atomic:
+            fresh = preflight_atomic_sweep(repo, classified)
+            top = fresh[-1]
+            print(f"Sending one top-entry request for #{top['number']}; this "
+                  f"sweeps positions 1..{len(fresh)}:")
+            merge_track_a(repo, top, opts, preflighted=True)
+            for swept in fresh[:-1]:
+                if not confirm_merged(repo, swept["number"]):
+                    raise Refusal(
+                        f"#{swept['number']}: the top entry merged, but this "
+                        "explicitly named swept member is not independently "
+                        "confirmed merged.")
+                print(f"  #{swept['number']} swept and independently confirmed "
+                      f"by GET /pulls/{swept['number']}/merge -> 204.")
+            print("All named pull requests merged and independently confirmed.")
             return 0
 
         queue = list(classified)

@@ -2609,3 +2609,9 @@
   files: 16
   digest: sha256:77b6cae7461e5b55
   finding: 'Read the complete staged diff. It adds fail-closed CI lane selection, parallel gate orchestration, workflow and exporter coverage, a generic timing design, and sanitized process records; it also claims the existing public canary-debt task after the run exposed its stale expectation. Evidence names public PR/run numbers, branch names, generic durations, the fictional example, and a tilde-relative sibling-repository path only. No real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'
+- base: 812524f1
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 11
+  digest: sha256:90e5da532b696119
+  finding: 'Read the complete staged diff. It adds a head-pinned, green-check-gated atomic stack prefix path, avoids redundant retarget edits, documents measured generic PR timing, corrects two stale public canary assertions, and records a fictional-fixture 4/4 canary run plus sanitized task evidence. It names public PR/run numbers, generic branch examples, model identifiers, and durations only. No real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'

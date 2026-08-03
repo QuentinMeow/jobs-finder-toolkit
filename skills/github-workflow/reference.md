@@ -131,6 +131,34 @@ top of a seven-entry stack lands all seven and leaves six PRs pointing at a merg
 commit that names none of them. Merge entry 1 unless you specifically want the
 group; `merge_stack.py` refuses `position != 1` without `--atomic`.
 
+**Ready contiguous groups have a fast path.** Name the complete swept prefix in
+bottom-to-top order and select `--atomic`; the driver requires one native stack,
+positions exactly 1…*k*, and every named member to be open and non-draft. On
+`--execute` it freshly re-reads every member, rejects any moved head, then sends
+**one** head-pinned async request for the named top entry. It still polls that
+request to a terminal state and independently confirms the top and every named
+swept member:
+
+```bash
+# Dry run first: says explicitly that #<top> sweeps positions 1..9.
+.venv/bin/python skills/github-workflow/scripts/merge_stack.py --atomic \
+  <position-1> <position-2> <position-3> <position-4> <position-5> \
+  <position-6> <position-7> <position-8> <position-9>
+
+# After reading that plan:
+.venv/bin/python skills/github-workflow/scripts/merge_stack.py --atomic --execute \
+  <position-1> <position-2> <position-3> <position-4> <position-5> \
+  <position-6> <position-7> <position-8> <position-9>
+```
+
+The latency reason is measured, not hypothetical: one ready nine-entry atomic
+merge completed in about **6 seconds**, while an older eleven-entry sequential
+merge took about **8 minutes 19 seconds**. The group sizes differ, so this is not
+a per-entry benchmark; it is evidence that avoiding ten extra request/poll/
+retarget cycles removes the dominant stack-merge wait when the whole prefix is
+already approved and ready. If any rung is not ready, omit `--atomic` and merge
+bottom-up normally.
+
 **Do not hand-edit a stack member's base.** Inside a native stack GitHub rebases
 the next entry onto the stack base by itself. `gh pr edit --base` here fights the
 server.
@@ -157,9 +185,11 @@ gh pr merge <n> --merge --match-head-commit <headRefOid>
 gh api repos/{owner}/{repo}/pulls/<n>/merge > local/scratch/merge-check.log 2>&1
 echo "EXIT=$?"
 
-# 4. Retarget the NEXT PR — only now — and READ IT BACK.
-gh pr edit <n+1> --base main
-gh pr view <n+1> --json baseRefName        # must now say "main"
+# 4. Read the NEXT PR's base — only now. Edit only when it differs, then read it
+#    back. A base already equal to `main` is a no-op; do not retrigger its CI.
+gh pr view <n+1> --json baseRefName
+gh pr edit <n+1> --base main               # only if the read differed
+gh pr view <n+1> --json baseRefName        # after an edit, must say "main"
 ```
 
 **Step 1 is the guard that `#198` needed.** Checking `baseRefName` before merging
@@ -168,7 +198,9 @@ reply, the UI's "Merged" badge — is green in the failure case.
 
 **Step 4's read-back is not ceremony.** An unverified retarget is the same bug as
 no retarget: you cannot tell them apart from the command's exit code, and the
-consequence is identical.
+consequence is identical. The read before editing matters too: an already-correct
+base needs no mutation, and skipping that redundant `gh pr edit` avoids starting
+another CI run for a PR whose target did not need to change.
 
 **Retarget only after the base has actually merged.** Retargeting `<n+1>` first
 makes its diff include its parent's commits, so the PR under review stops being
@@ -296,6 +328,7 @@ Ordered by how convincingly each one looks like success.
 | 202 read as "merged" | `gh` exits 0, body says `pending` | the request was only accepted | poll to a terminal state, then confirm 204 |
 | `enqueued` read as merged | a terminal status, no error | a merge queue holds the request; the trunk does not have the work | treat `enqueued` as not-merged |
 | Retarget that did not take | `gh pr edit` exits 0 | the base is unchanged | re-read `baseRefName` afterwards |
+| Redundant retarget reruns CI | the child already targets the intended base | `gh pr edit --base` mutates an already-correct PR and starts duplicate work | read first; skip the edit when equal |
 | Whole stack merged by accident | one merge commit, six PRs closed | merging entry *k* lands 1…*k* atomically | assert `position == 1` |
 | `gh pr merge` on a stack member | HTTP 403 | stack members cannot use it | classify first |
 | A PR number that will not resolve | "Could not resolve to a PullRequest" | the number names a **stack** | check `/stacks` |
@@ -324,6 +357,7 @@ piped, to `local/gates/<name>.log`. The exit code you read is the gate's own.
 | Flag | Effect |
 |---|---|
 | `--list` | print the table and exit without running anything |
+| `--impact-from <ref>` | run policy plus the long lanes affected since the ref's merge-base; uncertainty expands to every lane |
 | `--group hook` \| `--group ci` | run only that group; default is both |
 | `--only <a>,<b>` · `--skip <a>,<b>` | narrow the selection by name |
 | `--fail-fast` | stop at the first red gate |
@@ -345,11 +379,17 @@ Three behaviours worth knowing before you trust a green run:
   excused in writing in `NOT_RUN_LOCALLY` — and fails in the other direction too, so
   an excuse for something CI no longer runs is also an error.
 
-**Run it before opening a PR, not just before committing.** The pre-commit hook runs a
-strict subset of CI: it does not run `automation/publish/tests`, `automation/shared/tests`,
-or any skill suite. A branch can commit clean and still be red. That has happened here —
-anchoring a `.gitignore` rule broke a leak-guard invariant that only the publish suite
-asserts, and every branch cut from that base inherited the failure.
+**Run the impact-scoped form before opening a PR, not just before committing:**
+
+```bash
+.venv/bin/python automation/gates/run_gates.py --impact-from origin/main --jobs 8
+```
+
+It uses the same fail-closed path classifier as CI and always includes policy gates.
+An unknown, foundational, deleted, or otherwise ambiguous input expands to the full
+suite automatically. Run the no-flag full form deliberately when validating a release
+or changing the classifier itself. The pre-commit hook remains a strict subset: a
+branch can commit clean and still be red in an affected CI-only suite.
 
 ## Files
 

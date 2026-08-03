@@ -1,6 +1,6 @@
 # Fast, risk-scoped pull-request verification
 
-**Status:** Implementation in progress on `codex/ci-pr-latency`; the current measurements and acceptance targets below are the baseline for the rollout.
+**Status:** In review. PR #266 exercised the fail-closed full matrix successfully; the stack-driver follow-up carries the focused workflow guidance and canary evidence.
 
 This design shortens routine pull-request verification by always running the repository's high-consequence policy checks, while running long render and unit-test lanes only when the changed inputs can affect them. Any classification uncertainty expands to the full suite, and every `main` or manually dispatched run executes the full matrix.
 
@@ -124,6 +124,12 @@ The reusable idea from `~/code/ai-harness/automation/run_tests.py` is explicit i
 ## Rollout and acceptance
 
 The first workflow-changing pull request necessarily selects the full matrix because workflow and selector changes are foundational. A stacked follow-up then exercises a focused lane against the new workflow. Every `main` run supplies the full-suite backstop while selective behavior gains evidence.
+
+First rollout observation, PR #266: hosted run `30805311849` completed the
+full green matrix in 88 seconds from creation through final `build`, compared
+with the 184-second historical PR median. Policy took 28 seconds and the slowest
+lane took 70 seconds. Updating the PR body afterward started only the dedicated
+`PR body` workflow (`30805537781`, green) and created no second CI run.
 
 Acceptance targets:
 
