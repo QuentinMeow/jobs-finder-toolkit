@@ -2577,5 +2577,23 @@
   reviewed_by: agent
   date: 2026-08-03
   files: 2
+  digest: sha256:39ca9d41f19a73ff
+  finding: 'Adds two sanitized session handovers: one records generic behavior and decisions from completed private chat-skill work without naming the overlay-only skill or a private path; the other records branch and worktree cleanup using repository-process facts only. Read the staged diff in full. No real identity, employer, school, salary, private company, private path, or dated job-hunt content.'
+- base: d708a38a
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 1
+  digest: sha256:56cd21e78800aefe
+  finding: 'Adds the current session handover for publishing and cleaning the local-only records branch. Read the staged diff in full. It contains repository workflow facts, generic private-repository status, public branch names, and a public queue-item slug only. No real identity, employer, school, salary, private company, private path, or dated job-hunt content.'
+- base: 84feedd1
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 2
   digest: sha256:c667fca8c0d17dee
   finding: 'Claims and moves the existing LibreOffice sandbox-crash task from backlog to in-progress after a new crash report reproduced the documented generic SIGABRT signature. The added worklog sentence names only the requested model family and repository process; no identity, employer, school, salary, or dated job-hunt content.'
+- base: cc9115be
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 3
+  digest: sha256:e41d588cd3c17fc3
+  finding: 'Merges the three already-reviewed sanitized session handovers from public origin/main into a diverged local main while preserving the unrelated local task-claim commit. Read the complete staged handover diff. The append-only ledger conflict was resolved by keeping both remote review rows first and the complete local review row afterward; no row was dropped or rewritten. Repository-process facts only; no identity, employer, school, salary, private company, private path, or dated job-hunt content.'
