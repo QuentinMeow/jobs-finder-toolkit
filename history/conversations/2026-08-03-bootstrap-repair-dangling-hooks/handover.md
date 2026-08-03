@@ -1,7 +1,7 @@
 # Handover — bootstrap-repair-dangling-hooks
 
 - **Date**: 2026-08-03
-- **Task(s)**: `tasks/1_in-progress/2026-08-03-bootstrap-repair-dangling-hooks/`
+- **Task(s)**: `tasks/3_in-review/2026-08-03-bootstrap-repair-dangling-hooks/`
 
 ## What happened
 
