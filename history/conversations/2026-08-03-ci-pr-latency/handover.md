@@ -5,12 +5,12 @@
 
 ## What happened
 
-- Nothing is broken on `main`: PRs #266 and #270 are green, while probe PR #275 now carries a stacked-base classifier fix found by its first hosted run; merging awaits explicit owner authorization.
+- Nothing is broken on `main`: PRs #266, #270, #275, and #277 are green; only explicit owner authorization remains before merging the stack.
 - Routine diffs now select owned test lanes, independent lanes run in parallel, body edits have a separate check, uncertain inputs fail closed to the full matrix, and a guarded one-request native-stack path is implemented.
 
 ## Where things stand
 
-- The foundation and stack fast path are in review. PR #275's fix must pass its fail-closed full matrix, then a clean documentation-only tip will provide the policy-only hosted timing before the task moves to review.
+- The complete four-PR stack is in review. The policy-only hosted acceptance run passed in 36 seconds with every long test group skipped by the corrected stacked-base classifier.
 
 ## Decisions made for you
 
@@ -23,7 +23,7 @@
 
 ## If X then Y
 
-- If the documentation-only tip exceeds 45 seconds, inspect policy dependency setup and link/review gates before changing test frameworks.
+- If later policy-only p95 exceeds 90 seconds, inspect dependency setup and link/review gates before changing test frameworks; one 36-second observation is not a percentile.
 - If a stacked probe sees lower-rung files again, inspect the event base SHA and fetched base commit before changing path ownership.
 - If GitHub does not treat the base-only skipped body job as satisfying the required context, keep bottom-up retargets manual and revise the workflow before merging #270.
 
