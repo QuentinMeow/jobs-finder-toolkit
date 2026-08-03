@@ -44,6 +44,11 @@
 - If CI runs the full lane matrix on this PR, that is expected, not a misclassification:
   `automation/bootstrap_overlay.py` has no lane owner in `automation/ci/classify_changes.py`,
   so the classifier fails closed to every lane.
+- If `pdf-tests` is red with exit 124, read the step name before reading the diff: the
+  LibreOffice apt install has a 180-second bound and a tail longer than that, so it fails before
+  any test runs and takes the required `build` check with it. It happened on this PR's first run
+  and a re-run of the same commit passed in 1m4s. Filed at
+  [libreoffice-apt-install-flakes-the-pdf-lane](../../../tasks/0_backlog/2026-08-03-libreoffice-apt-install-flakes-the-pdf-lane/task.md).
 
 ## Dead ends
 

@@ -27,3 +27,8 @@
 - Not done, deliberately: `bootstrap_overlay.py --check` is still in no gate table. It cannot be
   a CI gate (CI never installs hooks, so it would be red by construction there) and pre-commit
   cannot run it in a worktree. It stays a local health command, which is what the DoD asks for.
+- Second red gate outside scope, this one in CI on PR #300: `pdf-tests` failed with exit 124 in
+  the LibreOffice apt step, before any test ran, taking the required `build` check with it.
+  `gh run rerun --failed` passed the same commit in 1m4s. Filed as
+  `tasks/0_backlog/2026-08-03-libreoffice-apt-install-flakes-the-pdf-lane/` — no open item
+  covered it, only a `4_done` task's verification note describing the same tail latency.
