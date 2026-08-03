@@ -945,6 +945,10 @@ class ParallelBranchConvergenceTests(GateTestCase):
         self.assertIn("records no `base:`", msg)
         self.assertIn("RE-PARENTED RANGE", msg)
         self.assertIn("git merge-base", msg)
+        self.assertIn("git worktree list --porcelain", msg)
+        self.assertIn("git -C <trunk-worktree> reset --merge ORIG_HEAD", msg)
+        self.assertNotIn("git reset --hard ORIG_HEAD", msg)
+        self.assertNotIn("git checkout <second branch>", msg)
         # The escape hatch that used to be here: rewriting a landed row's evidence.
         self.assertNotIn("Correct the digest", msg)
         self.assertIn("Never restate a row's evidence", msg)
