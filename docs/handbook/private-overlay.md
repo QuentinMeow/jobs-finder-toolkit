@@ -47,6 +47,24 @@ git-ignored in the public repo, your real data is never committed to the public 
   `JOBHUNT_PERSONAL_TOKENS` **arms** it; `leak_tokens.txt` adds tokens but cannot arm it,
   and an unarmed guard exits 2 instead of reporting "safe to publish" (`--allow-unarmed`
   runs the token-independent checks knowingly).
+- **Safe words, for a skill name that is also an ordinary phrase.** The guard also
+  derives a token from every `private/skills/<name>/` folder, so creating a skill named
+  after a common phrase retroactively turns pre-existing public prose into a leak report —
+  a false positive of the familiar kind, where banning one word reddens every old
+  sentence that already contained it. An optional `private/leak_safe_words.txt` (one per
+  line, `#` comments, separators unified so `field notes` also covers `field-notes`)
+  says "this string is an ordinary phrase, not a secret". It is git-ignored for the
+  obvious reason: a tracked list of safe words would disclose the very skill names the
+  skill-name token exists to hide. **The mechanism ships; the values never do.**
+  Its scope is deliberately narrow — safe words suppress only the **auto-derived** skill
+  names, never a token you **declared** in `config.yaml`, `JOBHUNT_PERSONAL_TOKENS`, or
+  `leak_tokens.txt`. The line is inferred-vs-declared: something able to silently
+  un-declare a declared secret would be a way to disarm the guard, so you undeclare a
+  token by editing the file that declares it. Every exemption that actually fires is
+  printed in the guard's summary, and a safe word that collides with a declared token is
+  named as having no effect. An unreadable safe-word file is not an error — losing an
+  exemption makes the scan wider, never narrower — but it is reported, so a red gate is
+  always explainable.
 - Skills are discovered through the tracked public adapters plus the Codex, Claude
   Code, and Cursor agent-host trees (see `AGENTS.md`). A private skill lives only
   in the overlay; `automation/bootstrap_overlay.py` gives it a repository-locally
@@ -68,6 +86,7 @@ the market you scan (`market/`). Each root maps onto `config.yaml` `paths.*` key
 my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 ├── config.yaml                # your real identity + paths (copied from config.example.yaml)
 ├── leak_tokens.txt            # -> private/leak_tokens.txt (extra publish-guard tokens)
+├── leak_safe_words.txt        # optional — skill names that are ordinary phrases
 ├── me/                        # PERMANENT — role-agnostic, this is you
 │   ├── profile.md             # -> paths.profile_md
 │   ├── baseline.yaml          # -> paths.baseline_yaml

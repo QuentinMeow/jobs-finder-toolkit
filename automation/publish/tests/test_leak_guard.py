@@ -1028,6 +1028,153 @@ class TokenSourceUnreadableTests(unittest.TestCase):
         self.assertEqual(result["violations"]["token_source_unreadable"], [])
 
 
+class SafeWordTests(unittest.TestCase):
+    """Safe words exempt an overlay SKILL NAME that is also an ordinary phrase.
+
+    ``_overlay_skill_name_tokens`` derives a token from every private skill
+    folder, so naming a skill after a common phrase retroactively turns
+    pre-existing public prose into a leak report. These pin both halves: that the
+    exemption works, and — the half that matters — that it can only ever reach the
+    auto-derived skill names, never a token the maintainer declared.
+    """
+
+    def _tree(self, td, *skill_names):
+        root = Path(td)
+        for name in skill_names:
+            skill = root / "private/skills" / name
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nvisibility: private\n---\n", encoding="utf-8")
+        return root
+
+    def _safe_file(self, td, text):
+        path = Path(td) / "leak_safe_words.txt"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_a_safe_word_drops_that_skill_name_from_the_token_set(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._tree(td, "field-notes", "hidden-practice")
+            safe = self._safe_file(td, "# a note\nfield notes\n")
+            with mock.patch.object(check_public, "SAFE_WORDS_FILES", [safe]), \
+                 mock.patch.object(check_public, "LEAK_TOKENS_FILES", []), \
+                 mock.patch.object(check_public, "_overlay_skill_name_tokens",
+                                   return_value=check_public._overlay_skill_name_tokens(root)), \
+                 mock.patch.object(check_public, "_load_shared_config",
+                                   return_value=_ExampleConfigStub):
+                # The exempted name is gone; the other private skill is untouched.
+                self.assertEqual(check_public.supplementary_tokens(),
+                                 {"hidden-practice"})
+
+    def test_separators_are_unified_in_both_directions(self):
+        # The folder is hyphenated, the safe word is spaced. Neither spelling is
+        # privileged: an underscored folder is covered by the same line.
+        for folder in ("field-notes", "field_notes", "field notes"):
+            for written in ("field notes", "field-notes", "field_notes"):
+                with self.subTest(folder=folder, written=written):
+                    with tempfile.TemporaryDirectory() as td:
+                        safe = self._safe_file(td, written + "\n")
+                        with mock.patch.object(check_public, "SAFE_WORDS_FILES", [safe]):
+                            self.assertEqual(
+                                check_public._apply_safe_words({folder}), set())
+
+    def test_a_safe_word_matches_the_whole_name_not_a_substring(self):
+        # Substring semantics would let a one-letter line exempt every skill.
+        with tempfile.TemporaryDirectory() as td:
+            safe = self._safe_file(td, "quick\nanswer\na\n")
+            with mock.patch.object(check_public, "SAFE_WORDS_FILES", [safe]):
+                self.assertEqual(
+                    check_public._apply_safe_words({"field-notes"}),
+                    {"field-notes"},
+                )
+
+    def test_a_safe_word_cannot_remove_a_declared_identity_token(self):
+        # THE safety property. A mechanism that can un-declare a declared secret
+        # is a disarming vector; this one is scoped to derived names only.
+        os.environ[check_public.TOKENS_ENV_VAR] = "field-notes,RealName"
+        with tempfile.TemporaryDirectory() as td:
+            safe = self._safe_file(td, "field notes\nreal name\n")
+            with mock.patch.object(check_public, "SAFE_WORDS_FILES", [safe]), \
+                 mock.patch.object(check_public, "LEAK_TOKENS_FILES", []), \
+                 mock.patch.object(check_public, "_overlay_skill_name_tokens",
+                                   return_value={"field-notes"}), \
+                 mock.patch.object(check_public, "_load_shared_config",
+                                   return_value=_ExampleConfigStub):
+                self.assertIn("field-notes", check_public.identity_tokens())
+                # Dropped from the derived half...
+                self.assertNotIn("field-notes", check_public.supplementary_tokens())
+                # ...and still live in the set the scan actually uses.
+                self.assertIn("field-notes", check_public.personal_tokens())
+                self.assertIn("RealName", check_public.personal_tokens())
+
+    def test_a_safe_word_cannot_remove_a_leak_token_file_line(self):
+        with tempfile.TemporaryDirectory() as td:
+            leak_file = Path(td) / "leak_tokens.txt"
+            leak_file.write_text("AcmeRobotics\n", encoding="utf-8")
+            safe = self._safe_file(td, "acme robotics\n")
+            with mock.patch.object(check_public, "SAFE_WORDS_FILES", [safe]), \
+                 mock.patch.object(check_public, "LEAK_TOKENS_FILES", [leak_file]), \
+                 mock.patch.object(check_public, "_overlay_skill_name_tokens",
+                                   return_value=set()), \
+                 mock.patch.object(check_public, "_load_shared_config",
+                                   return_value=_ExampleConfigStub):
+                self.assertIn("AcmeRobotics", check_public.supplementary_tokens())
+
+    def test_an_absent_safe_word_file_changes_nothing(self):
+        # A public clone has no overlay and no such file; that is not an error.
+        with tempfile.TemporaryDirectory() as td:
+            missing = Path(td) / "nope" / "leak_safe_words.txt"
+            with mock.patch.object(check_public, "SAFE_WORDS_FILES", [missing]):
+                self.assertEqual(check_public.safe_words(), set())
+                self.assertEqual(check_public._apply_safe_words({"field-notes"}),
+                                 {"field-notes"})
+
+    def test_an_unreadable_safe_word_file_widens_the_scan_and_is_reported(self):
+        # Opposite fail-direction to a leak-token file, and that is why it is not
+        # a violation: losing an exemption over-reports, it never certifies.
+        with tempfile.TemporaryDirectory() as td:
+            root = self._tree(td, "field-notes")
+            safe = Path(td) / "leak_safe_words.txt"
+            safe.symlink_to(Path(td) / "does-not-exist.txt")
+            with mock.patch.object(check_public, "SAFE_WORDS_FILES", [safe]), \
+                 mock.patch.object(check_public, "LEAK_TOKENS_FILES", []), \
+                 mock.patch.object(check_public, "_load_shared_config",
+                                   return_value=_ExampleConfigStub):
+                self.assertEqual(check_public.safe_words(), set())
+                # Not exempted — the token stays live.
+                self.assertEqual(check_public._apply_safe_words({"field-notes"}),
+                                 {"field-notes"})
+                report = check_public.safe_word_report(root)
+        self.assertTrue(report["unreadable"])
+        self.assertEqual(report["exempted"], [])
+
+    def test_the_report_names_a_safe_word_that_has_no_effect(self):
+        # Silence here would let the maintainer believe a word is exempt while
+        # the union puts it straight back.
+        os.environ[check_public.TOKENS_ENV_VAR] = "field-notes"
+        with tempfile.TemporaryDirectory() as td:
+            root = self._tree(td, "field-notes")
+            safe = self._safe_file(td, "field notes\n")
+            with mock.patch.object(check_public, "SAFE_WORDS_FILES", [safe]), \
+                 mock.patch.object(check_public, "LEAK_TOKENS_FILES", []), \
+                 mock.patch.object(check_public, "_load_shared_config",
+                                   return_value=_ExampleConfigStub):
+                report = check_public.safe_word_report(root)
+        self.assertEqual(report["ineffective"], ["field notes"])
+
+    def test_an_unexempted_skill_name_is_still_caught_in_content(self):
+        # The guard must keep doing its job for every name NOT declared safe.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "docs").mkdir(parents=True)
+            (root / "docs/leaky.md").write_text(
+                "see the hidden-practice skill\n", encoding="utf-8")
+            result = check_public.scan(
+                root=root, tracked=["docs/leaky.md"], tokens=["hidden-practice"])
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["violations"]["personal_token"])
+
+
 class RealTreeStructuralTests(unittest.TestCase):
     """Scan the REAL tracked tree, not a synthetic fixture built from the same literals.
 

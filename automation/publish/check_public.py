@@ -137,6 +137,44 @@ LEAK_TOKENS_FILES = [
 # run against a freshly copied (config-less) export tree.
 TOKENS_ENV_VAR = "JOBHUNT_PERSONAL_TOKENS"
 
+# Optional git-ignored file of SAFE WORDS — strings that must NOT be treated as
+# secrets even when an overlay skill folder is named that. Same format as the
+# leak-token file (one per line, ``#`` comments and blanks ignored), and it lives
+# under the same overlay prefix, for the same reason plus one more: a safe word
+# names a private skill, so a TRACKED list of them would disclose exactly what
+# ``_overlay_skill_name_tokens`` exists to hide. The MECHANISM ships; the values
+# never do.
+#
+# Why this exists. ``_overlay_skill_name_tokens`` derives a token from every
+# ``private/skills/<name>/`` folder, so creating a skill whose name is also an
+# ordinary phrase retroactively turns pre-existing public prose into a leak
+# report. That is a false positive of the classic filter kind: banning the word
+# "grape" reddens every old post about fruit salad. The public tree here has used
+# one such phrase since before the skill existed, and nothing about the old text
+# discloses the new skill.
+#
+# Scope, deliberately narrow: safe words filter ONLY the auto-derived overlay
+# skill-name tokens. They can never remove a token the maintainer DECLARED — the
+# config identity, ``$JOBHUNT_PERSONAL_TOKENS``, or a ``leak_tokens.txt`` line.
+# The line is inferred-vs-declared, not importance: a mechanism able to silently
+# un-declare a declared secret is a disarming vector, and the guard has already
+# had to close three of those. Undeclaring a declared token is done by editing
+# the file that declares it, where the change is visible.
+#
+# There is no env-var channel and none is needed: the filter is applied where the
+# set is BUILT, so anything ``personal_tokens()`` later forwards through
+# ``$JOBHUNT_PERSONAL_TOKENS`` is already filtered.
+SAFE_WORDS_FILES = [
+    REPO_ROOT / "private" / "leak_safe_words.txt",
+]
+
+# Safe words and skill names are compared with separators unified, so a folder
+# named ``field-notes`` is covered by the safe word ``field notes`` (or
+# ``field_notes``). Matching is on the WHOLE name, never a substring: a safe word
+# is permission to stop protecting one specific skill name, and substring
+# semantics would let ``a`` exempt everything.
+_SAFE_WORD_SEP_RE = re.compile(r"[\s_-]+")
+
 # The private overlay prefix that must never be tracked in the public repo.
 PERSONAL_OVERLAY_PREFIXES = ("private/",)
 
@@ -587,6 +625,80 @@ def _overlay_skill_name_tokens(root: Path = REPO_ROOT) -> set[str]:
     }
 
 
+def _normalize_safe_word(word: str) -> str:
+    """Fold a safe word or skill name to its comparison form.
+
+    Lowercase, and every run of whitespace/underscore/hyphen becomes one space,
+    so the three spellings a folder name and a written phrase differ by
+    (``field-notes`` / ``field_notes`` / ``field notes``) compare equal. Nothing
+    else is stripped — this decides only whether two names are the same name.
+    """
+    return _SAFE_WORD_SEP_RE.sub(" ", word.strip().lower()).strip()
+
+
+def safe_words(paths: list[Path] | None = None) -> set[str]:
+    """Normalized safe words the maintainer declared (see ``SAFE_WORDS_FILES``).
+
+    ABSENT is legitimate and yields an empty set: a public clone has no overlay,
+    and a maintainer who never hit a collision has no file.
+
+    UNREADABLE is deliberately NOT a violation here, which looks inconsistent with
+    ``_read_token_source``'s fail-closed contract until you check the direction.
+    Losing a leak TOKEN narrows the scan — the guard stops looking for something
+    and still says "Safe to publish", which is fail-OPEN and is what check 9
+    exists to catch. Losing a safe WORD widens it: the exemption is not applied,
+    the skill-name token stays live, and the guard over-reports. Over-reporting
+    is the safe direction, so an unreadable file degrades to "no exemptions"
+    rather than blocking the run. It is still SURFACED by ``safe_word_report()``,
+    because a silently-ignored file means a red gate the maintainer cannot explain.
+    """
+    out: set[str] = set()
+    for path in (SAFE_WORDS_FILES if paths is None else paths):
+        raw, _error = _read_token_source(path)
+        for word in raw:
+            normalized = _normalize_safe_word(word)
+            if normalized:
+                out.add(normalized)
+    return out
+
+
+def _apply_safe_words(names: set[str], safe: set[str] | None = None) -> set[str]:
+    """Drop the skill names the maintainer declared safe. Whole-name match only."""
+    safe = safe_words() if safe is None else safe
+    if not safe:
+        return names
+    return {n for n in names if _normalize_safe_word(n) not in safe}
+
+
+def safe_word_report(root: Path = REPO_ROOT) -> dict:
+    """What the safe-word list actually DID, so it is never silently in effect.
+
+    ``exempted`` is the honest count of protection given up. ``ineffective`` names
+    safe words that collide with a DECLARED token: those tokens stay live by
+    design (see ``SAFE_WORDS_FILES``), and saying so beats letting the maintainer
+    believe a word is exempt when the union puts it straight back.
+    """
+    safe = safe_words()
+    names = _overlay_skill_name_tokens(root)
+    exempted = sorted(n for n in names if _normalize_safe_word(n) in safe)
+    declared = identity_tokens()
+    for leak_file in LEAK_TOKENS_FILES:
+        declared |= _read_token_source(leak_file)[0]
+    ineffective = sorted(
+        {_normalize_safe_word(t) for t in declared} & safe)
+    errors = [
+        {"path": _display_path(path), "detail": error}
+        for path in SAFE_WORDS_FILES
+        if (error := _read_token_source(path)[1]) is not None
+    ]
+    return {
+        "declared": len(safe),
+        "exempted": exempted,
+        "ineffective": ineffective,
+        "unreadable": errors,
+    }
+
+
 def _env_tokens() -> set[str]:
     """Tokens forwarded through ``JOBHUNT_PERSONAL_TOKENS``.
 
@@ -639,7 +751,11 @@ def supplementary_tokens() -> set[str]:
     toks: set[str] = set(PERSONAL_TOKENS)
     for leak_file in LEAK_TOKENS_FILES:
         toks |= _read_token_source(leak_file)[0]
-    toks |= _overlay_skill_name_tokens()
+    # Safe words are applied HERE, to the derived skill names only — not to the
+    # union, and not to the leak-token lines read just above. Filtering at the
+    # source is also what keeps the exemption true for anything
+    # ``personal_tokens()`` forwards onward (see ``SAFE_WORDS_FILES``).
+    toks |= _apply_safe_words(_overlay_skill_name_tokens())
     return toks
 
 
@@ -1164,9 +1280,20 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
     identity_count: int | None = None
     supplementary_count: int | None = None
     token_source_errs: list[dict] = []
+    safe_words_info: dict | None = None
     if tokens is None:
         identity = identity_tokens()
         supplementary = supplementary_tokens()
+        # Reported, never gating: giving up protection on a skill name is a
+        # maintainer decision, and this is the line that keeps it visible.
+        #
+        # Deliberately NOT ``safe_word_report(root)``. The filter above ran inside
+        # ``supplementary_tokens()`` against the real checkout, so the report has
+        # to read the same tree or it describes a scan that did not happen. In
+        # ``--staged`` mode ``root`` is a temp tree of staged blobs with no
+        # ``private/`` at all, which would report "0 exempted" for a run whose
+        # tokens were in fact filtered.
+        safe_words_info = safe_word_report()
         identity_count = len(identity)
         supplementary_count = len(supplementary - identity)
         tokens = sorted(identity | supplementary)
@@ -1209,6 +1336,8 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         # (identity 0) is visible at a glance instead of hiding inside the union.
         "identity_token_count": identity_count,
         "supplementary_token_count": supplementary_count,
+        # None when the caller injected tokens (the files were never consulted).
+        "safe_words": safe_words_info,
         # WHY the identity count is what it is: a real config, the fictional
         # example, or a config layer that refused/failed. Never raises.
         "config_status": config_identity_status(),
@@ -1355,6 +1484,22 @@ def print_report(result: dict) -> None:
         # Says WHY the identity count is what it is — a refused or failed config
         # layer reads identically to a clean unarmed run without this line.
         print(f"  identity source:      {result['config_status']}")
+    safe = result.get("safe_words")
+    if safe and (safe["exempted"] or safe["ineffective"] or safe["unreadable"]):
+        # Only printed when the list DID something (or failed to). A maintainer
+        # with no collisions never sees this block.
+        if safe["exempted"]:
+            print(f"  safe words:           {safe['declared']} declared; "
+                  f"{len(safe['exempted'])} overlay skill name(s) NOT protected "
+                  f"({', '.join(safe['exempted'])})")
+        for path_detail in safe["unreadable"]:
+            print(f"  safe words:           IGNORED — {path_detail['path']} exists "
+                  f"but could not be read ({path_detail['detail']}); no exemption "
+                  "applied, so the scan is WIDER, not narrower")
+        for word in safe["ineffective"]:
+            print(f"  safe words:           '{word}' has NO effect — it also names a "
+                  "declared token (config identity / leak_tokens.txt), which safe "
+                  "words never remove")
     print()
 
     if result["ok"]:
