@@ -2579,3 +2579,9 @@
   files: 2
   digest: sha256:39ca9d41f19a73ff
   finding: 'Adds two sanitized session handovers: one records generic behavior and decisions from completed private chat-skill work without naming the overlay-only skill or a private path; the other records branch and worktree cleanup using repository-process facts only. Read the staged diff in full. No real identity, employer, school, salary, private company, private path, or dated job-hunt content.'
+- base: d708a38a
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 1
+  digest: sha256:56cd21e78800aefe
+  finding: 'Adds the current session handover for publishing and cleaning the local-only records branch. Read the staged diff in full. It contains repository workflow facts, generic private-repository status, public branch names, and a public queue-item slug only. No real identity, employer, school, salary, private company, private path, or dated job-hunt content.'
