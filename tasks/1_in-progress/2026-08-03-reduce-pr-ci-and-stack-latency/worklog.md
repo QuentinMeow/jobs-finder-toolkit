@@ -9,3 +9,6 @@
 - Opened PR #266. Its deliberately full first run passed in 88 seconds end-to-end versus the 184-second historical PR median; policy took 28 seconds and the slowest lane 70 seconds. A later body edit ran only the 15-second body workflow and no CI workflow.
 - Added `build` and `pr-body` as required GitHub Actions checks after both reported green.
 - Implemented the stacked follow-up: no-op retarget detection plus a named, head-pinned atomic-prefix merge path; canary and final hosted evidence remain before merge.
+- Opened PR #270. Its final head passed every hosted check; the deliberately full matrix completed in 109 seconds and the separate body job in 8 seconds.
+- Added a regression-tested base-retarget filter so ordinary stack retargets do not restart the required body gate while description edits still do.
+- The merge driver's live dry run re-read both PRs as open and mergeable with pinned heads. The irreversible execute request was not attempted because merging into `main` requires explicit owner authorization.

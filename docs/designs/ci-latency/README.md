@@ -1,6 +1,6 @@
 # Fast, risk-scoped pull-request verification
 
-**Status:** In review. PR #266 exercised the fail-closed full matrix successfully; the stack-driver follow-up carries the focused workflow guidance and canary evidence.
+**Status:** In review. PR #266 exercised the fail-closed full matrix successfully; PR #270 carries the stack-driver fast path, retarget guard, focused workflow guidance, and canary evidence.
 
 This design shortens routine pull-request verification by always running the repository's high-consequence policy checks, while running long render and unit-test lanes only when the changed inputs can affect them. Any classification uncertainty expands to the full suite, and every `main` or manually dispatched run executes the full matrix.
 
@@ -109,6 +109,8 @@ For a fully reviewed native GitHub stack, one explicit atomic merge of the highe
 
 For ordinary chained pull requests, retargeting remains explicit after the parent merges. A child already targeting the intended base is a no-op: the driver reports it and does not call `gh pr edit`, avoiding an `edited` event and duplicate CI on the same head.
 
+A real base retarget still emits `edited`, but the required PR-body job distinguishes it from a description edit. Base-only edits skip that job; description edits continue to run it. This prevents an ordinary bottom-up stack from creating a new required-body wait between entries.
+
 ## Test-framework direction
 
 Changing from `unittest` to another framework is not the first optimization: hosted measurements show dependency setup and real test work dominate discovery. The order is:
@@ -130,6 +132,12 @@ full green matrix in 88 seconds from creation through final `build`, compared
 with the 184-second historical PR median. Policy took 28 seconds and the slowest
 lane took 70 seconds. Updating the PR body afterward started only the dedicated
 `PR body` workflow (`30805537781`, green) and created no second CI run.
+
+Second rollout observation, PR #270: hosted run `30806602419` completed its
+deliberately full matrix in 109 seconds. Policy took 27 seconds, the slowest lane
+took 61 seconds, and every selected lane passed. The separate body run
+`30806612926` passed in 14 seconds wall time with an 8-second job. Both
+workflow-changing observations remain below the 150-second full-matrix target.
 
 Acceptance targets:
 
