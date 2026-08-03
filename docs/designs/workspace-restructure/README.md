@@ -133,7 +133,7 @@ private/
 │   └── interviews/
 │       ├── story-bank/                    #   behavioral story bank
 │       ├── question-bank/                 #   generic answers (_general_*) + sources/
-│       ├── common-message-replies/        #   reusable message templates
+│       ├── common-message-replies/        #   paste-ready outreach + application-form copy
 │       ├── practice/                      #   coding practice tied to no company
 │       └── calendar.md                    #   upcoming interviews across everything
 │

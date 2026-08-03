@@ -97,7 +97,7 @@ my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 │       ├── calendar.md        # -> paths.calendar_md (upcoming interviews across everything)
 │       ├── story-bank/        # -> paths.story_bank_dir (behavioral project stories)
 │       ├── question-bank/     # generic behavioral answers
-│       └── common-message-replies/   # reusable recruiter-message templates
+│       └── common-message-replies/   # paste-ready outreach + application-form copy
 ├── companies/                 # PERMANENT — one folder per company (-> paths.companies_root)
 │   └── <key>/
 │       ├── research/          # company-research output
