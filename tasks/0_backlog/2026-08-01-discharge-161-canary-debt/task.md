@@ -38,7 +38,7 @@ own). The PR's own commit message says nothing about the eval gate, and no
 recorded run for this skill, `evals/results/behavioral-interview-prep-70d79c6e812e-2026-07-23.md`,
 predates the branch (2026-07-23) and does not cover this change.
 
-**This is the other half of an already-filed task.** `tasks/0_backlog/2026-07-31-answer-bank-renders-company-answers-into-the-question-bank/task.md`
+**This is the other half of an already-filed task.** `tasks/4_done/2026-07-31-answer-bank-renders-company-answers-into-the-question-bank/task.md`
 describes the exact same generator fix and lists its own last Definition-of-done bullet as:
 *"Canaries for `behavioral-interview-prep` run and are recorded (`evals/README.md`) — this is a
 behavioural edit, and it also covers the path corrections that skipped ahead of it."* Every other
@@ -89,7 +89,7 @@ canary set path, run kind = "regression pre-merge" (it is being run after the fa
 already-merged code — say so in the Notes/Verdict rather than mis-labeling it a baseline), the
 SHA, model version, config mode, date, judge, the per-canary `rubric_pass`/efficiency table, pass
 rate, and a PASS/FAIL verdict. If any canary fails, the finding routes back to
-`tasks/0_backlog/2026-07-31-answer-bank-renders-company-answers-into-the-question-bank/task.md`
+`tasks/4_done/2026-07-31-answer-bank-renders-company-answers-into-the-question-bank/task.md`
 (reopen/amend it) rather than being fixed inline here — this task's scope is discharging the
 measurement, not the code.
 
@@ -100,6 +100,6 @@ measurement, not the code.
 - [ ] Efficiency numbers pulled via `automation/metrics/report.py --by-sha` for that SHA.
 - [ ] Result filed at `evals/results/behavioral-interview-prep-<sha>-<date>.md` from
       `evals/results/TEMPLATE.md`, verdict recorded.
-- [ ] If PASS: note it against `tasks/0_backlog/2026-07-31-answer-bank-renders-company-answers-into-the-question-bank/task.md`'s
+- [ ] If PASS: note it against `tasks/4_done/2026-07-31-answer-bank-renders-company-answers-into-the-question-bank/task.md`'s
       last Definition-of-done bullet. If FAIL: file the regression against that same task rather
       than opening a new one.

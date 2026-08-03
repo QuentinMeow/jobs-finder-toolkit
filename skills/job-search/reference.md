@@ -230,6 +230,26 @@ list that is checked **first** so it wins over remote/abbreviation false positiv
 Set `us_only: false` to allow global results, or `require_match: true` for a hard
 preferred-cities/remote filter.
 
+### Two gates read two different files
+
+This gate — the **search-time** one, `scoring.location_ok` — reads only the active
+profile's `location:` block. The **draft-time** gate reads `config.location_policy()`
+from `config.yaml`: `handoff.py` (folder creation and per-row grouping),
+`status.py --check-locations`, and `company_roles.py`. Editing `config.yaml` therefore
+changes no search result, and editing the profile changes no draft-time verdict.
+
+**They default in opposite directions.** With the key absent, `us_only` resolves to
+`False` for the search (`scoring.py` passes `loc_cfg.get("us_only", False)`) and to
+`True` for the draft gate (`config.location_policy()`; `automation/shared/location.py`
+also defaults it `True`). `config.location_policy()` returns no `require_match` at all,
+so the draft gate always runs with location.py's own `require_match: True`, while the
+search profile's default is `False`. A profile that omits `us_only` therefore searches
+worldwide and has its foreign picks rejected at handoff. Set `us_only` explicitly in
+every profile; the shipped `example.yaml` and `_TEMPLATE.yaml` both do. The asymmetry is
+documented rather than resolved — changing either default changes which postings a user
+sees, so it is an owner decision
+(`message-queue/needs-human/decisions/job-search-us-only-default-asymmetry.md`).
+
 ### When a remote signal does NOT grant US scope (`assess_location`)
 
 A remote statement says how the work is done, not where. Three narrowings apply once the
@@ -487,9 +507,13 @@ Three kinds of sources feed one pipeline, split across two stages:
   single company with many open reqs can't dominate; thin searches still backfill to
   the full top-K.
 - **Posting age is NOT filtered by default.** `max_age_days` is opt-in (`null` in the
-  default profile): an open role is worth considering regardless of when it was posted.
+  default profile, and `null` is also what the pipeline uses when the key is absent):
+  an open role is worth considering regardless of when it was posted.
   Pass `--max-age-days N` (or set a number in the profile) only when you specifically
-  want "what was posted in the last N days". Do **not** confuse this with the 7-day
+  want "what was posted in the last N days". **One exception to watch:**
+  `profiles/_TEMPLATE.yaml` ships an explicit `max_age_days: 3`, so a profile created by
+  copying the template filters on posting age until the key is set to `null`.
+  Do **not** confuse this with the 7-day
   **company re-search** window (`company_search_log.skip_within_days`) below — that skips
   a company you already fully searched recently, and has nothing to do with posting age.
 - **Visa**: JD text is scanned for sponsorship signals (§ Visa sponsorship heuristic).

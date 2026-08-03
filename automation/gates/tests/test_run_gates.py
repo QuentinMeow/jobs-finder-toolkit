@@ -259,6 +259,43 @@ class TableSanityTests(unittest.TestCase):
         self.assertIn("review-gate-verify-all", names)  # CI form
 
 
+class OverlayIsolationTests(unittest.TestCase):
+    """No gate may judge the private overlay's own documents.
+
+    ``verify-links`` shipped as CI's bare invocation with no precondition, so on a
+    MAINTAINER checkout — the only kind that has ``private/`` mounted — the runner
+    read the overlay's markdown and reported RED on an otherwise green tree, while
+    the two things it exists to mirror both refuse to: the pre-commit hook passes
+    ``--no-overlay`` explicitly (its comment names this exact failure — "the branch
+    becomes uncommittable on the maintainer's own machine"), and CI has no overlay
+    to read, which makes the flag a no-op there. The overlay is a separate
+    repository at its own commit, so judging this branch's documents against it
+    compares two unrelated states.
+
+    Overlay link coverage is not lost, it is relocated: the gardener routine
+    (``automation/gardener/verify_links.py`` with no flags) is the deliberate,
+    run-by-hand reader, and its output may name ``private/`` paths.
+    """
+
+    def test_no_link_gate_reads_the_mounted_overlay(self):
+        gates = [g for g in run_gates.build_gates(REPO_ROOT)
+                 if any(t.endswith("verify_links.py") for t in g.argv)]
+        self.assertTrue(gates, "the table no longer runs verify_links.py at all")
+        for gate in gates:
+            with self.subTest(gate=gate.name):
+                self.assertIn(
+                    "--no-overlay", gate.argv,
+                    f"{gate.name} judges the mounted overlay's markdown, which "
+                    "neither pre-commit nor CI does — it goes RED on a green tree "
+                    "in every maintainer checkout")
+
+    def test_the_hook_it_mirrors_passes_the_same_flag(self):
+        """If the hook ever stops passing it, this gate's copy is drift, not a mirror."""
+        body = "\n".join(line for line in PRE_COMMIT.read_text(encoding="utf-8").splitlines()
+                         if not line.lstrip().startswith("#"))
+        self.assertIn("verify_links.py --require-roots --no-overlay", body)
+
+
 class RepoRootTests(unittest.TestCase):
     """A worktree's .git is a FILE, not a directory; both must resolve."""
 

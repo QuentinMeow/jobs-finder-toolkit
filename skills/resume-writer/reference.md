@@ -233,8 +233,11 @@ The render writes the resume DOCX to `source/` and the PDF to the folder root. F
 role in `meta.yaml`**, if a bundled `..._Application_<job title>.txt` exists, `render.py`
 also renders its COVER LETTER section to `source/..._Cover_Letter_<job title>.docx` +
 `..._Cover_Letter_<job title>.pdf` (at root) in the same run (skip with `--no-cover-letter`;
-render just one with `cover_letter.py --label "<Role>"`). `render.py`/`check.py` validate a
-cover letter for every role, so make sure every JD has its own bundle before rendering. Tell
+render just one with `cover_letter.py --label "<Role>"`). **A missing bundle is a WARN, not a
+FAIL:** `check.py` validates every letter that EXISTS, so a folder that produced ZERO cover letters
+still exits 0 and prints `✓ all checks passed (N warning(s))`. That is a gap in the gate, not
+permission — `AGENTS.md` requires one letter per JD. Write every bundle before rendering, then count
+the rendered letters against the `meta.yaml` roles rather than trusting the exit code. Tell
 the user where these files are (submit the resume DOCX from `source/` to portals, PDFs for
 humans) and that each JD's bundled `.txt` (cover letter + why-fit + past experience) is ready
 to copy-paste into that posting's portal.
@@ -276,13 +279,13 @@ City, ST • jordan.rivers@example.com • linkedin.com/in/jordanrivers
 
 Dear <Company> Hiring Team,
 
-<MAIN PARAGRAPH 1 — Interest + company/product understanding (70-140 words):
+<MAIN PARAGRAPH 1 — Interest + company/product understanding (100-140 words):
 one full-sentence paragraph that names the specific role, shows genuine,
 researched understanding of what the company builds and why it matters, and
 connects that to why you want to contribute. Concrete product specifics,
 never generic flattery.>
 
-<MAIN PARAGRAPH 2 — Unique personal strength (80-150 words): one full-sentence
+<MAIN PARAGRAPH 2 — Unique personal strength (110-150 words): one full-sentence
 paragraph proving your single most differentiating strength for THIS role,
 with a real, quantified achievement from the profile/story bank mapped to the
 JD's top requirements. Tell the story behind a resume bullet; don't relist.>
@@ -344,12 +347,12 @@ The body has **at least two developed main paragraphs**, written as professional
 full-sentence prose (NEVER telegraphic keyword fragments, sentence stubs, or
 comma-spliced clause lists):
 
-1. **Main paragraph 1 — Interest + company/product understanding (70-140 words).**
+1. **Main paragraph 1 — Interest + company/product understanding (100-140 words).**
    Name the specific role, demonstrate genuine, *researched* understanding of what the
    company actually builds (product, customers, mission, a concrete recent detail) and why
    it matters, and connect that to why you are drawn to this role. Specific and
    substantive — never generic flattery or invented product claims.
-2. **Main paragraph 2 — Unique personal strength (80-150 words).**
+2. **Main paragraph 2 — Unique personal strength (110-150 words).**
    Prove your single most differentiating strength for THIS role with a real,
    quantified achievement from the profile / story bank, mapped to the JD's top
    requirements. Tell the story behind a resume bullet rather than relisting bullets.
@@ -363,6 +366,9 @@ paragraphs.
 - **At least two** paragraphs must land in that 60-180-word band.
 - Whole letter body: **200-450 words** total (target ~250-400; one page, never more).
 - No placeholder text (`to be written`, `TODO`, unfilled `<...>`), or the check fails.
+- **The 200-word body floor binds the two main paragraphs alone.** The closing is optional, so the
+  targets above are set to clear the floor without one (100 + 110 = 210). Two 60-word paragraphs
+  pass both paragraph checks and still FAIL the body total — add words to the mains, not a closing.
 
 **Technique (research-backed — HBR, The Muse, Harvard Career Services, Novoresume, Zety,
 2024-2026):**
@@ -540,7 +546,7 @@ keywords in high-weight locations is the target.
   bullet** — surface JD-critical skills there (Approved list, or user-facing
   Weak/Selective + explicit JD mention).
 - The **first bullet under each project** is weighted more than later bullets — lead with
-  the most JD-relevant bullet per project (reorder within the 2-3 without rewriting).
+  the most JD-relevant bullet per project (reorder within the project's 1-4 bullets).
 - Any term appearing **2+ times in the JD is almost certainly weighted** — make sure the
   resume covers each of those at least once.
 

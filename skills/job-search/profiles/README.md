@@ -38,13 +38,23 @@ Then point `config.job_search.default_profile` at the label to make it the defau
   title contains at least one `include` term and none of the `exclude` terms.
 - **keywords.strong / good / negative** — scoring. `strong` matches in title+description
   (high weight), `good` in description (medium), `negative` lowers score (honest mis-fits).
-- **location.preferred / allow_remote / require_match** — `require_match: false` keeps all
-  locations but boosts preferred/remote; `true` hard-filters to them.
+- **location.preferred / allow_remote / us_only / require_match** — `require_match: false` keeps
+  all locations but boosts preferred/remote; `true` hard-filters to them. **This block is the only
+  source of the search-time location gate** — `config.yaml`'s `location_policy:` is a separate,
+  draft-time gate (`handoff.py`, `status.py --check-locations`, `company_roles.py`) and editing it
+  changes no search result. Always set `us_only` explicitly: the search treats an absent
+  `us_only` as `false` (worldwide), while the draft-time gate treats an absent one as `true`, so a
+  profile that omits it surfaces foreign roles that handoff then rejects.
 - **visa** — `needs_sponsorship: true` activates the visa filter. `policy: exclude_negative`
   drops only postings that explicitly deny sponsorship; `require_positive` keeps only those
   that explicitly offer it. `h1b_transfer` / `perm_greencard` add soft scoring boosts.
 - **max_age_days** — only postings published within the last N days (`null` = don't
-  filter on posting age).
+  filter on posting age, which is also what the pipeline uses when the key is
+  absent). `_TEMPLATE.yaml` ships an explicit `3`, so set it to `null` in your copy
+  unless you want a 3-day recency window. **It does not apply to a company's FIRST
+  search**: an employer with no row in the company-search log has no prior coverage
+  to protect, so that run widens to `company_search_log.first_search_max_age_days`
+  (`null` = no age gate at all). See `reference.md` § Recency filter.
 - **ai_company** — AI-native / AI-transitioning company fit. `signals` = JD-text phrases
   (each found adds `boost_per_hit`, capped at `max_boost`); `company_tags` = registry tags
   (e.g. `ai-lab`/`ai-infra`/`ai-native`) whose employers get `company_boost`. `require: true`

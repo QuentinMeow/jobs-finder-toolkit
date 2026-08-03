@@ -11,6 +11,12 @@ Canonical source -> vendored copy targets are declared in ``TARGETS`` below (pat
 are relative to the repo root). Editing a shared module = edit the canonical file,
 then run this script to regenerate the copies.
 
+``--check`` runs in BOTH directions. Outward: every declared copy still matches
+its source. Inward (``undeclared_vendored_files``): every file sitting under a
+``scripts/_vendor/`` root is declared somewhere here. Without the inward pass
+the gate fails open — an undeclared copy is compared to nothing and drifts
+forever while the check stays green.
+
 Usage:
     # Regenerate every vendored copy from its canonical source
     .venv/bin/python automation/vendoring/sync_vendored.py
@@ -108,6 +114,25 @@ DIR_TARGETS: dict[str, list[str]] = {
 _EXCLUDE_DIRS = {"__pycache__"}
 _EXCLUDE_SUFFIXES = {".pyc", ".pyo"}
 
+# Where the reverse audit looks. Scoped to ``skills/`` on purpose: that is the
+# only tree this manifest ever writes into, and a bare ``rglob("_vendor")``
+# would sweep in unrelated third-party vendor dirs such as
+# ``.venv/**/site-packages/pip/_vendor``.
+_VENDOR_ROOT_GLOB = "skills/*/scripts/_vendor"
+
+# The ONLY files allowed to sit directly in a ``scripts/_vendor/`` root without
+# a ``TARGETS`` entry. Exempt by exact NAME AND POSITION, never by glob or
+# suffix, so the same names deeper in the tree — where they would mean a file
+# added to or removed from a ``DIR_TARGETS`` mirror — still fail the audit.
+#   README.md    Documentation, not vendored code: the "generated, do not edit"
+#                notice pointing a reader at this script. It is hand-written per
+#                skill and has no canonical source to be byte-identical to.
+#   __init__.py  Package marker, not vendored code: it makes ``_vendor`` an
+#                importable package for that skill's own scripts. Structure.
+# Matches the rule already stated in docs/handbook/skills-and-vendoring.md:
+# "Everything in _vendor/ except __init__.py/README.md is generated".
+_VENDOR_ROOT_EXEMPT = frozenset({"README.md", "__init__.py"})
+
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -190,6 +215,51 @@ def _check_dir(src: str, dst: str) -> list[str]:
     return reasons
 
 
+def undeclared_vendored_files(
+    repo_root: Path = REPO_ROOT,
+    targets: dict[str, list[str]] | None = None,
+    dir_targets: dict[str, list[str]] | None = None,
+) -> list[str]:
+    """Reverse audit: repo-relative files under a vendor root that nobody declared.
+
+    Everything else in this module walks the manifest OUTWARD — for each
+    declared target, does the copy still match its source? That direction alone
+    is a gate that fails open: a module copied into
+    ``skills/<skill>/scripts/_vendor/`` and never added to ``TARGETS`` is
+    compared against nothing, so the check stays green forever while the copy
+    rots away from ``automation/shared/``. This walks the tree INWARD instead
+    and asks whether every file present is accounted for.
+
+    A file is accounted for when it is a declared ``TARGETS`` copy, sits inside
+    a declared ``DIR_TARGETS`` tree, or is one of the ``_VENDOR_ROOT_EXEMPT``
+    shapes. ``__pycache__``/``*.pyc`` build artifacts are skipped, as everywhere
+    else here.
+
+    The dict arguments exist so tests can drive the audit over a synthetic tree
+    with a synthetic manifest; production callers pass neither.
+    """
+    targets = TARGETS if targets is None else targets
+    dir_targets = DIR_TARGETS if dir_targets is None else dir_targets
+    declared_files = {dst for dsts in targets.values() for dst in dsts}
+    declared_trees = tuple(f"{dst.rstrip('/')}/"
+                           for dsts in dir_targets.values() for dst in dsts)
+
+    undeclared: list[str] = []
+    for vendor_root in sorted(repo_root.glob(_VENDOR_ROOT_GLOB)):
+        if not vendor_root.is_dir():
+            continue
+        for rel, path in sorted(_dir_files(vendor_root).items()):
+            if "/" not in rel and rel in _VENDOR_ROOT_EXEMPT:
+                continue
+            repo_rel = path.relative_to(repo_root).as_posix()
+            if repo_rel in declared_files:
+                continue
+            if any(repo_rel.startswith(tree) for tree in declared_trees):
+                continue
+            undeclared.append(repo_rel)
+    return undeclared
+
+
 def check() -> int:
     """Return 0 if every vendored copy matches its source, else 1 (with report)."""
     drift: list[tuple[str, str]] = []
@@ -214,6 +284,8 @@ def check() -> int:
         for dst in dsts:
             dir_drift.extend(_check_dir(src, dst))
 
+    undeclared = undeclared_vendored_files()
+
     for src, dst in drift:
         print(f"OUT OF SYNC: {dst} != {src}", file=sys.stderr)
     for reason in dir_drift:
@@ -221,6 +293,21 @@ def check() -> int:
     if drift or dir_drift:
         print("Run: .venv/bin/python automation/vendoring/sync_vendored.py",
               file=sys.stderr)
+
+    for path in undeclared:
+        print(f"UNDECLARED VENDORED FILE: {path}", file=sys.stderr)
+    if undeclared:
+        print(
+            "Nothing in automation/vendoring/sync_vendored.py names the file(s) "
+            "above, so this check compares them to no canonical source and they "
+            "drift silently. Fix EACH one: either declare it — add its canonical "
+            "source -> this path to TARGETS (or its directory to DIR_TARGETS) in "
+            "automation/vendoring/sync_vendored.py, then re-run the script to "
+            "regenerate it — or delete the file if nothing needs it. Re-running "
+            "sync_vendored.py alone will NOT clear this.",
+            file=sys.stderr)
+
+    if drift or dir_drift or undeclared:
         return 1
     print("vendored copies in sync")
     return 0
@@ -230,7 +317,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true",
-                        help="verify only; exit 1 if any vendored copy drifted")
+                        help="verify only; exit 1 if any vendored copy drifted "
+                             "or any file under a scripts/_vendor/ root is "
+                             "undeclared")
     args = parser.parse_args()
     if args.check:
         return check()

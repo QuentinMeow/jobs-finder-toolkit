@@ -2,7 +2,7 @@
 
 - **Status**: awaiting-owner-input
 - **Filed**: 2026-07-31
-- **Source**: [task 2026-07-31-sponsorship-negation-defeats-require-positive](../../../tasks/3_in-review/2026-07-31-sponsorship-negation-defeats-require-positive/task.md)
+- **Source**: [task 2026-07-31-sponsorship-negation-defeats-require-positive](../../../tasks/4_done/2026-07-31-sponsorship-negation-defeats-require-positive/task.md)
 - **Blocks**: nothing — the fix ships either way; this is only about existing files
 - **Default path**: agents change nothing. Existing `meta.yaml` files keep whatever
   `required_yoe` / `job_level` they were written with; only newly enriched

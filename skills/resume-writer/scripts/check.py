@@ -414,7 +414,11 @@ def check_skills(c: Checker, data: dict, approved: list, weak: list, jd_text: st
             if _in_list(tok, weak):
                 # Weak/Selective skills are allowed only when the JD mentions them
                 if jd_text is None:
-                    c.warn(f"Weak/Selective skill {tok!r} used but no JD file (jd.md / JD-*.md) "
+                    # Name only what layout.find_jd_files actually matches: it
+                    # globs source/*.md and keeps the JD- prefixed ones, so a
+                    # bare jd.md is never read. Naming it sent agents off to
+                    # create the one file nothing looks at.
+                    c.warn(f"Weak/Selective skill {tok!r} used but no JD file (source/JD-*.md) "
                            "found to verify JD mention")
                 elif not _mentioned_in_jd(tok, jd_text):
                     c.fail(f"Weak/Selective skill {tok!r} used but the JD does not mention it "
@@ -938,7 +942,9 @@ def format_rules() -> str:
     lines.append(
         f"Warn-only (never block): >{int(REWORDED_WARN_RATIO * 100)}% bullets reworded (drift); "
         f"bullet near length limit; sparse bottom (>{RESUME_BOTTOM_BLANK_WARN_IN:g}in); "
-        "visa/sponsorship in the cover body. Full workflow: SKILL.md.")
+        "visa/sponsorship in the cover body; a role with NO bundled .txt at all (so a render "
+        "that produced zero cover letters still exits 0 — read the warnings). "
+        "Full workflow: SKILL.md.")
     return "\n".join(lines) + "\n"
 
 

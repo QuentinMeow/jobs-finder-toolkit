@@ -1,6 +1,6 @@
 # Current state
 
-- **Last-updated**: 2026-08-01
+- **Last-updated**: 2026-08-02
 
 *Groomed 2026-07-31 after an audit found this page four merges stale under a fresh
 date. Every claim below was re-derived from the tree that day — task folders read
@@ -115,10 +115,21 @@ only re-measurement can keep true, it was replaced by the command that produces 
   is the single company index every alias lookup resolves through, and its task is in
   `tasks/4_done/2026-07-28-workspace-phase-7-company-key`, with two follow-ups filed:
   7b (put `company_key` on every application `meta.yaml`) in `tasks/3_in-review/` and
-  7c (durable vs disposable timeline) in `tasks/0_backlog/`. **Only phase 8 is
-  genuinely unstarted** (`tasks/0_backlog/2026-07-28-workspace-phase-8-instruction-surface`);
-  its preconditions are met and its task file carries re-measured scope. See
-  `docs/designs/workspace-restructure/execution-plan.md`.
+  7c (durable vs disposable timeline) in `tasks/0_backlog/`. **Phase 8 is mostly
+  landed, not unstarted** (`tasks/0_backlog/2026-07-28-workspace-phase-8-instruction-surface`)
+  — this page said "only phase 8 is genuinely unstarted" on 2026-08-01 and that was
+  wrong in both halves. Its instruction-surface column was re-measured to **zero
+  work** (phase-2 and phase-5 tokens: 0 stale references across all 11 public
+  `SKILL.md`), and its `examples/` reshape **landed 2026-08-02** (`261b4f0`,
+  `8c8112a`): `examples/` now mirrors the private tree as `applications fixtures
+  market me screenshots store`, and `.github/workflows/ci.yml:252` pins
+  `validate_store.py examples/store`. What is left is the ratification of the seven
+  calls the reshape was built on — `message-queue/needs-human/decisions/examples-reshape-seven-calls.md`,
+  now ratify-or-revert — plus D7, the one call that was **not** built (no `companies/`
+  counterpart was added under `examples/`, so `config.companies_root()` still resolves to
+  nothing under the example config), and the inherited accessor item.
+  The task stays in `0_backlog/` because those are open, not because the work is.
+  See `docs/designs/workspace-restructure/execution-plan.md`.
 - **The link-checker repair merged ahead of phase 5** — owner decision, 2026-07-29,
   and it was the right order for a reason nobody had seen yet. `verify_links.py`
   enumerated with `git ls-files` in the **public** repo, so it had never opened a

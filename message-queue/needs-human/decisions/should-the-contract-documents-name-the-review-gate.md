@@ -20,9 +20,15 @@
 >   never weaken a check to make a commit pass, never bypass with `--no-verify`.
 > — `AGENTS.md:230-233`
 
-The public review gate is at least as consequential and appears in none of the three
-contract documents: `grep -ic "review_ledger\|review gate\|review_gate"` over `AGENTS.md`,
-`README.md` and `CONTRIBUTING.md` returns **0, 0, 0**. It blocks anyway, in both places
+The public review gate is at least as consequential and is not named as a gate in any of the
+three contract documents. **Measurement corrected 2026-08-02 — it was cited here as 0, 0, 0
+and that is no longer true.** `grep -ic "review_ledger\|review gate\|review_gate"` over
+`AGENTS.md`, `README.md` and `CONTRIBUTING.md` now returns **1, 0, 3**. Neither hit changes
+the question: `AGENTS.md`'s single match is `review_gate.EXPORT_ABSENT_ROOTS` at `:53`, a
+constant cited inside the public/private section, not a Guardrails entry; `CONTRIBUTING.md`'s
+three (`:26`, `:83`, `:87`, added in `cb631f7`) tell a reader the gate *runs* in pre-commit and
+in CI, which is a contributor check-list fact, not the Guardrail this item asks for. It blocks
+anyway, in both places
 the reconciler does — `automation/hooks/pre-commit:98-99` and
 `.github/workflows/ci.yml:154-163` (`review_gate.py --verify-all`, with `--head <sha>` on
 a PR).

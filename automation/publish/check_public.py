@@ -44,9 +44,15 @@ message:
      OPEN at all — a dangling symlink, a permission error, an I/O error — is a
      FAILURE: its bytes ship and the guard inspected none of them. The line is
      OPENABILITY, not extractability. A file that opened but holds no scannable
-     text (a raw binary blob, a non-UTF-8 file, an image with no extractor) is
-     counted in the report's ``content read: N of M`` line but is never fatal
-     (rationale: the "inspection accounting" comment above ``_probe_open``).
+     text (a raw binary blob, an image with no extractor) is counted in the
+     report's ``content read: N of M`` line but is never fatal (rationale: the
+     "inspection accounting" comment above ``_probe_open``). A text file that is
+     not valid UTF-8 is NOT in that bucket — it is decoded by ``_decode_lossless``
+     and scanned like any other, because a name in a latin-1 note is still a name.
+  9. Unreadable personal-token source (fail closed). A token file that EXISTS but
+     cannot be READ narrows check 6 silently — every employer/school/product token
+     vanishes and the guard still certifies. That is a FAILURE. A token file that
+     is simply ABSENT stays legitimate: the overlay may not be mounted.
 
 This guard is designed to go GREEN on a properly genericized public checkout. Run
 it in a maintainer checkout (where ``config.yaml`` supplies the real tokens)
@@ -392,6 +398,51 @@ def _load_shared_config():
         return None
 
 
+def _same_file_content(a: Path, b: Path) -> bool:
+    """True when two paths hold byte-identical content. Missing/unreadable -> False."""
+    try:
+        if a.stat().st_size != b.stat().st_size:
+            return False
+        return a.read_bytes() == b.read_bytes()
+    except OSError:
+        return False
+
+
+def is_example_config(active: Path, example: Path) -> bool:
+    """Is the ACTIVE config the fictional example persona? Identity, not location.
+
+    The old test was ``active.resolve() == example.resolve()``, which is only
+    correct while both paths live in the same tree. The exporter breaks that
+    assumption by construction: it runs this guard with ``cwd`` inside a freshly
+    copied export, so ``EXAMPLE_CONFIG`` resolves to the EXPORT's copy while an
+    inherited absolute ``$JOBHUNT_CONFIG`` still names the SOURCE checkout's file.
+    Same file, two absolute paths, and the answer flipped to "real" — after which
+    ``Jordan`` and ``Rivers`` became personal-identity tokens and a clean export
+    failed on the toolkit's own documentation.
+
+    So: the same resolved path (the fast, ordinary case) OR byte-identical
+    content. Content is what makes the answer travel between trees, because the
+    exporter copies ``config.example.yaml`` verbatim.
+
+    The NAME is deliberately never consulted. A REAL config that merely happens to
+    be called ``config.example.yaml`` holds different bytes and stays REAL — this
+    must not become a way for an owner's real identity to disarm the guard. And a
+    config that is a verbatim copy of the example IS the example: it carries no
+    real identity, so refusing to arm on it is the correct answer.
+
+    Both ways of being wrong fail CLOSED. Mistaking a real config for the example
+    yields zero identity tokens, which is the UNARMED refusal (exit 2) — loud,
+    never a silent pass. Mistaking the example for a real config yields false
+    violations (exit 1). Neither certifies a tree it should not.
+    """
+    try:
+        if Path(active).resolve() == Path(example).resolve():
+            return True
+    except OSError:
+        pass
+    return _same_file_content(Path(active), Path(example))
+
+
 def config_identity_status() -> str:
     """One line describing which config (if any) supplied identity tokens.
 
@@ -410,7 +461,7 @@ def config_identity_status() -> str:
         return (f"config unresolved ({type(exc).__name__}: {exc}) — "
                 f"no identity resolved from config")
     try:
-        is_example = active.resolve() == Path(config.EXAMPLE_CONFIG).resolve()
+        is_example = is_example_config(active, Path(config.EXAMPLE_CONFIG))
     except Exception:  # noqa: BLE001
         is_example = False
     if is_example:
@@ -422,16 +473,18 @@ def _identity_tokens(config) -> set[str]:
     """Derive identity tokens from the ACTIVE config — only if it is a real one.
 
     When the discovered config is the tracked ``config.example.yaml`` fallback
-    (the fictional "Jordan Rivers" persona), this returns an empty set so the
-    example identity is never treated as a leak.
+    (the fictional example persona), this returns an empty set so the example
+    identity is never treated as a leak. "Is it the example" is decided by
+    ``is_example_config`` — content identity, not an absolute path, because the
+    exporter reads the same file from two different trees.
     """
     toks: set[str] = set()
     try:
-        active = config.config_path().resolve()
-        example = config.EXAMPLE_CONFIG.resolve()
+        active = Path(config.config_path())
+        example = Path(config.EXAMPLE_CONFIG)
     except Exception:
         return toks
-    if active == example:
+    if is_example_config(active, example):
         return toks
 
     name = config.candidate_name()
@@ -459,17 +512,61 @@ def _identity_tokens(config) -> set[str]:
     return toks
 
 
-def _tokens_from_file(path: Path) -> set[str]:
+def _display_path(path: Path) -> str:
+    """Repo-relative when possible, so a printed path never echoes a home directory."""
+    try:
+        return Path(path).relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _read_token_source(path: Path) -> tuple[set[str], str | None]:
+    """Read one personal-token file. Returns ``(tokens, error)``.
+
+    ABSENT is legitimate and returns ``(set(), None)`` — ``private/leak_tokens.txt``
+    only exists in a maintainer checkout with the overlay mounted, and a public
+    clone must still be able to run the guard.
+
+    PRESENT BUT UNREADABLE is not. A permission error, an I/O error or a dangling
+    symlink used to return that same empty set, so every employer/school/product
+    token silently vanished from check 6 and the guard went on to print "Safe to
+    publish" over a scan it had quietly narrowed. The guard fails CLOSED for the
+    files it SCANS (check 8); its own arming input gets the same treatment — the
+    reason comes back and ``scan()`` turns it into a violation (check 9).
+
+    ENCODING is deliberately not an error: ``_decode_lossless`` recovers the
+    tokens byte-for-byte, so one stray byte can never drop the whole set.
+    """
     toks: set[str] = set()
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return toks
-    for line in text.splitlines():
+        data = path.read_bytes()
+    except FileNotFoundError:
+        # A DANGLING SYMLINK raises this too and is NOT an absence: something is
+        # there, it claims to be the token file, and its content is gone.
+        if path.is_symlink():
+            return toks, "FileNotFoundError: dangling symlink"
+        return toks, None
+    except OSError as exc:
+        return toks, _oserror_detail(exc)
+    for line in _decode_lossless(data).splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
             toks.add(line)
-    return toks
+    return toks, None
+
+
+def token_source_errors(paths: list[Path] | None = None) -> list[dict]:
+    """Personal-token files that EXIST but could not be read (check 9).
+
+    Empty in the normal case, including the common one where the overlay is not
+    mounted and the file is simply absent.
+    """
+    out: list[dict] = []
+    for path in (LEAK_TOKENS_FILES if paths is None else paths):
+        _, error = _read_token_source(path)
+        if error is not None:
+            out.append({"path": _display_path(path), "detail": error})
+    return out
 
 
 def _overlay_skill_name_tokens(root: Path = REPO_ROOT) -> set[str]:
@@ -534,10 +631,14 @@ def supplementary_tokens() -> set[str]:
     name/email/handles are known. Gating on the union of this set and
     ``identity_tokens()`` is exactly the fail-open bug this split exists to
     prevent.
+
+    Returns only the tokens it could read. Whether a token FILE was unreadable —
+    a narrowed scan rather than an empty one — is reported separately by
+    ``token_source_errors()`` and gates in ``scan()`` (check 9).
     """
     toks: set[str] = set(PERSONAL_TOKENS)
     for leak_file in LEAK_TOKENS_FILES:
-        toks |= _tokens_from_file(leak_file)
+        toks |= _read_token_source(leak_file)[0]
     toks |= _overlay_skill_name_tokens()
     return toks
 
@@ -566,13 +667,14 @@ def unarmed_report() -> list[str]:
         lines.append(f"  looked for:     '{filename}' via ${env_name} ({env_val}), then "
                      f"upward from {Path.cwd()}, then upward from {shared_dir}")
         try:
-            active = Path(config.config_path()).resolve()
-            example = Path(config.EXAMPLE_CONFIG).resolve()
+            active = Path(config.config_path())
+            is_example = is_example_config(active, Path(config.EXAMPLE_CONFIG))
         except Exception:
-            active = example = None
+            active = None
+            is_example = False
         if active is None:
             lines.append("  active config:  <could not be resolved>")
-        elif active == example:
+        elif is_example:
             lines.append(f"  active config:  {active}")
             lines.append("                  ^ the TRACKED example fallback — the fictional "
                          "persona contributes zero tokens by design")
@@ -582,8 +684,14 @@ def unarmed_report() -> list[str]:
                  f"{'set but empty' if TOKENS_ENV_VAR in os.environ else 'unset'}")
     supplementary = supplementary_tokens()
     for leak_file in LEAK_TOKENS_FILES:
-        state = "present" if leak_file.exists() else "absent"
-        lines.append(f"  {leak_file}: {state} "
+        error = _read_token_source(leak_file)[1]
+        if error is not None:
+            # Never let "unreadable" read as "absent" here either: absent is the
+            # normal state of a public clone, unreadable is a broken maintainer one.
+            state = f"UNREADABLE ({error})"
+        else:
+            state = "present" if leak_file.exists() else "absent"
+        lines.append(f"  {_display_path(leak_file)}: {state} "
                      f"({len(supplementary)} supplementary token(s) — cannot arm the guard)")
     return lines
 
@@ -686,11 +794,14 @@ def find_skill_notes_violations(tracked: list[str]) -> list[dict]:
 #   read       the content was inspected — text lines, an extracted document, or
 #              (for a symlink) the target path the link stores.
 #   skipped    the guard OPENED it and there was legitimately no text to scan: a
-#              raw binary blob, a non-UTF-8 file, an image or archive it has no
-#              extractor for. Expected, counted, named — never fatal. Failing
-#              here would fail on every ordinary binary in the tree, and a guard
-#              that cries wolf on `examples/screenshots/*.jpg` is a guard someone
-#              switches off.
+#              raw binary blob, an image or archive it has no extractor for.
+#              Expected, counted, named — never fatal. Failing here would fail on
+#              every ordinary binary in the tree, and a guard that cries wolf on
+#              `examples/screenshots/*.jpg` is a guard someone switches off.
+#              A file that is not valid UTF-8 does NOT belong here: it used to,
+#              and that was a hole — a NUL-free latin-1 `.md` carrying a real name
+#              was counted, never searched, and the tree still certified. It is
+#              decoded by `_decode_lossless` and READ like anything else now.
 #   unreadable the guard could not OPEN it: a dangling symlink, a permission
 #              error, an I/O error. Git tracks the path, so the content ships,
 #              and the guard knows NOTHING about it. That is a finding (check 8).
@@ -701,11 +812,16 @@ def find_skill_notes_violations(tracked: list[str]) -> list[dict]:
 # purpose. A broken symlink was never opened at all.
 SKIP_GUARD_SELF = "guard-self"          # this file: content-exempt by design
 SKIP_BINARY_SNIFF = "binary-sniff"      # NUL byte — a binary blob, no text
-SKIP_NOT_UTF8 = "not-utf8"              # decoded as neither UTF-8 nor binary
 SKIP_NO_EXTRACTOR = "no-text-extractor"  # image/archive: nothing to extract
 SKIP_EXTRACT_FAILED = "extract-failed"  # extractor ran; container malformed/lib missing
 UNREADABLE_BROKEN_SYMLINK = "broken-symlink"
 UNREADABLE_OPEN_FAILED = "open-failed"
+
+# Read statuses. Both mean "the bytes were searched"; the second says the file
+# needed the mixed decoder, which the report names so a lossy-looking input is
+# never invisible.
+READ_UTF8 = "read"
+READ_FALLBACK_DECODE = "utf8+latin-1"
 
 
 def _oserror_detail(exc: OSError) -> str:
@@ -726,12 +842,49 @@ def _probe_open(path: Path) -> str | None:
     return None
 
 
-def _read_text_classified(path: Path) -> tuple[list[str] | None, str, str]:
-    """Read ``path`` as UTF-8 lines AND say why, when that did not happen.
+def _decode_lossless(data: bytes) -> str:
+    """Decode UTF-8, falling back to latin-1 for exactly the bytes UTF-8 rejects.
 
-    Returns ``(lines, status, detail)``. ``status`` is ``"read"`` with the lines,
-    or one of ``SKIP_BINARY_SNIFF`` / ``SKIP_NOT_UTF8`` (opened, no text to scan)
-    or ``UNREADABLE_OPEN_FAILED`` (never opened — a check-8 finding).
+    Neither single codec is sufficient, and the gap between them is a leak:
+
+      * ``data.decode("utf-8", errors="replace")`` keeps UTF-8-encoded text but
+        turns each rejected byte into U+FFFD, which SPLITS a latin-1-encoded token
+        (``Bj\\xf8rnholm`` -> ``Bj?rnholm``) and defeats the substring match;
+      * ``data.decode("latin-1")`` never fails, but mojibakes every UTF-8-encoded
+        non-ASCII token (``Z\\xc3\\xbcrich`` -> ``ZÃ¼rich``).
+
+    Splicing them keeps both properties: a valid UTF-8 sequence decodes to its
+    real characters, and every byte UTF-8 rejects becomes its latin-1 character (a
+    1:1 map over 0x00-0xFF). No byte is dropped and no token is split, which is
+    what lets an undecodable text file be SCANNED instead of merely counted.
+
+    Only reached when strict UTF-8 has already failed, so the ordinary path pays
+    nothing. NUL-bearing blobs are sniffed out before this — decoding a compressed
+    payload would just hand the scanner megabytes of noise.
+    """
+    chunks: list[str] = []
+    pos = 0
+    while True:
+        try:
+            chunks.append(data[pos:].decode("utf-8"))
+            return "".join(chunks)
+        except UnicodeDecodeError as exc:
+            # ``exc.start``/``exc.end`` are relative to the slice handed to
+            # decode(); ``end > start`` always, so ``pos`` strictly advances.
+            chunks.append(data[pos:pos + exc.start].decode("utf-8"))
+            chunks.append(data[pos + exc.start:pos + exc.end].decode("latin-1"))
+            pos += exc.end
+
+
+def _read_text_classified(path: Path) -> tuple[list[str] | None, str, str]:
+    """Read ``path`` as text lines AND say why, when that did not happen.
+
+    Returns ``(lines, status, detail)``. ``status`` is ``READ_UTF8`` with the
+    lines, ``READ_FALLBACK_DECODE`` with the lines when strict UTF-8 rejected a
+    byte and ``_decode_lossless`` recovered it, ``SKIP_BINARY_SNIFF`` (opened, no
+    text to scan) or ``UNREADABLE_OPEN_FAILED`` (never opened — a check-8
+    finding). Line NUMBERS stay true to the file in every case: the mixed decode
+    is byte-preserving, so it never adds or removes a line break.
     """
     try:
         data = path.read_bytes()
@@ -740,9 +893,10 @@ def _read_text_classified(path: Path) -> tuple[list[str] | None, str, str]:
     if b"\x00" in data:
         return None, SKIP_BINARY_SNIFF, ""
     try:
-        return data.decode("utf-8").splitlines(), "read", ""
+        return data.decode("utf-8").splitlines(), READ_UTF8, ""
     except UnicodeDecodeError as exc:
-        return None, SKIP_NOT_UTF8, f"undecodable byte at offset {exc.start}"
+        return (_decode_lossless(data).splitlines(), READ_FALLBACK_DECODE,
+                f"undecodable byte at offset {exc.start}; read with a latin-1 fallback")
 
 
 def _read_text(path: Path) -> list[str] | None:
@@ -870,6 +1024,7 @@ def find_token_and_pii_violations(
     unscanned: list[dict] = []
     skipped: list[dict] = []
     unreadable: list[dict] = []
+    fallback: list[dict] = []
     files_read = 0
 
     for rel in tracked:
@@ -944,6 +1099,10 @@ def find_token_and_pii_violations(
                 skipped.append({"path": rel, "reason": status})
             continue
         files_read += 1
+        if status == READ_FALLBACK_DECODE:
+            # Read and scanned — but say so out loud. A file that needed the
+            # mixed decoder is worth an operator's eye even when it is clean.
+            fallback.append({"path": rel, "detail": detail})
         token_found = False
         seen_kinds: set[str] = set()
         for lineno, line in enumerate(lines, start=1):
@@ -975,6 +1134,9 @@ def find_token_and_pii_violations(
         "files_read": files_read,
         "files_skipped": skipped,
         "unreadable": unreadable,
+        # A SUBSET of files_read (informational, never fatal), so the
+        # read + skipped + unreadable == tracked accounting still holds.
+        "fallback_decoded": fallback,
     }
     return token_viols, pii_viols, unscanned, inspection
 
@@ -1001,12 +1163,19 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         tracked = _list_files(root)
     identity_count: int | None = None
     supplementary_count: int | None = None
+    token_source_errs: list[dict] = []
     if tokens is None:
         identity = identity_tokens()
         supplementary = supplementary_tokens()
         identity_count = len(identity)
         supplementary_count = len(supplementary - identity)
         tokens = sorted(identity | supplementary)
+        # The guard resolved its OWN token set, so a token file that exists but
+        # could not be read makes the scan below silently NARROWER than it should
+        # be — the exact fail-open shape check 9 exists to stop. When the caller
+        # supplied ``tokens`` the files were never consulted and there is nothing
+        # to narrow, which is what keeps fixture scans deterministic.
+        token_source_errs = token_source_errors()
 
     private_skill = find_private_skill_violations(
         Path(visibility_root).resolve() if visibility_root else root, tracked)
@@ -1027,6 +1196,8 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         "unscanned_binary": [
             {"category": "unscanned_binary", **item} for item in unscanned],
         "unreadable_file": [{"category": "unreadable_file", **item} for item in unreadable],
+        "token_source_unreadable": [
+            {"category": "token_source_unreadable", **item} for item in token_source_errs],
     }
     total = sum(len(v) for v in violations.values())
     return {
@@ -1050,6 +1221,10 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         "files_read": inspection["files_read"],
         "files_skipped": inspection["files_skipped"],
         "unreadable_files": unreadable,
+        # Files that were READ (they count in files_read) but only after the
+        # UTF-8 + latin-1 mixed decode. Named so a lossy-looking input is never
+        # invisible; never a violation, because its bytes WERE searched.
+        "fallback_decoded": inspection["fallback_decoded"],
         "ok": total == 0,
         "total_violations": total,
         "violations": violations,
@@ -1140,6 +1315,7 @@ def print_report(result: dict) -> None:
     tokens = v["personal_token"]
     unscanned = result.get("unscanned_binaries") or []
     unreadable = result.get("unreadable_files") or []
+    token_sources = v.get("token_source_unreadable") or []
 
     print("Public-repo leak guard")
     print(f"  repo root:      {result['repo_root']}")
@@ -1157,6 +1333,9 @@ def print_report(result: dict) -> None:
             summary = ", ".join(f"{k}: {n}" for k, n in sorted(by_reason.items()))
             print(f"  not inspected:  {sum(by_reason.values())} ({summary}) "
                   "— opened, no text to scan")
+        for item in result.get("fallback_decoded") or []:
+            print(f"  mixed encoding: {item['path']} — {item['detail']} "
+                  "(SCANNED, not skipped)")
         if unreadable:
             print(f"  UNREADABLE:     {len(unreadable)} file(s) could not be opened "
                   "— see [8] below")
@@ -1260,6 +1439,16 @@ def print_report(result: dict) -> None:
             print(f"  - {item['reason'].upper():15} {item['path']}{detail}")
         print("  Fix: repoint or remove the dangling link, restore read permission, "
               "or untrack the file.\n")
+
+    if token_sources:
+        print(f"[9] Unreadable personal-token source ({len(token_sources)}) — the file "
+              f"EXISTS but could not be read, so the token scan above ran on a "
+              f"SILENTLY NARROWER token set:")
+        for item in token_sources:
+            print(f"  - {item['path']}  ({item['detail']})")
+        print("  A missing token file is fine (a public clone has none); an unreadable "
+              "one is not.\n  Fix: restore read permission, repoint the dangling link, "
+              "or remove the file.\n")
 
 
 EXIT_OK = 0

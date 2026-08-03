@@ -95,4 +95,4 @@ Four supporting calls made the same day:
 - Revisit if the review-gate row rate proves unworkable in practice, or if a leak reaches the
   public remote despite both layers.
 
-Design: [`design/workspace-restructure/`](../../design/workspace-restructure/README.md).
+Design: [`docs/designs/workspace-restructure/`](../../docs/designs/workspace-restructure/README.md).

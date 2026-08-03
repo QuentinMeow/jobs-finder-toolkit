@@ -43,3 +43,17 @@ Two other files in the tree are in the same position and could be done in one pa
       `reference.md` — diff the two and show that no edge case was dropped.
 - [ ] The `github-workflow` canary set passes, since this is a behavioral-surface edit
       to a skill that has one.
+
+## Lines this file now owes (append one per deferral)
+
+**2026-08-02** — the owner-reporting standard (`docs/handbook/reporting-to-the-owner.md`,
+branch `docs/owner-reporting-standard`) added a `## What needs you` section to
+`.github/pull_request_template.md`. `SKILL.md` documents the PR body format and should
+name that section, but it is at 600/600, so the line was NOT written. The line it owes,
+in the PR-body format section: **`## What needs you` sits directly after
+`## What changes for you`; it projects live `message-queue/needs-human/` items ranked by
+`Cost if wrong` worst-first, each with a link, `Why this matters` and `If you do nothing`,
+and is exactly the sentence `No queued action requested.` when there are none. Full
+prose rules: `docs/handbook/reporting-to-the-owner.md`.** Add it in the consolidation
+pass. Until then the template's own HTML comment is the only place the rule is written,
+which means an agent writing a PR body from `SKILL.md` alone will not know about it.

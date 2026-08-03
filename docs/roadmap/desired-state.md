@@ -22,18 +22,23 @@
    (meta.yaml schema v6 with multi-occurrence calendar links, `calendar.md`, `status.py --update-progress` /
    `--sync-calendar`) without changing the coarse status-folder pipeline.
 3. **Raw-data-layer store as the single job-postings substrate**
-   (`docs/designs/raw-data-layer/execution-plan.md`): remaining work is the
-   incremental O(new) build (`tasks/0_backlog/2026-07-21-store-incremental-build-o-new`)
-   and the parked logs-as-projections question
-   (`message-queue/needs-human/decisions/logs-as-store-projections.md`).
+   (`docs/designs/raw-data-layer/execution-plan.md`): the incremental O(new) build
+   shipped and its task is in `tasks/4_done/2026-07-21-store-incremental-build-o-new`,
+   so the only thing left on this line is the parked logs-as-projections question
+   (`message-queue/needs-human/decisions/logs-as-store-projections.md`) — the
+   skip-logs stay the sole search/draft skip authorities until it is answered.
 4. **A self-enforcing process layer** (AgentFold restructure): the reconciler is
    green in pre-commit + CI and the restructure itself is closed
    (`tasks/4_done/2026-07-22-agentfold-restructure`, PRs #56–#59; its
    top-level `handbook/` + `design/` item was later reversed by workspace phase
-   2 under a superseding ADR). Remaining: queue hygiene tooling, now rewritten
-   down to its two live gaps
-   (`tasks/0_backlog/2026-07-21-todo-queue-hygiene-tooling`), and session
-   handovers in `history/`. **The tree-instructions validator is dropped** —
+   2 under a superseding ADR). Remaining: queue hygiene tooling, now down to **one**
+   live gap (`tasks/0_backlog/2026-07-21-todo-queue-hygiene-tooling`) — the
+   company-plus-date structural screen, itself blocked on the unanswered
+   `message-queue/needs-human/decisions/company-plus-date-structural-screen.md`,
+   whose default path is that no screen is added. The gardener half shipped:
+   `automation/gardener/gardener.py` registers `queue-hygiene` in `ROUTINES` and
+   `ALL_ORDER`. Also remaining: session handovers in `history/`.
+   **The tree-instructions validator is dropped** —
    the tree it would police is 2 tracked `AGENTS.md` and 0
    `agents-references/` directories, and its own owner-decided ADR
    (`memory/decisions/tree-instruction-growth-policy.md`) holds that surface
@@ -79,11 +84,14 @@ id, slug or title must never reach this file or a public commit message.
 The claim this section rests on is the SHAPE, not the figure, and the shape has held at
 every measurement: the backlog is dominated by the harness that tracks the work, while the
 defects with the shortest path to a wrong artifact reaching the user sit in
-`memory/known-issues/` and on no list at all. (2026-08-02, public tree only: 60 open items;
-`harness` 16 + `repo` 12 + `benchmarks` 4 = 32 against `job-search` 17 + `resume-writer` 4 +
-`email` 4 + `tracker` 3 = 28 — the split is milder than the hand count claimed, and the
-`Area` field draws the line differently from the original prose, which is precisely why the
-command is now the record.)
+`memory/known-issues/` and on no list at all. **No figure is quoted here on purpose.** The
+last one written into this paragraph was already wrong the day it was written and was wrong
+again a day later, for the reason stated above — closing a task changes the number, and this
+page is not re-derived on every merge. Run the two commands; the answer they print is the
+record. The split to read off the second command is `harness + repo + benchmarks` (the
+harness that tracks the work) against `job-search + resume-writer + email + tracker` (the
+product a user touches); the first side has been the larger one at every measurement, and
+the `Area` field draws the line more mildly than the original hand count's prose did.
 
 Meanwhile **`memory/known-issues/` holds 4 open entries** (down from 7 on 2026-07-31; three
 were closed on 2026-08-02 after being verified fixed in code, and each names its fixing

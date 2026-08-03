@@ -12,11 +12,27 @@ the new layout.
 
 ## Context
 
-Detail in [the execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) under "Phase 8". `examples/` gets reshaped to mirror
-the private tree and to fix its own two violations (`examples/data/` is a generic bucket,
-`examples/templates/` collides with the root `templates/`). `examples/data` is an executed path
-pin in `ci.yml` (`automation/store/validate_store.py examples/data --check-fixture-size`) —
-same PR.
+Detail in [the execution plan](../../../docs/designs/workspace-restructure/execution-plan.md) under "Phase 8".
+
+**Rewritten 2026-08-02: the tree this section described no longer exists.** It said
+`examples/` *gets* reshaped and named its two violations — `examples/data/` as a generic
+bucket and `examples/templates/` colliding with the root `templates/` — plus an executed
+`examples/data` pin in `ci.yml`. **All three are gone.** The reshape landed on 2026-08-02
+(`261b4f0` "Mirror the private tree's shape in the public examples/ dataset", `8c8112a`
+"Rename the example fixture store examples/data to examples/store"):
+
+```
+$ ls examples/
+applications  fixtures  market  me  screenshots  store
+
+$ grep -n examples .github/workflows/ci.yml
+229:            examples/applications/6_drafted/example-corp-senior-software-engineer/
+252:        run: python automation/store/validate_store.py examples/store --check-fixture-size
+```
+
+Neither `examples/data/` nor `examples/templates/` exists, and the `ci.yml` pin names
+`examples/store`. What is left of this phase is **not** the reshape; it is the two things
+below the reshape did not close — D7 and the inherited accessor item.
 
 ### Scope, re-measured 2026-07-31 — the per-skill table is dead in both columns
 
@@ -109,25 +125,36 @@ eval protocols and both trees' notes — plus the prose and canary YAML the chec
 missed, not the table's original estimate. The link checker is now the instrument for the part
 it can see, and it reports `references: all resolve` today.
 
-### Status after the 2026-07-31 hardening stack — scoped, partly landed, blocked on the owner
+### Status — the reshape landed 2026-08-02; what is left is ratification plus two items
 
-**Scoped.** The phase was re-measured in full this session: the per-skill instruction sweep is
-zero work in both columns (above), the `examples/` target shape is mapped file by file against
-the private tree that actually exists, and every literal that has to move with it was counted —
-**85 references in 42 files** naming `examples/{data,templates,profile,applications}` outside
-the record trees, including `ci.yml`'s executed `examples/data` pin.
+**Scoped, then built.** The phase was re-measured in full on 2026-07-31: the per-skill
+instruction sweep is zero work in both columns (above), the `examples/` target shape was
+mapped file by file against the private tree, and every literal that had to move with it was
+counted — **85 references in 42 files** naming `examples/{data,templates,profile,applications}`
+outside the record trees, including `ci.yml`'s executed `examples/data` pin. That count is a
+**dated measurement of work now done**, not a to-do: `261b4f0` and `8c8112a` moved the tree and
+its references together, and the `ci.yml` pin now reads `examples/store`.
 
 **Landed in that stack (no path moves, so no owner call was needed):** the four factually wrong
 instructions this phase was also chartered to fix are corrected — search-profile locations in
 `ask-me-anything` and `job-search`, and where company behavioural answers belong in
 `behavioral-interview-prep`. That is the phase's PR 1.
 
-**Deliberately NOT done: the `examples/` reshape itself.** Every remaining piece renames,
-deletes or invents a **published** path in a public repo, or changes what a generator writes
-into the owner's private tree. Seven such calls are filed as one item —
+**Was: "deliberately NOT done — the `examples/` reshape itself."** ~~Every remaining piece
+renames, deletes or invents a **published** path in a public repo, or changes what a generator
+writes into the owner's private tree.~~ **Superseded 2026-08-02.** The pre-registered fallback
+in that item fired: the owner said "continue the work of the folder refactor", which the item's
+own **Default path** had already defined to mean *build each call to its recommendation*. D1,
+D2, D3 and D6 were built and are now **ratify-or-revert**, each as its own revertible commit
+range. **D7 was NOT built** — `examples/companies/` still does not exist
+(`git ls-files examples/companies` returns 0 rows) — and D5 shipped separately in `ac34371`.
+
+The calls are still filed as one item —
 [`message-queue/needs-human/decisions/examples-reshape-seven-calls.md`](../../../message-queue/needs-human/decisions/examples-reshape-seven-calls.md)
-— with options, a recommendation and a default for each. **This task does not move out of
-`0_backlog/` until that item is answered**; the default path is that nothing moves.
+— with options, a recommendation and a default for each; no `Your answer:` line has been
+filled. **This task stays in `0_backlog/` because that ratification is open and D7 is
+unbuilt — not because the reshape is undone.** Its default path is now "the recommendations
+stand as built; nothing further moves without an answer."
 
 One correction to the plan worth carrying forward: it proposed an `examples/skills/skill-notes/`
 counterpart and then argued against it, correctly. That directory would re-create the
@@ -138,16 +165,38 @@ assertion carves `skill_references_dir()` out instead (decision D4 in the item a
 
 - [ ] `AGENTS.md` describes the private tree and routes into it
 - [ ] All 11 public `SKILL.md` files and 7 handbook docs updated
-- [ ] `examples/` mirrors the private tree; `data/` and `templates/` violations fixed;
-      `ci.yml`'s `examples/data` pin updated in the same PR
+- [x] `examples/` mirrors the private tree; `data/` and `templates/` violations fixed;
+      `ci.yml`'s `examples/data` pin updated in the same PR — **done 2026-08-02**
+      (`261b4f0`, `8c8112a`; `ls examples/` → `applications fixtures market me screenshots
+      store`, `ci.yml:252` → `validate_store.py examples/store`). Ratification of the calls
+      it was built on is open; see the item above
 - [ ] **Inherited 2026-07-31** from
-      [the config-defaults task](../../3_in-review/2026-07-30-config-defaults-still-name-the-pre-phase-5-layout/verification.md):
-      the four accessor defaults now derive the lifetime layout, but under the example config
-      `overlay_root()` is `examples/`, so `blacklist_path()`, `story_bank_path()`,
-      `search_profiles_dir()` and `skill_references_dir()` still resolve to directories that do
-      not exist there (as they did before). Reshaping `examples/` is what closes it — together
-      with the smoke assertion that every `config.*()` path exists **under the example config**,
-      which is the check a maintainer-only run cannot make
+      [the config-defaults task](../../4_done/2026-07-30-config-defaults-still-name-the-pre-phase-5-layout/verification.md),
+      **re-measured 2026-08-02 against the reshaped tree.** The reshape closed half of it and
+      not the other half. Resolving `config.*()` with `JOBHUNT_CONFIG=config.example.yaml`
+      (`overlay_root()` → `examples/`):
+
+      **Resolve now (9):** `profile_md_path` → `examples/me/profile.example.md`,
+      `baseline_path` → `examples/me/baseline.example.yaml`, `reference_docx_path` →
+      `examples/me/resume/reference.example.docx`, `company_levels_path` →
+      `examples/market/logs/company-levels.example.yaml`, `calendar_path` →
+      `examples/me/interviews/calendar.md`, `candidate_dir` → `examples/market/logs`,
+      plus `applications_root`, `discoveries_dir`, `overlay_root`.
+
+      **Still resolve to nothing (9):** `companies_root` → `examples/companies` (**D7, the
+      unbuilt call — this is the one the reshape was supposed to close**);
+      `blacklist_path` → `examples/market/blacklist.yaml`; `story_bank_path` →
+      `examples/me/interviews/story-bank`; `search_profiles_dir` →
+      `examples/market/searches`; `tailoring_card_path` →
+      `examples/market/logs/tailoring-card.md`; `skill_references_dir(<skill>)` →
+      `examples/skills/skill-notes/<skill>` (**carved out on purpose — D4**); and the three
+      append-only logs `applications_log_path`, `applications_jsonl_path`,
+      `company_search_log_path`, which are created on first write and are arguably not
+      defects. `data_root()` returns `None` — `config.example.yaml` sets no store root.
+
+      The smoke assertion that every `config.*()` path exists under the example config is
+      still unwritten, and it must carve out `skill_references_dir` (D4) and decide whether
+      the three logs count. That is the honest remainder of this bullet
 - [ ] ADRs recorded for the layout and any remaining reversals
 - [ ] Per-skill canaries pass and are recorded for the 9 skills that have a set; a one-line
       rationale recorded for `gardener` and `search-recall-audit`

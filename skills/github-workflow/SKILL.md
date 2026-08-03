@@ -432,8 +432,8 @@ git add <the paths this commit changes>   # explicit pathspecs; never -A or .
 git add automation/publish/review_ledger.yaml && git commit
 ```
 
-`git add -A` is wrong here for a reason beyond tidiness: `.gitignore` lists
-`.venv/`, which does not cover a `.venv` **symlink**, so `-A` stages it.
+`git add -A` is wrong here for a reason beyond tidiness: it stages whatever the worktree
+carries — scratch, a stray link, another agent's edits — under a row certifying your diff.
 
 The row it prints carries **no `commit:`** — the commit has no SHA yet. That is a
 **pending row**: `base:` + `digest:` pin the range, and the gate resolves its

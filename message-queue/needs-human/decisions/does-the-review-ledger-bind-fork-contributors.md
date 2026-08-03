@@ -28,8 +28,17 @@ It then tells them (`:107-109`):
 >    something that looks personal and it must come out, not be excepted.
 
 That paragraph enumerates what a fork PR runs and names one gate. It omits the one a fork
-PR cannot satisfy. `grep -ic "review_ledger\|review gate\|review_gate" CONTRIBUTING.md`
-→ **0**, and `:33-35` describes its check list as *"the canonical one"*.
+PR cannot satisfy.
+
+**Measurement corrected 2026-08-02, and the question is unchanged.** Two figures cited here
+have moved: `grep -ic "review_ledger\|review gate\|review_gate" CONTRIBUTING.md` now returns
+**3**, not 0 (`:26`, `:83`, `:87`, added in `cb631f7`), and `:33-35` no longer calls its check
+list *"the canonical one"* — it now says the contributor list is *"a **subset**, not a mirror"*
+and that `.github/workflows/ci.yml` is *"the authoritative gate list"*. The paragraph quoted
+above has also moved to `:120-122`. What none of that changes: those three mentions say the
+review gate **runs**, never what a fork contributor **owes** it. The `## Commits & pull
+requests` section that binds forks (rules 1-6) still says nothing about the ledger, so a fork
+PR still goes red at `ci.yml` with no instruction anywhere telling the contributor what to do.
 
 **What actually happens to a fork PR** — worth stating precisely, because the mechanism is
 not the one it looks like from a distance:
