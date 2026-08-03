@@ -39,20 +39,31 @@ UUID = "3f2b1c9a-0d4e-4f6a-8b1c-2d3e4f5a6b7c"
 
 
 def stacked(number, *, position=1, size=3, stack_number=88, state="OPEN",
-            base="main", head="a" * 40, draft=False, mergeable="MERGEABLE"):
+            base="main", head="a" * 40, draft=False, mergeable="MERGEABLE",
+            check_state="SUCCESS"):
     return {
         "number": number, "state": state, "isDraft": draft,
         "baseRefName": base, "headRefOid": head, "mergeable": mergeable,
+        "commits": {"nodes": [{"commit": {
+            "oid": head,
+            "statusCheckRollup": (None if check_state is None else
+                                  {"state": check_state}),
+        }}]},
         "stackEntry": {"position": position,
                        "stack": {"number": stack_number, "size": size}},
     }
 
 
 def plain(number, *, state="OPEN", base="main", head="b" * 40, draft=False,
-          mergeable="MERGEABLE"):
+          mergeable="MERGEABLE", check_state="SUCCESS"):
     return {
         "number": number, "state": state, "isDraft": draft,
         "baseRefName": base, "headRefOid": head, "mergeable": mergeable,
+        "commits": {"nodes": [{"commit": {
+            "oid": head,
+            "statusCheckRollup": (None if check_state is None else
+                                  {"state": check_state}),
+        }}]},
         "stackEntry": None,
     }
 
@@ -214,6 +225,20 @@ class DryRunTests(GhTestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("feat/01-parser", out)
 
+    def test_atomic_dry_run_names_one_top_request_and_the_full_sweep(self):
+        fake = FakeGh(pulls={
+            81: stacked(81, position=1, size=3),
+            84: stacked(84, position=2, size=3),
+            87: stacked(87, position=3, size=3),
+        })
+        code, out = self.run_main(
+            ["--repo", REPO, "--atomic", "81", "84", "87"], fake)
+        self.assertEqual(code, 0, out)
+        self.assertIn("one top-entry async request", out)
+        self.assertIn("merging #87 at position 3 sweeps positions 1..3", out)
+        self.assertIn("#81, #84, #87", out)
+        self.assertEqual(out.count("--method PUT"), 1, out)
+
 
 class TrackATests(GhTestCase):
     def _fake(self, *, put=None, polls=None, merge_check=None, pulls=None):
@@ -334,12 +359,126 @@ class TrackATests(GhTestCase):
         self.assertEqual(code, 1, out)
         self.assertEqual(fake.ran("--method PUT"), [])
 
-    def test_atomic_allows_it_on_purpose(self):
-        fake, dispatch = self._fake(pulls={84: stacked(84, position=4, size=7)})
+    def test_atomic_full_prefix_uses_one_top_entry_request(self):
+        fake, dispatch = self._fake(pulls={
+            81: stacked(81, position=1, size=4),
+            82: stacked(82, position=2, size=4),
+            83: stacked(83, position=3, size=4),
+            84: stacked(84, position=4, size=4),
+        })
         code, out = self._run(
             fake, dispatch,
-            ["--repo", REPO, "--execute", "--atomic", *FAST, "84"])
+            ["--repo", REPO, "--execute", "--atomic", *FAST,
+             "81", "82", "83", "84"])
         self.assertEqual(code, 0, out)
+        puts = fake.ran("--method PUT")
+        self.assertEqual(len(puts), 1, fake.calls)
+        self.assertIn("pulls/84/merge-async", " ".join(puts[0]))
+        self.assertIn("atomic preflight passed", out)
+        self.assertIn("sweeps positions 1..4", out)
+        for number in (81, 82, 83, 84):
+            self.assertIn(
+                ["api", f"repos/{REPO}/pulls/{number}/merge"], fake.calls)
+
+    def test_atomic_requires_every_swept_position_to_be_named(self):
+        fake, dispatch = self._fake(pulls={
+            81: stacked(81, position=1, size=4),
+            84: stacked(84, position=4, size=4),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "81", "84"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("every swept member", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_requires_one_stack(self):
+        fake, dispatch = self._fake(pulls={
+            81: stacked(81, position=1, size=2, stack_number=88),
+            84: stacked(84, position=2, size=2, stack_number=99),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "81", "84"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("different stacks", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_preflight_refuses_a_moved_member_head_before_the_put(self):
+        fake, dispatch = self._fake(pulls={
+            81: [stacked(81, position=1, size=2, head="a" * 40),
+                 stacked(81, position=1, size=2, head="c" * 40)],
+            84: stacked(84, position=2, size=2, head="b" * 40),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "81", "84"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("head moved", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_preflight_refuses_a_draft_member_before_the_put(self):
+        fake, dispatch = self._fake(pulls={
+            81: stacked(81, position=1, size=2),
+            84: [stacked(84, position=2, size=2),
+                 stacked(84, position=2, size=2, draft=True)],
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "81", "84"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("DRAFT", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_preflight_refuses_a_pending_rollup_before_the_put(self):
+        fake, dispatch = self._fake(pulls={
+            81: stacked(81, position=1, size=2),
+            84: stacked(84, position=2, size=2, check_state="PENDING"),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "81", "84"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("'PENDING', not 'SUCCESS'", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_preflight_refuses_a_failing_rollup_before_the_put(self):
+        fake, dispatch = self._fake(pulls={
+            81: stacked(81, position=1, size=2, check_state="FAILURE"),
+            84: stacked(84, position=2, size=2),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "81", "84"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("'FAILURE', not 'SUCCESS'", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_preflight_refuses_a_missing_rollup_before_the_put(self):
+        fake, dispatch = self._fake(pulls={
+            81: stacked(81, position=1, size=2),
+            84: stacked(84, position=2, size=2, check_state=None),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "81", "84"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("no usable statusCheckRollup", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_preflight_refuses_an_unavailable_rollup_shape(self):
+        malformed = stacked(84, position=2, size=2)
+        del malformed["commits"]["nodes"][0]["commit"]["statusCheckRollup"]
+        fake, dispatch = self._fake(pulls={
+            81: stacked(81, position=1, size=2),
+            84: malformed,
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "81", "84"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("no usable statusCheckRollup", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
 
     def test_a_stacked_pr_whose_base_reads_main_is_still_position_checked(self):
         """`baseRefName == main` proves NOTHING inside a stack."""
@@ -425,6 +564,13 @@ class TrackBTests(GhTestCase):
         self.assertEqual(fake.ran("merge-async"), [])
         self.assertIn("MERGED (confirmed", out)
 
+    def test_ordinary_merge_leaves_check_enforcement_to_branch_protection(self):
+        fake, dispatch = self._fake({41: plain(41, check_state="PENDING")})
+        code, out = self._run(fake, dispatch,
+                              ["--repo", REPO, "--execute", *FAST, "41"])
+        self.assertEqual(code, 0, out)
+        self.assertTrue(fake.ran("pr merge 41"), fake.calls)
+
     def test_a_stale_base_refuses_the_198_way(self):
         fake, dispatch = self._fake({198: plain(198, base="chore/08-earlier")})
         code, out = self._run(fake, dispatch,
@@ -443,14 +589,31 @@ class TrackBTests(GhTestCase):
     def test_the_next_pr_is_retargeted_and_read_back(self):
         fake, dispatch = self._fake({
             41: plain(41),
-            42: [plain(42, base="feat/01-parser"), plain(42, base="main"),
+            42: [plain(42, base="feat/01-parser"),
+                 plain(42, base="feat/01-parser"), plain(42, base="main"),
                  plain(42, base="main")],
         })
         code, out = self._run(fake, dispatch,
                               ["--repo", REPO, "--execute", *FAST, "41", "42"])
         self.assertEqual(code, 0, out)
-        self.assertTrue(fake.ran("pr edit 42"), fake.calls)
+        edits = fake.ran("pr edit 42")
+        self.assertEqual(edits, [["pr", "edit", "42", "--repo", REPO,
+                                  "--base", "main"]], fake.calls)
         self.assertIn("read back and confirmed", out)
+        edit_index = fake.calls.index(edits[0])
+        self.assertTrue(any("api graphql" in " ".join(call)
+                            for call in fake.calls[:edit_index]), fake.calls)
+        self.assertTrue(any("api graphql" in " ".join(call)
+                            for call in fake.calls[edit_index + 1:]), fake.calls)
+
+    def test_an_already_correct_child_base_is_a_noop_without_edit(self):
+        fake, dispatch = self._fake({41: plain(41), 42: plain(42)})
+        code, out = self._run(fake, dispatch,
+                              ["--repo", REPO, "--execute", *FAST, "41", "42"])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(fake.ran("pr edit 42"), [], fake.calls)
+        self.assertIn("already targets main", out)
+        self.assertIn("no duplicate CI", out)
 
     def test_a_retarget_that_did_not_take_refuses(self):
         """An unverified retarget is the same bug as no retarget."""

@@ -12,8 +12,11 @@ concurrency:
 
 jobs:
   # The body is untrusted input. It is passed through the environment and written
-  # outside the checkout, never interpolated into a shell command.
+  # outside the checkout, never interpolated into a shell command. An ordinary
+  # stack retarget also emits `edited`, but changes only the base; skip that event
+  # so it cannot restart a required body check on an unchanged description.
   pr-body:
+    if: github.event.action != 'edited' || github.event.changes.body != null
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository (full history — needed for the merge-base)
