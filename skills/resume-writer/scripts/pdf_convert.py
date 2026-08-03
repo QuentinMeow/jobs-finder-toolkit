@@ -4,7 +4,11 @@ Used by both skills/resume-writer/scripts/render.py (resume) and
 skills/resume-writer/scripts/cover_letter.py so the conversion path is
 defined in exactly one place.
 
-Two flake-hardening guarantees (a silent "PDF: skipped" used to hide both):
+Four failure-hardening guarantees (a silent "PDF: skipped" used to hide some):
+  * fail before launch: on macOS, a direct sandbox probe prevents LibreOffice
+    from starting when LaunchServices mach lookup is known to be denied;
+  * classify nonzero exits: deterministic nonzero exits and signal terminations
+    fail immediately and are never retried;
   * detect + retry: LibreOffice occasionally exits 0 without writing the PDF
     (a transient lock / first-run no-op). We verify a real PDF landed
     (exists AND > MIN_PDF_BYTES); if not, we clear stray lock state, back off,
@@ -23,6 +27,7 @@ one legitimate "install a converter" case, not a flake.
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -31,14 +36,12 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-# LibreOffice locations to try, in order: the JOBHUNT_SOFFICE env override,
-# the common macOS install locations, then PATH lookups (Linux/CI).
-LO_PATHS = [p for p in (os.environ.get("JOBHUNT_SOFFICE"),) if p] + [
-    str(Path.home() / "Applications/LibreOffice.app/Contents/MacOS/soffice"),
-    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    "soffice",
-    "libreoffice",
-]
+from _vendor.libreoffice_env import (
+    LaunchServicesAccess,
+    find_soffice,
+    launchservices_access,
+    launchservices_denied_diagnostic,
+)
 
 # A real one-page resume/cover PDF is comfortably larger than this; anything
 # smaller (or absent) means LibreOffice silently no-op'd instead of converting.
@@ -50,7 +53,7 @@ _SOFFICE_TIMEOUT_S = 120
 
 
 class PdfConversionError(RuntimeError):
-    """A converter was available but failed to produce a valid PDF (the flake).
+    """A converter was available but could not produce a valid PDF.
 
     Distinct from the ``docx_to_pdf`` -> ``None`` case, which means no converter
     is installed at all. Callers should treat this as a hard, non-zero failure
@@ -60,10 +63,51 @@ class PdfConversionError(RuntimeError):
 
 def _find_soffice() -> str | None:
     """First LibreOffice binary that actually exists / is on PATH, else None."""
-    for lo in LO_PATHS:
-        if shutil.which(lo) or Path(lo).exists():
-            return lo
-    return None
+    return find_soffice()
+
+
+def _guard_soffice_launch(lo: str) -> None:
+    """Refuse a known-unusable macOS sandbox before starting LibreOffice."""
+    if launchservices_access() is LaunchServicesAccess.DENIED:
+        raise PdfConversionError(launchservices_denied_diagnostic(lo))
+
+
+def _nonzero_exit_error(
+    lo: str,
+    docx_path: Path,
+    result: subprocess.CompletedProcess,
+) -> PdfConversionError:
+    """Describe a deterministic nonzero exit, including POSIX signal details."""
+    code = result.returncode
+    detail = f"raw return code {code}"
+    signal_number: int | None = None
+    signal_name: str | None = None
+    if os.name == "posix" and code < 0:
+        signal_number = -code
+        try:
+            signal_name = signal.Signals(signal_number).name
+        except ValueError:
+            signal_name = "UNKNOWN_SIGNAL"
+        detail += f" (signal {signal_number}, {signal_name})"
+
+    stderr = (result.stderr or "").strip()
+    message = (
+        f"LibreOffice ({lo}) failed to convert {docx_path} with {detail}. "
+        "A nonzero exit is a hard, non-transient failure, so LibreOffice was "
+        f"not retried. soffice stderr: {stderr!r}."
+    )
+    if (
+        sys.platform == "darwin"
+        and signal_number == signal.SIGABRT
+        and signal_name == "SIGABRT"
+    ):
+        message += (
+            " On macOS, SIGABRT is consistent with the known AppKit/LaunchServices sandbox "
+            "startup failure. Run the PDF-producing command outside the Codex app "
+            "sandbox, or through a separately validated route that can access "
+            "LaunchServices; JOBHUNT_SOFFICE only selects a binary."
+        )
+    return PdfConversionError(message)
 
 
 def _valid_pdf(path: Path) -> bool:
@@ -136,11 +180,15 @@ def docx_to_pdf(docx_path: Path, output_dir: Path, stem: str) -> Path | None:
 
     lo = _find_soffice()
     if lo is not None:
+        _guard_soffice_launch(lo)
         attempts = 2  # first try + one retry
         result = None
         for attempt in range(attempts):
             profile_dir = _new_profile_dir()
             result = _run_soffice(lo, docx_path, output_dir, profile_dir)
+            if result is not None and result.returncode != 0:
+                _clear_lock_state(docx_path, profile_dir)
+                raise _nonzero_exit_error(lo, docx_path, result)
             ok = (result is not None and result.returncode == 0
                   and _valid_pdf(produced))
             if ok:
@@ -148,13 +196,22 @@ def docx_to_pdf(docx_path: Path, output_dir: Path, stem: str) -> Path | None:
                 if produced != pdf_path:
                     produced.replace(pdf_path)
                 return pdf_path
-            # Failed: transient lock / first-run no-op / launch failure. Clear
-            # any stray lock state we created and retry once after a short wait.
+            # Exit 0 without a valid PDF is the transient lock / first-run no-op.
+            # A launch failure/timeout may also retain the existing single retry.
             _clear_lock_state(docx_path, profile_dir)
             if attempt + 1 < attempts:
                 time.sleep(RETRY_BACKOFF_S)
 
-        stderr = (result.stderr or "").strip() if result is not None else "<soffice did not run>"
+        if result is None:
+            raise PdfConversionError(
+                f"LibreOffice ({lo}) launch/conversion did not complete for "
+                f"{docx_path} after {attempts} attempts (the process could not "
+                "start or timed out). No successful conversion was observed. "
+                "Retry the render, or verify the converter manually:\n"
+                f"  {lo} --headless --convert-to pdf --outdir {output_dir} {docx_path}"
+            )
+
+        stderr = (result.stderr or "").strip()
         raise PdfConversionError(
             f"LibreOffice ({lo}) exited without producing a valid PDF for "
             f"{docx_path} after {attempts} attempts "
@@ -196,7 +253,10 @@ def docx_to_pdf_many(jobs: list[tuple[Path, Path, str]],
     """
     if not jobs:
         return []
-    if len(jobs) == 1 or _find_soffice() is None:
+    lo = _find_soffice()
+    if lo is not None:
+        _guard_soffice_launch(lo)
+    if len(jobs) == 1 or lo is None:
         return [docx_to_pdf(*job) for job in jobs]
 
     if max_workers is None:

@@ -2597,3 +2597,9 @@
   files: 3
   digest: sha256:e41d588cd3c17fc3
   finding: 'Merges the three already-reviewed sanitized session handovers from public origin/main into a diverged local main while preserving the unrelated local task-claim commit. Read the complete staged handover diff. The append-only ledger conflict was resolved by keeping both remote review rows first and the complete local review row afterward; no row was dropped or rewritten. Repository-process facts only; no identity, employer, school, salary, private company, private path, or dated job-hunt content.'
+- base: f226362b
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 16
+  digest: sha256:9ffdb9c5455bd03d
+  finding: 'Implements the LibreOffice/macOS Codex-sandbox fail-before-launch fix across the canonical shared helper, its byte-identical resume-writer vendor, runner/converter/E2E tests, cookbook, and sanitized task/session records. Read the complete 16-file staged diff against f226362b, excluding this ledger. Content is generic tooling/process evidence, platform and tool names, repo-process dates, and the explicitly fictional Jordan Rivers example only. The handover exposes aggregate pending-item counts and one public queue slug but names or summarizes no private item; /private/tmp/soffice-fix.WZpIjX is an ephemeral system temporary path, not a personal home or private-overlay path. No real identity, employer, school, salary, personal home path, private item name, or dated personal/job-hunt content.'

@@ -14,6 +14,17 @@ from pathlib import Path
 import yaml
 from pypdf import PdfReader
 
+SCRIPTS = Path(__file__).resolve().parents[1]
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from _vendor.libreoffice_env import (  # noqa: E402
+    LaunchServicesAccess,
+    LibreOfficeEnvironment,
+    launchservices_denied_diagnostic,
+    libreoffice_environment,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 FIXTURE = (
@@ -27,16 +38,30 @@ STATUS = (
 )
 
 
-def _has_libreoffice() -> bool:
-    return bool(
-        shutil.which("soffice")
-        or (Path.home() / "Applications/LibreOffice.app/Contents/MacOS/soffice").exists()
-        or Path("/Applications/LibreOffice.app/Contents/MacOS/soffice").exists()
-    )
+_LIBREOFFICE_ENVIRONMENT = libreoffice_environment()
 
 
-@unittest.skipUnless(_has_libreoffice(), "LibreOffice is required for PDF E2E")
+def _has_libreoffice(environment: LibreOfficeEnvironment) -> bool:
+    """Only absence skips the E2E; known denial is a hard setup error."""
+    return environment.executable is not None
+
+
+def _require_usable_libreoffice(environment: LibreOfficeEnvironment) -> None:
+    if environment.launchservices is LaunchServicesAccess.DENIED:
+        raise RuntimeError(
+            launchservices_denied_diagnostic(environment.executable)
+        )
+
+
+@unittest.skipUnless(
+    _has_libreoffice(_LIBREOFFICE_ENVIRONMENT),
+    "LibreOffice executable is required for PDF E2E",
+)
 class MultiExperienceApplicationE2E(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        _require_usable_libreoffice(_LIBREOFFICE_ENVIRONMENT)
+
     def setUp(self):
         self._temp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._temp.name)
@@ -166,6 +191,27 @@ class MultiExperienceApplicationE2E(unittest.TestCase):
             sys.executable, STATUS, "--check-metadata", "--statuses", "drafted", "--json")
         self.assertEqual(metadata.returncode, 0, metadata.stderr)
         self.assertTrue(json.loads(metadata.stdout)["rows"][0]["valid"])
+
+
+class ZLibreOfficeE2EPreflightTests(unittest.TestCase):
+    """Pin missing=skip and denied=red without launching LibreOffice."""
+
+    def test_missing_executable_is_the_only_skip_condition(self):
+        environment = LibreOfficeEnvironment(
+            None,
+            LaunchServicesAccess.NOT_APPLICABLE,
+        )
+        self.assertFalse(_has_libreoffice(environment))
+        _require_usable_libreoffice(environment)
+
+    def test_denied_environment_is_not_skipped_and_errors_before_render(self):
+        environment = LibreOfficeEnvironment(
+            "/fake/soffice",
+            LaunchServicesAccess.DENIED,
+        )
+        self.assertTrue(_has_libreoffice(environment))
+        with self.assertRaisesRegex(RuntimeError, "FAIL, not SKIP or PASS"):
+            _require_usable_libreoffice(environment)
 
 
 if __name__ == "__main__":
