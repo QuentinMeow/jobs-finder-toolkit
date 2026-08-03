@@ -12,3 +12,5 @@
 - Opened PR #270. Its final head passed every hosted check; the deliberately full matrix completed in 109 seconds and the separate body job in 8 seconds.
 - Added a regression-tested base-retarget filter so ordinary stack retargets do not restart the required body gate while description edits still do.
 - The merge driver's live dry run re-read both PRs as open and mergeable with pinned heads. The irreversible execute request was not attempted because merging into `main` requires explicit owner authorization.
+- Opened stacked probe PR #275. Its first hosted run exposed that CI compared every stacked PR with `origin/main`, so a documentation-only tip inherited the lower workflow diff and selected all lanes.
+- Changed hosted classification to use the pull request event's immutable base and head SHAs plus their merge base; added a static regression test forbidding the hardcoded default-branch comparison.

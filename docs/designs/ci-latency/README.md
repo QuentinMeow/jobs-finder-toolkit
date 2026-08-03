@@ -139,6 +139,14 @@ took 61 seconds, and every selected lane passed. The separate body run
 `30806612926` passed in 14 seconds wall time with an 8-second job. Both
 workflow-changing observations remain below the 150-second full-matrix target.
 
+The first documentation-only probe on stacked PR #275 exposed a base-selection
+bug before rollout: run `30807216699` compared the tip with `origin/main`, saw
+the lower workflow commit, and unnecessarily selected all seven lanes. The
+workflow now compares the immutable pull-request base and head SHAs, then uses
+their merge base. A static regression test rejects a return to the hardcoded
+default branch. The fix itself must run the full matrix; a clean documentation
+tip above it is the acceptance probe for policy-only timing.
+
 Acceptance targets:
 
 | Scenario | Target |

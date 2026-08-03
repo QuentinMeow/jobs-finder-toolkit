@@ -36,22 +36,25 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Compare every PR with origin/main so a stack tip covers all lower rungs.
-      # The stdlib-only classifier falls back to every lane if that base is absent.
+      # Compare with this PR's actual base branch, including a stacked PR base.
+      # The stdlib-only classifier falls back to every lane if either immutable
+      # event SHA is absent or their merge base cannot be resolved.
       - name: Classify changed paths
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            if MERGE_BASE="$(git merge-base origin/main "$HEAD_SHA")"; then
+            if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ] && \
+               MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"; then
               python automation/ci/classify_changes.py \
                 --base "$MERGE_BASE" \
                 --head "$HEAD_SHA"
             else
               python automation/ci/classify_changes.py \
-                --force-full "merge base with origin/main unavailable"
+                --force-full "pull-request base or head unavailable"
             fi
           else
             python automation/ci/classify_changes.py \

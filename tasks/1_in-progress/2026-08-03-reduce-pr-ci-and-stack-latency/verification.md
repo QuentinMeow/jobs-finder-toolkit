@@ -71,6 +71,25 @@ PR #270's full matrix took 109 seconds. Policy took 27 seconds, the slowest sele
 
 `<PUBLIC_REPO>` redacts the identity-derived public owner segment; the arguments and outputs are otherwise the commands and evidence observed in this session.
 
+## Stacked-base probe and correction
+
+```
+$ gh run view 30807216699 --repo <PUBLIC_REPO> --json createdAt,updatedAt,status,conclusion,headSha
+{"conclusion":"success","createdAt":"2026-08-03T10:51:36Z","headSha":"f12e13371b42bd6362a24a20f594c93ce3da4f42","status":"completed","updatedAt":"2026-08-03T10:53:08Z"}
+```
+
+The documentation-only probe took 92 seconds because its classifier reported `FULL`, 27 changed entries, and `unowned or foundational path: .github/workflows/ci.yml`. The workflow had compared the stacked tip with `origin/main` instead of PR #275's actual base.
+
+```
+$ python automation/gates/tests/test_run_gates.py
+....................................................................
+Ran 68 tests in 0.667s
+
+OK
+```
+
+The added drift test requires `github.event.pull_request.base.sha`, requires `git merge-base "$BASE_SHA" "$HEAD_SHA"`, and rejects `git merge-base origin/main`.
+
 ## Required checks and local limitations
 
 GitHub ruleset `19191121` requires the stable `build` and `pr-body` contexts without strict base synchronization. This keeps checks mandatory while avoiding a redundant child rebuild after a reviewed stack parent merges.

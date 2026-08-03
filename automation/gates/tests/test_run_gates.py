@@ -214,6 +214,15 @@ class CIDriftTests(unittest.TestCase):
             workflow,
         )
 
+    def test_ci_classifies_against_the_pull_requests_actual_base(self):
+        workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+        self.assertIn(
+            "BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+            workflow,
+        )
+        self.assertIn('git merge-base "$BASE_SHA" "$HEAD_SHA"', workflow)
+        self.assertNotIn("git merge-base origin/main", workflow)
+
     def test_the_excuse_list_is_reasons_not_placeholders(self):
         for path, reason in run_gates.NOT_RUN_LOCALLY.items():
             self.assertGreater(len(reason), 40, f"{path}: excuse is too thin: {reason!r}")
