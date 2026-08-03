@@ -122,7 +122,12 @@ example config) — substitute the resolved path, never a literal folder at the 
 # overlay is mounted this also installs ITS hooks into private/.git/hooks/ —
 # automation/hooks/overlay-pre-commit (store-payload + staged-set-size guard) and
 # overlay-pre-push (destination must be the configured private remote).
+# Re-running repairs a hook symlink that dangles or points at the wrong tracked
+# name; a foreign hook is left alone with a warning. --check makes no changes and
+# exits 1 when any of those hooks is not wired, so a checkout whose leak guard is
+# silently not running fails a check instead of looking installed.
 python automation/bootstrap_overlay.py
+python automation/bootstrap_overlay.py --check
 
 # Every blocking gate in one command — the whole pre-commit chain AND every CI `run:`
 # step. Each gate is a subprocess with no shell and NO PIPE: its stdout+stderr are

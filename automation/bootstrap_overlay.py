@@ -20,17 +20,24 @@ What it does:
       Their exact paths are written only to ``.git/info/exclude`` (repository-local
       Git metadata), never to the tracked ``.gitignore``.
   (b) Always: install the tracked git hooks (``automation/hooks/pre-commit`` /
-      ``automation/hooks/pre-push``) into ``.git/hooks`` — only when missing or already
-      pointing there; a foreign hook is left alone with a warning. When the overlay
-      is mounted, its OWN ``.git/hooks`` gets ``automation/hooks/overlay-pre-commit``
-      / ``overlay-pre-push`` the same way, so the overlay is guarded without having
-      to track a single file of its own.
+      ``automation/hooks/pre-push``) into ``.git/hooks``. A missing hook is
+      created and a BROKEN install of ours is repaired — see
+      ``_hook_is_repairable``; a genuinely foreign hook is left alone with a
+      warning. When the overlay is mounted, its OWN ``.git/hooks`` gets
+      ``automation/hooks/overlay-pre-commit`` / ``overlay-pre-push`` the same way,
+      so the overlay is guarded without having to track a single file of its own.
   (c) If ``config.yaml`` is missing while the overlay is mounted: print a reminder
       to create it (never auto-written).
 
 Usage:
     python automation/bootstrap_overlay.py            # apply
     python automation/bootstrap_overlay.py --check     # report only; make no changes
+
+Exit codes: an apply run exits 0 — it repairs what it owns, and a foreign hook it
+must not clobber is a warning, not a failure it can act on. ``--check`` is a health
+report and exits 1 when any of those hooks is not wired to its tracked source
+(missing, dangling, mis-wired, or shadowed by a foreign hook), so a checkout whose
+leak guard does not run fails a check instead of staying quiet.
 """
 from __future__ import annotations
 
@@ -46,7 +53,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Status tags for the report.
 OK = "ok"        # already correct — no-op
 CREATE = "create"
-UPDATE = "update"  # stale overlay symlink replaced (overlay-managed links only)
+UPDATE = "update"  # a link we own replaced (overlay adapters, broken hook installs)
 REMOVE = "remove"  # obsolete generated adapter removed
 SKIP = "skip"
 WARN = "warn"    # foreign file / hook left untouched, or missing prerequisite
@@ -192,22 +199,66 @@ def _sync_local_excludes(
 # hook filename in .git/hooks -> tracked source under automation/hooks/.
 TOOLKIT_HOOKS = {"pre-commit": "pre-commit", "pre-push": "pre-push"}
 OVERLAY_HOOKS = {"pre-commit": "overlay-pre-commit", "pre-push": "overlay-pre-push"}
+HOOKS_SRC_DIR = "automation/hooks"
+
+
+def _hook_is_repairable(link: Path, hooks_root: Path) -> bool:
+    """Is this hook a BROKEN install of OURS rather than a third-party hook?
+
+    Two shapes qualify, and under both git runs nothing — so retargeting the link
+    cannot cost the checkout a hook it was actually using:
+
+    * the target does not resolve. This is how moving ``hooks/`` to
+      ``automation/hooks/`` disabled the leak guard on every checkout installed
+      before the move: git skips a dangling hook without a word, so commits and
+      pushes kept succeeding with no guard output at all.
+    * the target resolves inside the tracked hooks directory but at the wrong
+      name — ours, mis-wired.
+
+    Anything else is foreign and is never clobbered: a real file, or a link into
+    another tool's hook.
+    """
+    if not link.is_symlink():
+        return False
+    if not link.exists():  # exists() follows the link — False here means dangling
+        return True
+    try:
+        return link.resolve().parent == hooks_root.resolve()
+    except OSError:
+        return False
 
 
 def _install_hooks(hooks_dir: Path, sources: dict[str, str], label: str,
-                   check: bool, results: list[tuple[str, str]]) -> None:
-    """Symlink each tracked hook into ``hooks_dir``; never clobber a foreign one."""
+                   check: bool, results: list[tuple[str, str]]) -> list[str]:
+    """Symlink each tracked hook into ``hooks_dir``; never clobber a foreign one.
+
+    Returns one line per hook that is NOT wired to its tracked source once this
+    returns — the input to the non-zero ``--check`` exit.
+    """
+    hooks_root = REPO_ROOT / HOOKS_SRC_DIR
+    unwired: list[str] = []
     for name, source in sources.items():
-        src = REPO_ROOT / "automation/hooks" / source
+        src = hooks_root / source
         if not src.is_file():
-            results.append((SKIP, f"automation/hooks/{source} not present — skipping"))
+            results.append((SKIP, f"{HOOKS_SRC_DIR}/{source} not present — skipping"))
             continue
         link = hooks_dir / name
-        # Foreign hooks are never overwritten: only create-if-missing or no-op.
-        status, msg, target = _plan_symlink(link, src, allow_replace_symlink=False)
+        repairable = _hook_is_repairable(link, hooks_root)
+        status, msg, target = _plan_symlink(
+            link, src, allow_replace_symlink=repairable)
+        if status == UPDATE:
+            msg += " — broken install of ours; git was running no hook here"
         results.append((status, f"[{label}] {msg}"))
-        if status == CREATE and not check:
-            _apply_symlink(link, target, status)
+        if status in (CREATE, UPDATE):
+            if check:
+                unwired.append(f"[{label}] {_disp(link)} is not wired to "
+                               f"{HOOKS_SRC_DIR}/{source}")
+            else:
+                _apply_symlink(link, target, status)
+        elif status == WARN:
+            unwired.append(f"[{label}] {_disp(link)} is foreign, so "
+                           f"{HOOKS_SRC_DIR}/{source} does not run here")
+    return unwired
 
 
 # Agent host trees that list installed skills. Mirrors
@@ -324,11 +375,13 @@ def bootstrap(check: bool) -> int:
         results.append((SKIP, "private/ overlay not mounted — no private skills to wire"))
 
     # (b) Git hooks — always for this repo, plus the overlay's own when mounted.
+    unwired_hooks: list[str] = []
     hooks_dir = _git_hooks_dir()
     if hooks_dir is None:
         results.append((WARN, ".git not found — skipping git-hook install"))
     else:
-        _install_hooks(hooks_dir, TOOLKIT_HOOKS, "toolkit", check, results)
+        unwired_hooks += _install_hooks(
+            hooks_dir, TOOLKIT_HOOKS, "toolkit", check, results)
 
     # The overlay is a separate git repo about to hold most of the owner's
     # commits, and it tracks no code of its own — so its hooks are these tracked
@@ -340,7 +393,8 @@ def bootstrap(check: bool) -> int:
         if overlay_hooks_dir is None:
             results.append((WARN, "private/.git not found — skipping overlay git-hook install"))
         else:
-            _install_hooks(overlay_hooks_dir, OVERLAY_HOOKS, "overlay", check, results)
+            unwired_hooks += _install_hooks(
+                overlay_hooks_dir, OVERLAY_HOOKS, "overlay", check, results)
 
     # (c) config.yaml reminder (never auto-written).
     if private.is_dir() and not (REPO_ROOT / "config.yaml").exists():
@@ -359,17 +413,26 @@ def bootstrap(check: bool) -> int:
         print(f"\n{len(pending)} change(s) pending — re-run without --check to apply.")
     if warns:
         print(f"{len(warns)} warning(s) — foreign files/hooks left untouched (review above).")
+    if unwired_hooks:
+        print("\nGit hook(s) NOT wired to their tracked source — the leak guard does "
+              "not run on commit or push here:")
+        for line in unwired_hooks:
+            print(f"  - {line}")
+        print("Repair: run this script without --check. A FOREIGN hook is never "
+              "clobbered — chain the tracked hook into it, or remove it, by hand.")
     print("done." if not check else "check complete.")
-    # A report/apply run only fails on a genuinely broken environment, never on
-    # warnings (foreign hooks are expected) or pending work in --check.
-    return 0
+    # An apply run repairs every hook it owns, so what is left is a foreign hook it
+    # must not touch — a warning, not a failure it can act on. --check is a health
+    # report: it fails whenever a hook that should be guarding this checkout is not.
+    return 1 if (check and unwired_hooks) else 0
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true",
-                        help="report what would change and make no changes")
+                        help="report what would change and make no changes; exits 1 "
+                             "when a tracked git hook is not wired to its source")
     args = parser.parse_args(argv)
     return bootstrap(args.check)
 
