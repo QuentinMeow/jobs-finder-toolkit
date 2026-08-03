@@ -2657,3 +2657,9 @@
   files: 4
   digest: sha256:56f94bbfe2592cf5
   finding: 'Read the complete staged four-file diff. It records public PR, workflow-run, merge-commit, and aggregate timing evidence; moves the generic CI-latency task to done; and updates the sanitized session handover. No real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'
+- base: ef54e3c8
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 11
+  digest: sha256:f2b0b517db2f9f5e
+  finding: 'Read the complete staged eleven-file diff. It makes hook installation, shared adapter exclusions, and the pre-push leak scan safe across linked worktrees, adds isolated regression tests, and updates generic public documentation. Test fixtures use only synthetic paths, identities, repositories, and tokens. No real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'

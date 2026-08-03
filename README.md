@@ -107,8 +107,8 @@ python automation/bootstrap_overlay.py    # wires git hooks (+ your private skil
 Keep your real profile, applications, and interview prep in a **private overlay** —
 your own git repo mounted at the git-ignored `private/` directory. A leak guard
 screens every tracked file for your identity so nothing personal can ship by
-accident — it runs blocking in CI, in the pre-push hook, and over the staged index
-on every commit. Full walkthrough, including
+accident — it runs blocking in CI, over every exact Git tree being pushed, and
+over the staged index on every commit. Full walkthrough, including
 creating an overlay from scratch: [docs/handbook/private-overlay.md](docs/handbook/private-overlay.md).
 
 ## The skills

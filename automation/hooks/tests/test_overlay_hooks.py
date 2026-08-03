@@ -19,6 +19,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PRE_COMMIT = REPO_ROOT / "automation/hooks/overlay-pre-commit"
@@ -269,6 +270,156 @@ class TestBootstrapWiring(unittest.TestCase):
             self.assertTrue(path.is_file(), f"{name} missing")
             self.assertTrue(os.access(path, os.X_OK), f"{name} is not executable")
 
+    def test_shared_dispatcher_runs_each_invoking_worktrees_hook_body(self) -> None:
+        """Shared metadata must not make a linked branch run primary's hook."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "primary"
+            linked = Path(td) / "linked"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "t@example.com"],
+                           cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"],
+                           cwd=root, check=True)
+            source = root / "automation/hooks/test-pre-commit"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                '#!/bin/sh\nprintf "primary\\n" > "$HOOK_MARKER"\n',
+                encoding="utf-8")
+            source.chmod(0o755)
+            (root / "seed").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "seed", "automation"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
+            subprocess.run(["git", "worktree", "add", "-q", "-b", "linked-test",
+                            str(linked)], cwd=root, check=True)
+            linked_source = linked / "automation/hooks/test-pre-commit"
+            linked_source.write_text(
+                '#!/bin/sh\nprintf "linked\\n" > "$HOOK_MARKER"\n',
+                encoding="utf-8")
+            linked_source.chmod(0o755)
+            subprocess.run(["git", "add", "automation/hooks/test-pre-commit"],
+                           cwd=linked, check=True)
+            subprocess.run(["git", "commit", "-qm", "linked hook body"],
+                           cwd=linked, check=True)
+
+            bootstrap_overlay = _bootstrap()
+            old_root = bootstrap_overlay.REPO_ROOT
+            self.addCleanup(setattr, bootstrap_overlay, "REPO_ROOT", old_root)
+            bootstrap_overlay.REPO_ROOT = linked
+            hooks_dir = bootstrap_overlay._git_hooks_dir(linked)
+            self.assertEqual(hooks_dir, (root / ".git/hooks").resolve())
+            self.assertNotEqual(
+                hooks_dir, (root / ".git/worktrees/linked/hooks").resolve())
+
+            # Exercise migration from the old shared symlink design.
+            legacy = hooks_dir / "pre-commit"
+            if legacy.exists() or legacy.is_symlink():
+                legacy.unlink()
+            legacy.symlink_to(source)
+            results: list[tuple[str, str]] = []
+            bootstrap_overlay._install_toolkit_hooks(
+                hooks_dir, {"pre-commit": "test-pre-commit"}, check=False,
+                results=results)
+            dispatcher = hooks_dir / "pre-commit"
+            self.assertTrue(dispatcher.is_file())
+            self.assertFalse(dispatcher.is_symlink())
+            self.assertIn(bootstrap_overlay.TOOLKIT_HOOK_MARKER,
+                          dispatcher.read_text(encoding="utf-8"))
+            self.assertTrue(any(status == bootstrap_overlay.UPDATE
+                                for status, _ in results))
+
+            marker = Path(td) / "hook-ran"
+            env = dict(os.environ, HOOK_MARKER=str(marker))
+            (linked / "from-linked").write_text("changed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "from-linked"], cwd=linked, check=True)
+            committed = subprocess.run(
+                ["git", "commit", "-qm", "exercise linked hook"], cwd=linked,
+                env=env, capture_output=True, text=True)
+            self.assertEqual(committed.returncode, 0,
+                             committed.stdout + committed.stderr)
+            self.assertEqual(marker.read_text(encoding="utf-8"), "linked\n")
+
+            marker.unlink()
+            (root / "from-primary").write_text("changed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "from-primary"], cwd=root, check=True)
+            committed = subprocess.run(
+                ["git", "commit", "-qm", "exercise primary hook"], cwd=root,
+                env=env, capture_output=True, text=True)
+            self.assertEqual(committed.returncode, 0,
+                             committed.stdout + committed.stderr)
+            self.assertEqual(marker.read_text(encoding="utf-8"), "primary\n")
+
+    def test_overlay_hook_is_durable_copy_and_foreign_hook_is_preserved(self) -> None:
+        """Overlay hook metadata never points into a disposable public worktree."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "toolkit"
+            hooks_dir = Path(td) / "overlay.git/hooks"
+            source = root / "automation/hooks/test-overlay-hook"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                '#!/bin/sh\nprintf "overlay-copy\\n" > "$HOOK_MARKER"\n',
+                encoding="utf-8")
+            source.chmod(0o755)
+            hooks_dir.mkdir(parents=True)
+
+            bootstrap_overlay = _bootstrap()
+            old_root = bootstrap_overlay.REPO_ROOT
+            self.addCleanup(setattr, bootstrap_overlay, "REPO_ROOT", old_root)
+            bootstrap_overlay.REPO_ROOT = root
+            results: list[tuple[str, str]] = []
+            bootstrap_overlay._install_overlay_hooks(
+                hooks_dir, {"pre-commit": "test-overlay-hook"}, check=False,
+                results=results)
+            installed = hooks_dir / "pre-commit"
+            self.assertTrue(installed.is_file())
+            self.assertFalse(installed.is_symlink())
+            self.assertIn(bootstrap_overlay.OVERLAY_HOOK_MARKER,
+                          installed.read_text(encoding="utf-8"))
+
+            source.unlink()
+            marker = Path(td) / "overlay-ran"
+            ran = subprocess.run([str(installed)],
+                                 env=dict(os.environ, HOOK_MARKER=str(marker)),
+                                 capture_output=True, text=True)
+            self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+            self.assertEqual(marker.read_text(encoding="utf-8"), "overlay-copy\n")
+
+            foreign = hooks_dir / "pre-push"
+            foreign.write_text("#!/bin/sh\necho foreign\n", encoding="utf-8")
+            source.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            source.chmod(0o755)
+            results = []
+            bootstrap_overlay._install_overlay_hooks(
+                hooks_dir, {"pre-push": "test-overlay-hook"}, check=False,
+                results=results)
+            self.assertEqual(foreign.read_text(encoding="utf-8"),
+                             "#!/bin/sh\necho foreign\n")
+            self.assertTrue(any(status == bootstrap_overlay.WARN
+                                for status, _ in results))
+
+    def test_relative_core_hooks_path_is_resolved_from_linked_worktree(self) -> None:
+        """``rev-parse --git-path`` also follows Git's hooksPath semantics."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "primary"
+            linked = Path(td) / "linked"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "t@example.com"],
+                           cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"],
+                           cwd=root, check=True)
+            (root / "seed").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "seed"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
+            subprocess.run(["git", "worktree", "add", "-q", "--detach", str(linked)],
+                           cwd=root, check=True)
+            subprocess.run(["git", "config", "core.hooksPath", "runtime-hooks"],
+                           cwd=root, check=True)
+
+            bootstrap_overlay = _bootstrap()
+            self.assertEqual(bootstrap_overlay._git_hooks_dir(linked),
+                             (linked / "runtime-hooks").resolve())
+
 
 class TestBootstrapWritesNothingIntoThePublicTree(unittest.TestCase):
     """The phase-4 invariant, asserted on the PLAN rather than on a live run.
@@ -395,6 +546,140 @@ class TestBootstrapWritesNothingIntoThePublicTree(unittest.TestCase):
             after = exclude.read_text(encoding="utf-8")
             self.assertNotIn("hidden-b", after)
             self.assertIn("hidden-a", after)
+
+    def test_shared_excludes_union_adapters_from_all_live_worktrees(self) -> None:
+        """One worktree cannot expose another worktree's private adapter."""
+        with tempfile.TemporaryDirectory() as td:
+            primary = Path(td) / "primary"
+            worktree_a = Path(td) / "worktree-a"
+            worktree_b = Path(td) / "worktree-b"
+            primary.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=primary, check=True)
+            subprocess.run(["git", "config", "user.email", "t@example.com"],
+                           cwd=primary, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"],
+                           cwd=primary, check=True)
+            (primary / "seed").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "seed"], cwd=primary, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=primary, check=True)
+            subprocess.run(["git", "worktree", "add", "-q", "-b", "adapter-a",
+                            str(worktree_a)], cwd=primary, check=True)
+            subprocess.run(["git", "worktree", "add", "-q", "-b", "adapter-b",
+                            str(worktree_b)], cwd=primary, check=True)
+
+            links: dict[str, Path] = {}
+            for worktree, name in ((worktree_a, "hidden-a"),
+                                   (worktree_b, "hidden-b")):
+                dest = worktree / "private/skills" / name
+                dest.mkdir(parents=True)
+                (dest / "SKILL.md").write_text("---\nvisibility: private\n---\n",
+                                                encoding="utf-8")
+                link = worktree / ".agents/skills" / name
+                link.parent.mkdir(parents=True)
+                link.symlink_to(f"../../private/skills/{name}")
+                links[name] = link
+
+            bootstrap_overlay = _bootstrap()
+            old_root = bootstrap_overlay.REPO_ROOT
+            self.addCleanup(setattr, bootstrap_overlay, "REPO_ROOT", old_root)
+            bootstrap_overlay.REPO_ROOT = worktree_a
+            results: list[tuple[str, str]] = []
+            self.assertTrue(bootstrap_overlay._sync_local_excludes(
+                [links["hidden-a"]], check=False, results=results))
+
+            exclude = primary / ".git/info/exclude"
+            text = exclude.read_text(encoding="utf-8")
+            self.assertIn("/.agents/skills/hidden-a\n", text)
+            self.assertIn("/.agents/skills/hidden-b\n", text)
+            for worktree, name in ((worktree_a, "hidden-a"),
+                                   (worktree_b, "hidden-b")):
+                ignored = subprocess.run(
+                    ["git", "check-ignore", "--no-index", f".agents/skills/{name}"],
+                    cwd=worktree, capture_output=True, text=True)
+                self.assertEqual(ignored.returncode, 0, ignored.stderr)
+
+            links["hidden-b"].unlink()
+            results = []
+            self.assertTrue(bootstrap_overlay._sync_local_excludes(
+                [links["hidden-a"]], check=False, results=results))
+            text = exclude.read_text(encoding="utf-8")
+            self.assertIn("/.agents/skills/hidden-a\n", text)
+            self.assertNotIn("hidden-b", text)
+
+    def test_incomplete_worktree_inventory_retains_managed_excludes(self) -> None:
+        """Inventory failure is fail-safe: stale ignores beat a private-path leak."""
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            exclude = root / ".git/info/exclude"
+            exclude.write_text(
+                f"{bootstrap_overlay.LOCAL_EXCLUDE_BEGIN}\n"
+                "/.agents/skills/from-another-worktree\n"
+                f"{bootstrap_overlay.LOCAL_EXCLUDE_END}\n",
+                encoding="utf-8")
+            original = bootstrap_overlay._git_worktree_paths
+            self.addCleanup(setattr, bootstrap_overlay, "_git_worktree_paths", original)
+            bootstrap_overlay._git_worktree_paths = lambda repo=None: None
+
+            planned = bootstrap_overlay._private_skill_links(root / "private")
+            results: list[tuple[str, str]] = []
+            self.assertTrue(bootstrap_overlay._sync_local_excludes(
+                [link for link, _ in planned], check=False, results=results))
+            self.assertIn("/.agents/skills/from-another-worktree\n",
+                          exclude.read_text(encoding="utf-8"))
+
+    def test_malformed_successful_porcelain_retains_managed_excludes(self) -> None:
+        """A zero exit with an incomplete record is still an unsafe inventory."""
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            exclude = root / ".git/info/exclude"
+            exclude.write_text(
+                f"{bootstrap_overlay.LOCAL_EXCLUDE_BEGIN}\n"
+                "/.agents/skills/from-omitted-worktree\n"
+                f"{bootstrap_overlay.LOCAL_EXCLUDE_END}\n",
+                encoding="utf-8")
+            real_run = subprocess.run
+
+            def malformed_worktree_list(args, *positional, **keywords):
+                if list(args)[-3:] == ["worktree", "list", "--porcelain"]:
+                    return subprocess.CompletedProcess(
+                        args, 0,
+                        stdout=(f"worktree {root}\n"
+                                "HEAD 0123456789abcdef0123456789abcdef01234567\n\n"),
+                        stderr="")
+                return real_run(args, *positional, **keywords)
+
+            planned = bootstrap_overlay._private_skill_links(root / "private")
+            results: list[tuple[str, str]] = []
+            with mock.patch.object(bootstrap_overlay.subprocess, "run",
+                                   side_effect=malformed_worktree_list):
+                self.assertIsNone(bootstrap_overlay._git_worktree_paths())
+                self.assertTrue(bootstrap_overlay._sync_local_excludes(
+                    [link for link, _ in planned], check=False, results=results))
+            self.assertIn("/.agents/skills/from-omitted-worktree\n",
+                          exclude.read_text(encoding="utf-8"))
+
+    def test_worktree_parser_handles_documented_record_variants(self) -> None:
+        bootstrap_overlay = _bootstrap()
+        live = Path("/tmp/documented-live-worktree")
+        output = (
+            "worktree /tmp/documented-bare-repo\n"
+            "bare\n\n"
+            f"worktree {live}\n"
+            "HEAD 0123456789abcdef0123456789abcdef01234567\n"
+            "detached\n"
+            "locked owner requested\n\n"
+            "worktree /tmp/documented-prunable-worktree\n"
+            "HEAD fedcba9876543210fedcba9876543210fedcba98\n"
+            "branch refs/heads/old\n"
+            "prunable gitdir file points to non-existent location\n\n"
+        )
+        completed = subprocess.CompletedProcess([], 0, stdout=output, stderr="")
+        with mock.patch.object(bootstrap_overlay.subprocess, "run",
+                               return_value=completed):
+            self.assertEqual(bootstrap_overlay._git_worktree_paths(),
+                             [live.resolve()])
 
     def test_bootstrap_removes_only_obsolete_generated_adapters(self) -> None:
         with tempfile.TemporaryDirectory() as td:

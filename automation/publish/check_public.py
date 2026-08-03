@@ -7,10 +7,10 @@ This script gates that invariant: it runs in CI (blocking), in the pre-push
 hook, and by hand — zero findings is the steady state; ANY finding is a
 regression.
 
-It scans a set of files (TRACKED git files by default, or every file under a plain
-directory tree — see ``scan()``) and FAILS (exit 1) if any of these appear,
-printing a clear report of every violation; otherwise it exits 0 with an "OK"
-message:
+It scans a set of files (TRACKED git files by default, an immutable Git tree with
+``--git-object``, or every file under a plain directory tree — see ``scan()``)
+and FAILS (exit 1) if any of these appear, printing a clear report of every
+violation; otherwise it exits 0 with an "OK" message:
 
   1. Private skill leak. A skill whose ``skills/<skill>/SKILL.md``
      frontmatter declares ``visibility: private`` MUST have zero tracked files.
@@ -78,6 +78,7 @@ Usage:
     .venv/bin/python automation/publish/check_public.py
     .venv/bin/python automation/publish/check_public.py --json
     .venv/bin/python automation/publish/check_public.py --staged [--allow-unarmed]
+    .venv/bin/python automation/publish/check_public.py --git-object <oid>
 """
 from __future__ import annotations
 
@@ -1365,10 +1366,11 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
 _EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
-def _git(args: list[str], repo_root: Path, binary: bool = False):
+def _git(args: list[str], repo_root: Path, binary: bool = False,
+         env: dict[str, str] | None = None):
     return subprocess.run(
         ["git", *args], cwd=repo_root, check=True, capture_output=True,
-        text=not binary,
+        text=not binary, env=env,
     )
 
 
@@ -1388,6 +1390,16 @@ def staged_paths(repo_root: Path = REPO_ROOT) -> list[str]:
     return [p for p in out.split("\0") if p]
 
 
+def _rewrite_materialized_symlinks(paths: list[str], dest: Path) -> None:
+    """Replace checked-out symlinks with the target text stored in their blobs."""
+    for rel in paths:
+        p = dest / rel
+        if p.is_symlink():
+            target = os.readlink(p)
+            p.unlink()
+            p.write_text(target + "\n", encoding="utf-8")
+
+
 def _materialize_index(repo_root: Path, paths: list[str], dest: Path) -> None:
     """Write the INDEX content of ``paths`` under ``dest`` (never the worktree).
 
@@ -1404,12 +1416,7 @@ def _materialize_index(repo_root: Path, paths: list[str], dest: Path) -> None:
     # A symlink entry checks out as a symlink whose target may not exist here; its
     # blob content IS the target path, which is exactly what must be scanned (an
     # overlay symlink's target names private paths). Replace it with that text.
-    for rel in paths:
-        p = dest / rel
-        if p.is_symlink():
-            target = os.readlink(p)
-            p.unlink()
-            p.write_text(target + "\n", encoding="utf-8")
+    _rewrite_materialized_symlinks(paths, dest)
 
 
 def scan_staged(repo_root: Path = REPO_ROOT, tokens: list[str] | None = None) -> dict:
@@ -1432,6 +1439,65 @@ def scan_staged(repo_root: Path = REPO_ROOT, tokens: list[str] | None = None) ->
     return result
 
 
+# ── immutable git-object mode (pre-push) ────────────────────────────────────
+def _git_tree(repo_root: Path, object_name: str) -> str:
+    """Resolve ``object_name`` to a tree object, or fail closed."""
+    return _git(
+        ["rev-parse", "--verify", f"{object_name}^{{tree}}"], repo_root
+    ).stdout.strip()
+
+
+def git_tree_paths(repo_root: Path, tree: str) -> list[str]:
+    """Return every path stored in ``tree``, independent of index/worktree state."""
+    out = _git(
+        ["ls-tree", "-r", "--full-tree", "--name-only", "-z", tree], repo_root
+    ).stdout
+    return [path for path in out.split("\0") if path]
+
+
+def _materialize_tree(repo_root: Path, tree: str, paths: list[str], dest: Path,
+                      index_path: Path) -> None:
+    """Check out ``tree`` through an isolated temporary index under ``dest``.
+
+    ``GIT_INDEX_FILE`` is the crucial isolation boundary: ``read-tree`` never
+    changes the caller's shared index, branch, HEAD, or files, including when the
+    caller is one of several linked worktrees.
+    """
+    env = dict(os.environ)
+    env["GIT_INDEX_FILE"] = str(index_path)
+    _git(["read-tree", tree], repo_root, env=env)
+    subprocess.run(
+        ["git", "checkout-index", "--all", "--force",
+         f"--prefix={dest.as_posix()}/"],
+        cwd=repo_root, check=True, capture_output=True, env=env,
+    )
+    _rewrite_materialized_symlinks(paths, dest)
+
+
+def scan_git_object(repo_root: Path, object_name: str,
+                    tokens: list[str] | None = None) -> dict:
+    """Run the full guard on the immutable tree named by ``object_name``.
+
+    Pre-push supplies the exact local object ID for every ref update. Scanning
+    that tree prevents another worktree, a non-HEAD push, or unstaged edits from
+    hiding bytes that are actually about to leave the repository.
+    """
+    repo_root = Path(repo_root).resolve()
+    tree = _git_tree(repo_root, object_name)
+    paths = git_tree_paths(repo_root, tree)
+    with tempfile.TemporaryDirectory(prefix="leak-guard-object-") as td:
+        scratch = Path(td)
+        dest = scratch / "tree"
+        dest.mkdir()
+        _materialize_tree(repo_root, tree, paths, dest, scratch / "index")
+        result = scan(root=dest, tracked=paths, tokens=tokens)
+    result["repo_root"] = f"{repo_root} (git object {object_name})"
+    result["mode"] = "git-object"
+    result["git_object"] = object_name
+    result["git_tree"] = tree
+    return result
+
+
 def print_report(result: dict) -> None:
     """Print a human-readable report of the scan result."""
     v = result["violations"]
@@ -1448,7 +1514,11 @@ def print_report(result: dict) -> None:
 
     print("Public-repo leak guard")
     print(f"  repo root:      {result['repo_root']}")
-    label = "staged files: " if result.get("mode") == "staged" else "tracked files:"
+    labels = {
+        "staged": "staged files: ",
+        "git-object": "object files: ",
+    }
+    label = labels.get(result.get("mode"), "tracked files:")
     print(f"  {label}  {result['tracked_file_count']}")
     # How much of that was actually looked at. Printed ALWAYS, clean or not: a
     # "Safe to publish" over zero inspected files must never read like a pass.
@@ -1611,11 +1681,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print machine-readable JSON results instead of the text report",
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--staged",
         action="store_true",
         help="scan the STAGED INDEX content of the pending commit instead of the "
              "tracked work tree (used by the pre-commit hook)",
+    )
+    mode.add_argument(
+        "--git-object",
+        metavar="OID",
+        help="scan the complete immutable tree named by OID instead of the index "
+             "or work tree (used by the pre-push hook)",
     )
     parser.add_argument(
         "--allow-unarmed",
@@ -1650,7 +1727,24 @@ def main(argv: list[str] | None = None) -> int:
               "so checks 1-5, 7\n         and 8 run but the personal-token scan "
               "(check 6) inspects nothing.", file=sys.stderr)
 
-    result = scan_staged() if args.staged else scan()
+    try:
+        if args.staged:
+            result = scan_staged()
+        elif args.git_object:
+            result = scan_git_object(REPO_ROOT, args.git_object)
+        else:
+            result = scan()
+    except subprocess.CalledProcessError as exc:
+        detail = (
+            exc.stderr.decode(errors="replace")
+            if isinstance(exc.stderr, bytes)
+            else exc.stderr
+        )
+        print("FAIL: leak guard could not resolve or materialize the requested Git "
+              f"object {args.git_object!r}.", file=sys.stderr)
+        if detail:
+            print(detail.strip(), file=sys.stderr)
+        return EXIT_VIOLATIONS
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:

@@ -272,13 +272,13 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    `skills/job-search/profiles/`; point `config.job_search.default_profile` at one), and
    per-skill private notes via `config.skill_references_dir("<skill>")`.
 
-   It **always** installs `automation/hooks/pre-commit` and `automation/hooks/pre-push` into `.git/hooks`
-   (never clobbering a foreign hook — it warns instead), and re-running is a safe
-   no-op. When `private/` is mounted it also installs the OVERLAY's own hooks into
-   `private/.git/hooks/`, as symlinks to `automation/hooks/overlay-pre-commit` and
-   `automation/hooks/overlay-pre-push`. Both scripts are tracked **here**, in the public
-   repo, so they stay reviewed and versioned and the overlay needs no tracked code of its
-   own. `overlay-pre-commit` rejects a staged raw-data-layer store payload
+   It **always** installs managed dispatchers into Git's active toolkit hook
+   directory (never clobbering a foreign hook — it warns instead). Each dispatcher
+   runs the tracked hook from the worktree that invoked Git. When `private/` is
+   mounted it installs durable managed copies of the OVERLAY's hooks into that
+   repository's active hook directory. The source scripts remain tracked **here**,
+   so they stay reviewed and versioned while the overlay needs no tracked code of
+   its own; rerun bootstrap after updating them. `overlay-pre-commit` rejects a staged raw-data-layer store payload
    (`<data_root>/*/{raw,derived,state}`, resolved from `config.data_root()`) and a staged
    set larger than any commit in that repo's history (500 files / 128 MiB);
    `overlay-pre-push` refuses any destination that is not the private remote the repo
@@ -312,9 +312,9 @@ with your overlay mounted it screens for **your** identity — and it refuses to
 run (exit 2) when no identity token resolved at all, because a guard that cannot
 see your name cannot certify a tree. It runs four times over: in the pre-commit
 hook over the **staged index** (with `--allow-unarmed`, alongside a hard reject of
-any staged `private/` path), blocking in CI, in the pre-push hook before anything
-reaches a public remote (armed — no escape hatch but `JOBHUNT_ALLOW_PUSH=1`), and
-by hand any time:
+any staged `private/` path), blocking in CI, and in the pre-push hook over every
+immutable outgoing ref tree before it reaches a public remote (armed — no escape
+hatch but `JOBHUNT_ALLOW_PUSH=1`). Run it by hand any time:
 
 ```bash
 .venv/bin/python automation/publish/check_public.py

@@ -129,8 +129,8 @@ public tree clean:
 2. **The leak guard** (`automation/publish/check_public.py`) scans tracked files — paths,
    text, and `.docx`/`.pdf` content — for private trees, structural PII, and
    personal-identity tokens derived at runtime from your config and
-   `private/leak_tokens.txt` (nothing hardcoded). It runs blocking in CI, in the
-   pre-push hook, and by hand.
+   `private/leak_tokens.txt` (nothing hardcoded). It runs blocking in CI, over
+   each immutable outgoing tree in the pre-push hook, and by hand.
 3. **The exporter** (`automation/publish/export_public.py`) can produce a sanitized copy
    of any checkout; the leak-guard test suite drives it end-to-end.
 
@@ -185,7 +185,7 @@ gates on commit and the leak guard on push.
 | `automation/store/` | Raw-data-layer store tooling: builder, validator, retention garbage collector |
 | `automation/reconcile/` | The reconciler — the process-layer gate (`reconcile.py --check`) |
 | `evals/` | All measurement: `canaries/<skill>.yaml` gating skill-instruction changes, `protocols/` (matched-pair A/B + stage benchmarks), `rubrics/`, dated `results/` (see `evals/README.md`) |
-| `automation/hooks/` | Tracked git hooks: pre-commit (nine gates — staged-`private/` reject, staged-index leak guard, public review gate, vendor drift, mail send-less policy, compile, instruction budget, reconciler, reference/link check; the hook file is the list), pre-push (leak guard, armed) |
+| `automation/hooks/` | Tracked git hooks: pre-commit (nine gates — staged-`private/` reject, staged-index leak guard, public review gate, vendor drift, mail send-less policy, compile, instruction budget, reconciler, reference/link check; the hook file is the list), pre-push (armed leak guard over every outgoing ref tree) |
 | `AGENTS.md` | The agent-facing contract: guardrails, conventions, memory map |
 | `docs/handbook/` | Human-facing operating docs (this file, `docs/handbook/private-overlay.md`, `docs/handbook/metrics.md`) |
 | `docs/designs/` | Design programs — one folder per family (`docs/designs/skill-script-sharing/`, `docs/designs/raw-data-layer/`, …) |
