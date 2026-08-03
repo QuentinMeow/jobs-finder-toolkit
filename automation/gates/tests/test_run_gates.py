@@ -223,6 +223,13 @@ class CIDriftTests(unittest.TestCase):
         self.assertIn('git merge-base "$BASE_SHA" "$HEAD_SHA"', workflow)
         self.assertNotIn("git merge-base origin/main", workflow)
 
+    def test_pdf_lanes_share_one_bounded_libreoffice_install(self):
+        workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+        self.assertEqual(workflow.count("apt-get install -y libreoffice-writer"), 1)
+        self.assertIn("sudo timeout 180s sh -c", workflow)
+        self.assertIn("python automation/gates/run_gates.py --lane render", workflow)
+        self.assertIn("python automation/gates/run_gates.py --lane resume", workflow)
+
     def test_the_excuse_list_is_reasons_not_placeholders(self):
         for path, reason in run_gates.NOT_RUN_LOCALLY.items():
             self.assertGreater(len(reason), 40, f"{path}: excuse is too thin: {reason!r}")

@@ -14,3 +14,5 @@
 - The merge driver's live dry run re-read both PRs as open and mergeable with pinned heads. The irreversible execute request was not attempted because merging into `main` requires explicit owner authorization.
 - Opened stacked probe PR #275. Its first hosted run exposed that CI compared every stacked PR with `origin/main`, so a documentation-only tip inherited the lower workflow diff and selected all lanes.
 - Changed hosted classification to use the pull request event's immutable base and head SHAs plus their merge base; added a static regression test forbidding the hardcoded default-branch comparison.
+- The correction run exposed a second tail: the render job's duplicate LibreOffice install stayed in `apt-get install` for more than five minutes after every non-PDF lane and the resume lane completed.
+- Grouped render and resume into one hosted PDF job with a single 180-second-bounded LibreOffice transaction; retained both hard test lanes and added output/workflow regression coverage.

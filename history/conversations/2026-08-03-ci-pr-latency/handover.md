@@ -19,6 +19,7 @@
 - Keep `unittest` for now because setup and real test work dominate discovery; switching frameworks would add churn before addressing the measured bottleneck.
 - Require explicit complete prefixes, current green checks, and head pins for one-request atomic merges; ordinary stacks remain bottom-up.
 - Require `build` and `pr-body` without strict base synchronization so a green stacked child does not rebuild solely because its parent reached `main`.
+- Group render and resume behind one bounded LibreOffice installation; undoing this doubles the external package-manager tail without adding test isolation.
 
 ## If X then Y
 

@@ -90,6 +90,24 @@ OK
 
 The added drift test requires `github.event.pull_request.base.sha`, requires `git merge-base "$BASE_SHA" "$HEAD_SHA"`, and rejects `git merge-base origin/main`.
 
+The correction run also created two parallel LibreOffice installations. Job `91666361002` remained in `Install LibreOffice for PDF lanes` for more than five minutes, while the duplicate resume job completed all setup and tests in 79 seconds. The run had not reached render tests; this was package-manager tail latency, not test execution.
+
+```
+$ python -m unittest discover automation/ci/tests
+.........................
+Ran 25 tests in 1.344s
+
+OK
+
+$ python automation/gates/tests/test_run_gates.py
+.....................................................................
+Ran 69 tests in 1.151s
+
+OK
+```
+
+The grouped output tests split non-PDF and PDF lanes without dropping any lane. The workflow test requires exactly one LibreOffice install, a 180-second bound, and both render and resume invocations.
+
 ## Required checks and local limitations
 
 GitHub ruleset `19191121` requires the stable `build` and `pr-body` contexts without strict base synchronization. This keeps checks mandatory while avoiding a redundant child rebuild after a reviewed stack parent merges.

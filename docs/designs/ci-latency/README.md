@@ -84,7 +84,7 @@ The classifier selects from seven owned lanes. A change can select more than one
 | `applications` | Tracker, email, behavioral-prep, and calendar tests | Those skills' runtime scripts |
 | `publish` | Exporter, review-gate, manifest, and leak-guard tests | `automation/publish/` |
 
-Independent lanes run in isolated GitHub jobs. That isolation removes the shared-worktree conflicts that currently force several local gates to run serially.
+Independent non-PDF lanes run in isolated GitHub jobs. Render and resume lanes share one PDF job because both require LibreOffice: the job installs it once, then runs whichever of the two lanes were selected. This removes a duplicate package transaction and bounds the remaining install at 180 seconds. The other isolation removes shared-worktree conflicts that currently force several local gates to run serially.
 
 ### Fail-closed selection
 
@@ -146,6 +146,12 @@ workflow now compares the immutable pull-request base and head SHAs, then uses
 their merge base. A static regression test rejects a return to the hardcoded
 default branch. The fix itself must run the full matrix; a clean documentation
 tip above it is the acceptance probe for policy-only timing.
+
+The correction run then exposed a separate full-matrix tail: one of two parallel
+LibreOffice installations remained inside `apt-get install` for more than five
+minutes while its duplicate in the resume lane completed. The workflow now
+groups render and resume behind one bounded installation. This keeps both hard
+PDF gates while halving the number of external package transactions on full runs.
 
 Acceptance targets:
 
