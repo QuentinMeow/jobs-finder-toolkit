@@ -100,6 +100,10 @@ ALLOWLIST_DIRS = [
     # workflow and the same markdown-link check, so omitting it would red the exported
     # repo's own CI twice over.
     "automation/gates",
+    # Pull-request impact classification. It ships with the workflow that invokes
+    # it; omitting this directory would make the exported mirror's CI reference a
+    # command the mirror does not contain.
+    "automation/ci",
     "automation/hooks",
     "automation/reconcile",
     "templates",
