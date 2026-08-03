@@ -19,3 +19,5 @@
 - PR #275's grouped correction run passed in 105 seconds end to end. The single PDF job ran both render and resume lanes in 61 seconds; the slowest non-PDF lane took 62 seconds.
 - Prepared a clean process-only stacked tip to validate the corrected pull-request base range and policy-only hosted target before owner-authorized merge.
 - Opened PR #277. Its hosted classifier selected no non-PDF or PDF lane; CI passed in 36 seconds end to end, with 28-second policy and 3-second stable `build` jobs. The separate body workflow passed in 9 seconds wall time.
+- After explicit owner authorization, used the guarded merge driver to merge #266, #270, #275, and #277 bottom-up into the latest `main`; every merge and base retarget was independently confirmed.
+- Post-merge `main` CI run `30818429618` passed the complete matrix and canonical counts in 112 seconds at `bfe24604`.
