@@ -12,6 +12,8 @@ branches run offline and deterministically.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import shutil
 import subprocess
@@ -417,6 +419,150 @@ class TestBootstrapWritesNothingIntoThePublicTree(unittest.TestCase):
             exclude = (root / ".git/info/exclude").read_text(encoding="utf-8")
             self.assertNotIn("hidden-b", exclude)
             self.assertIn("hidden-a", exclude)
+
+
+class TestBootstrapRepairsBrokenHookInstalls(unittest.TestCase):
+    """A hook git cannot run is worse than no hook: it looks installed.
+
+    Moving ``hooks/`` to ``automation/hooks/`` left every existing checkout with
+    ``.git/hooks/pre-commit -> ../../hooks/pre-commit``, a dangling link git skips
+    in silence — so commits and pushes ran with no leak guard while bootstrap
+    reported the link as foreign and exited 0. Bootstrap now repairs the shapes it
+    owns, and ``--check`` is red whenever a tracked hook is not wired.
+    """
+
+    def _tree(self, td: str):
+        """A synthetic repo root: real git dirs, stub hook sources, no overlay."""
+        root = Path(td).resolve()
+        bootstrap_overlay = _bootstrap()
+        self.addCleanup(setattr, bootstrap_overlay, "REPO_ROOT",
+                        bootstrap_overlay.REPO_ROOT)
+        bootstrap_overlay.REPO_ROOT = root
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / ".git/hooks").mkdir(parents=True, exist_ok=True)
+        hooks = root / "automation/hooks"
+        hooks.mkdir(parents=True)
+        for name in ("pre-commit", "pre-push",
+                     "overlay-pre-commit", "overlay-pre-push"):
+            script = hooks / name
+            script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            script.chmod(0o755)
+        return root, bootstrap_overlay
+
+    def _run(self, bootstrap_overlay, *, check: bool) -> tuple[int, str]:
+        report = io.StringIO()
+        with contextlib.redirect_stdout(report):
+            code = bootstrap_overlay.bootstrap(check=check)
+        return code, report.getvalue()
+
+    def _link(self, root: Path, rel: str, target: str) -> Path:
+        link = root / rel
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(target)
+        return link
+
+    # ── the incident: a link left behind by the hooks/ -> automation/hooks/ move ──
+    def test_dangling_retired_path_link_is_repaired_by_apply(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            link = self._link(root, ".git/hooks/pre-commit", "../../hooks/pre-commit")
+            self.assertFalse(link.exists(), "fixture must start dangling")
+
+            code, report = self._run(bootstrap_overlay, check=False)
+
+            self.assertEqual(code, 0, report)
+            self.assertEqual(os.readlink(link), "../../automation/hooks/pre-commit")
+            self.assertEqual(link.resolve(), root / "automation/hooks/pre-commit")
+            self.assertIn("was: ../../hooks/pre-commit", report)
+
+    def test_check_is_red_on_a_dangling_hook_and_changes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            link = self._link(root, ".git/hooks/pre-push", "../../hooks/pre-push")
+
+            code, report = self._run(bootstrap_overlay, check=True)
+
+            self.assertEqual(code, 1, report)
+            self.assertEqual(os.readlink(link), "../../hooks/pre-push")
+            self.assertIn("NOT wired to their tracked source", report)
+            self.assertIn(".git/hooks/pre-push", report)
+
+    def test_check_is_red_when_a_hook_is_missing_and_green_after_apply(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+
+            missing, _ = self._run(bootstrap_overlay, check=True)
+            self.assertEqual(missing, 1)
+
+            self.assertEqual(self._run(bootstrap_overlay, check=False)[0], 0)
+
+            wired, report = self._run(bootstrap_overlay, check=True)
+            self.assertEqual(wired, 0, report)
+            self.assertNotIn("NOT wired", report)
+            for name in ("pre-commit", "pre-push"):
+                self.assertEqual((root / ".git/hooks" / name).resolve(),
+                                 root / "automation/hooks" / name)
+
+    def test_a_link_mis_wired_inside_the_tracked_dir_is_repaired(self) -> None:
+        """Ours, pointing at the wrong tracked hook — repair, do not warn."""
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            link = self._link(root, ".git/hooks/pre-commit",
+                              "../../automation/hooks/pre-push")
+
+            code, report = self._run(bootstrap_overlay, check=False)
+
+            self.assertEqual(code, 0, report)
+            self.assertEqual(link.resolve(), root / "automation/hooks/pre-commit")
+
+    # ── the other side of the rule: a real third-party hook is untouchable ──────
+    def test_a_foreign_hook_file_survives_apply_and_still_fails_check(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            foreign = root / ".git/hooks/pre-commit"
+            foreign.write_text("#!/bin/sh\necho someone elses hook\n", encoding="utf-8")
+            before = foreign.read_text(encoding="utf-8")
+
+            code, report = self._run(bootstrap_overlay, check=False)
+
+            self.assertEqual(code, 0, report)
+            self.assertFalse(foreign.is_symlink())
+            self.assertEqual(foreign.read_text(encoding="utf-8"), before)
+            self.assertIn("leaving it untouched", report)
+            # It still means the guard does not run, so the health check says so.
+            self.assertEqual(self._run(bootstrap_overlay, check=True)[0], 1)
+
+    def test_a_foreign_symlink_that_resolves_elsewhere_is_left_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            other = root / "third-party/husky-pre-commit"
+            other.parent.mkdir()
+            other.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            link = self._link(root, ".git/hooks/pre-commit",
+                              "../../third-party/husky-pre-commit")
+
+            code, report = self._run(bootstrap_overlay, check=False)
+
+            self.assertEqual(code, 0, report)
+            self.assertEqual(link.resolve(), other)
+            self.assertIn("is a foreign symlink", report)
+
+    # ── the overlay's own hooks follow the same rule ────────────────────────────
+    def test_a_dangling_overlay_hook_is_repaired_too(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            private = root / "private"
+            subprocess.run(["git", "init", "-q", str(private)], check=True)
+            (private / ".git/hooks").mkdir(parents=True, exist_ok=True)
+            link = self._link(root, "private/.git/hooks/pre-commit",
+                              "../../../hooks/overlay-pre-commit")
+
+            code, report = self._run(bootstrap_overlay, check=False)
+
+            self.assertEqual(code, 0, report)
+            self.assertEqual(link.resolve(),
+                             root / "automation/hooks/overlay-pre-commit")
+            self.assertIn("[overlay]", report)
 
 
 if __name__ == "__main__":

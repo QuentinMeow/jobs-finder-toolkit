@@ -255,6 +255,10 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    python automation/bootstrap_overlay.py          # add --check to preview, make no changes
    ```
 
+   `--check` is also the health check for an existing install: it exits 1 when a
+   tracked git hook is not wired to its source, and names each one. Run it any
+   time you want to know the leak guard is actually armed on this checkout.
+
    It writes **nothing tracked** into the public tree. With `private/` mounted it
    links each private skill — any `private/skills/<name>/` holding a `SKILL.md` —
    into the Codex, Claude Code, and Cursor host trees, pointing straight at
@@ -272,9 +276,16 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    `skills/job-search/profiles/`; point `config.job_search.default_profile` at one), and
    per-skill private notes via `config.skill_references_dir("<skill>")`.
 
-   It **always** installs `automation/hooks/pre-commit` and `automation/hooks/pre-push` into `.git/hooks`
-   (never clobbering a foreign hook — it warns instead), and re-running is a safe
-   no-op. When `private/` is mounted it also installs the OVERLAY's own hooks into
+   It **always** installs `automation/hooks/pre-commit` and `automation/hooks/pre-push` into `.git/hooks`,
+   and re-running is a safe no-op. It also **repairs a broken install of its own**:
+   a hook symlink whose target does not resolve, or one pointing at the wrong name
+   inside `automation/hooks/`, is retargeted. Git skips a dangling hook without a
+   word, so that shape used to leave a checkout committing and pushing with no leak
+   guard while everything looked installed — which is exactly what happened to
+   checkouts wired before `hooks/` moved to `automation/hooks/`. A genuinely foreign
+   hook — a real file, or a symlink into another tool — is still never clobbered; it
+   is warned about and left, and `--check` reports it as unwired because the guard
+   does not run. When `private/` is mounted it also installs the OVERLAY's own hooks into
    `private/.git/hooks/`, as symlinks to `automation/hooks/overlay-pre-commit` and
    `automation/hooks/overlay-pre-push`. Both scripts are tracked **here**, in the public
    repo, so they stay reviewed and versioned and the overlay needs no tracked code of its
