@@ -206,6 +206,14 @@ class CIDriftTests(unittest.TestCase):
         ])
         self.assertEqual(keys, [])
 
+    def test_pr_body_workflow_skips_base_only_retarget_edits(self):
+        workflow = (REPO_ROOT / ".github/workflows/pr-body.yml").read_text()
+        self.assertIn(
+            "if: github.event.action != 'edited' || "
+            "github.event.changes.body != null",
+            workflow,
+        )
+
     def test_the_excuse_list_is_reasons_not_placeholders(self):
         for path, reason in run_gates.NOT_RUN_LOCALLY.items():
             self.assertGreater(len(reason), 40, f"{path}: excuse is too thin: {reason!r}")
