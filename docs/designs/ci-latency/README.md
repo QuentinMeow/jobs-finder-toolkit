@@ -1,6 +1,6 @@
 # Fast, risk-scoped pull-request verification
 
-**Status:** In review. PR #266 exercised the fail-closed full matrix successfully; the stack-driver follow-up carries the focused workflow guidance and canary evidence.
+**Status:** In review. PR #266 exercised the fail-closed full matrix successfully; PR #270 carries the stack-driver fast path, retarget guard, focused workflow guidance, and canary evidence.
 
 This design shortens routine pull-request verification by always running the repository's high-consequence policy checks, while running long render and unit-test lanes only when the changed inputs can affect them. Any classification uncertainty expands to the full suite, and every `main` or manually dispatched run executes the full matrix.
 
@@ -84,7 +84,7 @@ The classifier selects from seven owned lanes. A change can select more than one
 | `applications` | Tracker, email, behavioral-prep, and calendar tests | Those skills' runtime scripts |
 | `publish` | Exporter, review-gate, manifest, and leak-guard tests | `automation/publish/` |
 
-Independent lanes run in isolated GitHub jobs. That isolation removes the shared-worktree conflicts that currently force several local gates to run serially.
+Independent non-PDF lanes run in isolated GitHub jobs. Render and resume lanes share one PDF job because both require LibreOffice: the job installs it once, then runs whichever of the two lanes were selected. This removes a duplicate package transaction and bounds the remaining install at 180 seconds. The other isolation removes shared-worktree conflicts that currently force several local gates to run serially.
 
 ### Fail-closed selection
 
@@ -109,6 +109,8 @@ For a fully reviewed native GitHub stack, one explicit atomic merge of the highe
 
 For ordinary chained pull requests, retargeting remains explicit after the parent merges. A child already targeting the intended base is a no-op: the driver reports it and does not call `gh pr edit`, avoiding an `edited` event and duplicate CI on the same head.
 
+A real base retarget still emits `edited`, but the required PR-body job distinguishes it from a description edit. Base-only edits skip that job; description edits continue to run it. This prevents an ordinary bottom-up stack from creating a new required-body wait between entries.
+
 ## Test-framework direction
 
 Changing from `unittest` to another framework is not the first optimization: hosted measurements show dependency setup and real test work dominate discovery. The order is:
@@ -130,6 +132,26 @@ full green matrix in 88 seconds from creation through final `build`, compared
 with the 184-second historical PR median. Policy took 28 seconds and the slowest
 lane took 70 seconds. Updating the PR body afterward started only the dedicated
 `PR body` workflow (`30805537781`, green) and created no second CI run.
+
+Second rollout observation, PR #270: hosted run `30806602419` completed its
+deliberately full matrix in 109 seconds. Policy took 27 seconds, the slowest lane
+took 61 seconds, and every selected lane passed. The separate body run
+`30806612926` passed in 14 seconds wall time with an 8-second job. Both
+workflow-changing observations remain below the 150-second full-matrix target.
+
+The first documentation-only probe on stacked PR #275 exposed a base-selection
+bug before rollout: run `30807216699` compared the tip with `origin/main`, saw
+the lower workflow commit, and unnecessarily selected all seven lanes. The
+workflow now compares the immutable pull-request base and head SHAs, then uses
+their merge base. A static regression test rejects a return to the hardcoded
+default branch. The fix itself must run the full matrix; a clean documentation
+tip above it is the acceptance probe for policy-only timing.
+
+The correction run then exposed a separate full-matrix tail: one of two parallel
+LibreOffice installations remained inside `apt-get install` for more than five
+minutes while its duplicate in the resume lane completed. The workflow now
+groups render and resume behind one bounded installation. This keeps both hard
+PDF gates while halving the number of external package transactions on full runs.
 
 Acceptance targets:
 

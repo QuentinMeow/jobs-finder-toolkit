@@ -20,6 +20,9 @@ jobs:
     outputs:
       matrix: ${{ steps.classify.outputs.matrix }}
       lanes: ${{ steps.classify.outputs.lanes }}
+      test_matrix: ${{ steps.classify.outputs.test_matrix }}
+      test_lanes: ${{ steps.classify.outputs.test_lanes }}
+      pdf_lanes: ${{ steps.classify.outputs.pdf_lanes }}
       full: ${{ steps.classify.outputs.full }}
       reason: ${{ steps.classify.outputs.reason }}
     steps:
@@ -36,22 +39,25 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Compare every PR with origin/main so a stack tip covers all lower rungs.
-      # The stdlib-only classifier falls back to every lane if that base is absent.
+      # Compare with this PR's actual base branch, including a stacked PR base.
+      # The stdlib-only classifier falls back to every lane if either immutable
+      # event SHA is absent or their merge base cannot be resolved.
       - name: Classify changed paths
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            if MERGE_BASE="$(git merge-base origin/main "$HEAD_SHA")"; then
+            if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ] && \
+               MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"; then
               python automation/ci/classify_changes.py \
                 --base "$MERGE_BASE" \
                 --head "$HEAD_SHA"
             else
               python automation/ci/classify_changes.py \
-                --force-full "merge base with origin/main unavailable"
+                --force-full "pull-request base or head unavailable"
             fi
           else
             python automation/ci/classify_changes.py \
@@ -89,11 +95,11 @@ jobs:
   # other lanes. An empty matrix deliberately skips this job.
   tests:
     needs: classify
-    if: needs.classify.result == 'success' && needs.classify.outputs.lanes != '[]'
+    if: needs.classify.result == 'success' && needs.classify.outputs.test_lanes != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.classify.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.classify.outputs.test_matrix) }}
     name: tests (${{ matrix.lane }})
     steps:
       - name: Check out repository (pinned head)
@@ -112,14 +118,45 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Install LibreOffice for PDF lanes
-        if: matrix.lane == 'render' || matrix.lane == 'resume'
-        run: sudo apt-get update && sudo apt-get install -y libreoffice-writer
-
       - name: Run selected test lane
         env:
           LANE: ${{ matrix.lane }}
         run: python automation/gates/run_gates.py --lane "$LANE" --jobs 4
+
+  # Render and resume validation share one package installation. This removes a
+  # duplicate apt transaction—and its independent long-tail failure mode—from
+  # full runs while keeping all non-PDF lanes parallel.
+  pdf-tests:
+    needs: classify
+    if: needs.classify.result == 'success' && needs.classify.outputs.pdf_lanes != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository (pinned head)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install LibreOffice once for PDF lanes
+        run: sudo timeout 180s sh -c 'apt-get update && apt-get install -y libreoffice-writer'
+
+      - name: Run render lane
+        if: contains(fromJSON(needs.classify.outputs.pdf_lanes), 'render')
+        run: python automation/gates/run_gates.py --lane render --jobs 4
+
+      - name: Run resume lane
+        if: contains(fromJSON(needs.classify.outputs.pdf_lanes), 'resume')
+        run: python automation/gates/run_gates.py --lane resume --jobs 4
 
   # Independent credential-shape scan across the pinned PR branch history.
   secret-scan:
@@ -140,7 +177,7 @@ jobs:
   # is valid only when classification explicitly emitted no long-running lanes.
   build:
     if: always()
-    needs: [classify, policy, tests, secret-scan]
+    needs: [classify, policy, tests, pdf-tests, secret-scan]
     runs-on: ubuntu-latest
     steps:
       - name: Verify required CI results
@@ -148,8 +185,10 @@ jobs:
           CLASSIFY_RESULT: ${{ needs.classify.result }}
           POLICY_RESULT: ${{ needs.policy.result }}
           TESTS_RESULT: ${{ needs.tests.result }}
+          PDF_TESTS_RESULT: ${{ needs.pdf-tests.result }}
           SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
-          LANES: ${{ needs.classify.outputs.lanes }}
+          TEST_LANES: ${{ needs.classify.outputs.test_lanes }}
+          PDF_LANES: ${{ needs.classify.outputs.pdf_lanes }}
         run: |
           if [ "$CLASSIFY_RESULT" != "success" ] || \
              [ "$POLICY_RESULT" != "success" ] || \
@@ -158,17 +197,19 @@ jobs:
             exit 1
           fi
 
-          if [ "$TESTS_RESULT" = "success" ]; then
-            exit 0
+          if [ "$TESTS_RESULT" != "success" ] && \
+             ! { [ "$TESTS_RESULT" = "skipped" ] && [ "$TEST_LANES" = "[]" ]; }; then
+            echo "Selected non-PDF tests did not complete successfully."
+            exit 1
           fi
 
-          if [ "$TESTS_RESULT" = "skipped" ] && [ "$LANES" = "[]" ]; then
-            echo "No long-running test lanes were selected."
-            exit 0
+          if [ "$PDF_TESTS_RESULT" != "success" ] && \
+             ! { [ "$PDF_TESTS_RESULT" = "skipped" ] && [ "$PDF_LANES" = "[]" ]; }; then
+            echo "Selected PDF tests did not complete successfully."
+            exit 1
           fi
 
-          echo "Selected tests did not complete successfully."
-          exit 1
+          echo "Every selected test group completed successfully."
 
   # Canonical tree-wide counts are published only after a merge to main. This
   # reporting job is intentionally non-blocking; the policy job gates the checks.

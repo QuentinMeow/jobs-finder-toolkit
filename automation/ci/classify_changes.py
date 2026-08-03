@@ -26,6 +26,7 @@ LANES = (
     "applications",
     "publish",
 )
+PDF_LANES = ("render", "resume")
 
 # These records are still checked by the fast, always-on policy job.  They do not
 # need a dependency install, LibreOffice, or a long unit-test lane of their own.
@@ -287,9 +288,19 @@ def classify_range(repository: Path, base: str, head: str) -> Classification:
 
 
 def github_outputs(classification: Classification) -> dict[str, str]:
+    test_lanes = tuple(
+        lane for lane in classification.lanes if lane not in PDF_LANES
+    )
+    pdf_lanes = tuple(lane for lane in classification.lanes if lane in PDF_LANES)
     return {
         "matrix": json.dumps(classification.matrix, separators=(",", ":")),
         "lanes": json.dumps(list(classification.lanes), separators=(",", ":")),
+        "test_matrix": json.dumps(
+            {"include": [{"lane": lane} for lane in test_lanes]},
+            separators=(",", ":"),
+        ),
+        "test_lanes": json.dumps(list(test_lanes), separators=(",", ":")),
+        "pdf_lanes": json.dumps(list(pdf_lanes), separators=(",", ":")),
         "full": str(classification.full).lower(),
         "reason": classification.reason,
     }

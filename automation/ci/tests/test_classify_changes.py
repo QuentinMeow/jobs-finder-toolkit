@@ -205,7 +205,23 @@ class RangeAndOutputTests(unittest.TestCase):
         result = CLASSIFIER.classify(changed(("M", ("automation/store/validate_store.py",))))
         outputs = CLASSIFIER.github_outputs(result)
         self.assertEqual(json.loads(outputs["matrix"]), {"include": [{"lane": "shared"}]})
+        self.assertEqual(
+            json.loads(outputs["test_matrix"]),
+            {"include": [{"lane": "shared"}]},
+        )
+        self.assertEqual(json.loads(outputs["test_lanes"]), ["shared"])
+        self.assertEqual(json.loads(outputs["pdf_lanes"]), [])
         self.assertEqual(outputs["full"], "false")
+
+    def test_pdf_lanes_share_one_hosted_job(self):
+        outputs = CLASSIFIER.github_outputs(CLASSIFIER.full_classification("full"))
+        self.assertEqual(json.loads(outputs["pdf_lanes"]), ["render", "resume"])
+        self.assertEqual(
+            [entry["lane"] for entry in json.loads(outputs["test_matrix"])["include"]],
+            ["maintenance", "shared", "job-search", "applications", "publish"],
+        )
+        self.assertNotIn("render", json.loads(outputs["test_lanes"]))
+        self.assertNotIn("resume", json.loads(outputs["test_lanes"]))
 
     def test_force_full_emits_all_lanes_without_invoking_git(self):
         with tempfile.TemporaryDirectory() as directory:

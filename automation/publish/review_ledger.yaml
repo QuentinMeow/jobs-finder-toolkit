@@ -2621,3 +2621,21 @@
   files: 2
   digest: sha256:84a456a1a980c23b
   finding: 'Read the complete staged two-file diff. It skips the required PR-body job only for base-only retarget edits while preserving checks for body edits, and adds static regression coverage. Generic workflow logic only; no real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'
+- base: cfecfa61
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 4
+  digest: sha256:ac424a1862477ec6
+  finding: 'Read the complete staged four-file diff. It records public workflow run and PR identifiers, generic branch names, aggregate timing, test evidence, reversible design decisions, and a sanitized session handover. The identity-derived public repository owner was replaced by a placeholder. It names one existing public queue item only and exposes no private-overlay item. No real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'
+- base: f12e1337
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 6
+  digest: sha256:d5ea17360ad4c3b3
+  finding: 'Read the complete staged six-file diff. It fixes generic stacked-PR base selection, adds static regression coverage, and records a public workflow run, PR number, aggregate timing, and sanitized session progress. Repository identifiers remain placeholder-redacted in the verification record. No real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'
+- base: d5890cf5
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 8
+  digest: sha256:c0e1db5a935e9274
+  finding: 'Read the complete staged eight-file diff. It groups two generic PDF test lanes behind one bounded package transaction, adds lossless classifier and workflow regression coverage, and records public job timing plus sanitized design/task/session evidence. Repository identifiers remain placeholder-redacted. No real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'
