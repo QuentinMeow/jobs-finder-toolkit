@@ -2558,6 +2558,18 @@
 - base: 7a69eb3a
   reviewed_by: agent
   date: 2026-08-02
+  files: 3
+  digest: sha256:c076677ae36f4134
+  finding: none
+- base: 7a69eb3a
+  reviewed_by: agent
+  date: 2026-08-02
   files: 4
   digest: sha256:e8eae021c7e9d0f8
   finding: 'Adds the leak guard safe-word mechanism (private/leak_safe_words.txt, git-ignored), its tests, a .gitignore line and one handbook bullet. Reviewed specifically for the leak this change could itself introduce: the first draft used a REAL private skill name as the worked example in code comments, tests, the handbook and the PR body, and the guard caught it as a fifth violation in this branch own test file. Every occurrence is now the fictional field-notes; re-measured with the safe-word file removed, this branch contributes ZERO violations and the tree reports only the four pre-existing behavioral-interview-prep hits. No safe word, private skill name, overlay path or config value appears in any tracked file. Toolkit paths, public skill names and repo-process dates only. No identity, employer, school, salary or dated job-hunt content.'
+- base: c165d37a
+  reviewed_by: agent
+  date: 2026-08-02
+  files: 3
+  digest: sha256:c076677ae36f4134
+  finding: 'Merge of origin/main into fix/leak-guard-safe-words. The three files are a session handover and a P1 backlog task about LibreOffice aborting during macOS app initialization under a sandbox; they arrive already reviewed on main (digest c076677a) and are re-read here rather than waved through as inherited. Generic tooling evidence only — crash signal, stack frames, LibreOffice version. The one conflict was automation/publish/review_ledger.yaml, where both sides appended a row after base 7a69eb3a and git merged their shared header into one; resolved by restoring BOTH complete rows, main first, since the ledger is append-only and neither review may be dropped. No identity, employer, school, salary or dated job-hunt content.'
