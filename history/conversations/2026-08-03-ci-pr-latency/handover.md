@@ -5,12 +5,12 @@
 
 ## What happened
 
-- Nothing is broken on `main`: PRs #266, #270, and #275 are green; the clean policy-only acceptance tip is the only remaining hosted check before owner-authorized merge.
+- Nothing is broken on `main`: PRs #266, #270, #275, and #277 are green; only explicit owner authorization remains before merging the stack.
 - Routine diffs now select owned test lanes, independent lanes run in parallel, body edits have a separate check, uncertain inputs fail closed to the full matrix, and a guarded one-request native-stack path is implemented.
 
 ## Where things stand
 
-- The foundation, stack fast path, and stacked-base/PDF-tail correction are in review. A clean documentation-only tip will provide the policy-only hosted timing; the task record is moving to review with that acceptance PR.
+- The complete four-PR stack is in review. The policy-only hosted acceptance run passed in 36 seconds with every long test group skipped by the corrected stacked-base classifier.
 
 ## Decisions made for you
 
@@ -23,7 +23,7 @@
 
 ## If X then Y
 
-- If the documentation-only tip exceeds 45 seconds, inspect policy dependency setup and link/review gates before changing test frameworks.
+- If later policy-only p95 exceeds 90 seconds, inspect dependency setup and link/review gates before changing test frameworks; one 36-second observation is not a percentile.
 - If a stacked probe sees lower-rung files again, inspect the event base SHA and fetched base commit before changing path ownership.
 - If GitHub does not treat the base-only skipped body job as satisfying the required context, keep bottom-up retargets manual and revise the workflow before merging #270.
 

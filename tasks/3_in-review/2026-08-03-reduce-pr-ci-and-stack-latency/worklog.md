@@ -18,3 +18,4 @@
 - Grouped render and resume into one hosted PDF job with a single 180-second-bounded LibreOffice transaction; retained both hard test lanes and added output/workflow regression coverage.
 - PR #275's grouped correction run passed in 105 seconds end to end. The single PDF job ran both render and resume lanes in 61 seconds; the slowest non-PDF lane took 62 seconds.
 - Prepared a clean process-only stacked tip to validate the corrected pull-request base range and policy-only hosted target before owner-authorized merge.
+- Opened PR #277. Its hosted classifier selected no non-PDF or PDF lane; CI passed in 36 seconds end to end, with 28-second policy and 3-second stable `build` jobs. The separate body workflow passed in 9 seconds wall time.

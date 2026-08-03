@@ -1,6 +1,6 @@
 # Fast, risk-scoped pull-request verification
 
-**Status:** In review. PR #266 exercised the fail-closed full matrix successfully; PR #270 carries the stack-driver fast path, retarget guard, focused workflow guidance, and canary evidence.
+**Status:** Ready for owner review. PRs #266, #270, #275, and #277 carry the implementation, stack fast path, hosted corrections, and final acceptance evidence.
 
 This design shortens routine pull-request verification by always running the repository's high-consequence policy checks, while running long render and unit-test lanes only when the changed inputs can affect them. Any classification uncertainty expands to the full suite, and every `main` or manually dispatched run executes the full matrix.
 
@@ -158,6 +158,13 @@ seconds end to end. The single PDF job installed LibreOffice once, ran both
 render and resume validation, and completed in 61 seconds; the slowest non-PDF
 lane completed in 62 seconds. The complete workflow stayed below the
 150-second full-matrix target without making either PDF gate optional.
+
+Final policy-only observation, PR #277: run `30808779641` completed in 36
+seconds end to end. Policy took 28 seconds; both non-PDF and PDF test jobs were
+deliberately skipped; the stable `build` result passed. The separate required
+body run passed in 9 seconds wall time with a 6-second job. This is the first
+hosted observation and meets the 45-second p50 rollout target; it is not yet a
+percentile claim.
 
 Acceptance targets:
 

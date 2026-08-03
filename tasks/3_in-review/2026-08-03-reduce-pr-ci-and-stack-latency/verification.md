@@ -115,6 +115,15 @@ $ gh run view 30808329154 --repo <PUBLIC_REPO> --json createdAt,updatedAt,status
 
 The grouped full matrix passed in 105 seconds. `pdf-tests` installed LibreOffice once and ran both PDF lanes in 61 seconds; job search was the slowest non-PDF lane at 62 seconds. The required `build` result passed in 3 seconds.
 
+## Policy-only hosted acceptance
+
+```
+$ gh run view 30808779641 --repo <PUBLIC_REPO> --json createdAt,updatedAt,status,conclusion,headSha
+{"conclusion":"success","createdAt":"2026-08-03T11:15:00Z","headSha":"3f50e1cd7b2c4ab5c46017b098d4f651f3eb93ca","status":"completed","updatedAt":"2026-08-03T11:15:36Z"}
+```
+
+PR #277 passed in 36 seconds end to end. `policy` passed in 28 seconds; `tests` and `pdf-tests` were deliberately skipped; the stable `build` result passed in 3 seconds. The separate required body run `30808779695` passed in 9 seconds wall time with a 6-second job.
+
 ## Required checks and local limitations
 
 GitHub ruleset `19191121` requires the stable `build` and `pr-body` contexts without strict base synchronization. This keeps checks mandatory while avoiding a redundant child rebuild after a reviewed stack parent merges.
