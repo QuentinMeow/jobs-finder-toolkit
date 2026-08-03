@@ -39,6 +39,7 @@ private/
 # overrode all of them. check_public.py is.
 # Optional git-ignored personal token list consumed by the leak guard
 private/leak_tokens.txt
+private/leak_safe_words.txt
 # Private products (present only if you work in-place with your own data).
 # Anchored to the repo root so they never match the tracked examples/ dataset
 # (e.g. examples/applications/**, examples/me/resume/reference.example.docx).
