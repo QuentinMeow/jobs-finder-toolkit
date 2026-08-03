@@ -108,6 +108,13 @@ OK
 
 The grouped output tests split non-PDF and PDF lanes without dropping any lane. The workflow test requires exactly one LibreOffice install, a 180-second bound, and both render and resume invocations.
 
+```
+$ gh run view 30808329154 --repo <PUBLIC_REPO> --json createdAt,updatedAt,status,conclusion,headSha
+{"conclusion":"success","createdAt":"2026-08-03T11:08:22Z","headSha":"dfaa33866d512230a9c2f232b33e908548e3ca9b","status":"completed","updatedAt":"2026-08-03T11:10:07Z"}
+```
+
+The grouped full matrix passed in 105 seconds. `pdf-tests` installed LibreOffice once and ran both PDF lanes in 61 seconds; job search was the slowest non-PDF lane at 62 seconds. The required `build` result passed in 3 seconds.
+
 ## Required checks and local limitations
 
 GitHub ruleset `19191121` requires the stable `build` and `pr-body` contexts without strict base synchronization. This keeps checks mandatory while avoiding a redundant child rebuild after a reviewed stack parent merges.

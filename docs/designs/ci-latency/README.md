@@ -153,6 +153,12 @@ minutes while its duplicate in the resume lane completed. The workflow now
 groups render and resume behind one bounded installation. This keeps both hard
 PDF gates while halving the number of external package transactions on full runs.
 
+Grouped correction observation, PR #275: run `30808329154` passed in 105
+seconds end to end. The single PDF job installed LibreOffice once, ran both
+render and resume validation, and completed in 61 seconds; the slowest non-PDF
+lane completed in 62 seconds. The complete workflow stayed below the
+150-second full-matrix target without making either PDF gate optional.
+
 Acceptance targets:
 
 | Scenario | Target |

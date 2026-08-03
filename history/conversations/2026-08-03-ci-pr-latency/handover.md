@@ -5,12 +5,12 @@
 
 ## What happened
 
-- Nothing is broken on `main`: PRs #266 and #270 are green, while probe PR #275 now carries a stacked-base classifier fix found by its first hosted run; merging awaits explicit owner authorization.
+- Nothing is broken on `main`: PRs #266, #270, and #275 are green; the clean policy-only acceptance tip is the only remaining hosted check before owner-authorized merge.
 - Routine diffs now select owned test lanes, independent lanes run in parallel, body edits have a separate check, uncertain inputs fail closed to the full matrix, and a guarded one-request native-stack path is implemented.
 
 ## Where things stand
 
-- The foundation and stack fast path are in review. PR #275's fix must pass its fail-closed full matrix, then a clean documentation-only tip will provide the policy-only hosted timing before the task moves to review.
+- The foundation, stack fast path, and stacked-base/PDF-tail correction are in review. A clean documentation-only tip will provide the policy-only hosted timing; the task record is moving to review with that acceptance PR.
 
 ## Decisions made for you
 
