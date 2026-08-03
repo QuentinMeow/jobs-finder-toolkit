@@ -1829,8 +1829,13 @@ class ThisRepoTests(unittest.TestCase):
 
     def test_ci_runs_the_gate_with_full_history(self):
         ci = (review_gate.REPO_ROOT / ".github/workflows/ci.yml").read_text()
-        self.assertIn("automation/publish/review_gate.py", ci)
-        self.assertIn("--verify-all", ci)
+        runner = (
+            review_gate.REPO_ROOT / "automation/gates/run_gates.py"
+        ).read_text()
+        self.assertIn("automation/gates/run_gates.py --lane policy", ci)
+        self.assertIn("review-gate-verify-all", runner)
+        self.assertIn('"--verify-all"', runner)
+        self.assertIn("JOBHUNT_REVIEW_HEAD", runner)
         self.assertIn("fetch-depth: 0", ci)
 
     def test_this_checkout_is_not_mistaken_for_the_published_export(self):

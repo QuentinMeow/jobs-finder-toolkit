@@ -31,8 +31,10 @@ Usage::
     .venv/bin/python automation/gates/run_gates.py               # everything
     .venv/bin/python automation/gates/run_gates.py --list        # the table, no runs
     .venv/bin/python automation/gates/run_gates.py --group hook  # what pre-commit runs
+    .venv/bin/python automation/gates/run_gates.py --lane maintenance
+    .venv/bin/python automation/gates/run_gates.py --impact-from origin/main --jobs 4
     .venv/bin/python automation/gates/run_gates.py --only reconciler,verify-links
-    .venv/bin/python automation/gates/run_gates.py --skip tests-publish --fail-fast
+    .venv/bin/python automation/gates/run_gates.py --lane publish --jobs 3
 
 Exit code: 0 when every SELECTED gate exited 0 (skips are reported, not failures),
 1 otherwise.
@@ -46,7 +48,9 @@ test, not a promise: ``automation/gates/tests/test_run_gates.py`` re-parses
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
+import re
 import subprocess
 import sys
 import time
@@ -73,6 +77,53 @@ def _find_repo_root(start: Path) -> Path:
 REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
 LOG_DIR_REL = "local/gates"  # local/ is the gitignored scratch tree (AGENTS.md)
 GROUPS = ("hook", "ci", "both")
+
+# CI invokes the always-on policy lane for every change, then one or more focused
+# long-running lanes selected by automation/ci/classify_changes.py.  Keep gate
+# membership here rather than duplicating it in the workflow: this table is what
+# both CI and local reproductions consume through ``--lane``.
+CI_LANES: dict[str, tuple[str, ...]] = {
+    "policy": (
+        "vendor-drift",
+        "mail-send-less",
+        "compileall",
+        "instruction-budget",
+        "reconciler",
+        "verify-links",
+        "review-gate-verify-all",
+        "leak-guard-tree",
+    ),
+    "maintenance": (
+        "tests-reconcile",
+        "tests-gardener",
+        "tests-hooks",
+        "tests-metrics",
+        "tests-evals",
+        "tests-gates",
+        "tests-ci-classifier",
+        "tests-github-workflow",
+    ),
+    "render": ("example-render",),
+    "resume": ("tests-resume-writer",),
+    "shared": ("tests-shared", "validate-example-store"),
+    "job-search": (
+        "tests-recall-audit",
+        "tests-job-search",
+        "filter-variants",
+    ),
+    "applications": (
+        "tests-application-tracker",
+        "tests-email-assistant",
+        "tests-behavioral-prep",
+    ),
+    "publish": (
+        "tests-publish-review",
+        "tests-publish-guard",
+        "tests-publish-export",
+    ),
+}
+LONG_CI_LANES = tuple(name for name in CI_LANES if name != "policy")
+_FULL_IMPACT_LANES = ("policy", *LONG_CI_LANES)
 
 # Repo-root maintenance tooling may import the canonical shared module directly.
 # Put its directory on sys.path so --list still works when invoked from any cwd.
@@ -191,6 +242,10 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
     leak_tree_argv = (py, "automation/publish/check_public.py")
     if not _leak_guard_is_armed():
         leak_tree_argv += ("--allow-unarmed",)
+    review_gate_argv = (py, "automation/publish/review_gate.py", "--verify-all")
+    review_head = os.environ.get("JOBHUNT_REVIEW_HEAD", "").strip()
+    if review_head:
+        review_gate_argv += ("--head", review_head)
 
     return [
         # ── the pre-commit hook's chain, in its order ────────────────────────
@@ -357,16 +412,25 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
                            "ci.yml step is neither in this table nor excused.",
             group="ci",
         ),
+        Gate(
+            name="tests-ci-classifier",
+            argv=(py, "-m", "unittest", "discover", "automation/ci/tests"),
+            what_it_proves="The fail-closed change classifier maps paths to stable "
+                           "focused lane matrices and handles unsafe Git input.",
+            group="ci",
+        ),
 
         # ── CI-only: the rest of the build job ───────────────────────────────
         Gate(
             name="review-gate-verify-all",
-            # CI adds `--head <sha>` on a pull_request; that pins the gate to the PR's
-            # own tip instead of GitHub's merge preview and has no local meaning.
-            argv=(py, "automation/publish/review_gate.py", "--verify-all"),
+            # CI sets JOBHUNT_REVIEW_HEAD on a pull_request, which adds
+            # `--head <sha>` and pins the gate to the PR's own tip instead of a
+            # merge preview. A blank or absent value preserves the local/main form.
+            argv=review_gate_argv,
             what_it_proves="Recomputes EVERY historical ledger row's digest and file "
                            "count — the full append-only check. The hook only "
-                           "recomputes a bounded tail.",
+                           "recomputes a bounded tail. JOBHUNT_REVIEW_HEAD pins the "
+                           "reviewed revision for pull requests.",
             group="ci",
             parallel_safe=False,  # walks the whole history with git
         ),
@@ -465,13 +529,36 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
                            "forms CI's pr-body job blocks on.",
             group="ci",
         ),
+        # These used to be one 112-second unittest discovery subprocess.  They use
+        # separate process environments and temporary exports, so the publish lane
+        # can run its three measured tails concurrently under ``--jobs 3``.
         Gate(
-            name="tests-publish",
-            argv=(py, "-m", "unittest", "discover", "automation/publish/tests"),
-            what_it_proves="The leak guard's structural-PII / path-denylist / "
-                           "fail-closed logic and the allowlist exporter end to end.",
+            name="tests-publish-review",
+            argv=(py, "-m", "unittest",
+                  "automation/publish/tests/test_review_gate.py"),
+            what_it_proves="The append-only public review ledger's digest, history, "
+                           "staged-tree, and fail-closed behavior.",
             group="ci",
-            parallel_safe=False,  # runs a real export and mutates the process env
+        ),
+        Gate(
+            name="tests-publish-guard",
+            argv=(py, "-m", "unittest",
+                  "automation/publish/tests/test_leak_guard.py",
+                  "automation/publish/tests/test_export_arming.py",
+                  "automation/publish/tests/test_skill_manifests.py",
+                  "automation/publish/tests/test_store_leak_guard.py"),
+            what_it_proves="The public leak guard's structural-PII, path-denylist, "
+                           "arming, skill-manifest, and store protections.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-publish-export",
+            argv=(py, "-m", "unittest",
+                  "automation/publish/tests/test_export_enumeration.py",
+                  "automation/publish/tests/test_export_destination.py"),
+            what_it_proves="The public export enumerates exactly the allowed tree "
+                           "and refuses unsafe or contaminated destinations.",
+            group="ci",
         ),
         Gate(
             name="leak-guard-tree",
@@ -491,6 +578,11 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
 # in NEITHER the table above NOR this mapping — so CI cannot grow a gate the runner
 # silently stops covering.
 NOT_RUN_LOCALLY: dict[str, str] = {
+    "automation/ci/classify_changes.py":
+        "CI bootstrap rather than a blocking gate: it classifies the immutable Git "
+        "range before dependency installation and chooses which run_gates.py lanes "
+        "to invoke. Local --impact-from imports the same classifier, while its "
+        "behavior is covered by its focused unit tests.",
     "skills/github-workflow/scripts/check_pr_body.py":
         "GitHub-only: the pr-body job reads the pull_request event's BODY, which does "
         "not exist locally. Run it by hand against a draft body — see "
@@ -511,23 +603,153 @@ NOT_RUN_LOCALLY_NON_PYTHON: dict[str, str] = {
 
 # ── selection ────────────────────────────────────────────────────────────────
 
+
+@dataclass(frozen=True)
+class ImpactDecision:
+    """Fail-closed lane selection for cumulative branch impact."""
+
+    ref: str
+    merge_base: str | None
+    long_lanes: tuple[str, ...]
+    full: bool
+    reason: str
+
+    @property
+    def lanes(self) -> tuple[str, ...]:
+        if self.full:
+            return _FULL_IMPACT_LANES
+        return ("policy", *self.long_lanes)
+
+
+def _full_impact(ref: str, reason: str, merge_base: str | None = None) -> ImpactDecision:
+    return ImpactDecision(ref, merge_base, LONG_CI_LANES, True, reason)
+
+
+def _load_change_classifier(root: Path):
+    """Load the stdlib-only CI classifier without making automation a package."""
+    path = root / "automation/ci/classify_changes.py"
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    module_name = "_jobhunt_ci_classify_changes"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not create an import spec for {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+def impact_decision(ref: str, root: Path = REPO_ROOT) -> ImpactDecision:
+    """Classify merge-base(ref, HEAD)..HEAD, expanding every uncertainty to full."""
+    if not ref.strip() or ref.startswith("-"):
+        return _full_impact(ref, "invalid or empty comparison ref")
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", "--", ref, "HEAD"],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    except (OSError, ValueError) as error:
+        return _full_impact(ref, f"merge-base unavailable: {error}")
+    if result.returncode:
+        detail = result.stderr.strip().replace("\n", " ")
+        reason = f"merge-base exited {result.returncode}"
+        return _full_impact(ref, reason + (f": {detail}" if detail else ""))
+
+    merge_base = result.stdout.strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", merge_base):
+        return _full_impact(ref, "merge-base returned an ambiguous object id")
+
+    try:
+        classifier = _load_change_classifier(root)
+        advertised = tuple(classifier.LANES)
+        if advertised != LONG_CI_LANES:
+            return _full_impact(
+                ref,
+                "classifier lane names drift from the gate runner",
+                merge_base,
+            )
+        classification = classifier.classify_range(root, merge_base, "HEAD")
+        lanes = tuple(classification.lanes)
+        full = classification.full
+        reason = str(classification.reason).replace("\n", " ")
+    except Exception as error:
+        return _full_impact(
+            ref, f"classifier unavailable or invalid: {error}", merge_base
+        )
+
+    if not isinstance(full, bool) or any(lane not in LONG_CI_LANES for lane in lanes):
+        return _full_impact(ref, "classifier returned an ambiguous result", merge_base)
+    if full:
+        return _full_impact(ref, reason or "classifier requested full coverage", merge_base)
+    ordered = tuple(lane for lane in LONG_CI_LANES if lane in set(lanes))
+    if len(ordered) != len(lanes):
+        return _full_impact(ref, "classifier returned duplicate lanes", merge_base)
+    return ImpactDecision(ref, merge_base, ordered, False, reason)
+
+
+def print_impact_decision(decision: ImpactDecision, out) -> None:
+    mode = "FULL fallback" if decision.full else "focused"
+    base = decision.merge_base[:12] if decision.merge_base else "unavailable"
+    reason = decision.reason or "no classifier reason"
+    print(
+        f"impact from {decision.ref!r} (merge-base {base}): {mode}; "
+        f"lanes: {', '.join(decision.lanes)}; reason: {reason}",
+        file=out,
+    )
+
+
 def _split(value: str | None) -> list[str]:
     return [part.strip() for part in (value or "").split(",") if part.strip()]
 
 
-def select_gates(gates: Sequence[Gate], *, group: str = "both",
-                 only: str | None = None, skip: str | None = None) -> list[Gate]:
-    """Apply --group / --only / --skip. Unknown names are an error, never a no-op."""
+def select_gates(gates: Sequence[Gate], *, group: str | None = None,
+                 lane: str | None = None, only: str | None = None,
+                 skip: str | None = None) -> list[Gate]:
+    """Apply selectors. Unknown names are errors and lane unions keep table order."""
     known = {g.name for g in gates}
     wanted, unwanted = _split(only), _split(skip)
+    lanes = _split(lane)
+
+    if lane is not None and not lanes:
+        raise SystemExit("run_gates: --lane requires at least one lane name.")
+    if lanes and group is not None:
+        raise SystemExit("run_gates: --lane cannot be combined with --group; "
+                         "a lane already defines its gate set.")
+    if lanes and wanted:
+        raise SystemExit("run_gates: --lane cannot be combined with --only; "
+                         "use one selector, then optionally --skip gates.")
+    unknown_lanes = [name for name in lanes if name not in CI_LANES]
+    if unknown_lanes:
+        raise SystemExit(
+            f"run_gates: unknown lane {unknown_lanes[0]!r} "
+            f"(one of {', '.join(CI_LANES)})."
+        )
+    lane_gate_names = {name for lane_name in lanes for name in CI_LANES[lane_name]}
+    unknown_mapped_gates = sorted(lane_gate_names - known)
+    if unknown_mapped_gates:
+        raise SystemExit("run_gates: CI_LANES references unknown gate(s): "
+                         + ", ".join(unknown_mapped_gates))
+
     for name in (*wanted, *unwanted):
         if name not in known:
             raise SystemExit(f"run_gates: unknown gate {name!r}. Try --list.")
+    group = group or "both"
     if group not in GROUPS:
         raise SystemExit(f"run_gates: unknown group {group!r} (one of {', '.join(GROUPS)})")
 
     chosen = []
     for gate in gates:
+        if lanes and gate.name not in lane_gate_names:
+            continue
         if group != "both" and gate.group not in (group, "both"):
             continue
         if wanted and gate.name not in wanted:
@@ -605,8 +827,8 @@ def _run_many(gates: Sequence[Gate], log_dir: Path, *, jobs: int, fail_fast: boo
     review-gate-verify-all read the git index/history; example-render and the
     resume-writer / job-search / application-tracker suites all write into the SAME
     examples/applications tree (and example-render drives a single headless
-    LibreOffice profile); tests-publish runs a real export and mutates its own
-    process environment. Those run first, one at a time, in table order.
+    LibreOffice profile). Those run first, one at a time, in table order. The
+    publish-test shards are process-isolated and remain parallel-safe.
     """
     results: list[Result] = []
     serial = [g for g in gates if not g.parallel_safe or jobs <= 1]
@@ -759,7 +981,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="run only these gates")
     parser.add_argument("--skip", metavar="NAME[,NAME...]",
                         help="run everything except these gates")
-    parser.add_argument("--group", choices=GROUPS, default="both",
+    parser.add_argument("--lane", metavar="NAME[,NAME...]",
+                        help="run one or more CI lanes: " + ", ".join(CI_LANES))
+    parser.add_argument("--impact-from", metavar="REF",
+                        help="run policy plus long lanes affected since merge-base "
+                             "REF (uncertainty runs every lane)")
+    parser.add_argument("--group", choices=GROUPS,
                         help="hook = what pre-commit runs · ci = what CI runs · "
                              "both = everything (default)")
     parser.add_argument("--fail-fast", action="store_true",
@@ -776,18 +1003,41 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Iterable[str] | None = None, out=None) -> int:
     out = out or sys.stdout
     args = build_parser().parse_args(list(argv) if argv is not None else None)
-    gates = select_gates(build_gates(REPO_ROOT), group=args.group,
+    if args.impact_from is not None:
+        conflicts = [
+            flag for flag, value in (
+                ("--group", args.group), ("--lane", args.lane), ("--only", args.only)
+            ) if value is not None
+        ]
+        if conflicts:
+            raise SystemExit(
+                "run_gates: --impact-from cannot be combined with "
+                + ", ".join(conflicts)
+                + "; impact classification already defines the gate set."
+            )
+        impact = impact_decision(args.impact_from, REPO_ROOT)
+        lane = ",".join(impact.lanes)
+    else:
+        impact = None
+        lane = args.lane
+    gates = select_gates(build_gates(REPO_ROOT), group=args.group, lane=lane,
                          only=args.only, skip=args.skip)
     if not gates:
         print("run_gates: selection matched no gates.", file=out)
         return 1
+    if impact is not None:
+        print_impact_decision(impact, out)
     if args.list:
         print_listing(gates, REPO_ROOT, out)
         return 0
 
     log_dir = REPO_ROOT / LOG_DIR_REL
     log_dir.mkdir(parents=True, exist_ok=True)
-    print(f"running {len(gates)} gates (group: {args.group}, jobs: {args.jobs}) — "
+    if impact is not None:
+        selection = f"impact from: {args.impact_from}"
+    else:
+        selection = f"lane: {args.lane}" if args.lane else f"group: {args.group or 'both'}"
+    print(f"running {len(gates)} gates ({selection}, jobs: {args.jobs}) — "
           f"full output in {LOG_DIR_REL}/", file=out)
 
     def announce(result: Result) -> None:

@@ -56,20 +56,20 @@ only re-measurement can keep true, it was replaced by the command that produces 
   into the single `calendar.md` via `config.calendar_path()`) is current; v5 is
   rejected after the preview-first migration cutover. Calendar rows lead with the time or action, link to role
   context, and keep machine metadata to one hidden compact line.
-- **Quality gates**: CI's `build` job is four environment steps followed by
-  verification steps in four families — structural (vendor drift, compileall),
-  process and safety gates (mail send-less policy, reconciler, reference/markdown
-  links, the public review gate, instruction budget), behavioural (example render +
-  validate, and unit suites across `automation/` and every skill), and the leak
-  defenses (leak-guard/exporter tests, then the blocking public leak guard); an
-  independent `secret-scan` job runs gitleaks. **None of it is advisory** — the
-  workflow contains no `continue-on-error:`. The tracked pre-commit hook runs nine
-  gates. *Neither list is restated here on purpose*: `.github/workflows/ci.yml` and
-  `automation/hooks/pre-commit` are the lists, and this bullet went four gates stale
-  the last time CI grew. The two facts worth carrying: the reconciler and the link
-  checker run in CI **without** `--require-roots` by design, and every public commit
-  needs a row in `automation/publish/review_ledger.yaml` — the review gate blocks in
-  both pre-commit and CI.
+- **Quality gates**: pull-request CI classifies the cumulative `main`-to-head diff,
+  runs policy and credential defenses unconditionally, and fans only affected
+  long-running test families into isolated matrix jobs. Unknown inputs fail closed
+  to the full matrix; every `main` and manual run is full. A stable final `build`
+  result blocks on every selected job, while PR-description validation is a
+  separate `pr-body` workflow so prose edits do not rerun product tests. **None of
+  it is advisory** — the workflows contain no `continue-on-error:`. The tracked
+  pre-commit hook runs nine gates. *Neither list is restated here on purpose*:
+  `.github/workflows/`, `automation/gates/run_gates.py`, and
+  `automation/hooks/pre-commit` are the lists. The two facts worth carrying: the
+  reconciler and the link checker run in CI **without** `--require-roots` by design,
+  and every public commit needs a row in
+  `automation/publish/review_ledger.yaml` — the review gate blocks in both
+  pre-commit and CI.
 - **Workspace restructure**: phases 0 (leak guard/config-discovery/pre-push
   fail closed instead of open, `sync_skill_manifests.py` makes `SKILL.md`
   frontmatter the sole visibility SSOT, eleven config accessors, widened link

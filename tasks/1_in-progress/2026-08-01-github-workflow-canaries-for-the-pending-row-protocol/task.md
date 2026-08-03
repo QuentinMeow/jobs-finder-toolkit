@@ -3,6 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: harness
 - **Source**: PR that made `commit:` optional in the review ledger and pointed the pre-commit hook at `review_gate.py --staged`; that PR rewrote the "The review gate: one commit carries its own row" section of `skills/github-workflow/SKILL.md` and declared `Eval gate: debt`.
+- **Claimed-by**: Codex `/root`
 
 ## Goal
 
@@ -19,6 +20,11 @@ The instruction change that needs the canaries is in `skills/github-workflow/SKI
 - the stacked-PR merge recipe no longer claims every branch tip is a ledger-only `Acknowledge …` commit.
 
 That is a behavioural instruction edit, so `evals/README.md` asks for a canary run before merge. It was not reachable inside the PR that made the change: one measured github-workflow canary run costs about a session's worth of turns and tokens, and `evals/**` was concurrently owned by another agent. The mechanism itself is covered by 14 new regression tests in `automation/publish/tests/test_review_gate.py` (`PendingRowTests`); what is untested is whether an agent reading the new SKILL.md still lands a branch green.
+
+The 2026-08-03 run exposed that the canary expectation itself still demands the
+retired ledger-only follow-up commit, directly contradicting the current skill.
+The frozen fixture must be corrected to test the pending-row protocol before the
+model can receive a meaningful pass/fail verdict.
 
 ## Definition of done
 

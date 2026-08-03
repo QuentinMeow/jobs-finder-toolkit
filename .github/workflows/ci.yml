@@ -1,312 +1,127 @@
-# CI — the gate for the PUBLIC job-hunting toolkit repo.
-#
-# Steps 1-3 (vendored-copy drift check, compile, example render + validate) verify
-# the toolkit itself and pass in ANY checkout (with or without the private overlay).
-#
-# Steps 4-6b run the unit tests: resume-writer schema/extraction/render/E2E, the
-# shared-module suite (job metadata, the metadata editor, layout/search/backfill),
-# the four skill suites (application-tracker, email-assistant,
-# behavioral-interview-prep, github-workflow), and the publish leak-guard suite
-# (structural PII detection, path denylist, fail-closed binaries, allowlist
-# copy). These must pass everywhere.
-#
-# Steps 2a and 2e are the two gates that used to run ONLY in the local
-# automation/hooks/pre-commit chain: the mail send-less policy and the
-# instruction-file budget. CONTRIBUTING.md and skills/github-workflow/SKILL.md
-# both describe them as hard gates, so they run here too — an uninstalled hook,
-# a `git commit --no-verify`, or a fork PR can no longer land a change either
-# one would have refused. Both are stdlib-only and need no config.yaml.
-#
-# Step 7 is the public leak guard (automation/publish/check_public.py) — a BLOCKING
-# gate. This IS the public toolkit repo, so the guard must be completely clean
-# (exit 0, zero findings) on every run; ANY finding is a regression. It is armed
-# with the `JOBHUNT_PERSONAL_TOKENS` repo secret when present. Fork PRs do NOT
-# receive repo secrets, so on a fork the guard runs tokenless (structural PII +
-# path / private-skill checks only) — safe by design, because a clean public tree
-# passes without any identity tokens.
-#
-# Step 2d is the public REVIEW gate (automation/publish/review_gate.py) — the other
-# blocking gate, and the one `git commit --no-verify` cannot dodge. It fails when
-# the published tree changed without a row in automation/publish/review_ledger.yaml.
-# It needs the full history (fetch-depth: 0 on checkout).
-#
-# The `secret-scan` job (gitleaks) is an independent gate that catches credential
-# shapes the identity guard does not target.
-#
-# The `pr-body` job reads the PR BODY as a gate input: a diff touching a skill's
-# instruction files must discharge the risk-based eval gate in the description.
-# The `canonical-counts` job runs on main AFTER a merge and publishes the tree-wide
-# totals to the job summary — see each job for why.
-
+# CI keeps fast policy and secret checks on every change, then runs only the
+# long test lanes selected by the fail-closed change classifier. Main and manual
+# runs always execute the full matrix.
 name: CI
 
-# push is filtered to main. Every other branch reaches CI through `pull_request`,
-# and an unfiltered `push:` ran the whole suite TWICE for any branch with an open
-# PR — measured at 74 runs where 26 were needed. `branches-ignore` cannot express
-# "unless a PR is open" (it takes static globs only), so the split is by trigger:
-# pull_request covers branches, push covers main (post-merge).
-#
-# `types:` is spelled out because the DEFAULT (opened, synchronize, reopened) does
-# not include `edited` — so a PR body fixed after the pr-body job failed would
-# never be re-checked, and the fix could only be picked up by pushing a commit.
 on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  classify:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.classify.outputs.matrix }}
+      lanes: ${{ steps.classify.outputs.lanes }}
+      full: ${{ steps.classify.outputs.full }}
+      reason: ${{ steps.classify.outputs.reason }}
     steps:
-      # fetch-depth: 0 is required by the public review gate (step 2d): it resolves
-      # the last acknowledged commit out of automation/publish/review_ledger.yaml and
-      # diffs from there, which a depth-1 clone cannot do. The gate detects a shallow
-      # checkout and FAILS rather than pass silently, so removing this line turns CI
-      # red instead of disarming the gate.
-      #
-      # `ref:` pins the checkout to the PR's OWN tip. Without it a pull_request run
-      # checks out GitHub's merge preview (branch merged into the base), so every
-      # gate below measured a tree that exists nowhere — a base that moved could
-      # turn a branch red or green on its own. The review gate (2d) was already
-      # immune because it passes --head; nothing else was. On a push the expression
-      # is empty, which actions/checkout treats as "the ref that triggered the run".
-      - name: Check out repository (full history — the review gate needs it)
+      # Full history makes the immutable PR base and head available. The explicit
+      # ref prevents classification of GitHub's synthetic merge commit.
+      - name: Check out repository (full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      # The toolkit requires Python 3.11+; the requirements (pyyaml, python-docx,
-      # pypdf) are tested on 3.12 here.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      # Compare every PR with origin/main so a stack tip covers all lower rungs.
+      # The stdlib-only classifier falls back to every lane if that base is absent.
+      - name: Classify changed paths
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if MERGE_BASE="$(git merge-base origin/main "$HEAD_SHA")"; then
+              python automation/ci/classify_changes.py \
+                --base "$MERGE_BASE" \
+                --head "$HEAD_SHA"
+            else
+              python automation/ci/classify_changes.py \
+                --force-full "merge base with origin/main unavailable"
+            fi
+          else
+            python automation/ci/classify_changes.py \
+              --force-full "$EVENT_NAME on $GITHUB_REF"
+          fi
+
+  # Policy checks are always blocking. Full history is required by the review
+  # ledger, while the token secret remains absent on fork pull requests by design.
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      # LibreOffice powers the DOCX -> PDF conversion in render.py / cover_letter.py.
-      # `libreoffice-writer` runs headless and is enough to convert the example
-      # resume + cover-letter DOCX to PDF, while being much lighter than the full
-      # suite. With it installed, the example render below runs WITHOUT --no-pdf, so
-      # check.py's one-page PDF validation also runs. Do NOT drop this install to
-      # speed CI up without also adding --no-pdf to the render step: a render that
-      # asks for a PDF and gets none now FAILS (the PDF gates report NOT INSPECTED
-      # rather than passing silently), so the step would go red. --no-pdf keeps it
-      # green but converts the six PDF gates into a reported NOT RUN — CI would
-      # stop checking that the example resume is one page.
-      - name: Install LibreOffice (DOCX -> PDF for the example render)
-        run: sudo apt-get update && sudo apt-get install -y libreoffice-writer
-
-      # 1. Vendored-copy drift check: every skill's scripts/_vendor/ copy must be
-      #    byte-identical to its canonical automation/shared/ source.
-      - name: Vendored-copy drift check
-        run: python automation/vendoring/sync_vendored.py --check
-
-      # 2. Compile everything so no toolkit or skill script has a syntax error.
-      - name: Compile all Python
-        run: python -m compileall automation skills/*/scripts
-
-      # 2a. Mail send-less policy — BLOCKING, and the one guardrail here whose
-      #     failure is irreversible for the user: a sent email cannot be recalled.
-      #     AGENTS.md states the invariant absolutely (never request Mail.Send,
-      #     never expose a send command), and automation/hooks/pre-commit has
-      #     enforced it since the mail layer landed — but only locally, so an
-      #     uninstalled hook or a fork PR could add sendMail and keep CI green.
-      #     Same invocation as the hook: walks every provider folder plus the
-      #     email-assistant CLI named by --consumer.
-      - name: Mail send-less policy (blocking)
-        run: >-
-          python automation/shared/mail/check_mail_safety.py
-          --consumer skills/email-assistant/scripts
-
-      # 2b. Process-layer invariants: queue/task/memory schemas, memory index,
-      #     handovers, a well-formed roadmap date (single source of truth:
-      #     templates/). Roadmap STALENESS is deliberately not here: it is the
-      #     gardener's report-only roadmap-staleness routine, because an age limit
-      #     in this step fails every commit in the repo once the clock runs out.
-      #     NOTE: deliberately WITHOUT --require-roots. Every check no-ops when its
-      #     folder is absent so the published export (which ships none of
-      #     message-queue/, tasks/, memory/, docs/roadmap/, history/) stays green;
-      #     --require-roots is a maintainer-checkout assertion and lives in the
-      #     pre-commit hook only.
-      - name: Reconciler (process-layer schemas)
-        run: python automation/reconcile/reconcile.py --check
-
-      # 2b-ii. Reference + markdown-link check. Until now this routine ran nowhere
-      #     but its own unit tests, so a rename could break every link in the tree
-      #     while the gardener reported "references: all resolve". It reads both
-      #     backticked paths and [text](path) links, and decides a break's fate by
-      #     what its SOURCE document is for: a handbook page must resolve, a design
-      #     doc is advisory, a dated record is permitted.
-      #     NOTE: deliberately WITHOUT --require-roots, exactly like the reconciler
-      #     above. That flag asserts every root named in a constant exists, which is
-      #     a maintainer-checkout assertion; the published export ships fewer roots
-      #     and would go red. It lives in the pre-commit hook only. That this step is
-      #     ALSO green inside a real export is not left to prose: it is asserted by
-      #     automation/publish/tests -> test_verify_links_passes_inside_the_export,
-      #     which is the only place a markdown link into a non-exported root shows up.
-      - name: References + markdown links
-        run: python automation/gardener/verify_links.py
-
-      # 2c. Maintenance-tooling unit tests: the reconciler's root handling and
-      #     retry filing, the gardener routines (link/reference verification,
-      #     skill drift, store report, the self-measure funnel), the private-overlay
-      #     git hooks, and the search-recall-audit readers of the applications
-      #     skip-log (whose log branch had no test at all before it was fixed),
-      #     and the instruction-budget gate's discovery + leaf tiers, and the
-      #     eval-record content pins (emit determinism, drift, rename detection,
-      #     and the --write round-trip that must not corrupt a record).
-      #     NOTE: this is a `run: |` block under `bash -e`, so a directory named
-      #     here that does not exist in the tree exits 1 ("Start directory is not
-      #     importable") and reds the whole step. A line may therefore only be
-      #     added in the same commit as the directory it names — and, because
-      #     automation/publish/tests asserts every path this file invokes also
-      #     SHIPS, in the same commit as its export_public.ALLOWLIST_DIRS entry.
-      #     automation/gates/tests is the one line here that is ABOUT this file: the
-      #     local gate runner (automation/gates/run_gates.py) declares what the hook
-      #     and this workflow run, and its drift test re-parses ci.yml and fails when
-      #     a step's invocation is neither in that table nor excused in writing. It
-      #     runs here so the runner cannot quietly fall behind CI.
-      - name: Reconciler + gardener + overlay-hook + recall-audit + metrics + eval-pin + gate-runner unit tests
-        run: |
-          python -m unittest discover automation/reconcile/tests
-          python -m unittest discover automation/gardener/tests
-          python -m unittest discover automation/hooks/tests
-          python -m unittest discover automation/search-recall-audit/tests
-          python -m unittest discover automation/metrics/tests
-          python -m unittest discover automation/evals/tests
-          python -m unittest discover automation/gates/tests
-
-      # 2d. Public review gate — every commit that changed the published tree must
-      #     carry a row in automation/publish/review_ledger.yaml. This is the copy
-      #     `git commit --no-verify` cannot dodge, and it evaluates the TIP: close a
-      #     branch with a ledger-only commit acknowledging your last commit (a
-      #     ledger-only commit changes no watched file, so it does not re-trigger).
-      #     --verify-all recomputes EVERY historical row's digest and file count —
-      #     the full append-only check. The pre-commit hook only recomputes a bounded
-      #     tail, so integrity of older rows is verified here, where the seconds are
-      #     affordable.
-      #     --head is KEPT even though the checkout above is now pinned to the PR's
-      #     own tip. It used to be the only thing standing between this gate and
-      #     GitHub's merge preview, whose ledger is a merge of both sides; it is now
-      #     the second of two independent pins, and it is the one that also decides
-      #     which revision the LEDGER is read from. Removing it would make this gate
-      #     depend on the checkout step staying right.
-      #     No-ops (exit 0, loudly) in a checkout whose history the ledger does not
-      #     describe, which is what keeps the exported public mirror's CI green.
-      - name: Public review gate (unreviewed public changes)
-        env:
-          EVENT: ${{ github.event_name }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ "$EVENT" = "pull_request" ]; then
-            python automation/publish/review_gate.py --verify-all --head "$PR_HEAD"
-          else
-            python automation/publish/review_gate.py --verify-all
-          fi
-
-      # 2e. Instruction-file budget (--strict) — the anti-bloat gate. Every
-      #     AGENTS.md (root at 500 lines, folder leaves at 100), every
-      #     skills/*/SKILL.md (600) and LESSONS.md (160) must be within budget;
-      #     going over forces a consolidation pass, not an exception.
-      #     CONTRIBUTING.md and skills/github-workflow/SKILL.md both list it as a
-      #     hard gate, and until now only the local hook ran it. The private
-      #     overlay's skills and the generated store README are measured ONLY
-      #     when they exist, so this run measures the public files alone.
-      - name: Instruction-file budget (strict)
-        run: python automation/metrics/instruction_budget.py --strict
-
-      # 3. Render + validate the worked example using the fake "Jordan Rivers"
-      #    config.example.yaml. render.py auto-runs check.py (locked fields, real
-      #    titles/skills, bullet lengths, one-page PDF, cover-letter prose).
-      - name: Example render + validate (fake "Jordan Rivers" config)
-        run: |
-          JOBHUNT_CONFIG="$PWD/config.example.yaml" \
-            python skills/resume-writer/scripts/render.py \
-            examples/applications/6_drafted/example-corp-senior-software-engineer/
-
-      # 4. Resume-writer tests: canonical/legacy schema normalization,
-      #    multi-employer extraction/render/layout, and one isolated
-      #    `_test_application_` search-to-PDF workflow.
-      - name: Resume-writer unit tests + multi-experience E2E
-        run: >-
-          JOBHUNT_CONFIG="$PWD/config.example.yaml"
-          python -m unittest discover
-          -s skills/resume-writer/scripts/tests
-
-      # 5. Shared-module unit tests: job-metadata extraction/validation, the
-      #    formatting-preserving metadata editor, company-levels import, layout
-      #    helpers, the search/backfill flows, and the raw-data-layer store
-      #    library (atomicity, blobs, capture, ledger, builder, identity,
-      #    annotations, validation, locking).
-      - name: Shared-module unit tests
-        run: python -m unittest discover automation/shared/tests
-
-      # 5b. Validate the fictional example store and enforce its soft size
-      #     threshold. The store validator is zone-aware; the size check WARNS a
-      #     human over 100 KB and exits 0 (never a silent grow, never a hard block).
-      - name: Validate example store + fixture size
-        run: python automation/store/validate_store.py examples/store --check-fixture-size
-
-      # 6. Job-search tests include the deterministic high-stakes filter corpus,
-      #    snapshot/refilter parity, review preservation, and handoff contracts.
-      - name: Job-search unit tests + filter variant corpus
-        run: |
-          JOBHUNT_CONFIG="$PWD/config.example.yaml" \
-            python -m unittest discover \
-            -s skills/job-search/scripts/tests \
-            -t skills/job-search/scripts/tests
-          python skills/job-search/scripts/validate_filter_variants.py --check
-
-      # 6b. The remaining skill suites. These existed and passed locally but ran
-      #     nowhere in CI, so application-tracker (the v5 meta.yaml schema, the
-      #     status rollup, the folder moves over owner data) and email-assistant
-      #     (the send-less mail path, the Graph client, store sync) could regress
-      #     at merge behind a green tick. CONTRIBUTING.md and README.md both say
-      #     CI runs the suites; now it does.
-      #     Only application-tracker reads config (applications root, location
-      #     policy, skip-log paths), so only that line pins JOBHUNT_CONFIG, the
-      #     same way steps 3/4/6 do. CI has no config.yaml, so the other three
-      #     fall back to config.example.yaml on their own.
-      - name: Application-tracker, email-assistant, behavioral-prep, github-workflow tests
-        run: |
-          JOBHUNT_CONFIG="$PWD/config.example.yaml" \
-            python -m unittest discover -s skills/application-tracker/scripts/tests
-          python -m unittest discover -s skills/email-assistant/scripts/tests
-          python -m unittest discover -s skills/behavioral-interview-prep/scripts/tests
-          python -m unittest discover -s skills/github-workflow/scripts/tests
-
-      # 7. Publish leak-guard + exporter UNIT TESTS (required gate). Exercises the
-      #    guard's structural PII / path-denylist / fail-closed logic and the
-      #    allowlist exporter end-to-end.
-      - name: Leak-guard + exporter unit tests
-        run: python -m unittest discover automation/publish/tests
-
-      # 8. Public leak guard — BLOCKING. This is the public toolkit repo, so the
-      #    guard must be completely clean (exit 0, zero findings); ANY finding is a
-      #    regression. The guard now FAILS CLOSED when it has no identity tokens
-      #    (exit 2), so the secret's presence decides how it is invoked:
-      #      * secret present (this repo)  -> armed; a bare run, no escape hatch.
-      #        A run that would have been silently tokenless now turns CI RED.
-      #      * secret absent (fork PRs get no secrets) -> tokenless by design, so
-      #        --allow-unarmed runs the token-INDEPENDENT checks (structural PII,
-      #        path denylist, private-skill/overlay trees, fail-closed binaries).
-      - name: Public leak guard (blocking; must be clean on this public repo)
+      - name: Run always-on policy gates
         env:
           JOBHUNT_PERSONAL_TOKENS: ${{ secrets.JOBHUNT_PERSONAL_TOKENS }}
-        run: |
-          if [ -n "$JOBHUNT_PERSONAL_TOKENS" ]; then
-            python automation/publish/check_public.py
-          else
-            echo "::warning::JOBHUNT_PERSONAL_TOKENS absent — leak guard runs UNARMED (token-independent checks only)."
-            python automation/publish/check_public.py --allow-unarmed
-          fi
+          JOBHUNT_REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python automation/gates/run_gates.py --lane policy --jobs 4
 
-  # Independent secret-scanning gate: catches API-key / token / credential shapes
-  # across the full history that the identity-token guard does not target.
+  # Each selected lane gets an isolated checkout and runs in parallel with the
+  # other lanes. An empty matrix deliberately skips this job.
+  tests:
+    needs: classify
+    if: needs.classify.result == 'success' && needs.classify.outputs.lanes != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.classify.outputs.matrix) }}
+    name: tests (${{ matrix.lane }})
+    steps:
+      - name: Check out repository (pinned head)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install LibreOffice for PDF lanes
+        if: matrix.lane == 'render' || matrix.lane == 'resume'
+        run: sudo apt-get update && sudo apt-get install -y libreoffice-writer
+
+      - name: Run selected test lane
+        env:
+          LANE: ${{ matrix.lane }}
+        run: python automation/gates/run_gates.py --lane "$LANE" --jobs 4
+
+  # Independent credential-shape scan across the pinned PR branch history.
   secret-scan:
     runs-on: ubuntu-latest
     steps:
@@ -314,83 +129,49 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Same pin as the build job: scan the branch's own history, not the
-          # merge preview's.
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Run gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # The PR BODY is a gate input, not decoration. AGENTS.md ("Risk-based eval gate
-  # on harness edits") and evals/README.md both require that a change to a skill's
-  # SKILL.md / LESSONS.md / reference.md either passes that skill's canaries or
-  # records a rationale — but nothing read the description, so the rule held only
-  # as far as an agent remembered it, and a behavioral edit merged inside a large
-  # stack with the gate neither run, skipped, nor owed.
-  #
-  # One of the four discharge forms — `Eval gate: stack — …; tip: <#PR or branch>`,
-  # for an intermediate PR of a stack — is a DECLARATION this job cannot verify: the
-  # named tip's run does not exist yet when the intermediate PR is checked, and this
-  # job never reads another PR's body. It gates that the tip is NAMED; a stack whose
-  # tip never ran is caught by auditing merged bodies (evals/README.md).
-  #
-  # This job runs ONLY the eval-gate property (--eval-gate-only). The three format
-  # properties (human-first section, Before/After, marketing words) stay where they
-  # were — checked by an author running check_pr_body.py locally, as
-  # skills/github-workflow/SKILL.md already instructs. Turning those into a merge
-  # blocker is a separate decision, and this job does not make it.
-  pr-body:
-    if: github.event_name == 'pull_request'
+  # Preserve the repository's stable required-check context. A skipped tests job
+  # is valid only when classification explicitly emitted no long-running lanes.
+  build:
+    if: always()
+    needs: [classify, policy, tests, secret-scan]
     runs-on: ubuntu-latest
     steps:
-      # fetch-depth: 0 so the merge-base with the PR's base branch exists locally;
-      # the diff decides whether the gate applies at all.
-      - name: Check out repository (full history — needed for the merge-base)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      # check_pr_body.py is stdlib-only and imports nothing from the repo root, so
-      # this job needs no dependency install.
-      #
-      # The body arrives through the environment, never interpolated into the shell:
-      # a PR description is untrusted text and `${{ … }}` inside a run block would
-      # execute it.
-      #
-      # Scratch goes to $RUNNER_TEMP, not into the checkout. A path written inside
-      # the repo would have to be a path the EXPORT ships — the exported mirror runs
-      # this same workflow, and automation/publish/tests asserts that every repo path
-      # ci.yml names exists there. A runner temp dir is outside that contract.
-      - name: Eval gate discharged in the PR body (blocking)
+      - name: Verify required CI results
         env:
-          BODY: ${{ github.event.pull_request.body }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          POLICY_RESULT: ${{ needs.policy.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+          LANES: ${{ needs.classify.outputs.lanes }}
         run: |
-          printf '%s' "$BODY" > "$RUNNER_TEMP/pr-body.md"
-          MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
-          git diff --name-only "$MERGE_BASE" "$HEAD_SHA" > "$RUNNER_TEMP/changed.txt"
-          python skills/github-workflow/scripts/check_pr_body.py \
-            "$RUNNER_TEMP/pr-body.md" \
-            --changed-files "$RUNNER_TEMP/changed.txt" \
-            --eval-gate-only
+          if [ "$CLASSIFY_RESULT" != "success" ] || \
+             [ "$POLICY_RESULT" != "success" ] || \
+             [ "$SECRET_SCAN_RESULT" != "success" ]; then
+            echo "Required CI job failed or was cancelled."
+            exit 1
+          fi
 
-  # Canonical tree-wide counts, published on main AFTER the merge.
-  #
-  # An absolute count measured on a branch ("2669 references", "74 ledger rows") is
-  # already wrong by the time the branch above it merges, so PR bodies report exit
-  # codes and their own deltas instead. That leaves nowhere for the totals to be
-  # true — this job is that place. It reuses the scripts that already compute the
-  # numbers and invents no metric of its own; it REPORTS, and gates nothing, so it
-  # cannot make a merged main red on its own.
+          if [ "$TESTS_RESULT" = "success" ]; then
+            exit 0
+          fi
+
+          if [ "$TESTS_RESULT" = "skipped" ] && [ "$LANES" = "[]" ]; then
+            echo "No long-running test lanes were selected."
+            exit 0
+          fi
+
+          echo "Selected tests did not complete successfully."
+          exit 1
+
+  # Canonical tree-wide counts are published only after a merge to main. This
+  # reporting job is intentionally non-blocking; the policy job gates the checks.
   canonical-counts:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -405,7 +186,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      # verify_links.py and review_gate.py both read YAML (config, the ledger).
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
@@ -424,13 +204,6 @@ jobs:
             echo
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          # Redirected, never piped: the exit code read below is the checker's own
-          # (a pipeline's $? is the LAST stage's). This job REPORTS that code rather
-          # than failing on it — verify_links already gates in the build job on this
-          # same commit, so a break is red there, and reporting it here keeps the
-          # numbers next to the run that produced them.
-          # Scratch goes to $RUNNER_TEMP, never into the checkout — see the pr-body
-          # job for why a repo-relative scratch path would break the export test.
           set +e
           python automation/gardener/verify_links.py > "$RUNNER_TEMP/links.log" 2>&1
           LINKS_EXIT=$?
@@ -444,11 +217,6 @@ jobs:
             echo '### Review ledger and eval records'
             echo
           } >> "$GITHUB_STEP_SUMMARY"
-          # Both repo paths are passed as ARGUMENTS rather than written inside the
-          # heredoc, so each is one clean shell token: automation/publish/tests reads
-          # this file to check that every path ci.yml names ships in the export, and
-          # a path glued to Python punctuation reaches it as `…review_gate.py")`,
-          # which resolves to nothing and fails that test for no real reason.
           python - automation/publish/review_gate.py evals/results \
             >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import importlib.util
@@ -457,7 +225,6 @@ jobs:
 
           gate_path, results_dir = sys.argv[1], sys.argv[2]
 
-          # The ledger's own parser, so this count can never disagree with the gate's.
           spec = importlib.util.spec_from_file_location("review_gate", gate_path)
           review_gate = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(review_gate)

@@ -1,0 +1,42 @@
+# PR descriptions are mutable without a commit. Keep this gate separate so a
+# body edit reruns only the body check, not the repository test matrix.
+name: PR body
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: pr-body-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # The body is untrusted input. It is passed through the environment and written
+  # outside the checkout, never interpolated into a shell command.
+  pr-body:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository (full history — needed for the merge-base)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Eval gate discharged in the PR body (blocking)
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          printf '%s' "$BODY" > "$RUNNER_TEMP/pr-body.md"
+          MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          git diff --name-only "$MERGE_BASE" "$HEAD_SHA" > "$RUNNER_TEMP/changed.txt"
+          python skills/github-workflow/scripts/check_pr_body.py \
+            "$RUNNER_TEMP/pr-body.md" \
+            --changed-files "$RUNNER_TEMP/changed.txt" \
+            --eval-gate-only

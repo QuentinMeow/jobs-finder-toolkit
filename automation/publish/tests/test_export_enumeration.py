@@ -11,10 +11,10 @@ Two regressions are pinned here:
     a warning, and a refusal under ``--strict`` (raised BEFORE ``--force`` touches
     the destination).
 
-The third block walks ``.github/workflows/ci.yml`` for the paths CI invokes and
-asserts every one of them exists in a FRESH export — the exported repo's CI used
-to be red before it started (``automation/store/validate_store.py`` was invoked
-but never exported).
+The third block walks every ``.github/workflows/*.yml`` file for the paths CI
+invokes and asserts every one of them exists in a FRESH export — the exported
+repo's CI used to be red before it started because a workflow invoked a path the
+export did not contain.
 
 Run with:
     .venv/bin/python -m unittest discover automation/publish/tests
@@ -40,7 +40,7 @@ import export_public  # noqa: E402
 import sync_skill_manifests as ssm  # noqa: E402
 
 REPO_ROOT = check_public.REPO_ROOT
-CI_WORKFLOW = REPO_ROOT / ".github/workflows/ci.yml"
+CI_WORKFLOWS = tuple(sorted((REPO_ROOT / ".github/workflows").glob("*.yml")))
 
 # A token that arms the guard without naming anybody. ``export()`` refuses to run
 # unarmed (an unarmed final guard would report any tree "safe to publish"), and
@@ -252,7 +252,7 @@ def tearDownModule() -> None:
     _EXPORT_PATH = None
 
 
-# ── ci.yml path extraction ───────────────────────────────────────────────────
+# ── workflow path extraction ─────────────────────────────────────────────────
 
 _RUN_RE = re.compile(r"^(\s*)run:\s*(.*)$")
 
@@ -345,27 +345,30 @@ class CIPathsExistInExportTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.export = _shared_export()
-        cls.text = CI_WORKFLOW.read_text(encoding="utf-8")
+        cls.text = "\n".join(path.read_text(encoding="utf-8")
+                             for path in CI_WORKFLOWS)
         cls.roots = {p.name for p in REPO_ROOT.iterdir()}
         cls.candidates = _candidate_paths(cls.text, cls.roots)
         cls.targets = _invocation_targets(cls.text)
 
     def test_the_parser_actually_found_something(self):
         """A parser that extracts nothing would make every assertion vacuous."""
-        self.assertGreaterEqual(len(self.candidates), 8, self.candidates)
+        self.assertGreaterEqual(len(self.candidates), 5, self.candidates)
         self.assertGreaterEqual(len(self.targets), 5, self.targets)
-        self.assertIn("automation/store/validate_store.py", self.targets)
-        self.assertIn("automation/shared/tests", self.targets)
+        self.assertIn("automation/ci/classify_changes.py", self.targets)
+        self.assertIn("automation/gates/run_gates.py", self.targets)
+        self.assertIn("skills/github-workflow/scripts/check_pr_body.py", self.targets)
 
     def test_every_invocation_target_exists_in_the_source(self):
         missing = [t for t in self.targets if not list(REPO_ROOT.glob(t))]
-        self.assertEqual(missing, [], f"ci.yml invokes paths that do not exist: {missing}")
+        self.assertEqual(missing, [],
+                         f"GitHub workflows invoke paths that do not exist: {missing}")
 
     def test_every_ci_path_exists_in_the_export(self):
         missing = [c for c in self.candidates if not list(self.export.glob(c))]
         self.assertEqual(
             missing, [],
-            "ci.yml invokes paths the export does not ship (add them to "
+            "GitHub workflows invoke paths the export does not ship (add them to "
             f"ALLOWLIST_DIRS/ALLOWLIST_FILES): {missing}")
 
     def test_requirements_and_example_config_ship(self):
