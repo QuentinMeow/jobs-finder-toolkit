@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: harness
 - **Source**: Codex desktop crash investigation, 2026-08-02 (macOS crash reports, unified logs, and current converter code)
-- **Claimed-by**:
+- **Claimed-by**: Codex
 
 ## Goal
 
