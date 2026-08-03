@@ -255,6 +255,10 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    python automation/bootstrap_overlay.py          # add --check to preview, make no changes
    ```
 
+   `--check` is also the health check for an existing install: it exits 1 when a
+   tracked git hook is not wired to its source, and names each one. Run it any
+   time you want to know the leak guard is actually armed on this checkout.
+
    It writes **nothing tracked** into the public tree. With `private/` mounted it
    links each private skill — any `private/skills/<name>/` holding a `SKILL.md` —
    into the Codex, Claude Code, and Cursor host trees, pointing straight at
@@ -273,12 +277,16 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    per-skill private notes via `config.skill_references_dir("<skill>")`.
 
    It **always** installs managed dispatchers into Git's active toolkit hook
-   directory (never clobbering a foreign hook — it warns instead). Each dispatcher
-   runs the tracked hook from the worktree that invoked Git. When `private/` is
-   mounted it installs durable managed copies of the OVERLAY's hooks into that
-   repository's active hook directory. The source scripts remain tracked **here**,
-   so they stay reviewed and versioned while the overlay needs no tracked code of
-   its own; rerun bootstrap after updating them. `overlay-pre-commit` rejects a staged raw-data-layer store payload
+   directory. Each dispatcher runs the tracked hook from the worktree that invoked
+   Git. A dangling legacy hook symlink, or a live symlink pointing at the wrong name
+   inside a registered worktree's `automation/hooks/`, is repaired into that
+   dispatcher; Git cannot run a dangling link. A runnable foreign file or symlink is
+   warned about and left untouched, and `--check` reports that the tracked guard is
+   not running. When `private/` is mounted, bootstrap installs durable managed copies
+   of the OVERLAY's hooks into that repository's active hook directory and repairs a
+   dangling legacy overlay link into a copy. The source scripts remain tracked
+   **here**, so they stay reviewed and versioned while the overlay needs no tracked
+   code of its own; rerun bootstrap after updating them. `overlay-pre-commit` rejects a staged raw-data-layer store payload
    (`<data_root>/*/{raw,derived,state}`, resolved from `config.data_root()`) and a staged
    set larger than any commit in that repo's history (500 files / 128 MiB);
    `overlay-pre-push` refuses any destination that is not the private remote the repo

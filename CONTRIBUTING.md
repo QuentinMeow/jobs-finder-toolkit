@@ -30,6 +30,7 @@ the reconciler, and the reference/markdown link check — and
 
 ```bash
 python automation/bootstrap_overlay.py        # installs automation/hooks/pre-commit + automation/hooks/pre-push
+python automation/bootstrap_overlay.py --check  # exits 1 if a hook is not wired to its source
 ```
 
 ## Running the checks
