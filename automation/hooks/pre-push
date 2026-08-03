@@ -19,9 +19,12 @@
 #          unknown remote and run the guard as a safety net.
 #        * Non-GitHub remote                    -> same: run the guard.
 #
-#   2. The guard is the gate, not the visibility itself: a clean tracked tree is
-#      safe to push anywhere; a dirty one is refused everywhere we cannot prove
-#      the destination private.
+#   2. For every non-deletion ref update, scan the complete tree at the exact
+#      local OID Git is about to push. HEAD, the index, and the current worktree
+#      are deliberately irrelevant: any of them may describe different bytes.
+#      The guard is the gate, not visibility itself; a clean outgoing tree is
+#      safe to push anywhere, while a leaking one is refused everywhere we
+#      cannot prove the destination private.
 #
 # Manual override (reported loudly):  JOBHUNT_ALLOW_PUSH=1 git push ...
 #   FOR THE REPO OWNER ONLY — never for an AGENT, and the strongest case of that rule in
@@ -48,6 +51,35 @@ set -e
 
 remote_name="$1"
 remote_url="$2"
+
+# Git sends one line per proposed ref update on stdin:
+#   <local-ref> <local-oid> <remote-ref> <remote-oid>
+# Consume it before any early return, including the verified-private and manual
+# override paths. The local OID is the only trustworthy description of what will
+# leave the repository: HEAD, the current index, and files in this worktree may
+# all describe a different tree.
+updates_file="$(mktemp "${TMPDIR:-/tmp}/jobhunt-pre-push.XXXXXX")"
+cleanup_updates() {
+    rm -f "$updates_file"
+}
+trap cleanup_updates 0 1 2 3 15
+
+is_zero_oid() {
+    case "$1" in
+        ""|*[!0]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+while IFS=' ' read -r local_ref local_oid remote_ref remote_oid; do
+    [ -n "$local_oid" ] || continue
+    # A deletion has no outgoing tree. Git normally spells local_ref as
+    # "(delete)" and local_oid as all zeroes; accept either marker.
+    if [ "$local_ref" = "(delete)" ] || is_zero_oid "$local_oid"; then
+        continue
+    fi
+    printf '%s %s\n' "$local_ref" "$local_oid" >> "$updates_file"
+done
 
 if [ "${JOBHUNT_ALLOW_PUSH:-}" = "1" ]; then
     echo "pre-push: JOBHUNT_ALLOW_PUSH=1 set — manual override. SKIPPING, specifically:" >&2
@@ -147,22 +179,32 @@ fi
 # An unarmed guard cannot see the owner's name/email/handles, so pushing to a
 # destination we could not prove private is a HARD STOP here: --allow-unarmed is
 # deliberately NOT passed at push time.
-if "$PY" automation/publish/check_public.py; then
-    echo "pre-push: leak guard PASSED."
-    echo "pre-push: OK"
-else
-    rc=$?
-    if [ "$rc" = "2" ]; then
-        echo "pre-push: REFUSING push — the leak guard is UNARMED (zero identity tokens)," >&2
-        echo "pre-push: so its personal-token scan inspected nothing. See the report above" >&2
-        echo "pre-push: for which config it looked for and where." >&2
-        echo "pre-push: arm it (config.yaml / JOBHUNT_PERSONAL_TOKENS) and push again." >&2
+scan_count=0
+while IFS=' ' read -r push_ref push_oid; do
+    [ -n "$push_oid" ] || continue
+    scan_count=$((scan_count + 1))
+    echo "pre-push: scanning outgoing ref '$push_ref' at $push_oid"
+    if "$PY" automation/publish/check_public.py --git-object "$push_oid"; then
+        echo "pre-push: leak guard PASSED for '$push_ref'."
     else
-        echo "pre-push: REFUSING push — leak guard found violations in the tracked tree." >&2
-        echo "pre-push: fix them before pushing." >&2
+        rc=$?
+        if [ "$rc" = "2" ]; then
+            echo "pre-push: REFUSING push — the leak guard is UNARMED (zero identity tokens)," >&2
+            echo "pre-push: so its personal-token scan inspected nothing. See the report above" >&2
+            echo "pre-push: for which config it looked for and where." >&2
+            echo "pre-push: arm it (config.yaml / JOBHUNT_PERSONAL_TOKENS) and push again." >&2
+        else
+            echo "pre-push: REFUSING push — leak guard found violations in outgoing ref" >&2
+            echo "pre-push: '$push_ref' at $push_oid. Fix them before pushing." >&2
+        fi
+        # The next line is addressed to the REPO OWNER at a terminal. An agent that reads it
+        # in a failed push must NOT act on it — see the JOBHUNT_ALLOW_PUSH note in the header.
+        echo "pre-push: override knowingly with JOBHUNT_ALLOW_PUSH=1 (it skips BOTH checks)." >&2
+        exit 1
     fi
-    # The next line is addressed to the REPO OWNER at a terminal. An agent that reads it
-    # in a failed push must NOT act on it — see the JOBHUNT_ALLOW_PUSH note in the header.
-    echo "pre-push: override knowingly with JOBHUNT_ALLOW_PUSH=1 (it skips BOTH checks)." >&2
-    exit 1
+done < "$updates_file"
+
+if [ "$scan_count" = "0" ]; then
+    echo "pre-push: no non-deletion ref updates to scan."
 fi
+echo "pre-push: OK"

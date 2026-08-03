@@ -208,8 +208,8 @@ your own overlay from scratch):
   ever tracked here, so it cannot enter a commit or PR by accident.
 - With an overlay mounted, the leak guard runs **armed with your identity
   tokens** (from `config.yaml` + `private/leak_tokens.txt`), and the pre-push
-  hook re-runs it before anything reaches a public remote — screen your own
-  identity locally before CI ever sees the PR.
+  hook scans every exact outgoing Git tree before anything reaches a public
+  remote — including non-HEAD branches and refs owned by other worktrees.
 - Keep the two commit streams separate: toolkit improvements → branch + PR here;
   your data → commits in your own overlay repo. A PR should never reference your
   overlay's contents, filenames, or real employers/companies from your hunt.

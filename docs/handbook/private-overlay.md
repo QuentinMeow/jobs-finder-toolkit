@@ -276,20 +276,17 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    `skills/job-search/profiles/`; point `config.job_search.default_profile` at one), and
    per-skill private notes via `config.skill_references_dir("<skill>")`.
 
-   It **always** installs `automation/hooks/pre-commit` and `automation/hooks/pre-push` into `.git/hooks`,
-   and re-running is a safe no-op. It also **repairs a broken install of its own**:
-   a hook symlink whose target does not resolve, or one pointing at the wrong name
-   inside `automation/hooks/`, is retargeted. Git skips a dangling hook without a
-   word, so that shape used to leave a checkout committing and pushing with no leak
-   guard while everything looked installed — which is exactly what happened to
-   checkouts wired before `hooks/` moved to `automation/hooks/`. A genuinely foreign
-   hook — a real file, or a symlink into another tool — is still never clobbered; it
-   is warned about and left, and `--check` reports it as unwired because the guard
-   does not run. When `private/` is mounted it also installs the OVERLAY's own hooks into
-   `private/.git/hooks/`, as symlinks to `automation/hooks/overlay-pre-commit` and
-   `automation/hooks/overlay-pre-push`. Both scripts are tracked **here**, in the public
-   repo, so they stay reviewed and versioned and the overlay needs no tracked code of its
-   own. `overlay-pre-commit` rejects a staged raw-data-layer store payload
+   It **always** installs managed dispatchers into Git's active toolkit hook
+   directory. Each dispatcher runs the tracked hook from the worktree that invoked
+   Git. A dangling legacy hook symlink, or a live symlink pointing at the wrong name
+   inside a registered worktree's `automation/hooks/`, is repaired into that
+   dispatcher; Git cannot run a dangling link. A runnable foreign file or symlink is
+   warned about and left untouched, and `--check` reports that the tracked guard is
+   not running. When `private/` is mounted, bootstrap installs durable managed copies
+   of the OVERLAY's hooks into that repository's active hook directory and repairs a
+   dangling legacy overlay link into a copy. The source scripts remain tracked
+   **here**, so they stay reviewed and versioned while the overlay needs no tracked
+   code of its own; rerun bootstrap after updating them. `overlay-pre-commit` rejects a staged raw-data-layer store payload
    (`<data_root>/*/{raw,derived,state}`, resolved from `config.data_root()`) and a staged
    set larger than any commit in that repo's history (500 files / 128 MiB);
    `overlay-pre-push` refuses any destination that is not the private remote the repo
@@ -323,9 +320,9 @@ with your overlay mounted it screens for **your** identity — and it refuses to
 run (exit 2) when no identity token resolved at all, because a guard that cannot
 see your name cannot certify a tree. It runs four times over: in the pre-commit
 hook over the **staged index** (with `--allow-unarmed`, alongside a hard reject of
-any staged `private/` path), blocking in CI, in the pre-push hook before anything
-reaches a public remote (armed — no escape hatch but `JOBHUNT_ALLOW_PUSH=1`), and
-by hand any time:
+any staged `private/` path), blocking in CI, and in the pre-push hook over every
+immutable outgoing ref tree before it reaches a public remote (armed — no escape
+hatch but `JOBHUNT_ALLOW_PUSH=1`). Run it by hand any time:
 
 ```bash
 .venv/bin/python automation/publish/check_public.py

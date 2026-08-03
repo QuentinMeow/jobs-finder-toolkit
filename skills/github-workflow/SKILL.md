@@ -328,15 +328,14 @@ commits above it are replayed:
 
 ```bash
 git fetch origin
-# One branch at a time, bottom-up. <old-base-tip> = where this branch used to sit.
-git rebase --onto origin/main <old-base-tip> feat/02-renderer
-git rebase --onto feat/02-renderer <old-tip-of-02> feat/03-cli
+git worktree list --porcelain  # map each branch to its owning worktree
+git -C <worktree-for-02> rebase --onto origin/main <old-base-tip>
+git -C <worktree-for-03> rebase --onto feat/02-renderer <old-tip-of-02>
 ```
 
-Record each branch's old tip (`git rev-parse feat/01-parser`) **before** the merge
-or branch deletion that loses it, or recover it from `git reflog`. Force-push each
-rebased branch in the same bottom-up order, and read the guardrail on force-pushing
-reviewed branches below.
+Record each branch's old tip (`git rev-parse feat/01-parser`) before it is lost, or recover it from `git reflog`. Create a dedicated
+worktree for an unowned branch; never check out one owned elsewhere. Rebase and
+force-push bottom-up, following the reviewed-branch guardrail below.
 
 ## 3. Gates, in the order you meet them
 
@@ -356,7 +355,7 @@ both places is often invoked with different flags in each.
 | 7 | Instruction budget (`automation/metrics/instruction_budget.py --strict`) | hook + CI | a `SKILL.md` passes 600 lines, a `LESSONS.md` 160, an `AGENTS.md` its tier's budget |
 | 8 | Reconciler (`automation/reconcile/reconcile.py --check`) | hook + CI; the hook adds `--require-roots` **only when `private/` is mounted**, CI never does | a queue/task/memory item breaks its `templates/` schema, the memory index is stale, a session has no handover, `skill-manifests` drifted, the roadmap's `Last-updated` line is missing/unparseable/in the future (an OLD date does not gate — that is the gardener's `roadmap-staleness` report) |
 | 9 | References + markdown links (`automation/gardener/verify_links.py`) | hook + CI; the hook adds `--require-roots --no-overlay` **only when `private/` is mounted**, CI never does | a backticked path or `[text](path)` in a must-resolve document does not resolve, a skill symlink dangles, or a vendored copy drifted |
-| 10 | Leak guard, armed | `automation/hooks/pre-push` | the guard is UNARMED (no identity tokens), or a tracked file could not be OPENED (dangling symlink, permission error) — either way it refuses rather than certify bytes it did not read. A file it opened but cannot text-extract (image, non-UTF-8 blob) is counted in the `content read: N of M` summary line, not a failure |
+| 10 | Leak guard over every outgoing tree, armed | `automation/hooks/pre-push` | each non-deletion ref's exact local OID is scanned, so a non-HEAD branch or another worktree cannot bypass the guard. It also refuses when the guard is UNARMED (no identity tokens) or a stored file cannot be OPENED; a file it opens but cannot text-extract is counted in the `content read: N of M` line, not a failure |
 | 11 | Eval gate discharged in the PR body (`skills/github-workflow/scripts/check_pr_body.py --eval-gate-only`) | CI only — the `pr-body` job, blocking | the diff touches a skill's `SKILL.md`, `LESSONS.md`, or `reference.md` and the body carries none of the four discharge forms below |
 
 `--require-roots` asserts that every root a checker names in a constant still
@@ -473,8 +472,8 @@ objects, so a deleted branch's commits are simply gone there).
 
 **After merging a stack, on the trunk:**
 
-1. `git checkout main && git pull` — then run the gate. It prints the orphaned rows
-   and computes the range from the **closest surviving ancestor row**.
+1. Find trunk's worktree with `git worktree list --porcelain`; when it is clean,
+   fetch and `merge --ff-only origin/main` there with `git -C`, then run the gate.
 2. **Never edit or delete the orphaned rows.** Append a reconciliation row for the
    trunk tip using the range the gate prints, whose `finding:` says the content was
    already reviewed on the branches and names the twins that landed.
@@ -551,11 +550,8 @@ anything is missing.
 
 ## Guardrails (inviolable)
 
-- **Never `--no-verify`**, and never bypass or weaken a gate to make a commit
-  land (`AGENTS.md`).
-- **Never force-push a branch someone has reviewed without saying so** — comment
-  on the PR with what changed and why the history moved, before or immediately
-  after the push. A silent force-push destroys the review's line anchors.
+- **Never `--no-verify`** or weaken a gate. A refusal spells out the whole valid path: explicitly stage; run the staged gate; read its diff; append its exact row; stage the ledger; commit once.
+- **Never force-push a reviewed branch silently** — comment with what changed and why. In deleted-base recovery, also identify `Base ref must be a branch` as the merged-base signal before `--onto` and retargeting.
 - **Never merge a stack without classifying it first.** A stacked PR and an
   ordinary one need opposite commands and look identical in `gh` and the UI.
   Bottom-up, one at a time, and confirm each merge before the next: for a stack
@@ -575,9 +571,10 @@ anything is missing.
   real CI failures that passed locally:
 
   ```bash
-  git worktree add --detach local/ci_check HEAD
-  # Run the checks against local/ci_check with the primary checkout's venv, then:
-  git worktree remove local/ci_check
+  ci_probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/jobhunt-ci-check.XXXXXX")"
+  git worktree add --detach "$ci_probe_dir" HEAD
+  # After checks, require `git -C "$ci_probe_dir" status --short` to be empty:
+  git worktree remove "$ci_probe_dir"
   ```
 
 - **The PR body and commit messages are public.** No company from the private

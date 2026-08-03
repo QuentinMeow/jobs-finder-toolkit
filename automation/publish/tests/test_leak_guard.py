@@ -627,6 +627,111 @@ class StagedIndexTests(unittest.TestCase):
         self.assertEqual(result["files_read"], 1)
 
 
+class GitObjectTests(unittest.TestCase):
+    """``--git-object`` scans a committed tree, never mutable checkout state."""
+
+    def _repo(self, td: str) -> Path:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _git(repo, "init", "-q")
+        return repo
+
+    def _commit(self, repo: Path, text: str) -> str:
+        (repo / "notes.md").write_text(text, encoding="utf-8")
+        _git(repo, "add", "notes.md")
+        _git(repo, "commit", "-qm", "snapshot")
+        return _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    def test_dirty_clean_edit_cannot_hide_token_in_object(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            oid = self._commit(repo, "hello SuperSecretSlug\n")
+            (repo / "notes.md").write_text("clean now\n", encoding="utf-8")
+
+            result = check_public.scan_git_object(
+                repo, oid, tokens=["SuperSecretSlug"])
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["violations"]["personal_token"])
+        self.assertEqual(result["mode"], "git-object")
+
+    def test_dirty_token_edit_does_not_taint_clean_object(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            oid = self._commit(repo, "clean\n")
+            (repo / "notes.md").write_text(
+                "hello SuperSecretSlug\n", encoding="utf-8")
+
+            result = check_public.scan_git_object(
+                repo, oid, tokens=["SuperSecretSlug"])
+
+        self.assertTrue(result["ok"], result["violations"])
+
+    def test_non_head_object_is_scanned(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            leaky_oid = self._commit(repo, "hello SuperSecretSlug\n")
+            clean_oid = self._commit(repo, "clean\n")
+            self.assertEqual(_git(repo, "rev-parse", "HEAD").stdout.strip(), clean_oid)
+
+            result = check_public.scan_git_object(
+                repo, leaky_oid, tokens=["SuperSecretSlug"])
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["git_object"], leaky_oid)
+
+    def test_object_from_linked_worktree_is_scanned_without_touching_primary(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            primary_oid = self._commit(repo, "clean\n")
+            linked = Path(td) / "linked"
+            _git(repo, "worktree", "add", "-q", "-b", "linked-topic", str(linked))
+            (linked / "notes.md").write_text(
+                "hello SuperSecretSlug\n", encoding="utf-8")
+            _git(linked, "add", "notes.md")
+            _git(linked, "commit", "-qm", "linked leak")
+            linked_oid = _git(linked, "rev-parse", "HEAD").stdout.strip()
+            primary_status = _git(repo, "status", "--porcelain=v1").stdout
+
+            result = check_public.scan_git_object(
+                repo, linked_oid, tokens=["SuperSecretSlug"])
+
+            self.assertFalse(result["ok"])
+            self.assertEqual(_git(repo, "rev-parse", "HEAD").stdout.strip(), primary_oid)
+            self.assertEqual(
+                _git(repo, "status", "--porcelain=v1").stdout, primary_status)
+
+    def test_scan_does_not_change_head_index_or_worktree(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            oid = self._commit(repo, "committed\n")
+            (repo / "notes.md").write_text("dirty\n", encoding="utf-8")
+            before_head = _git(repo, "rev-parse", "HEAD").stdout
+            before_index = _git(repo, "write-tree").stdout
+            before_status = _git(repo, "status", "--porcelain=v1").stdout
+
+            check_public.scan_git_object(repo, oid, tokens=[])
+
+            self.assertEqual(_git(repo, "rev-parse", "HEAD").stdout, before_head)
+            self.assertEqual(_git(repo, "write-tree").stdout, before_index)
+            self.assertEqual(
+                _git(repo, "status", "--porcelain=v1").stdout, before_status)
+
+    def test_object_symlink_target_is_scanned_as_text(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            os.symlink("../private/skills/hidden-practice", repo / "link")
+            _git(repo, "add", "link")
+            _git(repo, "commit", "-qm", "symlink")
+            oid = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+            result = check_public.scan_git_object(
+                repo, oid, tokens=["hidden-practice"])
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["violations"]["personal_token"])
+
+
 class UnreadableFileTests(unittest.TestCase):
     """Check 8: a tracked path the guard could not OPEN is a finding, not a skip.
 
