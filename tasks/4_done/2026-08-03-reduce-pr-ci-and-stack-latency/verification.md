@@ -129,3 +129,18 @@ PR #277 passed in 36 seconds end to end. `policy` passed in 28 seconds; `tests` 
 GitHub ruleset `19191121` requires the stable `build` and `pr-body` contexts without strict base synchronization. This keeps checks mandatory while avoiding a redundant child rebuild after a reviewed stack parent merges.
 
 The local full-impact run selected all 29 gates; 27 passed. `example-render` and resume end-to-end PDF validation could not launch LibreOffice because the Codex macOS sandbox denies the LaunchServices lookup. The corresponding hosted Ubuntu render and resume lanes passed, so this is an environment limitation rather than a product regression.
+
+## Post-merge acceptance
+
+The owner explicitly authorized the merge. The guarded ordinary-stack driver merged and independently confirmed each exact reviewed head, retargeting and reading back the next base only after its parent landed:
+
+| PR | Merge commit |
+|---|---|
+| #266 | `3009d0ab50453128ef74a0c2da4acb29260c764e` |
+| #270 | `91e310c27fe721db1f39702142e7358c484183c9` |
+| #275 | `0088cd383caf89f99e294aeededa5a9620131480` |
+| #277 | `bfe24604b0ef40a44d755ca480fe5878218abdfb` |
+
+PR #277's first merge attempt was correctly refused while its base-only retarget event was settling. The driver stopped after the first three confirmed merges; once GitHub reported #277 clean against `main`, a one-PR rerun merged and confirmed it.
+
+Post-merge `main` run `30818429618` passed at `bfe24604b0ef40a44d755ca480fe5878218abdfb` in 112 seconds. Canonical counts, policy, every non-PDF lane, the grouped PDF job, secret scanning, and the required `build` context all passed.

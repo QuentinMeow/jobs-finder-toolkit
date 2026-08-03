@@ -5,12 +5,12 @@
 
 ## What happened
 
-- Nothing is broken on `main`: PRs #266, #270, #275, and #277 are green; only explicit owner authorization remains before merging the stack.
+- PRs #266, #270, #275, and #277 were merged bottom-up into `main` after explicit owner authorization; the guarded driver confirmed each merge and each next-base retarget.
 - Routine diffs now select owned test lanes, independent lanes run in parallel, body edits have a separate check, uncertain inputs fail closed to the full matrix, and a guarded one-request native-stack path is implemented.
 
 ## Where things stand
 
-- The complete four-PR stack is in review. The policy-only hosted acceptance run passed in 36 seconds with every long test group skipped by the corrected stacked-base classifier.
+- The complete four-PR stack is on `main` at `bfe24604`. Post-merge full CI and canonical counts passed in 112 seconds; the policy-only hosted acceptance remains 36 seconds.
 
 ## Decisions made for you
 
@@ -30,9 +30,9 @@
 ## Dead ends
 
 - Replacing `unittest` was rejected as the first move because hosted setup plus real suite work, not discovery, dominate the critical path.
-- Executing the live merge plan was blocked because the request did not explicitly authorize irreversible merges into `main`; the dry run passed.
+- The first attempt to merge the retargeted final PR was correctly refused while GitHub's base-policy event settled; retrying after `mergeStateStatus` returned `CLEAN` succeeded.
 
 ## Needs your attention
 
-- Merge approval is needed for PRs #266 and #270 (and the documentation-only tip after it is green). Why this matters: live merge/retarget timing cannot be confirmed without changing `main`. If you do nothing: all improvements remain reviewable and green but unmerged.
+- No action is needed for the CI-latency stack; it is merged and post-merge CI is green.
 - No new repository queue item was filed. The 32 pre-existing public items and 7 private-overlay items remain unchanged. Highest cost: [`job-search-us-only-default-asymmetry`](../../../message-queue/needs-human/decisions/job-search-us-only-default-asymmetry.md) — Why this matters: inconsistent defaults can repeatedly hide eligible remote roles. If you do nothing: the documented status quo remains and the recurring-loss risk continues.
