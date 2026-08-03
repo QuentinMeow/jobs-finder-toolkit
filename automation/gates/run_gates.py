@@ -21,9 +21,10 @@ easy thing:
     (a redirect is not a pipeline) and loses none of the output;
   * the summary is an explicit ``NAME / EXIT / RESULT`` table plus one final line
     that says ALL GREEN or names every gate that failed;
-  * a gate that cannot run (LibreOffice absent, ``private/`` not mounted) reports
-    **SKIP**, never PASS. A skip that reads as a pass is the same failure in a
-    different costume, so skips are counted and named separately, always.
+  * a gate missing an optional prerequisite (LibreOffice absent, ``private/`` not
+    mounted) reports **SKIP**, never PASS. A known-unsafe execution environment
+    reports **FAIL** before a subprocess starts. Skips and failures are counted
+    and named separately, always.
 
 Usage::
 
@@ -46,7 +47,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -74,8 +74,31 @@ REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
 LOG_DIR_REL = "local/gates"  # local/ is the gitignored scratch tree (AGENTS.md)
 GROUPS = ("hook", "ci", "both")
 
+# Repo-root maintenance tooling may import the canonical shared module directly.
+# Put its directory on sys.path so --list still works when invoked from any cwd.
+SHARED_DIR = REPO_ROOT / "automation" / "shared"
+if str(SHARED_DIR) not in sys.path:
+    sys.path.insert(0, str(SHARED_DIR))
+
+import libreoffice_env  # noqa: E402
+
 
 # ── gate table ───────────────────────────────────────────────────────────────
+
+PASS, FAIL, SKIP, NOTRUN = "PASS", "FAIL", "SKIP", "NOTRUN"
+
+
+@dataclass(frozen=True)
+class PreconditionResult:
+    """A gate that must fail or skip before its subprocess starts."""
+
+    status: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        if self.status not in (FAIL, SKIP):
+            raise ValueError(f"precondition status must be FAIL or SKIP, got {self.status!r}")
+
 
 @dataclass(frozen=True)
 class Gate:
@@ -91,7 +114,8 @@ class Gate:
     ``env``             extra environment for this gate only.
     ``parallel_safe``   False = never run concurrently with anything, even under
                         ``--jobs N`` (see ``_run_many``).
-    ``precondition``    returns a SKIP reason string, or None to run.
+    ``precondition``    returns a PreconditionResult, a legacy SKIP reason
+                        string, or None to run.
     ``dirties``         a gate that REWRITES TRACKED FILES leaves that note here; the
                         summary repeats it, because CI does this in a throwaway
                         checkout and your working tree is not one.
@@ -103,27 +127,27 @@ class Gate:
     group: str
     env: dict[str, str] = field(default_factory=dict)
     parallel_safe: bool = True
-    precondition: Callable[[Path], str | None] | None = None
+    precondition: Callable[[Path], PreconditionResult | str | None] | None = None
     dirties: str | None = None
 
 
 # ── preconditions ────────────────────────────────────────────────────────────
-# LibreOffice locations, copied from skills/resume-writer/scripts/pdf_convert.py so
-# the runner and the renderer can never disagree about what "installed" means.
-_LO_PATHS = [p for p in (os.environ.get("JOBHUNT_SOFFICE"),) if p] + [
-    str(Path.home() / "Applications/LibreOffice.app/Contents/MacOS/soffice"),
-    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    "soffice",
-]
-
-
-def _needs_libreoffice(_root: Path) -> str | None:
-    for lo in _LO_PATHS:
-        if shutil.which(lo) or Path(lo).exists():
-            return None
-    return ("LibreOffice not found (JOBHUNT_SOFFICE / ~/Applications / /Applications / "
-            "PATH). CI installs libreoffice-writer, so this gate — including check.py's "
-            "one-page PDF validation — runs there and NOT here.")
+def _needs_libreoffice(_root: Path) -> PreconditionResult | None:
+    environment = libreoffice_env.libreoffice_environment()
+    if environment.launchservices is libreoffice_env.LaunchServicesAccess.DENIED:
+        return PreconditionResult(
+            FAIL,
+            libreoffice_env.launchservices_denied_diagnostic(environment.executable),
+        )
+    if environment.executable is None:
+        return PreconditionResult(
+            SKIP,
+            "LibreOffice not found (JOBHUNT_SOFFICE / ~/Applications / "
+            "/Applications / soffice or libreoffice on PATH). CI installs "
+            "libreoffice-writer, so this gate — including check.py's one-page "
+            "PDF validation — runs there and NOT here.",
+        )
+    return None
 
 
 def _needs_overlay(plain_gate: str) -> Callable[[Path], str | None]:
@@ -516,8 +540,6 @@ def select_gates(gates: Sequence[Gate], *, group: str = "both",
 
 # ── execution ────────────────────────────────────────────────────────────────
 
-PASS, FAIL, SKIP, NOTRUN = "PASS", "FAIL", "SKIP", "NOTRUN"
-
 
 @dataclass
 class Result:
@@ -533,11 +555,27 @@ class Result:
         return self.gate.name
 
 
+def _evaluate_precondition(gate: Gate, root: Path) -> PreconditionResult | None:
+    """Normalize old string preconditions to explicit SKIP results."""
+    if gate.precondition is None:
+        return None
+    result = gate.precondition(root)
+    if isinstance(result, str):
+        return PreconditionResult(SKIP, result)
+    return result
+
+
 def run_gate(gate: Gate, log_dir: Path, root: Path = REPO_ROOT) -> Result:
     """Run one gate. stdout+stderr are REDIRECTED to a file — never piped."""
-    reason = gate.precondition(root) if gate.precondition else None
-    if reason:
-        return Result(gate, SKIP, reason=reason)
+    precondition = _evaluate_precondition(gate, root)
+    if precondition is not None:
+        exit_code = 1 if precondition.status == FAIL else None
+        return Result(
+            gate,
+            precondition.status,
+            exit_code=exit_code,
+            reason=precondition.reason,
+        )
 
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{gate.name}.log"
@@ -637,11 +675,14 @@ def print_listing(gates: Sequence[Gate], root: Path, out) -> None:
         for key, value in sorted(gate.env.items()):
             print(f"      env {key}={value}", file=out)
         print(f"    proves: {gate.what_it_proves}", file=out)
-        if gate.dirties:
+        precondition = _evaluate_precondition(gate, root)
+        if gate.dirties and precondition is None:
             print(f"    DIRTIES THE WORKTREE: {gate.dirties}", file=out)
-        reason = gate.precondition(root) if gate.precondition else None
-        if reason:
-            print(f"    SKIP HERE: {reason}", file=out)
+        if precondition is not None:
+            print(
+                f"    {precondition.status} HERE: {precondition.reason}",
+                file=out,
+            )
         print(file=out)
     if NOT_RUN_LOCALLY or NOT_RUN_LOCALLY_NON_PYTHON:
         print("not run locally (asserted by automation/gates/tests):", file=out)
@@ -681,7 +722,11 @@ def summarise(results: Sequence[Result], out, *, tail: int, root: Path) -> int:
 
     print("", file=out)
     for result in results:
-        if result.gate.dirties and result.status in (PASS, FAIL):
+        if (
+            result.gate.dirties
+            and result.status in (PASS, FAIL)
+            and result.log_path is not None
+        ):
             print(f"note: {result.name} {result.gate.dirties}", file=out)
     if skipped:
         print("skipped (NOT passes): "

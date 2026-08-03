@@ -17,6 +17,7 @@ Run with:
 from __future__ import annotations
 
 import io
+import os
 import re
 import shlex
 import subprocess
@@ -24,6 +25,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # Make the sibling module importable (automation/gates/).
 _GATES_DIR = Path(__file__).resolve().parents[1]
@@ -332,6 +334,13 @@ FAILING = _gate("synthetic-fail",
                 "import sys; print('line one'); sys.stderr.write('boom\\n'); sys.exit(3)")
 SKIPPED = _gate("synthetic-skip", "print('never runs')",
                 precondition=lambda root: "synthetic precondition: a tool is missing")
+PREFLIGHT_FAILED = _gate(
+    "synthetic-preflight-fail",
+    "print('never runs')",
+    precondition=lambda root: run_gates.PreconditionResult(
+        run_gates.FAIL, "synthetic precondition: execution is forbidden"
+    ),
+)
 MISSING_BINARY = run_gates.Gate(
     name="synthetic-missing-binary",
     argv=("jobhunt-no-such-binary-xyz",),
@@ -402,6 +411,18 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(code, 0, text)
         self.assertIn("ALL GREEN (0 gates, 1 skipped: synthetic-skip)", text)
 
+    def test_a_precondition_failure_is_red_without_a_process_or_log(self):
+        with mock.patch.object(run_gates.subprocess, "run") as process:
+            results, code, text, log_dir = self._run([PREFLIGHT_FAILED])
+        process.assert_not_called()
+        self.assertEqual(results[0].status, run_gates.FAIL)
+        self.assertEqual(results[0].exit_code, 1)
+        self.assertIsNone(results[0].log_path)
+        self.assertFalse((log_dir / "synthetic-preflight-fail.log").exists())
+        self.assertEqual(code, 1, text)
+        self.assertIn("RED: synthetic-preflight-fail", text)
+        self.assertNotIn("ALL GREEN", text)
+
     def test_a_missing_executable_skips_with_the_reason(self):
         results, code, text, _ = self._run([MISSING_BINARY])
         self.assertEqual(results[0].status, run_gates.SKIP)
@@ -429,12 +450,159 @@ class ExecutionTests(unittest.TestCase):
         _, _, text, _ = self._run([DIRTY_SKIPPED])
         self.assertNotIn("note: synthetic-dirty-skipped", text)
 
+    def test_a_failed_preflight_does_not_claim_it_dirtied_the_worktree(self):
+        gate = run_gates.Gate(
+            name="synthetic-dirty-preflight-fail",
+            argv=DIRTY.argv,
+            what_it_proves="a gate denied before launch cannot dirty the worktree",
+            group="ci",
+            dirties=DIRTY.dirties,
+            precondition=PREFLIGHT_FAILED.precondition,
+        )
+        _, _, text, _ = self._run([gate])
+        self.assertNotIn("note: synthetic-dirty-preflight-fail", text)
+
     def test_fail_fast_stops_and_still_exits_one(self):
         results, code, text, _ = self._run([FAILING, PASSING], fail_fast=True)
         self.assertEqual(code, 1)
         self.assertEqual([r.status for r in results],
                          [run_gates.FAIL, run_gates.NOTRUN])
         self.assertIn("not run (--fail-fast): synthetic-pass", text)
+
+
+class LibreOfficePreconditionTests(unittest.TestCase):
+    def _environment(self, executable, access):
+        return run_gates.libreoffice_env.LibreOfficeEnvironment(executable, access)
+
+    def test_missing_binary_is_skip(self):
+        environment = self._environment(
+            None,
+            run_gates.libreoffice_env.LaunchServicesAccess.NOT_APPLICABLE,
+        )
+        with mock.patch.object(
+                run_gates.libreoffice_env,
+                "libreoffice_environment",
+                return_value=environment,
+            ):
+            result = run_gates._needs_libreoffice(REPO_ROOT)
+        self.assertEqual(result.status, run_gates.SKIP)
+        self.assertIn("soffice or libreoffice on PATH", result.reason)
+
+    def test_known_denial_with_binary_is_fail(self):
+        environment = self._environment(
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+            run_gates.libreoffice_env.LaunchServicesAccess.DENIED,
+        )
+        with mock.patch.object(
+                run_gates.libreoffice_env,
+                "libreoffice_environment",
+                return_value=environment,
+            ):
+            result = run_gates._needs_libreoffice(REPO_ROOT)
+        self.assertEqual(result.status, run_gates.FAIL)
+        self.assertIn("No LibreOffice process was started", result.reason)
+        self.assertIn("FAIL, not SKIP or PASS", result.reason)
+
+    def test_known_denial_without_binary_is_still_fail_not_skip(self):
+        environment = self._environment(
+            None,
+            run_gates.libreoffice_env.LaunchServicesAccess.DENIED,
+        )
+        with mock.patch.object(
+                run_gates.libreoffice_env,
+                "libreoffice_environment",
+                return_value=environment,
+            ):
+            result = run_gates._needs_libreoffice(REPO_ROOT)
+        self.assertEqual(result.status, run_gates.FAIL)
+        self.assertIn("No LibreOffice process was started", result.reason)
+
+    def test_known_denial_runs_no_subprocess_writes_no_log_and_is_red(self):
+        environment = self._environment(
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+            run_gates.libreoffice_env.LaunchServicesAccess.DENIED,
+        )
+        gate = run_gates.Gate(
+            name="synthetic-libreoffice-denied",
+            argv=(sys.executable, "-c", "print('never runs')"),
+            what_it_proves="a denied PDF gate must stop before its subprocess starts",
+            group="ci",
+            precondition=run_gates._needs_libreoffice,
+            dirties="would rewrite tracked PDFs if it ran",
+        )
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(
+                run_gates.libreoffice_env,
+                "libreoffice_environment",
+                return_value=environment,
+            ), mock.patch.object(run_gates.subprocess, "run") as process:
+            root = Path(td)
+            log_dir = root / run_gates.LOG_DIR_REL
+            result = run_gates.run_gate(gate, log_dir, root)
+            out = io.StringIO()
+            code = run_gates.summarise([result], out, tail=15, root=root)
+            self.assertFalse((log_dir / "synthetic-libreoffice-denied.log").exists())
+        process.assert_not_called()
+        text = out.getvalue()
+        self.assertEqual(result.status, run_gates.FAIL)
+        self.assertIsNone(result.log_path)
+        self.assertEqual(code, 1, text)
+        self.assertIn("RED: synthetic-libreoffice-denied", text)
+        self.assertNotIn("ALL GREEN", text)
+        self.assertNotIn("note: synthetic-libreoffice-denied", text)
+
+    def test_allowed_or_unknown_environment_is_runnable(self):
+        for access in (
+            run_gates.libreoffice_env.LaunchServicesAccess.ALLOWED,
+            run_gates.libreoffice_env.LaunchServicesAccess.UNKNOWN,
+            run_gates.libreoffice_env.LaunchServicesAccess.NOT_APPLICABLE,
+        ):
+            with self.subTest(access=access), mock.patch.object(
+                    run_gates.libreoffice_env,
+                    "libreoffice_environment",
+                    return_value=self._environment("/usr/bin/libreoffice", access),
+                ):
+                self.assertIsNone(run_gates._needs_libreoffice(REPO_ROOT))
+
+    def test_jobhunt_override_cannot_bypass_denial(self):
+        with mock.patch.dict(
+                os.environ, {"JOBHUNT_SOFFICE": "/custom/soffice"}, clear=True), \
+                mock.patch.object(
+                    run_gates.libreoffice_env,
+                    "find_soffice",
+                    return_value="/custom/soffice",
+                ), mock.patch.object(
+                    run_gates.libreoffice_env,
+                    "launchservices_access",
+                    return_value=run_gates.libreoffice_env.LaunchServicesAccess.DENIED,
+                ):
+            result = run_gates._needs_libreoffice(REPO_ROOT)
+        self.assertEqual(result.status, run_gates.FAIL)
+        self.assertIn("JOBHUNT_SOFFICE only selects", result.reason)
+
+    def test_listing_says_fail_here_and_not_skip_or_dirty(self):
+        environment = self._environment(
+            "/custom/soffice",
+            run_gates.libreoffice_env.LaunchServicesAccess.DENIED,
+        )
+        gate = run_gates.Gate(
+            name="synthetic-libreoffice",
+            argv=(sys.executable, "-c", "print('never runs')"),
+            what_it_proves="a PDF gate needs a usable LibreOffice environment",
+            group="ci",
+            precondition=run_gates._needs_libreoffice,
+            dirties="would rewrite tracked PDFs if it ran",
+        )
+        out = io.StringIO()
+        with mock.patch.object(
+                run_gates.libreoffice_env,
+                "libreoffice_environment",
+                return_value=environment,
+            ):
+            run_gates.print_listing([gate], REPO_ROOT, out)
+        text = out.getvalue()
+        self.assertIn("FAIL HERE:", text)
+        self.assertNotIn("SKIP HERE:", text)
+        self.assertNotIn("DIRTIES THE WORKTREE", text)
 
 
 class SelectionTests(unittest.TestCase):

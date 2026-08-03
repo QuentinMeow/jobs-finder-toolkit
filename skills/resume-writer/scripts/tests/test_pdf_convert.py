@@ -9,6 +9,8 @@ All LibreOffice invocations are mocked — no real soffice runs — by patching
 from __future__ import annotations
 
 import collections
+import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -81,6 +83,13 @@ class PdfConvertTestBase(unittest.TestCase):
         p2 = mock.patch.object(pdf_convert, "_find_soffice", lambda: FAKE_SOFFICE)
         p2.start()
         self.addCleanup(p2.stop)
+        p3 = mock.patch.object(
+            pdf_convert,
+            "launchservices_access",
+            return_value=pdf_convert.LaunchServicesAccess.ALLOWED,
+        )
+        p3.start()
+        self.addCleanup(p3.stop)
 
     def _patch_soffice(self, fake: FakeSoffice):
         p = mock.patch.object(pdf_convert, "_run_soffice", fake)
@@ -141,11 +150,73 @@ class SingleConversionTests(PdfConvertTestBase):
         with self.assertRaises(pdf_convert.PdfConversionError):
             pdf_convert.docx_to_pdf(self.docx, self.tmp, "Resume")
 
+    def test_sigabrt_fails_once_with_signal_and_unsandboxed_remedy(self):
+        completed = subprocess.CompletedProcess(
+            [FAKE_SOFFICE],
+            -signal.SIGABRT,
+            stdout="",
+            stderr="abort() called",
+        )
+        with mock.patch.object(
+                pdf_convert, "_run_soffice", return_value=completed) as run, \
+                mock.patch.object(pdf_convert.sys, "platform", "darwin"):
+            with self.assertRaises(pdf_convert.PdfConversionError) as ctx:
+                pdf_convert.docx_to_pdf(self.docx, self.tmp, "Resume")
+        run.assert_called_once()
+        message = str(ctx.exception)
+        self.assertIn(f"raw return code {-signal.SIGABRT}", message)
+        self.assertIn(f"signal {signal.SIGABRT}", message)
+        self.assertIn("SIGABRT", message)
+        self.assertIn("not retried", message)
+        self.assertIn("consistent with", message)
+        self.assertNotIn("matches the known", message)
+        self.assertIn("outside the Codex app sandbox", message)
+
+    def test_positive_nonzero_exit_fails_once_without_retry(self):
+        completed = subprocess.CompletedProcess(
+            [FAKE_SOFFICE], 2, stdout="", stderr="configuration error"
+        )
+        with mock.patch.object(
+                pdf_convert, "_run_soffice", return_value=completed) as run:
+            with self.assertRaises(pdf_convert.PdfConversionError) as ctx:
+                pdf_convert.docx_to_pdf(self.docx, self.tmp, "Resume")
+        run.assert_called_once()
+        message = str(ctx.exception)
+        self.assertIn("raw return code 2", message)
+        self.assertIn("not retried", message)
+        self.assertNotIn("silent-skip", message)
+
+    def test_known_launchservices_denial_starts_no_process(self):
+        with mock.patch.object(
+                pdf_convert,
+                "launchservices_access",
+                return_value=pdf_convert.LaunchServicesAccess.DENIED,
+            ), mock.patch.object(pdf_convert, "_run_soffice") as run:
+            with self.assertRaises(pdf_convert.PdfConversionError) as ctx:
+                pdf_convert.docx_to_pdf(self.docx, self.tmp, "Resume")
+        run.assert_not_called()
+        self.assertIn("No LibreOffice process was started", str(ctx.exception))
+        self.assertIn("FAIL, not SKIP or PASS", str(ctx.exception))
+
     def test_launch_failure_then_success(self):
         fake = self._patch_soffice(FakeSoffice({"Resume": ["launchfail", "valid"]}))
         out = pdf_convert.docx_to_pdf(self.docx, self.tmp, "Resume")
         self.assertTrue(out.exists())
         self.assertEqual(fake.calls["Resume"], 2)
+
+    def test_two_launch_failures_have_a_distinct_exhaustion_diagnostic(self):
+        fake = self._patch_soffice(
+            FakeSoffice({"Resume": ["launchfail", "launchfail"]})
+        )
+        with self.assertRaises(pdf_convert.PdfConversionError) as ctx:
+            pdf_convert.docx_to_pdf(self.docx, self.tmp, "Resume")
+        self.assertEqual(fake.calls["Resume"], 2)
+        message = str(ctx.exception)
+        self.assertIn("launch/conversion did not complete", message)
+        self.assertIn("after 2 attempts", message)
+        self.assertNotIn("silent-skip", message)
+        self.assertNotIn("lock / first-run", message)
+        self.assertNotIn("DOCX rendered", message)
 
     def test_lock_state_cleared_before_retry(self):
         # A stray per-document lock file must be removed before the retry.
@@ -190,6 +261,20 @@ class ManyConversionTests(PdfConvertTestBase):
         results = pdf_convert.docx_to_pdf_many(jobs)
         self.assertEqual(results, [self.tmp / "Resume.pdf", self.tmp / "Cover_A.pdf"])
         self.assertTrue(all(p.exists() for p in results))
+
+    def test_denied_preflight_starts_no_pool_or_soffice_for_multiple_jobs(self):
+        cover = self._cover("Cover_A")
+        jobs = [(self.docx, self.tmp, "Resume"), (cover, self.tmp, "Cover_A")]
+        with mock.patch.object(
+                pdf_convert,
+                "launchservices_access",
+                return_value=pdf_convert.LaunchServicesAccess.DENIED,
+            ), mock.patch.object(pdf_convert, "ThreadPoolExecutor") as pool, \
+                mock.patch.object(pdf_convert, "_run_soffice") as run:
+            with self.assertRaises(pdf_convert.PdfConversionError):
+                pdf_convert.docx_to_pdf_many(jobs)
+        pool.assert_not_called()
+        run.assert_not_called()
 
     def test_parallel_one_hard_fail_propagates(self):
         cover = self._cover("Cover_A")

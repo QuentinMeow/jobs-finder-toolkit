@@ -3,8 +3,17 @@
 Expands `AGENTS.md` → "Handy Commands". Always use the repo venv:
 `.venv/bin/python` (needs Python 3.11+). PDF conversion uses LibreOffice,
 which `skills/resume-writer/scripts/pdf_convert.py` finds via
-`~/Applications`, `/Applications`, or `soffice` on `PATH` (override with the
-`JOBHUNT_SOFFICE` env var).
+`~/Applications`, `/Applications`, or `soffice` / `libreoffice` on `PATH`.
+`JOBHUNT_SOFFICE` selects a binary before those defaults; it does not change
+the permissions inherited by that process.
+
+On macOS, even `--headless` LibreOffice initializes AppKit and needs access to
+LaunchServices. The Codex app sandbox may deny that access. The renderer and
+PDF-producing gate preflight this condition without launching LibreOffice and
+report a hard failure because PDF conversion and the one-page checks did not
+run. Run PDF-producing commands outside the Codex app sandbox, or through a
+separately validated route with LaunchServices access. Pointing
+`JOBHUNT_SOFFICE` at a different binary is not a sandbox escape.
 
 **`applications/` in every command below is shorthand for `config.applications_root()`**
 (`private/applications/` for a real hunt, `examples/applications/` under the shipped
@@ -119,8 +128,11 @@ python automation/bootstrap_overlay.py
 # step. Each gate is a subprocess with no shell and NO PIPE: its stdout+stderr are
 # redirected to local/gates/<name>.log, so the exit code reported is the gate's own
 # (`<gate> | tail -5; echo $?` prints tail's 0 for a gate that exited 1). A gate that
-# cannot run here — no LibreOffice, no private/ overlay — reports SKIP, never PASS, and
-# is named in the final line. Exit 0 only when every selected gate exited 0.
+# cannot run here because no LibreOffice is installed or no private/ overlay is mounted
+# reports SKIP, never PASS, and is named in the final line. A known macOS LaunchServices
+# sandbox denial is FAIL (not SKIP), stops before any LibreOffice process starts, and
+# makes the summary RED. Exit 0 only when every runnable selected gate exited 0 and no
+# precondition failed.
 # Note: example-render rewrites the tracked example DOCX/PDFs (CI does that in a
 # throwaway checkout) — `git checkout -- examples/` after, unless those bytes are yours.
 .venv/bin/python automation/gates/run_gates.py                  # everything

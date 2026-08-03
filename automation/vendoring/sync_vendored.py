@@ -60,6 +60,9 @@ TARGETS: dict[str, list[str]] = {
         "skills/application-tracker/scripts/_vendor/location.py",
         "skills/job-search/scripts/_vendor/location.py",
     ],
+    "automation/shared/libreoffice_env.py": [
+        "skills/resume-writer/scripts/_vendor/libreoffice_env.py",
+    ],
     # ONE copy, on purpose. The profile's '## Skills' vocabulary is read by the
     # resume-writer's check.py / build_tailoring_card.py (this copy) and by
     # automation/gardener/skill_drift.py (the canonical file, imported directly
