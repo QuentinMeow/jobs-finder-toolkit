@@ -22,7 +22,7 @@ $ <PRIMARY_CHECKOUT>/.venv/bin/python -m unittest automation.hooks.tests.test_pu
 Ran 6 tests
 OK
 
-$ <PRIMARY_CHECKOUT>/.venv/bin/python -m unittest automation.publish.tests.test_leak_guard.GitObjectTests automation.publish.tests.test_leak_guard.StagedTests
+$ <PRIMARY_CHECKOUT>/.venv/bin/python -m unittest automation.publish.tests.test_leak_guard.GitObjectTests automation.publish.tests.test_leak_guard.StagedIndexTests
 Ran 15 tests
 OK
 ```
@@ -53,3 +53,34 @@ The risk-based skill eval ran with `gpt-5.6-sol` at `xhigh` reasoning. All four
 final canary transcripts passed; efficiency was not measured. The tested bytes
 and the honest first-pass misses are recorded in
 `evals/results/github-workflow-b0b7f117ee1c-20260803-worktree-safety.md`.
+
+## Conflict resolution after main advanced
+
+The following commands ran against the resolved merge tree before its normal
+commit and armed push. The merge combined PR #300's hook-repair behavior with
+PR #302's dispatcher/copy architecture.
+
+```
+$ <PRIMARY_CHECKOUT>/.venv/bin/python -m unittest automation.hooks.tests.test_overlay_hooks
+Ran 40 tests in 11.833s
+OK
+
+$ <PRIMARY_CHECKOUT>/.venv/bin/python -m unittest automation.hooks.tests.test_public_pre_push
+Ran 6 tests in 6.746s
+OK
+
+$ <PRIMARY_CHECKOUT>/.venv/bin/python -m unittest automation.publish.tests.test_leak_guard.GitObjectTests automation.publish.tests.test_leak_guard.StagedIndexTests
+Ran 15 tests in 1.382s
+OK
+
+$ <PRIMARY_CHECKOUT>/.venv/bin/python automation/bootstrap_overlay.py --check
+check complete.
+
+$ <PRIMARY_CHECKOUT>/.venv/bin/python automation/reconcile/reconcile.py --check
+reconcile: OK (9 checks clean)
+```
+
+The bottom merge commit is `821815e45983`; its complete pre-commit hook chain
+and armed exact-object pre-push scan exited 0. One earlier test invocation used
+the nonexistent class name `StagedTests`; unittest exited 1 before running that
+class, and the corrected `StagedIndexTests` command above passed.

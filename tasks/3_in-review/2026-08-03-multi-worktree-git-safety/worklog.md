@@ -23,3 +23,16 @@
 - Left the owner's primary checkout and the detached stress-test worktree
   untouched. The primary checkout still shows the artificial staged state
   created before this task; repairing it needs separate approval.
+
+## 2026-08-03 — session 3 (Codex)
+
+- Merged the new `origin/main` into PR #302 in a dedicated worktree. The three
+  textual conflicts combined the already-merged dangling-hook repair with the
+  worktree dispatcher design, preserved both branches' append-only review rows,
+  and documented the resulting managed-file behavior.
+- Kept every reviewed commit reachable by using merge commits rather than
+  rebasing or GitHub's Update Branch button. The resolved bottom branch was then
+  merged into PR #305 so the two-entry stack remains coherent.
+- Expanded the combined hook suite to cover dangling and miswired legacy links,
+  foreign-hook preservation, shared-worktree dispatch, and durable overlay
+  copies. No primary-checkout or stress-test files/indexes were changed.
