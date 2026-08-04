@@ -24,6 +24,7 @@ from calendar_todos import (  # noqa: E402
     record_cancellation,
     record_reschedule,
     render_company_view,
+    render_company_view_html,
     render_entry,
 )
 
@@ -219,6 +220,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(len(rendered), 2)
         self.assertIn("<!-- jobhunt-calendar {", rendered[1])
         self.assertIn('"id":"cal-examplecorp', rendered[1])
+        self.assertNotIn("display_rounds", rendered[1])
 
     def test_state_change_preserves_owner_authored_entry_text(self):
         base = _calendar_with(
@@ -320,7 +322,7 @@ class PlanTests(unittest.TestCase):
             output.index("<summary><strong>Tracker actions and raw schedule</strong></summary>"),
         )
         self.assertIn("Availability submitted; awaiting a confirmed time.", output)
-        self.assertIn("<summary><strong>Other active roles and latest updates</strong></summary>", output)
+        self.assertIn("<summary><strong>Pipeline and company updates</strong></summary>", output)
         self.assertIn(
             "| Example Corp | [Backend Engineer](<../4_in_progress/example-corp/notes.md>) "
             "| Technical interview | Waiting for confirmed time |",
@@ -331,6 +333,126 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(second.errors, ())
         self.assertFalse(second.changed)
         self.assertEqual(second.output_bytes, first.output_bytes)
+
+    def test_human_views_separate_actions_from_same_day_interviews_and_escape_html(self):
+        companies = [{
+            "company": "Example <Corp>",
+            "applications": [{
+                "application": "example-corp-20260720",
+                "roles": [{
+                    "role": "Platform & Infrastructure",
+                    "phase": "interview_loop",
+                    "state": "scheduled",
+                    "details": "../../applications/4_in_progress/example/notes.md",
+                    "interviews": [
+                        {"starts_at": "2099-08-10T13:00:00-07:00",
+                         "ends_at": "2099-08-10T14:00:00-07:00",
+                         "timezone": "America/Los_Angeles",
+                         "label": "Coding <round>", "action": "Attend coding interview"},
+                        {"starts_at": "2099-08-10T15:30:00-07:00",
+                         "ends_at": "2099-08-10T16:30:00-07:00",
+                         "timezone": "America/Los_Angeles",
+                         "label": "Architecture", "action": "Attend architecture interview"},
+                    ],
+                    "actions": [{
+                        "state": "booking_required",
+                        "action": "Choose a time & confirm",
+                        "due_at": "2099-08-09",
+                    }],
+                }],
+            }],
+        }]
+        markdown = render_company_view(companies)
+        self.assertIn("### Do now", markdown)
+        self.assertIn("| When | Company | Role | Action |", markdown)
+        self.assertIn("| Date | Time | Company | Role | Prepare for |", markdown)
+        self.assertEqual(markdown.count("| Mon, Aug 10, 2099 |"), 2)
+        self.assertEqual(markdown.count("Choose a time & confirm"), 1)
+
+        html = render_company_view_html(companies)
+        self.assertIn("<meta name=\"viewport\"", html)
+        self.assertIn("@media (max-width: 720px)", html)
+        self.assertIn('<div class="table-wrap" role="region"', html)
+        self.assertIn('<th scope="col">Date</th>', html)
+        self.assertIn('data-label="Prepare for"', html)
+        self.assertIn("table, tbody, tr, td { display: block", html)
+        self.assertIn("Example &lt;Corp&gt;", html)
+        self.assertIn("Coding &lt;round&gt;", html)
+        self.assertIn("Platform &amp; Infrastructure", html)
+        self.assertIn('href="../../applications/4_in_progress/example/notes.md"', html)
+        self.assertNotIn("javascript:", html)
+
+    def test_unlinked_agenda_items_and_named_rounds_have_markdown_html_parity(self):
+        supplemental = [
+            {
+                "id": "agenda-example-interview",
+                "kind": "interview",
+                "company": "Unlinked Co",
+                "role": "Infra Engineer (posting link unresolved)",
+                "round": "Technical interview",
+                "starts_at": "2099-08-10T14:30:00-07:00",
+                "ends_at": "2099-08-10T15:00:00-07:00",
+                "timezone": "America/Los_Angeles",
+            },
+            {
+                "id": "agenda-example-action",
+                "kind": "action",
+                "company": "Unlinked Co",
+                "role": "Infra Engineer (posting link unresolved)",
+                "action": "Submit four availability slots",
+            },
+        ]
+        companies = [{
+            "company": "Tracked Co",
+            "applications": [{
+                "application": "tracked-co-20990810",
+                "roles": [{
+                    "role": "Platform Engineer",
+                    "phase": "interview_loop",
+                    "state": "scheduled",
+                    "details": "../../applications/4_in_progress/tracked/notes.md",
+                    "interviews": [{
+                        "starts_at": "2099-08-10T13:00:00-07:00",
+                        "ends_at": "2099-08-10T15:00:00-07:00",
+                        "timezone": "America/Los_Angeles",
+                        "label": "Virtual onsite",
+                        "display_rounds": ["Coding — Alex", "Architecture — Casey"],
+                    }],
+                    "actions": [{
+                        "state": "booking_required",
+                        "action": "Choose a time",
+                        "due_at": "2099-08-09",
+                    }],
+                }],
+            }],
+        }]
+        markdown = render_company_view(companies, supplemental)
+        html = render_company_view_html(companies, supplemental)
+        for expected in (
+            "Unlinked Co", "Technical interview", "Submit four availability slots",
+            "Coding — Alex", "Architecture — Casey", "exact subslot not recorded",
+        ):
+            self.assertIn(expected, markdown)
+            self.assertIn(expected, html)
+        self.assertEqual(markdown.count("Submit four availability slots"), 1)
+        self.assertEqual(html.count("Submit four availability slots"), 1)
+        self.assertLess(markdown.index("Coding — Alex"), markdown.index("Unlinked Co"))
+        self.assertLess(
+            markdown.index("| Now | Unlinked Co"),
+            markdown.index("| Sun, Aug 9 |"),
+        )
+
+        marker = (
+            '<!-- jobhunt-agenda {"id":"agenda-example-interview",'
+            '"kind":"interview","company":"Unlinked Co",'
+            '"role":"Infra Engineer","round":"Technical interview",'
+            '"starts_at":"2099-08-10T14:30:00-07:00",'
+            '"timezone":"America/Los_Angeles"} -->\n'
+        )
+        parsed = parse_calendar(CALENDAR_TEMPLATE.replace(
+            COMPANY_VIEW_START, marker + COMPANY_VIEW_START, 1))
+        self.assertEqual(parsed.errors, [])
+        self.assertEqual(parsed.agenda_items[0]["company"], "Unlinked Co")
 
     def test_duplicate_company_view_markers_fail_closed(self):
         duplicate = CALENDAR_TEMPLATE.replace(

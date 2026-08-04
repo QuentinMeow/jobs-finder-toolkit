@@ -90,6 +90,7 @@ from calendar_todos import (
     record_completion,
     record_reschedule,
     render_company_view,
+    render_company_view_html,
 )
 from job_metadata import (
     APPLICATION_SCHEMA_VERSION,
@@ -978,6 +979,11 @@ def _calendar_path() -> Path:
     return config.calendar_path()
 
 
+def _calendar_html_path() -> Path:
+    """Optional generated companion beside the canonical Markdown calendar."""
+    return _calendar_path().with_suffix(".html")
+
+
 def _details_reference(meta_path: Path, *, source_meta_path: Path | None = None) -> str:
     """Relative role-context link for the human calendar row."""
     target = meta_path.parent / "notes.md"
@@ -1040,7 +1046,7 @@ def _latest_standardized_note(notes_path: Path, *, details: str) -> dict | None:
 def _company_view_data(
     meta_overrides: dict[Path, tuple[bytes, Path]] | None = None,
     calendar_overrides: dict[str, dict] | None = None,
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict], list[dict], list[str]]:
     """Build a deterministic read-only projection of all in-progress companies.
 
     Overrides map a current ``meta.yaml`` path to prospective bytes and the
@@ -1051,6 +1057,7 @@ def _company_view_data(
     grouped: dict[str, dict] = {}
     errors: list[str] = []
     calendar_rows: dict[str, dict] = {}
+    agenda_items: list[dict] = []
     calendar_raw = _read_calendar_raw()
     if calendar_raw is not None:
         try:
@@ -1067,6 +1074,7 @@ def _company_view_data(
                     item: entry.fields()
                     for item, entry in calendar_doc.entries.items()
                 }
+                agenda_items = list(calendar_doc.agenda_items)
     calendar_rows.update(calendar_overrides or {})
     seen: set[Path] = set()
     for status in STATUS_FOLDERS:
@@ -1113,6 +1121,26 @@ def _company_view_data(
                     if isinstance(job.get("progress"), dict) else {}
                 source = progress.get("source") \
                     if isinstance(progress.get("source"), dict) else {}
+                calendar_items = [
+                    calendar_rows[item]
+                    for item in _progress_calendar_items(progress)
+                    if item in calendar_rows
+                ]
+                actions = [
+                    {
+                        "state": item.get("state"),
+                        "action": item.get("action"),
+                        "due_at": item.get("due_at"),
+                        "follow_up_at": item.get("follow_up_at"),
+                        "timezone": item.get("timezone"),
+                    }
+                    for item in calendar_items
+                    if item.get("state") in PROGRESS_ACTION_STATES
+                ]
+                if not actions and progress.get("state") in PROGRESS_ACTION_STATES:
+                    # Metadata remains the authority even before an owner has
+                    # added optional action wording or a due date to its entry.
+                    actions.append({"state": progress.get("state")})
                 roles.append({
                     "role": str(job.get("role") or "Tracked role"),
                     "status": str(job.get("status") or ""),
@@ -1128,17 +1156,17 @@ def _company_view_data(
                     "details": details,
                     "interviews": [
                         {
-                            "starts_at": calendar_rows[item].get("starts_at"),
-                            "ends_at": calendar_rows[item].get("ends_at"),
-                            "timezone": calendar_rows[item].get("timezone"),
-                            "label": calendar_rows[item].get("label"),
-                            "action": calendar_rows[item].get("action"),
+                            "starts_at": item.get("starts_at"),
+                            "ends_at": item.get("ends_at"),
+                            "timezone": item.get("timezone"),
+                            "label": item.get("label"),
+                            "action": item.get("action"),
+                            "display_rounds": item.get("display_rounds") or [],
                         }
-                        for item in _progress_calendar_items(progress)
-                        if item in calendar_rows
-                        and calendar_rows[item].get("state") == "scheduled"
-                        and calendar_rows[item].get("starts_at")
+                        for item in calendar_items
+                        if item.get("state") == "scheduled" and item.get("starts_at")
                     ],
+                    "actions": actions,
                 })
             if latest_note is None:
                 next_action = str(meta.get("next_action") or "").strip()
@@ -1179,15 +1207,16 @@ def _company_view_data(
     for row in grouped.values():
         row["applications"].sort(key=lambda item: item["application"])
     companies = sorted(grouped.values(), key=lambda item: item["company"].casefold())
-    return companies, errors
+    return companies, agenda_items, errors
 
 
 def _company_view_markdown(
     meta_overrides: dict[Path, tuple[bytes, Path]] | None = None,
     calendar_overrides: dict[str, dict] | None = None,
 ) -> tuple[str, int, list[str]]:
-    companies, errors = _company_view_data(meta_overrides, calendar_overrides)
-    return render_company_view(companies), len(companies), errors
+    companies, agenda_items, errors = _company_view_data(
+        meta_overrides, calendar_overrides)
+    return render_company_view(companies, agenda_items), len(companies), errors
 
 
 def _read_calendar_raw(*, create: bool = False) -> bytes | None:
@@ -1960,13 +1989,16 @@ def check_calendar(as_json: bool = False) -> bool:
     return False
 
 
-def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
+def refresh_calendar(
+    write: bool = False, as_json: bool = False, html_companion: bool = False,
+) -> bool:
     """Preview or re-render managed rows plus the generated company view.
 
     Metadata remains canonical for phase/state. This command only refreshes
     visible dates/actions, role links, the hidden one-line markers, and the
     read-only company projection; it does not infer a transition or touch any
-    application metadata.
+    application metadata. ``html_companion`` emits an optional, separately
+    derived offline view beside the canonical Markdown file.
     """
     path = _calendar_path()
     raw = _read_calendar_raw()
@@ -2032,33 +2064,71 @@ def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
         for error in plan.errors:
             print(f"  - {error}", file=sys.stderr)
         return False
+    html_output = None
+    html_path = _calendar_html_path()
+    html_changed = False
+    if html_companion:
+        html_companies, html_agenda_items, html_errors = _company_view_data(
+            calendar_overrides=upserts)
+        if html_errors:
+            print("Error: cannot render calendar HTML:", file=sys.stderr)
+            for error in html_errors:
+                print(f"  - {error}", file=sys.stderr)
+            return False
+        html_output = render_company_view_html(
+            html_companies, html_agenda_items)
+        try:
+            existing_html = html_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            existing_html = None
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"Error: cannot read calendar HTML companion {html_path}: {exc}",
+                  file=sys.stderr)
+            return False
+        if existing_html is not None and "Generated from canonical application progress" not in existing_html:
+            print(f"Error: refusing to overwrite non-generated calendar HTML {html_path}",
+                  file=sys.stderr)
+            return False
+        html_changed = existing_html != html_output
+
     summary = {
         "calendar": str(path),
         "entries": len(upserts),
         "companies": company_count,
-        "changed": plan.changed,
+        "changed": plan.changed or html_changed,
+        "html": str(html_path) if html_companion else None,
         "mode": "write" if write else "dry_run",
     }
     if as_json:
         print(json.dumps(summary, indent=2))
-    elif plan.changed:
+    elif plan.changed or html_changed:
         print(f"Calendar refresh ({'WRITE' if write else 'DRY RUN'}): "
               f"{len(upserts)} managed row(s) and {company_count} company "
               f"view row(s) will be re-rendered.")
     else:
         print(f"Calendar {path}: already uses the current layout.")
-    if not plan.changed or not write:
-        if plan.changed and not as_json:
+    if (not plan.changed and not html_changed) or not write:
+        if (plan.changed or html_changed) and not as_json:
             print("No files written. Re-run with --refresh-calendar --write.")
         return True
-    try:
-        atomic_write_bytes(path, plan.output_bytes,
-                           expected_sha256=plan.before_sha256)
-    except (MetadataChecksumMismatchError, OSError) as exc:
-        print(f"Error: calendar refresh failed: {exc}", file=sys.stderr)
-        return False
+    if plan.changed:
+        try:
+            atomic_write_bytes(path, plan.output_bytes,
+                               expected_sha256=plan.before_sha256)
+        except (MetadataChecksumMismatchError, OSError) as exc:
+            print(f"Error: calendar refresh failed: {exc}", file=sys.stderr)
+            return False
+    if html_changed and html_output is not None:
+        try:
+            atomic_write_text(html_path, html_output)
+        except OSError as exc:
+            print(f"Error: calendar HTML refresh failed: {exc}", file=sys.stderr)
+            return False
+    rendered = [str(path)] if plan.changed else []
+    if html_changed:
+        rendered.append(str(html_path))
     print(f"Refreshed {len(upserts)} managed calendar row(s) and "
-          f"{company_count} company view row(s) -> {path}")
+          f"{company_count} company view row(s) -> {', '.join(rendered)}")
     return True
 
 
@@ -3080,6 +3150,10 @@ def main():
                              "dates/actions, role links, compact markers, and the "
                              "generated in-progress company view. Add --write "
                              "to apply; metadata is untouched.")
+    parser.add_argument("--html", action="store_true",
+                        help="With --refresh-calendar: also preview or write the "
+                             "optional offline calendar.html companion beside the "
+                             "canonical Markdown calendar.")
     parser.add_argument("--write", action="store_true",
                         help="With --sync-calendar or --refresh-calendar: apply "
                              "the previewed proposals.")
@@ -3175,10 +3249,16 @@ def main():
         sys.exit(0 if sync_calendar(write=args.write, as_json=args.json) else 1)
 
     if args.refresh_calendar:
-        sys.exit(0 if refresh_calendar(write=args.write, as_json=args.json) else 1)
+        sys.exit(0 if refresh_calendar(
+            write=args.write, as_json=args.json, html_companion=args.html) else 1)
 
     if args.write:
         print("Error: --write requires --sync-calendar or --refresh-calendar",
+              file=sys.stderr)
+        sys.exit(1)
+
+    if args.html:
+        print("Error: --html requires --refresh-calendar",
               file=sys.stderr)
         sys.exit(1)
 
