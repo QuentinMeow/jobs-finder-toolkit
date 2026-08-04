@@ -22,6 +22,7 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -46,6 +47,10 @@ ANSWER_MODULES = (
     "technical_deep_dive_long",
 )
 ADDITIVE_MODULES = ("technical_deep_dive_short", "technical_deep_dive_long")
+FABRICATION_STATUSES = {"fabricated", "unsupported", "source-conflict"}
+FABRICATION_AUTHORIZATION = "direct-human-request"
+DISCLOSURE_ROOTS = {*ANSWER_MODULES, "story_references", "project_title"}
+DISCLOSURE_FIELDS = {"claim", "status", "authorization", "authorized_on", "evidence", "used_in"}
 DEFAULT_BANNED_PHRASES = (
     "delve into",
     "game-changing",
@@ -377,6 +382,69 @@ def _validate_story_references(
                 )
 
 
+def _validate_fabrication_disclosures(
+    disclosures: Any, where: str, result: ValidationResult
+) -> None:
+    if disclosures is None:
+        return
+    if not isinstance(disclosures, list) or not disclosures:
+        result.errors.append(f"{where} must be a non-empty list when present")
+        return
+
+    seen_claims: set[str] = set()
+    for index, item in enumerate(disclosures):
+        item_where = f"{where}[{index}]"
+        if not isinstance(item, dict):
+            result.errors.append(f"{item_where} must be a mapping")
+            continue
+        missing = sorted(DISCLOSURE_FIELDS - set(item))
+        extra = sorted(set(item) - DISCLOSURE_FIELDS)
+        if missing:
+            result.errors.append(f"{item_where} is missing fields: {', '.join(missing)}")
+        if extra:
+            result.errors.append(f"{item_where} has unknown fields: {', '.join(extra)}")
+
+        for field_name in ("claim", "status", "authorization", "evidence"):
+            value = item.get(field_name)
+            if not isinstance(value, str) or not value.strip():
+                result.errors.append(f"{item_where}.{field_name} must be a non-empty string")
+
+        claim = item.get("claim")
+        if isinstance(claim, str) and claim.strip():
+            normalized_claim = claim.strip().casefold()
+            if normalized_claim in seen_claims:
+                result.errors.append(f"{item_where}.claim duplicates another disclosure")
+            seen_claims.add(normalized_claim)
+
+        if item.get("status") not in FABRICATION_STATUSES:
+            result.errors.append(
+                f"{item_where}.status must be one of: {', '.join(sorted(FABRICATION_STATUSES))}"
+            )
+        if item.get("authorization") != FABRICATION_AUTHORIZATION:
+            result.errors.append(
+                f"{item_where}.authorization must be {FABRICATION_AUTHORIZATION}"
+            )
+
+        authorized_on = item.get("authorized_on")
+        if not isinstance(authorized_on, date):
+            try:
+                date.fromisoformat(authorized_on)
+            except (TypeError, ValueError):
+                result.errors.append(f"{item_where}.authorized_on must be an ISO date")
+
+        used_in = item.get("used_in")
+        if not isinstance(used_in, list) or not used_in:
+            result.errors.append(f"{item_where}.used_in must be a non-empty list")
+            continue
+        for field_index, field_path in enumerate(used_in):
+            field_where = f"{item_where}.used_in[{field_index}]"
+            if not isinstance(field_path, str) or not field_path.strip():
+                result.errors.append(f"{field_where} must be a non-empty field path")
+                continue
+            if field_path.split(".", 1)[0] not in DISCLOSURE_ROOTS:
+                result.errors.append(f"{field_where} must reference an answer field")
+
+
 def _positive_number(settings: dict[str, Any], key: str, default: float, result: ValidationResult) -> float:
     value = settings.get(key, default)
     if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
@@ -420,7 +488,13 @@ def _validate_answer(
                 )
 
     missing = [name for name in ANSWER_MODULES if name not in answer]
-    allowed = {"project_title", "source_stories", "story_references", *ANSWER_MODULES}
+    allowed = {
+        "project_title",
+        "source_stories",
+        "story_references",
+        "fabrication_disclosures",
+        *ANSWER_MODULES,
+    }
     extra = [name for name in answer if name not in allowed]
     if missing:
         result.errors.append(f"{where} is missing modules: {', '.join(missing)}")
@@ -444,6 +518,11 @@ def _validate_answer(
         result,
         max_sentence_words=max_sentence_words,
         banned_phrases=banned_phrases,
+    )
+    _validate_fabrication_disclosures(
+        answer.get("fabrication_disclosures"),
+        f"{where}.fabrication_disclosures",
+        result,
     )
 
     valid_modules = {
@@ -805,6 +884,30 @@ def _render_focus_areas(items: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def _render_fabrication_disclosures(items: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        "<details>",
+        "<summary><em>Private claim disclosures</em> · not spoken</summary>",
+        "",
+        "> Direct-human-authorized preparation metadata. Do not say this section aloud.",
+        "",
+    ]
+    for item in items:
+        used_in = ", ".join(f"`{field}`" for field in item["used_in"])
+        lines.extend(
+            [
+                f"- **{item['status']}** — {item['claim'].strip()}",
+                f"  - Evidence: {item['evidence'].strip()}",
+                (
+                    "  - Authorization: direct human request on "
+                    f"{item['authorized_on']} · used in {used_in}"
+                ),
+            ]
+        )
+    lines.extend(["", "</details>", ""])
+    return lines
+
+
 def _answer_block_summary(index: int, title: str) -> str:
     return f"<summary><strong>Answer {index}</strong> — {title}</summary>"
 
@@ -951,7 +1054,11 @@ def render_markdown(
             ]
         )
         lines.extend(_render_focus_areas(answer["story_references"]["focus_areas"]))
-        lines.extend(["</details>", "", "</details>", ""])
+        lines.extend(["</details>", ""])
+        disclosures = answer.get("fabrication_disclosures")
+        if disclosures:
+            lines.extend(_render_fabrication_disclosures(disclosures))
+        lines.extend(["</details>", ""])
     return "\n".join(lines)
 
 

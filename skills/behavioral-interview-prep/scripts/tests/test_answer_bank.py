@@ -286,6 +286,49 @@ class AnswerBankTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn("# Amazon — Deliver Results", company_output)
 
+    def test_human_authorized_disclosure_validates_and_renders_privately(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            data = _valid_data()
+            data["answers"][0]["fabrication_disclosures"] = [
+                {
+                    "claim": "I designed the complete architecture.",
+                    "status": "source-conflict",
+                    "authorization": "direct-human-request",
+                    "authorized_on": "2026-08-04",
+                    "evidence": "The source describes a shared design.",
+                    "used_in": ["quick_answer.action", "combined_answer.action"],
+                }
+            ]
+            source = self._write_fixture(root, data)
+            result = load_and_validate(source)
+            self.assertEqual(result.errors, [])
+            rendered = render_markdown(result.data, source)
+            self.assertIn("<em>Private claim disclosures</em> · not spoken", rendered)
+            self.assertIn("**source-conflict** — I designed the complete architecture.", rendered)
+            self.assertIn("Do not say this section aloud", rendered)
+
+    def test_disclosure_rejects_non_human_authorization_and_bad_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            data = _valid_data()
+            data["answers"][0]["fabrication_disclosures"] = [
+                {
+                    "claim": "I saved $8 million each year.",
+                    "status": "estimated",
+                    "authorization": "agent-inferred",
+                    "authorized_on": "not-a-date",
+                    "evidence": "No supporting measurement exists.",
+                    "used_in": ["quick_answer.result"],
+                }
+            ]
+            result = load_and_validate(self._write_fixture(root, data))
+            errors = "\n".join(result.errors)
+            self.assertIn("status must be one of", errors)
+            self.assertIn("authorization must be direct-human-request", errors)
+            self.assertIn("authorized_on must be an ISO date", errors)
+
+
     def test_output_targets_split_general_and_company_aliases(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
