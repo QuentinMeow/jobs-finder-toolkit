@@ -2735,3 +2735,9 @@
   files: 3
   digest: sha256:1fa96291ebaa7a34
   finding: 'Read the complete staged three-file diff. It adds only model-pinned public canary follow-up results and generic deterministic test evidence. No real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'
+- base: c618c5a2
+  reviewed_by: agent
+  date: 2026-08-04
+  files: 25
+  digest: sha256:0e9bb48051d17a58
+  finding: 'Read the complete staged 25-file diff. One finding, fixed before commit: a pasted command transcript in the task verification file contained a live job-requisition identifier belonging to the owner''s active job hunt, cross-checked against the private tree; replaced with a placeholder. The leak guard does not catch identifiers of that class. Remainder is provider/store code, synchronized vendored copies, deterministic tests, generic skill guidance, and task records. No real identity, employer, school, salary, personal home path, private item name, or dated personal job-hunt content.'

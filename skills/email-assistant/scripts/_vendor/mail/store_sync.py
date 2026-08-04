@@ -1,9 +1,9 @@
 """Privacy-bounded local synchronization for the email store.
 
 This is deliberately below the email-assistant CLI and above providers: it has
-no application-tracker imports and no drafting operations.  It records Inbox,
-Sent Items, Drafts, and Deleted Items as private local raw evidence, with a
-normal full inventory path before delta is treated as an optimisation.  The
+no application-tracker imports and no drafting operations.  It records every
+provider-discovered mail folder as private local raw evidence, with a normal
+full inventory path before delta is treated as an optimisation.  The
 only provider identity used as a key is its immutable item ID; RFC Message-ID
 remains an alias.
 
@@ -64,10 +64,18 @@ class SyncResult:
 @dataclass
 class _FolderWork:
     folder: str
+    mode: str
     messages: list[dict[str, Any]] = field(default_factory=list)
     removed_ids: list[str] = field(default_factory=list)
     sync_token: str | None = None
     watermark: str | None = None
+
+
+@dataclass(frozen=True)
+class _FolderRef:
+    key: str
+    provider_id: str
+    display_name: str
 
 
 def message_key(account_slug: str, provider_message_id: str) -> str:
@@ -342,6 +350,28 @@ class EmailStoreSync:
             state["folders"].setdefault(folder, self._default_state()["folders"][folder])
         return state
 
+    def _discover_folders(self) -> tuple[_FolderRef, ...]:
+        raw = self.provider.list_mail_folders()
+        refs: list[_FolderRef] = []
+        keys: set[str] = set()
+        provider_ids: set[str] = set()
+        for item in raw:
+            if not isinstance(item, dict):
+                raise EmailStoreError("mail provider returned a malformed folder record")
+            key = str(item.get("key") or "").strip()
+            provider_id = str(item.get("id") or "").strip()
+            display_name = str(item.get("display_name") or key).strip()
+            if not key or not provider_id or not display_name:
+                raise EmailStoreError("mail provider returned an incomplete folder record")
+            if key in keys or provider_id in provider_ids:
+                raise EmailStoreError("mail provider returned duplicate folder identity")
+            keys.add(key)
+            provider_ids.add(provider_id)
+            refs.append(_FolderRef(key, provider_id, display_name))
+        if not refs:
+            raise EmailStoreError("mail provider discovered no folders; refusing incomplete sync")
+        return tuple(refs)
+
     def _save_state(self, state: dict[str, Any]) -> None:
         atomic_write_text(self.state_path, dumps_json(state))
 
@@ -469,12 +499,13 @@ class EmailStoreSync:
             ),
         )
         key = str(record["message_key"])
+        known_folders = set(state.get("folders", {})) | {folder}
         history = [
             str(value)
             for value in (previous or {}).get("folder_history", [])
-            if value in FOLDERS
+            if value in known_folders
         ]
-        previous_folder = _record_folder(previous or {})
+        previous_folder = _record_folder(previous or {}, known_folders)
         if previous_folder and (not history or history[-1] != previous_folder):
             history.append(previous_folder)
         if not history or history[-1] != folder:
@@ -494,7 +525,7 @@ class EmailStoreSync:
         return key
 
     # ── provider collection ────────────────────────────────────────────
-    def _full_snapshot(self, folder: str, cutoff: datetime | None) -> _FolderWork:
+    def _full_snapshot(self, ref: _FolderRef, cutoff: datetime | None) -> _FolderWork:
         """Build one complete inventory, using delta's initial enumeration when safe.
 
         The resulting work is still processed as a *full* snapshot and always
@@ -506,27 +537,30 @@ class EmailStoreSync:
             # applies this timestamp filter on the server and paginates every
             # matching item; only then are full bodies fetched locally.
             messages = self.provider.list_folder(
-                folder, limit=None, since=to_z(cutoff)
+                ref.provider_id, limit=None, since=to_z(cutoff)
             )
             # Do not initialize Graph delta here: an initial delta enumeration
             # walks the entire mailbox even though the user asked for a bounded
             # window. Rolling-window syncs therefore remain server-filtered full
             # snapshots; opaque delta optimization is reserved for ``--all``.
-            return _FolderWork(folder=folder, messages=messages, sync_token=None,
+            return _FolderWork(folder=ref.key, mode="full", messages=messages, sync_token=None,
                                watermark=_latest_time(messages))
         if self.provider.capabilities().delta_sync:
-            response = self.provider.delta_sync(folder, None)
+            response = self.provider.delta_sync(ref.provider_id, None)
             return _FolderWork(
-                folder=folder,
+                folder=ref.key,
+                mode="full",
                 messages=list(response.get("messages") or []),
                 sync_token=str(response.get("sync_token") or "") or None,
                 watermark=_latest_time(response.get("messages") or []),
             )
-        messages = self.provider.list_folder(folder, limit=None)
-        return _FolderWork(folder=folder, messages=messages, watermark=_latest_time(messages))
+        messages = self.provider.list_folder(ref.provider_id, limit=None)
+        return _FolderWork(
+            folder=ref.key, mode="full", messages=messages, watermark=_latest_time(messages)
+        )
 
-    def _delta(self, folder: str, token: str) -> _FolderWork:
-        response = self.provider.delta_sync(folder, token)
+    def _delta(self, ref: _FolderRef, token: str) -> _FolderWork:
+        response = self.provider.delta_sync(ref.provider_id, token)
         messages = list(response.get("messages") or [])
         removed = [
             str(item.get("id"))
@@ -534,7 +568,8 @@ class EmailStoreSync:
             if isinstance(item, dict) and item.get("@removed") and item.get("id")
         ]
         return _FolderWork(
-            folder=folder,
+            folder=ref.key,
+            mode="delta",
             messages=[item for item in messages if isinstance(item, dict) and not item.get("@removed")],
             removed_ids=removed,
             sync_token=str(response.get("sync_token") or "") or None,
@@ -542,8 +577,8 @@ class EmailStoreSync:
         )
 
     # ── synchronization ────────────────────────────────────────────────
-    def sync(self, *, days: int | None = 30, force_full: bool = False) -> SyncResult:
-        """Synchronize the requested rolling window; ``days=None`` means all mail.
+    def sync(self, *, days: int | None = None, force_full: bool = False) -> SyncResult:
+        """Synchronize all existing mail unless an explicit rolling window is given.
 
         Full snapshots perform the documented inventory diff.  With a rolling
         window, only a previously indexed message still inside *today's* window
@@ -555,39 +590,48 @@ class EmailStoreSync:
         if days is not None and days <= 0:
             raise EmailStoreError("--days must be a positive number or all")
         state = self._load_state()
+        refs = self._discover_folders()
+        ref_by_key = {ref.key: ref for ref in refs}
+        for ref in refs:
+            folder_state = state["folders"].setdefault(
+                ref.key,
+                {
+                    "delta_token": None,
+                    "inventory": [],
+                    "watermark": None,
+                    "last_successful_sync": None,
+                },
+            )
+            folder_state["provider_id"] = ref.provider_id
+            folder_state["display_name"] = ref.display_name
         cutoff = datetime.now(timezone.utc) - timedelta(days=days) if days else None
         token_invalid = False
         token_compatible = state.get("field_set_version") == FIELD_SET_VERSION
-        tokens = [state["folders"][folder].get("delta_token") for folder in FOLDERS]
-        use_full = force_full or not token_compatible or not all(tokens)
-
-        if use_full:
-            work = {folder: self._full_snapshot(folder, cutoff) for folder in FOLDERS}
-            mode = "full"
-        else:
-            try:
-                work = {
-                    folder: self._delta(folder, str(state["folders"][folder]["delta_token"]))
-                    for folder in FOLDERS
-                }
-                mode = "delta"
-            except SyncTokenExpired:
-                # An expired opaque token is an expected operational path, never
-                # a data-loss event.  Restart all folders so cross-folder moves
-                # remain coherent before running inventory-diff tombstoning.
-                token_invalid = True
-                work = {folder: self._full_snapshot(folder, cutoff) for folder in FOLDERS}
-                mode = "full"
+        try:
+            work = {}
+            for ref in refs:
+                token = state["folders"][ref.key].get("delta_token")
+                if force_full or not token_compatible or not token:
+                    work[ref.key] = self._full_snapshot(ref, cutoff)
+                else:
+                    work[ref.key] = self._delta(ref, str(token))
+        except SyncTokenExpired:
+            # An expired opaque token is an expected operational path. Restart
+            # every discovered folder so cross-folder moves remain coherent.
+            token_invalid = True
+            work = {ref.key: self._full_snapshot(ref, cutoff) for ref in refs}
+        modes = {item.mode for item in work.values()}
+        mode = next(iter(modes)) if len(modes) == 1 else "mixed"
 
         observed_at = now_z()
         seen: set[str] = set()
-        by_folder: dict[str, set[str]] = {folder: set() for folder in FOLDERS}
+        by_folder: dict[str, set[str]] = {folder: set() for folder in ref_by_key}
         removed_provider_ids: set[str] = set()
         counts = {
             folder: {"upserted": 0, "removed": 0, "tombstoned": 0, "out_of_scope": 0}
-            for folder in FOLDERS
+            for folder in ref_by_key
         }
-        for folder in FOLDERS:
+        for folder in ref_by_key:
             folder_work = work[folder]
             for envelope in folder_work.messages:
                 if not _is_within_window(envelope, cutoff):
@@ -602,11 +646,11 @@ class EmailStoreSync:
 
         # A full snapshot's absence is meaningful only for records that remain
         # within this exact rolling window.  For each absence read its immutable
-        # ID: 404 = hard deletion/tombstone; present outside the four folders =
-        # out of scope.  Any other error aborts rather than manufacturing loss.
+        # ID: 404 = hard deletion/tombstone; present outside the discovered
+        # folders = out of scope. Any other error aborts rather than manufacturing loss.
         pending_absences: set[str] = set()
-        if mode == "full":
-            for folder in FOLDERS:
+        for folder in ref_by_key:
+            if work[folder].mode == "full":
                 previous = set(state["folders"][folder].get("inventory") or [])
                 for key in previous - by_folder[folder]:
                     record = state["messages"].get(key)
@@ -626,7 +670,11 @@ class EmailStoreSync:
             record = state["messages"].get(key)
             if not record:
                 continue
-            prior_folder = _record_folder(record) or "inbox"
+            prior_folder = _record_folder(record, set(state["folders"])) or "inbox"
+            prior_counts = counts.setdefault(
+                prior_folder,
+                {"upserted": 0, "removed": 0, "tombstoned": 0, "out_of_scope": 0},
+            )
             try:
                 self.provider.read_message(str(record["provider_message_id"]))
             except MessageNotFound:
@@ -634,20 +682,20 @@ class EmailStoreSync:
                 record["in_scope"] = False
                 record["folder"] = None
                 record["tombstoned_at"] = observed_at
-                counts[prior_folder]["tombstoned"] += 1
+                prior_counts["tombstoned"] += 1
             else:
                 record["tombstoned"] = False
                 record["in_scope"] = False
                 record["folder"] = None
                 record["out_of_scope_at"] = observed_at
-                counts[prior_folder]["out_of_scope"] += 1
+                prior_counts["out_of_scope"] += 1
             self._write_derived(record)
 
         state["field_set_version"] = FIELD_SET_VERSION
-        for folder in FOLDERS:
+        for folder, ref in ref_by_key.items():
             folder_state = state["folders"][folder]
             observed = by_folder[folder]
-            if mode == "full":
+            if work[folder].mode == "full":
                 # A full snapshot IS the folder's inventory for this window.
                 folder_state["inventory"] = sorted(observed)
             else:
@@ -667,7 +715,7 @@ class EmailStoreSync:
                 folder_state["delta_token"] = work[folder].sync_token
             # Use a post-sync cheap live probe as the actual watermark.  It is
             # intentionally one GET per folder and detects parser/delta wedges.
-            probe = self.provider.probe_folder(folder)
+            probe = self.provider.probe_folder(ref.provider_id)
             folder_state["watermark"] = probe.get("latest_at") or work[folder].watermark
             folder_state["last_successful_sync"] = observed_at
 
@@ -701,11 +749,13 @@ class EmailStoreSync:
         if threshold_seconds < 0:
             raise EmailStoreError("staleness threshold cannot be negative")
         state = self._load_state()
+        refs = self._discover_folders()
         details: dict[str, dict[str, Any]] = {}
         stale = False
-        for folder in FOLDERS:
-            live = self.provider.probe_folder(folder)
-            folder_state = state["folders"][folder]
+        for ref in refs:
+            folder = ref.key
+            live = self.provider.probe_folder(ref.provider_id)
+            folder_state = state["folders"].get(folder, {})
             stored = folder_state.get("watermark")
             live_at = live.get("latest_at")
             reason = None
@@ -727,6 +777,7 @@ class EmailStoreSync:
             if reason:
                 stale = True
             details[folder] = {
+                "display_name": ref.display_name,
                 "live_latest_at": live_at,
                 "stored_watermark": stored,
                 "sync_completed": sync_completed,
@@ -764,6 +815,9 @@ def _record_time(record: dict[str, Any]) -> str | None:
     )
 
 
-def _record_folder(record: dict[str, Any]) -> str | None:
+def _record_folder(
+    record: dict[str, Any], allowed_folders: set[str] | None = None
+) -> str | None:
     folder = record.get("folder")
-    return str(folder) if folder in FOLDERS else None
+    allowed = allowed_folders or set(FOLDERS)
+    return str(folder) if folder in allowed else None

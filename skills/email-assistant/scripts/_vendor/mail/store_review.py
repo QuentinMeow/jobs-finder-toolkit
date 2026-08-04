@@ -379,13 +379,14 @@ class EmailStoreReader:
         )
 
     def _scan_search_documents(self) -> dict[str, Any]:
-        """Hydrate and normalize each current four-folder message exactly once."""
+        """Hydrate and normalize each current discovered-folder message once."""
         integrity = self.integrity()
         state = self.state()
         folder_state = state.get("folders") if isinstance(state.get("folders"), dict) else {}
+        folders = tuple(sorted(set(FOLDERS) | {str(folder) for folder in folder_state}))
         unsynced_folders = [
             folder
-            for folder in FOLDERS
+            for folder in folders
             if not isinstance(folder_state.get(folder), dict)
             or not folder_state[folder].get("last_successful_sync")
         ]
@@ -395,9 +396,9 @@ class EmailStoreReader:
             for key, envelope in envelopes.items()
             if envelope.get("in_scope") is True
             and envelope.get("tombstoned") is not True
-            and envelope.get("folder") in FOLDERS
+            and envelope.get("folder") in folders
         }
-        scanned_by_folder = {folder: 0 for folder in FOLDERS}
+        scanned_by_folder = {folder: 0 for folder in folders}
         unavailable: list[str] = []
         documents: list[dict[str, Any]] = []
         for key, envelope in sorted(current.items()):
@@ -436,6 +437,7 @@ class EmailStoreReader:
 
         messages_scanned = sum(scanned_by_folder.values())
         return {
+            "folders": folders,
             "integrity": integrity,
             "stored_messages": len(envelopes),
             "current_in_scope_messages": len(current),
@@ -499,7 +501,7 @@ class EmailStoreReader:
                 "all case-insensitive literals across full subject, body, and "
                 "sender/To/Cc participants"
             ),
-            "folders": list(FOLDERS),
+            "folders": list(scan["folders"]),
             "unsynced_folders": scan["unsynced_folders"],
             "integrity": scan["integrity"].as_dict(),
             "counts": {
@@ -523,7 +525,7 @@ class EmailStoreReader:
         normalized_queries = _normalize_queries(queries)
         scan = self._scan_search_documents()
         matches_by_query = {
-            normalized: {folder: [] for folder in FOLDERS}
+            normalized: {folder: [] for folder in scan["folders"]}
             for _display, normalized in normalized_queries
         }
         for document in scan["documents"]:
@@ -543,7 +545,7 @@ class EmailStoreReader:
                         "match_count": len(matches_by_query[normalized][folder]),
                         "message_keys": matches_by_query[normalized][folder],
                     }
-                    for folder in FOLDERS
+                    for folder in scan["folders"]
                 },
             }
             for display, normalized in normalized_queries
@@ -559,7 +561,7 @@ class EmailStoreReader:
                 "independent case-insensitive literals across full subject, body, and "
                 "sender/To/Cc participants"
             ),
-            "folders": list(FOLDERS),
+            "folders": list(scan["folders"]),
             "unsynced_folders": scan["unsynced_folders"],
             "integrity": scan["integrity"].as_dict(),
             "counts": {

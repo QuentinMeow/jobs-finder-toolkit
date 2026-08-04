@@ -118,15 +118,33 @@ class MailProvider(abc.ABC):
     def review_window(self, limit: int = 20) -> dict[str, Any]:
         """Reconcile recent inbox mail against Sent and Drafts (read-only)."""
 
+    def list_mail_folders(self) -> list[dict[str, str]]:
+        """Discover folders that belong in a complete mailbox evidence sync.
+
+        Providers with folder discovery should return mappings containing a
+        stable local ``key``, the provider-facing folder ``id``, and a human
+        ``display_name``.  The conservative fallback preserves compatibility
+        with providers that expose only the four original evidence folders.
+        """
+        labels = {
+            "inbox": "Inbox",
+            "sentitems": "Sent Items",
+            "drafts": "Drafts",
+            "deleteditems": "Deleted Items",
+        }
+        return [
+            {"key": folder, "id": folder, "display_name": labels[folder]}
+            for folder in ("inbox", "sentitems", "drafts", "deleteditems")
+        ]
+
     def list_folder(
         self, folder: str, limit: int | None = None, since: str | None = None
     ) -> list[dict[str, Any]]:
         """List an in-scope folder for archival sync.
 
         ``None`` requests the provider's complete folder walk.  The default
-        adapter preserves compatibility with existing providers while keeping
-        the allowed email-store scope explicit (Inbox, Sent Items, Drafts,
-        Deleted Items).
+        adapter preserves compatibility with providers that do not implement
+        folder discovery.
         """
         if limit is None:
             # A silent 2,000-message cap would turn a purported full inventory

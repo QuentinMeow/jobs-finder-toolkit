@@ -9,6 +9,7 @@ draft-only route allowlist (``route_policy.py``).
 from __future__ import annotations
 
 import html
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Callable, ClassVar
 from urllib.parse import quote, urlencode
@@ -48,6 +49,7 @@ DELTA_SELECT = (
     "lastModifiedDateTime,isRead,isDraft,bodyPreview,conversationId,"
     "internetMessageId,parentFolderId,webLink"
 )
+SYNC_WELL_KNOWN_FOLDERS = ("inbox", "sentitems", "drafts", "deleteditems")
 
 
 class GraphError(MailProviderError):
@@ -156,24 +158,98 @@ class DraftOnlyGraphClient(MailProvider):
     def me(self) -> dict[str, Any]:
         return self._request("GET", "/me", params={"$select": "displayName,mail,userPrincipalName"})
 
+    @staticmethod
+    def _discovered_folder_key(display_name: str, folder_id: str) -> str:
+        del display_name  # Folder names may change; provider IDs are the stable identity.
+        digest = hashlib.sha256(folder_id.encode("utf-8")).hexdigest()[:10]
+        return f"folder-{digest}"
+
+    def _list_folder_collection(self, path: str) -> list[dict[str, Any]]:
+        folders: list[dict[str, Any]] = []
+        next_url: str | None = None
+        while True:
+            data = (
+                self._request_url("GET", next_url)
+                if next_url
+                else self._request(
+                    "GET",
+                    path,
+                    params={
+                        "includeHiddenFolders": "true",
+                        "$top": 100,
+                        "$select": (
+                            "id,displayName,parentFolderId,childFolderCount,totalItemCount"
+                        ),
+                    },
+                )
+            )
+            folders.extend(item for item in (data.get("value") or []) if isinstance(item, dict))
+            possible_next = data.get("@odata.nextLink")
+            if not isinstance(possible_next, str) or not possible_next:
+                return folders
+            next_url = possible_next
+
+    def list_mail_folders(self) -> list[dict[str, str]]:
+        """Discover every Outlook mail folder, including Archive and custom folders."""
+        canonical_ids: dict[str, str] = {}
+        for well_known in SYNC_WELL_KNOWN_FOLDERS:
+            item = self._request(
+                "GET",
+                f"/me/mailFolders/{well_known}",
+                params={"$select": "id,displayName"},
+            )
+            folder_id = str(item.get("id") or "")
+            if not folder_id:
+                raise GraphError(f"Graph omitted the {well_known} folder ID")
+            canonical_ids[folder_id] = well_known
+
+        discovered: list[dict[str, Any]] = []
+        pending = self._list_folder_collection("/me/mailFolders")
+        seen_ids: set[str] = set()
+        while pending:
+            item = pending.pop(0)
+            folder_id = str(item.get("id") or "")
+            if not folder_id or folder_id in seen_ids:
+                continue
+            seen_ids.add(folder_id)
+            discovered.append(item)
+            if int(item.get("childFolderCount") or 0) > 0:
+                encoded = quote(folder_id, safe="")
+                pending.extend(self._list_folder_collection(f"/me/mailFolders/{encoded}/childFolders"))
+
+        result: list[dict[str, str]] = []
+        for item in discovered:
+            folder_id = str(item.get("id") or "")
+            display_name = str(item.get("displayName") or "Unnamed folder").strip()
+            key = canonical_ids.get(folder_id) or self._discovered_folder_key(
+                display_name, folder_id
+            )
+            result.append({"key": key, "id": folder_id, "display_name": display_name})
+        missing = set(SYNC_WELL_KNOWN_FOLDERS) - {item["key"] for item in result}
+        if missing:
+            raise GraphError(
+                "Graph folder discovery omitted required folder(s): " + ", ".join(sorted(missing))
+            )
+        return sorted(result, key=lambda item: (item["key"] not in SYNC_WELL_KNOWN_FOLDERS, item["display_name"].casefold(), item["key"]))
+
     def _list_folder(
         self, folder: str, limit: int | None, since: str | None = None
     ) -> list[dict[str, Any]]:
-        if folder not in {"inbox", "drafts", "sentitems", "deleteditems"}:
-            raise DraftPolicyError(f"mail folder blocked by policy: {folder}")
+        if not isinstance(folder, str) or not folder:
+            raise DraftPolicyError("mail folder ID is required")
         bounded = None if limit is None else max(1, min(int(limit), MAX_LIST_LIMIT))
         order_by = {
             "inbox": "receivedDateTime desc",
             "drafts": "lastModifiedDateTime desc",
             "sentitems": "sentDateTime desc",
             "deleteditems": "lastModifiedDateTime desc",
-        }[folder]
+        }.get(folder, "lastModifiedDateTime desc")
         filter_field = {
             "inbox": "receivedDateTime",
             "drafts": "lastModifiedDateTime",
             "sentitems": "sentDateTime",
             "deleteditems": "lastModifiedDateTime",
-        }[folder]
+        }.get(folder, "lastModifiedDateTime")
         messages: list[dict[str, Any]] = []
         next_url: str | None = None
         while bounded is None or len(messages) < bounded:
@@ -198,7 +274,9 @@ class DraftOnlyGraphClient(MailProvider):
             data = (
                 self._request_url("GET", next_url)
                 if next_url is not None
-                else self._request("GET", f"/me/mailFolders/{folder}/messages", params=params)
+                else self._request(
+                    "GET", f"/me/mailFolders/{quote(folder, safe='')}/messages", params=params
+                )
             )
             page = list(data.get("value") or [])
             messages.extend(page)
@@ -309,10 +387,10 @@ class DraftOnlyGraphClient(MailProvider):
         calls replay changes in arbitrary order; the store engine is therefore
         idempotent and resolves removals only after all folders complete.
         """
-        if folder not in {"inbox", "drafts", "sentitems", "deleteditems"}:
-            raise DraftPolicyError(f"mail folder blocked by policy: {folder}")
+        if not isinstance(folder, str) or not folder:
+            raise DraftPolicyError("mail folder ID is required")
         url = sync_token or self._url(
-            f"/me/mailFolders/{folder}/messages/delta",
+            f"/me/mailFolders/{quote(folder, safe='')}/messages/delta",
             params={"$select": DELTA_SELECT},
         )
         messages: list[dict[str, Any]] = []

@@ -40,15 +40,14 @@ The tracker transactionally couples `meta.yaml` and local `calendar.md`; Outlook
 system and cannot join that transaction. Never roll back correct local evidence because Outlook is
 temporarily unavailable. A repeated run must search first and converge without creating a duplicate.
 
-## 1. Build a Bounded Evidence Set
+## 1. Build a Complete Evidence Set
 
-- Convert the user's review window to an exact start timestamp in their timezone. Sync Inbox,
-  Sent Items, Drafts, and Deleted Items through the email assistant for that same window and
-  verify store freshness. Use its bounded live fallback only when the store refresh is incomplete.
-  Deleted Items covers messages still retained in that Outlook folder, not permanently purged mail
-  Microsoft no longer exposes.
-- When the user asks to recheck all existing email, run a full all-time inventory rather than a
-  recent-window sample. For every application folder currently rolled up to `in_progress`, search
+- By default, use the email assistant to discover every Outlook mail folder and sync all existing
+  mail, then verify store freshness. This includes Inbox, Sent Items, Drafts, Deleted Items,
+  Archive, Junk, and user-created folders that Microsoft Graph exposes. Use a bounded window only
+  when the user explicitly requests one. Deleted Items covers messages still retained in that
+  Outlook folder, not permanently purged mail Microsoft no longer exposes.
+- For every application folder currently rolled up to `in_progress`, search
   the complete stored subject, participants, and raw body for the company name, every tracked role,
   job/requisition IDs, recruiter domains, and established thread aliases. Produce a coverage row
   for every company and role even when it has zero matches. Use `store-coverage

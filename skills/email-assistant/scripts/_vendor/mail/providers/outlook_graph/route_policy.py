@@ -20,15 +20,20 @@ class DraftOnlyRoutePolicy(RoutePolicy):
     _REPLY = re.compile(r"^/v1\.0/me/messages/[^/]+/createReply$")
     _ATTACHMENTS = re.compile(r"^/v1\.0/me/messages/[^/]+/attachments$")
     _FOLDER_MESSAGES = re.compile(
-        r"^/v1\.0/me/mailFolders(?:/(?:inbox|drafts|sentitems|deleteditems)"
-        r"|\('(?:inbox|drafts|sentitems|deleteditems)'\))/messages$"
+        r"^/v1\.0/me/mailFolders(?:/[^/]+|\('[^/'()]+'\))/messages$"
     )
     _DELTA = re.compile(
-        r"^/v1\.0/me/mailFolders(?:/(?:inbox|drafts|sentitems|deleteditems)"
-        r"|\('(?:inbox|drafts|sentitems|deleteditems)'\))/messages/delta$"
+        r"^/v1\.0/me/mailFolders(?:/[^/]+|\('[^/'()]+'\))/messages/delta$"
+    )
+    _MAIL_FOLDER = re.compile(
+        r"^/v1\.0/me/mailFolders(?:/[^/]+|\('[^/'()]+'\))$"
+    )
+    _CHILD_FOLDERS = re.compile(
+        r"^/v1\.0/me/mailFolders(?:/[^/]+|\('[^/'()]+'\))/childFolders$"
     )
     _EXACT = {
         ("GET", "/v1.0/me"),
+        ("GET", "/v1.0/me/mailFolders"),
         ("GET", "/v1.0/me/mailFolders/inbox/messages"),
         ("GET", "/v1.0/me/mailFolders/drafts/messages"),
         ("GET", "/v1.0/me/mailFolders/sentitems/messages"),
@@ -56,6 +61,8 @@ class DraftOnlyRoutePolicy(RoutePolicy):
             cls._ATTACHMENTS.fullmatch(path)
             or cls._FOLDER_MESSAGES.fullmatch(path)
             or cls._DELTA.fullmatch(path)
+            or cls._MAIL_FOLDER.fullmatch(path)
+            or cls._CHILD_FOLDERS.fullmatch(path)
         ):
             return
         if normalized_method == "POST" and cls._REPLY.fullmatch(path):

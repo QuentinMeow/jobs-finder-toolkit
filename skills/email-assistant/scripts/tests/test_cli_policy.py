@@ -46,11 +46,14 @@ class CliPolicyTests(unittest.TestCase):
         self.assertEqual(args.message_id, "draft-1")
         self.assertEqual(args.body_file, "reply.txt")
 
-    def test_store_sync_defaults_to_a_precise_30_day_window(self):
+    def test_store_sync_defaults_to_all_existing_mail(self):
         args = build_parser().parse_args(["sync-store"])
-        self.assertEqual(args.days, 30)
+        self.assertIsNone(args.days)
         self.assertFalse(args.all)
         self.assertFalse(args.full)
+
+        bounded = build_parser().parse_args(["sync-store", "--days", "30"])
+        self.assertEqual(bounded.days, 30)
 
     def test_live_client_wires_the_same_auth_manager_as_token_refresher(self):
         settings = Mock(account="owner@example.invalid")

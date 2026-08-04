@@ -59,6 +59,50 @@ class DraftOnlyGraphClientTests(unittest.TestCase):
                 "https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages",
             )
 
+    def test_arbitrary_folder_discovery_and_reads_are_read_only_allowlisted(self):
+        for path in (
+            "/v1.0/me/mailFolders",
+            "/v1.0/me/mailFolders/archive-id",
+            "/v1.0/me/mailFolders/archive-id/childFolders",
+            "/v1.0/me/mailFolders/archive-id/messages",
+            "/v1.0/me/mailFolders('archive-id')/messages/delta",
+        ):
+            DraftOnlyRoutePolicy.assert_allowed("GET", f"https://graph.microsoft.com{path}")
+        with self.assertRaises(DraftPolicyError):
+            DraftOnlyRoutePolicy.assert_allowed(
+                "POST", "https://graph.microsoft.com/v1.0/me/mailFolders/archive-id/messages"
+            )
+
+    def test_folder_discovery_recurses_and_preserves_well_known_keys(self):
+        core = [
+            ("inbox", "Inbox"),
+            ("sentitems", "Sent Items"),
+            ("drafts", "Drafts"),
+            ("deleteditems", "Deleted Items"),
+        ]
+        root = [
+            {"id": folder_id, "displayName": display_name, "childFolderCount": 0}
+            for folder_id, display_name in core
+        ] + [{"id": "archive-id", "displayName": "Archive", "childFolderCount": 1}]
+        transport = FakeTransport(
+            [
+                *({"id": folder_id, "displayName": display_name} for folder_id, display_name in core),
+                {"value": root},
+                {"value": [{"id": "custom-id", "displayName": "Recruiting", "childFolderCount": 0}]},
+            ]
+        )
+        client = DraftOnlyGraphClient("token", transport=transport)
+
+        folders = client.list_mail_folders()
+
+        by_id = {item["id"]: item for item in folders}
+        self.assertEqual(by_id["inbox"]["key"], "inbox")
+        self.assertEqual(by_id["deleteditems"]["key"], "deleteditems")
+        self.assertEqual(by_id["archive-id"]["display_name"], "Archive")
+        self.assertRegex(by_id["archive-id"]["key"], r"^folder-[0-9a-f]{10}$")
+        self.assertEqual(by_id["custom-id"]["display_name"], "Recruiting")
+        self.assertTrue(any("archive-id/childFolders" in call[1] for call in transport.calls))
+
     def test_new_message_must_be_confirmed_as_draft(self):
         transport = FakeTransport([{"id": "draft-1", "isDraft": False}])
         client = DraftOnlyGraphClient("token", transport=transport)

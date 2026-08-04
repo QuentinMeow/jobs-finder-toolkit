@@ -36,24 +36,24 @@ Graph is the only provider today; the provider layer lives in `automation/shared
 
 The runtime, static policy checker, unit tests, and pre-commit hook all enforce this boundary.
 
-## Local Bounded Store
+## Local Complete Store
 
-For a complete bounded review, sync Inbox, Sent Items, Drafts, and Deleted Items into the private
-local store,
-then verify freshness before reading its content-free reconciliation projection:
+By default, discover every Outlook mail folder and sync all existing mail into the private local
+store. This includes Inbox, Sent Items, Drafts, Deleted Items, Archive, Junk, and user-created
+folders that Microsoft Graph exposes. Then verify freshness before reading the content-free
+reconciliation projection:
 
 ```bash
-.venv/bin/python skills/email-assistant/scripts/outlook_email.py sync-store --days 30 --full
+.venv/bin/python skills/email-assistant/scripts/outlook_email.py sync-store --full
 .venv/bin/python skills/email-assistant/scripts/outlook_email.py store-staleness
 .venv/bin/python skills/email-assistant/scripts/outlook_email.py store-review
 ```
 
-Set `--days` to the user-requested window (for example, `--days 90`) rather than silently applying
-the 30-day example. Use `sync-store --all --full` only when the user asks to recheck all existing
-mail. Include Inbox, Sent Items, and messages retained in Deleted Items for the complete
-communication timeline; use Drafts only to reconcile unsent work, and never present a draft as a
-sent communication. Deleted Items does not include mail that has been permanently purged and is no
-longer exposed by Microsoft.
+Use `--days` only when the user explicitly requests a bounded window (for example, `--days 90`);
+`--all` is an explicit alias for the default all-existing-mail scope. Include every discovered
+folder in the communication timeline; use Drafts only to reconcile unsent work, and never present a
+draft as a sent communication. Deleted Items does not include mail that has been permanently purged
+and is no longer exposed by Microsoft.
 
 If a transient Graph failure prevents a complete store refresh, keep the review read-only and use
 the bounded live fallback with the same exact start timestamp. `--compact` retains message IDs,
@@ -76,7 +76,7 @@ company/role links remain unresolved until exact evidence or an approved private
 mapping exists. Until the store-first cutover gate is satisfied, retain the live review-window and
 exact-message preflight before any draft or application change.
 
-`store-coverage` scans the fresh four-folder store once while evaluating repeated `--query` values
+`store-coverage` scans the fresh discovered-folder store once while evaluating repeated `--query` values
 as independent families. For an in-progress audit, use `--in-progress-applications` to include every
 company, active role, and conservative job-URL identifier, then add recruiter domains and established
 thread aliases with `--query`. Its content-free result groups stable message keys and counts by
