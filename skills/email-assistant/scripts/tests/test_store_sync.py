@@ -41,6 +41,7 @@ class SyntheticMailbox(MailProvider):
         }
         self.revision = 0
         self.expire_next_delta = False
+        self.discover_archive = False
         self.list_limits: list[int | None] = []
         self.delta_tokens: list[str | None] = []
 
@@ -52,6 +53,12 @@ class SyntheticMailbox(MailProvider):
 
     def review_window(self, limit: int = 20) -> dict[str, Any]:
         return {"draft_only": True, "sending_is_manual": True}
+
+    def list_mail_folders(self) -> list[dict[str, str]]:
+        folders = super().list_mail_folders()
+        if self.discover_archive:
+            folders.append({"key": "archive", "id": "archive", "display_name": "Archive"})
+        return folders
 
     def list_inbox(self, limit: int = 10) -> list[dict[str, Any]]:
         return self.list_folder("inbox", limit)
@@ -523,6 +530,28 @@ class EmailStoreSyncTests(unittest.TestCase):
         ).search_raw(queries=["Example Corp"])
         self.assertFalse(incomplete["audit_complete"])
         self.assertEqual(incomplete["unsynced_folders"], ["deleteditems"])
+
+    def test_full_body_search_includes_provider_discovered_archive(self):
+        self.mailbox.discover_archive = True
+        self.mailbox.seed(
+            folder="archive",
+            at=self.recent,
+            body="Example Corp archived Platform Engineer confirmation.",
+        )
+        self._syncer().sync(force_full=True)
+        reader = EmailStoreReader.for_account_label(
+            data_root=self.root, account_label="owner@example.com"
+        )
+
+        report = reader.search_raw(queries=["Example Corp", "Platform Engineer"])
+
+        self.assertTrue(report["audit_complete"], report)
+        self.assertEqual(report["folders"], [
+            "archive", "deleteditems", "drafts", "inbox", "sentitems"
+        ])
+        self.assertEqual(report["counts"]["scanned_by_folder"]["archive"], 1)
+        self.assertEqual([item["folder"] for item in report["matches"]], ["archive"])
+        self.assertTrue(_content_free(report))
 
     def test_full_body_search_matches_sender_to_and_cc_participant_aliases(self):
         self.mailbox.seed(

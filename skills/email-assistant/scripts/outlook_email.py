@@ -261,15 +261,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync = subparsers.add_parser(
         "sync-store",
-        help="sync a private local Inbox/Sent/Drafts/Deleted evidence window (read-only)",
+        help="sync all existing mail from every discovered folder (read-only)",
     )
     sync.add_argument(
-        "--days", type=int, default=30,
-        help="rolling window to capture in full, including bodies (default: 30)",
+        "--days", type=int,
+        help="limit the full-body sync to a rolling window; omitted means all existing mail",
     )
     sync.add_argument(
         "--all", action="store_true",
-        help="capture all in-scope history instead of a rolling window",
+        help="explicit alias for the default all-existing-mail scope",
     )
     sync.add_argument(
         "--full", action="store_true",
@@ -602,10 +602,9 @@ def main(argv: list[str] | None = None) -> int:
 
     _, client = _client()
     if args.command == "sync-store":
-        if args.all and args.days != 30:
+        if args.all and args.days is not None:
             raise EmailStoreError("use either --all or --days, not both")
-        days = None if args.all else args.days
-        _json(_email_store(client, settings).sync(days=days, force_full=args.full).as_dict())
+        _json(_email_store(client, settings).sync(days=args.days, force_full=args.full).as_dict())
         return 0
     if args.command == "store-staleness":
         _json(

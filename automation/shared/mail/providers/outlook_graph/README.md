@@ -19,14 +19,14 @@ Private and never tracked in the public toolkit:
 - Mailbox content, suggested reply bodies, and any personal writing preferences.
 
 Interactive review streams mailbox content to the active agent. The separate
-`sync-store` command may capture a requested private local window into the configured data root
+`sync-store` command captures all existing mail from every Graph-discovered folder by default into the configured data root
 for evidence/rebuild purposes; raw bodies, derived messages, state, message rows, and quoted
 evidence remain outside Git. `store-review` first live-probes freshness, then prints a bounded,
 content-free summary by default; `store-review --details` is the explicit opt-in for the complete
 content-free record/projection view. `store-search` deterministically searches full locally stored
-subjects, bodies, and sender/To/Cc participant names and addresses across Inbox, Sent Items,
-Drafts, and Deleted Items; it returns neutral-key matches unless `--include-content` explicitly
-requests matching private content. `store-coverage` runs the same complete four-folder scan once,
+subjects, bodies, and sender/To/Cc participant names and addresses across every discovered folder,
+including Archive and Deleted Items; it returns neutral-key matches unless `--include-content` explicitly
+requests matching private content. `store-coverage` runs the same complete discovered-folder scan once,
 but treats every repeated `--query` as an independent family and returns only per-family counts,
 stable message keys grouped by folder, and explicit zero-match queries. Add
 `--in-progress-applications` to generate families for every in-progress company, active role, and
@@ -64,11 +64,10 @@ The client permits only these operations beneath `https://graph.microsoft.com/v1
 | Method | Route shape | Purpose |
 |---|---|---|
 | `GET` | `/me` | Verify the signed-in mailbox |
-| `GET` | `/me/mailFolders/inbox/messages` | List recent inbox messages |
-| `GET` | `/me/mailFolders/sentitems/messages` | Reconcile whether an inbound message was answered |
-| `GET` | `/me/mailFolders/drafts/messages` | List existing drafts |
-| `GET` | `/me/mailFolders/deleteditems/messages` | Read Deleted Items without restoring or deleting messages |
-| `GET` | `/me/mailFolders/{inbox,sentitems,drafts,deleteditems}/messages/delta` | Incremental local-store sync |
+| `GET` | `/me/mailFolders` and `/me/mailFolders/{id}/childFolders` | Discover visible, hidden, nested, and custom folders |
+| `GET` | `/me/mailFolders/{id}` | Resolve the stable IDs of required well-known folders |
+| `GET` | `/me/mailFolders/{id}/messages` | Read messages from any discovered folder |
+| `GET` | `/me/mailFolders/{id}/messages/delta` | Incrementally sync any discovered folder |
 | `GET` | `/me/messages/{id}` | Read one message or verify one draft |
 | `GET` | `/me/messages/{id}/attachments` | Attachment metadata only |
 | `POST` | `/me/messages` | Create a new draft |

@@ -108,20 +108,20 @@ canaries:
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
-  - id: oea-full-body-in-progress-audit-including-deleted
+  - id: oea-full-body-in-progress-audit-including-all-folders
     requires_overlay: false
     prompt: "Recheck all existing Outlook mail, including deleted messages, for anything missed in my in-progress applications."
     setup: >
-      Mock a complete four-folder store. One relevant outcome appears only in the body of a Deleted
-      Items message; another in-progress role has no matches. Subjects and previews do not contain
-      the decisive role or job ID.
+      Mock a complete discovered-folder store. One relevant outcome appears only in the body of an
+      Archive message, another only in Deleted Items, and another in-progress role has no matches.
+      Subjects and previews do not contain the decisive role or job ID.
     expected_behavior:
-      - "Uses a full all-time inventory of Inbox, Sent Items, Drafts, and Deleted Items and verifies freshness/completeness before reconciliation."
+      - "By default discovers every available folder and uses a full all-time inventory, including Archive and Deleted Items, then verifies freshness/completeness before reconciliation."
       - "Uses one content-free `store-coverage --in-progress-applications` pass plus recruiter-domain/thread-alias families to search complete stored bodies and participants for every in-progress company, role, and job ID; reports folder provenance and the zero-match role too."
       - "Treats Drafts as unsent, deduplicates a moved/deleted message by stable evidence, and reads the exact matching messages before proposing application changes."
       - "Reports that permanently purged mail outside Deleted Items is not available rather than claiming impossible coverage."
     failure_modes:
-      - "Uses subject-only search, omits Deleted Items or zero-match roles, treats a Draft as sent, or claims coverage beyond Microsoft's retained mail."
+      - "Uses subject-only search, omits Archive, Deleted Items, or zero-match roles, treats a Draft as sent, or claims coverage beyond Microsoft's retained mail."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
