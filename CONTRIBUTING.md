@@ -29,8 +29,8 @@ the reconciler, and the reference/markdown link check — and
 `automation/hooks/pre-commit` is the list:
 
 ```bash
-python automation/bootstrap_overlay.py        # installs automation/hooks/pre-commit + automation/hooks/pre-push
-python automation/bootstrap_overlay.py --check  # exits 1 if a hook is not wired to its source
+.venv/bin/python automation/bootstrap_overlay.py        # installs automation/hooks/pre-commit + automation/hooks/pre-push
+.venv/bin/python automation/bootstrap_overlay.py --check  # exits 1 if a hook is not wired to its source
 ```
 
 ## Running the checks

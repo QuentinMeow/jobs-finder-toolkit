@@ -53,6 +53,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -787,6 +788,39 @@ def _evaluate_precondition(gate: Gate, root: Path) -> PreconditionResult | None:
     return result
 
 
+def _is_wsl(*, release: str | None = None,
+            environ: dict[str, str] | None = None) -> bool:
+    """Return whether the current Linux process is hosted by Windows WSL."""
+    environ = os.environ if environ is None else environ
+    if release is None:
+        try:
+            release = Path("/proc/sys/kernel/osrelease").read_text(
+                encoding="utf-8").strip()
+        except OSError:
+            release = ""
+    return "microsoft" in release.lower() or bool(environ.get("WSL_DISTRO_NAME"))
+
+
+def _is_windows_mount(path: Path) -> bool:
+    return bool(re.match(r"^/mnt/[a-z](?:/|$)", path.absolute().as_posix().lower()))
+
+
+def _wsl_temp_overrides(*, environ: dict[str, str] | None = None,
+                        release: str | None = None,
+                        temp_dir: Path | None = None) -> dict[str, str]:
+    """Keep gate subprocess temp files off DrvFS when WSL inherits Windows TEMP."""
+    environ = os.environ if environ is None else environ
+    if not _is_wsl(release=release, environ=environ):
+        return {}
+    selected = temp_dir or Path(tempfile.gettempdir())
+    native = Path("/tmp")
+    if not _is_windows_mount(selected):
+        return {}
+    if not native.is_dir() or not os.access(native, os.W_OK | os.X_OK):
+        return {}
+    return {"TMPDIR": str(native), "TMP": str(native), "TEMP": str(native)}
+
+
 def run_gate(gate: Gate, log_dir: Path, root: Path = REPO_ROOT) -> Result:
     """Run one gate. stdout+stderr are REDIRECTED to a file — never piped."""
     precondition = _evaluate_precondition(gate, root)
@@ -801,11 +835,16 @@ def run_gate(gate: Gate, log_dir: Path, root: Path = REPO_ROOT) -> Result:
 
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{gate.name}.log"
-    env = {**os.environ, **gate.env}
+    inherited = dict(os.environ)
+    temp_overrides = _wsl_temp_overrides(environ=inherited)
+    env = {**inherited, **temp_overrides, **gate.env}
     started = time.monotonic()
     try:
         with log_path.open("wb") as log:
-            log.write(f"$ {' '.join(gate.argv)}\n\n".encode())
+            env_prefix = ""
+            if temp_overrides:
+                env_prefix = "env TMPDIR=/tmp TMP=/tmp TEMP=/tmp "
+            log.write(f"$ {env_prefix}{' '.join(gate.argv)}\n\n".encode())
             log.flush()
             completed = subprocess.run(list(gate.argv), cwd=root, env=env,
                                        stdout=log, stderr=subprocess.STDOUT)

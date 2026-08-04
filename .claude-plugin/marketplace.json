@@ -13,6 +13,11 @@
       "description": "Orientation guide for the whole job-hunting toolkit — the five-step workflow (set up profile/filters → search jobs → generate applications → review & track → interview prep), the repo structure, and which skill + dependencies each step needs. Use when the user is new or asks \"how does this work\", \"how do I use this\", \"where do I start\", \"what do I do next\", \"what do I need installed\", or about the overall process, folder structure, or how the skills fit together."
     },
     {
+      "name": "windows-environment",
+      "source": "./skills/windows-environment",
+      "description": "Set up, diagnose, and validate Windows development for this toolkit through WSL2. Use whenever runtime detection identifies Windows or WSL, or the user asks about Windows setup, WSL installation, migration from macOS, `/mnt/c` performance or permissions, Windows `TEMP`/`TMP`, Python or LibreOffice installation, Codex `bubblewrap` sandbox failures, or running repository gates on Windows."
+    },
+    {
       "name": "job-search",
       "source": "./skills/job-search",
       "description": "Discover and rank fresh job postings that match a candidate profile, filtering by role, keywords, location, recency, and visa sponsorship (H-1B transfer / PERM / green card). Use when the user asks to find, search for, or discover matching jobs, check what's newly posted, or filter openings by sponsorship or posting date."

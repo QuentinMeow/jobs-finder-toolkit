@@ -51,8 +51,10 @@ malformed, and unsupported-layout inputs with expected outputs.
 
 Works out of the box on a fresh clone — no config needed; every tool falls back to
 the fictional "Jordan Rivers" example candidate. Requires Python 3.11+
-(`python3 --version` first) and, for PDF output, LibreOffice
-(`brew install --cask libreoffice`). Without a converter the render stops and says the
+(`python3 --version` first) and, for PDF output, LibreOffice (`brew install --cask
+libreoffice` on macOS; `sudo apt install libreoffice` inside Ubuntu/WSL). Windows users
+must run the toolkit through WSL2 and should start with the
+[`windows-environment` skill](skills/windows-environment/SKILL.md). Without a converter the render stops and says the
 one-page check could not run; add `--no-pdf` if you deliberately want a DOCX-only draft.
 
 ```bash
@@ -101,7 +103,7 @@ Your real identity never enters this repo. Copy the example config and point its
 
 ```bash
 cp config.example.yaml config.yaml     # edit: your name, your file paths
-python automation/bootstrap_overlay.py    # wires git hooks (+ your private skills if mounted)
+.venv/bin/python automation/bootstrap_overlay.py    # wires git hooks (+ your private skills if mounted)
 ```
 
 Keep your real profile, applications, and interview prep in a **private overlay** —
@@ -129,6 +131,7 @@ Claude Code plugin marketplace via
 - `gardener` — periodic memory hygiene for the toolkit's agent-memory zones (dry-run by default)
 - `search-recall-audit` — spot-check whether job-search silently missed or over-kept matching roles
 - `github-workflow` — write the PR description, stack PRs, clear the push gates, drive CI and merges
+- `windows-environment` — install, diagnose, and validate the Windows/WSL2 development environment
 
 ## Repo layout
 

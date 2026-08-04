@@ -35,7 +35,7 @@ module is **vendored** (copied) into the skill:
   `.venv/bin/python automation/vendoring/sync_vendored.py`.
 - A drift check (`sync_vendored.py --check`) fails if any copy diverges from its
   source. It runs in the tracked `automation/hooks/pre-commit` hook (install once with
-  `python automation/bootstrap_overlay.py`), so copies can never
+  `.venv/bin/python automation/bootstrap_overlay.py`), so copies can never
   silently drift.
 - **It checks both directions.** As well as "does each declared copy still match its
   source", it audits every file under a `skills/*/scripts/_vendor/` root and fails on

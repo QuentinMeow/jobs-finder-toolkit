@@ -172,7 +172,7 @@ cd ..
 
 # 5. Point the toolkit at it and wire everything up (see "Setup steps" below):
 cp config.example.yaml config.yaml     # edit candidate + paths.* to private/…
-python automation/bootstrap_overlay.py
+.venv/bin/python automation/bootstrap_overlay.py
 ```
 
 Git does not track empty directories, so the status folders under
@@ -252,7 +252,7 @@ leave them empty until you have content (e.g. your own private interview-prep sk
 4. **Wire the private skills + git hooks.** One idempotent, stdlib-only step:
 
    ```bash
-   python automation/bootstrap_overlay.py          # add --check to preview, make no changes
+   .venv/bin/python automation/bootstrap_overlay.py  # add --check to preview, make no changes
    ```
 
    `--check` is also the health check for an existing install: it exits 1 when a
