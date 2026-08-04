@@ -35,7 +35,7 @@
     {
       "name": "behavioral-interview-prep",
       "source": "./skills/behavioral-interview-prep",
-      "description": "Prepare grounded behavioral answers from real project stories, map projects to common software engineer questions, and generate validated multi-project answers with connected STAR paragraphs, prominent impact, timed quick answers, technical expansions, and reusable story references. Use when the user asks for behavioral interview prep, STAR answers, story bank creation, leadership/conflict/failure questions, or company-specific behavioral coaching."
+      "description": "Prepare grounded behavioral answers, or explicitly human-authorized fictionalized claims with private disclosures, and generate validated STAR answers with prominent impact, timed quick answers, technical expansions, and reusable story references. Use for behavioral interview prep, story banks, leadership/conflict/failure questions, or company-specific coaching."
     },
     {
       "name": "company-research",

@@ -90,10 +90,11 @@ genuinely nothing to project, the section says so in one fixed sentence —
   and useful answer. A missing before is not.
 - **State uncertainty as a number, or say you did not measure.** Likelihood and
   confidence are separate axes: "this probably fixes it, and I am sure it breaks
-  nothing else" is two claims, and one of them may be the weak one. Inventing a
-  number to satisfy this rule is worse than the vagueness it replaces — that is
-  a fabricated measurement, which the Guardrails in `AGENTS.md` forbid outright.
-  "I did not measure it" is a complete answer.
+  nothing else" is two claims, and one of them may be the weak one. Repository,
+  session, PR, gate, and verification reporting is always factual. A direct-human
+  exception for a named behavioral answer does not authorize a fabricated
+  measurement here or anywhere outside that answer and its private disclosure
+  ledger. "I did not measure it" is a complete answer.
 - **Gloss a repo-local term once, at first use.** "The leak guard (the check
   that scans every tracked file for the owner's real name)". Half a sentence, in
   every document, every time — the reader may not have read the last one.
