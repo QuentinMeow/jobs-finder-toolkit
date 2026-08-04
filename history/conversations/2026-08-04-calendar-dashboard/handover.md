@@ -34,4 +34,4 @@
 ## Needs your attention
 
 - No new public queue item was filed. Existing public decisions remain open; their default paths are unchanged.
-- 29 pending · top: [job-search-us-only-default-asymmetry](../../../message-queue/needs-human/decisions/job-search-us-only-default-asymmetry.md) — inconsistent search and draft defaults can repeatedly admit roles that later cannot be drafted.
+- 28 pending · top: [job-search-us-only-default-asymmetry](../../../message-queue/needs-human/decisions/job-search-us-only-default-asymmetry.md) — inconsistent search and draft defaults can repeatedly admit roles that later cannot be drafted.
