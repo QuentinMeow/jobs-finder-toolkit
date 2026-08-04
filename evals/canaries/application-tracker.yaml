@@ -102,7 +102,8 @@ canaries:
       email update whose exact role is unresolved; the other has a human-provided update. The
       calendar contains hand-written text outside generated markers.
     expected_behavior:
-      - "Uses `status.py --refresh-calendar --write` and renders exactly one company row per in-progress application with every role's canonical status/phase/state/label."
+      - "Uses `status.py --refresh-calendar --write` and leads with one confirmed interview occurrence per aligned row, using separate date, time, company, role, and round columns."
+      - "Keeps past occurrences and every in-progress role's canonical status/phase/state/label in collapsed detail instead of concatenating events or expanding all status metadata equally."
       - "Shows the newest company update with its human or email source and keeps ambiguous email evidence at company scope rather than copying it into both roles."
       - "Preserves hand-written calendar content, is byte-stable on a second refresh, and creates no duplicate company or role rows."
       - "Does not change metadata progress, move application folders, or create Outlook events."

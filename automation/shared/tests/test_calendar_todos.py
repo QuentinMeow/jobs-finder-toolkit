@@ -311,9 +311,22 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(output.count(COMPANY_VIEW_START), 1)
         self.assertEqual(output.count(COMPANY_VIEW_END), 1)
         self.assertIn("Owner prose stays byte-for-byte.   \n", output)
+        self.assertIn(
+            "<summary><strong>Tracker actions and raw schedule</strong></summary>",
+            output,
+        )
+        self.assertLess(
+            output.index(COMPANY_VIEW_END),
+            output.index("<summary><strong>Tracker actions and raw schedule</strong></summary>"),
+        )
         self.assertIn("Availability submitted; awaiting a confirmed time.", output)
-        self.assertIn("Technical interview · Waiting for confirmed time", output)
-        self.assertIn("Source: [Email evidence]", output)
+        self.assertIn("<summary><strong>Other active roles and latest updates</strong></summary>", output)
+        self.assertIn(
+            "| Example Corp | [Backend Engineer](<../4_in_progress/example-corp/notes.md>) "
+            "| Technical interview | Waiting for confirmed time |",
+            output,
+        )
+        self.assertIn("[Application metadata](<../4_in_progress/example-corp/notes.md>)", output)
         second = plan_calendar_update(first.output_bytes, {}, company_view=body)
         self.assertEqual(second.errors, ())
         self.assertFalse(second.changed)

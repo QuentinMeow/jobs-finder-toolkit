@@ -1039,6 +1039,7 @@ def _latest_standardized_note(notes_path: Path, *, details: str) -> dict | None:
 
 def _company_view_data(
     meta_overrides: dict[Path, tuple[bytes, Path]] | None = None,
+    calendar_overrides: dict[str, dict] | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Build a deterministic read-only projection of all in-progress companies.
 
@@ -1049,6 +1050,24 @@ def _company_view_data(
     overrides = meta_overrides or {}
     grouped: dict[str, dict] = {}
     errors: list[str] = []
+    calendar_rows: dict[str, dict] = {}
+    calendar_raw = _read_calendar_raw()
+    if calendar_raw is not None:
+        try:
+            calendar_doc = parse_calendar(calendar_raw.decode("utf-8"))
+        except UnicodeDecodeError as exc:
+            errors.append(f"{_calendar_path()}: cannot build company view: {exc}")
+        else:
+            errors.extend(
+                f"{_calendar_path()}: cannot build company view: {error}"
+                for error in calendar_doc.errors
+            )
+            if not calendar_doc.errors:
+                calendar_rows = {
+                    item: entry.fields()
+                    for item, entry in calendar_doc.entries.items()
+                }
+    calendar_rows.update(calendar_overrides or {})
     seen: set[Path] = set()
     for status in STATUS_FOLDERS:
         status_dir = _status_dir(status)
@@ -1107,6 +1126,19 @@ def _company_view_data(
                     ),
                     "source_kind": str(source.get("kind") or "metadata"),
                     "details": details,
+                    "interviews": [
+                        {
+                            "starts_at": calendar_rows[item].get("starts_at"),
+                            "ends_at": calendar_rows[item].get("ends_at"),
+                            "timezone": calendar_rows[item].get("timezone"),
+                            "label": calendar_rows[item].get("label"),
+                            "action": calendar_rows[item].get("action"),
+                        }
+                        for item in _progress_calendar_items(progress)
+                        if item in calendar_rows
+                        and calendar_rows[item].get("state") == "scheduled"
+                        and calendar_rows[item].get("starts_at")
+                    ],
                 })
             if latest_note is None:
                 next_action = str(meta.get("next_action") or "").strip()
@@ -1152,8 +1184,9 @@ def _company_view_data(
 
 def _company_view_markdown(
     meta_overrides: dict[Path, tuple[bytes, Path]] | None = None,
+    calendar_overrides: dict[str, dict] | None = None,
 ) -> tuple[str, int, list[str]]:
-    companies, errors = _company_view_data(meta_overrides)
+    companies, errors = _company_view_data(meta_overrides, calendar_overrides)
     return render_company_view(companies), len(companies), errors
 
 
@@ -1404,18 +1437,11 @@ def _transition_calendar_plan(
         for item in _progress_calendar_items(progress)
     ]
     overrides = {source_meta_path: (prospective_meta, target_meta_path)}
-    company_view, company_count, view_errors = _company_view_markdown(overrides)
-    if view_errors:
-        print("Error: could not build the generated company view:", file=sys.stderr)
-        for error in view_errors:
-            print(f"  - {error}", file=sys.stderr)
-        sys.exit(1)
     raw = _read_calendar_raw()
-    if raw is None and not referencing and not company_count:
-        return None
-    if raw is None:
+    if raw is None and referencing:
         raw = _read_calendar_raw(create=True)
-    doc = parse_calendar(raw.decode("utf-8"))
+    doc = parse_calendar(
+        raw.decode("utf-8") if raw is not None else CALENDAR_TEMPLATE)
     if doc.errors:
         print(f"Error: calendar file {_calendar_path()} failed validation:",
               file=sys.stderr)
@@ -1432,6 +1458,17 @@ def _transition_calendar_plan(
         upserts[item] = _entry_fields_for_progress(
             entry, slug=slug, job=job, progress=progress, company=company,
             meta_path=target_meta_path, calendar_item=item)
+    company_view, company_count, view_errors = _company_view_markdown(
+        overrides, upserts)
+    if view_errors:
+        print("Error: could not build the generated company view:", file=sys.stderr)
+        for error in view_errors:
+            print(f"  - {error}", file=sys.stderr)
+        sys.exit(1)
+    if raw is None and not company_count:
+        return None
+    if raw is None:
+        raw = _read_calendar_raw(create=True)
     plan = plan_calendar_update(raw, upserts, company_view=company_view)
     if plan.errors:
         print("Error: could not plan the calendar update (nothing written):",
@@ -1741,9 +1778,8 @@ def update_progress(
                   file=sys.stderr)
         sys.exit(1)
 
-    company_view, company_count, view_errors = _company_view_markdown({
-        meta_path: (plan.output_bytes, meta_path),
-    })
+    company_view, company_count, view_errors = _company_view_markdown(
+        {meta_path: (plan.output_bytes, meta_path)}, upserts)
     if view_errors:
         print("Error: could not build the generated company view:", file=sys.stderr)
         for error in view_errors:
@@ -1982,6 +2018,14 @@ def refresh_calendar(write: bool = False, as_json: bool = False) -> bool:
             print(f"  - {error}", file=sys.stderr)
         return False
 
+    company_view, company_count, view_errors = _company_view_markdown(
+        calendar_overrides=upserts)
+    if view_errors:
+        print("Error: cannot refresh generated company view:", file=sys.stderr)
+        for error in view_errors:
+            print(f"  - {error}", file=sys.stderr)
+        return False
+
     plan = plan_calendar_update(raw, upserts, company_view=company_view)
     if plan.errors:
         print("Error: could not refresh calendar:", file=sys.stderr)
@@ -2211,7 +2255,7 @@ def sync_calendar(write: bool = False, as_json: bool = False) -> bool:
         meta_writes.append((meta_path, pre_image, plan))
         meta_overrides[meta_path] = (plan.output_bytes, meta_path)
     company_view, _company_count, view_errors = _company_view_markdown(
-        meta_overrides)
+        meta_overrides, upserts)
     if view_errors:
         print("Error: could not build the generated company view:", file=sys.stderr)
         for error in view_errors:

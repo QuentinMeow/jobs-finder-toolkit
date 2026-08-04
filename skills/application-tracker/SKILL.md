@@ -244,9 +244,13 @@ the machine contract is one hidden JSON-comment line. Optional calendar fields i
 `action`, `due_at`, `starts_at`, `ends_at`, timezone, and `follow_up_at`.
 Sections project entry state: **Action needed** (owner work), **Waiting and follow-up**
 (employer/result/paused waits), **Interview schedule** (confirmed times, chronological), and
-**My notes and personal todos** (owner-only). A separate generated **`## Companies in progress`**
-view contains every application rolled up to `in_progress`, every role in each folder, the
-canonical per-role stage, and the latest concise company update with a `human` or `email` source.
+**My notes and personal todos** (owner-only). The generated **`## Companies in progress`** view
+leads with an aligned preparation table: one confirmed occurrence per row, with separate date,
+time, company, role, and round columns. Never concatenate several events into one sentence or one
+table cell. Past occurrences and the complete per-role stage/latest-update projection stay
+available in collapsed detail blocks, so every in-progress role remains represented without
+burying the upcoming schedule. Keep the raw tracker-action/schedule sections collapsed as a
+mechanical reference; the generated preparation table is the primary human view.
 It is a projection only: `meta.yaml` progress plus standardized `notes.md` evidence remain canonical.
 Company-scope evidence may appear there when an exact posting is unresolved, but it must not be
 copied into multiple roles or used to create an Outlook event.
@@ -527,9 +531,10 @@ When the user asks "how's my pipeline?" or "what's my status?":
    stuck scheduling"
 4. Note stale applications (applied > 2 weeks ago with no status change)
 5. Show conversion rates if enough data exists
-6. Refresh or inspect the generated company view so every in-progress company and role has a
-   current stage and a latest-update source; surface unresolved company-scope evidence explicitly
-   rather than guessing which sibling role owns it
+6. Refresh or inspect the generated company view: upcoming confirmed interviews must be one row
+   each with date/time/company/role/round columns; every in-progress role and latest-update source
+   remains in the folded detail. Surface unresolved company-scope evidence explicitly rather than
+   guessing which sibling role owns it.
 
 ## Job Discovery
 
