@@ -184,6 +184,10 @@ must contain at least two distinct project answers.
 
 `answer_bank.py render` emits one file per output alias. Each project answer is a collapsed outer
 `<details>` block. The summary bolds only **Answer N**; the project title follows in normal weight.
+When one or more `project_title` values start with `(Select)`, render a visible selected-answer
+index immediately after the `#` title and before question variants. Each row repeats `(Select)`,
+its answer number, and its title so interview navigation never depends on opening a collapsed block.
+Keep `(Select)` in the corresponding block summary as a second signal.
 A `---` rule separates the answer header from nested sections when expanded. Nested summaries use
 *italic* module labels plus word-count timing (not bold). Order inside each answer:
 
@@ -192,9 +196,12 @@ A `---` rule separates the answer header from nested sections when expanded. Nes
 3. *Technical deep dives* — nested group with *Deep dive · short* then *Deep dive · long*
 4. *Reference · timeline*
 5. *Reference · isolated problem / action / impact*
-6. *Private claim disclosures · not spoken* (only when disclosures exist)
+6. *Reference · likely follow-up questions* (only when `follow_up_questions` exists)
+7. *Private claim disclosures · not spoken* (only when disclosures exist)
 
 Do not use `<details open>` in generated files; expand sections at interview prep time.
+The two detailed reference sections use tagged Markdown bullets for fast retrieval. Optional
+`follow_up_questions` contains at least three non-empty question strings and renders as bullets.
 
 ## What code can and cannot validate
 

@@ -492,6 +492,7 @@ def _validate_answer(
         "project_title",
         "source_stories",
         "story_references",
+        "follow_up_questions",
         "fabrication_disclosures",
         *ANSWER_MODULES,
     }
@@ -519,6 +520,19 @@ def _validate_answer(
         max_sentence_words=max_sentence_words,
         banned_phrases=banned_phrases,
     )
+    follow_up_questions = answer.get("follow_up_questions")
+    if follow_up_questions is not None:
+        if not isinstance(follow_up_questions, list) or len(follow_up_questions) < 3:
+            result.errors.append(
+                f"{where}.follow_up_questions must contain at least three questions"
+            )
+        else:
+            for question_index, question in enumerate(follow_up_questions):
+                question_where = f"{where}.follow_up_questions[{question_index}]"
+                if not isinstance(question, str) or not question.strip():
+                    result.errors.append(f"{question_where} must be a non-empty string")
+                elif not question.strip().endswith("?"):
+                    result.errors.append(f"{question_where} must end with a question mark")
     _validate_fabrication_disclosures(
         answer.get("fabrication_disclosures"),
         f"{where}.fabrication_disclosures",
@@ -857,7 +871,7 @@ def _render_star(module: dict[str, Any]) -> list[str]:
 def _render_timeline(items: list[dict[str, Any]]) -> list[str]:
     lines: list[str] = []
     for item in items:
-        lines.extend([f"({item['tag'].strip()}) {item['text'].strip()}", ""])
+        lines.extend([f"- ({item['tag'].strip()}) {item['text'].strip()}", ""])
     return lines
 
 
@@ -874,7 +888,7 @@ def _render_focus_areas(items: list[dict[str, Any]]) -> list[str]:
         lines.extend(
             [
                 (
-                    f"({item['tag'].strip()}) {item['problem'].strip()} "
+                    f"- ({item['tag'].strip()}) {item['problem'].strip()} "
                     f"To address that, {item['action'].strip()} "
                     f"As a result, {_continue_sentence(item['impact'])}"
                 ),
@@ -940,17 +954,33 @@ def render_markdown(
     rate = float(settings.get("speaking_rate_wpm", 120))
     relative_source = f"sources/{source.name}"
     selected_output = output or data["outputs"][0]
+    selected_answers = [
+        (index, answer["project_title"].strip())
+        for index, answer in enumerate(data["answers"], start=1)
+        if answer["project_title"].strip().startswith("(Select)")
+    ]
     lines = [
         f"<!-- Generated from {relative_source}; do not edit by hand. -->",
         f"# {selected_output['title'].strip()}",
         "",
-        "## Most natural question",
-        "",
-        f"> {data['primary_question'].strip()}",
-        "",
-        "## Similar questions",
-        "",
     ]
+    if selected_answers:
+        heading = "## Selected answer" if len(selected_answers) == 1 else "## Selected answers"
+        lines.extend([heading, ""])
+        for index, title in selected_answers:
+            display_title = title[len("(Select)") :].strip()
+            lines.append(f"- **(Select) Answer {index} — {display_title}**")
+        lines.append("")
+    lines.extend(
+        [
+            "## Most natural question",
+            "",
+            f"> {data['primary_question'].strip()}",
+            "",
+            "## Similar questions",
+            "",
+        ]
+    )
     lines.extend(f"- {question.strip()}" for question in data["similar_questions"])
     lines.append("")
 
@@ -1055,6 +1085,17 @@ def render_markdown(
         )
         lines.extend(_render_focus_areas(answer["story_references"]["focus_areas"]))
         lines.extend(["</details>", ""])
+        follow_up_questions = answer.get("follow_up_questions")
+        if follow_up_questions:
+            lines.extend(
+                [
+                    "<details>",
+                    _reference_details_summary("likely follow-up questions"),
+                    "",
+                ]
+            )
+            lines.extend(f"- {question.strip()}" for question in follow_up_questions)
+            lines.extend(["", "</details>", ""])
         disclosures = answer.get("fabrication_disclosures")
         if disclosures:
             lines.extend(_render_fabrication_disclosures(disclosures))
