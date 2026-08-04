@@ -37,3 +37,17 @@ Pass rate: `8/8`.
 
 - **Regression:** PASS. Every rubric bullet passed; no failure mode was observed.
 - **Efficiency vs baseline:** not measured. No per-run metrics hook was available.
+
+## Follow-up rerun — Do now first
+
+- **Run commit:** `76e57052d4e6`
+- **Model:** `GPT-5.6 Terra`
+- **Verdict:** PASS, `8/8`. The communication/calendar canary explicitly verified proposed scheduling in **Do now** before confirmed interviews while preserving organizer-event reuse and the draft-only/send-less boundary.
+- **Deterministic evidence:** mail safety passed; fake-transport `90/90`; calendar core `30/30`; progress/calendar `30/30`.
+- **Efficiency:** not measured.
+
+```eval-pin v1
+skill email-assistant
+pin sha256=d1a3928dcf4a699 bytes=20585 path=skills/email-assistant/SKILL.md
+pin sha256=c174c50c0e213094 bytes=11005 path=evals/canaries/email-assistant.yaml
+```

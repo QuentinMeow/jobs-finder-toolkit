@@ -34,3 +34,17 @@ Pass rate: `5/5`.
 
 - **Regression:** PASS. Every rubric bullet passed; no failure mode was observed.
 - **Efficiency vs baseline:** not measured. No per-run metrics hook was available.
+
+## Follow-up rerun — Do now first
+
+- **Run commit:** `76e57052d4e6`
+- **Model:** `GPT-5.6 Terra`
+- **Verdict:** PASS, `5/5`. The agenda checks verified **Do now** before **Upcoming interviews**, separate occurrence rows, complete unresolved evidence, and no Outlook event from proposed availability.
+- **Deterministic evidence:** calendar core `30/30`; progress/calendar `30/30`; full tracker discovery exited 0.
+- **Efficiency:** not measured.
+
+```eval-pin v1
+skill interview-calendar
+pin sha256=71e6ae46afc8e2fa bytes=13078 path=skills/interview-calendar/SKILL.md
+pin sha256=9648b398690b603f bytes=6628 path=evals/canaries/interview-calendar.yaml
+```

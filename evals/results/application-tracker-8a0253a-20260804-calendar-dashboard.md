@@ -37,3 +37,18 @@ Pass rate: `7/7`.
 
 - **Regression:** PASS. Every rubric bullet passed; no failure mode was observed.
 - **Efficiency vs baseline:** not measured. No per-run metrics hook was available.
+
+## Follow-up rerun — Do now first
+
+- **Run commit:** `76e57052d4e6`
+- **Model:** `GPT-5.6 Terra`
+- **Verdict:** PASS, `7/7`. The company-view canary explicitly verified that **Do now** precedes **Upcoming interviews** while preserving one occurrence per row, folded detail, unresolved-posting visibility, and idempotence.
+- **Deterministic evidence:** calendar core `30/30`; progress/calendar `30/30`; full tracker discovery and example metadata validation exited 0.
+- **Efficiency:** not measured.
+
+```eval-pin v1
+skill application-tracker
+pin sha256=3e71757aca5d813a bytes=31631 path=skills/application-tracker/SKILL.md
+pin sha256=fcad03eefa7ed01a bytes=3766 path=skills/application-tracker/LESSONS.md
+pin sha256=f2ba7456e9512d35 bytes=11436 path=evals/canaries/application-tracker.yaml
+```
