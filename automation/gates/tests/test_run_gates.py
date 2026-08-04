@@ -552,6 +552,21 @@ class ExecutionTests(unittest.TestCase):
             self.assertTrue(body.startswith("$ "), "the log records the exact argv")
         self.assertFalse((log_dir / "synthetic-skip.log").exists())
 
+    def test_wsl_windows_temp_is_replaced_for_gate_subprocesses(self):
+        with mock.patch.object(
+            run_gates,
+            "_wsl_temp_overrides",
+            return_value={"TMPDIR": "/tmp", "TMP": "/tmp", "TEMP": "/tmp"},
+        ):
+            _, code, _, log_dir = self._run([_gate(
+                "synthetic-temp",
+                "import os; print(os.environ['TMPDIR'], os.environ['TMP'], os.environ['TEMP'])",
+            )])
+        self.assertEqual(code, 0)
+        body = (log_dir / "synthetic-temp.log").read_text(encoding="utf-8")
+        self.assertIn("env TMPDIR=/tmp TMP=/tmp TEMP=/tmp", body.splitlines()[0])
+        self.assertIn("/tmp /tmp /tmp", body)
+
     def test_a_gate_that_rewrites_tracked_files_says_so_after_running(self):
         _, code, text, _ = self._run([DIRTY])
         self.assertEqual(code, 0, text)
@@ -580,6 +595,39 @@ class ExecutionTests(unittest.TestCase):
                          [run_gates.FAIL, run_gates.NOTRUN])
         self.assertIn("not run (--fail-fast): synthetic-pass", text)
 
+
+class WSLTempTests(unittest.TestCase):
+    def test_detects_wsl_from_kernel_or_environment(self):
+        self.assertTrue(run_gates._is_wsl(release="microsoft-standard-WSL2", environ={}))
+        self.assertTrue(run_gates._is_wsl(
+            release="linux", environ={"WSL_DISTRO_NAME": "Ubuntu"}))
+        self.assertFalse(run_gates._is_wsl(release="linux", environ={}))
+
+    def test_redirects_only_windows_mounted_temp(self):
+        self.assertEqual(
+            run_gates._wsl_temp_overrides(
+                release="microsoft-standard-WSL2",
+                environ={},
+                temp_dir=Path("/mnt/c/Temp"),
+            ),
+            {"TMPDIR": "/tmp", "TMP": "/tmp", "TEMP": "/tmp"},
+        )
+        self.assertEqual(
+            run_gates._wsl_temp_overrides(
+                release="microsoft-standard-WSL2",
+                environ={},
+                temp_dir=Path("/tmp"),
+            ),
+            {},
+        )
+        self.assertEqual(
+            run_gates._wsl_temp_overrides(
+                release="linux",
+                environ={},
+                temp_dir=Path("/mnt/c/Temp"),
+            ),
+            {},
+        )
 
 class LibreOfficePreconditionTests(unittest.TestCase):
     def _environment(self, executable, access):

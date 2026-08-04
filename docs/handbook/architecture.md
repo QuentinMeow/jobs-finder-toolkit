@@ -164,7 +164,7 @@ A separate `secret-scan` job runs gitleaks over the full history for credential
 shapes the identity guard does not target.
 
 Local equivalents are in [`CONTRIBUTING.md`](../../CONTRIBUTING.md) → "Running the checks";
-the tracked git hooks (installed by `python automation/bootstrap_overlay.py`) run the cheap
+the tracked git hooks (installed by `.venv/bin/python automation/bootstrap_overlay.py`) run the cheap
 gates on commit and the leak guard on push.
 
 ## Repo reference

@@ -37,7 +37,7 @@ data in the public tree** — it ships only the fake "Jordan Rivers" example.
 (SKILL.md + scripts published; PRODUCTS stay private): `ask-me-anything`, `job-search`,
 `resume-writer`, `application-tracker`, `behavioral-interview-prep`, `company-research`,
 `email-assistant`, `interview-calendar`, `gardener`, `search-recall-audit`,
-`github-workflow`. **PRIVATE skills are intentionally not enumerated here**:
+`github-workflow`, `windows-environment`. **PRIVATE skills are intentionally not enumerated here**:
 each entire skill lives only in the overlay, and bootstrap discovers it dynamically.
 
 **PRODUCTS are always private** and mount under `private/` (real applications, discoveries,
@@ -64,6 +64,16 @@ the public skills; each private skill is reached from generated entries in
 `private/skills/<name>`. Their exact paths live only in repository-local Git
 metadata; `automation/bootstrap_overlay.py` creates them dynamically.
 Full detail: `docs/handbook/public-private-split.md`.
+
+## Runtime Environment (required preflight)
+
+The top-level agent confirms the runtime before the first repository command (`uname -s` plus
+the kernel release; do not infer it from the host app or a path). macOS is the default local
+environment and uses the standard commands in this contract. Native Windows is not a supported
+execution environment: use WSL2. When Windows or WSL is detected, read
+`skills/windows-environment/SKILL.md` before setup, tests, or mutations and run its doctor; keep
+the checkout and temporary files on the Linux filesystem. Ordinary non-WSL Linux follows the CI
+path. Subagents inherit the top-level environment result and never repeat this preflight.
 
 ## Configuration
 
@@ -114,7 +124,8 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
    `email-assistant` (read personal Outlook mail, create repository-grounded reply drafts),
    `interview-calendar` (reconcile email evidence, tracker progress, and Outlook interview events),
    `search-recall-audit` (spot-check whether job-search is missing/over-keeping roles),
-   `github-workflow` (PR descriptions, stacked PRs, CI, the push gates).
+   `github-workflow` (PR descriptions, stacked PRs, CI, the push gates),
+   `windows-environment` (mandatory Windows/WSL setup and diagnostics).
    **Every GitHub operation — opening, stacking, retargeting, merging or closing a PR —
    follows `skills/github-workflow/`; merging in particular goes through its runbook
    (`skills/github-workflow/scripts/merge_stack.py`), never a hand-typed merge command.**

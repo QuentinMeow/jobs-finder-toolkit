@@ -127,8 +127,8 @@ example config) — substitute the resolved path, never a literal folder at the 
 # runnable foreign hook is left alone with a warning. --check makes no changes and
 # exits 1 when a tracked guard is not installed, so a checkout whose leak guard is
 # silently not running fails a check instead of looking installed.
-python automation/bootstrap_overlay.py
-python automation/bootstrap_overlay.py --check
+.venv/bin/python automation/bootstrap_overlay.py
+.venv/bin/python automation/bootstrap_overlay.py --check
 
 # Every blocking gate in one command — the whole pre-commit chain AND every CI `run:`
 # step. Each gate is a subprocess with no shell and NO PIPE: its stdout+stderr are
@@ -171,5 +171,5 @@ python automation/bootstrap_overlay.py --check
 .venv/bin/python automation/publish/review_gate.py --verify-all  # recompute EVERY row (CI)
 
 # Install dependencies
-pip install -r requirements.txt
+.venv/bin/pip install -r requirements.txt
 ```

@@ -50,17 +50,21 @@ tracks them through a pipeline. Content (your experience, in markdown/YAML) and 
 
 ## Prerequisites (install once)
 
+Before installing anything, the agent confirms the runtime. macOS is the default path.
+On Windows, read `skills/windows-environment/SKILL.md`, run the toolkit through WSL2,
+and complete its doctor before continuing; native PowerShell is not the execution shell.
+
 These are the global dependencies. Per-step extras are listed under each step.
 
 | What | Why | Install |
 |------|-----|---------|
 | Python 3.11+ in a repo venv | Runs every toolkit script | `python3 -m venv .venv` (Python 3.11+; or `uv venv --seed`), then always call `.venv/bin/python` |
 | Python packages | YAML + DOCX + PDF parsing | `.venv/bin/pip install -r requirements.txt` (pyyaml, python-docx, pypdf) |
-| LibreOffice **or** Word+docx2pdf | DOCX → PDF for resumes/cover letters (Step 3) | `brew install --cask libreoffice` (recommended), or `pip install docx2pdf` if you have Word |
+| LibreOffice | DOCX → PDF for resumes/cover letters (Step 3) | macOS: `brew install --cask libreoffice`; Ubuntu/WSL: `sudo apt install libreoffice` |
 | Any AI coding agent | Reads `AGENTS.md` + `skills/` and drives the workflow | Open the repo in the agent (Claude Code, Cursor, Codex, …); skills auto-route |
 
 Optional but recommended: install the git hooks so vendored script copies can't
-drift — run `python automation/bootstrap_overlay.py` (installs both tracked hooks).
+drift — run `.venv/bin/python automation/bootstrap_overlay.py` (installs both tracked hooks).
 
 Always invoke scripts with the repo venv (`.venv/bin/python ...`); the system Python is
 often too old. On macOS the renderer looks for LibreOffice at `~/Applications/LibreOffice.app`

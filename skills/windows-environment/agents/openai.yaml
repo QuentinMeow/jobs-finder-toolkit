@@ -1,0 +1,4 @@
+interface:
+  display_name: "Windows Environment"
+  short_description: "Set up and diagnose Windows WSL environments"
+  default_prompt: "Use $windows-environment to check and prepare this Windows WSL workspace."
