@@ -16,3 +16,13 @@
 - Passed the full impact-aware gate bundle in both the working checkout and a detached config-less
   public checkout at `4243d59`; both worktrees were clean afterward.
 - Opened draft PR #314; every GitHub check is green, but the PR remains intentionally unmergeable.
+
+## 2026-08-04 — session 2 (Codex)
+
+- Recovered the private interview branch after a laptop crash and assigned one GPT-5.6 Sol high
+  subagent to each of eight answer topics.
+- Applied the disclosure schema to every requested unsupported or source-conflicting claim.
+- Marked each chosen story with `(Select)`, regenerated deterministic aliases, and passed full
+  source validation, freshness, private content tests, and whitespace checks.
+- Committed and pushed the private answer refresh at `c53804d`, then updated private PR #79.
+- Kept exact-claim authorization as the active default; the broader category-level policy remains
