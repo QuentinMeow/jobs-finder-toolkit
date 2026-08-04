@@ -105,14 +105,21 @@ The private local `calendar.md` carries one generated view for every application
 rollup is `in_progress`. Refresh it with the application tracker; do not hand-maintain a second
 status table.
 
-- Lead with the question the owner actually needs answered: which interview to prepare for, when,
-  and for which role. Render one confirmed occurrence per table row with separate date, time,
-  company, role, and round columns; never join multiple events into a sentence or day cell.
+- Lead with a top-level **Do now** table so owner work is visible before the schedule. Follow it
+  with one confirmed occurrence per chronological table row using separate **Date**, **Time**,
+  **Company**, **Role**, and **Prepare for** columns; never join events into a sentence or day cell.
+  Waits and company commentary never compete with the preparation agenda.
+- If confirmed or actionable evidence cannot yet be matched to one posting, keep it in those same
+  tables labeled **posting link unresolved**. Markdown and HTML must share that supplemental item;
+  never hide it in prose, omit it from one surface, or invent an application link.
 - Put past confirmed occurrences and the full role/status/latest-update projection in collapsed
   detail blocks. Keep each role's canonical `status`, `progress.phase`, `progress.state`, and
   `progress.label` from `meta.yaml` there, including every posting in a multi-role folder.
 - Keep the raw tracker-action/schedule sections collapsed as a reference. They must stay complete
-  and machine-readable, but they do not compete visually with the preparation table.
+  and machine-readable, but they do not compete visually with the preparation table. When useful,
+  generate the optional offline `calendar.html` companion with
+  `status.py --refresh-calendar --write --html`; it is a linked visual projection, never a source
+  of truth.
 - Show the latest concise company update and whether it came from explicit human input or matched
   email evidence. Use the tracker's deterministic precedence: newest standardized email-timeline
   outcome/summary, then human `next_action`, then canonical role progress. Prefer a dated

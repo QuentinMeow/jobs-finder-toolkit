@@ -505,7 +505,7 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertEqual(
             text.count("Availability submitted; awaiting a confirmed time."), 1)
         self.assertIn("[Email timeline]", text)
-        self.assertIn("Other active roles and latest updates", text)
+        self.assertIn("Pipeline and company updates", text)
         self.assertNotIn("acct-01/", text)
         self.assertIn("my own note — tooling must never touch this line", text)
 
@@ -559,6 +559,21 @@ class ProgressCalendarTests(unittest.TestCase):
             text,
         )
 
+    def test_company_view_surfaces_unlinked_owner_action_from_metadata(self):
+        self._place("in_progress", "example-corp-role-20260720", [_job(
+            "Backend Engineer", "in_progress", "JD-backend.md",
+            {"phase": "technical_interview", "state": "booking_required"},
+        )])
+        self._write_calendar(CALENDAR_SKELETON)
+        write = self._run(STATUS, "--refresh-calendar", "--write")
+        self.assertEqual(write.returncode, 0, write.stderr)
+        text = self.calendar.read_text()
+        prep = text[:text.index("<details>")]
+        self.assertIn("### Do now", prep)
+        self.assertIn("Choose an interview time", prep)
+        self.assertIn("| When | Company | Role | Action |", prep)
+        self.assertEqual(self._run(STATUS, "--check-calendar").returncode, 0)
+
     def test_company_view_aligns_one_interview_per_row_and_folds_past_events(self):
         slug = "example-corp-multi-20260720"
         upcoming_one = "cal-example-corp-multi-01"
@@ -597,7 +612,7 @@ class ProgressCalendarTests(unittest.TestCase):
         refresh = self._run(STATUS, "--refresh-calendar", "--write")
         self.assertEqual(refresh.returncode, 0, refresh.stderr)
         text = self.calendar.read_text()
-        self.assertEqual(text.count("| Date | Time | Company | Role | Round |"), 2)
+        self.assertEqual(text.count("| Date | Time | Company | Role | Prepare for |"), 2)
         self.assertEqual(text.count("| Mon, Aug 10, 2099 |"), 2)
         self.assertIn("| 1:00 PM–2:00 PM PDT | Example Corp |", text)
         self.assertIn("| 3:30 PM–4:30 PM PDT | Example Corp |", text)
@@ -605,7 +620,89 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertIn("| architecture interview |", text)
         self.assertIn("<summary><strong>Past confirmed interviews</strong></summary>", text)
         self.assertIn("| Wed, Jan 5, 2000 |", text)
-        self.assertIn("<summary><strong>Other active roles and latest updates</strong></summary>", text)
+        self.assertIn("<summary><strong>Pipeline and company updates</strong></summary>", text)
+        self.assertEqual(self._run(STATUS, "--check-calendar").returncode, 0)
+
+    def test_refresh_html_keeps_actions_separate_and_is_byte_stable(self):
+        slug = "example-corp-multi-20260720"
+        action_id = "cal-example-corp-multi-01"
+        first_id = "cal-example-corp-multi-02"
+        second_id = "cal-example-corp-multi-03"
+        self._place("in_progress", slug, [_job(
+            "Backend Engineer", "in_progress", "JD-backend.md",
+            {
+                "phase": "interview_loop",
+                "state": "booking_required",
+                "calendar_items": [action_id, first_id, second_id],
+            },
+        )])
+        action = self._entry_fields(
+            action_id, slug, state="booking_required", phase="interview_loop",
+            action="Choose the final interview time", due_at="2099-08-09")
+        first = self._entry_fields(
+            first_id, slug, state="scheduled", phase="interview_loop",
+            label="Virtual onsite", starts_at="2099-08-10T13:00:00-07:00",
+            ends_at="2099-08-10T14:00:00-07:00",
+            timezone="America/Los_Angeles", action="Attend coding interview")
+        second = self._entry_fields(
+            second_id, slug, state="scheduled", phase="interview_loop",
+            label="Virtual onsite", starts_at="2099-08-10T15:30:00-07:00",
+            ends_at="2099-08-10T16:30:00-07:00",
+            timezone="America/Los_Angeles", action="Attend architecture interview")
+        calendar = CALENDAR_SKELETON.replace(
+            "## Action needed\n", "## Action needed\n\n" + "".join(
+                render_entry(action, checked=False, text="legacy")), 1)
+        supplemental = (
+            '<!-- jobhunt-agenda {"id":"agenda-unlinked-interview",'
+            '"kind":"interview","company":"Unlinked Co",'
+            '"role":"Infrastructure Engineer (posting link unresolved)",'
+            '"round":"Technical interview",'
+            '"starts_at":"2099-08-10T14:30:00-07:00",'
+            '"ends_at":"2099-08-10T15:00:00-07:00",'
+            '"timezone":"America/Los_Angeles"} -->\n'
+            '<!-- jobhunt-agenda {"id":"agenda-unlinked-action",'
+            '"kind":"action","company":"Unlinked Co",'
+            '"role":"Infrastructure Engineer (posting link unresolved)",'
+            '"action":"Submit four availability slots"} -->\n\n'
+        )
+        calendar = calendar.replace(
+            "## Action needed\n", supplemental + "## Action needed\n", 1)
+        calendar = calendar.replace(
+            f"{SECTION_SCHEDULED}\n", f"{SECTION_SCHEDULED}\n\n" + "".join(
+                render_entry(first, checked=False, text="legacy")
+                + render_entry(second, checked=False, text="legacy")), 1)
+        self._write_calendar(calendar)
+
+        write = self._run(STATUS, "--refresh-calendar", "--write", "--html")
+        self.assertEqual(write.returncode, 0, write.stderr)
+        markdown = self.calendar.read_text()
+        html = self.calendar.with_suffix(".html").read_text()
+        self.assertLess(markdown.index("### Do now"), markdown.index("### Upcoming interviews"))
+        prep = markdown[:markdown.index("<details>")]
+        generated = markdown[
+            markdown.index(COMPANY_VIEW_START):markdown.index(COMPANY_VIEW_END)
+        ]
+        self.assertIn("Choose the final interview time", prep)
+        self.assertEqual(prep.count("| Mon, Aug 10, 2099 |"), 3)
+        self.assertEqual(generated.count("Submit four availability slots"), 1)
+        self.assertLess(
+            generated.index("Submit four availability slots"),
+            generated.index("Choose the final interview time"),
+        )
+        self.assertIn("Unlinked Co", prep)
+        self.assertIn("| Date | Time | Company | Role | Prepare for |", prep)
+        self.assertIn('href="../4_in_progress/example-corp-multi-20260720/meta.yaml"', html)
+        self.assertIn("@media (max-width: 720px)", html)
+        self.assertIn('<div class="table-wrap" role="region"', html)
+        self.assertEqual(html.count("Submit four availability slots"), 1)
+        self.assertIn("Unlinked Co", html)
+        self.assertIn('<th scope="col">Date</th>', html)
+        self.assertLess(html.index("<h2>Do now</h2>"), html.index("<h2>Upcoming interviews</h2>"))
+        first_markdown, first_html = self.calendar.read_bytes(), self.calendar.with_suffix(".html").read_bytes()
+        again = self._run(STATUS, "--refresh-calendar", "--write", "--html")
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.calendar.read_bytes(), first_markdown)
+        self.assertEqual(self.calendar.with_suffix(".html").read_bytes(), first_html)
         self.assertEqual(self._run(STATUS, "--check-calendar").returncode, 0)
 
     def test_status_transition_adds_and_removes_company_view_without_role_entry(self):

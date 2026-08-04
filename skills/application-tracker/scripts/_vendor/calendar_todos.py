@@ -52,6 +52,7 @@ and config-free; the application tracker is the only transactional writer.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import re
 from dataclasses import dataclass, field, replace
@@ -93,6 +94,7 @@ MANAGED_SECTIONS = (SECTION_ACTION, SECTION_WAITING, SECTION_SCHEDULED)
 
 MARKER_OPEN = "<!-- jobhunt-calendar"
 MARKER_CLOSE = "-->"
+AGENDA_MARKER_OPEN = "<!-- jobhunt-agenda"
 COMPANY_VIEW_START = "<!-- jobhunt-company-view:start -->"
 COMPANY_VIEW_END = "<!-- jobhunt-company-view:end -->"
 
@@ -123,6 +125,7 @@ _OPTIONAL_KEYS = (
     "label", "action", "due_at", "starts_at", "ends_at", "timezone",
     "follow_up_at", "details", "source",
     "reschedule_to", "reschedule_timezone", "cancel", "history",
+    "display_rounds",
 )
 _HISTORY_STATUSES = ("superseded", "cancelled", "completed")
 _HISTORY_KEYS = ("starts_at", "ends_at", "timezone", "status", "recorded_at")
@@ -133,14 +136,21 @@ _DATETIME_RE = re.compile(
 _DATE_OR_DATETIME_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)?)?$")
 _TIMEZONE_RE = re.compile(r"^(UTC|[A-Za-z_]+(?:/[A-Za-z0-9_+\-]+)+)$")
+_AGENDA_ID_RE = re.compile(r"^agenda-[a-z0-9]+(?:-[a-z0-9]+)*$")
+_AGENDA_KINDS = ("interview", "action")
+_AGENDA_REQUIRED_KEYS = ("id", "kind", "company", "role")
+_AGENDA_OPTIONAL_KEYS = (
+    "round", "action", "due_at", "starts_at", "ends_at", "timezone",
+    "details",
+)
 
 CALENDAR_TEMPLATE = """\
 # Interview calendar
 
-Scan the bold date or action first. Open the linked role for full context.
+Start with the preparation agenda. Open a linked role for its notes.
 
 <!-- jobhunt-company-view:start -->
-## Companies in progress
+## Interview prep
 
 _Generated from canonical application progress and standardized notes. Edit those sources, not this block._
 
@@ -186,6 +196,7 @@ class CalendarEntry:
     reschedule_timezone: str | None
     cancel: bool
     history: tuple[dict, ...]
+    display_rounds: tuple[str, ...]
     checked: bool
     text: str
     section: str | None
@@ -213,6 +224,7 @@ class CalendarEntry:
             "reschedule_timezone": self.reschedule_timezone,
             "cancel": self.cancel,
             "history": [dict(item) for item in self.history],
+            "display_rounds": list(self.display_rounds),
         }
 
 
@@ -224,6 +236,7 @@ class CalendarDocument:
     newline: str = "\n"
     sections: dict[str, int] = field(default_factory=dict)  # heading -> line idx
     entries: dict[str, CalendarEntry] = field(default_factory=dict)
+    agenda_items: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -344,6 +357,17 @@ def validate_entry_fields(fields: dict, *, context: str) -> list[str]:
         if bad:
             errors.append(
                 f"{context}: history[{index}] has unknown key(s): {', '.join(sorted(bad))}")
+    display_rounds = fields.get("display_rounds", [])
+    if not isinstance(display_rounds, list):
+        errors.append(f"{context}: display_rounds must be a list")
+    else:
+        for index, item in enumerate(display_rounds):
+            if not isinstance(item, str) or not item.strip():
+                errors.append(
+                    f"{context}: display_rounds[{index}] must be a non-empty string")
+            elif "\n" in item or "\r" in item or "-->" in item:
+                errors.append(
+                    f"{context}: display_rounds[{index}] must be one line and cannot contain '-->'")
     if state == "scheduled":
         if not str(fields.get("starts_at") or "").strip():
             errors.append(
@@ -363,6 +387,94 @@ def validate_entry_fields(fields: dict, *, context: str) -> list[str]:
     if fields.get("reschedule_to") and not str(fields.get("reschedule_timezone") or "").strip():
         errors.append(f"{context}: reschedule_to requires reschedule_timezone")
     return errors
+
+
+def _parse_agenda_items(lines: list[str]) -> tuple[list[dict], list[str]]:
+    """Read validated private-only/unlinked facts without making them applications.
+
+    These compact comments let the generated Markdown and HTML share unresolved
+    but operationally important interviews and actions. Tools read them but do
+    not rewrite them; deleting or editing one is an explicit owner/product edit.
+    """
+    items: list[dict] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+    for index, line in enumerate(lines):
+        marker = _line_text(line).strip()
+        if not marker.startswith(AGENDA_MARKER_OPEN):
+            continue
+        context = f"line {index + 1}"
+        if not marker.endswith(MARKER_CLOSE):
+            errors.append(f"{context}: jobhunt-agenda marker must fit on one line")
+            continue
+        payload_text = marker[len(AGENDA_MARKER_OPEN):-len(MARKER_CLOSE)].strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError as exc:
+            errors.append(f"{context}: jobhunt-agenda payload is not valid JSON: {exc}")
+            continue
+        if not isinstance(payload, dict):
+            errors.append(f"{context}: jobhunt-agenda payload must be a mapping")
+            continue
+        unknown = sorted(
+            key for key in payload
+            if key not in _AGENDA_REQUIRED_KEYS + _AGENDA_OPTIONAL_KEYS
+        )
+        if unknown:
+            errors.append(
+                f"{context}: jobhunt-agenda has unknown key(s): {', '.join(unknown)}")
+        for key in _AGENDA_REQUIRED_KEYS:
+            if not isinstance(payload.get(key), str) or not payload[key].strip():
+                errors.append(
+                    f"{context}: jobhunt-agenda requires non-empty string '{key}'")
+        item_id = str(payload.get("id") or "")
+        if item_id and not _AGENDA_ID_RE.match(item_id):
+            errors.append(f"{context}: jobhunt-agenda id must match agenda-<lowercase-slug>")
+        if item_id in seen:
+            errors.append(f"{context}: duplicate jobhunt-agenda id '{item_id}'")
+        seen.add(item_id)
+        kind = payload.get("kind")
+        if kind not in _AGENDA_KINDS:
+            errors.append(
+                f"{context}: jobhunt-agenda kind must be one of {', '.join(_AGENDA_KINDS)}")
+        for key in ("round", "action", "timezone", "details"):
+            value = payload.get(key)
+            if value is not None and not isinstance(value, str):
+                errors.append(f"{context}: jobhunt-agenda {key} must be a string or null")
+            if isinstance(value, str) and ("\n" in value or "\r" in value or "-->" in value):
+                errors.append(
+                    f"{context}: jobhunt-agenda {key} must be one line and cannot contain '-->'")
+        for key, pattern in (
+            ("starts_at", _DATETIME_RE),
+            ("ends_at", _DATETIME_RE),
+            ("due_at", _DATE_OR_DATETIME_RE),
+        ):
+            value = payload.get(key)
+            if value is not None and (not isinstance(value, str) or not pattern.match(value)):
+                errors.append(f"{context}: jobhunt-agenda {key} has invalid ISO-8601 shape")
+        timezone_name = payload.get("timezone")
+        if isinstance(timezone_name, str) and timezone_name and not _validate_timezone(timezone_name):
+            errors.append(f"{context}: jobhunt-agenda timezone must be an IANA timezone name")
+        if kind == "interview":
+            if not payload.get("starts_at") or not timezone_name:
+                errors.append(
+                    f"{context}: interview agenda item requires starts_at and timezone")
+            if not str(payload.get("round") or "").strip():
+                errors.append(f"{context}: interview agenda item requires round")
+        if kind == "action" and not str(payload.get("action") or "").strip():
+            errors.append(f"{context}: action agenda item requires action")
+        if payload.get("ends_at") and not payload.get("starts_at"):
+            errors.append(f"{context}: jobhunt-agenda ends_at requires starts_at")
+        if payload.get("starts_at") and payload.get("ends_at"):
+            try:
+                starts = datetime.fromisoformat(str(payload["starts_at"]).replace("Z", "+00:00"))
+                ends = datetime.fromisoformat(str(payload["ends_at"]).replace("Z", "+00:00"))
+                if ends <= starts:
+                    errors.append(f"{context}: jobhunt-agenda ends_at must be after starts_at")
+            except (TypeError, ValueError):
+                pass
+        items.append(dict(payload))
+    return items, errors
 
 
 def _line_text(line: str) -> str:
@@ -393,6 +505,8 @@ def parse_calendar(text: str) -> CalendarDocument:
 
     _company_span, company_errors = _company_view_span(doc.lines)
     doc.errors.extend(company_errors)
+    doc.agenda_items, agenda_errors = _parse_agenda_items(doc.lines)
+    doc.errors.extend(agenda_errors)
 
     for index, line in enumerate(doc.lines):
         stripped = _line_text(line)
@@ -501,6 +615,7 @@ def parse_calendar(text: str) -> CalendarDocument:
                 reschedule_timezone=payload.get("reschedule_timezone"),
                 cancel=bool(payload.get("cancel", False)),
                 history=tuple(item for item in history if isinstance(item, dict)),
+                display_rounds=tuple(payload.get("display_rounds") or ()),
                 checked=bullet.group(1).lower() == "x",
                 text=bullet.group(2),
                 section=current_section,
@@ -525,6 +640,8 @@ def render_entry(fields: dict, *, checked: bool, text: str, newline: str = "\n")
     ):
         if fields.get(key) not in (None, ""):
             payload[key] = fields[key]
+    if fields.get("display_rounds"):
+        payload["display_rounds"] = list(fields["display_rounds"])
     if fields.get("cancel", False):
         payload["cancel"] = True
     history = fields.get("history") or []
@@ -698,7 +815,7 @@ def _interview_time(
     start_text = start.strftime("%I:%M %p").lstrip("0")
     zone_text = start.tzname() or timezone_name or ""
     if end is None:
-        return f"{start_text}{f' {zone_text}' if zone_text else ''}"
+        return f"{start_text}{f' {zone_text}' if zone_text else ''} · end not recorded"
     end_text = end.strftime("%I:%M %p").lstrip("0")
     return f"{start_text}–{end_text}{f' {zone_text}' if zone_text else ''}"
 
@@ -714,7 +831,7 @@ def _interview_sort_key(interview: dict) -> tuple[int, str]:
 
 def _render_interview_table(rows: list[dict]) -> list[str]:
     lines = [
-        "| Date | Time | Company | Role | Round |",
+        "| Date | Time | Company | Role | Prepare for |",
         "|---|---|---|---|---|",
     ]
     for row in rows:
@@ -732,28 +849,47 @@ def _render_interview_table(rows: list[dict]) -> list[str]:
     return lines
 
 
-def render_company_view(companies: list[dict]) -> str:
-    """Render a human-first interview agenda plus folded tracker detail.
+def _action_sort_key(action: dict) -> tuple[int, str, str, str]:
+    """Stable owner-action order: immediate work, then dated work."""
+    due = str(action.get("due_at") or action.get("follow_up_at") or "").strip()
+    return (
+        0 if not due else 1,
+        due,
+        str(action.get("company") or "").casefold(),
+        str(action.get("role") or "").casefold(),
+    )
 
-    ``companies`` is already filtered to derived ``in_progress`` applications.
-    Confirmed occurrences lead as one aligned table row each. Past interviews and
-    status-heavy application detail remain available, but folded so the owner can
-    answer "what should I prepare for next?" without scanning implementation data.
-    Provider IDs are deliberately absent: callers pass only the source kind and a
-    link back to the canonical notes/meta file.
-    """
+
+def _render_action_table(rows: list[dict]) -> list[str]:
+    """One owner action per row; do not mix these with confirmed interviews."""
     lines = [
-        "## Companies in progress",
-        "",
-        "_Prepare from the confirmed schedule below. One interview block is one row; "
-        "edit application progress or notes rather than this generated view._",
-        "",
+        "| When | Company | Role | Action |",
+        "|---|---|---|---|",
     ]
-    if not companies:
-        lines.append("_None currently._")
-        return "\n".join(lines) + "\n"
+    for row in sorted(rows, key=_action_sort_key):
+        details = str(row.get("details") or "")
+        role = _markdown_text(str(row.get("role") or "Tracked role"))
+        linked_role = f"[{role}](<{details}>)" if details else role
+        when = _display_date_or_datetime(
+            row.get("due_at") or row.get("follow_up_at"), row.get("timezone")) \
+            or "Now"
+        action = str(row.get("action") or "").strip() or _STATE_LABELS.get(
+            str(row.get("state") or ""), "Complete next step")
+        lines.append(
+            "| "
+            f"{_markdown_text(when)} | "
+            f"{_markdown_text(str(row.get('company') or 'Company'))} | "
+            f"{linked_role} | {_markdown_text(action)} |"
+        )
+    return lines
 
+
+def _company_view_rows(
+    companies: list[dict], supplemental_items: list[dict] | tuple[dict, ...] = (),
+) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    """Flatten canonical projection data for both Markdown and HTML views."""
     interview_rows: list[dict] = []
+    action_rows: list[dict] = []
     role_rows: list[dict] = []
     latest_updates: list[dict] = []
     for company in companies:
@@ -765,22 +901,54 @@ def render_company_view(companies: list[dict]) -> str:
             for role in application.get("roles") or []:
                 role_rows.append({"company": company_name, **role})
                 for interview in role.get("interviews") or []:
-                    interview_rows.append({
+                    row = {
                         "company": company_name,
                         "role": role.get("role"),
                         "round": (
                             interview.get("label")
                             or role.get("label")
-                            or _PHASE_LABELS.get(str(role.get("phase") or ""), "Interview")
+                            or _PHASE_LABELS.get(
+                                str(role.get("phase") or ""), "Interview")
                         ),
                         "details": role.get("details"),
                         **interview,
+                    }
+                    display_rounds = interview.get("display_rounds") or []
+                    if display_rounds:
+                        for display_round in display_rounds:
+                            interview_rows.append({
+                                **row,
+                                "round": (
+                                    f"{display_round} — exact subslot not recorded "
+                                    "within organizer block"
+                                ),
+                            })
+                    else:
+                        interview_rows.append(row)
+                for action in role.get("actions") or []:
+                    action_rows.append({
+                        "company": company_name,
+                        "role": role.get("role"),
+                        "details": role.get("details"),
+                        **action,
                     })
+    for item in supplemental_items:
+        row = dict(item)
+        if row.get("kind") == "interview":
+            row["round"] = row.get("round") or "Interview"
+            interview_rows.append(row)
+        elif row.get("kind") == "action":
+            row["state"] = "action_required"
+            action_rows.append(row)
+    return interview_rows, action_rows, role_rows, latest_updates
 
+
+def _split_interview_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split confirmed occurrences into chronological future and folded past rows."""
     now_utc = datetime.now(timezone.utc)
     upcoming: list[dict] = []
     past: list[dict] = []
-    for interview in sorted(interview_rows, key=_interview_sort_key):
+    for interview in sorted(rows, key=_interview_sort_key):
         parsed = _zoned_datetime(interview.get("starts_at"), interview.get("timezone"))
         if parsed is not None:
             if parsed.tzinfo is None:
@@ -791,14 +959,14 @@ def render_company_view(companies: list[dict]) -> str:
         target.append(interview)
 
     round_counts: dict[tuple[str, str, str], int] = {}
-    for interview in interview_rows:
+    for interview in rows:
         key = (
             str(interview.get("company") or ""),
             str(interview.get("role") or ""),
             str(interview.get("round") or ""),
         )
         round_counts[key] = round_counts.get(key, 0) + 1
-    for interview in interview_rows:
+    for interview in rows:
         key = (
             str(interview.get("company") or ""),
             str(interview.get("role") or ""),
@@ -807,8 +975,42 @@ def render_company_view(companies: list[dict]) -> str:
         action = str(interview.get("action") or "").strip()
         if round_counts.get(key, 0) > 1 and action:
             interview["round"] = re.sub(r"^Attend\s+", "", action, flags=re.IGNORECASE)
+    return upcoming, past
 
-    lines.extend(["### Upcoming interviews", ""])
+
+def render_company_view(
+    companies: list[dict], supplemental_items: list[dict] | tuple[dict, ...] = (),
+) -> str:
+    """Render a human-first interview agenda plus folded tracker detail.
+
+    ``companies`` is already filtered to derived ``in_progress`` applications.
+    Owner actions lead in a compact table, followed by confirmed occurrences as
+    one aligned row each. Past interviews and status-heavy application detail
+    remain available, but folded so the owner can act before scanning the schedule.
+    Provider IDs are deliberately absent: callers pass only the source kind and a
+    link back to the canonical notes/meta file.
+    """
+    lines = [
+        "## Interview prep",
+        "",
+        "_Handle Do now first. Upcoming interviews follow one confirmed occurrence per row; open a role for notes._",
+        "",
+    ]
+    if not companies and not supplemental_items:
+        lines.append("_None currently._")
+        return "\n".join(lines) + "\n"
+
+    interview_rows, action_rows, role_rows, latest_updates = _company_view_rows(
+        companies, supplemental_items)
+    upcoming, past = _split_interview_rows(interview_rows)
+
+    lines.extend(["### Do now", ""])
+    if action_rows:
+        lines.extend(_render_action_table(action_rows))
+    else:
+        lines.append("_No owner actions right now._")
+
+    lines.extend(["", "### Upcoming interviews", ""])
     if upcoming:
         lines.extend(_render_interview_table(upcoming))
     else:
@@ -828,7 +1030,7 @@ def render_company_view(companies: list[dict]) -> str:
     lines.extend([
         "",
         "<details>",
-        "<summary><strong>Other active roles and latest updates</strong></summary>",
+        "<summary><strong>Pipeline and company updates</strong></summary>",
         "",
         "| Company | Role | Current step | State |",
         "|---|---|---|---|",
@@ -871,6 +1073,141 @@ def render_company_view(companies: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _html_relative_href(value: object) -> str | None:
+    """A local detail link only; generated HTML never accepts external URLs."""
+    text = str(value or "").strip()
+    if not text or text.startswith(("/", "\\")) or re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", text):
+        return None
+    return text.replace("\\", "/")
+
+
+def _html_role_link(role: object, details: object) -> str:
+    label = html.escape(str(role or "Tracked role"))
+    href = _html_relative_href(details)
+    if href is None:
+        return label
+    return f'<a href="{html.escape(href, quote=True)}">{label}</a>'
+
+
+def _html_table(
+    headers: tuple[str, ...], rows: list[tuple[str, ...]], *, caption: str,
+) -> list[str]:
+    cells = "".join(
+        f'<th scope="col">{html.escape(header)}</th>' for header in headers)
+    lines = [
+        f'<div class="table-wrap" role="region" tabindex="0" '
+        f'aria-label="{html.escape(caption, quote=True)}">',
+        "<table>",
+        f'<caption class="visually-hidden">{html.escape(caption)}</caption>',
+        f"<thead><tr>{cells}</tr></thead>",
+        "<tbody>",
+    ]
+    for row in rows:
+        lines.append(
+            "<tr>" + "".join(
+                f'<td data-label="{html.escape(header, quote=True)}">{cell}</td>'
+                for header, cell in zip(headers, row)
+            ) + "</tr>")
+    lines.extend(["</tbody>", "</table>", "</div>"])
+    return lines
+
+
+def render_company_view_html(
+    companies: list[dict], supplemental_items: list[dict] | tuple[dict, ...] = (),
+) -> str:
+    """Render the optional offline companion from the same canonical projection."""
+    interview_rows, action_rows, role_rows, latest_updates = _company_view_rows(
+        companies, supplemental_items)
+    upcoming, past = _split_interview_rows(interview_rows)
+    lines = [
+        "<!doctype html>",
+        "<html lang=\"en\">",
+        "<head>",
+        "<meta charset=\"utf-8\">",
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+        "<title>Interview prep</title>",
+        "<style>",
+        ":root { color-scheme: light dark; --text: #101828; --muted: #475467; --border: #d0d5dd; --surface: #fff; --card: #f9fafb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }",
+        "@media (prefers-color-scheme: dark) { :root { --text: #f2f4f7; --muted: #d0d5dd; --border: #475467; --surface: #101828; --card: #1d2939; } }",
+        "body { max-width: 1100px; margin: 0 auto; padding: 24px; line-height: 1.45; color: var(--text); background: var(--surface); }",
+        "h1 { margin-bottom: .2rem; } .lede { margin-top: 0; color: var(--muted); }",
+        "table { width: 100%; border-collapse: collapse; } th, td { padding: .65rem .75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); } th { white-space: nowrap; } td:nth-child(1), td:nth-child(2) { white-space: nowrap; font-variant-numeric: tabular-nums; }",
+        ".visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }",
+        ".table-wrap:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid #2e90fa; outline-offset: 2px; }",
+        "details { margin-top: 1.5rem; padding: .75rem 1rem; border: 1px solid var(--border); border-radius: .5rem; } summary { cursor: pointer; font-weight: 650; }",
+        "@media (max-width: 720px) { body { padding: 16px; } .table-wrap { overflow: visible; } table, tbody, tr, td { display: block; width: auto; } thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); } tr { margin: 0 0 .9rem; padding: .35rem .65rem; border: 1px solid var(--border); border-radius: .65rem; background: var(--card); } td, td:nth-child(1), td:nth-child(2) { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: .6rem; padding: .38rem 0; border: 0; white-space: normal; } td::before { content: attr(data-label); color: var(--muted); font-weight: 650; } }",
+        "</style>",
+        "</head>",
+        "<body>",
+        "<!-- Generated from canonical application progress and standardized notes. -->",
+        "<h1>Interview prep</h1>",
+        "<p class=\"lede\">Handle Do now first. Upcoming interviews follow one confirmed occurrence per row.</p>",
+        "<h2>Do now</h2>",
+    ]
+    if action_rows:
+        lines.extend(_html_table(("When", "Company", "Role", "Action"), [
+            (
+                html.escape(_display_date_or_datetime(
+                    row.get("due_at") or row.get("follow_up_at"), row.get("timezone")) or "Now"),
+                html.escape(str(row.get("company") or "Company")),
+                _html_role_link(row.get("role"), row.get("details")),
+                html.escape(str(row.get("action") or "").strip() or _STATE_LABELS.get(
+                    str(row.get("state") or ""), "Complete next step")),
+            ) for row in sorted(action_rows, key=_action_sort_key)
+        ], caption="Actions to do now"))
+    else:
+        lines.append("<p>No owner actions right now.</p>")
+    lines.append("<h2>Upcoming interviews</h2>")
+    if upcoming:
+        lines.extend(_html_table(("Date", "Time", "Company", "Role", "Prepare for"), [
+            (
+                html.escape(_interview_date(row.get("starts_at"), row.get("timezone"))),
+                html.escape(_interview_time(row.get("starts_at"), row.get("ends_at"), row.get("timezone"))),
+                html.escape(str(row.get("company") or "Company")),
+                _html_role_link(row.get("role"), row.get("details")),
+                html.escape(str(row.get("round") or "Interview")),
+            ) for row in upcoming
+        ], caption="Upcoming interviews"))
+    else:
+        lines.append("<p>No confirmed future interviews.</p>")
+    if past:
+        lines.extend(["<details>", "<summary>Past confirmed interviews</summary>"])
+        lines.extend(_html_table(("Date", "Time", "Company", "Role", "Prepare for"), [
+            (
+                html.escape(_interview_date(row.get("starts_at"), row.get("timezone"))),
+                html.escape(_interview_time(row.get("starts_at"), row.get("ends_at"), row.get("timezone"))),
+                html.escape(str(row.get("company") or "Company")),
+                _html_role_link(row.get("role"), row.get("details")),
+                html.escape(str(row.get("round") or "Interview")),
+            ) for row in past
+        ], caption="Past confirmed interviews"))
+        lines.append("</details>")
+    lines.extend(["<details>", "<summary>Pipeline and company updates</summary>"])
+    lines.extend(["<h2>Active roles</h2>"])
+    lines.extend(_html_table(("Company", "Role", "Current step", "State"), [
+        (
+            html.escape(str(row.get("company") or "Company")),
+            _html_role_link(row.get("role"), row.get("details")),
+            html.escape(str(row.get("label") or "").strip() or _PHASE_LABELS.get(
+                str(row.get("phase") or ""), "Next step")),
+            html.escape(_STATE_LABELS.get(
+                str(row.get("state") or ""), str(row.get("state") or "unknown").replace("_", " ").title())),
+        ) for row in sorted(role_rows, key=lambda item: (
+            str(item.get("company") or "").casefold(), str(item.get("role") or "").casefold()))
+    ], caption="Active application roles"))
+    if latest_updates:
+        lines.extend(["<h2>Latest company updates</h2>", "<ul>"])
+        for update in sorted(latest_updates, key=lambda item: str(item.get("company") or "").casefold()):
+            summary = html.escape(str(update.get("summary") or "Update recorded"))
+            details = _html_relative_href(update.get("details"))
+            source = html.escape(_source_label(str(update.get("source_kind") or "metadata")))
+            link = f' <a href="{html.escape(details, quote=True)}">{source}</a>' if details else f" {source}"
+            lines.append(f"<li><strong>{html.escape(str(update.get('company') or 'Company'))}:</strong> {summary} ·{link}</li>")
+        lines.append("</ul>")
+    lines.extend(["</details>", "</body>", "</html>", ""])
+    return "\n".join(lines)
+
+
 def _splice_company_view(
     lines: list[str], *, body: str, newline: str,
 ) -> tuple[list[str], list[str]]:
@@ -884,6 +1221,24 @@ def _splice_company_view(
     rendered.append(COMPANY_VIEW_END + newline)
     if span is not None:
         start, end = span
+        earlier_details = next(
+            (index for index, line in enumerate(lines[:start])
+             if _line_text(line).strip() == "<details>"),
+            None,
+        )
+        if earlier_details is not None:
+            # The primary agenda must precede every collapsed archive/reference
+            # block. Move only the generated bytes; every owner-owned line keeps
+            # its relative order.
+            remaining = lines[:start] + lines[end + 1:]
+            block = list(rendered)
+            if earlier_details and _line_text(remaining[earlier_details - 1]).strip():
+                block.insert(0, newline)
+            block.append(newline)
+            return (
+                remaining[:earlier_details] + block + remaining[earlier_details:],
+                [],
+            )
         return lines[:start] + rendered + lines[end + 1:], []
 
     insert_at = next(
