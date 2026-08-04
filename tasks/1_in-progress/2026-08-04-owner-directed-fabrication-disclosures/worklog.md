@@ -26,3 +26,23 @@
   source validation, freshness, private content tests, and whitespace checks.
 - Committed and pushed the private answer refresh at `c53804d`, then updated private PR #79.
 - Kept exact-claim authorization as the active default; the broader category-level policy remains
+  pending owner input.
+
+## 2026-08-04 — session 3 (Codex)
+
+- Corrected the selected-answer navigation after confirming the original `(Select)` markers were
+  buried inside collapsed answer summaries.
+- Added a singular/plural selected-answer index immediately below every rendered question title
+  while retaining the marker on each selected collapsed summary.
+- Regenerated all eight company-specific answers; Earn Trust lists both selected stories, while the other
+  seven questions each identify one selected story.
+- Added a regression test for exact title-to-index adjacency, singular/plural rendering, and the
+  secondary collapsed-summary marker.
+- Added optional validated `follow_up_questions` plus tagged Markdown bullets for both detailed
+  reference styles, then populated them for every selected story.
+- Tightened the selected quick answers into high-level 1:30-1:42 versions and kept implementation
+  details in the short and long expansions.
+- Passed the full private source validation, regeneration, freshness check, private content test,
+  public unit tests, reconciler, instruction budget, impact-aware gates, and whitespace checks.
+- Preserved the crash-recovered private commit on `interview/03-selected-answer-navigation` and
+  restored the local private `main` pointer to `origin/main` without discarding content.

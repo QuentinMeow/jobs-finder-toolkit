@@ -95,6 +95,13 @@ Use this skill when the user asks to:
   a collapsed outer `<details>` block whose summary uses **Answer N** in bold plus the project
   title in normal weight, then a horizontal rule before nested sections. Nested module summaries
   use *italic* labels and word-count timing; do not bold nested titles.
+- When the human chooses an answer, prefix its `project_title` with `(Select)`. Render a
+  prominent `## Selected answer` or `## Selected answers` index immediately below the file's
+  `#` title, with `(Select)`, answer number, and project title on every selected row. Keep the
+  marker in the collapsed answer summary too; never make the user open sections to find it.
+- Render timeline and problem/action/impact reference entries as tagged bullets for rapid scanning.
+  When `follow_up_questions` are supplied for an answer, render them as a separate collapsed
+  bulleted reference section after the two detailed story-reference sections.
 - When the user wants bullet-style answers, make each bullet start with a short parenthesized tag like `(Signal)`, `(Context)`, `(Judgment)`, or `(Impact)`.
 - Do not force STAR onto `Tell me about yourself`; use `present -> past -> future` there even if
   the rest of the bank is STAR-based. End the concise default answer with a natural bridge that
@@ -485,6 +492,10 @@ Strong answer-module shape:
 - Do the technical expansions add detail instead of repeating the quick answer?
 - Does every project answer end with both required tagged general-story reference styles?
 - Does every `Tell me about yourself` answer include a natural bridge to optional technical depth?
+- If the human selected an answer, is `(Select)` visible both directly below the question title
+  and on that answer's collapsed summary?
+- Are detailed references rendered as tagged bullets, with explicit likely follow-up questions when
+  the human requested interviewer follow-up preparation?
 - Does the neutral source start with `_general_03_<source-stem>` and include every applicable
   company-prefixed alias?
 - Are there at least two distinct project answers?

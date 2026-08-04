@@ -286,6 +286,57 @@ class AnswerBankTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn("# Amazon — Deliver Results", company_output)
 
+    def test_selected_answer_index_is_visible_before_question_navigation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = _valid_data()
+            data["answers"][0]["project_title"] = "(Select) Registry capacity recovery"
+            data["answers"][0]["follow_up_questions"] = [
+                "How did you validate the rollback path?",
+                "What trade-off did you make to ship on time?",
+                "What would you change if you repeated the project?",
+            ]
+            source = self._write_fixture(Path(tmp), data)
+            result = load_and_validate(source)
+            self.assertEqual(result.errors, [])
+            rendered = render_markdown(result.data, source)
+            selected_line = "- **(Select) Answer 1 — Registry capacity recovery**"
+            rendered_title = result.data["outputs"][0]["title"]
+            self.assertIn("## Selected answer\n\n" + selected_line, rendered)
+            self.assertIn(
+                f"# {rendered_title}\n\n## Selected answer\n\n" + selected_line,
+                rendered,
+            )
+            self.assertLess(rendered.index(selected_line), rendered.index("## Most natural question"))
+            self.assertIn(
+                "<summary><strong>Answer 1</strong> — (Select) Registry capacity recovery",
+                rendered,
+            )
+            self.assertIn("<em>Reference</em> · likely follow-up questions", rendered)
+            self.assertIn("- How did you validate the rollback path?", rendered)
+            self.assertIn("- (Context: capacity risk)", rendered)
+
+            data["answers"][1]["project_title"] = "(Select) Migration test framework"
+            source.write_text(
+                yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            result = load_and_validate(source)
+            self.assertEqual(result.errors, [])
+            rendered = render_markdown(result.data, source)
+            rendered_title = result.data["outputs"][0]["title"]
+            self.assertIn(f"# {rendered_title}\n\n## Selected answers", rendered)
+            self.assertIn("- **(Select) Answer 2 — Migration test framework**", rendered)
+
+    def test_follow_up_questions_require_three_question_strings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = _valid_data()
+            data["answers"][0]["follow_up_questions"] = ["What changed?", "Why now?"]
+            source = self._write_fixture(Path(tmp), data)
+            result = load_and_validate(source)
+            self.assertTrue(
+                any("follow_up_questions must contain at least three" in error for error in result.errors)
+            )
+
     def test_human_authorized_disclosure_validates_and_renders_privately(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
