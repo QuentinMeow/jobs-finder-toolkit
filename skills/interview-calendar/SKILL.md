@@ -99,14 +99,20 @@ Map evidence conservatively:
   replacement. Preserve the old local occurrence as superseded.
 - Cancellation without a replacement -> record the cancelled occurrence; never infer rejection.
 
-### Company view for every in-progress application
+### Human-first company and interview view
 
-The private local `calendar.md` also carries one generated company-view row for every application
-whose folder rollup is `in_progress`, including every posting in a multi-role folder. Refresh it
-with the application tracker; do not hand-maintain a second status table.
+The private local `calendar.md` carries one generated view for every application whose folder
+rollup is `in_progress`. Refresh it with the application tracker; do not hand-maintain a second
+status table.
 
-- Show each role's canonical `status` plus `progress.phase`, `progress.state`, and `progress.label`
-  from `meta.yaml`.
+- Lead with the question the owner actually needs answered: which interview to prepare for, when,
+  and for which role. Render one confirmed occurrence per table row with separate date, time,
+  company, role, and round columns; never join multiple events into a sentence or day cell.
+- Put past confirmed occurrences and the full role/status/latest-update projection in collapsed
+  detail blocks. Keep each role's canonical `status`, `progress.phase`, `progress.state`, and
+  `progress.label` from `meta.yaml` there, including every posting in a multi-role folder.
+- Keep the raw tracker-action/schedule sections collapsed as a reference. They must stay complete
+  and machine-readable, but they do not compete visually with the preparation table.
 - Show the latest concise company update and whether it came from explicit human input or matched
   email evidence. Use the tracker's deterministic precedence: newest standardized email-timeline
   outcome/summary, then human `next_action`, then canonical role progress. Prefer a dated

@@ -2705,3 +2705,9 @@
   files: 3
   digest: sha256:9db9732afb4bcd54
   finding: 'Read the complete staged three-file diff. Two handbook/design comment lines clarify that common-message-replies holds paste-ready outreach and application-form copy. The session handover names only generic overlay paths under me/interviews/… and does not name a real employer, identity, school, salary, home path, or private queue item. No personal data.'
+- base: cbf7c5b4
+  reviewed_by: agent
+  date: 2026-08-03
+  files: 12
+  digest: sha256:10b9ffc8689806af
+  finding: none

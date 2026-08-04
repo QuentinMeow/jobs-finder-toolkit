@@ -55,7 +55,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -147,6 +147,9 @@ _Generated from canonical application progress and standardized notes. Edit thos
 _None currently._
 <!-- jobhunt-company-view:end -->
 
+<details>
+<summary><strong>Tracker actions and raw schedule</strong></summary>
+
 ## Action needed
 
 ## Waiting and follow-up
@@ -156,6 +159,8 @@ _None currently._
 ## My notes and personal todos
 
 - [ ] Add anything here; tooling never rewrites unmarked items.
+
+</details>
 """
 
 
@@ -566,19 +571,37 @@ _STATE_LABELS = {
 
 
 def _markdown_text(value: str) -> str:
-    return str(value or "").replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+    return (
+        str(value or "")
+        .replace("\\", "\\\\")
+        .replace("[", "\\[")
+        .replace("]", "\\]")
+        .replace("|", "\\|")
+        .replace("\n", " ")
+    )
 
 
-def _display_datetime(value: str | None, timezone_name: str | None) -> str | None:
-    """Compact agenda timestamp in the entry's explicit timezone."""
+def _zoned_datetime(value: str | None, timezone_name: str | None) -> datetime | None:
+    """Parse an event timestamp and apply its explicit IANA zone when needed."""
     if not value:
         return None
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if timezone_name:
             zone = ZoneInfo(timezone_name)
-            parsed = parsed.replace(tzinfo=zone) if parsed.tzinfo is None else parsed.astimezone(zone)
+            parsed = parsed.replace(tzinfo=zone) if parsed.tzinfo is None \
+                else parsed.astimezone(zone)
+        return parsed
     except (TypeError, ValueError, ZoneInfoNotFoundError):
+        return None
+
+
+def _display_datetime(value: str | None, timezone_name: str | None) -> str | None:
+    """Compact agenda timestamp in the entry's explicit timezone."""
+    if not value:
+        return None
+    parsed = _zoned_datetime(value, timezone_name)
+    if parsed is None:
         return str(value)
     date_text = parsed.strftime("%a, %b %d").replace(" 0", " ")
     time_text = parsed.strftime("%I:%M %p").lstrip("0")
@@ -648,21 +671,6 @@ def default_entry_text(
     return " · ".join(bits)
 
 
-def _display_progress_update(value: str | None) -> str:
-    """Human-readable but deterministic timestamp for the generated view."""
-    if not value:
-        return "Not recorded"
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return str(value)
-    if "T" not in str(value):
-        return parsed.strftime("%b %d, %Y").replace(" 0", " ")
-    zone = parsed.tzname() or ""
-    rendered = parsed.strftime("%b %d, %Y · %I:%M %p").replace(" 0", " ")
-    return f"{rendered}{f' {zone}' if zone else ''}"
-
-
 def _source_label(kind: str) -> str:
     return {
         "email": "Email evidence",
@@ -673,60 +681,193 @@ def _source_label(kind: str) -> str:
     }.get(str(kind or "").strip(), "Application metadata")
 
 
+def _interview_date(value: str | None, timezone_name: str | None) -> str:
+    parsed = _zoned_datetime(value, timezone_name)
+    if parsed is None:
+        return _markdown_text(str(value or "Date needs review"))
+    return parsed.strftime("%a, %b %d, %Y").replace(" 0", " ")
+
+
+def _interview_time(
+    starts_at: str | None, ends_at: str | None, timezone_name: str | None,
+) -> str:
+    start = _zoned_datetime(starts_at, timezone_name)
+    end = _zoned_datetime(ends_at, timezone_name)
+    if start is None:
+        return "Time needs review"
+    start_text = start.strftime("%I:%M %p").lstrip("0")
+    zone_text = start.tzname() or timezone_name or ""
+    if end is None:
+        return f"{start_text}{f' {zone_text}' if zone_text else ''}"
+    end_text = end.strftime("%I:%M %p").lstrip("0")
+    return f"{start_text}–{end_text}{f' {zone_text}' if zone_text else ''}"
+
+
+def _interview_sort_key(interview: dict) -> tuple[int, str]:
+    parsed = _zoned_datetime(interview.get("starts_at"), interview.get("timezone"))
+    if parsed is None:
+        return (1, str(interview.get("starts_at") or "~"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return (0, parsed.astimezone(timezone.utc).isoformat())
+
+
+def _render_interview_table(rows: list[dict]) -> list[str]:
+    lines = [
+        "| Date | Time | Company | Role | Round |",
+        "|---|---|---|---|---|",
+    ]
+    for row in rows:
+        details = str(row.get("details") or "")
+        role = _markdown_text(str(row.get("role") or "Tracked role"))
+        linked_role = f"[{role}](<{details}>)" if details else role
+        lines.append(
+            "| "
+            f"{_interview_date(row.get('starts_at'), row.get('timezone'))} | "
+            f"{_interview_time(row.get('starts_at'), row.get('ends_at'), row.get('timezone'))} | "
+            f"{_markdown_text(str(row.get('company') or 'Company'))} | "
+            f"{linked_role} | "
+            f"{_markdown_text(str(row.get('round') or 'Interview'))} |"
+        )
+    return lines
+
+
 def render_company_view(companies: list[dict]) -> str:
-    """Render the read-only company projection placed between view markers.
+    """Render a human-first interview agenda plus folded tracker detail.
 
     ``companies`` is already filtered to derived ``in_progress`` applications.
-    Each company contains applications; each application may provide one latest
-    standardized-notes update plus all of its role progress rows. Provider IDs
-    are deliberately absent: callers pass only the source kind and a link back
-    to the canonical notes/meta file.
+    Confirmed occurrences lead as one aligned table row each. Past interviews and
+    status-heavy application detail remain available, but folded so the owner can
+    answer "what should I prepare for next?" without scanning implementation data.
+    Provider IDs are deliberately absent: callers pass only the source kind and a
+    link back to the canonical notes/meta file.
     """
     lines = [
         "## Companies in progress",
         "",
-        "_Generated from canonical application progress and standardized notes. "
-        "Edit those sources, not this block._",
+        "_Prepare from the confirmed schedule below. One interview block is one row; "
+        "edit application progress or notes rather than this generated view._",
         "",
     ]
     if not companies:
         lines.append("_None currently._")
         return "\n".join(lines) + "\n"
 
-    for company_index, company in enumerate(companies):
-        if company_index:
-            lines.append("")
-        lines.append(f"### {_markdown_text(str(company.get('company') or 'Company'))}")
-        lines.append("")
+    interview_rows: list[dict] = []
+    role_rows: list[dict] = []
+    latest_updates: list[dict] = []
+    for company in companies:
+        company_name = str(company.get("company") or "Company")
         for application in company.get("applications") or []:
             latest_note = application.get("latest_note")
             if isinstance(latest_note, dict):
-                summary = _markdown_text(str(latest_note.get("summary") or "Update recorded"))
-                heading = _markdown_text(str(latest_note.get("heading") or "Latest update"))
-                details = str(latest_note.get("details") or "")
-                source_label = _source_label(
-                    str(latest_note.get("source_kind") or "metadata"))
-                source = f"[{source_label}](<{details}>)" if details else source_label
-                lines.append(
-                    f"- **Latest company update:** {summary} — {heading} · Source: {source}")
+                latest_updates.append({"company": company_name, **latest_note})
             for role in application.get("roles") or []:
-                role_name = _markdown_text(str(role.get("role") or "Tracked role"))
-                details = str(role.get("details") or "")
-                subject = f"[{role_name}](<{details}>)" if details else role_name
-                phase = str(role.get("label") or "").strip() or _PHASE_LABELS.get(
-                    str(role.get("phase") or ""), "Next step")
-                state = _STATE_LABELS.get(
-                    str(role.get("state") or ""),
-                    str(role.get("state") or "unknown").replace("_", " ").title(),
-                )
-                posting_status = str(role.get("status") or "").replace("_", " ").title()
-                status_suffix = f" · Posting: {posting_status}" if posting_status else ""
-                lines.append(
-                    f"- {subject} — {_markdown_text(phase)} · {_markdown_text(state)}{status_suffix}")
-                updated = _display_progress_update(role.get("updated_at"))
-                source_label = _source_label(str(role.get("source_kind") or ""))
-                source = f"[{source_label}](<{details}>)" if details else source_label
-                lines.append(f"  - Latest: {updated} · Source: {source}")
+                role_rows.append({"company": company_name, **role})
+                for interview in role.get("interviews") or []:
+                    interview_rows.append({
+                        "company": company_name,
+                        "role": role.get("role"),
+                        "round": (
+                            interview.get("label")
+                            or role.get("label")
+                            or _PHASE_LABELS.get(str(role.get("phase") or ""), "Interview")
+                        ),
+                        "details": role.get("details"),
+                        **interview,
+                    })
+
+    now_utc = datetime.now(timezone.utc)
+    upcoming: list[dict] = []
+    past: list[dict] = []
+    for interview in sorted(interview_rows, key=_interview_sort_key):
+        parsed = _zoned_datetime(interview.get("starts_at"), interview.get("timezone"))
+        if parsed is not None:
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            target = upcoming if parsed.astimezone(timezone.utc) >= now_utc else past
+        else:
+            target = upcoming
+        target.append(interview)
+
+    round_counts: dict[tuple[str, str, str], int] = {}
+    for interview in interview_rows:
+        key = (
+            str(interview.get("company") or ""),
+            str(interview.get("role") or ""),
+            str(interview.get("round") or ""),
+        )
+        round_counts[key] = round_counts.get(key, 0) + 1
+    for interview in interview_rows:
+        key = (
+            str(interview.get("company") or ""),
+            str(interview.get("role") or ""),
+            str(interview.get("round") or ""),
+        )
+        action = str(interview.get("action") or "").strip()
+        if round_counts.get(key, 0) > 1 and action:
+            interview["round"] = re.sub(r"^Attend\s+", "", action, flags=re.IGNORECASE)
+
+    lines.extend(["### Upcoming interviews", ""])
+    if upcoming:
+        lines.extend(_render_interview_table(upcoming))
+    else:
+        lines.append("_No confirmed future interviews._")
+
+    if past:
+        lines.extend([
+            "",
+            "<details>",
+            "<summary><strong>Past confirmed interviews</strong></summary>",
+            "",
+            *_render_interview_table(past),
+            "",
+            "</details>",
+        ])
+
+    lines.extend([
+        "",
+        "<details>",
+        "<summary><strong>Other active roles and latest updates</strong></summary>",
+        "",
+        "| Company | Role | Current step | State |",
+        "|---|---|---|---|",
+    ])
+    for role in sorted(
+        role_rows,
+        key=lambda item: (
+            str(item.get("company") or "").casefold(),
+            str(item.get("role") or "").casefold(),
+        ),
+    ):
+        role_name = _markdown_text(str(role.get("role") or "Tracked role"))
+        details = str(role.get("details") or "")
+        subject = f"[{role_name}](<{details}>)" if details else role_name
+        phase = str(role.get("label") or "").strip() or _PHASE_LABELS.get(
+            str(role.get("phase") or ""), "Next step")
+        state = _STATE_LABELS.get(
+            str(role.get("state") or ""),
+            str(role.get("state") or "unknown").replace("_", " ").title(),
+        )
+        lines.append(
+            f"| {_markdown_text(str(role.get('company') or 'Company'))} | {subject} | "
+            f"{_markdown_text(phase)} | {_markdown_text(state)} |"
+        )
+
+    if latest_updates:
+        lines.extend(["", "#### Latest company updates", ""])
+        for update in sorted(
+            latest_updates, key=lambda item: str(item.get("company") or "").casefold()
+        ):
+            summary = _markdown_text(str(update.get("summary") or "Update recorded"))
+            details = str(update.get("details") or "")
+            source_label = _source_label(str(update.get("source_kind") or "metadata"))
+            source = f"[{source_label}](<{details}>)" if details else source_label
+            lines.append(
+                f"- **{_markdown_text(str(update.get('company') or 'Company'))}:** "
+                f"{summary} · {source}"
+            )
+    lines.extend(["", "</details>"])
     return "\n".join(lines) + "\n"
 
 
@@ -752,6 +893,15 @@ def _splice_company_view(
     )
     if insert_at is None:
         return lines, [f"cannot insert company view: missing '{SECTION_ACTION}'"]
+    # The human-facing company view must stay outside the optional collapsed
+    # mechanics wrapper that contains the four raw tracker sections.
+    for candidate in range(insert_at - 1, -1, -1):
+        marker = _line_text(lines[candidate]).strip()
+        if marker == "</details>":
+            break
+        if marker == "<details>":
+            insert_at = candidate
+            break
     block = list(rendered)
     if insert_at and _line_text(lines[insert_at - 1]).strip():
         block.insert(0, newline)

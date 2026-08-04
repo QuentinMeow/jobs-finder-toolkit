@@ -65,7 +65,7 @@ canaries:
     expected_behavior:
       - "Runs a full all-time four-folder inventory and one content-free `store-coverage --in-progress-applications` pass plus domain/alias families across complete raw bodies and participants, including folder provenance and a zero-match coverage row."
       - "Keeps the per-role match unresolved but adds one deduplicated company-level latest update: availability submitted and awaiting schedule, sourced to email."
-      - "Refreshes one generated company-view row containing both roles and their canonical stages, while preserving hand-written calendar content."
+      - "Refreshes the generated view with one confirmed interview per aligned date/time/company/role/round row; because this fixture has no confirmed occurrence, it shows none and keeps both roles plus their canonical stages in folded detail while preserving hand-written content."
       - "Creates no Outlook event or availability holds because no exact confirmed occurrence exists."
     failure_modes:
       - "Skips Deleted Items, uses only subjects/previews, silently assigns the receipt to both roles, or creates proposed-time Outlook events."
@@ -85,6 +85,7 @@ canaries:
     expected_behavior:
       - "Searches the bounded Outlook window and verifies exactly three canonical organizer events; leaves all three unchanged and creates no personal mirrors."
       - "Creates three distinct local occurrences and stores three unique ordered IDs in `progress.calendar_items`, using `--add-occurrence` for the second and third blocks even though two share a date."
+      - "Shows all three blocks as separate rows in the generated date/time/company/role/round preparation table, including both blocks on Wednesday."
       - "Keeps aggregate role progress `scheduled` while any later block remains and advances to `awaiting_result` only after the final occurrence completes."
       - "Refreshes and checks the local calendar with no duplicate or orphan entry."
     failure_modes:

@@ -498,15 +498,14 @@ class ProgressCalendarTests(unittest.TestCase):
         text = first.decode("utf-8")
         self.assertEqual(text.count(COMPANY_VIEW_START), 1)
         self.assertEqual(text.count(COMPANY_VIEW_END), 1)
-        self.assertEqual(text.count("### Example Corp"), 1)
+        self.assertEqual(text.count("| Company | Role | Current step | State |"), 1)
         self.assertIn("Backend Engineer", text)
         self.assertIn("Platform Engineer", text)
         self.assertNotIn("Excluded Role", text)
         self.assertEqual(
             text.count("Availability submitted; awaiting a confirmed time."), 1)
-        self.assertIn("Source: [Email timeline]", text)
-        self.assertIn("Source: [Email evidence]", text)
-        self.assertIn("Source: [Manual tracker update]", text)
+        self.assertIn("[Email timeline]", text)
+        self.assertIn("Other active roles and latest updates", text)
         self.assertNotIn("acct-01/", text)
         self.assertIn("my own note — tooling must never touch this line", text)
 
@@ -550,16 +549,64 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertEqual(write.returncode, 0, write.stderr)
         text = self.calendar.read_text()
         self.assertIn(
-            "**Latest company update:** Availability submitted; wait for the "
-            "recruiter to confirm. — Date not recorded · Source: [Human]",
+            "**Alpha Corp:** Availability submitted; wait for the "
+            "recruiter to confirm. · [Human]",
             text,
         )
         self.assertIn(
-            "**Latest company update:** Infrastructure Engineer: Technical "
-            "Interview — Scheduled. — 2026-07-29T18:00:00Z · Source: "
-            "[Application metadata]",
+            "**Beta Corp:** Infrastructure Engineer: Technical Interview — "
+            "Scheduled. · [Application metadata]",
             text,
         )
+
+    def test_company_view_aligns_one_interview_per_row_and_folds_past_events(self):
+        slug = "example-corp-multi-20260720"
+        upcoming_one = "cal-example-corp-multi-01"
+        upcoming_two = "cal-example-corp-multi-02"
+        past = "cal-example-corp-multi-03"
+        self._place("in_progress", slug, [_job(
+            "Backend Engineer", "in_progress", "JD-backend.md",
+            {
+                "phase": "interview_loop",
+                "state": "scheduled",
+                "label": "Virtual onsite",
+                "calendar_items": [upcoming_one, upcoming_two, past],
+            },
+        )])
+        blocks = []
+        for entry_id, starts_at, ends_at, action in (
+            (upcoming_one, "2099-08-10T13:00:00-07:00", "2099-08-10T14:00:00-07:00",
+             "Attend coding interview"),
+            (upcoming_two, "2099-08-10T15:30:00-07:00", "2099-08-10T16:30:00-07:00",
+             "Attend architecture interview"),
+            (past, "2000-01-05T09:00:00-08:00", "2000-01-05T10:00:00-08:00",
+             "Attend recruiter interview"),
+        ):
+            fields = self._entry_fields(
+                entry_id, slug, state="scheduled", phase="interview_loop",
+                label="Virtual onsite", starts_at=starts_at, ends_at=ends_at,
+                timezone="America/Los_Angeles", action=action,
+            )
+            blocks.append("".join(render_entry(fields, checked=False, text="legacy")))
+        self._write_calendar(CALENDAR_SKELETON.replace(
+            f"{SECTION_SCHEDULED}\n",
+            f"{SECTION_SCHEDULED}\n\n" + "\n".join(blocks),
+            1,
+        ))
+
+        refresh = self._run(STATUS, "--refresh-calendar", "--write")
+        self.assertEqual(refresh.returncode, 0, refresh.stderr)
+        text = self.calendar.read_text()
+        self.assertEqual(text.count("| Date | Time | Company | Role | Round |"), 2)
+        self.assertEqual(text.count("| Mon, Aug 10, 2099 |"), 2)
+        self.assertIn("| 1:00 PM–2:00 PM PDT | Example Corp |", text)
+        self.assertIn("| 3:30 PM–4:30 PM PDT | Example Corp |", text)
+        self.assertIn("| coding interview |", text)
+        self.assertIn("| architecture interview |", text)
+        self.assertIn("<summary><strong>Past confirmed interviews</strong></summary>", text)
+        self.assertIn("| Wed, Jan 5, 2000 |", text)
+        self.assertIn("<summary><strong>Other active roles and latest updates</strong></summary>", text)
+        self.assertEqual(self._run(STATUS, "--check-calendar").returncode, 0)
 
     def test_status_transition_adds_and_removes_company_view_without_role_entry(self):
         slug = "example-corp-solo-20260720"
@@ -573,7 +620,7 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertEqual(self._find(slug)[0], "in_progress")
         text = self.calendar.read_text()
         self.assertEqual(text.count(COMPANY_VIEW_START), 1)
-        self.assertIn("### Example Corp", text)
+        self.assertIn("| Example Corp |", text)
         self.assertIn("Backend Engineer", text)
         self.assertIn(
             "../4_in_progress/example-corp-solo-20260720/meta.yaml", text)
