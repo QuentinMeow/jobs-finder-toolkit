@@ -2761,3 +2761,9 @@
   files: 15
   digest: sha256:dafa599997262dd1
   finding: 'Read the staged public policy, skill, validator, tests, canary, process records, and generated metadata. It contains only generic behavioral-prep rules and fictional canary claims; no real identity, employer, school, salary, private item name, or dated personal job-hunt content.'
+- base: 4243d598
+  reviewed_by: agent
+  date: 2026-08-04
+  files: 2
+  digest: sha256:b0c3be614e3420aa
+  finding: 'Read the complete two-file diff. It only records the public draft PR number, public commit prefix, green gate status, and remaining generic approval steps; no real identity, employer, school, salary, private item name, or personal job-hunt content.'

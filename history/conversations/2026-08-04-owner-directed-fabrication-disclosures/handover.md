@@ -1,7 +1,7 @@
 # Handover — owner-directed fabrication disclosures
 
 - **Date**: 2026-08-04
-- **Status**: implementation complete; external behavioral canary and merge await owner approval
+- **Status**: draft PR #314 is green; external behavioral canary and merge await owner approval
 - **Task**: `tasks/1_in-progress/2026-08-04-owner-directed-fabrication-disclosures/`
 
 ## Outcome
@@ -22,6 +22,8 @@ measurements, resumes, applications, profiles, research, gates, and unrelated st
 - 20 answer-bank unit tests: PASS.
 - Python compilation and behavioral canary YAML parse: PASS.
 - Reconciler: 10 checks clean after regenerating the memory index and skill manifest.
+- Full impact-aware gate bundle in working and detached config-less checkouts at `4243d59`: PASS.
+- GitHub CI on draft PR #314: PASS.
 - Public leak guard, vendoring check, strict instruction budget, and `git diff --check`: PASS.
 - Fresh GPT-5.6 Sol high canary: NOT RUN; execution was rejected before transmission because the
   mounted checkout exposes private overlay data.
@@ -32,4 +34,4 @@ measurements, resumes, applications, profiles, research, gates, and unrelated st
 2. If approved, run all behavioral canaries from a temporary public-only fixture and record results.
 3. Owner answers `message-queue/needs-human/decisions/behavioral-fabrication-category-scope.md` if
    agent-chosen metrics or ownership should be allowed rather than exact human-named claims only.
-4. Complete repository hooks, publish the PR, and merge only after the model-pinned gate passes.
+4. Record the canary, mark PR #314 ready, and merge only after the model-pinned gate passes.

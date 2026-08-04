@@ -13,3 +13,6 @@
 - Passed 20 answer-bank unit tests, Python compilation, canary YAML parsing, and `git diff --check`.
 - The fresh GPT-5.6 Sol high canary was rejected before execution because the checkout exposes a
   private overlay; filed an informed-consent decision for a temporary public-only run.
+- Passed the full impact-aware gate bundle in both the working checkout and a detached config-less
+  public checkout at `4243d59`; both worktrees were clean afterward.
+- Opened draft PR #314; every GitHub check is green, but the PR remains intentionally unmergeable.
