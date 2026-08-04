@@ -5,7 +5,7 @@
 
 ## What happened
 
-- Nothing is half-implemented: the calendar renderer now produces one chronological preparation agenda and one action table in both Markdown and an optional offline HTML companion.
+- Nothing is half-implemented: the calendar renderer now puts the action table first, followed by one chronological preparation agenda, in both Markdown and an optional offline HTML companion.
 - Explicit interviews and actions whose posting match is unresolved stay visible without receiving a fabricated application link.
 - Past interviews, pipeline detail, and raw tracker material remain available in collapsed sections; mobile HTML changes tables into labeled cards.
 
@@ -20,6 +20,7 @@
 - Unresolved evidence uses validated supplemental agenda records and an explicit `posting link unresolved` label; omitting it or guessing a link would make one surface incomplete or inaccurate.
 - Named rounds sharing an organizer block render on separate rows with the shared window and an explicit unknown-subslot note; no unavailable time was inferred.
 - Immediate `Now` actions sort before future dated work because the primary view is an execution queue, not a deadline ledger.
+- The owner-visible **Do now** section precedes **Upcoming interviews** on both surfaces; tests enforce the section order rather than relying on a one-off generated file.
 
 ## If X then Y
 

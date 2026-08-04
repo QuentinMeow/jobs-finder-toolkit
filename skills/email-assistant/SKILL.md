@@ -235,9 +235,9 @@ When the user asks to update a calendar, use the connected Outlook Calendar capa
 the audited email provider's Graph route or permission allowlist. For each exact future interview
 time found in matched mail:
 
-- Keep the local calendar human-first: each confirmed occurrence becomes one chronological row
-  with **Date**, **Time**, **Company**, **Role**, and **Prepare for**. Proposed or unresolved
-  scheduling is a separate **Do now** action, never an event. Keep past interviews, company/status
+- Keep the local calendar human-first: show proposed or unresolved scheduling in **Do now** first,
+  never as an event. Then render each confirmed occurrence as one chronological row with **Date**,
+  **Time**, **Company**, **Role**, and **Prepare for**. Keep past interviews, company/status
   updates, and raw tracker detail folded.
 - If the evidence is explicit but the posting match is not, retain it in the same generated agenda
   labeled **posting link unresolved**; Markdown and HTML must not diverge or imply a false match.

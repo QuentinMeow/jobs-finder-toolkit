@@ -984,16 +984,16 @@ def render_company_view(
     """Render a human-first interview agenda plus folded tracker detail.
 
     ``companies`` is already filtered to derived ``in_progress`` applications.
-    Confirmed occurrences lead as one aligned table row each. Past interviews and
-    status-heavy application detail remain available, but folded so the owner can
-    answer "what should I prepare for next?" without scanning implementation data.
+    Owner actions lead in a compact table, followed by confirmed occurrences as
+    one aligned row each. Past interviews and status-heavy application detail
+    remain available, but folded so the owner can act before scanning the schedule.
     Provider IDs are deliberately absent: callers pass only the source kind and a
     link back to the canonical notes/meta file.
     """
     lines = [
         "## Interview prep",
         "",
-        "_One confirmed occurrence per row. Open a role for notes; edit canonical progress or notes, not this view._",
+        "_Handle Do now first. Upcoming interviews follow one confirmed occurrence per row; open a role for notes._",
         "",
     ]
     if not companies and not supplemental_items:
@@ -1004,17 +1004,17 @@ def render_company_view(
         companies, supplemental_items)
     upcoming, past = _split_interview_rows(interview_rows)
 
-    lines.extend(["### Upcoming interviews", ""])
-    if upcoming:
-        lines.extend(_render_interview_table(upcoming))
-    else:
-        lines.append("_No confirmed future interviews._")
-
-    lines.extend(["", "### Do now", ""])
+    lines.extend(["### Do now", ""])
     if action_rows:
         lines.extend(_render_action_table(action_rows))
     else:
         lines.append("_No owner actions right now._")
+
+    lines.extend(["", "### Upcoming interviews", ""])
+    if upcoming:
+        lines.extend(_render_interview_table(upcoming))
+    else:
+        lines.append("_No confirmed future interviews._")
 
     if past:
         lines.extend([
@@ -1141,22 +1141,9 @@ def render_company_view_html(
         "<body>",
         "<!-- Generated from canonical application progress and standardized notes. -->",
         "<h1>Interview prep</h1>",
-        "<p class=\"lede\">One confirmed occurrence per row. Open a role for notes.</p>",
-        "<h2>Upcoming interviews</h2>",
+        "<p class=\"lede\">Handle Do now first. Upcoming interviews follow one confirmed occurrence per row.</p>",
+        "<h2>Do now</h2>",
     ]
-    if upcoming:
-        lines.extend(_html_table(("Date", "Time", "Company", "Role", "Prepare for"), [
-            (
-                html.escape(_interview_date(row.get("starts_at"), row.get("timezone"))),
-                html.escape(_interview_time(row.get("starts_at"), row.get("ends_at"), row.get("timezone"))),
-                html.escape(str(row.get("company") or "Company")),
-                _html_role_link(row.get("role"), row.get("details")),
-                html.escape(str(row.get("round") or "Interview")),
-            ) for row in upcoming
-        ], caption="Upcoming interviews"))
-    else:
-        lines.append("<p>No confirmed future interviews.</p>")
-    lines.append("<h2>Do now</h2>")
     if action_rows:
         lines.extend(_html_table(("When", "Company", "Role", "Action"), [
             (
@@ -1170,6 +1157,19 @@ def render_company_view_html(
         ], caption="Actions to do now"))
     else:
         lines.append("<p>No owner actions right now.</p>")
+    lines.append("<h2>Upcoming interviews</h2>")
+    if upcoming:
+        lines.extend(_html_table(("Date", "Time", "Company", "Role", "Prepare for"), [
+            (
+                html.escape(_interview_date(row.get("starts_at"), row.get("timezone"))),
+                html.escape(_interview_time(row.get("starts_at"), row.get("ends_at"), row.get("timezone"))),
+                html.escape(str(row.get("company") or "Company")),
+                _html_role_link(row.get("role"), row.get("details")),
+                html.escape(str(row.get("round") or "Interview")),
+            ) for row in upcoming
+        ], caption="Upcoming interviews"))
+    else:
+        lines.append("<p>No confirmed future interviews.</p>")
     if past:
         lines.extend(["<details>", "<summary>Past confirmed interviews</summary>"])
         lines.extend(_html_table(("Date", "Time", "Company", "Role", "Prepare for"), [

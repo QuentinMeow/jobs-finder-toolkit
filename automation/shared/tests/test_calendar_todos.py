@@ -436,7 +436,10 @@ class PlanTests(unittest.TestCase):
             self.assertIn(expected, html)
         self.assertEqual(markdown.count("Submit four availability slots"), 1)
         self.assertEqual(html.count("Submit four availability slots"), 1)
-        self.assertLess(markdown.index("Coding — Alex"), markdown.index("Unlinked Co"))
+        self.assertLess(markdown.index("### Do now"), markdown.index("### Upcoming interviews"))
+        upcoming_markdown = markdown[markdown.index("### Upcoming interviews"):]
+        self.assertLess(upcoming_markdown.index("Coding — Alex"), upcoming_markdown.index("Unlinked Co"))
+        self.assertLess(html.index("<h2>Do now</h2>"), html.index("<h2>Upcoming interviews</h2>"))
         self.assertLess(
             markdown.index("| Now | Unlinked Co"),
             markdown.index("| Sun, Aug 9 |"),

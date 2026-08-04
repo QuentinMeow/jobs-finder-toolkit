@@ -244,10 +244,10 @@ the machine contract is one hidden JSON-comment line. Optional calendar fields i
 `action`, `due_at`, `starts_at`, `ends_at`, timezone, and `follow_up_at`.
 Sections project entry state: **Action needed** (owner work), **Waiting and follow-up**
 (employer/result/paused waits), **Interview schedule** (confirmed times, chronological), and
-**My notes and personal todos** (owner-only). The generated **Interview prep** view
-leads with an aligned preparation table: one confirmed occurrence per row, with separate date,
-time, company, role, and prepare-for columns. A separate **Do now** table carries only owner
-actions. Confirmed or actionable evidence that is not safely linked to a posting stays visible in
+**My notes and personal todos** (owner-only). The generated **Interview prep** view leads with a
+**Do now** table containing only owner actions, then an aligned preparation table: one confirmed
+occurrence per row, with separate date, time, company, role, and prepare-for columns. Confirmed or
+actionable evidence that is not safely linked to a posting stays visible in
 the same tables with **posting link unresolved** and no fabricated application link. Never
 concatenate several events into one sentence or one
 table cell. Past occurrences and the complete per-role stage/latest-update projection stay

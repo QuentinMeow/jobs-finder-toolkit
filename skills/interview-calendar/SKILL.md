@@ -105,11 +105,10 @@ The private local `calendar.md` carries one generated view for every application
 rollup is `in_progress`. Refresh it with the application tracker; do not hand-maintain a second
 status table.
 
-- Lead with the question the owner actually needs answered: which interview to prepare for, when,
-  and for which role. Render one confirmed occurrence per chronological table row with separate
-  **Date**, **Time**, **Company**, **Role**, and **Prepare for** columns; never join events into a
-  sentence or day cell. Put owner work in a separate top-level **Do now** table; waits and company
-  commentary never compete with the preparation agenda.
+- Lead with a top-level **Do now** table so owner work is visible before the schedule. Follow it
+  with one confirmed occurrence per chronological table row using separate **Date**, **Time**,
+  **Company**, **Role**, and **Prepare for** columns; never join events into a sentence or day cell.
+  Waits and company commentary never compete with the preparation agenda.
 - If confirmed or actionable evidence cannot yet be matched to one posting, keep it in those same
   tables labeled **posting link unresolved**. Markdown and HTML must share that supplemental item;
   never hide it in prose, omit it from one surface, or invent an application link.

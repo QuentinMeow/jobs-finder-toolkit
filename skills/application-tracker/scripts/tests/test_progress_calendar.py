@@ -677,7 +677,7 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertEqual(write.returncode, 0, write.stderr)
         markdown = self.calendar.read_text()
         html = self.calendar.with_suffix(".html").read_text()
-        self.assertLess(markdown.index("### Upcoming interviews"), markdown.index("### Do now"))
+        self.assertLess(markdown.index("### Do now"), markdown.index("### Upcoming interviews"))
         prep = markdown[:markdown.index("<details>")]
         generated = markdown[
             markdown.index(COMPANY_VIEW_START):markdown.index(COMPANY_VIEW_END)
@@ -697,6 +697,7 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertEqual(html.count("Submit four availability slots"), 1)
         self.assertIn("Unlinked Co", html)
         self.assertIn('<th scope="col">Date</th>', html)
+        self.assertLess(html.index("<h2>Do now</h2>"), html.index("<h2>Upcoming interviews</h2>"))
         first_markdown, first_html = self.calendar.read_bytes(), self.calendar.with_suffix(".html").read_bytes()
         again = self._run(STATUS, "--refresh-calendar", "--write", "--html")
         self.assertEqual(again.returncode, 0, again.stderr)
