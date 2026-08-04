@@ -42,6 +42,8 @@
   reference styles, then populated them for every selected story.
 - Tightened the selected quick answers into high-level 1:30-1:42 versions and kept implementation
   details in the short and long expansions.
+- Removed the selected Ownership long expansion's repeated storage-impact sentence and replaced it
+  with new operational validation detail; updated the disclosure field mapping to match.
 - Passed the full private source validation, regeneration, freshness check, private content test,
   public unit tests, reconciler, instruction budget, impact-aware gates, and whitespace checks.
 - Preserved the crash-recovered private commit on `interview/03-selected-answer-navigation` and

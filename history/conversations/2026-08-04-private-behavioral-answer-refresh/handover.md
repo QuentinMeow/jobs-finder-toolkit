@@ -14,8 +14,9 @@
 
 ## Where things stand
 
-- Private PRs #78 and #79 are merged. Commits `643d2a9` and `d1537f4` contain the navigation,
-  answer-format, and follow-up update on `interview/03-selected-answer-navigation`.
+- Private PRs #78 and #79 are merged. Commits `643d2a9`, `d1537f4`, and `b959f74` contain the
+  navigation, answer-format, follow-up, and additive-expansion update on
+  `interview/03-selected-answer-navigation`.
 - The public renderer and regression test are on `behavioral/selected-answer-navigation`.
 - Source validation, alias freshness, the private answer-source test, the public unit suite,
   reconciliation, the instruction budget, and whitespace checks pass.
