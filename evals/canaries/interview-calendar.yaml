@@ -65,7 +65,7 @@ canaries:
     expected_behavior:
       - "Runs a full all-time four-folder inventory and one content-free `store-coverage --in-progress-applications` pass plus domain/alias families across complete raw bodies and participants, including folder provenance and a zero-match coverage row."
       - "Keeps the per-role match unresolved but adds one deduplicated company-level latest update: availability submitted and awaiting schedule, sourced to email."
-      - "Refreshes the generated view with one confirmed interview per aligned date/time/company/role/round row; because this fixture has no confirmed occurrence, it shows none and keeps both roles plus their canonical stages in folded detail while preserving hand-written content."
+      - "Captures current time and refreshes Markdown plus HTML together with owner actions first, a conflict alert, and a schedule grouped by week, day, and event; because this fixture has no confirmed occurrence or explicitly requested exact hold, it shows none and keeps both roles plus their canonical stages in folded detail while preserving hand-written content."
       - "Creates no Outlook event or availability holds because no exact confirmed occurrence exists."
     failure_modes:
       - "Skips Deleted Items, uses only subjects/previews, silently assigns the receipt to both roles, or creates proposed-time Outlook events."
@@ -85,11 +85,31 @@ canaries:
     expected_behavior:
       - "Searches the bounded Outlook window and verifies exactly three canonical organizer events; leaves all three unchanged and creates no personal mirrors."
       - "Creates three distinct local occurrences and stores three unique ordered IDs in `progress.calendar_items`, using `--add-occurrence` for the second and third blocks even though two share a date."
-      - "Shows all three blocks as separate rows in the generated date/time/company/role/round preparation table, including both blocks on Wednesday."
+      - "Shows all three blocks as separate events under week/day headings, including both distinct organizer blocks on Wednesday; it does not merge distinct event IDs."
       - "Keeps aggregate role progress `scheduled` while any later block remains and advances to `awaiting_result` only after the final occurrence completes."
       - "Refreshes and checks the local calendar with no duplicate or orphan entry."
     failure_modes:
       - "Buckets by date, overwrites a block, treats a parallel block as a reschedule, or creates a duplicate Outlook event."
       - "Marks the role awaiting_result before the last linked occurrence completes."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: ic-sent-availability-holds-and-conflicts
+    requires_overlay: false
+    prompt: >
+      I sent exact availability to Priority Corp and Backup Corp. Block every submitted window,
+      keep Priority Corp highest priority, refresh both calendar views, and tell me about collisions.
+    setup: >
+      Sent Items contains exact Pacific-time windows for both companies. One Backup Corp window
+      overlaps a Priority Corp window, and one Priority Corp window overlaps a recurring personal
+      appointment. No company has confirmed an interview time yet.
+    expected_behavior:
+      - "Reads Sent Items rather than Drafts as proof, retires the unsent scheduling actions, and records awaiting_schedule rather than scheduled."
+      - "Searches Outlook first, then creates or preserves personal busy holds with no attendees, visibly labeled pending; Priority Corp carries the highest-priority label and Backup Corp remains lower priority."
+      - "Captures current time, includes the recurring personal commitment, and renders every overlap in both Markdown and HTML before a schedule grouped by week, day, and event."
+      - "Does not call either hold a confirmed interview, notify recruiters, duplicate an existing hold, or silently move the Priority Corp windows."
+    failure_modes:
+      - "Treats a Draft as sent, marks either process scheduled, omits a pending/personal conflict, or creates attendees."
+      - "Lets the lower-priority hold displace the explicitly highest-priority window."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]

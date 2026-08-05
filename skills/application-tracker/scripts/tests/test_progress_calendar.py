@@ -612,14 +612,15 @@ class ProgressCalendarTests(unittest.TestCase):
         refresh = self._run(STATUS, "--refresh-calendar", "--write")
         self.assertEqual(refresh.returncode, 0, refresh.stderr)
         text = self.calendar.read_text()
-        self.assertEqual(text.count("| Date | Time | Company | Role | Prepare for |"), 2)
-        self.assertEqual(text.count("| Mon, Aug 10, 2099 |"), 2)
-        self.assertIn("| 1:00 PM–2:00 PM PDT | Example Corp |", text)
-        self.assertIn("| 3:30 PM–4:30 PM PDT | Example Corp |", text)
+        self.assertIn("#### Week of Aug 10–16, 2099", text)
+        self.assertIn("##### Monday, August 10, 2099", text)
+        self.assertEqual(text.count("| Time | Status | Company / commitment | Role | Event |"), 2)
+        self.assertIn("| 1:00 PM–2:00 PM PDT | Confirmed | Example Corp |", text)
+        self.assertIn("| 3:30 PM–4:30 PM PDT | Confirmed | Example Corp |", text)
         self.assertIn("| coding interview |", text)
         self.assertIn("| architecture interview |", text)
-        self.assertIn("<summary><strong>Past confirmed interviews</strong></summary>", text)
-        self.assertIn("| Wed, Jan 5, 2000 |", text)
+        self.assertIn("<summary><strong>Past schedule</strong></summary>", text)
+        self.assertIn("##### Wednesday, January 5, 2000", text)
         self.assertIn("<summary><strong>Pipeline and company updates</strong></summary>", text)
         self.assertEqual(self._run(STATUS, "--check-calendar").returncode, 0)
 
@@ -677,27 +678,34 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertEqual(write.returncode, 0, write.stderr)
         markdown = self.calendar.read_text()
         html = self.calendar.with_suffix(".html").read_text()
-        self.assertLess(markdown.index("### Do now"), markdown.index("### Upcoming interviews"))
+        self.assertLess(markdown.index("### Do now"), markdown.index("### Schedule"))
         prep = markdown[:markdown.index("<details>")]
         generated = markdown[
             markdown.index(COMPANY_VIEW_START):markdown.index(COMPANY_VIEW_END)
         ]
         self.assertIn("Choose the final interview time", prep)
-        self.assertEqual(prep.count("| Mon, Aug 10, 2099 |"), 3)
+        self.assertEqual(prep.count("##### Monday, August 10, 2099"), 1)
+        self.assertEqual(prep.count("| Confirmed |"), 3)
         self.assertEqual(generated.count("Submit four availability slots"), 1)
         self.assertLess(
             generated.index("Submit four availability slots"),
             generated.index("Choose the final interview time"),
         )
         self.assertIn("Unlinked Co", prep)
-        self.assertIn("| Date | Time | Company | Role | Prepare for |", prep)
-        self.assertIn('href="../4_in_progress/example-corp-multi-20260720/meta.yaml"', html)
+        self.assertIn("| Time | Status | Company / commitment | Role | Event |", prep)
+        self.assertIn(
+            'href="../4_in_progress/example-corp-multi-20260720/meta.yaml" '
+            'target="_blank" rel="noopener noreferrer"',
+            html,
+        )
+        self.assertEqual(html.count("<a "), html.count('target="_blank"'))
         self.assertIn("@media (max-width: 720px)", html)
         self.assertIn('<div class="table-wrap" role="region"', html)
         self.assertEqual(html.count("Submit four availability slots"), 1)
         self.assertIn("Unlinked Co", html)
-        self.assertIn('<th scope="col">Date</th>', html)
-        self.assertLess(html.index("<h2>Do now</h2>"), html.index("<h2>Upcoming interviews</h2>"))
+        self.assertIn('<section class="week">', html)
+        self.assertIn('<article class="event event-interview">', html)
+        self.assertLess(html.index("<h2>Do now</h2>"), html.index("<h2>Schedule</h2>"))
         first_markdown, first_html = self.calendar.read_bytes(), self.calendar.with_suffix(".html").read_bytes()
         again = self._run(STATUS, "--refresh-calendar", "--write", "--html")
         self.assertEqual(again.returncode, 0, again.stderr)
@@ -758,6 +766,52 @@ class ProgressCalendarTests(unittest.TestCase):
         text = self.calendar.read_text()
         self.assertIn("- [ ] my own note — tooling must never touch this line",
                       text)
+
+    def test_update_progress_records_ordered_subslots_on_one_organizer_block(self):
+        slug = "example-corp-onsite-20260720"
+        entry_id = "cal-example-corp-onsite-01"
+        self._place("in_progress", slug, [_job(
+            "Backend Engineer", "in_progress", "JD-backend.md",
+            {
+                "phase": "interview_loop",
+                "state": "scheduled",
+                "label": "Virtual onsite",
+                "calendar_items": [entry_id],
+            },
+        )])
+        fields = self._entry_fields(
+            entry_id, slug, state="scheduled", phase="interview_loop",
+            label="Virtual onsite", starts_at="2099-08-10T13:00:00-07:00",
+            ends_at="2099-08-10T15:00:00-07:00",
+            timezone="America/Los_Angeles", action="Attend virtual onsite",
+        )
+        self._write_calendar(CALENDAR_SKELETON.replace(
+            f"{SECTION_SCHEDULED}\n",
+            f"{SECTION_SCHEDULED}\n\n" + "".join(
+                render_entry(fields, checked=False, text="legacy")),
+            1,
+        ))
+
+        update = self._run(
+            STATUS, "--update-progress", slug, "Backend Engineer",
+            "--phase", "interview_loop", "--state", "scheduled",
+            "--label", "Virtual onsite", "--calendar-item", entry_id,
+            "--display-round", "1:00–2:00 PM — Coding — Alex",
+            "--display-round", "2:00–3:00 PM — Architecture — Casey",
+        )
+        self.assertEqual(update.returncode, 0, update.stderr)
+        doc = parse_calendar(self.calendar.read_text())
+        self.assertEqual(doc.entries[entry_id].display_rounds, (
+            "1:00–2:00 PM — Coding — Alex",
+            "2:00–3:00 PM — Architecture — Casey",
+        ))
+        generated = self.calendar.read_text()[
+            self.calendar.read_text().index(COMPANY_VIEW_START):
+            self.calendar.read_text().index(COMPANY_VIEW_END)
+        ]
+        self.assertEqual(generated.count("1:00 PM–3:00 PM PDT | Confirmed"), 1)
+        self.assertIn("1:00–2:00 PM — Coding — Alex", generated)
+        self.assertIn("2:00–3:00 PM — Architecture — Casey", generated)
 
     # -- fail-closed calendar states ---------------------------------------- #
     def test_malformed_marker_fails_everything_closed(self):
