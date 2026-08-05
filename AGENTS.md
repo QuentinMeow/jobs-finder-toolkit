@@ -183,7 +183,12 @@ not an entry — plus one standing line: `N pending · top: <slug> — <its cons
 **End of session** (any session that did real work): write
 `history/conversations/<YYYY-MM-DD>-<slug>/handover.md` from `templates/handover.md` (one screen,
 for a human who was away), update the task's `worklog.md`, and file any pending questions into
-`message-queue/` — the reconciler's `handover-present` check backstops this.
+`message-queue/` — the reconciler's `handover-present` check backstops this. **History-free skill
+exception:** when the applicable skill explicitly says its live or focused workflow is
+process-history-free, the finished problem, answer, or coaching artifact is the complete record;
+do not create a conversation handover, session task, queue item, or worklog solely to narrate that
+turn. An explicit owner request or a hard guardrail that requires a durable unresolved item still
+wins.
 **A handover is a history record, never the system of record.** Anything still unresolved —
 a question, a blocked step, a decision needed — gets its own queue item, task, or design file
 carrying the full context needed to act on it, because the handover may be local-only and a
