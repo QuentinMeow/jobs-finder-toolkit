@@ -56,7 +56,7 @@ import html
 import json
 import re
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -137,11 +137,11 @@ _DATE_OR_DATETIME_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)?)?$")
 _TIMEZONE_RE = re.compile(r"^(UTC|[A-Za-z_]+(?:/[A-Za-z0-9_+\-]+)+)$")
 _AGENDA_ID_RE = re.compile(r"^agenda-[a-z0-9]+(?:-[a-z0-9]+)*$")
-_AGENDA_KINDS = ("interview", "action")
+_AGENDA_KINDS = ("interview", "hold", "commitment", "action")
 _AGENDA_REQUIRED_KEYS = ("id", "kind", "company", "role")
 _AGENDA_OPTIONAL_KEYS = (
     "round", "action", "due_at", "starts_at", "ends_at", "timezone",
-    "details",
+    "details", "priority",
 )
 
 CALENDAR_TEMPLATE = """\
@@ -437,7 +437,7 @@ def _parse_agenda_items(lines: list[str]) -> tuple[list[dict], list[str]]:
         if kind not in _AGENDA_KINDS:
             errors.append(
                 f"{context}: jobhunt-agenda kind must be one of {', '.join(_AGENDA_KINDS)}")
-        for key in ("round", "action", "timezone", "details"):
+        for key in ("round", "action", "timezone", "details", "priority"):
             value = payload.get(key)
             if value is not None and not isinstance(value, str):
                 errors.append(f"{context}: jobhunt-agenda {key} must be a string or null")
@@ -455,12 +455,14 @@ def _parse_agenda_items(lines: list[str]) -> tuple[list[dict], list[str]]:
         timezone_name = payload.get("timezone")
         if isinstance(timezone_name, str) and timezone_name and not _validate_timezone(timezone_name):
             errors.append(f"{context}: jobhunt-agenda timezone must be an IANA timezone name")
-        if kind == "interview":
-            if not payload.get("starts_at") or not timezone_name:
+        if kind in ("interview", "hold", "commitment"):
+            if (not payload.get("starts_at") or not payload.get("ends_at")
+                    or not timezone_name):
                 errors.append(
-                    f"{context}: interview agenda item requires starts_at and timezone")
+                    f"{context}: {kind} agenda item requires starts_at, ends_at, "
+                    "and timezone")
             if not str(payload.get("round") or "").strip():
-                errors.append(f"{context}: interview agenda item requires round")
+                errors.append(f"{context}: {kind} agenda item requires round")
         if kind == "action" and not str(payload.get("action") or "").strip():
             errors.append(f"{context}: action agenda item requires action")
         if payload.get("ends_at") and not payload.get("starts_at"):
@@ -829,22 +831,152 @@ def _interview_sort_key(interview: dict) -> tuple[int, str]:
     return (0, parsed.astimezone(timezone.utc).isoformat())
 
 
-def _render_interview_table(rows: list[dict]) -> list[str]:
-    lines = [
-        "| Date | Time | Company | Role | Prepare for |",
-        "|---|---|---|---|---|",
+def _schedule_status(row: dict) -> str:
+    kind = str(row.get("kind") or "interview")
+    if kind == "hold":
+        priority = str(row.get("priority") or "").strip()
+        return f"Pending — {priority}" if priority else "Pending"
+    if kind == "commitment":
+        return "Busy"
+    return "Confirmed"
+
+
+def _week_label(start: datetime) -> str:
+    week_start = start - timedelta(days=start.weekday())
+    week_end = week_start + timedelta(days=6)
+    if week_start.year == week_end.year and week_start.month == week_end.month:
+        return f"Week of {week_start.strftime('%b')} {week_start.day}–{week_end.day}, {week_start.year}"
+    if week_start.year == week_end.year:
+        return (
+            f"Week of {week_start.strftime('%b')} {week_start.day}–"
+            f"{week_end.strftime('%b')} {week_end.day}, {week_start.year}"
+        )
+    return (
+        f"Week of {week_start.strftime('%b')} {week_start.day}, {week_start.year}–"
+        f"{week_end.strftime('%b')} {week_end.day}, {week_end.year}"
+    )
+
+
+def _group_schedule(rows: list[dict]) -> list[tuple[str, list[tuple[str, list[dict]]]]]:
+    weeks: list[tuple[str, list[tuple[str, list[dict]]]]] = []
+    week_indexes: dict[str, int] = {}
+    day_indexes: dict[tuple[str, str], int] = {}
+    for row in sorted(rows, key=_interview_sort_key):
+        start = _zoned_datetime(row.get("starts_at"), row.get("timezone"))
+        if start is None:
+            week_name = "Date needs review"
+            day_name = "Date needs review"
+        else:
+            week_name = _week_label(start)
+            day_name = start.strftime("%A, %B %d, %Y").replace(" 0", " ")
+        if week_name not in week_indexes:
+            week_indexes[week_name] = len(weeks)
+            weeks.append((week_name, []))
+        days = weeks[week_indexes[week_name]][1]
+        day_key = (week_name, day_name)
+        if day_key not in day_indexes:
+            day_indexes[day_key] = len(days)
+            days.append((day_name, []))
+        days[day_indexes[day_key]][1].append(row)
+    return weeks
+
+
+def _render_schedule_groups(rows: list[dict], *, week_level: int = 4) -> list[str]:
+    """Render the planning hierarchy as week -> day -> individual events."""
+    lines: list[str] = []
+    for week_name, days in _group_schedule(rows):
+        if lines:
+            lines.append("")
+        lines.extend([f"{'#' * week_level} {week_name}", ""])
+        for day_index, (day_name, events) in enumerate(days):
+            if day_index:
+                lines.append("")
+            lines.extend([
+                f"{'#' * (week_level + 1)} {day_name}",
+                "",
+                "| Time | Status | Company / commitment | Role | Event |",
+                "|---|---|---|---|---|",
+            ])
+            for row in events:
+                details = str(row.get("details") or "")
+                role = _markdown_text(str(row.get("role") or "—"))
+                linked_role = f"[{role}](<{details}>)" if details else role
+                lines.append(
+                    "| "
+                    f"{_interview_time(row.get('starts_at'), row.get('ends_at'), row.get('timezone'))} | "
+                    f"{_markdown_text(_schedule_status(row))} | "
+                    f"{_markdown_text(str(row.get('company') or 'Commitment'))} | "
+                    f"{linked_role} | "
+                    f"{_markdown_text(str(row.get('round') or 'Interview'))} |"
+                )
+    return lines
+
+
+def _utc_bounds(row: dict) -> tuple[datetime, datetime] | None:
+    start = _zoned_datetime(row.get("starts_at"), row.get("timezone"))
+    end = _zoned_datetime(row.get("ends_at"), row.get("timezone"))
+    if start is None or end is None:
+        return None
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _conflict_label(row: dict) -> str:
+    bits = [
+        _schedule_status(row),
+        str(row.get("company") or "Commitment"),
+        str(row.get("round") or row.get("role") or "Event"),
     ]
-    for row in rows:
-        details = str(row.get("details") or "")
-        role = _markdown_text(str(row.get("role") or "Tracked role"))
-        linked_role = f"[{role}](<{details}>)" if details else role
+    return " · ".join(bit for bit in bits if bit)
+
+
+def _find_schedule_conflicts(rows: list[dict]) -> list[dict]:
+    """Return every pair of overlapping current/future schedule blocks."""
+    conflicts: list[dict] = []
+    ordered = sorted(rows, key=_interview_sort_key)
+    for index, first in enumerate(ordered):
+        first_bounds = _utc_bounds(first)
+        if first_bounds is None:
+            continue
+        for second in ordered[index + 1:]:
+            second_bounds = _utc_bounds(second)
+            if second_bounds is None:
+                continue
+            overlap_start = max(first_bounds[0], second_bounds[0])
+            overlap_end = min(first_bounds[1], second_bounds[1])
+            if overlap_start >= overlap_end:
+                continue
+            display_zone = str(first.get("timezone") or "UTC")
+            local_start = overlap_start.astimezone(ZoneInfo(display_zone))
+            local_end = overlap_end.astimezone(ZoneInfo(display_zone))
+            conflicts.append({
+                "date": local_start.strftime("%a, %b %d, %Y").replace(" 0", " "),
+                "overlap": (
+                    f"{local_start.strftime('%I:%M %p').lstrip('0')}–"
+                    f"{local_end.strftime('%I:%M %p').lstrip('0')} "
+                    f"{local_start.tzname() or display_zone}"
+                ),
+                "first": first,
+                "second": second,
+                "sort": overlap_start.isoformat(),
+            })
+    return sorted(conflicts, key=lambda item: item["sort"])
+
+
+def _render_conflicts(rows: list[dict]) -> list[str]:
+    lines = [
+        "| Date | Overlap | Event 1 | Event 2 |",
+        "|---|---|---|---|",
+    ]
+    for conflict in _find_schedule_conflicts(rows):
         lines.append(
-            "| "
-            f"{_interview_date(row.get('starts_at'), row.get('timezone'))} | "
-            f"{_interview_time(row.get('starts_at'), row.get('ends_at'), row.get('timezone'))} | "
-            f"{_markdown_text(str(row.get('company') or 'Company'))} | "
-            f"{linked_role} | "
-            f"{_markdown_text(str(row.get('round') or 'Interview'))} |"
+            f"| {_markdown_text(conflict['date'])} | "
+            f"{_markdown_text(conflict['overlap'])} | "
+            f"{_markdown_text(_conflict_label(conflict['first']))} | "
+            f"{_markdown_text(_conflict_label(conflict['second']))} |"
         )
     return lines
 
@@ -902,6 +1034,7 @@ def _company_view_rows(
                 role_rows.append({"company": company_name, **role})
                 for interview in role.get("interviews") or []:
                     row = {
+                        "kind": "interview",
                         "company": company_name,
                         "role": role.get("role"),
                         "round": (
@@ -915,14 +1048,10 @@ def _company_view_rows(
                     }
                     display_rounds = interview.get("display_rounds") or []
                     if display_rounds:
-                        for display_round in display_rounds:
-                            interview_rows.append({
-                                **row,
-                                "round": (
-                                    f"{display_round} — exact subslot not recorded "
-                                    "within organizer block"
-                                ),
-                            })
+                        interview_rows.append({
+                            **row,
+                            "round": "; ".join(str(item) for item in display_rounds),
+                        })
                     else:
                         interview_rows.append(row)
                 for action in role.get("actions") or []:
@@ -934,7 +1063,7 @@ def _company_view_rows(
                     })
     for item in supplemental_items:
         row = dict(item)
-        if row.get("kind") == "interview":
+        if row.get("kind") in ("interview", "hold", "commitment"):
             row["round"] = row.get("round") or "Interview"
             interview_rows.append(row)
         elif row.get("kind") == "action":
@@ -944,12 +1073,15 @@ def _company_view_rows(
 
 
 def _split_interview_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Split confirmed occurrences into chronological future and folded past rows."""
+    """Split schedule blocks using their end time so in-progress events stay current."""
     now_utc = datetime.now(timezone.utc)
     upcoming: list[dict] = []
     past: list[dict] = []
     for interview in sorted(rows, key=_interview_sort_key):
-        parsed = _zoned_datetime(interview.get("starts_at"), interview.get("timezone"))
+        parsed = _zoned_datetime(
+            interview.get("ends_at") or interview.get("starts_at"),
+            interview.get("timezone"),
+        )
         if parsed is not None:
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
@@ -993,7 +1125,7 @@ def render_company_view(
     lines = [
         "## Interview prep",
         "",
-        "_Handle Do now first. Upcoming interviews follow one confirmed occurrence per row; open a role for notes._",
+        "_Handle Do now first. The schedule is grouped by week, then day, then event. Pending holds and personal commitments are included in conflict checks._",
         "",
     ]
     if not companies and not supplemental_items:
@@ -1010,19 +1142,26 @@ def render_company_view(
     else:
         lines.append("_No owner actions right now._")
 
-    lines.extend(["", "### Upcoming interviews", ""])
-    if upcoming:
-        lines.extend(_render_interview_table(upcoming))
+    conflicts = _find_schedule_conflicts(upcoming)
+    lines.extend(["", "### ⚠️ Conflicts", ""])
+    if conflicts:
+        lines.extend(_render_conflicts(upcoming))
     else:
-        lines.append("_No confirmed future interviews._")
+        lines.append("_No overlapping current or future calendar blocks._")
+
+    lines.extend(["", "### Schedule", ""])
+    if upcoming:
+        lines.extend(_render_schedule_groups(upcoming))
+    else:
+        lines.append("_No current or future schedule blocks._")
 
     if past:
         lines.extend([
             "",
             "<details>",
-            "<summary><strong>Past confirmed interviews</strong></summary>",
+            "<summary><strong>Past schedule</strong></summary>",
             "",
-            *_render_interview_table(past),
+            *_render_schedule_groups(past),
             "",
             "</details>",
         ])
@@ -1086,7 +1225,10 @@ def _html_role_link(role: object, details: object) -> str:
     href = _html_relative_href(details)
     if href is None:
         return label
-    return f'<a href="{html.escape(href, quote=True)}">{label}</a>'
+    return (
+        f'<a href="{html.escape(href, quote=True)}" target="_blank" '
+        f'rel="noopener noreferrer">{label}</a>'
+    )
 
 
 def _html_table(
@@ -1112,6 +1254,57 @@ def _html_table(
     return lines
 
 
+def _render_schedule_html(rows: list[dict]) -> list[str]:
+    """Accessible week/day/event cards for the offline calendar view."""
+    lines: list[str] = []
+    for week_name, days in _group_schedule(rows):
+        lines.extend([
+            '<section class="week">',
+            f"<h3>{html.escape(week_name)}</h3>",
+        ])
+        for day_name, events in days:
+            lines.extend([
+                '<section class="day">',
+                f"<h4>{html.escape(day_name)}</h4>",
+                '<div class="events">',
+            ])
+            for row in events:
+                kind = str(row.get("kind") or "interview")
+                lines.extend([
+                    f'<article class="event event-{html.escape(kind, quote=True)}">',
+                    '<div class="event-heading">',
+                    f'<time>{html.escape(_interview_time(row.get("starts_at"), row.get("ends_at"), row.get("timezone")))}</time>',
+                    f'<span class="status status-{html.escape(kind, quote=True)}">{html.escape(_schedule_status(row))}</span>',
+                    '</div>',
+                    f'<div class="event-company">{html.escape(str(row.get("company") or "Commitment"))}</div>',
+                    f'<div class="event-role">{_html_role_link(row.get("role") or "—", row.get("details"))}</div>',
+                    f'<div class="event-round">{html.escape(str(row.get("round") or "Interview"))}</div>',
+                    '</article>',
+                ])
+            lines.extend(['</div>', '</section>'])
+        lines.append('</section>')
+    return lines
+
+
+def _render_conflicts_html(rows: list[dict]) -> list[str]:
+    conflicts = _find_schedule_conflicts(rows)
+    if not conflicts:
+        return ["<p>No overlapping current or future calendar blocks.</p>"]
+    lines = ['<div class="conflict-list">']
+    for conflict in conflicts:
+        lines.extend([
+            '<article class="conflict">',
+            f'<div class="conflict-time">{html.escape(conflict["date"])} · {html.escape(conflict["overlap"])}</div>',
+            '<ul>',
+            f'<li>{html.escape(_conflict_label(conflict["first"]))}</li>',
+            f'<li>{html.escape(_conflict_label(conflict["second"]))}</li>',
+            '</ul>',
+            '</article>',
+        ])
+    lines.append('</div>')
+    return lines
+
+
 def render_company_view_html(
     companies: list[dict], supplemental_items: list[dict] | tuple[dict, ...] = (),
 ) -> str:
@@ -1127,21 +1320,22 @@ def render_company_view_html(
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
         "<title>Interview prep</title>",
         "<style>",
-        ":root { color-scheme: light dark; --text: #101828; --muted: #475467; --border: #d0d5dd; --surface: #fff; --card: #f9fafb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }",
-        "@media (prefers-color-scheme: dark) { :root { --text: #f2f4f7; --muted: #d0d5dd; --border: #475467; --surface: #101828; --card: #1d2939; } }",
+        ":root { color-scheme: light dark; --text: #101828; --muted: #475467; --border: #d0d5dd; --surface: #fff; --card: #f9fafb; --confirmed: #067647; --pending: #b54708; --busy: #344054; --danger: #b42318; --danger-bg: #fef3f2; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }",
+        "@media (prefers-color-scheme: dark) { :root { --text: #f2f4f7; --muted: #d0d5dd; --border: #475467; --surface: #101828; --card: #1d2939; --confirmed: #6ce9a6; --pending: #fec84b; --busy: #d0d5dd; --danger: #fda29b; --danger-bg: #55160c; } }",
         "body { max-width: 1100px; margin: 0 auto; padding: 24px; line-height: 1.45; color: var(--text); background: var(--surface); }",
         "h1 { margin-bottom: .2rem; } .lede { margin-top: 0; color: var(--muted); }",
         "table { width: 100%; border-collapse: collapse; } th, td { padding: .65rem .75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); } th { white-space: nowrap; } td:nth-child(1), td:nth-child(2) { white-space: nowrap; font-variant-numeric: tabular-nums; }",
         ".visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }",
         ".table-wrap:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid #2e90fa; outline-offset: 2px; }",
         "details { margin-top: 1.5rem; padding: .75rem 1rem; border: 1px solid var(--border); border-radius: .5rem; } summary { cursor: pointer; font-weight: 650; }",
+        ".week { margin: 1.5rem 0 2.25rem; padding-top: .2rem; border-top: 3px solid var(--text); } .week > h3 { margin: .65rem 0 1rem; } .day { margin: 1rem 0 1.5rem; padding: .9rem 1rem 1rem; border: 1px solid var(--border); border-radius: .8rem; background: var(--card); } .day h4 { margin: 0 0 .8rem; } .events { display: grid; gap: .65rem; } .event { padding: .8rem .9rem; border-left: 5px solid var(--confirmed); border-radius: .45rem; background: var(--surface); } .event-hold { border-left-color: var(--pending); } .event-commitment { border-left-color: var(--busy); } .event-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; } .event-heading time { font-weight: 700; font-variant-numeric: tabular-nums; } .status { font-size: .82rem; font-weight: 700; color: var(--confirmed); } .status-hold { color: var(--pending); } .status-commitment { color: var(--busy); } .event-company { margin-top: .35rem; font-weight: 700; } .event-role, .event-round { color: var(--muted); } .conflict-list { display: grid; gap: .75rem; } .conflict { padding: .85rem 1rem; border: 2px solid var(--danger); border-radius: .65rem; background: var(--danger-bg); } .conflict-time { color: var(--danger); font-weight: 750; } .conflict ul { margin: .45rem 0 0; padding-left: 1.2rem; }",
         "@media (max-width: 720px) { body { padding: 16px; } .table-wrap { overflow: visible; } table, tbody, tr, td { display: block; width: auto; } thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); } tr { margin: 0 0 .9rem; padding: .35rem .65rem; border: 1px solid var(--border); border-radius: .65rem; background: var(--card); } td, td:nth-child(1), td:nth-child(2) { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: .6rem; padding: .38rem 0; border: 0; white-space: normal; } td::before { content: attr(data-label); color: var(--muted); font-weight: 650; } }",
         "</style>",
         "</head>",
         "<body>",
         "<!-- Generated from canonical application progress and standardized notes. -->",
         "<h1>Interview prep</h1>",
-        "<p class=\"lede\">Handle Do now first. Upcoming interviews follow one confirmed occurrence per row.</p>",
+        "<p class=\"lede\">Handle Do now first. The schedule is grouped by week, day, and event; conflicts include confirmed interviews, pending holds, and personal commitments.</p>",
         "<h2>Do now</h2>",
     ]
     if action_rows:
@@ -1157,30 +1351,16 @@ def render_company_view_html(
         ], caption="Actions to do now"))
     else:
         lines.append("<p>No owner actions right now.</p>")
-    lines.append("<h2>Upcoming interviews</h2>")
+    lines.append("<h2>⚠️ Conflicts</h2>")
+    lines.extend(_render_conflicts_html(upcoming))
+    lines.append("<h2>Schedule</h2>")
     if upcoming:
-        lines.extend(_html_table(("Date", "Time", "Company", "Role", "Prepare for"), [
-            (
-                html.escape(_interview_date(row.get("starts_at"), row.get("timezone"))),
-                html.escape(_interview_time(row.get("starts_at"), row.get("ends_at"), row.get("timezone"))),
-                html.escape(str(row.get("company") or "Company")),
-                _html_role_link(row.get("role"), row.get("details")),
-                html.escape(str(row.get("round") or "Interview")),
-            ) for row in upcoming
-        ], caption="Upcoming interviews"))
+        lines.extend(_render_schedule_html(upcoming))
     else:
-        lines.append("<p>No confirmed future interviews.</p>")
+        lines.append("<p>No current or future schedule blocks.</p>")
     if past:
-        lines.extend(["<details>", "<summary>Past confirmed interviews</summary>"])
-        lines.extend(_html_table(("Date", "Time", "Company", "Role", "Prepare for"), [
-            (
-                html.escape(_interview_date(row.get("starts_at"), row.get("timezone"))),
-                html.escape(_interview_time(row.get("starts_at"), row.get("ends_at"), row.get("timezone"))),
-                html.escape(str(row.get("company") or "Company")),
-                _html_role_link(row.get("role"), row.get("details")),
-                html.escape(str(row.get("round") or "Interview")),
-            ) for row in past
-        ], caption="Past confirmed interviews"))
+        lines.extend(["<details>", "<summary>Past schedule</summary>"])
+        lines.extend(_render_schedule_html(past))
         lines.append("</details>")
     lines.extend(["<details>", "<summary>Pipeline and company updates</summary>"])
     lines.extend(["<h2>Active roles</h2>"])
@@ -1201,7 +1381,11 @@ def render_company_view_html(
             summary = html.escape(str(update.get("summary") or "Update recorded"))
             details = _html_relative_href(update.get("details"))
             source = html.escape(_source_label(str(update.get("source_kind") or "metadata")))
-            link = f' <a href="{html.escape(details, quote=True)}">{source}</a>' if details else f" {source}"
+            link = (
+                f' <a href="{html.escape(details, quote=True)}" target="_blank" '
+                f'rel="noopener noreferrer">{source}</a>'
+                if details else f" {source}"
+            )
             lines.append(f"<li><strong>{html.escape(str(update.get('company') or 'Company'))}:</strong> {summary} ·{link}</li>")
         lines.append("</ul>")
     lines.extend(["</details>", "</body>", "</html>", ""])

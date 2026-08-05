@@ -22,6 +22,8 @@ second mail client, tracker, or calendar store.
    connector, never add calendar routes or permissions to the email provider.
 4. Use `.venv/bin/python` for repository scripts. Keep disposable mailbox material only under
    `local/email-assistant/`; never put message bodies or personal event data in this public skill.
+5. Capture the actual current clock time and user timezone before reading or mutating calendar
+   state. Calendar freshness decisions must never rely on the conversation date or an old render.
 
 ## Ownership and Ordering
 
@@ -57,6 +59,10 @@ temporarily unavailable. A repeated run must search first and converge without c
   title-only grep for this pass.
 - Treat Drafts as unsent work. Never record them in the sent timeline or use them as proof that
   availability, a booking, or a reschedule request was sent.
+- Treat a matching non-draft Sent Items message as authoritative proof that availability, a booking,
+  or a reschedule request was sent. Retire the corresponding unsent action from application notes
+  and supplemental agenda markers in the same reconciliation; advance the tracker to
+  `awaiting_schedule` or `reschedule_pending` as appropriate.
 - Read the exact relevant messages. Skip alerts, newsletters, generic job matches, and messages
   that are not part of an application process.
 - Deduplicate messages by stable evidence before editing notes. Consolidate automated confirmation,
@@ -89,8 +95,12 @@ temporarily unavailable. A repeated run must search first and converge without c
 
 Map evidence conservatively:
 
-- Proposed availability, an uncompleted booking link, or “we will schedule” -> no Outlook event;
-  record `booking_required` or `awaiting_schedule` and an open note/calendar todo.
+- Unsent proposed availability, an uncompleted booking link, or “we will schedule” -> no Outlook
+  event; record `booking_required` and an open note/calendar todo.
+- Exact availability windows proven sent -> `awaiting_schedule`; when the user explicitly requests
+  blocking protection, search first and create personal busy holds labeled `Pending interview hold
+  — <Company>`, with no attendees. These are pending holds, not confirmed interviews; preserve the
+  user's priority ordering and remove only when superseded by a confirmed time or explicit evidence.
 - Explicit confirmed start, timezone, and duration/end -> `scheduled`; eligible for Outlook
   reconciliation. Append a new occurrence for an additional confirmed block; never classify a
   parallel block as a reschedule merely because another time is already linked.
@@ -104,9 +114,11 @@ The private local `calendar.md` carries one generated view for every application
 rollup is `in_progress`. Refresh it with the application tracker; do not hand-maintain a second
 status table.
 
-- Lead with a top-level **Do now** table so owner work is visible before the schedule. Follow it
-  with one confirmed occurrence per chronological table row using separate **Date**, **Time**,
-  **Company**, **Role**, and **Prepare for** columns; never join events into a sentence or day cell.
+- Lead with a top-level **Do now** table so owner work is visible before the schedule. Follow it with
+  a prominent conflict alert covering every overlap among confirmed interviews, pending holds, and
+  personal commitments. Render the schedule in exactly three navigation layers: **week**, **day**,
+  then individual **event**. When one organizer block names multiple interviewers or rounds without
+  exact subslots, render one event and merge those names into its content; do not duplicate the time.
   Waits and company commentary never compete with the preparation agenda.
 - If confirmed or actionable evidence cannot yet be matched to one posting, keep it in those same
   tables labeled **posting link unresolved**. Markdown and HTML must share that supplemental item;
@@ -127,7 +139,14 @@ status table.
 - Link the row to the private application notes. Preserve hand-written calendar content outside the
   generated markers, and make repeated refreshes byte-stable and duplicate-free.
 - This company view is a planning projection, not an Outlook event. Only a confirmed occurrence
-  satisfying the event gate below may be written to Outlook.
+  satisfying the event gate below may be written as an interview. Submitted availability may be
+  written only as the explicitly requested personal pending hold described above.
+
+On every calendar touch, reconcile the current clock, live Outlook events across the active planning
+horizon, Inbox, Sent Items, Drafts, Deleted Items, tracker state, supplemental pending holds, and
+personal commitments. Retire stale actions, use event end time for past/current classification, and
+regenerate `calendar.md` plus `calendar.html` together. The local view is stale if either surface
+disagrees with live evidence.
 
 ## 3. Search Outlook Before Every Write
 
@@ -162,8 +181,9 @@ Use this event shape:
 
 Update only an unambiguous personal event created for this purpose. For an explicit reschedule,
 move that event rather than creating a second one. Never edit an organizer-owned invitation,
-respond to an invite, change attendees, guess a timezone/duration, or create an event from proposed
-availability.
+respond to an invite, change attendees, or guess a timezone/duration. Never turn unsent availability
+into an event. A sent-availability personal hold is allowed only under the explicit blocking rule
+above and must remain visibly pending.
 
 When enriching an existing personal event, preserve accurate subject/body information, meeting
 links, location, reminder, and availability unless evidence explicitly changes them. Keep the body
@@ -173,10 +193,13 @@ brief and operational; application notes hold the full communication timeline.
 
 - Re-fetch every created or updated Outlook event and repeat the bounded duplicate search. The
   result must be exactly one canonical event for that confirmed occurrence.
-- Run `status.py --refresh-calendar --write`, then `status.py --check-metadata` and
+- Run `status.py --refresh-calendar --write --html`, then `status.py --check-metadata` and
   `status.py --check-calendar`; after status moves, run `status.py --sync-log`. Confirm that every
   in-progress application and every one of its roles appears exactly once in the company view, then
-  repeat the refresh without `--write` and require it to report no change.
+  repeat `status.py --refresh-calendar --html` without `--write` and require it to report no change.
+- Confirm every current/future live Outlook block in scope is either represented in the grouped
+  local schedule or explicitly excluded as unrelated, and verify that every detected overlap is
+  visible in both Markdown and HTML.
 - Confirm application notes contain one entry per matched message and one `People` row per person.
 - Report each application/status/progress change and each Outlook event as `created`, `updated`,
   `already present`, `ambiguous`, or `skipped`, with the evidence date and a plain-language reason.

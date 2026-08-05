@@ -1638,6 +1638,7 @@ def update_progress(
     starts_at: str | None = None, ends_at: str | None = None,
     timezone_name: str | None = None, follow_up_at: str | None = None,
     calendar_item: str | None = None, add_occurrence: bool = False,
+    display_rounds: list[str] | None = None,
 ):
     """Set ONE posting's structured progress; never moves the status folder.
 
@@ -1737,7 +1738,7 @@ def update_progress(
 
         occurrence_values = any(value is not None for value in (
             action, due_at, starts_at, ends_at, timezone_name, follow_up_at,
-        ))
+        )) or display_rounds is not None
         if add_occurrence:
             target_items = [generate_entry_id(doc.entries, slug)]
             calendar_items.append(target_items[0])
@@ -1783,6 +1784,8 @@ def update_progress(
             ):
                 if value is not None:
                     fields[key] = value or None
+            if display_rounds is not None:
+                fields["display_rounds"] = list(display_rounds)
             upserts[item] = fields
 
         occurrence_fields = {
@@ -3133,6 +3136,11 @@ def main():
     parser.add_argument("--calendar-item", default=None, metavar="CAL_ID",
                         help="Target one linked occurrence when a role has more "
                              "than one calendar item.")
+    parser.add_argument("--display-round", action="append", default=None,
+                        metavar="TEXT",
+                        help="With --update-progress: add one ordered round or "
+                             "interviewer label to the targeted shared organizer "
+                             "block. Repeat for each subslot.")
     parser.add_argument("--add-occurrence", action="store_true",
                         help="Append a distinct confirmed occurrence to the "
                              "role's calendar_items list; requires scheduled "
@@ -3239,7 +3247,8 @@ def main():
                         ends_at=args.ends_at, timezone_name=args.timezone,
                         follow_up_at=args.follow_up_at,
                         calendar_item=args.calendar_item,
-                        add_occurrence=args.add_occurrence)
+                        add_occurrence=args.add_occurrence,
+                        display_rounds=args.display_round)
         return
 
     if args.check_calendar:

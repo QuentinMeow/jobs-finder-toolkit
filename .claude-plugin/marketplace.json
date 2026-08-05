@@ -35,7 +35,7 @@
     {
       "name": "behavioral-interview-prep",
       "source": "./skills/behavioral-interview-prep",
-      "description": "Prepare grounded behavioral answers, or explicitly human-authorized fictionalized claims with private disclosures, and generate validated STAR answers with prominent impact, timed quick answers, technical expansions, and reusable story references. Use for behavioral interview prep, story banks, leadership/conflict/failure questions, or company-specific coaching."
+      "description": "Give immediate, grounded answers to live behavioral interview questions and arm interview sessions without repository bookkeeping. Also generate validated STAR answer banks, story banks, technical expansions, and company-specific coaching when the user explicitly asks to save or build prep artifacts. Use for behavioral interview prep, story banks, leadership/conflict/failure questions, or company-specific coaching."
     },
     {
       "name": "company-research",

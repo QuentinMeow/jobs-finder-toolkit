@@ -365,21 +365,31 @@ class PlanTests(unittest.TestCase):
         markdown = render_company_view(companies)
         self.assertIn("### Do now", markdown)
         self.assertIn("| When | Company | Role | Action |", markdown)
-        self.assertIn("| Date | Time | Company | Role | Prepare for |", markdown)
-        self.assertEqual(markdown.count("| Mon, Aug 10, 2099 |"), 2)
+        self.assertIn("### Schedule", markdown)
+        self.assertIn("#### Week of Aug 10–16, 2099", markdown)
+        self.assertIn("##### Monday, August 10, 2099", markdown)
+        self.assertIn("| Time | Status | Company / commitment | Role | Event |", markdown)
+        self.assertEqual(markdown.count("| Confirmed | Example <Corp> |"), 2)
         self.assertEqual(markdown.count("Choose a time & confirm"), 1)
 
         html = render_company_view_html(companies)
         self.assertIn("<meta name=\"viewport\"", html)
         self.assertIn("@media (max-width: 720px)", html)
         self.assertIn('<div class="table-wrap" role="region"', html)
-        self.assertIn('<th scope="col">Date</th>', html)
-        self.assertIn('data-label="Prepare for"', html)
+        self.assertIn('<section class="week">', html)
+        self.assertIn("<h3>Week of Aug 10–16, 2099</h3>", html)
+        self.assertIn("<h4>Monday, August 10, 2099</h4>", html)
+        self.assertIn('<article class="event event-interview">', html)
         self.assertIn("table, tbody, tr, td { display: block", html)
         self.assertIn("Example &lt;Corp&gt;", html)
         self.assertIn("Coding &lt;round&gt;", html)
         self.assertIn("Platform &amp; Infrastructure", html)
-        self.assertIn('href="../../applications/4_in_progress/example/notes.md"', html)
+        self.assertIn(
+            'href="../../applications/4_in_progress/example/notes.md" '
+            'target="_blank" rel="noopener noreferrer"',
+            html,
+        )
+        self.assertEqual(html.count("<a "), html.count('target="_blank"'))
         self.assertNotIn("javascript:", html)
 
     def test_unlinked_agenda_items_and_named_rounds_have_markdown_html_parity(self):
@@ -430,16 +440,19 @@ class PlanTests(unittest.TestCase):
         html = render_company_view_html(companies, supplemental)
         for expected in (
             "Unlinked Co", "Technical interview", "Submit four availability slots",
-            "Coding — Alex", "Architecture — Casey", "exact subslot not recorded",
+            "Coding — Alex", "Architecture — Casey",
         ):
             self.assertIn(expected, markdown)
             self.assertIn(expected, html)
         self.assertEqual(markdown.count("Submit four availability slots"), 1)
         self.assertEqual(html.count("Submit four availability slots"), 1)
-        self.assertLess(markdown.index("### Do now"), markdown.index("### Upcoming interviews"))
-        upcoming_markdown = markdown[markdown.index("### Upcoming interviews"):]
+        self.assertLess(markdown.index("### Do now"), markdown.index("### Schedule"))
+        upcoming_markdown = markdown[markdown.index("### Schedule"):]
         self.assertLess(upcoming_markdown.index("Coding — Alex"), upcoming_markdown.index("Unlinked Co"))
-        self.assertLess(html.index("<h2>Do now</h2>"), html.index("<h2>Upcoming interviews</h2>"))
+        self.assertLess(html.index("<h2>Do now</h2>"), html.index("<h2>Schedule</h2>"))
+        self.assertEqual(markdown.count("1:00 PM–3:00 PM PDT | Confirmed | Tracked Co"), 1)
+        self.assertIn("### ⚠️ Conflicts", markdown)
+        self.assertIn("2:30 PM–3:00 PM PDT", markdown)
         self.assertLess(
             markdown.index("| Now | Unlinked Co"),
             markdown.index("| Sun, Aug 9 |"),
@@ -450,12 +463,49 @@ class PlanTests(unittest.TestCase):
             '"kind":"interview","company":"Unlinked Co",'
             '"role":"Infra Engineer","round":"Technical interview",'
             '"starts_at":"2099-08-10T14:30:00-07:00",'
+            '"ends_at":"2099-08-10T15:00:00-07:00",'
             '"timezone":"America/Los_Angeles"} -->\n'
         )
         parsed = parse_calendar(CALENDAR_TEMPLATE.replace(
             COMPANY_VIEW_START, marker + COMPANY_VIEW_START, 1))
         self.assertEqual(parsed.errors, [])
         self.assertEqual(parsed.agenda_items[0]["company"], "Unlinked Co")
+
+    def test_pending_holds_and_commitments_are_grouped_and_conflict_checked(self):
+        supplemental = [
+            {
+                "id": "agenda-priority-hold",
+                "kind": "hold",
+                "company": "Priority Co",
+                "role": "Platform Engineer (posting link unresolved)",
+                "round": "Submitted interview availability",
+                "starts_at": "2099-08-11T13:00:00-07:00",
+                "ends_at": "2099-08-11T15:00:00-07:00",
+                "timezone": "America/Los_Angeles",
+                "priority": "Highest priority",
+            },
+            {
+                "id": "agenda-personal-commitment",
+                "kind": "commitment",
+                "company": "Personal commitment",
+                "role": "—",
+                "round": "Appointment",
+                "starts_at": "2099-08-11T14:00:00-07:00",
+                "ends_at": "2099-08-11T16:00:00-07:00",
+                "timezone": "America/Los_Angeles",
+            },
+        ]
+        markdown = render_company_view([], supplemental)
+        self.assertIn("Pending — Highest priority", markdown)
+        self.assertIn("| Busy | Personal commitment |", markdown)
+        self.assertIn("1:00 PM–3:00 PM PDT", markdown)
+        self.assertIn("2:00 PM–3:00 PM PDT", markdown)
+        self.assertEqual(markdown.count("##### Tuesday, August 11, 2099"), 1)
+
+        rendered_html = render_company_view_html([], supplemental)
+        self.assertIn('class="event event-hold"', rendered_html)
+        self.assertIn('class="event event-commitment"', rendered_html)
+        self.assertIn('class="conflict"', rendered_html)
 
     def test_duplicate_company_view_markers_fail_closed(self):
         duplicate = CALENDAR_TEMPLATE.replace(

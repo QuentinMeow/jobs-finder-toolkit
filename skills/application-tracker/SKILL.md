@@ -245,8 +245,11 @@ the machine contract is one hidden JSON-comment line. Optional calendar fields i
 Sections project entry state: **Action needed** (owner work), **Waiting and follow-up**
 (employer/result/paused waits), **Interview schedule** (confirmed times, chronological), and
 **My notes and personal todos** (owner-only). The generated **Interview prep** view leads with a
-**Do now** table containing only owner actions, then an aligned preparation table: one confirmed
-occurrence per row, with separate date, time, company, role, and prepare-for columns. Confirmed or
+**Do now** table containing only owner actions, then a conflict alert and a schedule organized as
+**week → day → event**. The conflict alert covers confirmed interviews, submitted-availability
+pending holds, and personal commitments. One organizer block is one event: when it names several
+rounds or interviewers but does not provide exact subslots, merge those names into the event content
+instead of duplicating the time. Confirmed or
 actionable evidence that is not safely linked to a posting stays visible in
 the same tables with **posting link unresolved** and no fabricated application link. Never
 concatenate several events into one sentence or one
@@ -257,6 +260,11 @@ mechanical reference; the generated preparation table is the primary human view.
 It is a projection only: `meta.yaml` progress plus standardized `notes.md` evidence remain canonical.
 Company-scope evidence may appear there when an exact posting is unresolved, but it must not be
 copied into multiple roles or used to create an Outlook event.
+Before every calendar refresh, capture the actual current time, reconcile live Outlook plus Inbox,
+Sent Items, Drafts, and Deleted Items, retire stale actions, and update supplemental pending holds or
+commitments. Classify a scheduled block as past only after its end time. Always regenerate Markdown
+and HTML together with `--refresh-calendar --write --html`; a second `--refresh-calendar --html`
+preview must report no change.
 Update precedence is deterministic: newest standardized `Email Timeline` outcome/summary (email)
 → non-empty company-scope `next_action` (human, date not recorded) → newest canonical per-role
 progress summary (metadata). A second refresh after a write must report no change.
@@ -451,7 +459,8 @@ If the user moves a folder **by hand**, it can drift from the rollup — re-sync
 status.py --update-progress <slug> <role-match> --phase <phase> --state <state> \
   [--label TEXT] [--action TEXT] [--due-at ISO_DATE_OR_TIME] \
   [--starts-at ISO_TIME --ends-at ISO_TIME --timezone IANA_ZONE] \
-  [--follow-up-at ISO_DATE_OR_TIME] [--email-ref acct-01/<neutral-message-key>]
+  [--follow-up-at ISO_DATE_OR_TIME] [--email-ref acct-01/<neutral-message-key>] \
+  [--calendar-item CAL_ID] [--display-round TEXT ...]
 
 # Append a distinct confirmed block instead of replacing an existing occurrence:
 status.py --update-progress <slug> <role-match> --phase interview_loop --state scheduled \
@@ -472,6 +481,9 @@ Use `--add-occurrence` for a parallel block and `--calendar-item <cal-id>` to en
 a role has several. A reschedule retains the same ID and appends `superseded` history. Completion
 and cancellation are occurrence-local; the role stays `scheduled` while any later linked block is
 still scheduled and becomes `awaiting_result` only after the last expected block completes.
+When one organizer block contains several named subslots, target that single ID and repeat
+`--display-round` in chronological order. The human view merges those subslots into one event rather
+than duplicating the organizer block.
 
 ### Calendar check & sync (human edits are proposals, preview-first)
 
@@ -480,9 +492,8 @@ status.py --check-calendar            # read-only: markers, duplicate ids, meta<
 status.py --sync-calendar             # preview how owner edits map back to progress
 status.py --sync-calendar --write     # apply the previewed proposals transactionally
 status.py --refresh-calendar          # preview compact rows plus the in-progress company/role view
-status.py --refresh-calendar --write  # re-render projections only; never changes progress
-status.py --refresh-calendar --write --html  # also write optional offline calendar.html beside calendar.md
-status.py --refresh-calendar          # repeat after writing; must report no change
+status.py --refresh-calendar --write --html  # always update calendar.md and calendar.html together
+status.py --refresh-calendar --html          # repeat after writing; must report no change
 ```
 
 Owner-edit surfaces the sync understands: a **checked box** (booking done -> `awaiting_schedule`;

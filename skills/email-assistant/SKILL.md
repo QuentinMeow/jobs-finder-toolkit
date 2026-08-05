@@ -212,6 +212,11 @@ Apply these rules:
   explicit waits, with the responsible person when known. Do not invent deadlines. Remove resolved
   items from this dashboard after their resolution is captured in the timeline; write `None
   currently.` when there are no open items.
+- Treat a matching non-draft **Sent Items** message as authoritative proof that availability, a
+  booking choice, or a reschedule request was sent. Immediately retire the corresponding unsent
+  action from `Upcoming Events & To-Dos` and any supplemental local agenda action, record the sent
+  communication in the timeline, and transition `booking_required` to `awaiting_schedule` (or
+  `reschedule_required` to `reschedule_pending`) through the tracker. A Draft is never that proof.
 - Record exact event date, time, duration, and timezone from the message. Preserve the sender's
   timezone and add the user's local equivalent when useful. Proposed availability, a scheduling
   link, or “we will schedule” is a to-do—not a confirmed event.
@@ -231,14 +236,19 @@ Apply these rules:
 
 ## Interview Calendar Reconciliation
 
-When the user asks to update a calendar, use the connected Outlook Calendar capability; never widen
+When the user asks to update a calendar, first capture the actual current time and user timezone,
+then use the connected Outlook Calendar capability; never widen
 the audited email provider's Graph route or permission allowlist. For each exact future interview
 time found in matched mail:
 
-- Keep the local calendar human-first: show proposed or unresolved scheduling in **Do now** first,
-  never as an event. Then render each confirmed occurrence as one chronological row with **Date**,
-  **Time**, **Company**, **Role**, and **Prepare for**. Keep past interviews, company/status
-  updates, and raw tracker detail folded.
+- Reconcile Inbox, Sent Items, Drafts, Deleted Items, the live Outlook planning window, tracker
+  progress, and local supplemental agenda markers on every calendar touch. Retire completed or
+  stale actions and classify a block as past only after its end time. Regenerate Markdown and HTML
+  together; a second refresh must be byte-stable.
+- Keep the local calendar human-first: show unresolved owner work in **Do now**, then show an alert
+  for every overlap among confirmed interviews, submitted-availability holds, and personal busy
+  commitments. Organize the schedule in three layers—**week**, **day**, then individual **event**—
+  and keep past schedule, company/status updates, and raw tracker detail folded.
 - If the evidence is explicit but the posting match is not, retain it in the same generated agenda
   labeled **posting link unresolved**; Markdown and HTML must not diverge or imply a false match.
 
@@ -251,8 +261,11 @@ time found in matched mail:
    that can notify them; list recruiter/interviewer names and the evidence date in the body instead.
    Carry over an explicit meeting link or location, mark the time busy, and use a 30-minute reminder.
 4. Update only an unambiguous personal event when later email explicitly reschedules it. Never guess
-   a timezone or duration, respond to an invitation, create an event from proposed availability, or
-   duplicate an existing event. Keep unresolved scheduling requests as top-of-note to-dos.
+   a timezone or duration, respond to an invitation, or duplicate an existing event. Unsent proposed
+   availability remains a to-do. When Sent Items proves exact availability windows were submitted
+   and the user explicitly wants schedule protection, create/search-first personal busy holds titled
+   `Pending interview hold — <Company>` with no attendees; label them pending, never confirmed, and
+   preserve any user-stated priority.
 5. Report every created, updated, already-present, and intentionally skipped event with its evidence.
 
 ## Drafting Workflow

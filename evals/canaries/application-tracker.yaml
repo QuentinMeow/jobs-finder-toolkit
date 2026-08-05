@@ -102,10 +102,11 @@ canaries:
       email update whose exact role is unresolved; the other has a human-provided update. The
       calendar contains hand-written text outside generated markers.
     expected_behavior:
-      - "Uses `status.py --refresh-calendar --write` and leads with one confirmed interview occurrence per aligned row, using separate date, time, company, role, and round columns."
+      - "Captures the actual current time, reconciles the live planning inputs, and uses `status.py --refresh-calendar --write --html` so Markdown and HTML update together."
+      - "Leads with owner actions and a complete overlap alert, then groups the schedule by week, day, and individual event; confirmed interviews, submitted-availability holds, and personal commitments are visually distinct."
       - "Keeps past occurrences and every in-progress role's canonical status/phase/state/label in collapsed detail instead of concatenating events or expanding all status metadata equally."
       - "Shows the newest company update with its human or email source and keeps ambiguous email evidence at company scope rather than copying it into both roles."
-      - "Preserves hand-written calendar content, is byte-stable on a second refresh, and creates no duplicate company or role rows."
+      - "Preserves hand-written calendar content, is byte-stable on a second `--refresh-calendar --html` preview, and creates no duplicate company or role rows."
       - "Does not change metadata progress, move application folders, or create Outlook events."
     failure_modes:
       - "Omits an in-progress role, invents a role stage, duplicates rows, or turns the company view into status authority."
@@ -124,6 +125,7 @@ canaries:
     expected_behavior:
       - "Creates the first scheduled occurrence with `status.py --update-progress` and appends each additional block with `--add-occurrence`; never overwrites a confirmed start or treats a parallel block as a reschedule."
       - "Stores three unique IDs in the ordered `progress.calendar_items` list and three distinct managed calendar entries, even though the blocks span only two dates."
+      - "Shows three individual events under week/day headings; the two Wednesday organizer blocks remain separate because they are distinct events, while a single organizer block with several named subslots would be one event with repeated `--display-round` labels."
       - "Keeps aggregate progress `scheduled` after the first occurrence completes while later blocks remain, and moves to `awaiting_result` only after the final expected occurrence completes."
       - "Runs `status.py --check-calendar` and preserves duplicate-free, idempotent calendar output."
     failure_modes:

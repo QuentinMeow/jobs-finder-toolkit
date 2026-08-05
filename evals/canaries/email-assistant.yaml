@@ -85,8 +85,9 @@ canaries:
       - "Uses the requested 90-day bounded Inbox/Sent review, matches each message unambiguously to the exact application, and does not treat Drafts as sent mail."
       - "Places Upcoming Events & To-Dos immediately after the notes title, followed by deduplicated People and a reverse-chronological Email Timeline with one concise paraphrased entry per matched Inbox/Sent message."
       - "Captures the recruiter and interviewer names/roles only from explicit evidence, removes resolved scheduling work from the open dashboard, and preserves unrelated existing application-note content."
+      - "Treats the non-draft Sent reply as authoritative proof that availability was submitted, retires the corresponding unsent action, and never treats a Draft as that proof."
       - "Reads mailbox timezone and searches/fetches plausible calendar matches before writing; recognizes the existing organizer invitation as the confirmed interview and creates no duplicate or attendee notification."
-      - "Does not create an event from proposed availability or a scheduling link, guess missing time data, copy full email bodies/provider IDs, or make prose the status authority."
+      - "Does not create an interview event from proposed availability or a scheduling link, guess missing time data, copy full email bodies/provider IDs, or make prose the status authority. A personal pending hold would require exact sent windows plus an explicit user request to block them."
     failure_modes:
       - "Blends a thread into one timeline entry, omits named contacts, or buries open actions below legacy notes."
       - "Creates a duplicate event, adds external attendees, treats a Draft as sent, or stores full mailbox content in notes."
