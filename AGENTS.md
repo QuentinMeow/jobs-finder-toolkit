@@ -137,6 +137,14 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
    `docs/roadmap/desired-state.md` — a new task should trace to a desired-state line.
 5. Before tailoring, read the tailoring card (`config.tailoring_card_path()`) — the distilled default context; open the full profile (`config.profile_md_path()`, source of truth) only on the resume-writer skill's escalation triggers (card missing/stale/`--check` fail, or a JD domain the card doesn't cover).
 
+**Live interview exception:** when the applicable interview skill marks the current turn as a
+chat-first session-arming or live-question fast path, stop this read order after that skill and the
+minimum prompt evidence. Do not read `.agents/MEMORY.md`, `memory/index.md`, handbooks, profiles,
+question banks, company material, or unrelated skill references unless the fast path itself requires
+a specific source for correctness. Treat the chat answer as the complete product: do not browse,
+research, edit files, run tests or validators, or create queue, task, memory, history, handover, or
+worklog records unless the user explicitly requests a durable artifact workflow.
+
 ## Async Collaboration (message-queue/ + tasks/ + doc dialogue)
 
 The owner and agents work asynchronously: each side writes files, the other picks them up next
@@ -151,7 +159,8 @@ folder per task, its status folder IS its status (`tasks/README.md`). Decided qu
 records live in **`memory/`**.
 
 **Boot ritual** — run by the **top-level session only** (subagents never run it); skip entirely if
-`message-queue/` is absent (public exports omit it). Filenames first; open only what's relevant:
+`message-queue/` is absent (public exports omit it). Also skip it entirely for the live interview
+exception above. Filenames first; open only what's relevant:
 1. `ls message-queue/needs-agent/requests/` (+ the `private/` mirror if mounted). For each item:
    act, or convert it (task / decision), then delete the request file in the same commit —
    **except** when the right response is an ANSWER to the owner: append it under a dated
@@ -171,7 +180,8 @@ records live in **`memory/`**.
 5. Sweep `message-queue/needs-human/reviews/`: delete items with a filled Resolution, or older
    than 30 days.
 
-**Always:** end your reply in the five parts of `docs/handbook/reporting-to-the-owner.md` — blocked
+**Outside the live interview exception:** end your reply in the five parts of
+`docs/handbook/reporting-to-the-owner.md` — blocked
 first, outcomes, **what was decided for you** (never optional: `async` settles every reversible fork
 alone, so an unreported decision is an unseen one), what you owe, where it is. Each filed
 `needs-human/` item gets a link + why it matters + what happens if you do nothing — a bare slug is
@@ -334,7 +344,7 @@ Each expands in a named `docs/handbook/` doc; the bolded name is the canonical s
   leak-guarded content): one self-contained item per file, schemas in `templates/` (copy, never
   restate). Hit an owner-owned fork? File it in `message-queue/needs-human/decisions/` (with
   options + a default path) and continue — don't block, don't guess.
-- **Reporting to the Owner** — the prose every human-read surface owes: the five-part session reply,
+- **Reporting to the Owner** — outside the live interview exception, the prose every human-read surface owes: the five-part session reply,
   the PR `## What needs you` section, the handover. Effect not mechanism; a before with every after;
   uncertainty as a number or "not measured". Full detail: `docs/handbook/reporting-to-the-owner.md`.
 - **Shell & Paths** — the shell is **zsh**; always use **absolute paths** in bash calls (a subagent's

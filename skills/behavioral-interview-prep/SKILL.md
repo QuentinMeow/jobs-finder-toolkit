@@ -1,10 +1,30 @@
 ---
 name: behavioral-interview-prep
 visibility: public
-description: Prepare grounded behavioral answers, or explicitly human-authorized fictionalized claims with private disclosures, and generate validated STAR answers with prominent impact, timed quick answers, technical expansions, and reusable story references. Use for behavioral interview prep, story banks, leadership/conflict/failure questions, or company-specific coaching.
+description: Give immediate, grounded answers to live behavioral interview questions and arm interview sessions without repository bookkeeping. Also generate validated STAR answer banks, story banks, technical expansions, and company-specific coaching when the user explicitly asks to save or build prep artifacts. Use for behavioral interview prep, story banks, leadership/conflict/failure questions, or company-specific coaching.
 ---
 
 # Behavioral Interview Prep
+
+## Live answer fast path
+
+Treat `ready`, `start`, `new question`, or an explicit statement that the next question or
+screenshot is forthcoming as session setup. When no actual question is present, reply only:
+`Ready—send the next behavioral question.` Then stop. Treat a broad request to prepare a company
+principle/value set, story bank, or answer package as an artifact workflow, not session arming.
+
+For one live behavioral question, make the chat answer the complete product. Use facts supplied in
+the conversation first. If they are insufficient, read only the directly relevant story source or
+profile section; the full profile is relevant for a broad `Tell me about yourself` answer. Otherwise
+ask one focused question rather than inventing a story. Give one concise, speakable answer and only
+the follow-up material the user requested.
+
+Do not run the repository boot ritual; browse or research; read the full profile, JD, company answer
+library, `QUESTION_BANK.md`, `reference.md`, or private overrides unless the specific live answer
+requires one of those sources; create temporary validation sources; or write YAML, Markdown, tasks,
+queue items, memory, history, handovers, or worklogs. Do not append the general owner-reporting
+footer. Leave this fast path only when the user explicitly asks to save, update, validate, organize,
+or publish an interview-prep artifact.
 
 ## When to Use
 
@@ -19,6 +39,9 @@ Use this skill when the user asks to:
   `private/me/interviews/question-bank/`
 
 ## Before You Start
+
+Use this preparation only for an explicitly requested artifact workflow; do not run it for the live
+answer fast path.
 
 1. Read `AGENTS.md` for repo guardrails.
 2. Read your candidate profile (`config.profile_md_path()`) unless the user already provided complete story material.
@@ -39,9 +62,9 @@ Use this skill when the user asks to:
    story/answer files belong there). See `AGENTS.md` → "Scratch & Temporary Files".
 10. **This focused interview workflow is process-history-free.** The finished chat answer,
     question-bank output, or explicitly requested story artifact is enough. Do not create a
-    `history/conversations/` handover, session task, queue item, or worklog solely to recap the
-    turn. Create one only when the user explicitly requests it or a hard guardrail requires a
-    durable unresolved item.
+    `history/conversations/` handover, session task, queue item, memory entry, or worklog solely to
+    recap the turn. Create one only when the user explicitly requests it or a hard guardrail
+    requires a durable unresolved item.
 
 ## Core Rules
 
@@ -111,12 +134,12 @@ Use this skill when the user asks to:
 - Do not force STAR onto `Tell me about yourself`; use `present -> past -> future` there even if
   the rest of the bank is STAR-based. End the concise default answer with a natural bridge that
   offers optional technical follow-ups, such as, "If useful, I can go deeper on either project."
-- Every project answer has four modules: a self-contained `quick_answer`, a self-contained
+- Every persisted project answer has four modules: a self-contained `quick_answer`, a self-contained
   `combined_answer` that integrates the quick answer with the short deep-dive material, an additive
   `technical_deep_dive_short`, and an additive `technical_deep_dive_long`.
-- The quick answer targets 90 seconds and must be between 75 and 130 seconds at the configured
-  speaking rate. Default to a conservative 120 words per minute. This gate applies to chat answers
-  and proposed packages too; count the actual words instead of merely declaring timing settings.
+- A persisted quick answer targets 90 seconds and must be between 75 and 130 seconds at the
+  configured speaking rate. Default to a conservative 120 words per minute. Keep live chat answers
+  near that range without creating temporary files or delaying the answer for script-based timing.
 - Render each module as four compact visual paragraphs: `(Situation) ...`, `(Task) ...`,
   `(Action) ...`, `(Result) ...`. Do not render large STAR headings or isolated summary lines.
   The labels are navigation aids and are not spoken.
@@ -130,7 +153,7 @@ Use this skill when the user asks to:
   space to be memorable while keeping Action the largest paragraph.
 - Introduce expansions with a natural bridge such as, "If useful, I can explain how I made that
   rollout safe." The bridge is navigation text, not part of STAR timing.
-- Append two general-story references to every project answer: a tagged timeline view with explicit
+- Append two general-story references to every persisted project answer: a tagged timeline view with explicit
   logical connections, and tagged isolated focus areas. Every isolated focus area must state the
   specific problem, what the candidate personally did, and the impact.
 - For company culture/principle prep, optimize for interview-time navigation: create exactly one
@@ -161,7 +184,8 @@ Use this skill when the user asks to:
    - do not modify story-bank content unless the user explicitly requested that modification
    - preserve source details; mark unknowns/conflicts, or record each exact human-authorized exception
 3. Map each story to likely question families.
-4. For a specific behavioral question, write the source YAML before the Markdown:
+4. For a specific live behavioral question, use the live answer fast path and stop. Only when the
+   user explicitly requests persistence, write the source YAML before the Markdown:
    - choose a company-neutral question-family slug and primary natural question
    - list similar question variants and ordered `_general_03_` / company-prefixed output aliases
    - create an `answers` list with at least two titled projects
@@ -182,8 +206,8 @@ Use this skill when the user asks to:
    - passes the credibility review for chronology, causality, motives, metrics, role, and credit
    - length fits spoken delivery
    - every quick answer's measured word count passes the 75-130 second gate
-   - every proposed source passes `answer_bank.py validate`; for response-only work, validate
-     temporary sources under top-level `local/` and delete them afterward
+   - every proposed source passes `answer_bank.py validate`; response-only work creates no source
+     file and runs no artifact validator
 7. If persisting to an answer bank:
    - create or update the neutral question-family YAML source
    - validate it before rendering
@@ -492,7 +516,8 @@ Strong answer-module shape:
 - Does each answer read as one connected spoken story after removing the visual STAR labels?
 - Is the impact prominent, concrete, and tied to a beneficiary, risk, metric, or durable change?
 - Is there more action than setup?
-- Does the quick answer target 90 seconds and stay within 75-130 seconds?
+- For persisted prep, does the measured quick answer target 90 seconds and stay within 75-130
+  seconds? For live chat, is it concise enough to speak naturally without file-based validation?
 - Is the combined answer self-contained instead of a mechanical concatenation?
 - Do the technical expansions add detail instead of repeating the quick answer?
 - Does every project answer end with both required tagged general-story reference styles?
@@ -503,6 +528,6 @@ Strong answer-module shape:
   the human requested interviewer follow-up preparation?
 - Does the neutral source start with `_general_03_<source-stem>` and include every applicable
   company-prefixed alias?
-- Are there at least two distinct project answers?
-- Did the YAML validate and generate every current Markdown alias exactly?
+- For persisted prep, are there at least two distinct project answers?
+- For persisted prep, did the YAML validate and generate every current Markdown alias exactly?
 - Did you preserve the facts except for exact, disclosed claims the human explicitly authorized?
