@@ -7,6 +7,11 @@ format from memory); the PR body format lives in
 `skills/github-workflow/SKILL.md`; the queue's routing and ranking live in
 `message-queue/README.md`. This doc is what fills them in.
 
+When an applicable skill explicitly makes its focused workflow
+process-history-free, this doc still governs the final reply and any PR body,
+but no handover or other session-history surface is created solely for that
+turn. The finished problem, answer, or coaching artifact is the durable record.
+
 The reason it exists: in `async` mode the agent decides everything reversible on
 its own and the work merges before the owner reads a word of it
 (`docs/handbook/collaboration-modes.md`). The reply is not a summary of a
@@ -113,6 +118,8 @@ genuinely nothing to project, the section says so in one fixed sentence —
 ## 6. Before you send
 
 - Does the first sentence say whether they need to act?
+- If the skill is process-history-free, did you avoid creating a handover or
+  worklog solely to recap the turn?
 - Is every "what was done" line a difference, with its before?
 - Is there a "what was decided for you" part, including the easy calls?
 - Is every open item listed — including ones carried over from earlier sessions

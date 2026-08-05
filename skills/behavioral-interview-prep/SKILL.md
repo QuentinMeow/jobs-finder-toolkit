@@ -37,6 +37,11 @@ Use this skill when the user asks to:
    artifacts; document every exception and never broaden or propagate it.
 9. **Scratch stays in `local/`** (never the repo root or the `me/interviews/` tree — only finished
    story/answer files belong there). See `AGENTS.md` → "Scratch & Temporary Files".
+10. **This focused interview workflow is process-history-free.** The finished chat answer,
+    question-bank output, or explicitly requested story artifact is enough. Do not create a
+    `history/conversations/` handover, session task, queue item, or worklog solely to recap the
+    turn. Create one only when the user explicitly requests it or a hard guardrail requires a
+    durable unresolved item.
 
 ## Core Rules
 
