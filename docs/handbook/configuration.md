@@ -12,7 +12,7 @@ filename stems are never hardcoded — they come from a config file loaded by
   relative to the config file's directory.
 - **Paths** come from config, not literals — always accessed via the `config.py` functions:
   the candidate profile is `config.profile_md_path()` (example:
-  `examples/me/profile.example.md`), the baseline is `config.baseline_path()`, the
+  `examples/me/career/profile.example.md`), the baseline is `config.baseline_path()`, the
   rendering reference DOCX is `config.reference_docx_path()`, the reusable sourced company
   leveling/compensation cache is `config.company_levels_path()` (default: inside `config.candidate_dir()`;
   compensation bands are age-gated while level/YOE mappings retain provenance), the

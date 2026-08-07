@@ -150,7 +150,7 @@ import yaml
 # The single source for this literal. ``review_gate.COMPANY_INDEX_REL`` restates it
 # (a gate must not gain an import it can fail on) and a test pins the two together.
 # It is NOT routed through ``config.companies_root()`` on purpose — see review_gate.
-DEFAULT_REL = "private/companies/_index.yaml"
+DEFAULT_REL = "private/market/company-index.yaml"
 
 # Same shape as ``job_metadata._STORE_KEY_RE``: usable as a folder name and as a URL
 # fragment, which is what the key is actually spent on.

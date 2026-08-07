@@ -145,20 +145,18 @@ WATCHED_PATHSPEC = [".", LEDGER_EXCLUDE]
 # cleanup and it silently disarms the detector. Measured with ``config.example.yaml``
 # active — the fallback in any clone without a real ``config.yaml``::
 #
-#     applications_root -> <repo>/examples/applications
-#     companies_root    -> <repo>/examples/companies
+#     applications_root -> <repo>/examples/me/applications
+#     companies_root    -> <repo>/examples/me/interviews/companies
 #     overlay_mounted   -> True
 #
-# So the accessor resolves INTO the public example tree. The moment a phase-8-style
-# ``examples/companies/`` exists, every public clone would read the EXAMPLE index and
-# report "inspected, (none)" — replacing the loud NOT INSPECTED banner with a false
-# clean bill of health, which is precisely the failure ``company_display_names``'
-# ``None`` return exists to prevent. The literal is correct; this comment is what was
-# missing. It is single-sourced as ``automation/shared/company_index.DEFAULT_REL`` and
-# the two are pinned by ``test_review_gate.test_index_path_matches_the_shared_constant``
-# — pinned by a TEST rather than by an import, because a gate must not gain an import
-# it can fail on.
-COMPANY_INDEX_REL = "private/companies/_index.yaml"
+# So the accessor resolves INTO the public example interview-prep tree, not to the
+# owner-only market index this detector must inspect. That example tree exists in a
+# public clone by design; using it as the source would replace the loud NOT INSPECTED
+# banner with a false clean bill of health for private data the gate never read. The
+# literal is correct and is single-sourced as
+# ``automation/shared/company_index.DEFAULT_REL``; a test pins the restatement rather
+# than adding an import a gate could fail on.
+COMPANY_INDEX_REL = "private/market/company-index.yaml"
 # Paths that are SUPPOSED to name companies, so a match there is not news.
 # ``private/`` is git-ignored in this repo and can never be in a diff here; it is
 # listed so the detector cannot flag the index against itself in any checkout that
@@ -701,7 +699,7 @@ class RowChain:
 # ── the advisory detector ────────────────────────────────────────────────────
 
 def company_display_names(repo: Path) -> list[str] | None:
-    """Display names + aliases from ``private/companies/_index.yaml``.
+    """Display names + aliases from ``private/market/company-index.yaml``.
 
     Returns None when there was NOTHING TO INSPECT — the caller MUST report that as
     "not inspected". Silence from a detector that never ran is indistinguishable

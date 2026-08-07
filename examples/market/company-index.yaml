@@ -1,0 +1,4 @@
+# Minimal fictional company identity registry for the public example tree.
+example-corp:
+  display: Example Corp
+  kind: employer

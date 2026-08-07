@@ -63,7 +63,7 @@ class ForbiddenDestinationTests(unittest.TestCase):
 
     def test_the_private_overlay_is_refused(self):
         """The reported defect: --dest private --force would rmtree the overlay."""
-        for rel in ("private", "private/applications/6_drafted", "private/.git"):
+        for rel in ("private", "private/me/applications/6_drafted", "private/.git"):
             dest = (REPO_ROOT / rel).resolve()
             reason = export_public.forbidden_destination(dest)
             self.assertIsNotNone(reason, rel)
@@ -199,8 +199,9 @@ class DestinationRefusalOrderingTests(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "src"
-            (root / "private/applications/6_drafted/acme-20260101").mkdir(parents=True)
-            sentinel = root / "private/applications/6_drafted/acme-20260101/meta.yaml"
+            (root / "private/me/applications/6_drafted/acme-20260101").mkdir(
+                parents=True)
+            sentinel = root / "private/me/applications/6_drafted/acme-20260101/meta.yaml"
             sentinel.write_text("company: Acme\n", encoding="utf-8")
             original = export_public.REPO_ROOT
             export_public.REPO_ROOT = root
@@ -212,7 +213,7 @@ class DestinationRefusalOrderingTests(unittest.TestCase):
             self.assertTrue(sentinel.is_file(), "the overlay must survive --force")
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "company: Acme\n")
             self.assertEqual(sorted(p.name for p in (root / "private").iterdir()),
-                             ["applications"])
+                             ["me"])
 
     def test_the_cli_refuses_dest_private_before_the_arming_gate(self):
         """Unarmed + forbidden --dest: the DESTINATION rule is what fires."""

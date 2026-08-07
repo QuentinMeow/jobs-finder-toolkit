@@ -11,7 +11,8 @@ skill: company-research
 default_setup: >
   config.yaml unset -> config.example.yaml + examples/** fallback. Live network research
   (curl / web fetch) is required for the real-company canaries. Output lands under
-  config.companies_root()/<company>/research/ — examples/companies/<company>/research/ under the
+  config.companies_root()/<company>/research/ —
+  examples/me/interviews/companies/<company>/research/ under the
   example config. That path is UNTRACKED but NOT git-ignored, so a run in the primary checkout
   leaves stageable files behind: run each canary in a detached worktree with JOBHUNT_CONFIG pinned
   to that worktree's config.example.yaml, and confirm companies_root() resolves inside it before
@@ -124,7 +125,7 @@ canaries:
       offer-decision facts (funding, ratings, comp, visa).
     setup: >
       Default setup. Example Corp is the FICTIONAL company in the shipped example drafted app
-      (examples/applications/6_drafted/example-corp-senior-software-engineer/) — no real public
+      (examples/me/applications/6_drafted/example-corp-senior-software-engineer/) — no real public
       facts exist to find. Tests the never-fabricate rule.
     expected_behavior:
       - "Recognizes it cannot source real funding/ratings/valuation for a fictional company and SCAFFOLDS the for-myself/ files with '[unverified] — confirm' plus where-to-look (Crunchbase / Glassdoor / Levels / h1bdata.info / recruiter) instead of inventing numbers."

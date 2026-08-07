@@ -18,7 +18,8 @@ Inputs (via the vendored config accessors — self-contained skill, no repo-root
                          card_staleness routine reads the SAME accessor — if the two ever
                          disagreed, the card would carry zero stories and a valid sha256.
                          With no ``config.yaml`` present the config falls back to the tracked
-                         example config, whose applications root is ``examples/applications``
+                         example config, whose applications root is
+                         ``examples/me/applications``
                          → the Jordan Rivers ``examples/`` fixture ships no story bank, and
                          the digest then says so gracefully.
 

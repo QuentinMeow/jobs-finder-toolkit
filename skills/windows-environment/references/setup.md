@@ -79,7 +79,7 @@ permission model in [File Permissions for WSL](https://learn.microsoft.com/windo
 ```bash
 .venv/bin/python skills/windows-environment/scripts/doctor.py
 .venv/bin/python automation/bootstrap_overlay.py --check
-.venv/bin/python skills/resume-writer/scripts/render.py examples/applications/6_drafted/example-corp-senior-software-engineer/
+.venv/bin/python skills/resume-writer/scripts/render.py examples/me/applications/6_drafted/example-corp-senior-software-engineer/
 ```
 
 If Codex still says `bubblewrap` is unavailable after `command -v bwrap` succeeds,

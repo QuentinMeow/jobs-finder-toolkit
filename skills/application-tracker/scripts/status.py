@@ -694,7 +694,8 @@ def company_keys_report(statuses: list[str], *, strict: bool = False,
     reported as such and every present key is then counted unresolved rather than
     wrong — "cannot check" is not "checked and clean".
     """
-    # The index path is a repo-root-relative LITERAL, not `config.companies_root()`.
+    # The market index path is a repo-root-relative LITERAL, not
+    # `config.companies_root()` (the interview-prep tree).
     # Under the example config that accessor resolves into `examples/`, so routing
     # through it would one day check a placeholder index and report a clean bill of
     # health for a tree that was never inspected — the same trap documented at

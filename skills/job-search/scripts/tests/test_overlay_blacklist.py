@@ -45,20 +45,23 @@ companies:
 
 @contextmanager
 def _overlay(*, blacklist: bool):
-    """A temp checkout whose config points applications_root into an overlay."""
+    """A temp checkout using the person-first private-overlay layout."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp).resolve()
-        (root / "private" / "applications" / "0_profile").mkdir(parents=True)
+        (root / "private" / "me" / "applications" / "0_profile").mkdir(
+            parents=True)
         if blacklist:
-            # The DEFAULT derivation, deliberately: config.yaml below sets only
-            # applications_root, so this fixture is what pins blacklist_path()'s
-            # default to the layout the handbook documents.
+            # blacklist_yaml stays omitted deliberately: this fixture pins its
+            # overlay_root-derived default to the person-first layout.
             (root / "private" / "market").mkdir(parents=True)
             (root / "private" / "market" / "blacklist.yaml").write_text(
                 BLACKLIST_YAML, encoding="utf-8")
         cfg = root / "config.yaml"
-        cfg.write_text('paths:\n  applications_root: "private/applications"\n',
-                       encoding="utf-8")
+        cfg.write_text(
+            'paths:\n'
+            '  applications_root: "private/me/applications"\n'
+            '  overlay_root: "private"\n',
+            encoding="utf-8")
         saved = os.environ.get(vendored_config.ENV_VAR)
         os.environ[vendored_config.ENV_VAR] = str(cfg)
         vendored_config._load.cache_clear()

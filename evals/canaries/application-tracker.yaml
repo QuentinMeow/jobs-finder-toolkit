@@ -8,7 +8,7 @@
 skill: application-tracker
 default_setup: >
   config.yaml unset -> config.example.yaml + examples/** fallback. The example drafted app is
-  examples/applications/6_drafted/example-corp-senior-software-engineer/ with a valid v6
+  examples/me/applications/6_drafted/example-corp-senior-software-engineer/ with a valid v6
   meta.yaml (each jobs entry status: drafted with progress application_prep/action_required).
   No network, no LibreOffice, no private overlay needed (pyyaml only).
 
@@ -16,7 +16,7 @@ canaries:
   - id: at-pipeline-health
     requires_overlay: false
     prompt: "How's my pipeline looking? What needs my attention?"
-    setup: "Default setup. Runs status.py over the examples/applications tree."
+    setup: "Default setup. Runs status.py over the examples/me/applications tree."
     expected_behavior:
       - "Runs `.venv/bin/python skills/application-tracker/scripts/status.py` and reads each app's OVERALL status from the FOLDER it lives in (drafted/applied/in_progress/rejected/ignored) — the derived rollup of its per-job `status` fields, which the folder must agree with."
       - "Summarizes the funnel and highlights apps needing action (non-empty `next_action`) and stale ones (applied > ~2 weeks with no change)."
@@ -62,7 +62,7 @@ canaries:
   - id: at-status-move-on-request
     requires_overlay: false
     prompt: "I just submitted the Example Corp platform application — mark it as applied."
-    setup: "Default setup. The app currently sits in examples/applications/6_drafted/."
+    setup: "Default setup. The app currently sits in examples/me/applications/6_drafted/."
     expected_behavior:
       - "Runs `status.py --update <slug> applied` — a whole-application transition that stamps EVERY posting's `status: applied` + today's `status_date` AND moves the folder drafted -> applied, keeping the folder and the per-job statuses consistent."
       - "Acts only because the user explicitly asked; does not hand-edit meta.yaml or move the folder outside the script."
@@ -78,7 +78,7 @@ canaries:
     prompt: "One of the two roles in my Acme application — the Backend Engineer one — just reached an onsite interview. Update it."
     setup: >
       Default setup, plus a multi-role application acme-multi-20260720 in
-      examples/applications/5_applied/ whose meta.yaml jobs: list has two postings (Backend
+      examples/me/applications/5_applied/ whose meta.yaml jobs: list has two postings (Backend
       Engineer and Frontend Engineer), both status: applied (so the folder rolls up to applied).
     expected_behavior:
       - "Runs `status.py --update-job acme-multi-20260720 \"Backend Engineer\" in_progress` — a single-posting transition (role matched by case-insensitive substring or a 1-based index) that resolves to exactly one job."

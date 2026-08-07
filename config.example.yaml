@@ -4,15 +4,19 @@ candidate:
   name_slug: "Jordan_Rivers"
   title_slug: "Software_Engineer"
 paths:
-  # Lifetime taxonomy: me/ is what the candidate authored and keeps across every
-  # application; market/ is what the pipeline scans as a whole; applications/ is
-  # disposable. The example tree mirrors the shape a private overlay uses.
-  profile_md: "examples/me/profile.example.md"
-  baseline_yaml: "examples/me/baseline.example.yaml"
-  reference_docx: "examples/me/resume/reference.example.docx"
+  # Person-first taxonomy: me/ groups career sources, applications, and interview
+  # preparation; market/ is what the pipeline scans as a whole. The example tree
+  # mirrors the shape a private overlay uses.
+  profile_md: "examples/me/career/profile.example.md"
+  baseline_yaml: "examples/me/career/resume/baseline.example.yaml"
+  reference_docx: "examples/me/career/resume/reference.example.docx"
   company_levels_yaml: "examples/market/logs/company-levels.example.yaml"
-  applications_root: "examples/applications"
-  discoveries_dir: "examples/applications/1_discoveries"
+  applications_root: "examples/me/applications"
+  discoveries_dir: "examples/market/scans/current"
+  # The person-first layout puts applications below me/, so its parent is not the
+  # overlay root. Benchmark configs intentionally omit this key: deriving their
+  # overlay root from a redirected applications root is what isolates writes.
+  overlay_root: "examples"
   # The single calendar/todo file the application tracker maintains alongside
   # per-job progress (interview schedules, booking todos, reschedule history).
   # Defaults to <candidate_dir>/calendar.md when omitted; the example keeps it
@@ -29,10 +33,10 @@ paths:
   candidate_dir: "examples/market/logs"
   # The tailoring card and the skip-logs each default to
   # <candidate_dir>/<filename>, so all of them are omitted here. Set one only
-  # when your layout puts it somewhere else — a lifetime-organised private tree,
+  # when your layout puts it somewhere else — a purpose-organised private tree,
   # for instance, keeps the card with the profile and the logs with the market
   # research:
-  #   tailoring_card:     "private/me/tailoring-card.md"
+  #   tailoring_card:     "private/me/career/tailoring-card.md"
   #   applications_log:   "private/market/logs/applications-log.yaml"
   #   applications_jsonl: "private/market/logs/applications-log.jsonl"
   #   company_search_log: "private/market/logs/company-search-log.yaml"

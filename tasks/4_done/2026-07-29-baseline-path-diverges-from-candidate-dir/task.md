@@ -36,6 +36,10 @@ names a directory that `candidate_dir()` now owns.
 
 ## Definition of done
 
+**Resolved 2026-08-06:** `baseline_path()` now uses the same config-dir-relative fictional
+fixture strategy as the profile and reference DOCX. A code comment records why it deliberately
+does not derive from `candidate_dir()`, and accessor tests pin the public and explicit real paths.
+
 Either:
 
 - `baseline_path()`'s default becomes `candidate_dir() / "baseline.yaml"`, with a test asserting

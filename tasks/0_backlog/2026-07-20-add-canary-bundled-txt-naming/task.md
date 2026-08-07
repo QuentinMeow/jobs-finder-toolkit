@@ -32,7 +32,7 @@ Relevant files:
 - `evals/canaries/application-tracker.yaml` (where the new canary belongs)
 - `skills/application-tracker/SKILL.md` (the naming-convention table,
   around the `<APPLICATION_STEM>_<job title>.txt` row)
-- `examples/applications/6_drafted/example-corp-senior-software-engineer/` (the
+- `examples/me/applications/6_drafted/example-corp-senior-software-engineer/` (the
   shipped fixture already contains a correctly-named bundled `.txt` file to
   assert against)
 

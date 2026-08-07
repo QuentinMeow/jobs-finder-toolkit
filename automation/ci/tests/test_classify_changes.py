@@ -87,7 +87,7 @@ class ClassificationTests(unittest.TestCase):
     def test_each_owned_lane(self):
         cases = {
             "maintenance": "automation/reconcile/tests/test_reconcile.py",
-            "render": "examples/applications/6_drafted/example/source/tailored.yaml",
+            "render": "examples/me/applications/6_drafted/example/source/tailored.yaml",
             "resume": "skills/resume-writer/scripts/tests/test_resume_schema.py",
             "shared": "automation/store/validate_store.py",
             "job-search": "skills/job-search/scripts/search.py",

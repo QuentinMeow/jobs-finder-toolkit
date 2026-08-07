@@ -723,7 +723,7 @@ def build_meta_bytes(
         # already opens.
         #
         # WHY IT IS EMPTY. The index is the owner's and lives in the private
-        # overlay (`private/companies/_index.yaml`), which this public script may
+        # overlay (`private/market/company-index.yaml`), which this public script may
         # not have; and a key is OWNER-ASSIGNED — `handoff` inventing one would
         # write a key the index does not contain, which is worse than none. So
         # this never resolves anything, with or without an overlay: the output is

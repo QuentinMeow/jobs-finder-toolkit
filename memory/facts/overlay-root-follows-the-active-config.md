@@ -1,5 +1,10 @@
 # `overlay_root()` follows whichever config is active, so an isolated config gets an isolated overlay
 
+**Correction, 2026-08-06.** The derivation remains true, but the real person-first layout no
+longer relies on it: `applications_root` now sits at `private/me/applications`, so the real
+config explicitly pins `overlay_root: private`. The benchmark config deliberately keeps this
+fact's derived behavior because its redirected applications parent is the isolation root.
+
 - **Filed**: 2026-07-29
 - **Source**: investigating whether phase 4's symlink removal broke the benchmark search leg (it did not) — session 2026-07-29
 
@@ -13,8 +18,8 @@ Concretely, the benchmark config (`private/evals/config.benchmark.yaml`) sets
 
 | Accessor | Under the real config | Under the benchmark config |
 |---|---|---|
-| `applications_root()` | `private/applications` | `private/evals/runs/applications` |
-| `overlay_root()` | `private/` | `private/evals/runs/` |
+| `applications_root()` | `private/me/applications` | `private/evals/runs/applications` |
+| `overlay_root()` | `private/` (explicit) | `private/evals/runs/` (derived) |
 | `search_profiles_dir()` | `private/market/searches/` | `private/evals/runs/job-search-profiles/` |
 | `blacklist_path()`, `story_bank_path()`, `companies_root()`, `candidate_dir()` | under `private/` | under `private/evals/runs/` |
 

@@ -34,7 +34,7 @@ Design rules:
     ``check_company_index``, which reads the owner's company index because a
     check nobody is forced to run is the failure mode this module exists to fix.
     Three things bound that exception to the maintainer's own machine: it no-ops
-    unless ``private/companies/`` is present, ``--require-roots`` never asserts a
+    unless ``private/market/`` is present, ``--require-roots`` never asserts a
     private root, and ``file_retries`` never writes a private subject into the
     tracked retry queue;
   * to change a file format, change ``templates/`` AND the matching check
@@ -68,7 +68,7 @@ _LAST_UPDATED_RE = re.compile(
 # The owner's company index lives under this root. It is the only PRIVATE root any
 # check names; ``company_index.DEFAULT_REL`` is the single source for the file path
 # itself, and a test pins this to be its parent.
-COMPANY_INDEX_ROOT = "private/companies"
+COMPANY_INDEX_ROOT = "private/market"
 
 # The tracked PUBLIC company registry. It and the git-ignored blacklist overlay
 # share ONE entry schema, so a personal skip rule written here works exactly as if
@@ -485,7 +485,7 @@ def company_index_findings(index_path: Path,
 def check_company_index() -> list[Finding]:
     """The owner's company index is consistent, and every company_key resolves.
 
-    NO-OPS when ``private/companies/`` is absent — the normal case in the published
+    NO-OPS when ``private/market/`` is absent — the normal case in the published
     tree, in CI, and in any contributor checkout without the overlay. The ``yaml``
     and ``company_index`` imports live BELOW that guard so this module stays
     stdlib-only on a bare clone (module docstring, "Design rules"), which is also

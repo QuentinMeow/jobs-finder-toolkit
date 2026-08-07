@@ -204,8 +204,8 @@ EXAMPLES_PREFIX = "examples/"
 
 # ── path/filename denylist (defense in depth, token-independent) ──────────────
 # Root-anchored private product trees that must never appear in a public tree.
-# Anchored (``^``) so the tracked ``examples/applications/**`` dataset is NOT hit
-# (``examples/me/``, ``examples/companies/``, ``examples/store/`` likewise).
+# Anchored (``^``) so the tracked ``examples/me/applications/**`` dataset is NOT
+# hit (``examples/me/``, ``examples/store/`` likewise).
 #
 # APPEND-ONLY UNION — entries are NEVER removed, only added.
 # A rename does not retire the old name: a stale checkout, an old branch, a
@@ -411,7 +411,7 @@ FAIL_CLOSED_EXTENSIONS = frozenset({
 # deleting the hatch itself. Being unreachable is also why it went stale unnoticed,
 # so anything added here needs a test, not just a line.
 BINARY_ALLOWLIST = frozenset({
-    "examples/me/resume/reference.example.docx",
+    "examples/me/career/resume/reference.example.docx",
 })
 
 

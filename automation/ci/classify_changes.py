@@ -191,8 +191,8 @@ def lanes_for_path(path: bytes) -> tuple[str, ...] | None:
     rules = (
         (("automation/publish/",), ("publish",)),
         (("skills/resume-writer/scripts/",), ("render", "resume")),
-        (("examples/applications/6_drafted/", "examples/fixtures/resume-writer/",
-          "examples/me/resume/"), ("render", "resume")),
+        (("examples/me/applications/6_drafted/", "examples/fixtures/resume-writer/",
+          "examples/me/career/resume/"), ("render", "resume")),
         (("skills/job-search/", "automation/search-recall-audit/"), ("job-search",)),
         (("skills/application-tracker/scripts/", "skills/email-assistant/scripts/",
           "skills/behavioral-interview-prep/scripts/",

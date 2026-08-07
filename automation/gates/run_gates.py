@@ -438,7 +438,7 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
         Gate(
             name="example-render",
             argv=(py, "skills/resume-writer/scripts/render.py",
-                  "examples/applications/6_drafted/example-corp-senior-software-engineer/"),
+                  "examples/me/applications/6_drafted/example-corp-senior-software-engineer/"),
             what_it_proves="The worked example renders and passes check.py under the "
                            "fake config.example.yaml persona: locked fields, real "
                            "titles/skills, bullet lengths, one-page PDF.",
@@ -447,7 +447,7 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
             parallel_safe=False,  # writes into examples/ and drives a headless soffice
             precondition=_needs_libreoffice,
             dirties="rewrites the four tracked example DOCX/PDF artifacts under "
-                    "examples/applications/6_drafted/example-corp-senior-software-engineer/ "
+                    "examples/me/applications/6_drafted/example-corp-senior-software-engineer/ "
                     "(binary output is not byte-reproducible). CI does this in a "
                     "throwaway checkout; you are not in one — `git checkout -- examples/` "
                     "unless the new bytes are the point of your change.",
@@ -865,7 +865,7 @@ def _run_many(gates: Sequence[Gate], log_dir: Path, *, jobs: int, fail_fast: boo
     Forced serial (``parallel_safe=False``) and why: the three staged-index gates and
     review-gate-verify-all read the git index/history; example-render and the
     resume-writer / job-search / application-tracker suites all write into the SAME
-    examples/applications tree (and example-render drives a single headless
+    examples/me/applications tree (and example-render drives a single headless
     LibreOffice profile). Those run first, one at a time, in table order. The
     publish-test shards are process-isolated and remain parallel-safe.
     """

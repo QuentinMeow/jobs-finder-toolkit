@@ -77,35 +77,39 @@ git-ignored in the public repo, your real data is never committed to the public 
 
 ## Suggested overlay layout
 
-Keep the overlay as its own git repo (private). The layout is organised **by lifetime** —
-what is permanently true about you (`me/`), what is permanently true about a company
-(`companies/<key>/`), what dies with a single req (`applications/`), and what describes
-the market you scan (`market/`). Each root maps onto `config.yaml` `paths.*` keys:
+Keep the overlay as its own git repo (private). Personal artifacts are organised **by
+purpose** below `me/`: career sources, applications, and interview preparation. Toolkit
+operating systems — the market view, raw store, private skills, evals, and process roots —
+remain peers at the overlay root. Each configured product path maps onto `config.yaml`
+`paths.*` keys:
 
 ```
 my-jobhunt-overlay/            # private git repo (mounts at ./private/)
 ├── config.yaml                # your real identity + paths (copied from config.example.yaml)
 ├── leak_tokens.txt            # -> private/leak_tokens.txt (extra publish-guard tokens)
 ├── leak_safe_words.txt        # optional — skill names that are ordinary phrases
-├── me/                        # PERMANENT — role-agnostic, this is you
-│   ├── profile.md             # -> paths.profile_md
-│   ├── baseline.yaml          # -> paths.baseline_yaml
-│   ├── tailoring-card.md      # -> paths.tailoring_card
-│   ├── resume/
-│   │   └── <your-resume>.docx # -> paths.reference_docx
+├── me/                        # your personal job-hunt artifacts; directories only at this level
+│   ├── career/
+│   │   ├── profile.md         # -> paths.profile_md
+│   │   ├── tailoring-card.md  # -> paths.tailoring_card
+│   │   ├── resume/
+│   │   │   ├── baseline.yaml  # -> paths.baseline_yaml
+│   │   │   └── <your-resume>.docx # -> paths.reference_docx
+│   │   └── communications/    # paste-ready outreach + application-form copy
+│   ├── applications/          # your real application pipeline (-> paths.applications_root)
+│   │   └── <2_ignored…6_drafted>/<company>-<role>-<date>/
 │   └── interviews/
 │       ├── calendar.md        # -> paths.calendar_md (upcoming interviews across everything)
 │       ├── story-bank/        # -> paths.story_bank_dir (behavioral project stories)
 │       ├── question-bank/     # generic behavioral answers
-│       └── common-message-replies/   # paste-ready outreach + application-form copy
-├── companies/                 # PERMANENT — one folder per company (-> paths.companies_root)
-│   └── <key>/
-│       ├── research/          # company-research output
-│       ├── coding/            # coding problems seen at this company
-│       └── product-sense/     # product/design-sense prep for this company
-├── applications/              # DISPOSABLE — your real applications (-> paths.applications_root)
-│   └── <2_ignored…6_drafted>/<company>-<role>-<date>/
+│       ├── practice/          # company-independent coding/system-design practice
+│       └── companies/         # -> paths.companies_root
+│           └── <key>/
+│               ├── research/  # company-research output
+│               ├── coding/    # coding problems seen at this company
+│               └── product-sense/ # product/design-sense prep for this company
 ├── market/                    # what the pipeline scans as a whole
+│   ├── company-index.yaml     # company-key identity registry used across workflows
 │   ├── blacklist.yaml         # -> paths.blacklist_yaml (registry skip rules)
 │   ├── universe/              # company universes you sweep
 │   ├── searches/              # -> paths.search_profiles_dir (your real search profile YAMLs)
@@ -147,17 +151,17 @@ checkout root:
 
 ```bash
 # 1. Scaffold the overlay tree (directly at the git-ignored ./private/ mount):
-mkdir -p private/me/{resume,interviews/{story-bank,question-bank,common-message-replies}}
-mkdir -p private/companies
-mkdir -p private/applications/{2_ignored,3_rejected,4_in_progress,5_applied,6_drafted}
+mkdir -p private/me/career/{resume,communications}
+mkdir -p private/me/applications/{2_ignored,3_rejected,4_in_progress,5_applied,6_drafted}
+mkdir -p private/me/interviews/{companies,practice,question-bank,story-bank}
 mkdir -p private/market/{universe,searches,logs,scans/{current,archive}}
 mkdir -p private/skills/skill-notes
 
 # 2. Seed the data files from the tracked fixtures, then edit them to be YOU:
-cp examples/me/profile.example.md                     private/me/profile.md
-cp examples/me/baseline.example.yaml                  private/me/baseline.yaml
+cp examples/me/career/profile.example.md              private/me/career/profile.md
+cp examples/me/career/resume/baseline.example.yaml    private/me/career/resume/baseline.yaml
 cp examples/market/logs/company-levels.example.yaml   private/market/logs/company-levels.yaml
-cp examples/me/resume/reference.example.docx          private/me/resume/reference.docx
+cp examples/me/career/resume/reference.example.docx   private/me/career/resume/reference.docx
 cp skills/job-search/profiles/_TEMPLATE.yaml  private/market/searches/my-default.yaml
 
 # 3. Arm the leak guard with your identity (one token per line: name variants,
@@ -176,8 +180,8 @@ cp config.example.yaml config.yaml     # edit candidate + paths.* to private/…
 ```
 
 Git does not track empty directories, so the status folders under
-`applications/` materialize in a fresh clone only as the tools write into them —
-that is normal. The `companies/`, `me/interviews/`, and `skills/` trees are optional;
+`me/applications/` materialize in a fresh clone only as the tools write into them —
+that is normal. The company-prep, personal-interview, and `skills/` trees are optional;
 leave them empty until you have content (e.g. your own private interview-prep skill).
 
 ## Setup steps
@@ -216,13 +220,15 @@ leave them empty until you have content (e.g. your own private interview-prep sk
      name_slug: "Jordan_Rivers"
      title_slug: "Software_Engineer"
    paths:
-     profile_md: "private/me/profile.md"
-     baseline_yaml: "private/me/baseline.yaml"
-     tailoring_card: "private/me/tailoring-card.md"
-     reference_docx: "private/me/resume/<your-resume>.docx"
+     overlay_root: "private"
+     profile_md: "private/me/career/profile.md"
+     baseline_yaml: "private/me/career/resume/baseline.yaml"
+     tailoring_card: "private/me/career/tailoring-card.md"
+     reference_docx: "private/me/career/resume/<your-resume>.docx"
      calendar_md: "private/me/interviews/calendar.md"
      story_bank_dir: "private/me/interviews/story-bank"
-     applications_root: "private/applications"
+     applications_root: "private/me/applications"
+     companies_root: "private/me/interviews/companies"
      discoveries_dir: "private/market/scans/current"
      applications_log: "private/market/logs/applications-log.yaml"
      applications_jsonl: "private/market/logs/applications-log.jsonl"
@@ -238,11 +244,13 @@ leave them empty until you have content (e.g. your own private interview-prep sk
    ```
 
    Every key after `applications_root` is optional — each has a default derived from
-   the roots above it. `blacklist_yaml`, `story_bank_dir`, `search_profiles_dir` and
-   `skill_references_root` default to exactly the lifetime paths shown above, so an
-   overlay laid out like this one can omit all four. The card and the two skip-logs
+   the roots above it. `blacklist_yaml`, `story_bank_dir`, `companies_root`,
+   `search_profiles_dir` and `skill_references_root` default to exactly the purpose paths
+   shown above, so an overlay laid out like this one can omit all five. Set `overlay_root`
+   explicitly whenever applications are nested under `me/`; otherwise the legacy fallback
+   treats the applications parent as the overlay root. The card and the two skip-logs
    still default to the flat "everything under `<applications_root>/0_profile/`"
-   layout the example candidate uses, so a lifetime-organised overlay must set those
+   layout, so a purpose-organised overlay must set those
    explicitly — as this one does.
 
    `config.yaml` is git-ignored in the public repo, so your real identity never

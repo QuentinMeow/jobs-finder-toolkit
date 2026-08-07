@@ -41,7 +41,7 @@ Every application also gets a bundled, copy-paste `..._Application_<role>.txt`
 (cover letter + "why this company/role" + "past experience" sections for portal
 text boxes) and a `meta.yaml` of structured facts (level, required YOE, salary,
 sponsorship). The full worked example lives in
-[`examples/applications/6_drafted/example-corp-senior-software-engineer/`](examples/applications/6_drafted/example-corp-senior-software-engineer/).
+[`examples/me/applications/6_drafted/example-corp-senior-software-engineer/`](examples/me/applications/6_drafted/example-corp-senior-software-engineer/).
 For contributors and integrators, the
 [`examples/fixtures/resume-writer/`](examples/fixtures/resume-writer/) corpus adds
 fully synthetic multi-employer, promotion, internship, contractor, hybrid-project,
@@ -60,7 +60,7 @@ one-page check could not run; add `--no-pdf` if you deliberately want a DOCX-onl
 ```bash
 git clone https://github.com/<owner>/jobs-finder-toolkit.git && cd jobs-finder-toolkit   # or your fork
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python skills/resume-writer/scripts/render.py examples/applications/6_drafted/example-corp-senior-software-engineer/
+.venv/bin/python skills/resume-writer/scripts/render.py examples/me/applications/6_drafted/example-corp-senior-software-engineer/
 ```
 
 That renders and validates the example resume + cover letter you see above. Then

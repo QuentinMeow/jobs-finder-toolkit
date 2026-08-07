@@ -1550,7 +1550,7 @@ class AdvisoryDetectorTests(GateTestCase):
     def test_examples_and_the_ats_registry_are_skipped(self):
         self.bootstrap()
         self.repo.write(review_gate.COMPANY_INDEX_REL, self.INDEX)
-        self.repo.write("examples/applications/x.md", "Lambda Systems Inc.\n")
+        self.repo.write("examples/me/applications/x.md", "Lambda Systems Inc.\n")
         self.repo.write("skills/job-search/companies.yaml", "- name: Lambda Systems Inc.\n")
         self.repo.commit("public change")
 
@@ -1887,11 +1887,11 @@ class ThisRepoTests(unittest.TestCase):
     def test_the_index_path_is_not_routed_through_the_config_accessor(self):
         """Routing it through ``config.companies_root()`` disarms the detector.
 
-        With ``config.example.yaml`` that accessor resolves into ``examples/``, and
-        ``overlay_mounted()`` returns True there — so the gate would read an EXAMPLE
-        index in every public clone and print "inspected, (none)" instead of the
-        NOT INSPECTED banner. The comment beside the constant records the
-        measurement; this pins that the constant stayed a literal.
+        With ``config.example.yaml`` that accessor resolves into the public example
+        interview-prep tree, not the owner-only market index. Reading it would print
+        "inspected, (none)" instead of the NOT INSPECTED banner for private data the
+        gate never saw. The comment beside the constant records the measurement;
+        this pins that the constant stayed a literal.
         """
         source = (review_gate.REPO_ROOT / "automation/publish/review_gate.py").read_text()
         # Comments are stripped first: the comment beside the constant NAMES the

@@ -86,9 +86,9 @@ relative to the config file's directory. The four files the paths point at:
 
 | Path key | What it is | How to create it |
 |----------|-----------|------------------|
-| `paths.profile_md` | Your complete professional profile (markdown): all experience, projects tagged `[draft]`/`[backup]`, and your Approved/Weak/Never **skill lists**. The source of truth. | Start from `examples/me/profile.example.md`; replace with your real content. |
-| `paths.baseline_yaml` | Exact YAML transcription of your **approved** resume — the anchor every tailored resume starts from. | Copy `examples/me/baseline.example.yaml`; or extract from a DOCX with `resume-writer/scripts/extract.py`. |
-| `paths.reference_docx` | Your formatted resume DOCX — the render *template* (fonts/margins/styles preserved). | Copy `examples/me/resume/reference.example.docx`; replace with your own formatted resume. |
+| `paths.profile_md` | Your complete professional profile (markdown): all experience, projects tagged `[draft]`/`[backup]`, and your Approved/Weak/Never **skill lists**. The source of truth. | Start from `examples/me/career/profile.example.md`; replace with your real content. |
+| `paths.baseline_yaml` | Exact YAML transcription of your **approved** resume — the anchor every tailored resume starts from. | Copy `examples/me/career/resume/baseline.example.yaml`; or extract from a DOCX with `resume-writer/scripts/extract.py`. |
+| `paths.reference_docx` | Your formatted resume DOCX — the render *template* (fonts/margins/styles preserved). | Copy `examples/me/career/resume/reference.example.docx`; replace with your own formatted resume. |
 | `paths.company_levels_yaml` | Optional reusable level/YOE/comp reference cache. | Optional; `examples/market/logs/company-levels.example.yaml` shows the shape. |
 
 If you don't set `config.yaml`, the toolkit falls back to `config.example.yaml` (the fake
@@ -148,7 +148,7 @@ Pick a posting from the shortlist and tell the agent:
 > "Tailor my resume for this job: <paste JD or URL>" (or "for posting #3 from the search").
 
 The `resume-writer` skill creates `applications/6_drafted/<slug>/` (here `applications/` means
-`config.applications_root()` — with the shipped example config, `examples/applications/`),
+`config.applications_root()` — with the shipped example config, `examples/me/applications/`),
 saves the JD(s) under `source/JD-<title>.md`, writes `meta.yaml`, tailors `source/tailored.yaml`
 **starting from
 your baseline** (targeted edits only — no fabrication, skills gated by your Approved/Weak/Never
@@ -206,7 +206,7 @@ Once you hear back (folder in `4_in_progress/`), prep with two skills:
   `config.story_bank_path()` and the question bank beside it (`me/interviews/question-bank/`).
   > "Build behavioral stories from my profile and map them to Amazon LPs."
 
-(Real interview products mount under the private overlay — `private/companies/<key>/`
+(Real interview products mount under the private overlay — `private/me/interviews/companies/<key>/`
 for company-specific material, `private/me/interviews/` for the rest.)
 
 (Coding interview prep is a separate **private** skill that ships only with the private
@@ -222,11 +222,11 @@ config.yaml (git-ignored) / config.example.yaml   # identity, paths, filters (St
 requirements.txt                                   # Python deps
 examples/                                          # fake "Jordan Rivers" profile + a worked drafted app
 private/                                            # your overlay (own git repo, git-ignored) — real data mounts here:
-  me/              # you: profile, baseline, tailoring card, resume/ (your render template —
-                   #   config.reference_docx_path()), interviews/ (story + question banks, calendar)
-  companies/       # one folder per company: research/, coding/, product-sense/ (config.companies_root())
-  applications/    # your pipeline (config.applications_root(): 2_ignored…6_drafted)
-  market/          # blacklist, search profiles, discovery scans, skip-logs
+  me/              # your personal artifacts:
+    career/        # profile, tailoring card, resume sources/exports, communications
+    applications/  # your pipeline (config.applications_root(): 2_ignored…6_drafted)
+    interviews/    # story/question banks, calendar, and companies/<key>/ prep
+  market/          # company identity index, blacklist, search profiles, discovery scans, skip-logs
 skills/<skill>/                             # the skills (SKILL.md + self-contained scripts/)
 automation/shared|vendoring|gardener|publish/          # shared helpers, vendoring, exporter/leak-guard
 AGENTS.md                                           # the full agent contract (deep reference)
