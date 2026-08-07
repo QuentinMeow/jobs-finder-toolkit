@@ -406,6 +406,13 @@ recovering cost **42% of the whole 10m32s cycle** — one wasted CI run, the loc
 diagnosis, and a second CI run. The local command that would have prevented it
 takes well under a minute.
 
+**Run it AFTER committing, not before.** `--impact-from` compares a committed Git
+range, so on uncommitted work it reports `focused; lanes: policy; reason: the Git
+range contains no changes`, runs 8 gates in ~28s, and prints `ALL GREEN`. That looks
+exactly like a clean full run and proves nothing about your edits. The same branch
+after committing selected `policy, maintenance`, ran 17 gates, and took ~76s. If the
+header says *no changes* while you have work in progress, you have measured nothing.
+
 Two guards now exist, and neither replaces running the real thing:
 
 - the reconciler's `shipped-docs-name-shipped-tooling` check fails at **commit**
