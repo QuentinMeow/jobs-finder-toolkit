@@ -106,6 +106,11 @@ ALLOWLIST_DIRS = [
     "automation/ci",
     "automation/hooks",
     "automation/reconcile",
+    # Timeless tooling with no personal data: the read-only post-merge cutover
+    # planner and the validation profile. It ships because the handbook pages
+    # that DO ship (post-merge-cutover.md, command-cookbook.md, repo-map.md) name
+    # these commands — omitting it leaves 13 broken references inside the export.
+    "automation/cutover",
     "templates",
     ".github",
     ".claude-plugin",
