@@ -976,22 +976,27 @@ class TestOverlaySourcesAreEnumerated(VerifyLinksTestCase):
         self.assertEqual([(b["file"], b["tier"]) for b in broken],
                          [("private/interviews/a/notes.md", "reference")])
 
-    def test_an_overlay_data_tree_is_still_skipped_not_reported(self) -> None:
-        """The other half of the rule: ``applications/`` and ``local/`` stay skipped.
+    def test_overlay_application_data_trees_are_still_skipped_not_reported(self) -> None:
+        """The person-first app root and its retired address stay skipped.
 
         Replaces a companion test that pinned ``private/interviews/`` being tallied
         ``skip-tree``. That behaviour was correct until phase 5 and is now wrong, so
-        the assertion moves to a tree that IS still runtime data. The file is still
-        enumerated and read either way — the source-set half of the fix is what makes
-        the tier decision meaningful at all.
+        the assertion moves to trees that ARE runtime data. Retaining the old address
+        is deliberate: dated records truthfully name it. Both files are still
+        enumerated and read — the source-set half of the fix is what makes the tier
+        decision meaningful at all.
         """
-        self.overlay_init({"applications/6_drafted/x/notes.md": "See [a](../b/gone.md).\n"})
+        self.overlay_init({
+            "me/applications/6_drafted/x/notes.md": "See [a](../b/gone.md).\n",
+            "applications/6_drafted/legacy/notes.md": "See [a](../b/gone.md).\n",
+        })
         self.git_init()
         broken, advisory, permitted, skipped, _ = V.check_references()
         self.assertEqual((broken, advisory, permitted), ([], [], []))
-        self.assertEqual(skipped["skip-tree"], 1)
-        self.assertIn("private/applications/6_drafted/x/notes.md",
-                      [V._rel(f) for f in V._instruction_files()])
+        self.assertEqual(skipped["skip-tree"], 2)
+        files = [V._rel(f) for f in V._instruction_files()]
+        self.assertIn("private/me/applications/6_drafted/x/notes.md", files)
+        self.assertIn("private/applications/6_drafted/legacy/notes.md", files)
 
     def test_removing_the_overlay_reproduces_the_public_result_exactly(self) -> None:
         """The CI assertion: with no ``private/`` every count is what it was before.

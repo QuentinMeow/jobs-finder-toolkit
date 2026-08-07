@@ -31,8 +31,8 @@ $ grep -n examples .github/workflows/ci.yml
 ```
 
 Neither `examples/data/` nor `examples/templates/` exists, and the `ci.yml` pin names
-`examples/store`. What is left of this phase is **not** the reshape; it is the two things
-below the reshape did not close — D7 and the inherited accessor item.
+`examples/store`. The 2026-08-06 person-first follow-up has now closed D7. What remains
+is ratification of the built calls and the inherited accessor item.
 
 ### Scope, re-measured 2026-07-31 — the per-skill table is dead in both columns
 
@@ -140,20 +140,27 @@ instructions this phase was also chartered to fix are corrected — search-profi
 `ask-me-anything` and `job-search`, and where company behavioural answers belong in
 `behavioral-interview-prep`. That is the phase's PR 1.
 
+**Correction, 2026-08-06: the person-first refactor builds the former D7 gap at its new
+destination.** `companies_root()` now resolves to `examples/me/interviews/companies/`, backed
+by one fictional company-prep fixture; the identity fixture is separately filed at
+`examples/market/company-index.yaml`. The same refactor moves the fictional application and
+career sources below `examples/me/`. Ratification remains open in the linked queue item.
+
 **Was: "deliberately NOT done — the `examples/` reshape itself."** ~~Every remaining piece
 renames, deletes or invents a **published** path in a public repo, or changes what a generator
 writes into the owner's private tree.~~ **Superseded 2026-08-02.** The pre-registered fallback
 in that item fired: the owner said "continue the work of the folder refactor", which the item's
 own **Default path** had already defined to mean *build each call to its recommendation*. D1,
 D2, D3 and D6 were built and are now **ratify-or-revert**, each as its own revertible commit
-range. **D7 was NOT built** — `examples/companies/` still does not exist
-(`git ls-files examples/companies` returns 0 rows) — and D5 shipped separately in `ac34371`.
+range. ~~**D7 was NOT built** — `examples/companies/` still does not exist.~~ That was
+true on 2026-08-02; the correction above records the new person-first destination built on
+2026-08-06. D5 shipped separately in `ac34371`.
 
 The calls are still filed as one item —
 [`message-queue/needs-human/decisions/examples-reshape-seven-calls.md`](../../../message-queue/needs-human/decisions/examples-reshape-seven-calls.md)
 — with options, a recommendation and a default for each; no `Your answer:` line has been
-filled. **This task stays in `0_backlog/` because that ratification is open and D7 is
-unbuilt — not because the reshape is undone.** Its default path is now "the recommendations
+filled. **This task stays in `0_backlog/` because ratification and the accessor assertion
+remain open — not because the reshape is undone.** Its default path is now "the recommendations
 stand as built; nothing further moves without an answer."
 
 One correction to the plan worth carrying forward: it proposed an `examples/skills/skill-notes/`
@@ -167,7 +174,7 @@ assertion carves `skill_references_dir()` out instead (decision D4 in the item a
 - [ ] All 11 public `SKILL.md` files and 7 handbook docs updated
 - [x] `examples/` mirrors the private tree; `data/` and `templates/` violations fixed;
       `ci.yml`'s `examples/data` pin updated in the same PR — **done 2026-08-02**
-      (`261b4f0`, `8c8112a`; `ls examples/` → `applications fixtures market me screenshots
+      (`261b4f0`, `8c8112a`; the later person-first move nests applications below `me/`; `ls examples/` → `fixtures market me screenshots
       store`, `ci.yml:252` → `validate_store.py examples/store`). Ratification of the calls
       it was built on is open; see the item above
 - [ ] **Inherited 2026-07-31** from
@@ -176,16 +183,15 @@ assertion carves `skill_references_dir()` out instead (decision D4 in the item a
       not the other half. Resolving `config.*()` with `JOBHUNT_CONFIG=config.example.yaml`
       (`overlay_root()` → `examples/`):
 
-      **Resolve now (9):** `profile_md_path` → `examples/me/profile.example.md`,
-      `baseline_path` → `examples/me/baseline.example.yaml`, `reference_docx_path` →
-      `examples/me/resume/reference.example.docx`, `company_levels_path` →
+      **Resolve now:** `profile_md_path` → `examples/me/career/profile.example.md`,
+      `baseline_path` → `examples/me/career/resume/baseline.example.yaml`, `reference_docx_path` →
+      `examples/me/career/resume/reference.example.docx`, `company_levels_path` →
       `examples/market/logs/company-levels.example.yaml`, `calendar_path` →
       `examples/me/interviews/calendar.md`, `candidate_dir` → `examples/market/logs`,
-      plus `applications_root`, `discoveries_dir`, `overlay_root`.
+      plus `applications_root`, `discoveries_dir`, `overlay_root`, and `companies_root` →
+      `examples/me/interviews/companies`.
 
-      **Still resolve to nothing (9):** `companies_root` → `examples/companies` (**D7, the
-      unbuilt call — this is the one the reshape was supposed to close**);
-      `blacklist_path` → `examples/market/blacklist.yaml`; `story_bank_path` →
+      **Still resolve to nothing:** `blacklist_path` → `examples/market/blacklist.yaml`; `story_bank_path` →
       `examples/me/interviews/story-bank`; `search_profiles_dir` →
       `examples/market/searches`; `tailoring_card_path` →
       `examples/market/logs/tailoring-card.md`; `skill_references_dir(<skill>)` →

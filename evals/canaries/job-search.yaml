@@ -19,7 +19,7 @@ canaries:
       (skills/job-search/scripts/search_jobs.py --profile example), Stage 1.
     expected_behavior:
       - "Runs search_jobs.py against the `example` profile (Stage 1 — company ATS boards + keyless aggregators + JobSpy Indeed/Google) rather than inventing postings."
-      - "Writes the ranked shortlist to the discoveries dir (config.discoveries_dir(); examples/applications/1_discoveries/<YYYYMMDD>-example.md in examples fallback) AND presents the top matches in-chat."
+      - "Writes the ranked shortlist to the discoveries dir (config.discoveries_dir(); examples/market/scans/current/<YYYYMMDD>-example.md in examples fallback) AND presents the top matches in-chat."
       - "Every surfaced row carries a real `source` + `url`; nothing is fabricated. '?' is used for facts the posting did not provide, never a guess."
       - "Presents company, title, score, level/Google-equivalent range, YOE, salary, visa label, and WHY each matched; calls out visa `unclear` rows as needing employer confirmation."
       - "Hands off next steps to resume-writer / application-tracker rather than tailoring here."

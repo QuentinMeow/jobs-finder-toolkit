@@ -91,7 +91,7 @@ job's `progress`/`status_date`)** — don't restate the schema here. After the f
 the empty structured placeholders by handing off to its enrichment (enrichment never sets
 `status` — creation already stamped `drafted`, and later transitions go through
 `status.py --update`/`--update-job`). Here `applications/` stands for `config.applications_root()`
-— with the example config, `examples/applications/`:
+— with the example config, `examples/me/applications/`:
 
 ```bash
 .venv/bin/python skills/application-tracker/scripts/status.py \

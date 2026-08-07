@@ -191,18 +191,38 @@ class MalformedConfigTests(unittest.TestCase):
 class AccessorDefaultTests(unittest.TestCase):
     """Each default must equal the literal it replaced, byte for byte."""
 
-    CONFIG = 'paths:\n  applications_root: "private/applications"\n'
+    CONFIG = ('paths:\n'
+              '  applications_root: "private/me/applications"\n'
+              '  discoveries_dir: "private/market/scans/current"\n'
+              '  overlay_root: "private"\n')
+
+    def test_candidate_source_defaults_match_the_person_first_example_tree(self):
+        with _active_config("\n") as cfg:
+            base = cfg.parent
+            self.assertEqual(
+                config.profile_md_path(),
+                base / "examples" / "me" / "career" / "profile.example.md")
+            self.assertEqual(
+                config.baseline_path(),
+                base / "examples" / "me" / "career" / "resume"
+                / "baseline.example.yaml")
+            self.assertEqual(
+                config.reference_docx_path(),
+                base / "examples" / "me" / "career" / "resume"
+                / "reference.example.docx")
 
     def test_defaults_match_the_literals_they_replaced(self):
         with _active_config(self.CONFIG) as cfg:
             base = cfg.parent
-            apps = base / "private" / "applications"
+            apps = base / "private" / "me" / "applications"
             overlay = base / "private"
             self.assertEqual(config.applications_root(), apps)
+            self.assertEqual(config.discoveries_dir(),
+                             overlay / "market" / "scans" / "current")
 
-            # overlay_root(): the applications_root().parent idiom (registry.py,
-            # build_tailoring_card.py, card_staleness.py).
-            self.assertEqual(config.overlay_root(), apps.parent)
+            # A person-first application root is nested below me/, so the live
+            # layout pins overlay_root explicitly. Benchmark isolation still tests
+            # the applications_root().parent derivation below.
             self.assertEqual(config.overlay_root(), overlay)
 
             # candidate_dir(): applications_root() / "0_profile" (status.py:152,
@@ -230,7 +250,8 @@ class AccessorDefaultTests(unittest.TestCase):
                              overlay / "market" / "searches")
             self.assertEqual(config.skill_references_dir("job-search"),
                              overlay / "skills" / "skill-notes" / "job-search")
-            self.assertEqual(config.companies_root(), overlay / "companies")
+            self.assertEqual(config.companies_root(),
+                             overlay / "me" / "interviews" / "companies")
 
     def test_story_bank_matches_the_display_key_both_hashers_record(self):
         # The trap: build_tailoring_card.py and card_staleness.py each hash this
@@ -256,6 +277,7 @@ class AccessorDefaultTests(unittest.TestCase):
             base = cfg.parent
             for name, path in (
                 ("applications_root", config.applications_root()),
+                ("discoveries_dir", config.discoveries_dir()),
                 ("overlay_root", config.overlay_root()),
                 ("candidate_dir", config.candidate_dir()),
                 ("tailoring_card_path", config.tailoring_card_path()),
@@ -314,8 +336,9 @@ class AccessorOverrideTests(unittest.TestCase):
 
     SPLIT = """\
         paths:
-          applications_root: "private/applications"
-          tailoring_card: "private/me/tailoring-card.md"
+          applications_root: "private/me/applications"
+          overlay_root: "private"
+          tailoring_card: "private/me/career/tailoring-card.md"
           applications_log: "private/market/logs/applications-log.yaml"
           applications_jsonl: "private/market/logs/applications-log.jsonl"
           company_search_log: "private/market/logs/company-search-log.yaml"
@@ -330,7 +353,7 @@ class AccessorOverrideTests(unittest.TestCase):
         with _active_config(self.SPLIT) as cfg:
             base = cfg.parent
             self.assertEqual(config.tailoring_card_path(),
-                             base / "private" / "me" / "tailoring-card.md")
+                             base / "private" / "me" / "career" / "tailoring-card.md")
             self.assertEqual(config.applications_log_path(),
                              base / "private" / "market" / "logs" / "applications-log.yaml")
             self.assertEqual(config.applications_jsonl_path(),
@@ -339,7 +362,7 @@ class AccessorOverrideTests(unittest.TestCase):
                              base / "private" / "market" / "logs" / "company-search-log.yaml")
             # candidate_dir() itself is untouched — the three left it, it did not move.
             self.assertEqual(config.candidate_dir(),
-                             base / "private" / "applications" / "0_profile")
+                             base / "private" / "me" / "applications" / "0_profile")
 
     def test_redirecting_applications_root_still_isolates_all_three(self):
         """Benchmark write-isolation, which these keys must not break.
@@ -360,6 +383,7 @@ class AccessorOverrideTests(unittest.TestCase):
         body = 'paths:\n  applications_root: "private/benchmark/applications"\n'
         with _active_config(body) as cfg:
             bench = cfg.parent / "private" / "benchmark" / "applications" / "0_profile"
+            self.assertEqual(config.overlay_root(), cfg.parent / "private" / "benchmark")
             self.assertEqual(config.tailoring_card_path(), bench / "tailoring-card.md")
             self.assertEqual(config.applications_log_path(),
                              bench / "applications-log.yaml")
@@ -373,17 +397,20 @@ class AccessorOverrideTests(unittest.TestCase):
         """Its default is candidate_dir()-derived, not profile_md_path().parent.
 
         Both spell the same folder in a default layout. They diverge the moment
-        the profile moves to ``me/`` while this file stays with the market logs —
+        the profile moves to ``me/career/`` while this file stays with the market
+        logs —
         which is exactly what the lifetime taxonomy does.
         """
         body = ('paths:\n'
-                '  applications_root: "private/applications"\n'
-                '  profile_md: "private/me/profile.md"\n')
+                '  applications_root: "private/me/applications"\n'
+                '  overlay_root: "private"\n'
+                '  profile_md: "private/me/career/profile.md"\n')
         with _active_config(body) as cfg:
             base = cfg.parent
             self.assertEqual(
                 config.company_levels_path(),
-                base / "private" / "applications" / "0_profile" / "company-levels.yaml")
+                base / "private" / "me" / "applications" / "0_profile"
+                / "company-levels.yaml")
             self.assertNotEqual(config.company_levels_path(),
                                 config.profile_md_path().parent / "company-levels.yaml")
 
@@ -405,11 +432,11 @@ class OverlayMountedTests(unittest.TestCase):
             self.assertFalse(config.overlay_mounted())
 
     def test_false_when_the_overlay_root_does_not_exist(self):
-        with _active_config('paths:\n  applications_root: "private/applications"\n'):
+        with _active_config('paths:\n  overlay_root: "private"\n'):
             self.assertFalse(config.overlay_mounted())
 
     def test_true_when_a_distinct_overlay_directory_exists(self):
-        with _active_config('paths:\n  applications_root: "private/applications"\n') as cfg:
+        with _active_config('paths:\n  overlay_root: "private"\n') as cfg:
             (cfg.parent / "private").mkdir()
             self.assertTrue(config.overlay_mounted())
 

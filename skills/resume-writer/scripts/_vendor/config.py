@@ -41,12 +41,12 @@ Config schema::
       name_slug: "First_Last"          # filename-safe person part
       title_slug: "Software_Engineer"  # filename-safe role part
     paths:
-      profile_md: "relative/path.md"
-      baseline_yaml: "relative/path.yaml"
-      reference_docx: "relative/path.docx"
+      profile_md: "private/me/career/profile.md"
+      baseline_yaml: "private/me/career/resume/baseline.yaml"
+      reference_docx: "private/me/career/resume/reference.docx"
       company_levels_yaml: "relative/path.yaml"
-      applications_root: "applications"
-      discoveries_dir: "applications/1_discoveries"
+      applications_root: "private/me/applications"
+      discoveries_dir: "private/market/scans/current"
       # Every key below is OPTIONAL; each derives from the two roots above when
       # omitted (see the accessor's docstring for the exact derivation).
       overlay_root: "private"                            # OPTIONAL
@@ -56,7 +56,7 @@ Config schema::
       story_bank_dir: "private/me/interviews/story-bank"           # OPTIONAL
       search_profiles_dir: "private/market/searches"               # OPTIONAL
       skill_references_root: "private/skills/skill-notes"          # OPTIONAL
-      companies_root: "private/companies"                          # OPTIONAL
+      companies_root: "private/me/interviews/companies"            # OPTIONAL
     job_search:
       default_profile: "default"
     generation:
@@ -372,17 +372,20 @@ def _resolve_configured(key: str, derived: Path) -> Path:
 
 def profile_md_path() -> Path:
     return _resolve(_paths().get("profile_md"),
-                    "examples/me/profile.example.md")
+                    "examples/me/career/profile.example.md")
 
 
 def baseline_path() -> Path:
+    # Baseline follows the same public-fixture fallback as profile/reference, not
+    # candidate_dir(): real and benchmark configs set it explicitly as a read-only
+    # candidate source, while a config-less public clone must load fictional data.
     return _resolve(_paths().get("baseline_yaml"),
-                    "applications/0_profile/baseline.yaml")
+                    "examples/me/career/resume/baseline.example.yaml")
 
 
 def reference_docx_path() -> Path:
     return _resolve(_paths().get("reference_docx"),
-                    "examples/me/resume/reference.example.docx")
+                    "examples/me/career/resume/reference.example.docx")
 
 
 def company_levels_path() -> Path:
@@ -398,8 +401,8 @@ def company_levels_path() -> Path:
         # first is falsy, so a default written here is unreachable by construction.
         return _resolve(str(configured), "")
     # Derived from candidate_dir(), NOT from the profile's parent. Both resolve to
-    # the same folder in a default layout, but the lifetime taxonomy moves the
-    # profile to ``me/`` while this file belongs with the market logs — and riding
+    # the same folder in a default layout, but the person-first taxonomy moves the
+    # profile to ``me/career/`` while this file belongs with the market logs — and riding
     # on ``profile_md_path().parent`` would silently follow the profile there.
     return candidate_dir() / "company-levels.yaml"
 
@@ -431,10 +434,11 @@ def overlay_root() -> Path:
 
     Everything candidate-specific that is NOT an application lives under it:
     the blacklist, the story bank, search profiles, per-skill private references,
-    the company cache. Defaults to the parent of ``applications_root`` — the
-    fragile idiom this accessor exists to replace — so a config that points
-    ``applications_root`` at ``private/applications`` derives ``private/``.
-    Override with ``paths.overlay_root`` when the two are not nested.
+    the company cache. Defaults to the parent of ``applications_root``. Benchmark
+    configs rely on that derivation to isolate overlay-relative paths beside their
+    redirected applications tree. A live person-first layout with applications at
+    ``private/me/applications`` must set ``paths.overlay_root: private`` explicitly,
+    because its applications root is not an immediate child of the overlay.
     """
     return _resolve_configured("overlay_root", applications_root().parent)
 
@@ -450,8 +454,9 @@ def candidate_dir() -> Path:
 
 # These three used to be hard-derived as ``candidate_dir() / <FILENAME>`` with no
 # key of their own, which was fine while all three lived in one folder. The
-# lifetime taxonomy sends the card to ``me/`` and the logs to ``market/logs/``, and
-# one ``candidate_dir`` cannot express that — so each gets a key.
+# person-first taxonomy sends the card to ``me/career/`` and the logs to
+# ``market/logs/``, and one ``candidate_dir`` cannot express that — so each gets a
+# key.
 #
 # The DEFAULT stays the old derivation, and that is load-bearing rather than
 # conservative. ``config.benchmark.yaml`` isolates benchmark writes SOLELY by
@@ -544,8 +549,13 @@ def skill_references_dir(skill: str) -> Path:
 
 
 def companies_root() -> Path:
-    """Company-level research/cache tree. Override with ``paths.companies_root``."""
-    return _resolve_configured("companies_root", overlay_root() / "companies")
+    """Company-specific interview-prep tree.
+
+    Defaults to ``<overlay_root>/me/interviews/companies``; override with
+    ``paths.companies_root``.
+    """
+    return _resolve_configured(
+        "companies_root", overlay_root() / "me" / "interviews" / "companies")
 
 
 def overlay_mounted() -> bool:

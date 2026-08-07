@@ -34,17 +34,19 @@ def story_bank_path() -> Path:
         "story_bank_dir", overlay_root() / "me" / "interviews" / "story-bank")
 ```
 
-and `config.py:427-437` derives `overlay_root()` from `applications_root().parent`. With the shipped
-`config.example.yaml` (`applications_root: "examples/applications"`) that resolves to
+and `config.py:427-437` derives `overlay_root()` from `applications_root().parent`. The shipped
+`config.example.yaml` now sets `applications_root: "examples/me/applications"` and explicitly
+pins `overlay_root: "examples"`, which resolves to
 `examples/me/interviews/story-bank` — so an agent following `:18-19` in a public checkout creates a
 git-ignored `private/` directory nothing ever reads, and the gardener's card-staleness hash and the
 tailoring-card builder (both of which read the accessor, per the docstring at `config.py:511-514`)
 never see the file. `memory/facts/overlay-root-follows-the-active-config.md` records the same
 principle.
 
-The sibling skill shows the shape to copy: `skills/company-research/reference.md:71-72` spells out
-both branches ("`private/companies/…` with the overlay mounted, `examples/companies/…` in a public
-checkout"), and `company-research` uses accessors throughout.
+The sibling skill shows the shape to copy: `skills/company-research/reference.md` spells out
+both branches (`private/me/interviews/companies/…` with the overlay mounted and
+`examples/me/interviews/companies/…` in a public checkout), and `company-research` uses
+accessors throughout.
 
 Counter-argument considered and rejected: "'All *real* products' scopes `:180` to a real
 deployment." That rescues `:180` only; `:18-19` and `:182` are unhedged literals in the section an

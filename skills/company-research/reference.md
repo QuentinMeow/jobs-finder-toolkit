@@ -68,9 +68,11 @@ returns nothing, your command is wrong, not the evidence. Record which URLs you 
 
 ## Output Location and Structure
 
-Write to `config.companies_root()/<company>/research/` — `private/companies/<company>/research/`
-with the overlay mounted, `examples/companies/<company>/research/` in a public checkout. A company
-folder is permanent: it outlives any one application (see `AGENTS.md` → "Public vs Private"):
+Write to `config.companies_root()/<company>/research/` —
+`private/me/interviews/companies/<company>/research/` with the overlay mounted, or
+`examples/me/interviews/companies/<company>/research/` in a public checkout. The folder is
+reusable interview preparation and outlives any one application (see `AGENTS.md` →
+"Public vs Private"):
 
 ```text
 <companies_root>/<company>/research/

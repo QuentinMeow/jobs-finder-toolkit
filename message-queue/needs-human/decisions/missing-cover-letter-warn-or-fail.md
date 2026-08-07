@@ -52,7 +52,7 @@ a hard gate, which is why it is a decision rather than an edit.
 **What is unknown:** how many of your existing application folders would go red. The private overlay
 is not mounted in the checkout that filed this, and agents do not read your real application folders
 to answer a process question. The one public folder
-(`examples/applications/6_drafted/example-corp-senior-software-engineer/`) has its bundle and would
+(`examples/me/applications/6_drafted/example-corp-senior-software-engineer/`) has its bundle and would
 stay green under every option below.
 
 ## Options

@@ -5,10 +5,11 @@
 skill: resume-writer
 default_setup: >
   config.yaml unset so config falls back to config.example.yaml + examples/**: profile
-  examples/me/profile.example.md, baseline examples/me/baseline.example.yaml,
-  reference examples/me/resume/reference.example.docx. LibreOffice must be installed for
+  examples/me/career/profile.example.md, baseline
+  examples/me/career/resume/baseline.example.yaml, reference
+  examples/me/career/resume/reference.example.docx. LibreOffice must be installed for
   DOCX -> PDF. No private overlay needed. The example JD lives at
-  examples/applications/6_drafted/example-corp-senior-software-engineer/source/JD-senior-software-engineer-platform.md.
+  examples/me/applications/6_drafted/example-corp-senior-software-engineer/source/JD-senior-software-engineer-platform.md.
 
 canaries:
   - id: rw-tailor-single-posting
@@ -30,7 +31,7 @@ canaries:
       at the temp config. Seed ONLY the handoff-scaffold inputs into
       <isolated>/6_drafted/example-corp-senior-software-engineer/: meta.yaml and
       source/JD-senior-software-engineer-platform.md, copied from the shipped
-      examples/applications/6_drafted/example-corp-senior-software-engineer/. Do NOT copy any
+      examples/me/applications/6_drafted/example-corp-senior-software-engineer/. Do NOT copy any
       generated output (source/tailored.yaml, the resume/cover DOCX or PDF, or the bundled
       ..._Application_*.txt) — the run must produce them. A fresh tailoring run should start
       from the baseline (cp baseline -> source/tailored.yaml), not write from scratch. This
@@ -113,7 +114,7 @@ canaries:
     prompt: "The JD mentions Rust and Kafka. Add whatever's relevant to my resume to match it better."
     setup: >
       Default setup. Check the profile's Approved / Weak / Never skill lists
-      (examples/me/profile.example.md) before adding any term; check.py enforces the gate.
+      (examples/me/career/profile.example.md) before adding any term; check.py enforces the gate.
     expected_behavior:
       - "Checks each concrete skill against the profile's three lists; a Never-list skill never appears anywhere (skills line, summary, or bullets), even though the JD mentions it."
       - "A Weak-list skill is included ONLY if that exact term appears in a source/JD-*.md (JD-conditional), and 'Weak' is understood as possibly wording-preference, not only low proficiency."
@@ -177,7 +178,7 @@ canaries:
     prompt: "Tailor a resume for the Example Corp Senior Software Engineer, Platform role."
     setup: >
       Default setup where the example draft folder
-      (examples/applications/6_drafted/example-corp-senior-software-engineer/) ALREADY covers
+      (examples/me/applications/6_drafted/example-corp-senior-software-engineer/) ALREADY covers
       this exact posting. Exercises the pre-flight duplicate guard.
     expected_behavior:
       - "Runs the pre-flight scan (applications-log + every applications/<status>/<slug>/ folder) and DETECTS the existing folder for this posting."

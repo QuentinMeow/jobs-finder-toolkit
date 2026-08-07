@@ -20,14 +20,14 @@ config:
 ```bash
 JOBHUNT_CONFIG=config.example.yaml .venv/bin/python \
   skills/resume-writer/scripts/estimate_layout.py \
-  examples/applications/6_drafted/example-corp-senior-software-engineer/
+  examples/me/applications/6_drafted/example-corp-senior-software-engineer/
 # EXIT=1
 #   TOTAL est 739pt / 734pt budget (44 content lines)
 #   OVERFLOW: predicted 2 pages (est 739pt > 734pt budget). Cut ~2 bullet lines …
 
 JOBHUNT_CONFIG=config.example.yaml .venv/bin/python \
   skills/resume-writer/scripts/check.py \
-  examples/applications/6_drafted/example-corp-senior-software-engineer/
+  examples/me/applications/6_drafted/example-corp-senior-software-engineer/
 # EXIT=0
 #   ✓ all checks passed (0 warning(s))
 ```
@@ -87,7 +87,7 @@ and a canary run.
 - [ ] A single documented rule for the borderline zone, identical in `SKILL.md`'s verdict
       protocol, `LESSONS.md`, `render.py`'s gate and `estimate_layout.py`'s exit code.
 - [ ] Following the documented protocol on
-      `examples/applications/6_drafted/example-corp-senior-software-engineer/` no longer tells
+      `examples/me/applications/6_drafted/example-corp-senior-software-engineer/` no longer tells
       an agent to cut content — verified by re-running the two commands above and recording
       both exit codes in `verification.md`.
 - [ ] `evals/canaries/resume-writer.yaml` run and recorded per `evals/README.md`.

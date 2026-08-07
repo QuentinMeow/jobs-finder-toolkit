@@ -1,5 +1,13 @@
 # Workspace phase 8 — seven calls the `examples/` reshape cannot make on its own
 
+> **2026-08-06 — D7 is now built under the owner-directed person-first layout.**
+> The owner directed applications below `me/` and company interview material below
+> `me/interviews/`. The public example contract mirrors that private shape, so the D7
+> recommendation now lives at `examples/me/interviews/companies/`, while the cross-workflow
+> identity fixture lives at `examples/market/company-index.yaml`. This is a reversible
+> implementation under the standing recommendation, not text written into an owner answer:
+> every `Your answer` line remains untouched. D1–D7 still await ratification or revert.
+
 > **2026-08-02 — the pre-registered fallback fired; this is now ratify-or-revert.**
 > The owner directed the session to "continue the work of the folder refactor". The
 > remaining folder refactor *is* this reshape, and the **Default path** below already
@@ -20,7 +28,7 @@
 > Three destinations the seven calls never stated had to be chosen to build at all. Each
 > was derived from the private tree it mirrors rather than invented, and each is named
 > here so a disagreement is cheap to spot:
-> - reference DOCX → `examples/me/resume/` (mirrors `private/me/resume/reference.docx`)
+> - reference DOCX → `examples/me/career/resume/` (mirrors the person-first private resume folder)
 > - `calendar.md` → `examples/me/interviews/` (mirrors `private/me/interviews/calendar.md`;
 >   `config.example.yaml` sets `calendar_md` explicitly, so it does not ride `candidate_dir`)
 > - company-levels → `examples/market/logs/` (mirrors `private/market/logs/company-levels.yaml`;
@@ -163,20 +171,16 @@ alone. The code default is load-bearing for benchmark isolation; the example con
 not.
 **Your answer:** ______
 
-### D7 — does `examples/` get a `companies/` counterpart? — **THE ONE CALL NOT BUILT**
+### D7 — does `examples/` get a `companies/` counterpart? — **BUILT 2026-08-06; RATIFY OR REVERT**
 
-*(2026-08-02: D1, D2, D3 and D6 were built to their recommendations when the fallback
-fired. This one was not, so it is still a plain unanswered question, not a ratify-or-revert.
-Re-measured today: `git ls-files examples/companies` → 0 rows, and `companies_root()`
-resolves to a path that does not exist under the example config.)*
+*(D1, D2, D3 and D6 were built on 2026-08-02. D7 followed on 2026-08-06 when the
+owner-directed person-first layout changed the correct destination and the mirror contract
+made the recommended fixture the default implementation.)*
 
-`companies_root()`'s default already resolves to `examples/companies/`, which does not
-exist; three documents already name it. Populating it means authoring a fictional company.
-**Recommendation: add a minimal `examples/companies/_index.yaml` plus one fictional
-company with an empty `research/`.** It is one small fixture, the leak guard already
-anticipates the tree, and it closes the last accessor that resolves to nothing under the
-example config. If you would rather not carry example research prose, ship `_index.yaml`
-alone.
+`companies_root()` now resolves to `examples/me/interviews/companies/`. The built
+recommendation is one fictional company with a minimal `research/README.md`; the separate
+identity index sits at `examples/market/company-index.yaml`, matching its cross-workflow
+purpose. This closes the accessor gap without pretending the index itself is interview prep.
 **Your answer:** ______
 
 ## Recommendation

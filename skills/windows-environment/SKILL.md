@@ -58,7 +58,7 @@ Run the checks from inside WSL and from the Linux-hosted clone:
 ```bash
 .venv/bin/python skills/windows-environment/scripts/doctor.py
 .venv/bin/python automation/bootstrap_overlay.py --check
-.venv/bin/python skills/resume-writer/scripts/render.py examples/applications/6_drafted/example-corp-senior-software-engineer/
+.venv/bin/python skills/resume-writer/scripts/render.py examples/me/applications/6_drafted/example-corp-senior-software-engineer/
 .venv/bin/python automation/gates/run_gates.py --impact-from origin/main --jobs 8
 ```
 

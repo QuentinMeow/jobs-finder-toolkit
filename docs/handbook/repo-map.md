@@ -3,7 +3,7 @@
 Expands `AGENTS.md` → "Repo Map". All job-search content (the candidate's
 profile materials, research findings, and every application) lives under the
 applications root (`config.applications_root()`, `applications/` by default,
-real data under `private/applications/`); only shared tooling (`automation/`,
+real data under `private/me/applications/`); only shared tooling (`automation/`,
 `skills/`) sits at the repo root. Files are grouped by purpose into
 meaningful subfolders (see `docs/handbook/file-organization.md`): `automation/` fans
 out into `automation/shared/`, `automation/vendoring/`, `automation/ci/`, and one folder per job —
@@ -23,7 +23,7 @@ are support folders, not applications. The tailoring card has its own key
 | Path | Purpose |
 |------|---------|
 | `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, and output-stem config; the tracked example is the neutral "Jordan Rivers" placeholder + fallback (see `docs/handbook/configuration.md`) |
-| `config.profile_md_path()` (example: `examples/me/profile.example.md`) | Comprehensive candidate profile: all experience, skills, and resume writing preferences |
+| `config.profile_md_path()` (example: `examples/me/career/profile.example.md`) | Comprehensive candidate profile: all experience, skills, and resume writing preferences |
 | `config.baseline_path()` | Canonical transcription of the approved resume — starting point for every tailored.yaml and the reference for locked-field validation |
 | `skills/job-search/companies.yaml` | Canonical company registry — public, single source of truth for company **identity**, ATS poll config, and tags. Ships NO personal skip rules; candidate-specific blacklist rows (companies that don't sponsor, the candidate's own employer) live in a git-ignored overlay at `config.blacklist_path()` (`private/market/blacklist.yaml`) merged at load time by `registry.py` (each row: identity-only + `blacklist:` reason, no `ats`/`token`). Never carries specific or dated postings |
 | `config.applications_jsonl_path()` | Append-only event log of postings already generated/considered — job-search skips them (new roles at the same company still surface). `handoff.py` appends at folder creation — **every folder it creates, whatever exit code the run returned**, including a location mismatch or an incomplete scaffold, and nothing when no folder was created — while `status.py --sync-log` and every `--update` append after; all three flatten through the shared `skip_log.posting_rows` (`automation/shared/skip_log.py`), and nothing rewrites it, so deleting an application does not un-skip its posting. That rule holds because only the owner ever deletes an application folder, so a missing folder is a decision, not an accident (`memory/decisions/handoff-records-every-folder-it-creates.md`) |
@@ -35,7 +35,7 @@ are support folders, not applications. The tailoring card has its own key
 | `config.applications_root()/4_in_progress/<slug>/` | Heard back / interviews scheduled — active pipeline (user moves here manually) |
 | `config.applications_root()/3_rejected/<slug>/` | Rejected at any stage (user moves here manually) |
 | `config.applications_root()/2_ignored/<slug>/` | Decided not to submit; don't reconsider this posting (user moves here manually) |
-| `config.reference_docx_path()` (default `examples/me/resume/reference.example.docx`; real DOCX under `private/`) | Formatted resume DOCX — the rendering reference (preserves all formatting) |
+| `config.reference_docx_path()` (default `examples/me/career/resume/reference.example.docx`; real DOCX under `private/`) | Formatted resume DOCX — the rendering reference (preserves all formatting) |
 | `skills/resume-writer/scripts/render.py` | Fill the DOCX template from `source/tailored.yaml` → resume DOCX (`source/`) + PDF (root, stem from `config.resume_stem()`) + **one cover letter per JD**; auto-runs `check.py`. Detail in the resume-writer skill |
 | `skills/resume-writer/scripts/cover_letter.py` | Render one cover letter per JD from each bundled `..._Application_<job title>.txt` COVER LETTER section (DOCX in `source/` + PDF at root); `--label "<Role>"` renders just one. Detail in the resume-writer skill |
 | `skills/resume-writer/scripts/pdf_convert.py` | Shared DOCX → PDF conversion (LibreOffice, docx2pdf fallback) used by both renderers |

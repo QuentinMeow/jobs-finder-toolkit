@@ -16,7 +16,7 @@ Two behaviours are pinned here, and they pull in opposite directions on purpose:
 
 ``company-index`` is the one check that reads the private overlay, and three tests
 here pin the three things that keep that exception from reaching a public tree: it
-no-ops without ``private/companies/``, ``--require-roots`` never asserts a private
+no-ops without ``private/market/``, ``--require-roots`` never asserts a private
 root, and ``file_retries`` never writes a private subject into the TRACKED retry
 queue (a retry item's filename and body carry the finding's subject verbatim, so
 filing one would commit an application slug or a company key).
@@ -60,7 +60,7 @@ class TempRepo(unittest.TestCase):
         """Create every PUBLIC check root in the temp tree.
 
         Private roots are never created here: they are never asserted, and
-        materialising ``private/companies/`` would make ``check_company_index``
+        materialising ``private/market/`` would make ``check_company_index``
         run against a bare temp tree that has no ``automation/shared`` to import.
         The company-index tests below drive that check directly instead.
         """
@@ -253,7 +253,8 @@ class TestFileRetries(TempRepo):
         application path and a company key.
         """
         self.assertIn("company-index", R.PRIVATE_CHECKS)
-        private = R.Finding("company-index", "private/companies/_index.yaml", "boom")
+        private = R.Finding(
+            "company-index", "private/market/company-index.yaml", "boom")
         public = R.Finding("roadmap-dated", "docs/roadmap/current-state.md", "missing")
         R.file_retries([private, public], "2026-07-30")
         filed = sorted(p.name for p in R.RETRIES_DIR.iterdir())
@@ -262,10 +263,10 @@ class TestFileRetries(TempRepo):
     def test_a_previously_filed_private_item_is_collected(self) -> None:
         """The filter runs before the GC, so an item filed by an older build goes."""
         R.RETRIES_DIR.mkdir(parents=True)
-        stale = R.RETRIES_DIR / "company-index--private-companies-index-yaml.md"
+        stale = R.RETRIES_DIR / "company-index--private-market-company-index-yaml.md"
         stale.write_text(f"- **Filed**: 2026-07-01, {R.RECONCILER_SIGNATURE}\n",
                          encoding="utf-8")
-        R.file_retries([R.Finding("company-index", "private/companies/_index.yaml",
+        R.file_retries([R.Finding("company-index", "private/market/company-index.yaml",
                                   "boom")], "2026-07-30")
         self.assertFalse(stale.exists())
 
@@ -286,7 +287,8 @@ class TestCompanyIndexCheck(TempRepo):
         """)
 
     def index_at(self, text: str) -> Path:
-        path = self.root / R.COMPANY_INDEX_ROOT / "_index.yaml"
+        company_index = R._shared_import("company_index")
+        path = self.root / company_index.DEFAULT_REL
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         return path
@@ -408,7 +410,8 @@ class TestCompanyIndexCheck(TempRepo):
         same way — silently returning clean while applications carry keys is the
         one answer that is wrong.
         """
-        path = self.root / R.COMPANY_INDEX_ROOT / "_index.yaml"
+        company_index = R._shared_import("company_index")
+        path = self.root / company_index.DEFAULT_REL
         path.mkdir(parents=True)
         apps = self.application("acme-labs-swe-20260730",
                                 "company: Acme Labs\ncompany_key: acme-labs\n")
@@ -418,7 +421,8 @@ class TestCompanyIndexCheck(TempRepo):
         self.assertIn("not a regular file", findings[0].message)
 
     def test_a_dangling_symlink_at_the_index_path_is_a_finding(self) -> None:
-        path = self.root / R.COMPANY_INDEX_ROOT / "_index.yaml"
+        company_index = R._shared_import("company_index")
+        path = self.root / company_index.DEFAULT_REL
         path.parent.mkdir(parents=True, exist_ok=True)
         path.symlink_to(self.root / "nowhere.yaml")
         findings = R.company_index_findings(path, None)

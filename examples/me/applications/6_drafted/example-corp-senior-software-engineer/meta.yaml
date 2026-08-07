@@ -1,5 +1,6 @@
 job_metadata_schema_version: 6
 company: "Example Corp"
+company_key: example-corp
 research_date: "2025-01-15"
 channel: ""
 referrer: ""

@@ -2809,3 +2809,35 @@
     grouping, conflict detection, safe new-tab HTML links, Sent Items reconciliation rules,
     deterministic tests, canary definitions, and process debt; no real identity, employer,
     school, salary, private item name, or dated personal job-hunt content.'
+- base: e160955a
+  reviewed_by: agent
+  date: 2026-08-06
+  files: 79
+  digest: sha256:7f005dd5168fb7c6
+  finding: 'Read the complete staged person-first layout diff. It contains only generic path
+    contracts, fictional example data, deterministic tests, and process records; no real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content.'
+- base: 5ac45b1e
+  reviewed_by: agent
+  date: 2026-08-06
+  files: 5
+  digest: sha256:69b2cfd61c9c1064
+  finding: 'Read the complete staged five-file diff. It contains only mechanical fictional-example
+    path corrections in deterministic tests; no real identity, employer, school, salary, private
+    item name, or dated personal job-hunt content.'
+- base: e08c2c98
+  reviewed_by: agent
+  date: 2026-08-06
+  files: 5
+  digest: sha256:70a4cd8229cc6390
+  finding: 'Read the complete staged five-file process-record diff. It contains only generic PR,
+    verification, rollout, and task-status evidence; no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content.'
+- base: 9f9485fd
+  reviewed_by: agent
+  date: 2026-08-06
+  files: 2
+  digest: sha256:ce63bf975e0ca08c
+  finding: 'Read the complete staged two-file diff. It corrects only the measured private commit
+    count in generic process records; no real identity, employer, school, salary, private item
+    name, or dated personal job-hunt content.'

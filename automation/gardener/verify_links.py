@@ -126,10 +126,13 @@ STRICT_ROOT_PREFIXES = (
 # skipped. So every link inside what used to be the interview tree is now VERIFIED
 # whenever the overlay is mounted — which is the whole point of removing them, and
 # it means the overlay's docs have to be right the first time rather than the
-# second. ``applications/`` and ``local/`` stay: they are runtime data and scratch.
-SKIP_PREFIXES = ("applications/", "local/",
+# second. The current person-first application root and its retired top-level form
+# both stay skipped: application products are runtime data, while dated records may
+# still truthfully name the retired address. ``local/`` remains scratch.
+SKIP_PREFIXES = ("me/applications/", "applications/", "local/",
                  ".agents/inputs/", ".git/", ".venv/",
-                 "private/applications/", "private/local/")
+                 "private/me/applications/", "private/applications/",
+                 "private/local/")
 SKILLS_ROOT = "skills"
 
 # Backticked refs into the private overlay (maintainer-only design docs, real

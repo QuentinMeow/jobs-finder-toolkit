@@ -4,7 +4,7 @@ The canonical file tree is in `AGENTS.md` → "Application Folder Convention". T
 model, per-file descriptions, `meta.yaml` fields, and the divergent-role split follow.
 
 **`applications/` throughout this document is shorthand for `config.applications_root()`**
-(`private/applications/` for a real hunt, `examples/applications/` under the shipped example
+(`private/me/applications/` for a real hunt, `examples/me/applications/` under the shipped example
 config) — never a literal folder at the repo root.
 
 Each application is a folder named `<company>-<role>-<YYYYMMDD>/`. **Each `jobs:` entry carries a

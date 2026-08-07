@@ -3,7 +3,7 @@
 This is a staging fixture, not a tracked job application. Tests copy it into a
 temporary applications root and may rename the generated handoff folder to a
 name beginning `_test_application_` after proving the normal production slug.
-Nothing here belongs under `examples/applications/`.
+Nothing here belongs under `examples/me/applications/`.
 
 Suggested flow:
 

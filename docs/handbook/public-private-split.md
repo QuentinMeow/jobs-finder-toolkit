@@ -8,7 +8,7 @@ person or a real job hunt stays private:
   information — the tooling (`automation/`, public skills + their scripts), the company registry
   `skills/job-search/companies.yaml` (**identity only** — never specific or dated
   postings), a FAKE example candidate under `examples/` (`examples/me/…`,
-  `examples/market/…`, `examples/applications/…`), and general instructions/techniques.
+  `examples/market/…`), and general instructions/techniques.
   `config.example.yaml` is the tracked placeholder.
 - **Private overlay repo** — its **own git repo** synced to a private GitHub remote, mounted
   at a git-ignored **`private/`** directory inside the public checkout. `config.yaml`
@@ -29,10 +29,9 @@ frontmatter:
 
 **PRODUCTS are always private** and mount under `private/`: anything tied to real jobs, the
 candidate's background, or dated/time-sensitive info — the real applications
-(`config.applications_root()`, e.g. `private/applications/**`, including the discoveries dir
-and the real company-level cache), the real interview material (`private/companies/**` for
-everything tied to one employer — research, their loop, the problems they ask — and
-`private/me/interviews/**` for the role-agnostic story/question banks), and the real
+(`config.applications_root()`, e.g. `private/me/applications/**`), the real interview material
+(`private/me/interviews/companies/**` for everything tied to one employer — research, their
+loop, and the problems they ask — plus the role-agnostic story/question banks), and the real
 profile / baseline / reference DOCX. The overlay is git-ignored in the public checkout and the
 exporter excludes it; only fake `examples/**` counterparts are published.
 

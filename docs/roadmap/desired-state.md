@@ -54,7 +54,7 @@
    — the schema is v5, the rejection logic moved out of the file the task named,
    the canary text already says "legacy v4", the behaviour is unit-tested at
    `test_progress_calendar.py`, and an invalid fixture under
-   `examples/applications/` would newly break the three canaries that walk the
+   `examples/me/applications/` would newly break the three canaries that walk the
    example tree (`at-pipeline-health`, `at-validate-drafted-metadata`,
    `rw-duplicate-preflight`).
 

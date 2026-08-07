@@ -116,7 +116,7 @@ per-JD verdicts (match? covered? verdict).
 > same-company log/folder entries by role: same/near-identical role ⇒ COVERED
 > (name the slug+status); only a DIFFERENT role ⇒ this specific role is NOT covered.
 > You may read the applications skip-log (`config.applications_jsonl_path()`) and the
-> `private/applications/<N>_*/` folders to confirm. Do NOT modify anything.
+> `config.applications_root()/<N>_*/` folders to confirm. Do NOT modify anything.
 >
 > **Output per JD:** `idx`, `company/title`, `requirements_match: yes|no|borderline`,
 > `gate_results` (title/location/yoe/visa, each pass/fail + why), `covered: yes|no`

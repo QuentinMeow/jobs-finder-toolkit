@@ -16,7 +16,7 @@ separately validated route with LaunchServices access. Pointing
 `JOBHUNT_SOFFICE` at a different binary is not a sandbox escape.
 
 **`applications/` in every command below is shorthand for `config.applications_root()`**
-(`private/applications/` for a real hunt, `examples/applications/` under the shipped
+(`private/me/applications/` for a real hunt, `examples/me/applications/` under the shipped
 example config) — substitute the resolved path, never a literal folder at the repo root.
 
 ```bash
