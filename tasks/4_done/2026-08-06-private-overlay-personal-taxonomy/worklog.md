@@ -22,3 +22,20 @@
   every reported public GitHub check passed, while the private repository reports no CI checks.
 - The mounted private checkout's unrelated tracked patch and untracked handover retained their
   exact starting hashes. The ignored local config remains deliberately unchanged until merge.
+
+## 2026-08-07 — session 2 (Codex `/root`)
+
+- Confirmed public PR #321 and private PR #93 were merged, then fast-forwarded both mounted
+  checkouts to their new `main` histories.
+- Checkpointed the preserved private patch at its recorded hash and rebased it onto the person-first
+  layout. Git carried all changed application records into `me/applications/`; the generated
+  calendar conflict was resolved by the verified relative-link rewrite required by the move.
+- Updated the ignored local config to the new career, application, company-interview, and overlay
+  roots. All configured path accessors now resolve to existing destinations.
+- Validated the migrated in-progress metadata and calendar, opened private PR #94, and merged it
+  with the repository merge driver.
+- Copied ignored files left under the retired company root into the new location without
+  overwriting; a checksum-enabled repeat reported no differences. Filed an owner-only retirement
+  decision and left the old copies untouched.
+- Removed the three task-owned temporary worktrees. The mounted public and private repositories
+  are back on clean `main` branches; this public closeout record is the only remaining PR work.
