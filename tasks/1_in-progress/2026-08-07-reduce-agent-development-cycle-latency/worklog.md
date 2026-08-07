@@ -51,3 +51,29 @@ below were done in the parent.
 
 Not done, and deliberately: the ≥3-run baseline, solution step 5 (closeout tax), and the end-to-end
 50%-improvement DoD, which is not reachable from steps 2–4 alone.
+
+## 2026-08-07 — session 3 (Claude Code): published, then measured the publishing
+
+- Shipped sessions 1–2 as PR #323 and merged it, with the phase recorder armed for the whole
+  cycle. That produced the first real time-breakdown this repo has had — 60.1% agent, 31.6%
+  external wait, 8.3% command execution — recorded in `verification.md`.
+- **The measurement indicted the session that produced it.** 42% of the 10m32s cycle was
+  recovering from one avoidable failure: two local gate lanes were run before pushing instead
+  of the documented `--impact-from origin/main --jobs 8`, so `automation/cutover` shipped its
+  handbook pages without itself and left 13 broken references inside the public export.
+- **Fixed that class mechanically rather than by writing it down again** — the instruction
+  already existed in two places and was skipped anyway. PR #324: a reconciler check
+  (`shipped-docs-name-shipped-tooling`) fails at COMMIT time when a shipped handbook page
+  names an `automation/` tree the exporter does not export; `run_gates.py --lane` no longer
+  silently discards every lane but the last.
+- **Control result:** PR #324 passed CI on the first attempt — 64s of CI wait, no recovery,
+  ~2 minutes end to end against 10m32s.
+- Found and documented two traps that cost time here: `--impact-from` compares a COMMITTED
+  range, so on uncommitted work it prints ALL GREEN having checked the policy lane alone; and
+  `git checkout main` mid-task deletes tooling the branch added.
+- Closed out: `.claude/worktrees/` is now git-ignored (it was staging four repo checkouts on
+  `git add -A`), and the session handover is written.
+
+Still open, unchanged: the ≥3-run baseline, solution step 5 (closeout tax), the
+50%-improvement target, and the post-merge *reconciliation* comparison — a publish cycle is a
+different workflow.

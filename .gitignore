@@ -13,6 +13,12 @@ local/
 config.yaml
 # Local Claude Code settings (personal permissions + opt-in metrics hooks; see docs/handbook/metrics.md)
 .claude/settings.local.json
+# Agent worktrees. The harness creates one full checkout per parallel subagent
+# here. They are scratch — the work reaches this repo through a branch or a
+# commit, never through this directory — but they were NOT ignored, so a single
+# `git add -A` staged four complete copies of the repo, one of which held an
+# unreviewed tree. Anchored to the root: only the harness writes here.
+/.claude/worktrees/
 # Local metrics collection output (opt-in metrics hooks; see docs/handbook/metrics.md)
 # Anchored to the repo root, like the product rules below. The only writer is
 # automation/metrics/hook_collect.py, whose LOG_PATH is REPO_ROOT/"logs". Left

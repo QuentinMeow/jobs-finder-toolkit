@@ -2939,3 +2939,44 @@
     uncommitted work reports "no changes" and reads as green. Generic tooling guidance;
     no real identity, employer, school, salary, private item name, or dated personal
     job-hunt content.'
+- base: ef4da803
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 4
+  digest: sha256:1b111620caff85e1
+  finding: 'Read the complete staged four-file diff: a .gitignore entry for the harness
+    agent-worktree directory, the first real-session time-breakdown recorded in a task
+    verification file, a worklog entry, and a session handover. Generic process prose and
+    timing numbers only; no real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content.'
+- base: 7c4b9d2e
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 1
+  digest: sha256:e6dbdf5dbcf91188
+  finding: 'Read the complete staged one-file diff: one root-anchored deny rule plus a
+    comment adding .claude/worktrees/ to the leak guard, satisfying the repo invariant
+    that every root-anchored .gitignore product rule is also denied by the guard.
+    Timeless tooling; no real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content.'
+- base: d2c86507
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 2
+  digest: sha256:44dc8879ed907b6b
+  finding: 'Read the complete staged two-file diff: the benchmark fixture now persists
+    gc.auto=0 and maintenance.auto=false into every repository it creates, and the shared
+    test temp directory tolerates cleanup errors — fixing a flaky teardown where a
+    background git process wrote into .git during removal. Timeless test tooling; no real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content.'
+- base: d2c86507
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 2
+  digest: sha256:44dc8879ed907b6b
+  finding: 'Read the complete staged two-file diff: the benchmark fixture now persists
+    gc.auto=0 and maintenance.auto=false into every repo it creates, and the shared test
+    teardown tolerates cleanup errors. Fixes a flaky CI teardown race. Timeless tooling;
+    no real identity, employer, school, salary, private item name, or dated personal
+    job-hunt content.'
