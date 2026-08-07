@@ -136,4 +136,44 @@ global. `reconcile.py --check` with no flag: `OK (9 checks clean)`.
 | Tests prove no owner-file deletion, no ignored overwrite, no bypassed gate, no failed-as-green | **Done**, and independently attacked — see the defect table. |
 | Fast path + closeout policy documented; schema changes matched by reconciler tests | **Partial.** The fast path is documented (`docs/handbook/post-merge-cutover.md`); the closeout-tax policy (solution step 5) was not attempted. |
 | ≥3 optimized runs, median non-external time ≥50% below baseline and ≤10 min | **Not met, and not reachable from this scope.** Steps 2–4 touch under ~5 minutes of the 27m33s. Meeting it needs the telemetry to locate the unattributed 8m17s and the step-5 closeout work (7m03s). |
-| Final real-session comparison | **Not done** — requires a future real post-merge session, which is what the recorder now exists to measure. |
+| Final real-session comparison | **Partially done** — a real publish→merge cycle was recorded (below). The post-merge *reconciliation* comparison the task names is still outstanding: it needs a session where prerequisite PRs have merged and local work must be reconciled. |
+
+## First real-session measurement (PR #323, publish → merge)
+
+The recorder was armed for the cycle that published this work. **This is the first
+time-breakdown this repository has ever had**, and it is the number every earlier
+claim in this file said did not exist.
+
+| Class | Seconds | Share |
+|---|---:|---:|
+| Agent active — reading, reasoning, writing the PR body, diagnosing | 379.9 | **60.1%** |
+| External wait — two CI runs plus the merge | 199.7 | 31.6% |
+| Local subprocess — every command actually executing | 52.3 | 8.3% |
+| Approval wait | 0.0 | 0.0% |
+| Unattributed | 0.1 | 0.0% |
+| **Total (recorder span)** | **632.0** | 100% |
+
+Per phase: `external_wait` 264.9s · `validation` 156.0s · `plan` 86.5s ·
+`publish` 43.2s · `closeout` 40.0s · `context` 21.8s · `commit` 19.4s.
+
+**What it establishes.** Command execution is 8.3% of a publish cycle, independently
+confirming the R1–R3 floor measurement (0.24s of deterministic commands across the
+inventory, classification and validation stages). Faster tooling cannot win back time
+that tooling never consumed. The costs, ranked: agent reasoning, external queue wait,
+and rework.
+
+**The largest single line item was avoidable.** 42% of the cycle (~4m27s) was
+recovering from one failure: two local lanes were run before pushing instead of the
+documented `--impact-from origin/main --jobs 8`, so the `publish` lane went red in CI
+— costing a wasted CI run, 156s of local diagnosis, and a second CI run.
+
+**Control, one PR later.** After making that class of drift fail at commit time
+(`shipped-docs-name-shipped-tooling`) and fixing `--lane` silently dropping lanes,
+PR #324 passed CI on the first attempt: 64s of CI wait, no recovery work, ~2 minutes
+end to end against 10m32s. The variable was not speed; it was being right the first
+time.
+
+**Caveats.** One observation, not a distribution. The coverage denominator is the
+recorder's own span, so the 100% figure it prints proves nothing — no external total
+was supplied. A publish cycle is not the 27m33s reconciliation workflow the task was
+opened about; it is a different workflow that happens to share the same shape.
