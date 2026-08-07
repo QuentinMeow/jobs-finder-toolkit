@@ -604,16 +604,69 @@ class TestRootFlag(TempRepo):
 
     def test_root_flag_checks_the_named_tree(self) -> None:
         named = self._tree("named", handover=False)
+        before = (R.REPO_ROOT, R.RETRIES_DIR)
         buf = io.StringIO()
         with redirect_stdout(buf):
             code = R.main(["--check", "--root", str(named)])
         self.assertEqual(code, 1)
         self.assertIn("handover-present", buf.getvalue())
         self.assertIn("2026-01-05-demo", buf.getvalue())
-        # …and it really was the named tree, not this checkout: the finding path is
-        # relative to --root, and REPO_ROOT now points there.
-        self.assertEqual(R.REPO_ROOT, named.resolve())
-        self.assertEqual(R.RETRIES_DIR, named.resolve() / "message-queue/needs-agent/retries")
+        # …and it really was the named tree, not this checkout: the finding path
+        # is relative to --root. The globals must be RESTORED afterwards — this
+        # used to assert they still pointed at `named`, which pinned a leak: a
+        # later in-process main(["--check"]) with no --root would have gone on
+        # inspecting the temp tree and printed OK for this checkout.
+        self.assertEqual((R.REPO_ROOT, R.RETRIES_DIR), before)
+
+    def test_root_does_not_leak_into_the_next_in_process_call(self) -> None:
+        """The rebind must not outlive the call that asked for it.
+
+        This used to leak: an in-process ``main(["--root", X])`` left REPO_ROOT
+        at X, so the NEXT call — passing no --root — went on inspecting X while
+        reporting as though it had checked this tree.
+        """
+        named = self._tree("leaky", handover=False)
+        with redirect_stdout(io.StringIO()):
+            R.main(["--check", "--root", str(named)])
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            R.main(["--check"])
+        self.assertNotIn("2026-01-05-demo", buf.getvalue(),
+                         "the second call inspected the first call's --root tree")
+
+    def test_root_refuses_to_delete_queue_items_in_the_inspected_tree(self) -> None:
+        """--root + --file-retries garbage-collects inside the named tree.
+
+        RETRIES_DIR is repointed by --root, and file_retries unlinks cleared
+        items out of it — so the combination deletes files in a directory the
+        operator only asked to inspect. Agents never delete owner data.
+        """
+        named = self._tree("victim", handover=False)
+        retries = named / "message-queue/needs-agent/retries"
+        retries.mkdir(parents=True, exist_ok=True)
+        victim = retries / "important-item.md"
+        victim.write_text(f"# Hand-written\n\nFiled {R.RECONCILER_SIGNATURE}\n",
+                          encoding="utf-8")
+
+        buf = io.StringIO()
+        with redirect_stderr(buf):
+            code = R.main(["--check", "--root", str(named), "--file-retries"])
+        self.assertEqual(code, 2, buf.getvalue())
+        self.assertTrue(victim.is_file(), "the inspected tree lost a queue item")
+
+    def test_root_refuses_a_directory_that_is_not_a_process_tree(self) -> None:
+        """A tree with no process roots must not come back "OK (9 checks clean)".
+
+        Every check no-ops when its root is absent, so an empty directory — or
+        $HOME — used to report clean: a gate saying OK for a tree it never
+        looked at.
+        """
+        with tempfile.TemporaryDirectory() as empty:
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                code = R.main(["--check", "--root", empty])
+        self.assertEqual(code, 2)
+        self.assertIn("never inspected", buf.getvalue())
 
     def test_root_flag_reports_a_clean_named_tree(self) -> None:
         clean = self._tree("clean", handover=True)

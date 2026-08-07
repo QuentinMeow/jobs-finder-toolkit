@@ -284,9 +284,18 @@ def _inproc_ignored_destination_protected(m: FIX.FixtureManifest) -> tuple[int, 
     dest = m.overlay / FIX.NEW_ROOT / FIX.IGNORED_REL
     if not dest.exists():
         return 0, "destination free — a copy is safe"
-    if dest.read_text(encoding="utf-8") == source.read_text(encoding="utf-8"):
-        return 0, "destination already holds the same bytes — copy is a no-op"
-    return 0, "destination OCCUPIED by different bytes — a copy must refuse"
+    text = dest.read_text(encoding="utf-8")
+    if text == FIX._IGNORED_DESTINATION_OCCUPANT:
+        return 0, "destination still holds its own bytes — not overwritten"
+    # Every branch used to return 0, which made this step decorative: it is
+    # registered as "ignored destination would not be overwritten" and could
+    # not report the one state it exists to catch. The check is against the
+    # OCCUPANT the fixture pre-placed, not against "are the bytes different" —
+    # the R3 variant is destination-exists, so occupied-with-different-bytes is
+    # the designed setup, and an overwrite is the failure.
+    if text == source.read_text(encoding="utf-8"):
+        return 1, "destination was OVERWRITTEN with the ignored source's bytes"
+    return 1, "destination holds unexpected bytes — neither occupant nor source"
 
 
 def _inproc_write_closeout_records(m: FIX.FixtureManifest) -> tuple[int, str]:

@@ -802,9 +802,15 @@ def build_steps(run_id: str, states: dict[str, RepoState]) -> list[dict]:
                 "resumable": True,
                 "summary": f"{path.path} — {proof}",
             })
+        # Hoisted out of `if copyable:` so the VALIDATE step below can name the
+        # same file. The copy step writes a run-scoped manifest; validate_cutover's
+        # own default is the stable per-checkout path, so leaving it implicit meant
+        # copy-checksum looked somewhere the copy had never written — it always
+        # SKIPped, and the skip is the one gate proving the owner's git-ignored
+        # payloads arrived byte-identical.
+        manifest = f"local/cutover/{run_id}/copied.txt"
         if copyable:
             mutating = True
-            manifest = f"local/cutover/{run_id}/copied.txt"
             argv = [
                 ["python", "automation/cutover/verify_copy.py", "--copy",
                  "--from", str(state.root / d.path),
@@ -835,7 +841,8 @@ def build_steps(run_id: str, states: dict[str, RepoState]) -> list[dict]:
         if mutating:
             add({
                 "argv": [["python", "automation/cutover/validate_cutover.py",
-                          "--profile", VALIDATION_PROFILE, "--jobs", "4"]],
+                          "--profile", VALIDATION_PROFILE, "--jobs", "4",
+                          "--manifest", manifest]],
                 "kind": KIND_MECHANICAL,
                 "mutates": [],
                 "op": OP_VALIDATE,

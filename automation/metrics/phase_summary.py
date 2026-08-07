@@ -228,6 +228,7 @@ def summarize(events, load_integrity=None, *, idle_threshold=DEFAULT_IDLE_THRESH
         "unmatched_phase_closes": 0,
         "session_end_missing": False,
         "accounting_error": False,
+        "overlong_runs": 0,
     }
     integrity.update(load_integrity or {})
     notes: list[str] = []
@@ -316,6 +317,7 @@ def summarize(events, load_integrity=None, *, idle_threshold=DEFAULT_IDLE_THRESH
     ]
 
     run_intervals = []             # (start, end, class, raw_phase)
+    overlong_runs: list[float] = []  # declared duration that did not fit
     wrapped_local = 0.0
     wrapped_external = 0.0
     by_head = {}
@@ -345,6 +347,13 @@ def summarize(events, load_integrity=None, *, idle_threshold=DEFAULT_IDLE_THRESH
         start, end = _clip(max(lower, axis[index] - duration), axis[index], t0, t1)
         if end - start > EPS:
             run_intervals.append((start, end, klass, rec.get("phase")))
+        # A child whose DECLARED duration does not fit the span it lands in is an
+        # anomaly: a clock step, a hand-edited log, or a duration from another
+        # session. The tiling clips it — which is the honest thing to do, and is
+        # why this no longer shows up as a negative residual — so the discrepancy
+        # is counted here instead of being silently absorbed.
+        if duration - (end - start) > 1.0:
+            overlong_runs.append(duration - (end - start))
 
     approval_intervals = []
     approval_marks_s = 0.0
@@ -406,12 +415,37 @@ def summarize(events, load_integrity=None, *, idle_threshold=DEFAULT_IDLE_THRESH
     }
     unattributed_total = sum(unattributed_items.values())
 
-    local_s = wrapped_local
-    external_s = wrapped_external + external_phase_extra
-    approval_s = approval_marks_s + approval_phase_extra
+    # Read the DE-OVERLAPPED tiling, not the raw sums.
+    #
+    # ``wrapped_local``/``wrapped_external``/``approval_marks_s`` add up every
+    # interval's own duration, so overlapping intervals are counted once each.
+    # Three concurrent wrapped children in a 6.3s session reported 18.0s of
+    # subprocess time under a 6.3s total, and because ``active`` is the residual
+    # it was driven to 0 — the classes summed to 18.1s against a reference of
+    # 6.3s while the docs promised an exact partition. Concurrency is ordinary
+    # here: the recorder advertises atomic appends under concurrent subagents.
+    #
+    # ``_tile`` already resolves each instant to exactly one class, so its
+    # per-label totals are the partition. The raw sums survive as the separately
+    # reported ``wrapped_*`` overlay, which is allowed to overlap by design.
+    local_s = tiled.get(PR.CLASS_LOCAL, 0.0)
+    external_s = tiled.get(PR.CLASS_EXTERNAL, 0.0)
+    approval_s = tiled.get(PR.CLASS_APPROVAL, 0.0)
 
-    # ``active`` is the RESIDUAL, which is what makes the partition exact by
-    # construction — and what makes double counting visible as a NEGATIVE.
+    if overlong_runs:
+        integrity["overlong_runs"] = len(overlong_runs)
+        notes.append(
+            f"overlong_runs: {len(overlong_runs)} wrapped command(s) declared a "
+            f"duration that did not fit the span they landed in (largest excess "
+            f"{max(overlong_runs):.1f}s); each was clipped to the span, so the "
+            f"classes still partition — but a duration that does not fit means a "
+            f"clock step, an edited log, or a duration from another session"
+        )
+
+    # ``active`` is the RESIDUAL, so the classes partition the reference total by
+    # construction. That makes the sum an identity rather than a check: it is the
+    # de-overlapped tiling above that earns it, and the clamp below is only a
+    # last resort for an input the tiling could not reconcile.
     active_s = reference_total - local_s - external_s - approval_s - unattributed_total
     if active_s < -1e-6:
         integrity["accounting_error"] = True
@@ -695,12 +729,11 @@ def _phase_rows(events, phase_intervals, segments):
         exit_code = rec.get("exit_code")
         if isinstance(exit_code, int) and not isinstance(exit_code, bool) and exit_code != 0:
             row["failed_commands"] += 1
-        duration = max(0.0, _num(rec.get("duration_s")) or 0.0)
-        klass = _enum(rec.get("kind"), (PR.CLASS_LOCAL, PR.CLASS_EXTERNAL), PR.CLASS_LOCAL)
-        if klass == PR.CLASS_LOCAL:
-            row["local_subprocess_s"] += duration
-        else:
-            row["external_wait_s"] += duration
+    # NOTE: the per-run ``duration_s`` is deliberately NOT accumulated into the
+    # row's class columns. Concurrent children overlap, so summing their raw
+    # durations reported 6.1s of subprocess time inside a 2.2s phase. The rows
+    # read their classes from the same de-overlapped tiling the totals do, which
+    # is also what makes the rows sum to the totals.
 
     for row in groups.values():
         for seg_start, seg_end, label, source in segments:
@@ -711,8 +744,10 @@ def _phase_rows(events, phase_intervals, segments):
                 row["unattributed_s"] += covered
             elif label == PR.CLASS_APPROVAL:
                 row["approval_wait_s"] += covered
-            elif label == PR.CLASS_EXTERNAL and source == "phase":
+            elif label == PR.CLASS_EXTERNAL:
                 row["external_wait_s"] += covered
+            elif label == PR.CLASS_LOCAL:
+                row["local_subprocess_s"] += covered
         row["active_s"] = max(0.0, row["elapsed_s"] - row["local_subprocess_s"]
                               - row["external_wait_s"] - row["approval_wait_s"]
                               - row["unattributed_s"])

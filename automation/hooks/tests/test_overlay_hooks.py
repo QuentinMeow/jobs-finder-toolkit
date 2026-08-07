@@ -209,9 +209,25 @@ class TestOverlayPreCommit(HookTestCase):
         self.assertIn("no private-scope reconciler applies", default.stdout)
         self.assertNotIn("scoped to this overlay", default.stdout)
 
+        # An overlay the toolkit reconciler can meaningfully check has at least
+        # one process root; --root refuses a tree carrying none rather than
+        # reporting "OK (9 checks clean)" for a tree it never inspected.
+        (self.repo / "tasks").mkdir(exist_ok=True)
         opted_in = self.run_hook(self.hook, JOBHUNT_OVERLAY_RECONCILE="1")
         self.assertIn("scoped to this overlay", opted_in.stdout)
         self.assertEqual(opted_in.returncode, 0, opted_in.stdout + opted_in.stderr)
+
+    def test_the_opt_in_refuses_an_overlay_with_no_process_roots(self) -> None:
+        """Pointing the reconciler at a tree with nothing to check must not read green.
+
+        Every check no-ops when its root is absent, so before the guard an
+        overlay carrying no process folders came back "OK (9 checks clean)".
+        """
+        self.write("applications/notes.md")
+        self.git("add", "applications/notes.md")
+        r = self.run_hook(self.hook, JOBHUNT_OVERLAY_RECONCILE="1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("never inspected", r.stdout + r.stderr)
 
     def test_only_the_literal_one_arms_the_toolkit_reconciler(self) -> None:
         """Turning it OFF must not turn it on.

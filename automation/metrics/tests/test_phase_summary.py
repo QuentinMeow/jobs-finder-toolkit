@@ -239,7 +239,14 @@ class PartitionTests(SummaryTestCase):
         self.assertLess(summary["wrapped_external_s"],
                         summary["classes_s"]["external_wait"])
 
-    def test_negative_active_is_clamped_and_flagged_never_published(self) -> None:
+    def test_a_child_claiming_more_time_than_exists_is_clipped_and_flagged(self) -> None:
+        """An impossible duration is reconciled, not published, and not silent.
+
+        This used to drive ``active`` negative and trip ``accounting_error``.
+        The tiling now clips the child to the span it actually occupies, which
+        is the honest reading — so the partition holds and the anomaly is
+        reported as ``overlong_runs`` instead of as a negative residual.
+        """
         log = self.log()
         log.start(0.0)
         log.open(0.0, "mutation")
@@ -247,11 +254,36 @@ class PartitionTests(SummaryTestCase):
         log.end(10.0)
         summary = self.summarize(log)
 
-        self.assertEqual(summary["classes_s"]["active"], 0.0)
-        self.assertTrue(summary["integrity"]["accounting_error"])
-        self.assertTrue(any("accounting_error" in n for n in summary["notes"]))
+        self.assertEqual(summary["integrity"]["overlong_runs"], 1)
+        self.assertTrue(any("overlong_runs" in n for n in summary["notes"]))
+        self.assertLessEqual(summary["classes_s"]["local_subprocess"],
+                             summary["reference_total_s"] + 1e-6,
+                             "a class may never exceed the total it partitions")
         for value in summary["classes_s"].values():
             self.assertGreaterEqual(value, 0.0)
+        self.assert_partition(summary)
+
+    def test_concurrent_children_do_not_inflate_subprocess_time(self) -> None:
+        """Overlapping wrapped children must be counted once, not once each.
+
+        Three concurrent 10s children inside a 12s phase summed to 30s of
+        subprocess time against a 12s reference, and because ``active`` is the
+        residual it collapsed to 0. The recorder advertises atomic appends under
+        concurrent subagents, so this is an ordinary session, not a corner case.
+        """
+        log = self.log()
+        log.start(0.0)
+        log.open(0.0, "validation")
+        for _ in range(3):
+            log.run(11.0, 10.0)       # three children, all ending at t=11
+        log.close(11.0)
+        log.end(12.0)
+        summary = self.summarize(log)
+
+        self.assertLessEqual(summary["classes_s"]["local_subprocess"], 12.0 + 1e-6)
+        self.assertGreater(summary["wrapped_local_s"], 12.0,
+                           "the raw overlay should still show the 30s of child time")
+        self.assert_partition(summary)
 
 
 class CoverageTests(SummaryTestCase):

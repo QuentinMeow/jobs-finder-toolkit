@@ -315,7 +315,11 @@ def check_skill_manifests() -> list[Finding]:
     skills = REPO_ROOT / "skills"
     if not skills.is_dir():
         return findings
-    publish = REPO_ROOT / "automation" / "publish"
+    # Resolved from THIS FILE, never from REPO_ROOT: under --root, REPO_ROOT is
+    # the tree being INSPECTED, and importing the checker out of it would let an
+    # inspected tree ship its own verdict — a fixture carrying this file would
+    # certify itself clean. The tree under test is passed as an argument instead.
+    publish = Path(__file__).resolve().parents[1] / "publish"
     if str(publish) not in sys.path:
         sys.path.insert(0, str(publish))
     import sync_skill_manifests  # noqa: E402  (stdlib-only sibling module)
@@ -684,6 +688,23 @@ def file_retries(findings: list[Finding], today: str) -> None:
 # ── entry point ──────────────────────────────────────────────────────────────
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point. Restores the module globals --root rebinds.
+
+    Without the restore, an in-process ``main(["--root", X])`` leaves REPO_ROOT
+    pointing at X for every later call in the same process — including one that
+    passes no --root and would then report on X while printing OK. Callers are
+    normally subprocesses, but the repo already has an in-process caller that
+    mutates these globals (automation/publish/tests/test_skill_manifests.py).
+    """
+    global REPO_ROOT, RETRIES_DIR
+    saved_root, saved_retries = REPO_ROOT, RETRIES_DIR
+    try:
+        return _main(argv)
+    finally:
+        REPO_ROOT, RETRIES_DIR = saved_root, saved_retries
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="run all checks; exit 1 on findings")
     parser.add_argument("--file-retries", action="store_true",
@@ -709,6 +730,27 @@ def main(argv: list[str] | None = None) -> int:
         root = Path(args.root).expanduser().resolve()
         if not root.is_dir():
             print(f"reconcile: --root {args.root!r} is not a directory", file=sys.stderr)
+            return 2
+        # --file-retries GARBAGE-COLLECTS items out of RETRIES_DIR, which --root
+        # repoints into the inspected tree — so the combination DELETES files in
+        # a directory the operator merely asked to look at. Agents never delete
+        # owner data, so the combination is refused outright.
+        #
+        # --fix-index is deliberately still allowed: it writes one generated file
+        # (memory/index.md) into a tree the operator named explicitly, destroys
+        # nothing, and is how the benchmark fixture's closeout stage is driven.
+        if args.file_retries:
+            print("reconcile: --root cannot be combined with --file-retries — that "
+                  "would delete queue items inside the inspected tree", file=sys.stderr)
+            return 2
+        # A directory that is not a process tree must not report "OK (9 checks
+        # clean)". Every check returns no findings when its root is absent, so
+        # an empty directory — or $HOME — used to come back green: a gate that
+        # says OK for a tree it never looked at.
+        if not any((root / rel).exists() for rel in set(CHECK_ROOTS.values())):
+            print(f"reconcile: --root {args.root!r} contains none of "
+                  f"{', '.join(sorted(set(CHECK_ROOTS.values())))} — refusing to "
+                  f"report a clean tree it never inspected", file=sys.stderr)
             return 2
         REPO_ROOT = root
         RETRIES_DIR = REPO_ROOT / "message-queue/needs-agent/retries"

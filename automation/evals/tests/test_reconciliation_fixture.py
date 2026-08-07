@@ -453,5 +453,50 @@ class TestBenchHarness(unittest.TestCase):
         self.assertIn("unknown stage", out)
 
 
+class TestStepsCanActuallyFail(unittest.TestCase):
+    """A validation step that cannot fail is decoration, not a check.
+
+    ``_inproc_ignored_destination_protected`` returned 0 on every branch —
+    including the one whose own message read "a copy must refuse" — so the step
+    registered as "ignored destination would not be overwritten" could not
+    report the single state it exists to catch. Nothing caught it because no
+    test anywhere drove a bench step to a non-ok result: every ``ok`` signal in
+    the harness could have been hardcoded ``True`` with the suite still green.
+    """
+
+    def test_the_destination_guard_is_green_on_the_designed_variant(self) -> None:
+        # R3 runs the destination-exists variant on purpose: occupied-with-
+        # different-bytes is the SETUP, not the failure.
+        code, note = BENCH._inproc_ignored_destination_protected(
+            _SHARED["destination-exists"])
+        self.assertEqual(code, 0, note)
+
+    def test_the_destination_guard_reports_an_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            m = FIX.build(Path(tmp) / "fixture", variant="destination-exists")
+            source = m.overlay / FIX.OLD_ROOT / FIX.IGNORED_REL
+            dest = m.overlay / FIX.NEW_ROOT / FIX.IGNORED_REL
+            dest.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+            code, note = BENCH._inproc_ignored_destination_protected(m)
+            self.assertEqual(code, 1, "an overwritten destination must not read green")
+            self.assertIn("OVERWRITTEN", note)
+
+    def test_an_unexpected_exit_code_makes_the_row_not_ok(self) -> None:
+        """The row's ``ok`` must be driven by the steps, not assumed."""
+        m = _SHARED["base"]
+        good = BENCH._execute(
+            BENCH.Step(name="probe-ok", repo="public", kind="subprocess",
+                       argv=("git", "rev-parse", "HEAD"), expect=0), m)
+        self.assertTrue(good.ok, good.note)
+
+        bad = BENCH._execute(
+            BENCH.Step(name="probe-bad", repo="public", kind="subprocess",
+                       argv=("git", "rev-parse", "no/such/ref"), expect=0), m)
+        self.assertFalse(bad.ok,
+                         "a step whose exit code differs from expect is not ok")
+        self.assertNotEqual(bad.exit_code, bad.expected)
+
+
 if __name__ == "__main__":
     unittest.main()

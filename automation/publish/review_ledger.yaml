@@ -2878,3 +2878,14 @@
     handover. Generic process prose about tooling, gates, decisions, and filed follow-ups
     only; no real identity, employer, school, salary, private item name, or dated personal
     job-hunt content.'
+- base: 999a9a7a
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 13
+  digest: sha256:20c3c1e073c84ac7
+  finding: 'Read the complete staged 13-file diff. It fixes adversarial-review findings in the
+    telemetry and cutover tooling (time-accounting partition under concurrency, reconciler
+    --root safety, signal exit codes, copy-manifest path, a decorative benchmark step) plus
+    their regression tests, one handbook correction, and two process records. Timeless tooling
+    and generic process prose only; no real identity, employer, school, salary, private item
+    name, or dated personal job-hunt content. Leak guard green ARMED against the real config.'

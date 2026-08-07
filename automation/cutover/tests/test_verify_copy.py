@@ -165,6 +165,49 @@ class CopyTests(CopyToolTestCase):
         self.assertEqual(code, 1, text)
         self.assertIn("does not exist", text)
 
+    def test_copy_refuses_a_symlinked_DESTINATION(self):
+        """A symlink at the destination must never be followed onto owner data.
+
+        ``test_copy_never_follows_a_symlink`` covers a symlink inside the
+        SOURCE tree. This is the other direction, and it is the dangerous one:
+        the destination link points at a file outside the copy entirely, so
+        following it overwrites something the copy was never asked to touch.
+        The guard is ``plan_copy``'s ``is_symlink()`` branch, which was correct
+        but unverified — mutating it to treat the link as creatable passed the
+        whole suite.
+        """
+        outside = self.write(self.root / "owner-data.txt", "OWNER DATA")
+        self.write(self.source / "a.md", "NEW BYTES")
+        self.destination.mkdir(parents=True, exist_ok=True)
+        (self.destination / "a.md").symlink_to(outside)
+
+        code, text = self.run_inprocess(
+            "--copy", "--from", str(self.source), "--to", str(self.destination),
+            "--manifest", str(self.manifest))
+
+        self.assertEqual(code, 1, text)
+        self.assertIn("REFUSED", text)
+        self.assertEqual(outside.read_text(), "OWNER DATA",
+                         "the file behind the destination symlink was overwritten")
+        self.assertFalse(self.manifest.exists(),
+                         "a refused run must not record a manifest row")
+
+    def test_create_only_will_not_truncate_a_file_that_appears_after_planning(self):
+        """The TOCTOU case ``O_CREAT|O_EXCL`` exists for.
+
+        ``plan_copy`` decided the destination was absent; by the time
+        ``create_only`` runs it is not. The syscall must refuse rather than
+        truncate — mutating ``O_EXCL`` to ``O_TRUNC`` passed the whole suite.
+        """
+        source = self.write(self.source / "a.md", "NEW BYTES")
+        self.destination.mkdir(parents=True, exist_ok=True)
+        occupied = self.write(self.destination / "a.md", "OWNER DATA")
+        pair = verify_copy.Pair(source=source, destination=occupied)
+
+        with self.assertRaises(FileExistsError):
+            verify_copy.create_only(pair)
+        self.assertEqual(occupied.read_text(), "OWNER DATA")
+
 
 class VerifyTests(CopyToolTestCase):
     def _copy_two_files(self) -> None:

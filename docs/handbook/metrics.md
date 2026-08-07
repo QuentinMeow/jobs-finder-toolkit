@@ -118,10 +118,26 @@ runs will report embarrassing `long_gap` and `pre_arm` numbers, and that is
 correct — the failure mode to guard against is a later "improvement" that
 reclassifies them into `active` to make coverage look better.
 
-The five classes partition the reference total exactly. Because `active` is the
-residual, double-counted time surfaces as a negative, which is clamped to 0,
-flagged as `integrity.accounting_error`, and explained in a note — a negative is
-never published.
+The five classes partition the reference total exactly. What earns that is the
+**de-overlapping**: the timeline is tiled so every instant belongs to exactly one
+class, and the class totals are read off that tiling. Concurrent wrapped children
+are therefore counted once, not once each — three parallel 10 s children inside a
+12 s phase contribute 12 s of `local_subprocess`, not 30 s.
+
+Because `active` is the residual, the sum is an **identity, not a check**: it
+cannot fail as long as the tiling is right, so do not read "the classes add up"
+as evidence of anything. The real signals are the separate ones:
+
+- `wrapped_subprocess` (with `wrapped_local_s` / `wrapped_external_s`) is the raw
+  sum of every wrapped child's own duration. It deliberately **overlaps** and may
+  exceed the reference total under concurrency — that is what tells you the
+  children ran in parallel. It is an overlay, never a partition member;
+- `integrity.overlong_runs` counts children whose declared duration did not fit
+  the span they landed in (a clock step, an edited log, a duration from another
+  session). Each is clipped to its span, so the partition still holds, and the
+  discrepancy is reported rather than absorbed;
+- `integrity.accounting_error` remains as a last-resort clamp for an input the
+  tiling could not reconcile. A negative is never published.
 
 ### Coverage always names its denominator
 

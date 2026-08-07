@@ -47,6 +47,35 @@ regression tests.
 | 4 | `JOBHUNT_OVERLAY_RECONCILE=0` **armed** the branch it disables (`-n` is "non-empty"); armed, it points the public reconciler at the overlay and blocks every private commit | measured under `/bin/sh`: `0`, `false`, `off`, `no` all ARMED | `= "1"`; `test_only_the_literal_one_arms_the_toolkit_reconciler` covers 5 spellings |
 | 5 | A worker crash in the planner's thread pool exited **1** ("readable plan, needs judgement") instead of 3 | `--public-root /nonexistent` → EXIT=1 | fail-closed wrapper returning 3; `test_an_unexpected_crash_refuses_rather_than_exiting_one` |
 
+### Second pass — adversarial correctness review (134-mutation campaign)
+
+A second reviewer ran a mutation campaign and a manual attack. It **withdrew two of its own
+findings** after I disproved them against the current tree (`check_configured_paths` does append
+UNCLASSIFIED/STALE rows to `failures` and returns 1; `--only X --skip X` already returned 1). The
+rest were verified before acting.
+
+| # | Defect | Evidence | Fix |
+|---|---|---|---|
+| 1 | **The partition invariant was false under concurrency.** Class totals were read from the raw sum of each wrapped child's duration, discarding the de-overlapped tiling already computed. `active` is the residual, so overlap drove it to **0**. | 3 concurrent children in a 6.3s session: `subproc 18.0s` under `TOTAL 6.3s`; classes summed to 18.1s against a 6.3s reference | totals AND per-phase rows now read the tiling; `wrapped_*` stays as the declared overlay; 2 tests incl. the concurrency case |
+| 8 | Same defect via an approval window containing a wrapped run — `active 70.0` where the truth was 80.0, `accounting_error` False | reproduced | closed by the same fix; verified `active 80.0` |
+| — | The clamp path was only reachable via that bug, so a child declaring more time than the session existed became undetectable once tiled | — | new `integrity.overlong_runs` counter + note; the anomaly is reported, not absorbed |
+| 3 | **`copy-checksum` still could not run.** My first fix moved the mismatch rather than closing it: the planner writes `local/cutover/<run-id>/copied.txt`, the validate step passed no `--manifest`. | read | one hoisted `manifest` shared by both steps |
+| 5 | **`--root` + `--file-retries` deletes queue items inside the inspected tree** — a flag documented as read-only inspection. Violates "agents never delete owner data". | victim tree lost a file | combination refused (exit 2); test asserts the victim survives |
+| 7 | `--root <any directory>` reported **"OK (9 checks clean)"** — verified green for an empty dir, `/private/tmp`, and `$HOME`. Every check no-ops when its root is absent. | reproduced | refuses a tree carrying no process root; 2 tests |
+| 4 | `check_skill_manifests` imported `sync_skill_manifests` from `<--root>/automation/publish`, so an inspected tree could **certify itself** | read | resolved from `__file__`, tree under test passed as an argument |
+| 6 | `main()` rebound module globals with no restore, so a later in-process call with no `--root` kept inspecting the previous root while printing OK | read | `try/finally` restore; test proves no leak between calls |
+| 16 | A signalled child returned Python's negative code, so `sys.exit(-15)` became **241** where an unwrapped shell reports 143 — the wrapper changed the code it promises to pass through | measured | `128 - code`; verified wrapped == unwrapped == 143 |
+| — | `_inproc_ignored_destination_protected` returned 0 on **every** branch, including the one whose message read "a copy must refuse" | read | asserts the destination still holds its own bytes; green on R3's designed variant, red on an overwrite |
+
+The compound finding worth naming: `verify_copy`'s never-overwrite guarantee had three layers, and
+all three were compromised at once — `plan_copy`'s symlink refusal and `create_only`'s `O_CREAT|O_EXCL`
+were **correct but untested** (both mutated cleanly through the whole suite), and the `copy-checksum`
+gate that would have caught a regression was the one that never ran. Both guards now have tests; the
+gate now runs.
+
+Remaining medium findings and coverage gaps are filed:
+[2026-08-07-cutover-tooling-review-remainder](../../0_backlog/2026-08-07-cutover-tooling-review-remainder/task.md).
+
 Attacked and **held**, no finding: the never-delete-owner-data rule (every delete path in
 `verify_copy`, `reconciliation_fixture --force`, and the planner refused, including through a
 symlinked destination and a planted manifest); the planner's read-only claim (`hash-object` without

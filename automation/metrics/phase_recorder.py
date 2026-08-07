@@ -656,6 +656,13 @@ def cmd_run(args) -> int:
         # NO pipe, NO capture: the child inherits our stdin/stdout/stderr so the
         # caller sees exactly what it would without the wrapper.
         exit_code = subprocess.run(child, cwd=cwd).returncode
+        # Python reports a signalled child as NEGATIVE (-15 for SIGTERM); a shell
+        # reports 128+N (143). Passing the negative through makes the wrapper
+        # change the code the caller sees — sys.exit(-15) becomes 241 — which
+        # breaks the one promise `run` makes: the exit code is the child's,
+        # exactly as if the wrapper were not there.
+        if exit_code < 0:
+            exit_code = 128 - exit_code
     except Exception as exc:
         spawn_error = f"{exc.__class__.__name__}: {exc}"
         exit_code = 127
