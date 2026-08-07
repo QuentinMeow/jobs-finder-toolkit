@@ -2869,3 +2869,12 @@
     tests (a constructed home path and a constructed LinkedIn slug) whose purpose is to
     prove the summary strips them. Fixture content uses the fake example persona. Leak
     guard green ARMED against the real config (15 active tokens).'
+- base: 852042f1
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 2
+  digest: sha256:2e7ec076a473f605
+  finding: 'Read the complete staged two-file diff: a session worklog entry and a session
+    handover. Generic process prose about tooling, gates, decisions, and filed follow-ups
+    only; no real identity, employer, school, salary, private item name, or dated personal
+    job-hunt content.'
