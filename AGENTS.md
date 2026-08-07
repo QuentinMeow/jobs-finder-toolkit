@@ -132,6 +132,13 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
    **Every GitHub operation — opening, stacking, retargeting, merging or closing a PR —
    follows `skills/github-workflow/`; merging in particular goes through its runbook
    (`skills/github-workflow/scripts/merge_stack.py`), never a hand-typed merge command.**
+   **Two OPERATIONAL skills apply to every task regardless of domain, and are not
+   routed by subject matter: `github-workflow` whenever work leaves this machine
+   (its §8 carries the pre-PR gate command, the step costs, and the rules that stop
+   one red CI job costing extra cycles — a hand-picked `--lane` list instead of
+   `--impact-from origin/main` measured at 42% of a publish cycle), and
+   `explain-clearly` before every reply that reports work. Both are cheap to read and
+   both prevent rework that no domain skill covers.**
    Overlay-only skills live at `private/skills/<name>/`; their names are deliberately
    absent from the public tree and are listed by the runtime when the overlay is mounted.
 3. Read `.agents/MEMORY.md` (if present) for cross-session context, and skim `memory/index.md`
