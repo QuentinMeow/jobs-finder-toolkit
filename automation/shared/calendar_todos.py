@@ -56,7 +56,7 @@ import html
 import json
 import re
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -95,6 +95,7 @@ MANAGED_SECTIONS = (SECTION_ACTION, SECTION_WAITING, SECTION_SCHEDULED)
 MARKER_OPEN = "<!-- jobhunt-calendar"
 MARKER_CLOSE = "-->"
 AGENDA_MARKER_OPEN = "<!-- jobhunt-agenda"
+AVAILABILITY_MARKER_OPEN = "<!-- jobhunt-availability"
 COMPANY_VIEW_START = "<!-- jobhunt-company-view:start -->"
 COMPANY_VIEW_END = "<!-- jobhunt-company-view:end -->"
 
@@ -143,6 +144,14 @@ _AGENDA_OPTIONAL_KEYS = (
     "round", "action", "due_at", "starts_at", "ends_at", "timezone",
     "details", "priority",
 )
+_AVAILABILITY_KEYS = (
+    "timezone", "days", "start", "end", "business_days",
+    "buffer_minutes", "minimum_window_minutes",
+)
+_WEEKDAY_NAMES = (
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+)
+_CLOCK_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
 CALENDAR_TEMPLATE = """\
 # Interview calendar
@@ -237,6 +246,7 @@ class CalendarDocument:
     sections: dict[str, int] = field(default_factory=dict)  # heading -> line idx
     entries: dict[str, CalendarEntry] = field(default_factory=dict)
     agenda_items: list[dict] = field(default_factory=list)
+    availability: dict | None = None
     errors: list[str] = field(default_factory=list)
 
 
@@ -479,6 +489,80 @@ def _parse_agenda_items(lines: list[str]) -> tuple[list[dict], list[str]]:
     return items, errors
 
 
+def _parse_availability(lines: list[str]) -> tuple[dict | None, list[str]]:
+    """Read the optional copy-ready availability policy from one compact marker."""
+    matches = [
+        (index, _line_text(line).strip())
+        for index, line in enumerate(lines)
+        if _line_text(line).strip().startswith(AVAILABILITY_MARKER_OPEN)
+    ]
+    if len(matches) > 1:
+        return None, ["duplicate jobhunt-availability marker"]
+    if not matches:
+        return None, []
+
+    index, marker = matches[0]
+    context = f"line {index + 1}"
+    if not marker.endswith(MARKER_CLOSE):
+        return None, [f"{context}: jobhunt-availability marker must fit on one line"]
+    payload_text = marker[
+        len(AVAILABILITY_MARKER_OPEN):-len(MARKER_CLOSE)
+    ].strip()
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError as exc:
+        return None, [
+            f"{context}: jobhunt-availability payload is not valid JSON: {exc}"
+        ]
+    if not isinstance(payload, dict):
+        return None, [f"{context}: jobhunt-availability payload must be a mapping"]
+
+    errors: list[str] = []
+    unknown = sorted(key for key in payload if key not in _AVAILABILITY_KEYS)
+    if unknown:
+        errors.append(
+            f"{context}: jobhunt-availability has unknown key(s): {', '.join(unknown)}")
+    for key in _AVAILABILITY_KEYS:
+        if key not in payload:
+            errors.append(f"{context}: jobhunt-availability requires '{key}'")
+
+    timezone_name = payload.get("timezone")
+    if not isinstance(timezone_name, str) or not _validate_timezone(timezone_name):
+        errors.append(
+            f"{context}: jobhunt-availability timezone must be an IANA timezone name")
+    days = payload.get("days")
+    if not isinstance(days, list) or not days:
+        errors.append(f"{context}: jobhunt-availability days must be a non-empty list")
+    elif any(day not in _WEEKDAY_NAMES for day in days):
+        errors.append(
+            f"{context}: jobhunt-availability days must use lowercase weekday names")
+    elif len(set(days)) != len(days):
+        errors.append(f"{context}: jobhunt-availability days cannot contain duplicates")
+
+    for key in ("start", "end"):
+        value = payload.get(key)
+        if not isinstance(value, str) or not _CLOCK_RE.match(value):
+            errors.append(f"{context}: jobhunt-availability {key} must be HH:MM")
+    if all(isinstance(payload.get(key), str) and _CLOCK_RE.match(payload[key])
+           for key in ("start", "end")):
+        if payload["end"] <= payload["start"]:
+            errors.append(f"{context}: jobhunt-availability end must be after start")
+
+    numeric_ranges = {
+        "business_days": (1, 30),
+        "buffer_minutes": (0, 120),
+        "minimum_window_minutes": (30, 1440),
+    }
+    for key, (minimum, maximum) in numeric_ranges.items():
+        value = payload.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) \
+                or not minimum <= value <= maximum:
+            errors.append(
+                f"{context}: jobhunt-availability {key} must be an integer "
+                f"from {minimum} to {maximum}")
+    return (None if errors else dict(payload)), errors
+
+
 def _line_text(line: str) -> str:
     return line.rstrip("\r\n")
 
@@ -509,6 +593,8 @@ def parse_calendar(text: str) -> CalendarDocument:
     doc.errors.extend(company_errors)
     doc.agenda_items, agenda_errors = _parse_agenda_items(doc.lines)
     doc.errors.extend(agenda_errors)
+    doc.availability, availability_errors = _parse_availability(doc.lines)
+    doc.errors.extend(availability_errors)
 
     for index, line in enumerate(doc.lines):
         stripped = _line_text(line)
@@ -1110,8 +1196,99 @@ def _split_interview_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     return upcoming, past
 
 
+def availability_windows(
+    rows: list[dict], config: dict, *, now: datetime | None = None,
+) -> list[dict]:
+    """Return copy-ready free ranges after busy blocks and their safety buffers.
+
+    The horizon starts on the next calendar day, so a generated recruiter reply
+    never advertises a partially elapsed same-day window. ``rows`` includes
+    confirmed interviews, pending holds, and personal commitments.
+    """
+    zone = ZoneInfo(str(config["timezone"]))
+    current = now or datetime.now(zone)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=zone)
+    else:
+        current = current.astimezone(zone)
+    weekday_indexes = {_WEEKDAY_NAMES.index(day) for day in config["days"]}
+    start_clock = time.fromisoformat(config["start"])
+    end_clock = time.fromisoformat(config["end"])
+    buffer = timedelta(minutes=config["buffer_minutes"])
+    minimum = timedelta(minutes=config["minimum_window_minutes"])
+
+    workdays: list[date] = []
+    candidate = current.date() + timedelta(days=1)
+    while len(workdays) < config["business_days"]:
+        if candidate.weekday() in weekday_indexes:
+            workdays.append(candidate)
+        candidate += timedelta(days=1)
+
+    windows: list[dict] = []
+    for workday in workdays:
+        day_start = datetime.combine(workday, start_clock, tzinfo=zone)
+        day_end = datetime.combine(workday, end_clock, tzinfo=zone)
+        busy: list[tuple[datetime, datetime]] = []
+        for row in rows:
+            starts = _zoned_datetime(row.get("starts_at"), row.get("timezone"))
+            ends = _zoned_datetime(row.get("ends_at"), row.get("timezone"))
+            if starts is None or ends is None:
+                continue
+            if starts.tzinfo is None:
+                starts = starts.replace(tzinfo=timezone.utc)
+            if ends.tzinfo is None:
+                ends = ends.replace(tzinfo=timezone.utc)
+            starts = starts.astimezone(zone) - buffer
+            ends = ends.astimezone(zone) + buffer
+            if ends <= day_start or starts >= day_end:
+                continue
+            busy.append((max(starts, day_start), min(ends, day_end)))
+
+        merged: list[tuple[datetime, datetime]] = []
+        for starts, ends in sorted(busy):
+            if merged and starts <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], ends))
+            else:
+                merged.append((starts, ends))
+        cursor = day_start
+        for starts, ends in [*merged, (day_end, day_end)]:
+            if starts - cursor >= minimum:
+                windows.append({"date": workday, "starts_at": cursor, "ends_at": starts})
+            cursor = max(cursor, ends)
+    return windows
+
+
+def _clock_label(value: datetime) -> str:
+    return value.strftime("%I:%M %p").lstrip("0").replace(":00 ", " ")
+
+
+def _availability_copy_lines(windows: list[dict]) -> list[str]:
+    grouped: dict[date, list[dict]] = {}
+    for window in windows:
+        grouped.setdefault(window["date"], []).append(window)
+    lines: list[str] = []
+    for workday, day_windows in grouped.items():
+        ranges = "; ".join(
+            f"{_clock_label(window['starts_at'])}–{_clock_label(window['ends_at'])}"
+            for window in day_windows
+        )
+        timezone_label = day_windows[0]["starts_at"].tzname() or ""
+        lines.append(
+            f"{workday.strftime('%a, %b')} {workday.day}: {ranges} {timezone_label}".rstrip())
+    return lines
+
+
+def _availability_summary(config: dict) -> str:
+    return (
+        f"Next {config['business_days']} business days · "
+        f"{config['buffer_minutes']}-minute buffer around busy blocks · "
+        f"ranges are at least {config['minimum_window_minutes']} minutes."
+    )
+
+
 def render_company_view(
     companies: list[dict], supplemental_items: list[dict] | tuple[dict, ...] = (),
+    *, availability_config: dict | None = None, now: datetime | None = None,
 ) -> str:
     """Render a human-first interview agenda plus folded tracker detail.
 
@@ -1128,7 +1305,7 @@ def render_company_view(
         "_Handle Do now first. The schedule is grouped by week, then day, then event. Pending holds and personal commitments are included in conflict checks._",
         "",
     ]
-    if not companies and not supplemental_items:
+    if not companies and not supplemental_items and availability_config is None:
         lines.append("_None currently._")
         return "\n".join(lines) + "\n"
 
@@ -1148,6 +1325,17 @@ def render_company_view(
         lines.extend(_render_conflicts(upcoming))
     else:
         lines.append("_No overlapping current or future calendar blocks._")
+
+    if availability_config is not None:
+        windows = availability_windows(
+            interview_rows, availability_config, now=now)
+        copy_lines = _availability_copy_lines(windows)
+        lines.extend([
+            "", "### Available interview times", "",
+            f"_{_availability_summary(availability_config)}_", "", "```text",
+            *(copy_lines or ["No qualifying availability in this window."]),
+            "```",
+        ])
 
     lines.extend(["", "### Schedule", ""])
     if upcoming:
@@ -1307,6 +1495,7 @@ def _render_conflicts_html(rows: list[dict]) -> list[str]:
 
 def render_company_view_html(
     companies: list[dict], supplemental_items: list[dict] | tuple[dict, ...] = (),
+    *, availability_config: dict | None = None, now: datetime | None = None,
 ) -> str:
     """Render the optional offline companion from the same canonical projection."""
     interview_rows, action_rows, role_rows, latest_updates = _company_view_rows(
@@ -1329,6 +1518,7 @@ def render_company_view_html(
         ".table-wrap:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid #2e90fa; outline-offset: 2px; }",
         "details { margin-top: 1.5rem; padding: .75rem 1rem; border: 1px solid var(--border); border-radius: .5rem; } summary { cursor: pointer; font-weight: 650; }",
         ".week { margin: 1.5rem 0 2.25rem; padding-top: .2rem; border-top: 3px solid var(--text); } .week > h3 { margin: .65rem 0 1rem; } .day { margin: 1rem 0 1.5rem; padding: .9rem 1rem 1rem; border: 1px solid var(--border); border-radius: .8rem; background: var(--card); } .day h4 { margin: 0 0 .8rem; } .events { display: grid; gap: .65rem; } .event { padding: .8rem .9rem; border-left: 5px solid var(--confirmed); border-radius: .45rem; background: var(--surface); } .event-hold { border-left-color: var(--pending); } .event-commitment { border-left-color: var(--busy); } .event-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; } .event-heading time { font-weight: 700; font-variant-numeric: tabular-nums; } .status { font-size: .82rem; font-weight: 700; color: var(--confirmed); } .status-hold { color: var(--pending); } .status-commitment { color: var(--busy); } .event-company { margin-top: .35rem; font-weight: 700; } .event-role, .event-round { color: var(--muted); } .conflict-list { display: grid; gap: .75rem; } .conflict { padding: .85rem 1rem; border: 2px solid var(--danger); border-radius: .65rem; background: var(--danger-bg); } .conflict-time { color: var(--danger); font-weight: 750; } .conflict ul { margin: .45rem 0 0; padding-left: 1.2rem; }",
+        ".availability-copy { padding: 1rem; overflow-x: auto; border: 1px solid var(--border); border-radius: .65rem; background: var(--card); font: inherit; white-space: pre-wrap; }",
         "@media (max-width: 720px) { body { padding: 16px; } .table-wrap { overflow: visible; } table, tbody, tr, td { display: block; width: auto; } thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); } tr { margin: 0 0 .9rem; padding: .35rem .65rem; border: 1px solid var(--border); border-radius: .65rem; background: var(--card); } td, td:nth-child(1), td:nth-child(2) { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: .6rem; padding: .38rem 0; border: 0; white-space: normal; } td::before { content: attr(data-label); color: var(--muted); font-weight: 650; } }",
         "</style>",
         "</head>",
@@ -1353,6 +1543,17 @@ def render_company_view_html(
         lines.append("<p>No owner actions right now.</p>")
     lines.append("<h2>⚠️ Conflicts</h2>")
     lines.extend(_render_conflicts_html(upcoming))
+    if availability_config is not None:
+        windows = availability_windows(
+            interview_rows, availability_config, now=now)
+        copy_text = "\n".join(
+            _availability_copy_lines(windows)
+            or ["No qualifying availability in this window."])
+        lines.extend([
+            "<h2>Available interview times</h2>",
+            f"<p>{html.escape(_availability_summary(availability_config))}</p>",
+            f'<pre class="availability-copy">{html.escape(copy_text)}</pre>',
+        ])
     lines.append("<h2>Schedule</h2>")
     if upcoming:
         lines.extend(_render_schedule_html(upcoming))

@@ -654,6 +654,10 @@ class ProgressCalendarTests(unittest.TestCase):
             "## Action needed\n", "## Action needed\n\n" + "".join(
                 render_entry(action, checked=False, text="legacy")), 1)
         supplemental = (
+            '<!-- jobhunt-availability {"timezone":"America/Los_Angeles",'
+            '"days":["monday","tuesday","wednesday","thursday","friday"],'
+            '"start":"08:00","end":"17:00","business_days":10,'
+            '"buffer_minutes":15,"minimum_window_minutes":60} -->\n'
             '<!-- jobhunt-agenda {"id":"agenda-unlinked-interview",'
             '"kind":"interview","company":"Unlinked Co",'
             '"role":"Infrastructure Engineer (posting link unresolved)",'
@@ -692,6 +696,8 @@ class ProgressCalendarTests(unittest.TestCase):
             generated.index("Choose the final interview time"),
         )
         self.assertIn("Unlinked Co", prep)
+        self.assertIn("### Available interview times", prep)
+        self.assertIn("```text", prep)
         self.assertIn("| Time | Status | Company / commitment | Role | Event |", prep)
         self.assertIn(
             'href="../4_in_progress/example-corp-multi-20260720/meta.yaml" '
@@ -703,6 +709,8 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertIn('<div class="table-wrap" role="region"', html)
         self.assertEqual(html.count("Submit four availability slots"), 1)
         self.assertIn("Unlinked Co", html)
+        self.assertIn("<h2>Available interview times</h2>", html)
+        self.assertIn('<pre class="availability-copy">', html)
         self.assertIn('<section class="week">', html)
         self.assertIn('<article class="event event-interview">', html)
         self.assertLess(html.index("<h2>Do now</h2>"), html.index("<h2>Schedule</h2>"))

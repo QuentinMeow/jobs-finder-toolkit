@@ -79,7 +79,9 @@ temporarily unavailable. A repeated run must search first and converge without c
 
 - Require one unambiguous application and posting using exact company plus role, job ID,
   recruiter domain, or established thread evidence. Company alone is insufficient when more than
-  one posting could match.
+  one posting could match. In a multi-role company, a title-only receipt without a posting ID or
+  established role-specific thread stays company-level when it could plausibly describe more than
+  one active posting; do not select the closest-looking title.
 - Apply per-role evidence with `status.py --update-job`; use `--update` only for evidence that
   clearly covers every posting in an application. Never let one role's rejection close an active
   sibling role.
@@ -116,10 +118,22 @@ status table.
 
 - Lead with a top-level **Do now** table so owner work is visible before the schedule. Follow it with
   a prominent conflict alert covering every overlap among confirmed interviews, pending holds, and
-  personal commitments. Render the schedule in exactly three navigation layers: **week**, **day**,
+  personal commitments. Then show **Available interview times** as a tight, copy-ready block before
+  the schedule. Render the schedule in exactly three navigation layers: **week**, **day**,
   then individual **event**. When one organizer block names multiple interviewers or rounds without
   exact subslots, render one event and merge those names into its content; do not duplicate the time.
   Waits and company commentary never compete with the preparation agenda.
+- Read the Outlook mailbox timezone and working hours and persist them in the calendar's single
+  validated `jobhunt-availability` marker. Project the next 10 matching business days after today.
+  Subtract confirmed interviews, submitted-availability holds, and personal busy commitments, with
+  15 minutes removed on both sides of every occupied block. Keep only remaining ranges of at least
+  60 minutes. This guarantees that a 30-minute interview can fit while remaining at least 15 minutes
+  from adjacent occupied time. Never advertise a partially elapsed same-day range.
+- Put one date per line and separate multiple ranges for that date with semicolons inside a fenced
+  `text` block in Markdown and a `<pre>` block in HTML. Include the timezone abbreviation and keep
+  the policy summary to one line so the entire section can be pasted into an availability reply.
+  The projection is not a hold, invitation, draft, or sent response and must never create Outlook
+  events by itself.
 - If confirmed or actionable evidence cannot yet be matched to one posting, keep it in those same
   tables labeled **posting link unresolved**. Markdown and HTML must share that supplemental item;
   never hide it in prose, omit it from one surface, or invent an application link.
@@ -199,8 +213,13 @@ brief and operational; application notes hold the full communication timeline.
   repeat `status.py --refresh-calendar --html` without `--write` and require it to report no change.
 - Confirm every current/future live Outlook block in scope is either represented in the grouped
   local schedule or explicitly excluded as unrelated, and verify that every detected overlap is
-  visible in both Markdown and HTML.
+  visible in both Markdown and HTML. Verify that both surfaces carry the same copy-ready availability
+  ranges and that every range satisfies the configured working hours, buffer, and minimum length.
 - Confirm application notes contain one entry per matched message and one `People` row per person.
+- For a mailbox-wide reconciliation, do not mark the work verified until the report names the
+  all-time folder inventory, the `store-coverage --in-progress-applications` and recruiter-domain/
+  thread-alias coverage families, the captured current time, and the byte-stable Markdown/HTML
+  calendar refresh with Do now, conflicts, available times, and week/day/event navigation.
 - Report each application/status/progress change and each Outlook event as `created`, `updated`,
   `already present`, `ambiguous`, or `skipped`, with the evidence date and a plain-language reason.
 - Surface open scheduling actions prominently. Do not claim a proposed time is booked, a Draft was
