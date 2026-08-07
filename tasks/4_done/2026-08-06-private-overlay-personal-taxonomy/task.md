@@ -31,8 +31,8 @@ private content.
 
 - [x] A design records the complete before/after taxonomy and supersedes the prior lifetime layout without rewriting history.
 - [x] Every tracked private file is classified, moved or intentionally retained, with no loose files directly under `me/`.
-- [ ] Ignored local data under moved roots has a safe, non-overwriting migration path.
+- [x] Ignored local data under moved roots has a safe, non-overwriting migration path.
 - [x] Config accessors, examples, documentation, skills, and tests resolve the new paths; the ignored local config waits for merge-time cutover.
 - [x] File-count and blob-identity checks prove that mechanical moves did not lose or rewrite owner data.
-- [ ] Impacted gates pass in both repositories, including a config-less public checkout.
-- [x] Separate private and public branches are committed, pushed, and opened as PRs with CI checked.
+- [x] Impacted gates pass in both repositories, including a config-less public checkout.
+- [x] Separate private and public branches are committed, pushed, opened, and merged with CI checked.

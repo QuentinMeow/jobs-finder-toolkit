@@ -80,3 +80,33 @@ mounted untracked handover   = 46fe50883700bfecba4405d30fdb855c8ef28ca94c34fca6c
 
 - Public toolkit: PR #321
 - Private overlay: PR #93
+
+## Post-merge local reconciliation
+
+```
+$ shasum -a 256 /private/tmp/private-local-before-reconcile.patch
+09b4658691cb58fe9dd79aa3f5a84d55bb3317aa5189fd6b58027da8143cb022  /private/tmp/private-local-before-reconcile.patch
+
+$ .venv/bin/python skills/application-tracker/scripts/status.py --check-metadata --statuses in_progress
+Checked 16 applications; 0 invalid.
+EXIT=0
+
+$ .venv/bin/python skills/application-tracker/scripts/status.py --check-calendar
+Calendar private/me/interviews/calendar.md: consistent; 27 entries, 27 referenced.
+EXIT=0
+
+$ .venv/bin/python skills/application-tracker/scripts/status.py --refresh-calendar --html
+Calendar private/me/interviews/calendar.md: already uses the current layout.
+EXIT=0
+
+$ rsync -anic --itemize-changes private/companies/ private/me/interviews/companies/
+<no output>
+EXIT=0
+```
+
+The checksum-enabled `rsync` comparison ran after a non-overwriting copy. The empty result proves
+that every ignored file remaining in the retired company root has the same content at the new
+destination; the source remains for owner-only retirement.
+
+Private PR #94 merged through `merge_stack.py` on track B and was independently confirmed by
+`GET /pulls/94/merge -> 204`.
