@@ -14,7 +14,7 @@
   checkout's unrelated work remains untouched.
 - Preserved the divergent legacy `data/` root and filed a store-aware reconciliation task after
   proving it contains unique newer state.
-- Committed the private migration in eleven guard-approved batches; no batch exceeded 500 files
+- Committed the private migration in ten guard-approved batches; no batch exceeded 500 files
   or 128 MiB. The largest was 369 files / 115,835,881 bytes.
 - The first config-less run found five missed hardcoded test paths. Fixed them in a focused public
   follow-up commit, then reran the complete suite outside the sandbox for LibreOffice access.

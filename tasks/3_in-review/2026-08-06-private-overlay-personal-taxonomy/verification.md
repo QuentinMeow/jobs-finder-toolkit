@@ -62,7 +62,7 @@ public PR check passing, including `pdf-tests`, `policy`, `secret-scan`, and all
 
 ## Private guard and baseline findings
 
-All eleven private commits passed the overlay pre-commit guard. Every staged batch stayed
+All ten private commits passed the overlay pre-commit guard. Every staged batch stayed
 within its standard 500-file / 128-MiB limits; the largest was 369 files / 115,835,881 bytes.
 
 Read-only private tracker checks still expose existing application-status, metadata,
