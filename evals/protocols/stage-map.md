@@ -77,6 +77,11 @@ are exact.
 
 ## A. Stage map
 
+**Other legs.** The post-merge two-repository reconciliation leg (`R1`–`R4`) has its own map, under
+the same protocol: `evals/protocols/reconciliation-stages.md`. It is kept separate because §A's
+cost-share framing is search/draft-specific and because its fixture is a public generator rather
+than a private capture. No stage here is renumbered by it.
+
 ### A.1 Search leg (~121k tok / 66 calls / ~9.1 min)
 
 | # | Stage | Inputs read (files + ~KB) | Scripts invoked (+ typical stdout) | Network | Artifacts written | ~tok (share) | wall-clock share | Conf |

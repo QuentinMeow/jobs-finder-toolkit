@@ -476,9 +476,9 @@ class ExecutionTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
         log_dir = root / run_gates.LOG_DIR_REL
-        results = run_gates._run_many(gates, log_dir, jobs=kwargs.get("jobs", 1),
-                                      fail_fast=kwargs.get("fail_fast", False),
-                                      root=root, on_done=lambda r: None)
+        results = run_gates.run_many(gates, log_dir, jobs=kwargs.get("jobs", 1),
+                                     fail_fast=kwargs.get("fail_fast", False),
+                                     root=root, on_done=lambda r: None)
         out = io.StringIO()
         code = run_gates.summarise(results, out, tail=kwargs.get("tail", 15), root=root)
         return results, code, out.getvalue(), log_dir
@@ -811,7 +811,7 @@ class SelectionTests(unittest.TestCase):
             "maintenance": [
                 "tests-reconcile", "tests-gardener", "tests-hooks",
                 "tests-metrics", "tests-evals", "tests-gates",
-                "tests-ci-classifier", "tests-github-workflow",
+                "tests-ci-classifier", "tests-cutover", "tests-github-workflow",
             ],
             "render": ["example-render"],
             "resume": ["tests-resume-writer"],
@@ -864,6 +864,27 @@ class SelectionTests(unittest.TestCase):
             ("maintenance", "render", "resume", "shared", "job-search",
              "applications", "publish"),
         )
+
+    def test_the_real_classifier_advertises_exactly_these_long_lanes(self):
+        """The tripwire ``impact_decision`` checks, asserted without a mock.
+
+        ``impact_decision`` degrades EVERY ``--impact-from`` run to the full lane
+        matrix when ``classifier.LANES != LONG_CI_LANES``, and it does so
+        silently apart from one reason string. Adding a lane here (rather than a
+        gate to an existing lane) is therefore a change that looks free and is
+        not, so the real modules are compared to each other.
+        """
+        classifier = run_gates._load_change_classifier(REPO_ROOT)
+        self.assertEqual(tuple(classifier.LANES), run_gates.LONG_CI_LANES)
+
+    def test_cutover_tests_are_a_gate_in_maintenance_not_a_lane_of_their_own(self):
+        gate = next(g for g in self.gates if g.name == "tests-cutover")
+        self.assertIn("tests-cutover", run_gates.CI_LANES["maintenance"])
+        self.assertNotIn("cutover", run_gates.CI_LANES)
+        self.assertEqual(
+            list(gate.argv[1:]),
+            ["-m", "unittest", "discover", "automation/cutover/tests"])
+        self.assertTrue((REPO_ROOT / "automation/cutover/tests").is_dir())
 
     def test_policy_is_the_exact_fast_blocking_set(self):
         self.assertEqual(

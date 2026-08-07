@@ -37,7 +37,7 @@ data in the public tree** — it ships only the fake "Jordan Rivers" example.
 (SKILL.md + scripts published; PRODUCTS stay private): `ask-me-anything`, `job-search`,
 `resume-writer`, `application-tracker`, `behavioral-interview-prep`, `company-research`,
 `email-assistant`, `interview-calendar`, `gardener`, `search-recall-audit`,
-`github-workflow`, `windows-environment`. **PRIVATE skills are intentionally not enumerated here**:
+`github-workflow`, `windows-environment`, `explain-clearly`. **PRIVATE skills are intentionally not enumerated here**:
 each entire skill lives only in the overlay, and bootstrap discovers it dynamically.
 
 **PRODUCTS are always private** and mount under `private/` (real applications, discoveries,
@@ -125,7 +125,10 @@ Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`
    `interview-calendar` (reconcile email evidence, tracker progress, and Outlook interview events),
    `search-recall-audit` (spot-check whether job-search is missing/over-keeping roles),
    `github-workflow` (PR descriptions, stacked PRs, CI, the push gates),
-   `windows-environment` (mandatory Windows/WSL setup and diagnostics).
+   `windows-environment` (mandatory Windows/WSL setup and diagnostics),
+   `explain-clearly` (**before sending any reply that reports work, results, or a decision** —
+   how to write it so a human who opens nothing can act on it; the WHAT stays in
+   `docs/handbook/reporting-to-the-owner.md`).
    **Every GitHub operation — opening, stacking, retargeting, merging or closing a PR —
    follows `skills/github-workflow/`; merging in particular goes through its runbook
    (`skills/github-workflow/scripts/merge_stack.py`), never a hand-typed merge command.**

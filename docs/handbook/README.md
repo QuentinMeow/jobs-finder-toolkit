@@ -20,6 +20,7 @@ folder. Active design programs live in `docs/designs/`, not here.
 | `docs/handbook/tailoring-guardrails.md` | Extended tailoring guardrails: traceability, keywords, skill lists |
 | `docs/handbook/architecture.md` | Human-facing design doc: render pipeline, config, vendoring, CI gates |
 | `docs/handbook/private-overlay.md` | Setting up and maintaining the private overlay repo |
+| `docs/handbook/post-merge-cutover.md` | The fast path for one situation only — the prerequisite PRs already merged and local work has to come onto the merged layout: the read-only planner, its refusal table, and when to escalate back to the broad read order |
 | `docs/handbook/metrics.md` | Opt-in local metrics collection |
 | `docs/handbook/doc-style.md` | Style contract for human-read documents (decision blocks, async fields) |
 | `docs/handbook/reporting-to-the-owner.md` | What the session reply, the PR ask section, and the handover must say |

@@ -235,6 +235,7 @@ evals/
     ab-protocol.md              # step-by-step matched-pair A/B procedure (design doc §2)
     stage-benchmarks.md         # fine-grained, fixture-pinned per-stage measurement (v1)
     stage-map.md                # the stage decomposition stage-benchmarks.md pins (fixtures + boundaries)
+    reconciliation-stages.md    # the R-leg map: post-merge two-repository reconciliation (R1–R4)
   canaries/
     <skill>.yaml                # 4–8 canaries per skill, 9 skills (see below)
   rubrics/

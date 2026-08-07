@@ -146,6 +146,42 @@ example config) — substitute the resolved path, never a literal folder at the 
 .venv/bin/python automation/gates/run_gates.py --group hook     # just the pre-commit chain
 .venv/bin/python automation/gates/run_gates.py --only reconciler,verify-links --tail 30
 
+# ── after a post-merge cutover: is the owner's data still intact? ─────────────
+# The `cutover` validation profile. Reuses the gate runner above (no shell, no
+# pipe, per-gate log, a SKIP is never a PASS), with its own five-gate table:
+# app-metadata · calendar · configured-paths · copy-checksum · overlay-bootstrap.
+# Every gate is read-only, so --jobs collapses the profile to its slowest gate.
+# This is NOT automation/reconcile/reconcile.py: that judges process-layer
+# schemas and gates commits; this judges owner DATA and gates nothing.
+# Exit 0 = all green (skips named) · 1 = a gate failed · 3 = REFUSED before any
+# subprocess, because no config loaded, it resolved to the fictional
+# config.example.yaml persona, or no private overlay is mounted.
+.venv/bin/python automation/cutover/validate_cutover.py --profile cutover --jobs 4
+.venv/bin/python automation/cutover/validate_cutover.py --list          # the table; runs nothing
+# Add --check-locations and --company-keys --strict to the same run:
+.venv/bin/python automation/cutover/validate_cutover.py --profile cutover-full --jobs 4
+# Point it at a run's log dir; the copy manifest is read from that dir's parent:
+.venv/bin/python automation/cutover/validate_cutover.py --log-dir local/cutover/<run-id>/gates
+
+# One gate on its own: does every config.*_path()/_dir()/_root() accessor still
+# resolve to an existing destination of the right kind? The accessor list is
+# DISCOVERED from automation/shared/config.py at runtime, so a new accessor is
+# checked the day it lands (and an unclassified one is red, not skipped).
+# Optional destinations that simply do not exist yet report SKIP; exit 3 means it
+# refused to certify the fictional example persona.
+.venv/bin/python automation/cutover/check_configured_paths.py
+
+# Move git-ignored files to their merged destination WITHOUT ever overwriting or
+# deleting: a destination that already holds different bytes refuses the whole
+# run before a byte is written, and the source is always left in place.
+.venv/bin/python automation/cutover/verify_copy.py --copy \
+    --from <src file or dir> --to <dst> --manifest local/cutover/<run-id>/copied.txt
+# Re-hash both ends of everything that manifest recorded. Exit 3 (never 0) when
+# there is no manifest: a check that verified nothing must not read as green.
+.venv/bin/python automation/cutover/verify_copy.py --verify --manifest local/cutover/<run-id>/copied.txt
+# Compare two trees directly, no manifest involved:
+.venv/bin/python automation/cutover/verify_copy.py --verify --from <src> --to <dst>
+
 # Reconciler by hand. Plain --check no-ops on a process folder that is absent (the
 # published export ships none of message-queue/, tasks/, memory/, docs/roadmap/,
 # history/). --require-roots is the maintainer-checkout assertion that they all

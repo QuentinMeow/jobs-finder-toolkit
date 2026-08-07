@@ -2849,3 +2849,72 @@
   finding: 'Read the complete staged six-file diff. It contains only generic folder-cutover,
     verification, task-closeout, and owner-retirement process records; no real identity, employer,
     school, salary, private item name, or dated personal job-hunt content.'
+- base: 19bfaa78
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 3
+  digest: sha256:87135f3679c07a1d
+  finding: none
+- base: 51d6cc45
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 42
+  digest: sha256:3835809049efde01
+  finding: 'Reviewed the complete 42-file staged diff for publishability. It adds timeless
+    tooling only — phase telemetry, a read-only two-repository planner, a validation
+    profile, a synthetic benchmark fixture, handbook pages, and process records. Scanned
+    specifically for the class the leak guard cannot arm on: no real company name, no
+    employer, school, salary, recruiter, private item name, or dated personal job-hunt
+    content. The two identity-shaped strings are deliberate synthetic redaction probes in
+    tests (a constructed home path and a constructed LinkedIn slug) whose purpose is to
+    prove the summary strips them. Fixture content uses the fake example persona. Leak
+    guard green ARMED against the real config (15 active tokens).'
+- base: 852042f1
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 2
+  digest: sha256:2e7ec076a473f605
+  finding: 'Read the complete staged two-file diff: a session worklog entry and a session
+    handover. Generic process prose about tooling, gates, decisions, and filed follow-ups
+    only; no real identity, employer, school, salary, private item name, or dated personal
+    job-hunt content.'
+- base: 999a9a7a
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 13
+  digest: sha256:20c3c1e073c84ac7
+  finding: 'Read the complete staged 13-file diff. It fixes adversarial-review findings in the
+    telemetry and cutover tooling (time-accounting partition under concurrency, reconciler
+    --root safety, signal exit codes, copy-manifest path, a decorative benchmark step) plus
+    their regression tests, one handbook correction, and two process records. Timeless tooling
+    and generic process prose only; no real identity, employer, school, salary, private item
+    name, or dated personal job-hunt content. Leak guard green ARMED against the real config.'
+- base: f0227437
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 1
+  digest: sha256:53c2138453ac43e0
+  finding: 'Read the complete staged one-file diff: three added dead-end lines in a session
+    handover recording what the adversarial review passes found and that reviewer findings
+    need verifying. Generic process prose; no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content.'
+- base: 2132c8a9
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 6
+  digest: sha256:9060fa97b847bdf6
+  finding: 'Read the complete staged six-file diff: a new PUBLIC skill on writing
+    understandable replies, its three generated manifest symlinks, the marketplace
+    manifest, and two AGENTS.md registration lines. Timeless writing guidance with
+    invented illustrative examples only; no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content.'
+- base: ce5410a5
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 1
+  digest: sha256:9e87564a6d357e6f
+  finding: 'Read the complete staged one-file diff: one entry plus a comment adding
+    automation/cutover to the public exporter allowlist, so the shipped handbook pages
+    that name those commands do not leave broken references inside the export. The
+    directory holds timeless read-only tooling; no real identity, employer, school,
+    salary, private item name, or dated personal job-hunt content.'

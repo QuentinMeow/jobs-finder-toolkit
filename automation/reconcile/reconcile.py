@@ -20,6 +20,8 @@ Usage:
     reconcile.py --check --require-roots  # maintainer checkout: ALSO fail when a
                                           #   process root is missing (see below)
     reconcile.py --fix-index              # regenerate memory/index.md
+    reconcile.py --check --root PATH      # check the tree at PATH instead of this
+                                          #   checkout (benchmark fixtures)
 
 Design rules:
   * stdlib only — must run on a bare clone;
@@ -29,6 +31,13 @@ Design rules:
     that no-op would turn the exported repo's CI red. ``--require-roots`` is the
     opt-in maintainer-checkout assertion that they are all present; it is wired
     into the pre-commit hook, never into CI;
+  * ``--root`` rebinds :data:`REPO_ROOT` (and :data:`RETRIES_DIR`) ONCE, in
+    :func:`main`, before any check runs. Every check reads the module global at
+    call time, so none of them needed a change — and with the flag ABSENT not one
+    byte of behaviour moves, which is the only acceptable shape for a file that
+    runs from pre-commit and CI on every commit in the repo. The flag exists so a
+    benchmark fixture (``automation/evals/reconciliation_fixture.py``) is judged by
+    the REAL reconciler instead of a simulation of it; nothing automated passes it;
   * checks validate the PUBLIC tree only (the private overlay mirror is its
     own repo with its own lifecycle) — with ONE declared exception,
     ``check_company_index``, which reads the owner's company index because a
@@ -306,7 +315,11 @@ def check_skill_manifests() -> list[Finding]:
     skills = REPO_ROOT / "skills"
     if not skills.is_dir():
         return findings
-    publish = REPO_ROOT / "automation" / "publish"
+    # Resolved from THIS FILE, never from REPO_ROOT: under --root, REPO_ROOT is
+    # the tree being INSPECTED, and importing the checker out of it would let an
+    # inspected tree ship its own verdict — a fixture carrying this file would
+    # certify itself clean. The tree under test is passed as an argument instead.
+    publish = Path(__file__).resolve().parents[1] / "publish"
     if str(publish) not in sys.path:
         sys.path.insert(0, str(publish))
     import sync_skill_manifests  # noqa: E402  (stdlib-only sibling module)
@@ -675,6 +688,23 @@ def file_retries(findings: list[Finding], today: str) -> None:
 # ── entry point ──────────────────────────────────────────────────────────────
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point. Restores the module globals --root rebinds.
+
+    Without the restore, an in-process ``main(["--root", X])`` leaves REPO_ROOT
+    pointing at X for every later call in the same process — including one that
+    passes no --root and would then report on X while printing OK. Callers are
+    normally subprocesses, but the repo already has an in-process caller that
+    mutates these globals (automation/publish/tests/test_skill_manifests.py).
+    """
+    global REPO_ROOT, RETRIES_DIR
+    saved_root, saved_retries = REPO_ROOT, RETRIES_DIR
+    try:
+        return _main(argv)
+    finally:
+        REPO_ROOT, RETRIES_DIR = saved_root, saved_retries
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="run all checks; exit 1 on findings")
     parser.add_argument("--file-retries", action="store_true",
@@ -685,7 +715,45 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fix-index", action="store_true", help="regenerate memory/index.md")
     parser.add_argument("--today", default=None,
                         help="override the Filed date for retry items (YYYY-MM-DD)")
+    parser.add_argument("--root", default=None, metavar="PATH",
+                        help="check the tree at PATH instead of this checkout "
+                             "(benchmark fixtures; absent => this checkout, unchanged)")
     args = parser.parse_args(argv)
+
+    # The ONLY place --root has an effect. Rebinding here, before the first read of
+    # either global, is what makes the flag's absence inert: the `if` is the whole
+    # delta, and every check below is byte-for-byte the code that ran before.
+    # Nothing automated passes --root — not automation/hooks/pre-commit, not
+    # .github/workflows/ci.yml, not automation/gates/run_gates.py.
+    if args.root is not None:
+        global REPO_ROOT, RETRIES_DIR
+        root = Path(args.root).expanduser().resolve()
+        if not root.is_dir():
+            print(f"reconcile: --root {args.root!r} is not a directory", file=sys.stderr)
+            return 2
+        # --file-retries GARBAGE-COLLECTS items out of RETRIES_DIR, which --root
+        # repoints into the inspected tree — so the combination DELETES files in
+        # a directory the operator merely asked to look at. Agents never delete
+        # owner data, so the combination is refused outright.
+        #
+        # --fix-index is deliberately still allowed: it writes one generated file
+        # (memory/index.md) into a tree the operator named explicitly, destroys
+        # nothing, and is how the benchmark fixture's closeout stage is driven.
+        if args.file_retries:
+            print("reconcile: --root cannot be combined with --file-retries — that "
+                  "would delete queue items inside the inspected tree", file=sys.stderr)
+            return 2
+        # A directory that is not a process tree must not report "OK (9 checks
+        # clean)". Every check returns no findings when its root is absent, so
+        # an empty directory — or $HOME — used to come back green: a gate that
+        # says OK for a tree it never looked at.
+        if not any((root / rel).exists() for rel in set(CHECK_ROOTS.values())):
+            print(f"reconcile: --root {args.root!r} contains none of "
+                  f"{', '.join(sorted(set(CHECK_ROOTS.values())))} — refusing to "
+                  f"report a clean tree it never inspected", file=sys.stderr)
+            return 2
+        REPO_ROOT = root
+        RETRIES_DIR = REPO_ROOT / "message-queue/needs-agent/retries"
 
     if args.fix_index:
         index = REPO_ROOT / "memory/index.md"

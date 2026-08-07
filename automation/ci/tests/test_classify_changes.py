@@ -100,6 +100,17 @@ class ClassificationTests(unittest.TestCase):
                 self.assertFalse(result.full)
                 self.assertIn(lane, result.lanes)
 
+    def test_cutover_tooling_selects_maintenance(self):
+        # The cutover tools are maintenance tooling with their own unit suite
+        # (run_gates' tests-cutover gate, in the maintenance lane). Without this
+        # rule they fall through to the full-fallback and every cutover edit
+        # runs every long lane.
+        self.assertFocused(
+            (("M", ("automation/cutover/validate_cutover.py",)),
+             ("A", ("automation/cutover/tests/test_verify_copy.py",))),
+            ("maintenance",),
+        )
+
     def test_resume_implementation_selects_render_and_resume(self):
         self.assertFocused(
             (("M", ("skills/resume-writer/scripts/render.py",)),),

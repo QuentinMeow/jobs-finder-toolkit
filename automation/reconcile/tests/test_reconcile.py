@@ -28,11 +28,13 @@ from __future__ import annotations
 
 import datetime
 import inspect
+import io
 import shutil
 import sys
 import tempfile
 import textwrap
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 RECONCILE_DIR = Path(__file__).resolve().parents[1]
@@ -575,6 +577,155 @@ class TestPublicRegistryBlacklist(TempRepo):
         self.assertTrue((R.REPO_ROOT / R.PUBLIC_REGISTRY_REL).is_file(),
                         "the registry moved; this check now silently no-ops")
         self.assertEqual(R.check_public_registry_blacklist(), [])
+
+
+class TestRootFlag(TempRepo):
+    """``--root`` checks the named tree, and its ABSENCE changes nothing.
+
+    The second half is the one that matters. This module runs from
+    ``automation/hooks/pre-commit`` and from CI on every commit in the repo, so a
+    flag that shifted behaviour when it is not passed would not be a bug in a
+    benchmark harness — it would make the repository uncommittable. Neither the
+    hook, ``.github/workflows/ci.yml`` nor ``automation/gates/run_gates.py`` passes
+    ``--root``, and the tests below pin both directions of that.
+    """
+
+    def _tree(self, name: str, *, handover: bool) -> Path:
+        """A minimal PUBLIC tree with exactly one controllable finding."""
+        root = self.root / name
+        (root / "history/conversations/2026-01-05-demo").mkdir(parents=True)
+        if handover:
+            (root / "history/conversations/2026-01-05-demo/handover.md").write_text(
+                "# handover\n", encoding="utf-8")
+        else:
+            (root / "history/conversations/2026-01-05-demo/notes.md").write_text(
+                "# notes\n", encoding="utf-8")
+        return root
+
+    def test_root_flag_checks_the_named_tree(self) -> None:
+        named = self._tree("named", handover=False)
+        before = (R.REPO_ROOT, R.RETRIES_DIR)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = R.main(["--check", "--root", str(named)])
+        self.assertEqual(code, 1)
+        self.assertIn("handover-present", buf.getvalue())
+        self.assertIn("2026-01-05-demo", buf.getvalue())
+        # …and it really was the named tree, not this checkout: the finding path
+        # is relative to --root. The globals must be RESTORED afterwards — this
+        # used to assert they still pointed at `named`, which pinned a leak: a
+        # later in-process main(["--check"]) with no --root would have gone on
+        # inspecting the temp tree and printed OK for this checkout.
+        self.assertEqual((R.REPO_ROOT, R.RETRIES_DIR), before)
+
+    def test_root_does_not_leak_into_the_next_in_process_call(self) -> None:
+        """The rebind must not outlive the call that asked for it.
+
+        This used to leak: an in-process ``main(["--root", X])`` left REPO_ROOT
+        at X, so the NEXT call — passing no --root — went on inspecting X while
+        reporting as though it had checked this tree.
+        """
+        named = self._tree("leaky", handover=False)
+        with redirect_stdout(io.StringIO()):
+            R.main(["--check", "--root", str(named)])
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            R.main(["--check"])
+        self.assertNotIn("2026-01-05-demo", buf.getvalue(),
+                         "the second call inspected the first call's --root tree")
+
+    def test_root_refuses_to_delete_queue_items_in_the_inspected_tree(self) -> None:
+        """--root + --file-retries garbage-collects inside the named tree.
+
+        RETRIES_DIR is repointed by --root, and file_retries unlinks cleared
+        items out of it — so the combination deletes files in a directory the
+        operator only asked to inspect. Agents never delete owner data.
+        """
+        named = self._tree("victim", handover=False)
+        retries = named / "message-queue/needs-agent/retries"
+        retries.mkdir(parents=True, exist_ok=True)
+        victim = retries / "important-item.md"
+        victim.write_text(f"# Hand-written\n\nFiled {R.RECONCILER_SIGNATURE}\n",
+                          encoding="utf-8")
+
+        buf = io.StringIO()
+        with redirect_stderr(buf):
+            code = R.main(["--check", "--root", str(named), "--file-retries"])
+        self.assertEqual(code, 2, buf.getvalue())
+        self.assertTrue(victim.is_file(), "the inspected tree lost a queue item")
+
+    def test_root_refuses_a_directory_that_is_not_a_process_tree(self) -> None:
+        """A tree with no process roots must not come back "OK (9 checks clean)".
+
+        Every check no-ops when its root is absent, so an empty directory — or
+        $HOME — used to report clean: a gate saying OK for a tree it never
+        looked at.
+        """
+        with tempfile.TemporaryDirectory() as empty:
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                code = R.main(["--check", "--root", empty])
+        self.assertEqual(code, 2)
+        self.assertIn("never inspected", buf.getvalue())
+
+    def test_root_flag_reports_a_clean_named_tree(self) -> None:
+        clean = self._tree("clean", handover=True)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = R.main(["--check", "--root", str(clean)])
+        self.assertEqual(code, 0, buf.getvalue())
+
+    def test_a_root_that_is_not_a_directory_is_a_usage_error(self) -> None:
+        buf = io.StringIO()
+        with redirect_stderr(buf):
+            code = R.main(["--check", "--root", str(self.root / "nope")])
+        self.assertEqual(code, 2)
+        self.assertIn("not a directory", buf.getvalue())
+
+    def _drop_skill_manifests(self) -> None:
+        """skill-manifests imports out of ``REPO_ROOT/automation/publish``, which a
+        bare temp tree has no copy of — the same carve-out
+        ``test_plain_check_still_passes_on_the_same_tree`` already makes."""
+        saved = R.CHECKS
+        R.CHECKS = {k: v for k, v in saved.items() if k != "skill-manifests"}
+        self.addCleanup(lambda: setattr(R, "CHECKS", saved))
+
+    def test_absent_root_flag_does_not_rebind_the_module_globals(self) -> None:
+        """The inertness proof: with no --root, REPO_ROOT is untouched."""
+        self.make_roots()
+        self._drop_skill_manifests()
+        before = (R.REPO_ROOT, R.RETRIES_DIR)
+        with redirect_stdout(io.StringIO()):
+            R.main(["--check"])
+        self.assertEqual((R.REPO_ROOT, R.RETRIES_DIR), before)
+
+    def test_absent_root_flag_is_identical_to_an_explicit_root_of_the_same_tree(self) -> None:
+        """Same exit code, same stdout, byte for byte."""
+        self.make_roots()
+        self._drop_skill_manifests()
+
+        implicit_out = io.StringIO()
+        with redirect_stdout(implicit_out):
+            implicit = R.main(["--check"])
+        explicit_out = io.StringIO()
+        with redirect_stdout(explicit_out):
+            explicit = R.main(["--check", "--root", str(self.root)])
+        self.assertEqual(implicit, explicit)
+        self.assertEqual(implicit_out.getvalue(), explicit_out.getvalue())
+
+    def test_no_automated_caller_passes_root(self) -> None:
+        """The flag exists for a human/benchmark; nothing that gates a commit uses it."""
+        repo = Path(__file__).resolve().parents[3]
+        callers = ("automation/hooks/pre-commit", "automation/gates/run_gates.py")
+        for rel in callers:
+            with self.subTest(caller=rel):
+                text = (repo / rel).read_text(encoding="utf-8")
+                self.assertIn("reconcile", text, f"{rel} stopped calling the reconciler")
+                self.assertNotIn("--root", text)
+        # ci.yml reaches the reconciler through run_gates.py, so it names a lane
+        # rather than the script — but it must still never pass the flag.
+        self.assertNotIn("--root",
+                         (repo / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
