@@ -459,6 +459,14 @@ class _Git:
         self.run(path, *args)
         # --initial-branch landed in git 2.28; this works on every version.
         self.run(path, "symbolic-ref", "HEAD", "refs/heads/main")
+        # PERSISTED, not just passed via -c. A local `git push` runs receive-pack
+        # against the DESTINATION repo, which reads that repo's own config and
+        # never sees the pusher's -c flags — so the bare remote could still fire
+        # `gc --auto` and write into .git while the test's TemporaryDirectory was
+        # removing it. That surfaced as a flaky teardown, `OSError: [Errno 39]
+        # Directory not empty: .../.git`, on CI only and only sometimes.
+        self.run(path, "config", "gc.auto", "0")
+        self.run(path, "config", "maintenance.auto", "false")
 
     def commit(self, repo: Path, message: str, date: str) -> str:
         self.run(repo, "add", "-A", ".")

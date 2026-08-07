@@ -2959,3 +2959,14 @@
     that every root-anchored .gitignore product rule is also denied by the guard.
     Timeless tooling; no real identity, employer, school, salary, private item name, or
     dated personal job-hunt content.'
+- base: d2c86507
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 2
+  digest: sha256:44dc8879ed907b6b
+  finding: 'Read the complete staged two-file diff: the benchmark fixture now persists
+    gc.auto=0 and maintenance.auto=false into every repository it creates, and the shared
+    test temp directory tolerates cleanup errors — fixing a flaky teardown where a
+    background git process wrote into .git during removal. Timeless test tooling; no real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content.'

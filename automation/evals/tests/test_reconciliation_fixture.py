@@ -58,7 +58,12 @@ _SHARED_TMP: tempfile.TemporaryDirectory | None = None
 
 def setUpModule() -> None:
     global _SHARED_TMP
-    _SHARED_TMP = tempfile.TemporaryDirectory(prefix="recon-fixture-shared-")
+    # ignore_cleanup_errors: a leftover temp directory is harmless; a red CI run
+    # over one is not. The cause (git firing gc --auto into .git while rmtree
+    # walked it) is fixed in the generator, and this keeps a future background
+    # git process from turning teardown into a test failure again.
+    _SHARED_TMP = tempfile.TemporaryDirectory(prefix="recon-fixture-shared-",
+                                              ignore_cleanup_errors=True)
     for variant in ("base", "destination-exists"):
         _SHARED[variant] = FIX.build(Path(_SHARED_TMP.name) / variant, variant=variant)
 
