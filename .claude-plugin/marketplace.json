@@ -66,6 +66,11 @@
       "name": "github-workflow",
       "source": "./skills/github-workflow",
       "description": "Get finished work from a local branch onto GitHub — write the PR description in this repo's human-facing Before/After format, split a long task into a stack of PRs that GitHub detects on its own, clear the gates that block a push (the pre-commit hook chain, the public review ledger, the leak guard, pre-push), and drive `gh` for CI, merges, and stack rebases. Use when the user asks to open a PR, write or rewrite a PR description, stack PRs, split work into stacked PRs, check CI, read a failing run's log, merge a stack, or rebase a stack after its base moved."
+    },
+    {
+      "name": "explain-clearly",
+      "source": "./skills/explain-clearly",
+      "description": "Write replies a person can understand without opening a single file — define every unfamiliar noun by what it does, state whether a thing exists, lead with the result instead of a chronology, and give the number or say plainly that there is none. Use before sending any reply that reports work, results, findings, a recommendation, or a decision; when the user says a reply was confusing, unstructured, a play-by-play, or asks \"what does this actually mean\"; and when writing a PR body, handover, or verification record."
     }
   ]
 }
