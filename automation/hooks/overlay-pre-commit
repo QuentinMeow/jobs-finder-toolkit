@@ -90,18 +90,32 @@ fi
 
 # ── 1. Private-scope reconciler, if one applies ──────────────────────────────
 # The toolkit reconciler validates the PUBLIC tree only (its own docstring says
-# so: "the private overlay mirror is its own repo with its own lifecycle"), and it
-# hardcodes its repo root. So today NOTHING applies and this is a reported skip,
-# not a silent one. Two futures are picked up automatically, no hook edit needed:
-# an overlay-local reconciler, or a `--root` flag on the toolkit's.
+# so: "the private overlay mirror is its own repo with its own lifecycle"). An
+# overlay-local reconciler is picked up automatically and needs no hook edit.
+#
+# The toolkit's `--root` flag is NOT auto-enabled, and that is a correction of an
+# earlier guess in this file. `--root` shipped on 2026-08-07 as a PUBLIC-tree
+# benchmark affordance (automation/evals/reconciliation_fixture.py builds a
+# fixture the real reconciler then grades) — it is not overlay scoping, and
+# pointing PUBLIC checks at an overlay breaks on the overlay's own shape:
+# `check_skill_manifests` arms whenever `skills/` exists, which it does here
+# (private skills), and then imports `sync_skill_manifests` out of
+# <root>/automation/publish, which no overlay has — a traceback on every private
+# commit. `--require-roots` would additionally demand docs/roadmap/,
+# history/conversations/ and skills/ in the overlay, roots the reconciler
+# deliberately never asserts privately. So it is opt-in, loudly, and OFF by
+# default; the mere existence of the flag changes nothing here. The test is
+# `= "1"`, not `-n`: with `-n`, exporting JOBHUNT_OVERLAY_RECONCILE=0 to turn
+# the branch OFF would turn it ON — "0" is a non-empty string.
 overlay_recon="automation/reconcile/reconcile.py"
 toolkit_recon="$TOOLKIT_ROOT/automation/reconcile/reconcile.py"
 if [ -f "$overlay_recon" ]; then
     say "private-scope reconciler ($overlay_recon)..."
     "$PY" "$overlay_recon" --check
-elif [ -f "$toolkit_recon" ] && "$PY" "$toolkit_recon" --help 2>/dev/null | grep -q -- '--root'; then
-    say "toolkit reconciler scoped to this overlay..."
-    "$PY" "$toolkit_recon" --check --require-roots --root "$(pwd -P)"
+elif [ "${JOBHUNT_OVERLAY_RECONCILE:-}" = "1" ] && [ -f "$toolkit_recon" ] \
+     && "$PY" "$toolkit_recon" --help 2>/dev/null | grep -q -- '--root'; then
+    say "toolkit reconciler scoped to this overlay (JOBHUNT_OVERLAY_RECONCILE)..."
+    "$PY" "$toolkit_recon" --check --root "$(pwd -P)"
 else
     say "no private-scope reconciler applies — skipped (the toolkit reconciler"
     say "  validates the PUBLIC tree only; see automation/reconcile/reconcile.py)."

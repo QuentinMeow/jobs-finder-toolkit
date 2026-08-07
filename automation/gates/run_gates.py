@@ -102,6 +102,7 @@ CI_LANES: dict[str, tuple[str, ...]] = {
         "tests-evals",
         "tests-gates",
         "tests-ci-classifier",
+        "tests-cutover",
         "tests-github-workflow",
     ),
     "render": ("example-render",),
@@ -165,7 +166,7 @@ class Gate:
     ``group``           ``hook`` (pre-commit only) · ``ci`` (CI only) · ``both``.
     ``env``             extra environment for this gate only.
     ``parallel_safe``   False = never run concurrently with anything, even under
-                        ``--jobs N`` (see ``_run_many``).
+                        ``--jobs N`` (see ``run_many``).
     ``precondition``    returns a PreconditionResult, a legacy SKIP reason
                         string, or None to run.
     ``dirties``         a gate that REWRITES TRACKED FILES leaves that note here; the
@@ -418,6 +419,15 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
             argv=(py, "-m", "unittest", "discover", "automation/ci/tests"),
             what_it_proves="The fail-closed change classifier maps paths to stable "
                            "focused lane matrices and handles unsafe Git input.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-cutover",
+            argv=(py, "-m", "unittest", "discover", "automation/cutover/tests"),
+            what_it_proves="The post-merge cutover tooling: the validation profile's "
+                           "exit-code aggregation, the configured-path doctor's "
+                           "fail-closed refusals, and verify_copy's never-overwrite, "
+                           "never-delete guarantees.",
             group="ci",
         ),
 
@@ -858,9 +868,14 @@ def run_gate(gate: Gate, log_dir: Path, root: Path = REPO_ROOT) -> Result:
     return Result(gate, status, completed.returncode, elapsed, log_path)
 
 
-def _run_many(gates: Sequence[Gate], log_dir: Path, *, jobs: int, fail_fast: bool,
-              root: Path, on_done: Callable[[Result], None]) -> list[Result]:
+def run_many(gates: Sequence[Gate], log_dir: Path, *, jobs: int, fail_fast: bool,
+             root: Path, on_done: Callable[[Result], None]) -> list[Result]:
     """Serial by default. --jobs N parallelises only the gates marked safe.
+
+    Public because it is the piece other profiles reuse rather than re-derive:
+    ``automation/cutover/validate_cutover.py`` loads this module and drives its
+    own gate table through this function, so "each future carries its own real
+    exit code, redirected never piped" is implemented once.
 
     Forced serial (``parallel_safe=False``) and why: the three staged-index gates and
     review-gate-verify-all read the git index/history; example-render and the
@@ -951,8 +966,18 @@ def print_listing(gates: Sequence[Gate], root: Path, out) -> None:
             print(f"  - {key}: {why}", file=out)
 
 
-def summarise(results: Sequence[Result], out, *, tail: int, root: Path) -> int:
-    """Print the table + the one final line, and return the process exit code."""
+def summarise(results: Sequence[Result], out, *, tail: int, root: Path,
+              require_pass: bool = False) -> int:
+    """Print the table + the one final line, and return the process exit code.
+
+    ``require_pass`` (default False, so the repo lanes are unchanged): a
+    selection in which NOTHING passed is not green. The lanes legitimately skip
+    gates that do not apply to a checkout, so all-skip is fine there. A caller
+    whose profile exists to PROVE something — ``validate_cutover.py``, where the
+    skipped gate may be the one attesting the owner's payloads survived a move —
+    passes True, and an all-skip run reports NOT GREEN and exits 1 instead of
+    printing ``ALL GREEN (0 gates, ...)``.
+    """
     failed = [r for r in results if r.status == FAIL]
     skipped = [r for r in results if r.status == SKIP]
     notrun = [r for r in results if r.status == NOTRUN]
@@ -999,6 +1024,11 @@ def summarise(results: Sequence[Result], out, *, tail: int, root: Path) -> int:
         names = ", ".join(r.name for r in failed) or "none"
         print(f"RED: {names} ({len(failed)} of {len(results)} failed)", file=out)
         return 1
+    if require_pass and not passed:
+        print(f"NOT GREEN: no gate ran a check — nothing was verified "
+              f"({len(skipped)} skipped: "
+              f"{', '.join(r.name for r in skipped) or 'none selected'})", file=out)
+        return 1
     if skipped:
         print(f"ALL GREEN ({len(passed)} gates, {len(skipped)} skipped: "
               f"{', '.join(r.name for r in skipped)})", file=out)
@@ -1035,7 +1065,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--jobs", type=int, default=1, metavar="N",
                         help="run this many gates concurrently (default 1 — serial; "
                              "gates that share the git index or the examples/ tree "
-                             "always run serially, see _run_many)")
+                             "always run serially, see run_many)")
     return parser
 
 
@@ -1085,8 +1115,8 @@ def main(argv: Iterable[str] | None = None, out=None) -> int:
         print(f"  {result.status:<6} {result.name}{code}{secs}", file=out)
         out.flush()
 
-    results = _run_many(gates, log_dir, jobs=max(1, args.jobs),
-                        fail_fast=args.fail_fast, root=REPO_ROOT, on_done=announce)
+    results = run_many(gates, log_dir, jobs=max(1, args.jobs),
+                       fail_fast=args.fail_fast, root=REPO_ROOT, on_done=announce)
     return summarise(results, out, tail=args.tail, root=REPO_ROOT)
 
 

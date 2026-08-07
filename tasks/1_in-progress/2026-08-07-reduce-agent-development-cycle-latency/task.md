@@ -3,7 +3,7 @@
 - **Priority**: P1 (this round)
 - **Area**: harness
 - **Source**: Owner-supplied Codex screenshot reporting 27m33s for the 2026-08-07 post-merge local reconciliation; corroborating Git reflogs, commit history, and [session handover](../../../history/conversations/2026-08-07-reconcile-local-work-after-private-refactor/handover.md)
-- **Claimed-by**: <(set when work starts, before the first change)>
+- **Claimed-by**: Claude Code, repo root (2026-08-07)
 
 ## Goal
 

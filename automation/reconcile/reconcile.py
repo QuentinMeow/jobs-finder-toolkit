@@ -20,6 +20,8 @@ Usage:
     reconcile.py --check --require-roots  # maintainer checkout: ALSO fail when a
                                           #   process root is missing (see below)
     reconcile.py --fix-index              # regenerate memory/index.md
+    reconcile.py --check --root PATH      # check the tree at PATH instead of this
+                                          #   checkout (benchmark fixtures)
 
 Design rules:
   * stdlib only — must run on a bare clone;
@@ -29,6 +31,13 @@ Design rules:
     that no-op would turn the exported repo's CI red. ``--require-roots`` is the
     opt-in maintainer-checkout assertion that they are all present; it is wired
     into the pre-commit hook, never into CI;
+  * ``--root`` rebinds :data:`REPO_ROOT` (and :data:`RETRIES_DIR`) ONCE, in
+    :func:`main`, before any check runs. Every check reads the module global at
+    call time, so none of them needed a change — and with the flag ABSENT not one
+    byte of behaviour moves, which is the only acceptable shape for a file that
+    runs from pre-commit and CI on every commit in the repo. The flag exists so a
+    benchmark fixture (``automation/evals/reconciliation_fixture.py``) is judged by
+    the REAL reconciler instead of a simulation of it; nothing automated passes it;
   * checks validate the PUBLIC tree only (the private overlay mirror is its
     own repo with its own lifecycle) — with ONE declared exception,
     ``check_company_index``, which reads the owner's company index because a
@@ -685,7 +694,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fix-index", action="store_true", help="regenerate memory/index.md")
     parser.add_argument("--today", default=None,
                         help="override the Filed date for retry items (YYYY-MM-DD)")
+    parser.add_argument("--root", default=None, metavar="PATH",
+                        help="check the tree at PATH instead of this checkout "
+                             "(benchmark fixtures; absent => this checkout, unchanged)")
     args = parser.parse_args(argv)
+
+    # The ONLY place --root has an effect. Rebinding here, before the first read of
+    # either global, is what makes the flag's absence inert: the `if` is the whole
+    # delta, and every check below is byte-for-byte the code that ran before.
+    # Nothing automated passes --root — not automation/hooks/pre-commit, not
+    # .github/workflows/ci.yml, not automation/gates/run_gates.py.
+    if args.root is not None:
+        global REPO_ROOT, RETRIES_DIR
+        root = Path(args.root).expanduser().resolve()
+        if not root.is_dir():
+            print(f"reconcile: --root {args.root!r} is not a directory", file=sys.stderr)
+            return 2
+        REPO_ROOT = root
+        RETRIES_DIR = REPO_ROOT / "message-queue/needs-agent/retries"
 
     if args.fix_index:
         index = REPO_ROOT / "memory/index.md"
