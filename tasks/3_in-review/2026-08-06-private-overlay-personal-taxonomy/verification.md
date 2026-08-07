@@ -46,3 +46,37 @@ OK
 
 The fictional application also passed metadata validation, resume validation, and a full
 isolated DOCX/PDF render. The fictional company index produced no lint findings.
+
+## Full public gate suite
+
+```
+$ automation/gates/run_gates.py --impact-from origin/main --jobs 8
+ALL GREEN (29 gates)
+EXIT=0
+```
+
+This ran from a config-less detached worktree at `e08c2c9`. It included the full
+LibreOffice DOCX/PDF example render, resume, shared, job-search, application, publish,
+export, leak, link, hook, reconciler, and policy suites. GitHub subsequently reported every
+public PR check passing, including `pdf-tests`, `policy`, `secret-scan`, and all test lanes.
+
+## Private guard and baseline findings
+
+All eleven private commits passed the overlay pre-commit guard. Every staged batch stayed
+within its standard 500-file / 128-MiB limits; the largest was 369 files / 115,835,881 bytes.
+
+Read-only private tracker checks still expose existing application-status, metadata,
+location-classification, generated-calendar, and isolated company-index-routing findings.
+The refactor did not rewrite owner statuses or generated records to conceal those unrelated
+findings; existing retry/queue records cover the status and calendar debt.
+
+## Worktree isolation and publication
+
+```
+mounted tracked patch before = 09b4658691cb58fe9dd79aa3f5a84d55bb3317aa5189fd6b58027da8143cb022
+mounted tracked patch after  = 09b4658691cb58fe9dd79aa3f5a84d55bb3317aa5189fd6b58027da8143cb022
+mounted untracked handover   = 46fe50883700bfecba4405d30fdb855c8ef28ca94c34fca6ce6115d3f9a6ed3c
+```
+
+- Public toolkit: PR #321
+- Private overlay: PR #93

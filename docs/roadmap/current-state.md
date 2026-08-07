@@ -7,7 +7,7 @@ lifetime-first placement with a person-first one: applications move below `me/ap
 company interview preparation below `me/interviews/companies/`, and loose candidate sources
 below `me/career/`. The cross-workflow company identity index moves to `market/`. The public
 and private PRs are tracked in
-[`2026-08-06-private-overlay-personal-taxonomy`](../../tasks/1_in-progress/2026-08-06-private-overlay-personal-taxonomy/task.md);
+[`2026-08-06-private-overlay-personal-taxonomy`](../../tasks/3_in-review/2026-08-06-private-overlay-personal-taxonomy/task.md);
 the dated phase-5 paragraphs below remain the record of the layout they originally described.
 
 *Groomed 2026-07-31 after an audit found this page four merges stale under a fresh
