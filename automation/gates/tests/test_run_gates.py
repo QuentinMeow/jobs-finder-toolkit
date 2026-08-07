@@ -902,6 +902,31 @@ class SelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "requires at least one lane name"):
             run_gates.select_gates(self.gates, lane=",")
 
+    def test_repeating_lane_accumulates_instead_of_keeping_only_the_last(self):
+        """``--lane a --lane b`` must run BOTH lanes.
+
+        ``--lane`` was a plain store, so the repeated form silently discarded
+        every lane but the last: a run asked for maintenance and policy, checked
+        policy alone, and printed ALL GREEN. A gate runner that checks less than
+        it was asked to and reports success is the failure mode it exists to
+        prevent, and nothing in the output said a lane had been dropped.
+        """
+        parser = run_gates.build_parser()
+
+        repeated = parser.parse_args(["--lane", "maintenance", "--lane", "policy"])
+        self.assertEqual(repeated.lane, ["maintenance", "policy"])
+
+        comma = parser.parse_args(["--lane", "maintenance,policy"])
+        self.assertEqual(comma.lane, ["maintenance,policy"])
+
+        # Both spellings must select the same gates once joined.
+        self.assertEqual(
+            {g.name for g in run_gates.select_gates(
+                self.gates, lane=",".join(repeated.lane))},
+            {g.name for g in run_gates.select_gates(
+                self.gates, lane=",".join(comma.lane))},
+        )
+
     def test_lane_rejects_ambiguous_primary_selectors(self):
         with self.assertRaisesRegex(SystemExit, "--lane cannot be combined with --only"):
             run_gates.select_gates(

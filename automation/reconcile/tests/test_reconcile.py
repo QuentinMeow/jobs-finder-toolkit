@@ -491,6 +491,54 @@ class TestCompanyIndexCheck(TempRepo):
         self.assertEqual(R.company_index_findings(self.index_at(self.INDEX), apps), [])
 
 
+class TestShippedDocsNameShippedTooling(TempRepo):
+    """A shipped handbook page may not name an `automation/` tree that is not shipped.
+
+    `docs/handbook/` is exported wholesale; `automation/` is exported one
+    allowlisted subdirectory at a time. Adding a subdirectory and documenting its
+    commands without adding it to the exporter leaves the mirror carrying a page
+    that names a command the mirror does not contain, and turns the mirror's own
+    link check red. That happened for real with `automation/cutover`: 13 broken
+    references, caught only by `tests-publish-export` after a push, in CI.
+    """
+
+    def build(self, *, doc_names: str, allowlisted: str, real_dir: str) -> None:
+        (self.root / "automation" / real_dir).mkdir(parents=True, exist_ok=True)
+        exporter = self.root / "automation" / "publish" / "export_public.py"
+        exporter.parent.mkdir(parents=True, exist_ok=True)
+        exporter.write_text(f'ALLOWLIST_DIRS = [\n    "automation/{allowlisted}",\n]\n',
+                            encoding="utf-8")
+        handbook = self.root / "docs" / "handbook"
+        handbook.mkdir(parents=True, exist_ok=True)
+        (handbook / "cookbook.md").write_text(
+            f"Run `automation/{doc_names}/tool.py` to do the thing.\n", encoding="utf-8")
+
+    def test_a_documented_and_exported_tree_reports_nothing(self) -> None:
+        self.build(doc_names="cutover", allowlisted="cutover", real_dir="cutover")
+        self.assertEqual(R.check_shipped_docs_name_shipped_tooling(), [])
+
+    def test_a_documented_but_unexported_tree_is_caught(self) -> None:
+        self.build(doc_names="cutover", allowlisted="gates", real_dir="cutover")
+        findings = R.check_shipped_docs_name_shipped_tooling()
+        self.assertEqual(len(findings), 1, findings)
+        self.assertEqual(findings[0].check, "shipped-docs-name-shipped-tooling")
+        self.assertIn("automation/cutover", findings[0].message)
+        self.assertIn("ALLOWLIST_DIRS", findings[0].message)
+
+    def test_a_directory_that_does_not_exist_is_not_reported(self) -> None:
+        """Prose may name a path that was renamed away; that is verify-links' job."""
+        self.build(doc_names="retired", allowlisted="gates", real_dir="gates")
+        self.assertEqual(R.check_shipped_docs_name_shipped_tooling(), [])
+
+    def test_it_no_ops_without_a_handbook_or_an_exporter(self) -> None:
+        """The bare-clone / exported-mirror rule: absent roots mean no findings."""
+        self.assertEqual(R.check_shipped_docs_name_shipped_tooling(), [])
+
+    def test_the_real_tree_is_clean_today(self) -> None:
+        self._restore()
+        self.assertEqual(R.check_shipped_docs_name_shipped_tooling(), [])
+
+
 class TestPublicRegistryBlacklist(TempRepo):
     """A `blacklist:` row in the PUBLISHED registry is a leak no other gate sees.
 

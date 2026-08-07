@@ -579,6 +579,43 @@ def check_public_registry_blacklist() -> list[Finding]:
     ]
 
 
+def check_shipped_docs_name_shipped_tooling() -> list[Finding]:
+    """A handbook page that ships may not name an ``automation/`` tree that does not.
+
+    ``docs/handbook/`` is exported; ``automation/`` is exported one allowlisted
+    subdirectory at a time. Add a new subdirectory, document its commands, and the
+    two drift: the exported mirror carries a page naming a command it does not
+    contain, and the mirror's own link check goes red.
+
+    This is caught today only by ``tests-publish-export``, which builds a whole
+    export and lives in the ``publish`` lane — so it surfaces after a push, in CI,
+    a full cycle late. Here it costs one directory listing and runs at commit time.
+    Real case: ``automation/cutover`` shipped its handbook pages and not itself,
+    leaving 13 broken references inside the export.
+    """
+    findings: list[Finding] = []
+    handbook = REPO_ROOT / "docs" / "handbook"
+    exporter = REPO_ROOT / "automation" / "publish" / "export_public.py"
+    automation = REPO_ROOT / "automation"
+    if not handbook.is_dir() or not exporter.is_file() or not automation.is_dir():
+        return findings
+
+    allowlisted = set(re.findall(r'"(automation/[A-Za-z0-9_.\-]+)"',
+                                 exporter.read_text(encoding="utf-8")))
+    present = {f"automation/{p.name}" for p in automation.iterdir()
+               if p.is_dir() and not p.name.startswith((".", "__"))}
+
+    for doc in sorted(handbook.rglob("*.md")):
+        named = set(re.findall(r"automation/[A-Za-z0-9_.\-]+", doc.read_text(encoding="utf-8")))
+        for ref in sorted(named & present - allowlisted):
+            findings.append(Finding(
+                "shipped-docs-name-shipped-tooling", _rel(doc),
+                f"names {ref}/, which automation/publish/export_public.py does not "
+                f"export — the exported mirror would carry this page without that "
+                f"command. Add {ref} to ALLOWLIST_DIRS, or stop naming it here."))
+    return findings
+
+
 CHECKS = {
     "queue-schema": check_queue_schema,
     "task-structure": check_task_structure,
@@ -589,6 +626,7 @@ CHECKS = {
     "skill-manifests": check_skill_manifests,
     "company-index": check_company_index,
     "public-registry-blacklist": check_public_registry_blacklist,
+    "shipped-docs-name-shipped-tooling": check_shipped_docs_name_shipped_tooling,
 }
 
 # The folder whose absence makes each check no-op (see the module docstring: that
@@ -606,6 +644,7 @@ CHECK_ROOTS = {
     "roadmap-dated": "docs/roadmap",
     "skill-manifests": "skills",
     "company-index": COMPANY_INDEX_ROOT,
+    "shipped-docs-name-shipped-tooling": "docs/handbook",
     "public-registry-blacklist": "skills",
 }
 

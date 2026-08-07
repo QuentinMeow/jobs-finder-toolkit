@@ -391,6 +391,64 @@ suite automatically. Run the no-flag full form deliberately when validating a re
 or changing the classifier itself. The pre-commit hook remains a strict subset: a
 branch can commit clean and still be red in an affected CI-only suite.
 
+**`--lane` is repeatable and comma-separated, and neither form drops a lane.** It
+used to be a plain store, so `--lane a --lane b` silently ran only `b` — a run that
+asked for two lanes checked one and printed `ALL GREEN`. If you name lanes by hand,
+read the `running N gates (lane: …)` header back: it echoes what was actually
+selected.
+
+### 8.1 Do not substitute your own lane list for the impact-scoped run
+
+Naming lanes by hand is the single most expensive mistake available here, because
+it is invisible until CI. Measured on the 2026-08-07 publish cycle: two lanes were
+run locally instead of `--impact-from`, the `publish` lane went red in CI, and
+recovering cost **42% of the whole 10m32s cycle** — one wasted CI run, the local
+diagnosis, and a second CI run. The local command that would have prevented it
+takes well under a minute.
+
+**Run it AFTER committing, not before.** `--impact-from` compares a committed Git
+range, so on uncommitted work it reports `focused; lanes: policy; reason: the Git
+range contains no changes`, runs 8 gates in ~28s, and prints `ALL GREEN`. That looks
+exactly like a clean full run and proves nothing about your edits. The same branch
+after committing selected `policy, maintenance`, ran 17 gates, and took ~76s. If the
+header says *no changes* while you have work in progress, you have measured nothing.
+
+Two guards now exist, and neither replaces running the real thing:
+
+- the reconciler's `shipped-docs-name-shipped-tooling` check fails at **commit**
+  time when a shipped `docs/handbook/` page names an `automation/` tree that
+  `export_public.py` does not export — the specific drift behind that failure;
+- `--impact-from` expands to the full suite on any input it cannot classify.
+
+### 8.2 Budgeting the slow steps
+
+Approximate costs, so you can decide what to run and what to background rather than
+discovering the cost mid-cycle:
+
+| Step | Typical | Notes |
+|---|---|---|
+| `--impact-from origin/main --jobs 8` | seconds to a few minutes | scales with how much the diff touches; the cheapest insurance available |
+| `tests-gardener`, `tests-cutover` | ~40–110s each | the two slowest local suites |
+| `example-render`, the PDF lanes | ~50s | needs LibreOffice; dirties tracked example files |
+| One CI run, end to end | ~1.5–2 min | the long pole is `tests (job-search)` |
+| `gh pr checks --watch` | as long as CI | it is a *wait*, not work — see below |
+
+Rules that keep those from compounding:
+
+- **Give every watch and every long gate an explicit timeout**, and always
+  redirect rather than pipe, so the exit code you read is the command's own.
+- **A red CI job is diagnosed locally, never by pushing a guess.** Pull the failing
+  job's log (`gh run view --job <id> --log-failed`), reproduce with the matching
+  local lane, fix, and only then push. Each speculative push costs a full CI run.
+- **Do not re-run green lanes to feel sure.** Re-run the lane that failed plus
+  `--impact-from`; the rest already passed on the same tree.
+- **Batch the fix.** If one push is going to be needed anyway, land every known
+  correction in it rather than discovering them one CI cycle at a time.
+- **Checking out `main` mid-task removes any tooling the branch added**, including
+  the scripts you may be measuring or validating with. Finish on the branch, then
+  switch — and `git fetch` before `git pull --ff-only`, or a stale remote-tracking
+  ref makes the pull a no-op that looks like a failure.
+
 ## Files
 
 | Path | Purpose |

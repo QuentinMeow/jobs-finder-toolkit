@@ -375,8 +375,10 @@ CI-only suite — no shell, **no pipe**, output redirected per gate, so the exit
 you read is the gate's own. Never shorten a gate with `| tail` and then read `$?`:
 that is the pager's status, and it has read a red gate as green here before. SKIP is
 never a PASS. **Before every PR**, run `--impact-from origin/main --jobs 8`; it
-includes policy and expands uncertainty to the full suite. The hook is a strict
-subset of CI. Full form, skips, CI drift: `skills/github-workflow/reference.md`.
+includes policy and expands uncertainty to the full suite. **Never substitute a
+hand-picked `--lane` list — measured at 42% of a publish cycle when it goes wrong.**
+The hook is a strict subset of CI. Full form, skips, CI drift, step costs, and the
+rules that stop a red CI job costing extra cycles: `reference.md` §8.
 
 ### Gate 11 — discharging the eval gate in the body
 

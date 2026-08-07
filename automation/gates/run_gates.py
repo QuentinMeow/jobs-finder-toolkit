@@ -1050,8 +1050,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="run only these gates")
     parser.add_argument("--skip", metavar="NAME[,NAME...]",
                         help="run everything except these gates")
-    parser.add_argument("--lane", metavar="NAME[,NAME...]",
-                        help="run one or more CI lanes: " + ", ".join(CI_LANES))
+    # ``action="append"`` so BOTH spellings accumulate: ``--lane a,b`` and
+    # ``--lane a --lane b``. As a plain store the repeated form silently kept
+    # only the LAST lane, so a run that asked for two lanes checked one and said
+    # ALL GREEN — the exact "checked less than you asked, reported success"
+    # failure this runner exists to prevent.
+    parser.add_argument("--lane", metavar="NAME[,NAME...]", action="append",
+                        help="run one or more CI lanes (repeatable, or comma-separated): "
+                             + ", ".join(CI_LANES))
     parser.add_argument("--impact-from", metavar="REF",
                         help="run policy plus long lanes affected since merge-base "
                              "REF (uncertainty runs every lane)")
@@ -1088,7 +1094,7 @@ def main(argv: Iterable[str] | None = None, out=None) -> int:
         lane = ",".join(impact.lanes)
     else:
         impact = None
-        lane = args.lane
+        lane = ",".join(args.lane) if args.lane else None
     gates = select_gates(build_gates(REPO_ROOT), group=args.group, lane=lane,
                          only=args.only, skip=args.skip)
     if not gates:
@@ -1105,7 +1111,8 @@ def main(argv: Iterable[str] | None = None, out=None) -> int:
     if impact is not None:
         selection = f"impact from: {args.impact_from}"
     else:
-        selection = f"lane: {args.lane}" if args.lane else f"group: {args.group or 'both'}"
+        selection = (f"lane: {','.join(args.lane)}" if args.lane
+                     else f"group: {args.group or 'both'}")
     print(f"running {len(gates)} gates ({selection}, jobs: {args.jobs}) — "
           f"full output in {LOG_DIR_REL}/", file=out)
 
