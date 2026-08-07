@@ -245,6 +245,14 @@ _DENY_TREES = [
     # The `^` anchor is what keeps the tracked examples/market/logs/** fixture
     # in scope for tracking while a root logs/ stays denied.
     (re.compile(r"^logs/"), "logs/"),
+    # Harness agent worktrees: one FULL checkout of this repo per parallel
+    # subagent. Denied rather than exempted because the content is a whole
+    # second copy of the tree at whatever state that agent left it — including
+    # a config.yaml, an unreviewed branch, or a half-finished edit — so a single
+    # tracked file from here republishes an arbitrary snapshot the review gate
+    # never saw. Nothing legitimate is ever tracked under it: work leaves a
+    # worktree through a branch or a commit, never through this path.
+    (re.compile(r"^\.claude/worktrees/"), ".claude/worktrees/"),
 ]
 
 
