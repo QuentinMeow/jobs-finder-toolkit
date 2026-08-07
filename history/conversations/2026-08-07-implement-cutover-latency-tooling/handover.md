@@ -62,9 +62,20 @@
   is the only shape that survives. One agent correctly refused to append a row at all and stopped
   with its work staged rather than guess — that was the right call.
 - **Green gates proved nothing about correctness.** All 9 maintenance gates were green *before* the
-  adversarial pass found five defects, two of which were "report a failed thing as green" — the
-  exact guardrail this tooling exists to protect. Do not skip the adversarial pass on the theory
-  that the suite is green.
+  adversarial passes, which found ten defects between them — including three "report a failed thing
+  as green", the exact guardrail this tooling exists to protect, and one that deleted files inside a
+  tree a flag documented as read-only. Do not skip the adversarial pass on the theory that the suite
+  is green.
+- **A mutation campaign found what a read-through did not.** The second reviewer mutated 134 lines
+  and reported which survived. That is how the compound `verify_copy` finding surfaced: two correct
+  guards on owner data, both unverified, plus the gate that would have caught a regression being the
+  one that never ran. Survival rates also located the risk precisely — the planner and recorder
+  killed 24 of 28 mutations, the fixture and bench killed 5 of 22.
+- **Reviewer findings need verifying before acting.** Two of the second reviewer's were wrong
+  against the current tree (it had been reading while I was editing, and its worktree was clobbered
+  mid-run); it withdrew both when challenged. One of my own fixes was wrong too — I made a benchmark
+  step return 1 on a state that is its stage's *designed setup*, and had to look at how the stage
+  was wired before getting it right.
 
 ## Needs your attention
 
