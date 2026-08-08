@@ -1261,6 +1261,12 @@ def _entry_fields_for_progress(
             "cancel": False,
             "history": [],
         }
+    # The application folder or role may have been corrected since this stable
+    # calendar occurrence was created.  Identity follows current metadata just
+    # like phase/state do; preserving the stale values makes --check-calendar
+    # fail after an otherwise valid rename.
+    fields["application"] = slug
+    fields["role"] = str(job.get("role") or "")
     fields["phase"] = progress.get("phase")
     fields["state"] = progress.get("state")
     fields["label"] = progress.get("label")

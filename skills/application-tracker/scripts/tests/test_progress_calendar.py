@@ -36,6 +36,7 @@ from calendar_todos import (  # noqa: E402
     COMPANY_VIEW_START,
     SECTION_SCHEDULED,
     SECTION_WAITING,
+    default_entry_text,
     parse_calendar,
     render_entry,
 )
@@ -189,6 +190,35 @@ class ProgressCalendarTests(unittest.TestCase):
         self.assertIn('"state":"booking_required"', calendar_text)
         self.assertIn("**Choose an interview time**", calendar_text)
         self.assertIn("[Example Corp · Backend Engineer]", calendar_text)
+        check = self._run(STATUS, "--check-calendar")
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_update_progress_refreshes_stale_application_and_role_identity(self):
+        slug = "example-corp-renamed-20260720"
+        entry_id = "cal-example-corp-original-01"
+        self._place("in_progress", slug, [_job(
+            "AI Data Engineer", "in_progress", "JD-ai-data.md",
+            {"phase": "recruiter_screen", "state": "paused",
+             "calendar_items": [entry_id]})])
+        fields = self._entry_fields(
+            entry_id, "example-corp-original-20260720",
+            state="paused", phase="recruiter_screen", role="Legacy Role")
+        self._write_calendar(self._calendar_with_entry(
+            fields, section=SECTION_WAITING,
+            text=default_entry_text(
+                "Example Corp", "Legacy Role", "paused", fields=fields)))
+
+        proc = self._run(
+            STATUS, "--update-progress", slug, "AI Data",
+            "--phase", "onboarding", "--state", "waiting_employer",
+            "--label", "Offer accepted; awaiting onboarding")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        entry = parse_calendar(self.calendar.read_text()).entries[entry_id]
+        self.assertEqual(entry.application, slug)
+        self.assertEqual(entry.role, "AI Data Engineer")
+        self.assertIn("AI Data Engineer", entry.text)
+        self.assertNotIn("Legacy Role", entry.text)
         check = self._run(STATUS, "--check-calendar")
         self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
 

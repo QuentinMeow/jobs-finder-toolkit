@@ -1827,9 +1827,9 @@ def plan_calendar_update(
         if existing:
             existing_fields = existing.fields()
             previous_default = default_entry_text(
-                company, role, existing.state, fields=existing_fields)
+                company, existing.role, existing.state, fields=existing_fields)
             legacy_default = _legacy_default_entry_text(
-                company, role, existing.state)
+                company, existing.role, existing.state)
             # Preserve owner-authored wording, but advance labels that the tool
             # itself generated for the previous scheduling state.
             text_line = (
