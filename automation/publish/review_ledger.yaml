@@ -2980,3 +2980,13 @@
     teardown tolerates cleanup errors. Fixes a flaky CI teardown race. Timeless tooling;
     no real identity, employer, school, salary, private item name, or dated personal
     job-hunt content.'
+- base: 9d551b38
+  reviewed_by: agent
+  date: 2026-08-07
+  files: 8
+  digest: sha256:b3b35bbfc59b733c
+  finding: 'Read the complete staged eight-file diff: generic availability-window parsing
+    and rendering, fictional unit fixtures, the matching public interview-calendar protocol,
+    plus a failed canary record and follow-up task. The armed staged leak guard reports zero
+    findings. No real identity, employer, school, salary, private item name, or dated personal
+    job-hunt content.'

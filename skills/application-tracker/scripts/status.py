@@ -1047,7 +1047,7 @@ def _latest_standardized_note(notes_path: Path, *, details: str) -> dict | None:
 def _company_view_data(
     meta_overrides: dict[Path, tuple[bytes, Path]] | None = None,
     calendar_overrides: dict[str, dict] | None = None,
-) -> tuple[list[dict], list[dict], list[str]]:
+) -> tuple[list[dict], list[dict], dict | None, list[str]]:
     """Build a deterministic read-only projection of all in-progress companies.
 
     Overrides map a current ``meta.yaml`` path to prospective bytes and the
@@ -1059,6 +1059,7 @@ def _company_view_data(
     errors: list[str] = []
     calendar_rows: dict[str, dict] = {}
     agenda_items: list[dict] = []
+    availability: dict | None = None
     calendar_raw = _read_calendar_raw()
     if calendar_raw is not None:
         try:
@@ -1076,6 +1077,7 @@ def _company_view_data(
                     for item, entry in calendar_doc.entries.items()
                 }
                 agenda_items = list(calendar_doc.agenda_items)
+                availability = calendar_doc.availability
     calendar_rows.update(calendar_overrides or {})
     seen: set[Path] = set()
     for status in STATUS_FOLDERS:
@@ -1208,16 +1210,18 @@ def _company_view_data(
     for row in grouped.values():
         row["applications"].sort(key=lambda item: item["application"])
     companies = sorted(grouped.values(), key=lambda item: item["company"].casefold())
-    return companies, agenda_items, errors
+    return companies, agenda_items, availability, errors
 
 
 def _company_view_markdown(
     meta_overrides: dict[Path, tuple[bytes, Path]] | None = None,
     calendar_overrides: dict[str, dict] | None = None,
 ) -> tuple[str, int, list[str]]:
-    companies, agenda_items, errors = _company_view_data(
+    companies, agenda_items, availability, errors = _company_view_data(
         meta_overrides, calendar_overrides)
-    return render_company_view(companies, agenda_items), len(companies), errors
+    return render_company_view(
+        companies, agenda_items, availability_config=availability,
+    ), len(companies), errors
 
 
 def _read_calendar_raw(*, create: bool = False) -> bytes | None:
@@ -2072,7 +2076,7 @@ def refresh_calendar(
     html_path = _calendar_html_path()
     html_changed = False
     if html_companion:
-        html_companies, html_agenda_items, html_errors = _company_view_data(
+        html_companies, html_agenda_items, html_availability, html_errors = _company_view_data(
             calendar_overrides=upserts)
         if html_errors:
             print("Error: cannot render calendar HTML:", file=sys.stderr)
@@ -2080,7 +2084,9 @@ def refresh_calendar(
                 print(f"  - {error}", file=sys.stderr)
             return False
         html_output = render_company_view_html(
-            html_companies, html_agenda_items)
+            html_companies, html_agenda_items,
+            availability_config=html_availability,
+        )
         try:
             existing_html = html_path.read_text(encoding="utf-8")
         except FileNotFoundError:

@@ -1,6 +1,7 @@
 """Tests for the single calendar/todo file module (calendar_todos.py)."""
 import sys
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 from _canonical_imports import pin_shared_modules
@@ -18,6 +19,7 @@ from calendar_todos import (  # noqa: E402
     SECTION_ACTION,
     SECTION_SCHEDULED,
     SECTION_WAITING,
+    availability_windows,
     generate_entry_id,
     parse_calendar,
     plan_calendar_update,
@@ -62,6 +64,25 @@ class ParseTests(unittest.TestCase):
         doc = parse_calendar(CALENDAR_TEMPLATE)
         self.assertEqual(doc.errors, [])
         self.assertEqual(doc.entries, {})
+
+    def test_availability_policy_is_validated(self):
+        marker = (
+            '<!-- jobhunt-availability {"timezone":"America/Los_Angeles",'
+            '"days":["monday","tuesday"],"start":"08:00","end":"17:00",'
+            '"business_days":10,"buffer_minutes":15,'
+            '"minimum_window_minutes":60} -->\n\n'
+        )
+        doc = parse_calendar(CALENDAR_TEMPLATE.replace(
+            "<!-- jobhunt-company-view:start -->", marker + COMPANY_VIEW_START, 1))
+        self.assertEqual(doc.errors, [])
+        self.assertEqual(doc.availability["minimum_window_minutes"], 60)
+
+        invalid = parse_calendar(CALENDAR_TEMPLATE.replace(
+            "<!-- jobhunt-company-view:start -->",
+            marker.replace('"end":"17:00"', '"end":"07:00"') + COMPANY_VIEW_START,
+            1,
+        ))
+        self.assertTrue(any("end must be after start" in error for error in invalid.errors))
 
     def test_roundtrip_entry_parses_with_placement(self):
         text = _calendar_with(_fields())
@@ -391,6 +412,44 @@ class PlanTests(unittest.TestCase):
         )
         self.assertEqual(html.count("<a "), html.count('target="_blank"'))
         self.assertNotIn("javascript:", html)
+
+    def test_availability_is_buffered_filtered_and_copy_ready_in_both_views(self):
+        config = {
+            "timezone": "America/Los_Angeles",
+            "days": ["monday"],
+            "start": "08:00",
+            "end": "17:00",
+            "business_days": 1,
+            "buffer_minutes": 15,
+            "minimum_window_minutes": 60,
+        }
+        rows = [{
+            "kind": "hold",
+            "company": "Example Corp",
+            "role": "Platform Engineer",
+            "round": "Pending interview hold",
+            "starts_at": "2026-08-10T10:00:00-07:00",
+            "ends_at": "2026-08-10T11:00:00-07:00",
+            "timezone": "America/Los_Angeles",
+        }]
+        now = datetime.fromisoformat("2026-08-07T12:00:00-07:00")
+        windows = availability_windows(rows, config, now=now)
+        self.assertEqual(
+            [(window["starts_at"].strftime("%H:%M"),
+              window["ends_at"].strftime("%H:%M")) for window in windows],
+            [("08:00", "09:45"), ("11:15", "17:00")],
+        )
+
+        markdown = render_company_view(
+            [], rows, availability_config=config, now=now)
+        html = render_company_view_html(
+            [], rows, availability_config=config, now=now)
+        expected = "Mon, Aug 10: 8 AM–9:45 AM; 11:15 AM–5 PM PDT"
+        self.assertIn("### Available interview times", markdown)
+        self.assertIn("```text\n" + expected + "\n```", markdown)
+        self.assertIn("<h2>Available interview times</h2>", html)
+        self.assertIn(expected, html)
+        self.assertIn('<pre class="availability-copy">', html)
 
     def test_unlinked_agenda_items_and_named_rounds_have_markdown_html_parity(self):
         supplemental = [
