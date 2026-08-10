@@ -3033,3 +3033,15 @@
     Example Corp / Nimbus Robotics fixtures. The armed staged leak guard reports zero
     findings. No real identity, employer, school, salary, private item name, or dated personal
     job-hunt content.'
+- base: 07188677
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 2
+  digest: sha256:f508095096eae88a
+  finding: 'Read the complete staged two-file diff: a shape-based resume contact-line
+    detector (phone / URL / bare domain / placeholder word / separator density) anchored to
+    the first preamble paragraphs, a keep-verbatim fallback under two named warnings instead
+    of a silent empty string, CLI reporting for success-path warnings, and tests built on the
+    fictional Jordan Rivers persona and placeholder 555 numbers. The armed staged leak guard
+    reports zero findings. No real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content.'
