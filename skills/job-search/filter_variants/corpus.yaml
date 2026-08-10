@@ -1016,6 +1016,40 @@ variants:
       confidence: high
       requirement_kind: required
 
+  - id: yoe-cued-general-phrasing-is-decisive
+    domain: yoe
+    # The most common way an English job post states a seniority requirement.
+    # It used to grade tool-specific/medium: the contextual regex's optional
+    # "(?:of\s+)?" backtracked and let the preposition "of" BE the tool name, so
+    # "8 years <of> experience" read as a domain requirement. Only a HIGH grade
+    # is decisive, so the documented max_years_experience cap silently did
+    # nothing on these — "Minimum 7 years of experience" was kept at a cap of 6
+    # while "Minimum 7 years of professional experience", the same requirement
+    # one adjective apart, was correctly dropped.
+    input:
+      text: "Requirements: 8+ years of experience."
+    expect:
+      decision: match
+      min: 8
+      confidence: high
+      requirement_kind: required
+
+  - id: yoe-escaped-range-dash
+    domain: yoe
+    # markdownify escapes a hyphen that could start a list item, so a JD fetched
+    # through JobSpy arrives as "3\-5 years". The escape hid the range separator
+    # entirely: the range matched nothing and a min-only pattern then read the
+    # range's UPPER bound as a standalone minimum, turning the band's CEILING
+    # into its FLOOR. Escaped and unescaped text must grade identically.
+    input:
+      text: 'Requires 3\-5 years of professional experience.'
+    expect:
+      decision: match
+      min: 3
+      max: 5
+      confidence: high
+      requirement_kind: required
+
   # --- Intentional, recurring LOCATION review families ------------------------
   # These preserve a posting for manual review at scale; each is a KNOWN shape so
   # the strict snapshot audit does not fail on it, while runtime search still

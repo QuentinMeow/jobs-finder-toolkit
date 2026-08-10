@@ -3013,6 +3013,39 @@
 - base: 8c39c9f6
   reviewed_by: agent
   date: 2026-08-09
+  files: 10
+  digest: sha256:81f637ade1e42b5a
+  finding: 'Read the complete staged ten-file diff: three JD-metadata parser fixes in the
+    canonical module plus its three byte-identical vendored copies, new unit tests, two
+    filter-variant corpus cases, and the regenerated example-store fixture (module-digest
+    lines only). Every example string is fictional (Acme, Example Corp) or a generic
+    technology name. No real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content.'
+- base: f0f6e79f
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 4
+  digest: sha256:115369a8e8382c4e
+  finding: 'Read the complete staged four-file diff: the required-experience gate now names
+    a non-decisive over-cap verdict as a review reason instead of silently keeping the row,
+    the discovery table prints a pay band''s unit, and two test modules cover both. Every
+    example string is fictional (Acme, Example Corp) or a generic technology name. No real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content.'
+- base: 6b964b42
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 4
+  digest: sha256:ac6c672aa15b7131
+  finding: 'Read the complete staged four-file diff: two shipped example profiles gain a
+    comment marking the compensation-floor keys as unimplemented, the search entry point
+    warns when a profile sets one, and a test module covers it. The 180000/300000 figures
+    are invented test inputs, not a real target. Timeless public tooling only; no real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content.'
+- base: 8c39c9f6
+  reviewed_by: agent
+  date: 2026-08-09
   files: 7
   digest: sha256:988ffbde8b8fa82c
   finding: 'Read the complete staged seven-file diff: a location-gate precision fix (the
@@ -3133,3 +3166,17 @@
     identical base/date header; both rows are kept verbatim and the YAML re-parses to 323
     well-formed rows. No real identity, employer, school, salary, private item name, or
     dated personal job-hunt content.'
+- base: bf386832
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 32
+  digest: sha256:7b7df0e4ff6d3d8a
+  finding: 'Merge of origin/main into this branch. Every file in the range is work already
+    reviewed on its own branch and already landed: the leak-guard token-boundary change
+    (PR #329), the onboarding/digest/extraction changes (PR #332), and the location-gate
+    change (PR #330). Their rows are already in this ledger above; this row reconciles the
+    range for THIS branch history, which the merge made new relative to its own last
+    review. The only hand-resolved file was this ledger, whose conflict was two branches
+    appending under an identical base/date header; both rows are kept verbatim and the YAML
+    re-parses to 327 well-formed rows. No real identity, employer, school, salary, private
+    item name, or dated personal job-hunt content.'
