@@ -253,6 +253,16 @@ _REMOTE_JD_RULES = (
     ("jd_remote_role", re.compile(
         r"\bremote(?:[- ]first)?\s+(?:role|position|job|opportunity)\b", re.I)),
     ("jd_work_remotely", re.compile(r"\bwork(?:ing)?\s+remotely\b", re.I)),
+    # The noun form of the same grant. "work remotely" is an ADVERB phrase, so a
+    # JD that only ever says "Work From Home 100% of the time" — or the "WFH"
+    # abbreviation every US job board prints — stated remote work and was not
+    # recognized as remote at all. The negative lookahead keeps the PERK out: a
+    # "work from home stipend" is a benefit line, not a statement about where
+    # this role is performed.
+    ("jd_work_from_home", re.compile(
+        r"\b(?:work(?:s|ing)?\s+from\s+home|wfh)\b"
+        r"(?!\s*(?:stipend|allowance|budget|reimbursement|equipment|setup|"
+        r"office\s+stipend))", re.I)),
     ("jd_remote_scope", re.compile(
         r"\bremote(?:ly)?\s+(?:within|in|from|across)\s+(?:the\s+)?"
         r"(?:united states|u\.?s\.?a?|north america|americas)\b", re.I)),
@@ -299,6 +309,24 @@ _ONSITE_JD_RULES = (
         r"\b(?:required|requirement|must|five days|5 days)\b|"
         r"\bmust\b.{0,50}\b(?:work|be)\b.{0,40}\b(?:onsite|on[- ]site|"
         r"in[- ]office|in the office)\b", re.I | re.S)),
+    # An onsite TOTALITY word. "100% onsite" / "fully on-site" is as absolute an
+    # office obligation as "must work onsite", but it names no requirement verb
+    # and carries no day count, so `jd_onsite_required` never saw it and the role
+    # read as having no workplace evidence at all.
+    ("jd_onsite_absolute", re.compile(
+        r"\b(?:100\s*%|fully|entirely|completely|strictly)\s*"
+        r"(?:-\s*)?(?:onsite|on[- ]site|in[- ]office|in\s+office|"
+        r"in[- ]person)\b", re.I)),
+    # A STRUCTURED field whose value is onsite. Several ATS templates emit the
+    # workplace mode as a labelled field in the JD body ("Position Role Type:
+    # Onsite", "Work Setting: In-office") rather than as prose, so no
+    # sentence-shaped rule could ever reach it. The label and the value must be
+    # adjacent, which is what keeps this from firing on incidental prose.
+    ("jd_onsite_field", re.compile(
+        r"\b(?:position\s+role\s+type|role\s+type|work\s+setting|"
+        r"work\s+type|workplace\s+type|work\s+arrangement|work\s+model|"
+        r"location\s+type)\b\s*[:\-–—]\s*"
+        r"(?:onsite|on[- ]site|in[- ]office|in\s+office|in[- ]person)\b", re.I)),
 )
 
 # A negated in-office/onsite obligation ("there is no minimum in-office
@@ -308,6 +336,22 @@ _ONSITE_JD_RULES = (
 _ONSITE_NEGATION_RE = re.compile(
     r"(?:\bno\b|\bnot\b|\bno\s+minimum\b|\bwithout\b|\bisn'?t\b|\baren'?t\b|"
     r"\bnever\b|\bzero\b)\s*$", re.I)
+
+# The onsite rules whose match is PROSE, and so can be preceded by a negation
+# that reverses it. `jd_onsite_field` is excluded on purpose: its match is a
+# `label: value` pair, where a preceding word is part of a different field.
+_ONSITE_NEGATABLE_RULES = frozenset({"jd_onsite_required", "jd_onsite_absolute"})
+
+# A remote field label whose VALUE is negative. Boards emit the workplace mode as
+# a labelled field ("Remote Position: No", "Remote: No", "Remote? No"), and the
+# label alone is worded exactly like a remote grant — `jd_remote_role` matched
+# the "Remote Position" of "Remote Position: No" and classified an office-bound
+# role as remote. Checked against the text immediately AFTER a remote match, and
+# the separator is required: a sentence that merely ENDS before a new one
+# starting with "No" ("...a fully remote role. No prior experience needed.")
+# is not a negated field and must keep its remote evidence.
+_REMOTE_NEGATED_VALUE_RE = re.compile(
+    r"^\s*[:?=\-–—]\s*(?:no|none|false|n)\b", re.I)
 
 # Hybrid framed as an OPTION/opportunity/CHOICE rather than a mandate. When the JD
 # also grants remote work, an optional-hybrid perk — or an explicit
@@ -717,13 +761,31 @@ def _onsite_rule_hits(text: str) -> list[str]:
     hits: list[str] = []
     for rule_id, pattern in _ONSITE_JD_RULES:
         matches = list(pattern.finditer(text))
-        if rule_id == "jd_onsite_required":
+        if rule_id in _ONSITE_NEGATABLE_RULES:
             matches = [
                 m for m in matches
                 if not _ONSITE_NEGATION_RE.search(text[max(0, m.start() - 34):m.start()])
             ]
         if matches:
             hits.append(rule_id)
+    return hits
+
+
+def _remote_rule_hits(text: str) -> list[str]:
+    """Remote JD rules with a negative-field-value guard.
+
+    A remote rule that matches only the LABEL of a negated workplace field
+    ("Remote Position: **No**") states the absence of a remote grant and must not
+    be recorded as remote evidence. A rule keeps its hit as long as at least one
+    of its matches is not immediately followed by a negative value.
+    """
+    text = text or ""
+    hits: list[str] = []
+    for rule_id, pattern in _REMOTE_JD_RULES:
+        for m in pattern.finditer(text):
+            if not _REMOTE_NEGATED_VALUE_RE.match(text[m.end():m.end() + 16]):
+                hits.append(rule_id)
+                break
     return hits
 
 
@@ -743,7 +805,7 @@ def _workplace_assessment(
     bare_workplace_tag = _is_workplace_word_only(nloc)
     loc_hybrid = _has(("hybrid",), nloc)
     loc_remote = _has(REMOTE_TOKENS, nloc)
-    remote_hits = _rule_hits(description, _REMOTE_JD_RULES)
+    remote_hits = _remote_rule_hits(description)
     hybrid_hits = _rule_hits(description, _HYBRID_JD_RULES)
     onsite_hits = _onsite_rule_hits(description)
     # An OPTIONAL hybrid perk alongside a remote grant is not a competing
@@ -963,17 +1025,33 @@ def assess_location(
     # swallowed here and still reaches review below.)
     if category == "foreign":
         review = []
+    # The two policy flags govern two DIFFERENT categories and must be read
+    # separately. `require_match` is the hard-filter on non-preferred US cities
+    # (`other_us`); `us_only` is the filter on non-US geography (`foreign`).
+    # Conjoining them ("not require_match and not us_only") made
+    # `require_match: false` a no-op for every policy that also set
+    # `us_only: true` — which is what both shipped search profiles set — so
+    # "Chicago, IL" and "Bellevue, WA" were dropped as no_match before anyone
+    # could review them, while the profile's own comment promised
+    # "false = keep all US + remote, boost preferred".
+    #
+    # The permissive catch-all below is deliberately kept for the REMAINING
+    # categories (an unclassified `unknown`), where both-flags-false has always
+    # meant "keep it": splitting only the two categories the flags actually name
+    # leaves every other verdict exactly as it was.
     if review:
         decision = "review"
         confidence = "low"
-    elif not require_match and not us_only:
-        decision = "match"
     elif category == "metro":
         decision = "match"
     elif category == "us_remote" and allow_us_remote:
         decision = "match"
-    elif category in {"foreign", "other_us"}:
-        decision = "no_match"
+    elif category == "other_us":
+        decision = "no_match" if require_match else "match"
+    elif category == "foreign":
+        decision = "no_match" if us_only else "match"
+    elif not require_match and not us_only:
+        decision = "match"
     else:
         decision = "review"
         review.append("unclassified_location")

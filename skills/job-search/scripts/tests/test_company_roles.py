@@ -236,6 +236,16 @@ class DigestFidelityTests(_RecordedBoard):
         self.assertIn("TITLE: Senior Platform Engineer", d)
         self.assertIn("LEVEL (job_metadata.classify_level on title): senior", d)
 
+    def test_digest_titles_the_posting_not_the_jd_body(self):
+        # ax-eng-2 is titled "Staff Platform Engineer" on the board but reuses a
+        # description whose first line reads "Senior Platform Engineer". The board
+        # title is the authoritative one and drives the level read; the body's is
+        # kept on its own line rather than dropped.
+        _code, d, _err = self._dump("Staff Platform", digest=True)
+        self.assertIn("TITLE: Staff Platform Engineer", d)
+        self.assertIn("LEVEL (job_metadata.classify_level on title): staff", d)
+        self.assertIn("TITLE (derived from the JD body): Senior Platform Engineer", d)
+
     def test_digest_carries_required_yoe(self):
         # extract_required_yoe_details -> meta.yaml required_yoe; a high-confidence
         # minimum over the profile cap is a HARD drop in assess_required_yoe.
@@ -290,7 +300,7 @@ class DigestFidelityTests(_RecordedBoard):
         p = self._posting("Senior Platform")
         expected = fetch_jd.build_digest(
             p.description, jd_path=company_roles._NOT_SAVED,
-            byte_count=len(p.description.encode()))
+            byte_count=len(p.description.encode()), title=p.title)
         self.assertIn(expected, d)
 
 
