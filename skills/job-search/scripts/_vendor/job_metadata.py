@@ -39,6 +39,7 @@ import hashlib
 import re
 import math
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -1985,15 +1986,91 @@ def _sponsor_offer_verb_denials(source: str, covered: list[tuple[int, int]]):
         yield _SponsorSpan(head.start() - len(scope) + cue.start(), head.end())
 
 
-def _bounded_phrase_matches(text: str, phrases):
+# --- the bounded-phrase scan, and the gate in front of it --------------------
+# ``_bounded_phrase_matches`` is this module's one spelling of "does this phrase
+# occur here as a whole phrase", and it is the hottest thing in the filter
+# pipeline: it compiled and scanned EVERY phrase of a list against the full JD
+# text, and ``assess_sponsorship`` asked for all 67 sponsorship phrases four
+# times over the same text.
+#
+# The gate below skips a phrase whose scan CANNOT produce a match. It is derived
+# from the phrase itself rather than written by hand, and that distinction is the
+# entire safety argument, so it is spelled out rather than asserted:
+#
+#   The compiled pattern is ``re.escape(phrase)`` with only ``\ `` relaxed to
+#   ``\s+``, wrapped in ``(?<![a-z0-9])`` / ``(?![a-z0-9])``. Every maximal
+#   ``[a-z0-9]+`` run of the phrase is therefore matched LITERALLY, and is
+#   bounded on both sides by something that is not ``[a-z0-9]``: the phrase's own
+#   escaped punctuation, a ``\s+``, or one of the two lookarounds. So each run of
+#   the phrase must appear in the text as a MAXIMAL ``[a-z0-9]+`` run. Tokenise
+#   the text once; a phrase whose runs are not all present cannot match. No
+#   reading of the text, no heuristic, no judgement call — which is why this is
+#   behaviour-preserving by construction rather than by measurement.
+#
+# What this must NOT become. GH #231 proposes gating the sponsorship scan on a
+# sponsorship / visa / immigration SIGNAL WORD. Five settled denials in
+# ``_SPONSOR_NEGATIVE`` — "us citizens only", "gc only", "green card required",
+# "permanent resident only", "must be a u.s. citizen" — contain no such word, so
+# that gate silently converts five confident refusals into ``review``: a
+# regression in the expensive direction that no existing test sees. A gate
+# derived from the phrases cannot make that mistake, because the phrase IS what
+# it is derived from. Pinned by ``BoundedPhraseGateTests`` and by the
+# ``no-signal-citizenship-denial`` rows of the frozen verdict matrix.
+_BOUNDED_WORD_RE = re.compile(r"[a-z0-9]+")
+# ``(?i)[a-z0-9]`` matches exactly four non-ASCII codepoints — U+0130 İ,
+# U+0131 ı, U+017F ſ, U+212A K — and for those the tokeniser's notion of a word
+# run can disagree with the pattern's. They are far too rare to design around and
+# far too cheap to check: their presence disables the gate for that call and the
+# scan falls back to exactly what it always did. The constant is pinned against a
+# full codepoint sweep in ``BoundedPhraseGateTests``.
+_BOUNDED_ALIEN_ALNUM_RE = re.compile(r"[İıſK]")
+
+
+@lru_cache(maxsize=4096)
+def _bounded_phrase_pattern(phrase: str):
+    """The compiled whole-phrase pattern (compiled once per phrase, not per call)."""
+    return re.compile(
+        r"(?<![a-z0-9])" + re.escape(phrase).replace(r"\ ", r"\s+")
+        + r"(?![a-z0-9])",
+        re.I,
+    )
+
+
+@lru_cache(maxsize=4096)
+def _bounded_phrase_words(phrase: str) -> frozenset[str]:
+    """The word runs any match of ``phrase`` is guaranteed to contain."""
+    return frozenset(_BOUNDED_WORD_RE.findall(phrase.lower()))
+
+
+def _bounded_word_set(text: str) -> frozenset[str] | None:
+    """Every maximal word run in ``text``, or ``None`` when the gate must not run."""
+    if not text.isascii() and _BOUNDED_ALIEN_ALNUM_RE.search(text):
+        return None
+    return frozenset(_BOUNDED_WORD_RE.findall(text.lower()))
+
+
+def _bounded_phrase_matches(text: str, phrases, *, words=None):
+    """Every whole-phrase occurrence of ``phrases`` in ``text``, per phrase.
+
+    ``words`` lets a caller that scans one text against several phrase lists
+    tokenise it once; it is an optimisation only, and passing nothing computes
+    the same set here.
+
+    Deliberately NOT a single union alternation, which is the obvious way to make
+    this one pass: ``finditer`` over a union returns NON-OVERLAPPING matches and
+    takes the first alternative that fits, so "does not offer sponsorship" would
+    swallow the "not offer sponsorship" hit inside it. Both are real phrases here,
+    both currently reach the evidence list, and losing one changes ``evidence``
+    and ``rule_ids`` while looking like a pure optimisation.
+    """
+    if words is None:
+        words = _bounded_word_set(text)
     hits = []
     for phrase in phrases:
-        pattern = re.compile(
-            r"(?<![a-z0-9])" + re.escape(phrase).replace(r"\ ", r"\s+")
-            + r"(?![a-z0-9])",
-            re.I,
-        )
-        hits.extend((phrase, match) for match in pattern.finditer(text))
+        if words is not None and not _bounded_phrase_words(phrase) <= words:
+            continue
+        hits.extend((phrase, match)
+                    for match in _bounded_phrase_pattern(phrase).finditer(text))
     return hits
 
 
@@ -2055,14 +2132,17 @@ def assess_sponsorship(text: str | None) -> dict:
             return False
         return True
 
-    listed = [
-        *_bounded_phrase_matches(source, _SPONSOR_NEGATIVE),
-        *_bounded_phrase_matches(source, _SPONSOR_POSITIVE),
-    ]
+    # Each phrase list is scanned ONCE. Both lists were previously scanned twice
+    # — once to build ``listed``/``covered`` and once for the polarity loops —
+    # for 134 full-text passes per assessment over 67 phrases.
+    words = _bounded_word_set(source)
+    listed_negative = _bounded_phrase_matches(source, _SPONSOR_NEGATIVE, words=words)
+    listed_positive = _bounded_phrase_matches(source, _SPONSOR_POSITIVE, words=words)
+    listed = [*listed_negative, *listed_positive]
     covered = [(match.start(), match.end()) for _phrase, match in listed]
     negative_matches = [
         (phrase, match)
-        for phrase, match in _bounded_phrase_matches(source, _SPONSOR_NEGATIVE)
+        for phrase, match in listed_negative
         if _immigration_sense(match)
     ] + [
         (_SPONSOR_OFFER_VERB_DENIAL, match)
@@ -2100,7 +2180,7 @@ def assess_sponsorship(text: str | None) -> dict:
     hedged_offer: list[str] = []
     negated_offer: list[str] = []
     unreachable_cue: list[str] = []
-    for phrase, positive_match in _bounded_phrase_matches(source, _SPONSOR_POSITIVE):
+    for phrase, positive_match in listed_positive:
         if not _immigration_sense(positive_match):
             continue
         if any(

@@ -15,7 +15,7 @@ from job_metadata import (
 )
 from location import assess_location
 from registry import comparable_base
-from visa import classify_visa, visa_tags
+from visa import visa_label_for, visa_tags
 
 # Engineering role nouns that make a broad domain include ("infrastructure",
 # "platform", ...) an actual engineering title rather than a business/finance use.
@@ -331,10 +331,29 @@ def location_ok(posting: JobPosting, profile: dict) -> bool:
 
 
 def visa_ok(posting: JobPosting, profile: dict) -> bool:
-    """Apply the profile's visa policy. Fills posting.visa_label/hits as a side effect."""
+    """Apply the profile's visa policy. Fills posting.visa_label/hits as a side effect.
+
+    The assessment is computed ONCE and both outputs are derived from it. This
+    used to call ``assess_sponsorship`` and then ``classify_visa``, which reaches
+    ``classify_sponsorship_evidence`` -> ``assess_sponsorship`` on the same text:
+    two full assessments per posting for one answer, on the pipeline's hottest
+    gate.
+
+    The other obvious saving here is NOT available, and the reason is worth
+    keeping: the ``needs_sponsorship`` early return below cannot be moved above
+    this work. The fields it fills are read whether or not the profile needs
+    sponsorship — ``score_posting`` adds +15 and a reason line for
+    ``visa_label == "yes"``, the Markdown and compact reports print the label
+    column, ``handoff`` carries ``posting.sponsorship``, and the recall audit
+    stores ``filter_assessments["sponsorship"]``. Skipping the assessment for the
+    shipped example profile (``needs_sponsorship: false``) would silently change
+    every one of those, which is a behaviour change wearing an optimisation's
+    clothes.
+    """
     text = posting.description or posting.title
     assessment = assess_sponsorship(text)
-    label, hits = classify_visa(text)
+    label = visa_label_for(assessment["verdict"])
+    hits = list(assessment["evidence"])
     posting.visa_label = label
     posting.visa_hits = hits
     posting.sponsorship = assessment["verdict"]

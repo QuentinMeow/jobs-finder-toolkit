@@ -3023,3 +3023,19 @@
     did NOT run (no overlay mounted), so the diff was read directly for company names: none
     present. No real identity, employer, school, salary, private item name, absolute home
     path, or dated personal job-hunt content.'
+- base: a15e6162
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 11
+  digest: sha256:bc78af81f0d2115d
+  finding: 'Read the complete staged eleven-file diff: a derived word-set gate in front of
+    the bounded phrase scan, the duplicate phrase scans removed from the sponsorship
+    assessment, the duplicate assessment removed from the search visa gate, a new test module
+    for the gate, three regenerated vendored copies, and four regenerated example-store
+    fixtures whose only change is the module content hash in their `by:` provenance line
+    (every derived value is byte-identical). Comments and test text are timeless engineering
+    prose about phrase matching and are fictional where they carry sample text. The
+    private-company cross-reference did NOT run (no overlay mounted), so the diff was read
+    directly for company names: only the fictional examplecorp / ghostworks / remoteworks
+    fixtures appear. No real identity, employer, school, salary, private item name, absolute
+    home path, or dated personal job-hunt content.'

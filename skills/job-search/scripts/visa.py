@@ -22,10 +22,20 @@ _GREEN_CARD_RE = re.compile(
 )
 
 
+def visa_label_for(verdict: str) -> str:
+    """Map a sponsorship VERDICT to this search's label vocabulary.
+
+    Split out of ``classify_visa`` so a caller that already holds an assessment
+    can relabel it without assessing the same text a second time. One definition,
+    so the two routes cannot drift apart.
+    """
+    return {"likely": "yes", "unlikely": "no"}.get(verdict, "unclear")
+
+
 def classify_visa(text: str) -> tuple[str, list[str]]:
     """Map the canonical sponsorship assessment to search labels."""
     verdict, hits = classify_sponsorship_evidence(text)
-    return {"likely": "yes", "unlikely": "no"}.get(verdict, "unclear"), hits
+    return visa_label_for(verdict), hits
 
 
 def visa_tags(text: str) -> list[str]:
