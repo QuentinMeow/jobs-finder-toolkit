@@ -330,6 +330,28 @@ def overwrite_refusal(dest: Path) -> str | None:
             "this exporter wrote")
 
 
+_TOKEN_SPEC_CACHE: dict[tuple[str, ...], list] = {}
+
+
+def _token_specs(tokens: list[str]) -> list:
+    """Classified tokens for ``tokens``, memoised across the per-file loop.
+
+    Classification is the GUARD's, never a second copy: an exporter that
+    excluded on a different rule would either drop files the guard passes (a
+    broken export) or ship files the guard fails (an export that cannot be
+    published). ``_deny_reason`` runs once per tracked file, so the specs — and
+    their compiled patterns — are built once per token set.
+    """
+    key = tuple(tokens)
+    specs = _TOKEN_SPEC_CACHE.get(key)
+    if specs is None:
+        specs = _TOKEN_SPEC_CACHE[key] = check_public.classify_tokens(
+            tokens,
+            force_substring=check_public.high_specificity_tokens(),
+            allowances=check_public.word_token_allowances())
+    return specs
+
+
 def _deny_reason(rel: str, tokens: list[str]) -> str | None:
     """Return why ``rel`` (repo-root-relative, posix) is excluded, or None.
 
@@ -355,28 +377,26 @@ def _deny_reason(rel: str, tokens: list[str]) -> str | None:
     if rel.startswith(PROFILES_DIR + "/") and name not in PUBLIC_PROFILE_FILES:
         return "personal-profile"
 
-    rel_lower = rel.lower()
-    for tok in tokens:
-        if tok.lower() in rel_lower:
-            return f"token-in-path:{tok!r}"
+    specs = _token_specs(tokens)
+    hit = check_public.first_token_hit(specs, rel, rel.lower())
+    if hit is not None:
+        return f"token-in-path:{hit!r}"
 
     if rel not in TOKEN_CONTENT_EXEMPT:
         suffix = Path(rel).suffix.lower()
         if suffix in check_public.BINARY_EXTENSIONS:
             blob = check_public._binary_text(REPO_ROOT / rel, suffix)
             if blob is not None:
-                blob_lower = blob.lower()
-                for tok in tokens:
-                    if tok.lower() in blob_lower:
-                        return f"token-in-binary:{tok!r}"
+                hit = check_public.first_token_hit(specs, blob, blob.lower())
+                if hit is not None:
+                    return f"token-in-binary:{hit!r}"
         else:
             lines = check_public._read_text(REPO_ROOT / rel)
             if lines is not None:
                 for lineno, line in enumerate(lines, start=1):
-                    line_lower = line.lower()
-                    for tok in tokens:
-                        if tok.lower() in line_lower:
-                            return f"token-in-content:{tok!r}@L{lineno}"
+                    hit = check_public.first_token_hit(specs, line, line.lower())
+                    if hit is not None:
+                        return f"token-in-content:{hit!r}@L{lineno}"
     return None
 
 
