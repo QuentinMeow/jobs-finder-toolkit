@@ -3033,3 +3033,12 @@
     should be reprioritised across lanes. Both carry a default path of changing no filtering
     rule. Corpus figures are aggregate counts and generic job titles only; no employer name,
     real identity, school, salary, private item name, or dated personal job-hunt content.'
+- base: 82a4b7fb
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 1
+  digest: sha256:d6ef717cd9e9bb4f
+  finding: 'Read the complete staged one-file diff: the session handover for the issue
+    triage and remediation work. Names only branch names, PR numbers, queue item slugs and
+    aggregate counts. No real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content.'
