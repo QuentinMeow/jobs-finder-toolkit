@@ -22,15 +22,37 @@ checkout with no overlay still runs on `example`.
 
 ## Create a new profile
 
+`--profile` accepts a **path**, so the copy can live anywhere and this works on a
+fresh clone with no config and no overlay:
+
 ```bash
-cp skills/job-search/profiles/_TEMPLATE.yaml \
-   private/market/searches/my-profile.yaml
+cp skills/job-search/profiles/_TEMPLATE.yaml examples/market/searches/my-profile.yaml
 # edit it, then:
+.venv/bin/python skills/job-search/scripts/search_jobs.py \
+  --profile examples/market/searches/my-profile.yaml
+```
+
+`examples/market/searches/` is tracked-but-empty and is what
+`config.search_profiles_dir()` resolves to under the fresh-clone example config,
+so a file placed there is also reachable by **bare label** — no path needed:
+
+```bash
 .venv/bin/python skills/job-search/scripts/search_jobs.py --profile my-profile
 ```
 
 Then point `config.job_search.default_profile` at the label to make it the default.
-`--profile` also accepts a path, so a profile kept anywhere else works too.
+
+**Keep a real profile out of the public tree.** Once you have a private overlay,
+`config.search_profiles_dir()` points at `private/market/searches/` instead —
+create it first, since a fresh checkout has no `private/` at all:
+
+```bash
+mkdir -p private/market/searches
+cp skills/job-search/profiles/_TEMPLATE.yaml private/market/searches/my-profile.yaml
+```
+
+`*.yaml` under `examples/market/searches/` is git-ignored so a profile parked
+there while you experiment cannot be committed by accident.
 
 ## Field reference
 

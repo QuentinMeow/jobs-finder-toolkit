@@ -8,14 +8,18 @@ real data.
 ## Dev setup
 
 ```bash
-python3 -m venv .venv        # Python 3.11+ (see below)
+python3 automation/check_python.py   # refuses to continue below Python 3.11
+python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
 **Python 3.11+ required.** Bare `python3` can resolve to an ancient interpreter
-(macOS boxes still ship 3.7-era pythons) where the requirements install fails —
-create the venv with a modern one if needed: `python3.13 -m venv .venv` or
-`uv venv --python 3.13`.
+(macOS boxes still ship 3.7-era pythons). `python3 -m venv` on one of those exits
+0 and installs an obsolete pip, so the only symptom is a misleading
+`No matching distribution found for python-jobspy` from the requirements install
+— run `automation/check_python.py` first (it is written to stay parseable by
+Python 3.7, so it reports instead of crashing), then create the venv with a
+modern interpreter: `python3.13 -m venv .venv` or `uv venv --python 3.13`.
 
 No `config.yaml` is needed to contribute: with none present, every tool falls
 back to the tracked `config.example.yaml` and the `examples/` Jordan Rivers
