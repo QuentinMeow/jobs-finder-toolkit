@@ -3074,3 +3074,16 @@
     directly for company names: only the fictional examplecorp / ghostworks / remoteworks
     fixtures and the example.com test URL appear. No real identity, employer, school,
     salary, private item name, absolute home path, or dated personal job-hunt content.'
+- base: 48de170c
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 2
+  digest: sha256:4cca8bd44eab7605
+  finding: 'Read the complete staged two-file diff: a delta appended to the sponsorship
+    known-issue recording that the frozen verdict matrix is now a tracked artifact (with its
+    paths, its rules, and what the sixth pass measured), and one backlog task for the
+    conditional-offer shape that was frozen rather than fixed. No prior text was deleted or
+    overwritten. Both files are timeless engineering prose; the only sample sentences are
+    the three fictional conditional offers already carried by the public verdict matrix. No
+    real identity, employer, school, salary, private item name, absolute home path, or dated
+    personal job-hunt content.'
