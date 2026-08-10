@@ -43,6 +43,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -75,6 +76,12 @@ _CELL_TAGS = frozenset({"td", "th"})
 
 _WS_RE = re.compile(r"\s+")
 _MULTINL_RE = re.compile(r"\n{3,}")
+
+# ``<title>`` is inside _SKIP_TAGS (its text is page chrome, not JD content), so
+# the reader never sees it. It is read separately because it is the page's OWN
+# statement of what the posting is — worth far more as the digest's title than a
+# guess taken off the first body line. See ``extract_page_title``.
+_TITLE_TAG_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
 
 
 class _ReadableTextExtractor(HTMLParser):
@@ -182,6 +189,20 @@ def extract_readable_text(html_text: str) -> str:
     parser.feed(html_text)
     parser.close()
     return parser.get_text()
+
+
+def extract_page_title(html_text: str) -> str:
+    """The page's own ``<title>`` text, whitespace-collapsed (``""`` when absent).
+
+    Only ever used as the AUTHORITATIVE title handed to ``build_digest``; the
+    saved JD is untouched. It is not cleaned up beyond entity decoding and
+    whitespace collapsing — a title like "Careers at Example Corp" is a fact
+    about the page and the digest still prints the body-derived title beside it.
+    """
+    match = _TITLE_TAG_RE.search(html_text)
+    if not match:
+        return ""
+    return _WS_RE.sub(" ", unescape(match.group(1))).strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -370,6 +391,21 @@ def _skip_provenance_header(lines: list[str]) -> list[str]:
     return lines[last_header + 1:] if (has_marker and last_header >= 0) else lines
 
 
+def _body_h1(lines: list[str]) -> str:
+    """The JD body's own first H1 (``""`` when it has none).
+
+    Split out of ``_digest_title`` because "does this body state its own title?"
+    is a question the CLI asks too: an H1 is the reliable posting title, so the
+    fetched page's ``<title>`` (usually the SITE — "Acme — Careers") is only worth
+    handing to the digest when there is no H1 to beat it.
+    """
+    for line in _skip_provenance_header(lines):
+        heading = re.match(r"^#\s+(.*\S)\s*$", line)   # H1 only ('# ', not '## ')
+        if heading:
+            return heading.group(1).strip()
+    return ""
+
+
 def _digest_title(lines: list[str]) -> str:
     """The posting title: the first H1, else the first non-chrome non-empty line.
 
@@ -377,13 +413,16 @@ def _digest_title(lines: list[str]) -> str:
     skipped first; scraped ATS pages also frequently lead with nav chrome ("Back to
     jobs", "Apply") before the real ``# <title>`` H1, so an H1 (when present) is the
     reliable title and the fallback skips chrome / blockquote lines.
+
+    That FALLBACK is the weak link this function cannot fix on its own: on a JD
+    whose first content line is marketing prose or a bare "ABOUT THE ROLE"
+    heading, it returns that string. Callers with a real title pass it to
+    ``build_digest(title=...)`` instead.
     """
-    lines = _skip_provenance_header(lines)
-    for line in lines:
-        heading = re.match(r"^#\s+(.*\S)\s*$", line)   # H1 only ('# ', not '## ')
-        if heading:
-            return heading.group(1).strip()
-    for line in lines:
+    h1 = _body_h1(lines)
+    if h1:
+        return h1
+    for line in _skip_provenance_header(lines):
         stripped = line.strip()
         if not stripped or stripped.startswith(">"):   # a title is never a blockquote
             continue
@@ -573,13 +612,26 @@ def _salary_summary(fact: dict | None) -> str:
     return f"PARSED SALARY (job_metadata.extract_salary_range): {rendered}"
 
 
-def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> str:
+def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None,
+                 title: str | None = None) -> str:
     """Build the deterministic ``--digest`` locator for one saved JD.
 
     ``text`` is the verbatim saved JD; ``jd_path`` / ``byte_count`` describe the
     file on disk (echoed in the tail escape-hatch line). ``helpers`` is the reused
     vendored-classifier bundle from ``_load_digest_helpers`` (loaded on demand when
-    ``None``, so this is directly unit-testable). Output sections:
+    ``None``, so this is directly unit-testable).
+
+    ``title`` is the AUTHORITATIVE posting title when the caller has one — the ATS
+    posting title in ``company_roles.py``, the fetched page's ``<title>`` in this
+    module's CLI. Pass it. Without it the title is guessed from the body by
+    ``_digest_title``, and a JD that opens with marketing copy or a bare
+    "ABOUT THE ROLE" heading gets that string reported as ``TITLE:`` *and* fed to
+    ``classify_level`` — which is how a Senior role reads ``LEVEL: unknown``. The
+    derived title is never discarded: when the two differ it is printed on its own
+    ``TITLE (derived from the JD body):`` line and still gets its own level read
+    before the JD-body fallback, so nothing the old behavior found is lost.
+
+    Output sections:
 
       (a) title + ``job_metadata.classify_level`` level/seniority read (plus the
           ``classify_level_from_jd_body`` fallback the enricher uses when the
@@ -605,22 +657,44 @@ def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> s
     lines = text.splitlines()
 
     # (a) title + level/seniority ----------------------------------------- #
-    title = _digest_title(lines) or "(none extracted)"
+    # The caller's authoritative title wins; the body-derived one is the fallback
+    # AND stays visible whenever the two disagree (see the docstring).
+    derived = _digest_title(lines)
+    title = (title or "").strip() or derived or "(none extracted)"
+    derived_title_line = ""
+    if derived and derived != title:
+        derived_title_line = (
+            f"TITLE (derived from the JD body): {_clip(derived, _DIGEST_LINE_WIDTH)}")
+
     level, signal = helpers["classify_level"](title)
     level_line = f"LEVEL (job_metadata.classify_level on title): {level}"
     if level != "unknown" and signal:
         level_line += f'  [signal: "{_clip(signal, 60)}"]'
+    derived_level_line = ""
     body_level_line = ""
     if level == "unknown":
-        # Mirror analyze_job_metadata: with a silent title it falls back to an
-        # explicit level phrase in the JD BODY, so surface that read too.
-        body_level, body_signal = helpers["classify_level_from_jd_body"](text)
-        if body_level != "unknown":
-            body_level_line = (
-                f"LEVEL FALLBACK (job_metadata.classify_level_from_jd_body): "
-                f"{body_level}")
-            if body_signal:
-                body_level_line += f'  [signal: "{_clip(body_signal, 60)}"]'
+        # An authoritative title that carries no seniority word ("Careers at
+        # Example Corp") must not COST the read the body title would have given:
+        # try that first, since a title is where classify_level is calibrated to
+        # read a bare seniority word.
+        if derived_title_line:
+            derived_level, derived_signal = helpers["classify_level"](derived)
+            if derived_level != "unknown":
+                derived_level_line = (
+                    f"LEVEL FALLBACK (job_metadata.classify_level on the JD-body "
+                    f"title): {derived_level}")
+                if derived_signal:
+                    derived_level_line += f'  [signal: "{_clip(derived_signal, 60)}"]'
+        if not derived_level_line:
+            # Mirror analyze_job_metadata: with a silent title it falls back to an
+            # explicit level phrase in the JD BODY, so surface that read too.
+            body_level, body_signal = helpers["classify_level_from_jd_body"](text)
+            if body_level != "unknown":
+                body_level_line = (
+                    f"LEVEL FALLBACK (job_metadata.classify_level_from_jd_body): "
+                    f"{body_level}")
+                if body_signal:
+                    body_level_line += f'  [signal: "{_clip(body_signal, 60)}"]'
 
     # (b) required years of experience ------------------------------------ #
     yoe = helpers["extract_required_yoe_details"](f"{title}\n{text}")
@@ -650,7 +724,11 @@ def build_digest(text: str, *, jd_path: str, byte_count: int, helpers=None) -> s
     # ---- assemble -------------------------------------------------------- #
     out: list[str] = [_DIGEST_HEADER, ""]
     out.append(f"TITLE: {_clip(title, _DIGEST_LINE_WIDTH)}")
+    if derived_title_line:
+        out.append(derived_title_line)
     out.append(level_line)
+    if derived_level_line:
+        out.append(derived_level_line)
     if body_level_line:
         out.append(body_level_line)
     out.append("")
@@ -857,14 +935,19 @@ def main(argv: list[str] | None = None) -> int:
         n = out_path.stat().st_size
         print(f"{out_path} ({n} bytes) [kept existing]")
         if args.digest:
+            # No HTML in hand on this path (the JD is already on disk), so the
+            # digest derives its title from the body, as it always has.
             _emit_digest(out_path.read_text(encoding="utf-8", errors="replace"),
                          out_path, n)
         return 0
 
+    page_title = ""
     try:
         text = fetch_source_native_text(args.url)
         if text is None:
-            text = extract_readable_text(fetch_page(args.url, args.timeout))
+            page_html = fetch_page(args.url, args.timeout)
+            page_title = extract_page_title(page_html)
+            text = extract_readable_text(page_html)
     except FetchError as exc:
         print(f"fetch_jd: {exc}", file=sys.stderr)
         return 1
@@ -888,20 +971,31 @@ def main(argv: list[str] | None = None) -> int:
               f"manually.", file=sys.stderr)
 
     if args.digest:
-        _emit_digest(text, out_path, n)
+        # The body's own H1 is the more reliable posting title, and most ATS pages
+        # title the SITE ("Nimbus Robotics — Careers"), not the role. So hand the
+        # page <title> over only when the body has NO H1 — exactly the case where
+        # the digest would otherwise guess the title off the first prose line and
+        # report a marketing paragraph as TITLE.
+        _emit_digest(text, out_path, n,
+                     title=("" if _body_h1(text.splitlines()) else page_title))
     return 0
 
 
-def _emit_digest(text: str, out_path: Path, byte_count: int) -> None:
+def _emit_digest(text: str, out_path: Path, byte_count: int,
+                 title: str | None = None) -> None:
     """Print the digest to stdout; never let a digest error break the save contract.
 
     The verbatim JD is already saved (or kept) and its status line already printed;
     the digest is a best-effort add-on, so any failure building it degrades to a
     one-line stderr note pointing at the full file rather than a non-zero exit.
+
+    ``title`` is the fetched page's ``<title>`` when this run downloaded the page;
+    empty on the kept-existing and source-native paths, where no HTML was seen.
     """
     try:
         print()
-        print(build_digest(text, jd_path=str(out_path), byte_count=byte_count))
+        print(build_digest(text, jd_path=str(out_path), byte_count=byte_count,
+                           title=title))
     except Exception as exc:  # noqa: BLE001 — digest must never break the save
         print(f"fetch_jd: could not build --digest ({exc}); read the full JD at "
               f"{out_path}.", file=sys.stderr)
