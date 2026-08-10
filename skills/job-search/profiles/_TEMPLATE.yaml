@@ -73,6 +73,12 @@ company_search_log:
 # Optional: drop JDs that state a minimum YOE above this (keep if unstated; see scoring.experience_ok)
 max_years_experience: null
 
+# NOT IMPLEMENTED — nothing reads these, so a number here filters nothing and
+# scores nothing. Leave them null; a non-null value makes search_jobs.py print a
+# "Profile:" warning to stderr rather than silently ignoring it. (A pay floor
+# needs a parsed salary to be trustworthy first: a posting whose pay the parser
+# cannot read comes back as "none parsed", and a floor would drop it for being
+# too low rather than unknown.)
 comp:
   min_base: null
   min_total: null
@@ -85,7 +91,7 @@ sources:
   query_location: "United States"
   jobspy:
     enabled: true           # Stage 1 Indeed/Google baseline (needs python-jobspy)
-    sites: [indeed, google]
+    reliable_sites: [indeed, google]   # STAGE 1. (`sites:` is the obsolete name)
     location: "United States"
     results_wanted: 25
     max_terms: 3

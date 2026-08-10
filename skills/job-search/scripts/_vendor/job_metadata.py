@@ -12,7 +12,11 @@ small:
     ``{min, max, confidence, source}`` — years of experience the posting asks
     for (``min``/``max`` may be ``null``).
 ``salary_range``
-    ``{min, max, confidence, source}`` or ``None`` — posted pay, assumed USD/year.
+    ``{min, max, period, currency, confidence, source}`` or ``None`` — posted
+    pay. ``period``/``currency`` are stated, never assumed: a band parsed from
+    the JD is always ``year`` (nothing else reaches this field), but a band
+    supplied by an aggregator's structured pay field may be hourly or monthly,
+    and the unit is the difference between "$30/hour" and "$30k/year".
 ``workplace``
     one word — ``onsite`` / ``hybrid`` / ``remote`` / ``unknown`` — the work
     arrangement (separate from the ``location`` city string).
@@ -39,6 +43,7 @@ import hashlib
 import re
 import math
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -468,6 +473,37 @@ _NEXT_YOE_CLAUSE_RE = re.compile(
     re.I,
 )
 
+# Function words that can sit between "years" and "experience" WITHOUT naming a
+# tool or a domain. They exist as a block-list because the second branch of
+# ``_CONTEXTUAL_YOE_RE`` had an optional ``(?:of\s+)?`` in front of its domain
+# token, and an optional group is a BACKTRACK: when the literal "of " could not
+# be followed by a domain token, the engine dropped the optional group and let
+# "of" itself BE the domain token. So "10+ years of experience" matched as
+# "years <of> experience" — the single most common phrasing in English job
+# posts, graded tool-specific/medium. Only HIGH confidence is decisive
+# (``assess_required_yoe``), so the documented ``max_years_experience`` cap
+# silently did nothing on those postings: with a cap of 6, "Minimum 7 years of
+# experience" was KEPT while "Minimum 7 years of professional experience" — the
+# same requirement, one adjective apart — was correctly dropped.
+_YOE_NON_DOMAIN_TOKENS = r"of|in|with|as|at|on|for|to|and|or|the|an?"
+_CONTEXTUAL_YOE_RE = re.compile(
+    # Branch 1 — "<N> years [of experience] <preposition> <tool/domain>".
+    # Bare "with" belongs here for the same reason the block-list exists: the
+    # genuinely tool-specific readings that USED to be caught by the "of"
+    # backtrack ("8+ years of experience with Kubernetes") must keep their
+    # contextual grade, and "with" is the preposition that carries them. Without
+    # it, "Required: 8+ years of experience with Kubernetes" would become a
+    # high-confidence GENERAL requirement and hard-drop a specialty posting.
+    r"\byears?(?:\s+of\s+experience)?\s+"
+    r"(?:working\s+with|using|with|in)\s+"
+    r"(?!software engineering\b|engineering\b|industry\b|professional\b)|"
+    # Branch 2 — "<N> years [of] <tool/domain> experience".
+    rf"\byears?\s+(?:of\s+)?(?!professional\b|industry\b|work\b|relevant\b|"
+    rf"software engineering\b|engineering\b|(?:{_YOE_NON_DOMAIN_TOKENS})\b)"
+    r"[a-z0-9+#.-]+\s+experience\b",
+    re.I,
+)
+
 # The NUMBER is digit-anchored at both ends. Unanchored, the bare 2-3 digit
 # alternative reads a FRAGMENT of a longer figure: in "$3240 - $175,000" the scan
 # slid past "3" and matched "240", then paired that fragment with a real salary,
@@ -476,9 +512,24 @@ _NEXT_YOE_CLAUSE_RE = re.compile(
 # one level down — there the boundary that was missing was a word, here it is a
 # digit. ``(?![.,]\d)`` covers the same slide across a thousands/decimal
 # separator ("$1.240" -> "240").
+#
+# CENTS are part of the figure, not a fragment after it. The trailing guard was
+# strict enough to reject every well-formed decimal it was meant to protect:
+# "$60,000.00 - $90,000.00 per year" parsed as NOTHING, because "60,000" hit
+# ``(?![.,]\d)`` on the ".0" that follows it and the 2-3 digit alternative then
+# hit the same guard on the comma. Dropping the cents by hand made the same line
+# parse, which is the tell. The grouped form ``(?:\.\d{2})?`` is therefore part
+# of the comma-separated alternative — the only shape a cents figure takes — and
+# the guard still runs AFTER it, so the fragment routes stay closed: "$3240"
+# still matches nothing (no comma for the first alternative; "324"/"32" still
+# rejected by ``(?!\d)``), and ``\.\d{2}`` is exact, so a three-decimal figure
+# ("60,000.000") is refused rather than truncated. Pinned by
+# ``test_a_digit_fragment_of_a_longer_figure_is_not_a_salary_bound`` and
+# ``test_cents_do_not_void_a_salary_band``.
 _AMOUNT = (
     r"(?:(USD|CAD|EUR|GBP)\s*)?([$€£])?\s*"
-    r"((?<![\d.,])(?:\d{1,3}(?:,\d{3})+|\d{2,3}(?:\.\d+)?)(?!\d|[.,]\d))\s*([kK])?"
+    r"((?<![\d.,])(?:\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d{2,3}(?:\.\d+)?)"
+    r"(?!\d|[.,]\d))\s*([kK])?"
 )
 _PER_AMOUNT_PERIOD = (
     r"(?:\s*(per\s+(?:year|month|week|day|hour)|"
@@ -498,11 +549,22 @@ _TOTAL_TERMS = (
     "on target earnings",
     "ote",
 )
+# The keyword that says "the numbers nearby are PAY". An hourly posting states
+# it in its own vocabulary — "the target hourly range is $21-$25", "the hourly
+# rate for this role" — and neither spelling was on this list, so an
+# hourly-stated band parsed as ``None`` while the same band under the words "pay
+# range" parsed fine. The two hourly spellings are pay keywords exactly like
+# "pay range"; they say nothing about the PERIOD, which ``_compensation_period``
+# reads separately, and nothing about whether the band is annualisable, which
+# ``_salary_envelope`` decides separately (an hourly band still never reaches the
+# annual ``salary_range`` field).
 _SALARY_TERMS = (
     "base salary",
     "base pay",
     "salary range",
     "pay range",
+    "hourly range",
+    "hourly rate",
     "annual salary",
     "annual base",
     "base compensation",
@@ -641,8 +703,21 @@ def _money(value: str, suffix: str | None) -> int:
 
 
 def _source_text(value: str | None) -> str:
-    """Undo common Markdown escapes before running JD regexes."""
-    return re.sub(r"\\([+$])", r"\1", value or "")
+    """Undo common Markdown escapes before running JD regexes.
+
+    The HYPHEN belongs on this list for the same reason ``+`` and ``$`` do, and
+    its absence was not cosmetic: markdownify (the HTML->Markdown step every
+    JobSpy-sourced JD goes through) escapes a hyphen that could start a list
+    item, so a real posting arrives as ``3\\-5 years of experience``. With the
+    backslash still in the text ``_YOE_RANGE_RE`` cannot see a range separator
+    at all, the range is missed, and one of the ``_YOE_MIN_PATTERNS`` then reads
+    the range's UPPER bound as a standalone minimum — ``3\\-5 years`` was
+    extracted as ``min: 5``, so the band's CEILING became its FLOOR and a
+    posting the candidate qualifies for was hard-dropped by the
+    ``max_years_experience`` gate. Escaped and unescaped text must parse
+    identically; ``test_escaped_range_dash_still_parses_as_a_range`` pins that.
+    """
+    return re.sub(r"\\([-+$])", r"\1", value or "")
 
 
 def source_to_tier(source: str | None) -> str | None:
@@ -933,15 +1008,7 @@ def _yoe_candidate_confidence(blob: str, match: re.Match) -> tuple[str, str] | N
     if _COMBINED_YOE_RE.search(f"{attribution[-40:]} {matched} {after[:40]}"):
         return None
     match_context = f"{matched} {after[:80]}"
-    contextual = bool(re.search(
-        r"\byears?(?:\s+of\s+experience)?\s+"
-        r"(?:working\s+with|using|in)\s+"
-        r"(?!software engineering\b|engineering\b|industry\b|professional\b)|"
-        r"\byears?\s+(?:of\s+)?(?!professional\b|industry\b|work\b|relevant\b|"
-        r"software engineering\b|engineering\b)[a-z0-9+#.-]+\s+experience\b",
-        match_context,
-        re.I,
-    ))
+    contextual = bool(_CONTEXTUAL_YOE_RE.search(match_context))
     requirement_window = f"{before[-80:]} {matched} {after[:30]}"
     required_signal = bool(_REQUIRED_YOE_RE.search(requirement_window))
     general = bool(_GENERAL_EXPERIENCE_RE.search(match_context))
@@ -1681,6 +1748,154 @@ _SPONSOR_HEDGE_RE = re.compile(
 # may be discussed").
 _SPONSOR_HEDGE_MAX_GAP_TOKENS = 3
 
+# --- denial shapes a substring list cannot hold ------------------------------
+# Four wordings below are real denials that match NEITHER phrase tuple, so they
+# reach the candidate as ``review``/``unknown`` with empty evidence — the JD said
+# no in writing and the shortlist reports silence. They cannot become phrases
+# because each carries an OPTIONAL segment ("cannot CURRENTLY sponsor", "without
+# the need for CURRENT OR FUTURE sponsorship"), and enumerating the variants is
+# how a phrase list gets to 67 entries without covering the next wording.
+#
+# So they are patterns. A pattern needs the same word-set gate a phrase gets, and
+# a gate must be DERIVED rather than declared, so each rule is built around a
+# mandatory ANCHOR word: the anchor is spliced into the compiled pattern as an
+# escaped literal wrapped in ``\b``, OUTSIDE every optional group, and the same
+# string is what the gate tests for. The rule and its gate cannot disagree,
+# because they are made from one object.
+#
+# Every rule is a FALLBACK. A match overlapping any listed-phrase span is
+# dropped, so a wording that already had an answer keeps it byte for byte — the
+# integration constraint the off-list denial rule had to learn the hard way
+# (`memory/known-issues/visa-sponsorship-negation-phrase-gap.md`).
+_SPONSOR_PATTERN_ANCHOR_RE = re.compile(r"[a-z0-9]+\Z")
+# Terms a "who may hold this job" field lists when the answer excludes visas.
+# The trailing ``\b`` is load-bearing: without it ``citizens?`` matches "citizen"
+# INSIDE "citizens", which leaves a stray "s" for the exhaustiveness lookahead to
+# trip over and lets "Visa: GC/Citizens/H-1B" — a field that offers H-1B — read
+# as a citizens-only denial.
+_SPONSOR_STATUS_TERM = (
+    r"(?:gc|green\s+card|(?:u\.?\s?s\.?\s+|us\s+)?citizens?(?:hip)?|"
+    r"permanent\s+residents?)\b"
+)
+# A requirement field whose ANSWER is negative is the opposite of a denial, and
+# "Citizenship required: No" is a wording a board really uses.
+_SPONSOR_REQUIRED_NOT_DENIED = r"(?!\s*[:?]?\s*(?:no\b|not\b|false\b|n/a\b))"
+
+
+class _SponsorPatternRule:
+    """One off-list denial shape, plus the word-set gate derived from it."""
+
+    __slots__ = ("label", "pattern", "words", "generic")
+
+    def __init__(self, label: str, prefix: str, anchor: str, suffix: str,
+                 *, generic: bool = False) -> None:
+        # The anchor must be a single word run, or wrapping it in ``\b`` would
+        # not make it a maximal ``[a-z0-9]+`` run in the text and the gate could
+        # skip a rule that would have matched.
+        if not _SPONSOR_PATTERN_ANCHOR_RE.fullmatch(anchor):
+            raise ValueError(f"pattern anchor must be one word run: {anchor!r}")
+        self.label = label
+        self.pattern = re.compile(
+            prefix + r"\b" + re.escape(anchor) + r"\b" + suffix, re.I)
+        self.words = frozenset((anchor,))
+        self.generic = generic
+
+
+_SPONSOR_PATTERN_RULES = (
+    # "we cannot currently sponsor or support visa transfers" — a bare
+    # "sponsor" verb with a coordinated second verb, which no contiguous phrase
+    # reaches once an adverb sits in front of it. Bare verb, so it is GENERIC:
+    # it stays behind the immigration gate, and "we do not sponsor or support
+    # local charities" is not a visa denial.
+    _SponsorPatternRule(
+        "negated coordinated sponsor verb",
+        r"\b(?:cannot|can\s+not|could\s+not|unable\s+to|not\s+able\s+to|"
+        r"do\s+not|does\s+not|did\s+not|will\s+not|are\s+not|is\s+not)\s+"
+        r"(?:currently\s+|presently\s+|at\s+this\s+time\s+|now\s+)?",
+        "sponsor",
+        r"\s+(?:or|nor|and)\s+(?:support|provide|facilitate|assist\s+with)\b",
+        generic=True,
+    ),
+    # "authorized to work without the need for current or future visa
+    # sponsorship" / "... now or at any time". Names sponsorship as the head
+    # noun, so no immigration gate — the object IS sponsorship.
+    _SponsorPatternRule(
+        "sponsorship stated as unnecessary",
+        r"\bwithout\s+(?:the\s+)?need\s+for\s+"
+        r"(?:(?:any\s+)?(?:current|future|ongoing)"
+        r"(?:\s+or\s+(?:current|future|ongoing))?\s+)?"
+        r"(?:visa\s+|employer\s+|employment\s+|immigration\s+|work\s+)?",
+        "sponsorship",
+        r"",
+    ),
+    # "we are not currently sponsoring employment-based visas" — the gerund is a
+    # form neither tuple carries. The negation is part of the pattern rather than
+    # left to the clause scope, so "we are open to sponsoring employment-based
+    # visas" cannot reach it.
+    _SponsorPatternRule(
+        "negated sponsoring of visas",
+        r"\b(?:are\s+not|is\s+not|were\s+not|was\s+not|do\s+not|does\s+not|"
+        r"will\s+not|am\s+not|not)\s+"
+        r"(?:currently\s+|presently\s+|now\s+|at\s+this\s+time\s+)?"
+        r"(?:or\s+in\s+the\s+foreseeable\s+future\s+)?",
+        "sponsoring",
+        r"\s+(?:new\s+|any\s+|additional\s+|further\s+)?"
+        r"(?:employment[-\s]based\s+|employment\s+|work\s+|h-?1b\s+)?visas?\b",
+    ),
+    # "Citizenship required: Yes" / "U.S. Citizenship Required? Yes" /
+    # "Citizenship: required" — a Q/A row or a table header rather than a
+    # sentence. The lookahead is what keeps the OPPOSITE answer out.
+    _SponsorPatternRule(
+        "citizenship stated as required",
+        r"(?:\b(?:u\.?\s?s\.?|us)\s+)?",
+        "citizenship",
+        r"[\s:?-]*(?:is\s+|are\s+)?required\b" + _SPONSOR_REQUIRED_NOT_DENIED,
+    ),
+    # "U.S. citizen: required" — the same field written with the status noun.
+    # ``\bcitizen\b`` cannot reach inside "citizenship", so the two never
+    # double-report on one field.
+    _SponsorPatternRule(
+        "citizen status stated as required",
+        r"(?:\b(?:u\.?\s?s\.?|us)\s+)?",
+        "citizen",
+        r"[\s:?-]*(?:is\s+|are\s+)?required\b" + _SPONSOR_REQUIRED_NOT_DENIED,
+    ),
+    # "Visa: GC/Citizens" — a compact field naming the accepted statuses. The
+    # trailing lookahead requires the value list to be EXHAUSTED by status
+    # terms, so "Visa: H-1B, OPT, GC, Citizens" (which offers H-1B) and
+    # "Visa: GC/Citizens/H-1B" both fail to match.
+    _SponsorPatternRule(
+        "visa field limited to citizens",
+        r"",
+        "visa",
+        r"\s*:\s*" + _SPONSOR_STATUS_TERM
+        + r"(?:\s*[/,&]\s*" + _SPONSOR_STATUS_TERM + r")*"
+        + r"\s*(?:only)?(?!\s*[/,&]\s*\w)",
+    ),
+)
+# The denial labels whose "sponsor" is a bare transitive verb, and so must pass
+# the immigration gate. Derived from the rules, not restated beside them.
+_SPONSOR_GENERIC_DENIALS = _SPONSOR_GENERIC_NEGATIVE | {
+    rule.label for rule in _SPONSOR_PATTERN_RULES if rule.generic
+}
+
+
+def _sponsor_pattern_denials(source: str, covered: list[tuple[int, int]],
+                             words=None):
+    """Off-list denials written as patterns; a fallback, exactly like the phrases.
+
+    ``covered`` is every ``_SPONSOR_NEGATIVE``/``_SPONSOR_POSITIVE`` span, so a
+    wording the tuples already answer is left to them untouched.
+    """
+    for rule in _SPONSOR_PATTERN_RULES:
+        if words is not None and not rule.words <= words:
+            continue
+        for match in rule.pattern.finditer(source):
+            if any(match.start() < end and start < match.end()
+                   for start, end in covered):
+                continue
+            yield rule.label, match
+
 
 def _sponsor_clause_scope(source: str, start: int) -> str:
     """The negation-carrying text that runs up to ``start``.
@@ -1898,6 +2113,63 @@ def _sponsor_scope_unsettled(source: str, start: int, end: int) -> bool:
                                       _SPONSOR_AMBIGUOUS_SCOPE_RE)
 
 
+# --- a denial scoped to NEW petitions, beside an offer to take transfers ------
+# "We are unable to sponsor new H-1B petitions; H-1B transfer candidates are
+# encouraged to apply" is one sentence that says both things, and the classifier
+# read only the first half: ``no_match``/``unlikely``/high, dropped under BOTH
+# visa policies with an EMPTY ``review_reasons`` — a posting that invites exactly
+# this candidate, deleted without a trace. The transfer half is not even hard to
+# see; ``visa.visa_tags()`` on the same text already returns
+# ``h1b_transfer_friendly``. The signal was computed and thrown away.
+#
+# This is the SAME move the quantifier ambiguity got in
+# `memory/decisions/sponsorship-an-unsettled-denial-is-review-not-a-silent-drop.md`,
+# applied to a different ambiguity, and it is deliberately a DEMOTION ONLY:
+#
+#   * EVIDENCE — the denial stays a denial. It never moves to ``scope_limited``,
+#     is never counted as positive, and never leaves the ``denial`` list, so
+#     every branch that could reach ``match``/``likely`` is preempted exactly as
+#     before. No promotion is reachable through this pattern, structurally.
+#   * VERDICT — a posting whose ONLY denial is unsettled this way lands
+#     ``review``/``unknown``/low, which ``visa_ok`` keeps and flags with
+#     ``sponsorship_requires_review`` under both policies.
+#
+# Both halves are required, and each is a separate bound:
+#
+#   1. the denial's scope is LEXICALLY limited to a new/initial/cap-subject
+#      PETITION. The petition noun is load-bearing: "we do not sponsor visas for
+#      new hires" is a flat refusal that happens to contain "new", and a bare
+#      new/initial cue would demote it;
+#   2. the SAME posting carries a transfer-friendly signal. Without one there is
+#      nothing to weigh against the refusal and it stays settled.
+_SPONSOR_NEW_PETITION_RE = re.compile(
+    r"\b(?:new|initial|first[- ]time|cap[- ]subject)\b"
+    r"[^.;:!?]{0,24}?\b(?:petitions?|filings?|cases?)\b",
+    re.I,
+)
+# Kept lexically aligned with ``visa._H1B_TRANSFER_RE``, which is what already
+# tags these postings ``h1b_transfer_friendly`` downstream, plus the possessive
+# forms a JD actually writes ("transfer their H-1B").
+_SPONSOR_TRANSFER_FRIENDLY_RE = re.compile(
+    r"\b(?:h-?1bs?\s+transfers?|transfer(?:s|red|ring)?\s+"
+    r"(?:your|their|an\s+existing|a\s+current|the\s+existing)\s+"
+    r"(?:h-?1b|visa)|cap[- ]exempt)\b",
+    re.I,
+)
+
+
+def _sponsor_denial_scoped_to_new_petitions(source: str, start: int,
+                                            end: int) -> bool:
+    """True when this denial refuses only NEW/initial/cap-subject petitions.
+
+    Reuses ``_sponsor_quantifier_bounds`` — the same adjacency reading the two
+    quantifier questions share — so no third notion of "what a denial's scope
+    reaches" enters the module.
+    """
+    return _sponsor_quantifier_bounds(source, start, end,
+                                      _SPONSOR_NEW_PETITION_RE)
+
+
 def _sponsor_window(source: str, start: int, end: int) -> str:
     """The text either context gate reads around a phrase match."""
     return source[max(0, start - _SPONSOR_CONTEXT_WINDOW_CHARS):
@@ -1908,10 +2180,12 @@ def _sponsor_denial_is_immigration(phrase: str, source: str,
                                    start: int, end: int) -> bool:
     """Whether a DENIAL phrase is about immigration rather than some other sponsee.
 
-    Only the bare-verb phrases are gated (see ``_SPONSOR_GENERIC_NEGATIVE``);
-    every other denial names sponsorship itself and passes unconditionally.
+    Only the bare-verb denials are gated (see ``_SPONSOR_GENERIC_DENIALS``,
+    which is ``_SPONSOR_GENERIC_NEGATIVE`` plus the pattern rules that share the
+    shape); every other denial names sponsorship itself and passes
+    unconditionally.
     """
-    if phrase not in _SPONSOR_GENERIC_NEGATIVE:
+    if phrase not in _SPONSOR_GENERIC_DENIALS:
         return True
     return bool(_SPONSOR_IMMIGRATION_RE.search(
         _sponsor_window(source, start, end)))
@@ -1985,15 +2259,91 @@ def _sponsor_offer_verb_denials(source: str, covered: list[tuple[int, int]]):
         yield _SponsorSpan(head.start() - len(scope) + cue.start(), head.end())
 
 
-def _bounded_phrase_matches(text: str, phrases):
+# --- the bounded-phrase scan, and the gate in front of it --------------------
+# ``_bounded_phrase_matches`` is this module's one spelling of "does this phrase
+# occur here as a whole phrase", and it is the hottest thing in the filter
+# pipeline: it compiled and scanned EVERY phrase of a list against the full JD
+# text, and ``assess_sponsorship`` asked for all 67 sponsorship phrases four
+# times over the same text.
+#
+# The gate below skips a phrase whose scan CANNOT produce a match. It is derived
+# from the phrase itself rather than written by hand, and that distinction is the
+# entire safety argument, so it is spelled out rather than asserted:
+#
+#   The compiled pattern is ``re.escape(phrase)`` with only ``\ `` relaxed to
+#   ``\s+``, wrapped in ``(?<![a-z0-9])`` / ``(?![a-z0-9])``. Every maximal
+#   ``[a-z0-9]+`` run of the phrase is therefore matched LITERALLY, and is
+#   bounded on both sides by something that is not ``[a-z0-9]``: the phrase's own
+#   escaped punctuation, a ``\s+``, or one of the two lookarounds. So each run of
+#   the phrase must appear in the text as a MAXIMAL ``[a-z0-9]+`` run. Tokenise
+#   the text once; a phrase whose runs are not all present cannot match. No
+#   reading of the text, no heuristic, no judgement call — which is why this is
+#   behaviour-preserving by construction rather than by measurement.
+#
+# What this must NOT become. GH #231 proposes gating the sponsorship scan on a
+# sponsorship / visa / immigration SIGNAL WORD. Five settled denials in
+# ``_SPONSOR_NEGATIVE`` — "us citizens only", "gc only", "green card required",
+# "permanent resident only", "must be a u.s. citizen" — contain no such word, so
+# that gate silently converts five confident refusals into ``review``: a
+# regression in the expensive direction that no existing test sees. A gate
+# derived from the phrases cannot make that mistake, because the phrase IS what
+# it is derived from. Pinned by ``BoundedPhraseGateTests`` and by the
+# ``no-signal-citizenship-denial`` rows of the frozen verdict matrix.
+_BOUNDED_WORD_RE = re.compile(r"[a-z0-9]+")
+# ``(?i)[a-z0-9]`` matches exactly four non-ASCII codepoints — U+0130 İ,
+# U+0131 ı, U+017F ſ, U+212A K — and for those the tokeniser's notion of a word
+# run can disagree with the pattern's. They are far too rare to design around and
+# far too cheap to check: their presence disables the gate for that call and the
+# scan falls back to exactly what it always did. The constant is pinned against a
+# full codepoint sweep in ``BoundedPhraseGateTests``.
+_BOUNDED_ALIEN_ALNUM_RE = re.compile(r"[İıſK]")
+
+
+@lru_cache(maxsize=4096)
+def _bounded_phrase_pattern(phrase: str):
+    """The compiled whole-phrase pattern (compiled once per phrase, not per call)."""
+    return re.compile(
+        r"(?<![a-z0-9])" + re.escape(phrase).replace(r"\ ", r"\s+")
+        + r"(?![a-z0-9])",
+        re.I,
+    )
+
+
+@lru_cache(maxsize=4096)
+def _bounded_phrase_words(phrase: str) -> frozenset[str]:
+    """The word runs any match of ``phrase`` is guaranteed to contain."""
+    return frozenset(_BOUNDED_WORD_RE.findall(phrase.lower()))
+
+
+def _bounded_word_set(text: str) -> frozenset[str] | None:
+    """Every maximal word run in ``text``, or ``None`` when the gate must not run."""
+    if not text.isascii() and _BOUNDED_ALIEN_ALNUM_RE.search(text):
+        return None
+    return frozenset(_BOUNDED_WORD_RE.findall(text.lower()))
+
+
+def _bounded_phrase_matches(text: str, phrases, *, words=None):
+    """Every whole-phrase occurrence of ``phrases`` in ``text``, per phrase.
+
+    ``words`` lets a caller that scans one text against several phrase lists
+    tokenise it once; it is an optimisation only, and passing nothing computes
+    the same set here.
+
+    Deliberately NOT a single union alternation, which is the obvious way to make
+    this one pass: ``finditer`` over a union returns NON-OVERLAPPING matches and
+    takes the first alternative that fits, so "does not offer sponsorship" would
+    swallow the "not offer sponsorship" hit inside it. Both are real phrases here,
+    both currently reach the evidence list, and losing one changes ``evidence``
+    and ``rule_ids`` while looking like a pure optimisation.
+    """
+    if words is None:
+        words = _bounded_word_set(text)
     hits = []
     for phrase in phrases:
-        pattern = re.compile(
-            r"(?<![a-z0-9])" + re.escape(phrase).replace(r"\ ", r"\s+")
-            + r"(?![a-z0-9])",
-            re.I,
-        )
-        hits.extend((phrase, match) for match in pattern.finditer(text))
+        if words is not None and not _bounded_phrase_words(phrase) <= words:
+            continue
+        hits.extend((phrase, match)
+                    for match in _bounded_phrase_pattern(phrase).finditer(text))
     return hits
 
 
@@ -2055,23 +2405,34 @@ def assess_sponsorship(text: str | None) -> dict:
             return False
         return True
 
-    listed = [
-        *_bounded_phrase_matches(source, _SPONSOR_NEGATIVE),
-        *_bounded_phrase_matches(source, _SPONSOR_POSITIVE),
-    ]
+    # Each phrase list is scanned ONCE. Both lists were previously scanned twice
+    # — once to build ``listed``/``covered`` and once for the polarity loops —
+    # for 134 full-text passes per assessment over 67 phrases.
+    words = _bounded_word_set(source)
+    listed_negative = _bounded_phrase_matches(source, _SPONSOR_NEGATIVE, words=words)
+    listed_positive = _bounded_phrase_matches(source, _SPONSOR_POSITIVE, words=words)
+    listed = [*listed_negative, *listed_positive]
     covered = [(match.start(), match.end()) for _phrase, match in listed]
     negative_matches = [
         (phrase, match)
-        for phrase, match in _bounded_phrase_matches(source, _SPONSOR_NEGATIVE)
+        for phrase, match in listed_negative
         if _immigration_sense(match)
     ] + [
         (_SPONSOR_OFFER_VERB_DENIAL, match)
         for match in _sponsor_offer_verb_denials(source, covered)
         if _immigration_sense(match)
+    ] + [
+        (label, match)
+        for label, match in _sponsor_pattern_denials(source, covered, words)
+        if _immigration_sense(match)
     ]
     negative: list[str] = []
     scope_limited: list[str] = []
     unsettled: list[str] = []
+    # The subset of ``unsettled`` that got there by being scoped to new
+    # petitions, tracked only so the reason line can say which ambiguity it was.
+    unsettled_transfer: list[str] = []
+    transfer_friendly: bool | None = None
     ambiguous = False
     for phrase, negative_match in negative_matches:
         if _sponsor_denial_is_negated(source, negative_match.start()):
@@ -2094,13 +2455,27 @@ def assess_sponsorship(text: str | None) -> dict:
             # as a non-immigration OFFER phrase is, so the posting reads
             # `unknown` — kept and flagged — instead of being deleted.
             continue
+        if _sponsor_denial_scoped_to_new_petitions(
+                source, negative_match.start(), negative_match.end()):
+            # A refusal of NEW petitions in a posting that welcomes transfers
+            # does not settle its own reading. The denial is kept — only its
+            # confidence is withdrawn — so no promotion is reachable here.
+            if transfer_friendly is None:
+                transfer_friendly = bool(
+                    _SPONSOR_TRANSFER_FRIENDLY_RE.search(source))
+            if transfer_friendly:
+                if phrase not in unsettled:
+                    unsettled.append(phrase)
+                if phrase not in unsettled_transfer:
+                    unsettled_transfer.append(phrase)
+                continue
         if phrase not in negative:
             negative.append(phrase)
     positive: list[str] = []
     hedged_offer: list[str] = []
     negated_offer: list[str] = []
     unreachable_cue: list[str] = []
-    for phrase, positive_match in _bounded_phrase_matches(source, _SPONSOR_POSITIVE):
+    for phrase, positive_match in listed_positive:
         if not _immigration_sense(positive_match):
             continue
         if any(
@@ -2148,6 +2523,8 @@ def assess_sponsorship(text: str | None) -> dict:
     # elsewhere: one flat refusal is enough, however many quantified ones surround it.
     unsettled = [phrase for phrase in unsettled
                  if phrase not in negative and phrase not in negated_offer]
+    unsettled_transfer = [phrase for phrase in unsettled_transfer
+                          if phrase in unsettled]
     settled = [*negative, *negated_offer]
     denial = [*settled, *unsettled]
     # An offer phrase with an unreachable cue in front of it is a POSSIBLE
@@ -2166,8 +2543,12 @@ def assess_sponsorship(text: str | None) -> dict:
         )
     elif unsettled:
         decision, verdict, confidence = "review", "unknown", "low"
-        reason = ("The posting's only denial is bounded by a quantifier that reads "
-                  "either way, so it is not read as a settled refusal.")
+        reason = (
+            "The posting's only denial covers NEW petitions while the posting "
+            "also welcomes transfers, so it is not read as a settled refusal."
+            if unsettled_transfer and len(unsettled_transfer) == len(unsettled)
+            else "The posting's only denial is bounded by a quantifier that reads "
+                 "either way, so it is not read as a settled refusal.")
     elif ambiguous:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = ("Double-negated sponsorship language; the posting is not read "
@@ -2319,29 +2700,66 @@ def _salary_envelope(fact: dict) -> tuple[int | float | None, int | float | None
     return fact.get("min"), fact.get("max")
 
 
-def _bare_salary(description: str, supplied: dict | None) -> dict | None:
-    """A flat ANNUAL ``{min, max, confidence, source}`` salary, or ``None``.
+def _fact_currency(fact: dict) -> str | None:
+    """The one currency a salary fact states, or ``None`` when its bands disagree."""
+    bands = fact.get("bands")
+    if isinstance(bands, list) and bands:
+        codes = {
+            band.get("currency") for band in bands
+            if isinstance(band, dict) and band.get("period") == "year"
+            and band.get("currency")
+        }
+        return next(iter(codes)) if len(codes) == 1 else None
+    currency = fact.get("currency")
+    return str(currency) if currency else None
 
-    Only a band the posting stated per year reaches this field; see
-    ``_salary_envelope`` for why a non-annual band is refused rather than
-    converted. The aggregator fallback is unchanged and still gets its turn.
+
+def _bare_salary(description: str, supplied: dict | None) -> dict | None:
+    """A flat ``{min, max, currency, period, confidence, source}`` salary, or ``None``.
+
+    THE UNIT TRAVELS WITH THE NUMBER. It used to be dropped here, and the two
+    routes into this field do not agree on what the number means, so dropping it
+    silently mixed two scales in one column:
+
+    * the JD route is annual by construction — ``_salary_envelope`` refuses any
+      band the posting did not state per year (see its docstring for why it
+      refuses rather than annualising);
+    * the AGGREGATOR route is whatever the board's structured pay field said.
+      ``common.provided_salary_range`` accepts hour/day/week/month/year and
+      only ever emits a range that carries BOTH an explicit currency and an
+      explicit period — so a contract role's ``{30, 35, hour, USD}`` arrived
+      here fully labelled and left as a bare ``{30, 35}``, which the discovery
+      table printed as ``30-35``, pixel-identical to a $30k-$35k annual band.
+      Nothing downstream could tell a $30/hour role from a $30k one.
+
+    Carrying ``currency`` and ``period`` through costs two keys and makes the
+    unit readable at every consumer (``search_jobs._format_comp`` renders it).
+    A JD band with no single agreed currency reports none rather than guessing.
     """
     fact = extract_salary_range(description)
     if fact:
         low, high = _salary_envelope(fact)
         if low is not None or high is not None:
+            currency = _fact_currency(fact)
             return {
                 "min": _num_or_none(low),
                 "max": _num_or_none(high),
+                # ``_salary_envelope`` returns a value only for an ANNUAL band.
+                "period": "year",
+                **({"currency": currency} if currency else {}),
                 "confidence": "high",
                 "source": "job_description",
             }
     if isinstance(supplied, dict):
         low, high = supplied.get("min"), supplied.get("max")
         if low is not None or high is not None:
+            period = supplied.get("period")
+            currency = supplied.get("currency")
             return {
                 "min": _num_or_none(low),
                 "max": _num_or_none(high),
+                **({"period": str(period)} if period else {}),
+                **({"currency": str(currency)} if currency else {}),
                 "confidence": "medium",
                 "source": str(supplied.get("source") or "aggregator"),
             }

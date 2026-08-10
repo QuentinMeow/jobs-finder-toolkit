@@ -342,6 +342,40 @@ allowed outcome for a row. Three of this entry's own prescriptions turned out to
 wrong in detail, and the matrix caught all three within minutes — none of them by
 review.
 
+## The matrix is now a tracked artifact (2026-08-10)
+
+The method above kept working and kept being thrown away: each pass rebuilt the matrix by
+hand and none of them committed it, so the sixth pass started by rediscovering the fifth
+pass's row set. It is now tracked, and there is no reason to build another one.
+
+- **Rows**: `skills/job-search/filter_variants/sponsorship_verdict_matrix.yaml` — 79 rows,
+  frozen at `origin/main` 399a6ec. Every `baseline` block is HISTORY and is never
+  re-measured; a row a landed change deliberately moved carries an `expect` block beside
+  its baseline, so the move is recorded in the file rather than argued in a commit message.
+  Twelve baselines are deliberately WRONG readings — that is what makes them measurements.
+- **Runner**: `skills/job-search/scripts/sponsorship_matrix.py` — `--check` is the gate and
+  is wired into the unit suite by
+  `skills/job-search/scripts/tests/test_sponsorship_matrix.py`; `--diff` reports which rows
+  moved from the frozen baseline and whether each move was predicted.
+  Note it imports `job_metadata` from the skill's `_vendor/` copy, so re-vendor
+  (`automation/vendoring/sync_vendored.py`) before trusting a run mid-change.
+- `expected-unchanged` rows are tripwires and may never carry an `expect` block; the lint
+  refuses the file if one does. An `expected-change` row that did NOT move is a reported
+  outcome, not a failure — "change nothing" stays an allowed outcome for any row.
+
+**Sixth pass, same day (#231 / #238a / #265), measured on it:** 12 of 79 rows moved, all 12
+predicted, 0 unpredicted. Six off-list denial shapes were added as PATTERNS rather than
+phrases (each with a word gate derived from its own mandatory anchor), and a denial scoped
+to new/initial/cap-subject petitions in a posting that welcomes transfers is now unsettled
+rather than a silent drop — the same evidence/verdict split, applied to a third ambiguity.
+
+**Still open, and frozen rather than fixed:** a CONDITIONAL offer ("if approved by
+counsel, the company will sponsor H-1B candidates") grades `match` / `likely` / `high`,
+which `--visa-policy require_positive` returns unflagged. It is the hedged-offer rule's
+grammar one step over. Three readings are frozen as the matrix's `conditional-offer` rows;
+the work is filed as
+`tasks/0_backlog/2026-08-10-conditional-sponsorship-offers-grade-as-unhedged`.
+
 ## The repair options, as they stood before the fix (kept as history)
 
 Three independent pieces; any can ship alone.

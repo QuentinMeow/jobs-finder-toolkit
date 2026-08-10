@@ -3308,14 +3308,20 @@ def main():
               file=sys.stderr)
         sys.exit(1)
 
-    if args.check_metadata:
+    # Both scan flags run when both are given. Each used to own an `if` block
+    # ending in an unconditional `sys.exit`, so `--check-metadata
+    # --check-locations` silently never reached the location check and reported a
+    # clean exit 0 while out-of-policy locations went unexamined. Neither call is
+    # short-circuited (the accumulator is the RIGHT operand of `and`), so each
+    # check still prints its own report, and the exit code is non-zero if either
+    # one fails.
+    if args.check_metadata or args.check_locations:
         statuses = _resolve_statuses(args)
-        ok = check_metadata(statuses, as_json=args.json)
-        sys.exit(0 if ok else 1)
-
-    if args.check_locations:
-        statuses = _resolve_statuses(args)
-        ok = check_locations(statuses, as_json=args.json)
+        ok = True
+        if args.check_metadata:
+            ok = check_metadata(statuses, as_json=args.json) and ok
+        if args.check_locations:
+            ok = check_locations(statuses, as_json=args.json) and ok
         sys.exit(0 if ok else 1)
 
     if args.company_keys:

@@ -1,0 +1,10 @@
+# config.search_profiles_dir() resolves here under the fresh-clone example config
+# (config.example.yaml sets no paths.search_profiles_dir, so the accessor derives
+# <overlay_root>/market/searches = examples/market/searches). The directory has to
+# EXIST for a bare `--profile <label>` to resolve, and git does not track empty
+# directories — hence this file.
+#
+# Only this file is meant to be tracked: `examples/market/searches/*.yaml` is
+# git-ignored, the same way `examples/market/scans/current/*.md` is, so a real
+# search profile parked here cannot reach a commit. Real profiles belong in the
+# private overlay (private/market/searches/) — see ../../../skills/job-search/profiles/README.md.

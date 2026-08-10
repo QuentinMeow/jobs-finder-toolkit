@@ -60,3 +60,8 @@ private/leak_safe_words.txt
 # write real dated files here because config.example.yaml points discoveries_dir
 # at this tracked dir). Only .gitkeep is meant to be tracked.
 examples/market/scans/current/*.md
+# Search profiles copied into the EXAMPLE config's search_profiles_dir. The
+# directory is tracked (.gitkeep) so a bare `--profile <label>` resolves on a
+# fresh clone, but a profile written there is the user's own search vocabulary —
+# candidate data, never publishable. Same shape as the rule above.
+examples/market/searches/*.yaml

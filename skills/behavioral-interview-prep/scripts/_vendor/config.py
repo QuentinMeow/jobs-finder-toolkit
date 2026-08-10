@@ -61,6 +61,8 @@ Config schema::
       default_profile: "default"
     generation:
       mode: token_saving              # token_saving (default) | full
+    leak_guard:
+      english_word_tokens: ["Green"]  # OPTIONAL; see the accessor's docstring
     outlook_email:
       account: "<personal-mailbox>"  # expected signed-in mailbox; private config only
       client_id: "..."               # public-client app registration ID; not a secret
@@ -637,6 +639,35 @@ def location_policy() -> dict:
         "allow_us_remote": lp.get("allow_us_remote", True),
         "us_only": lp.get("us_only", True),
     }
+
+
+# ── leak guard ────────────────────────────────────────────────
+def leak_guard_english_word_tokens() -> list[str]:
+    """Identity tokens the owner declares to be ordinary ENGLISH WORDS.
+
+    Read by the publish leak guard (``automation/publish/check_public.py``). A
+    surname such as Green, Long, Park or Quick is both an identity token and a
+    word this repository's own prose uses constantly, and no boundary rule can
+    tell "Menlo Park" from "Alex Park". Naming one here reduces the guard's
+    protection for that ONE bare word — and only for it: the owner's email,
+    handles, home-directory basename and every derived name compound
+    (``alexgreen``, ``alex-green``, ``agreen``) keep full protection, so the
+    full name written any way at all is still caught.
+
+    OPT-IN, never inferred. The guard prints every declared word and the number
+    of occurrences it skipped on every single run, so the reduction can never be
+    silently in effect. Declared as::
+
+        leak_guard:
+          english_word_tokens: ["Green"]
+
+    Absent / empty is the normal state and the default.
+    """
+    block = _config().get("leak_guard") or {}
+    raw = block.get("english_word_tokens") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    return [str(word).strip() for word in raw if str(word).strip()]
 
 
 # ── generation mode (token_saving default | full) ────────────

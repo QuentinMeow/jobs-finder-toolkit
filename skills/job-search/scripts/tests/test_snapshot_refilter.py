@@ -280,10 +280,16 @@ class DiscoveriesRunIdentityTests(unittest.TestCase):
             run_files = [n for n in second if n != pointer]
             bodies = {(disc / n).read_text() for n in run_files}
             self.assertEqual(len(bodies), 2)       # two different answers, both kept
-            rows = sorted(body.count("| [link](") for body in bodies)
+            # Count the SHORTLIST table only. The report also renders a
+            # `## Manual review` preview whose rows carry the same link marker,
+            # so a whole-body count cannot say which table a row came from.
+            def shortlist_rows(body):
+                return body.split("## Manual review")[0].count("| [link](")
+
+            rows = sorted(shortlist_rows(body) for body in bodies)
             self.assertEqual(rows, [1, 3])         # --top-k 1 and --top-k 3 survive
             # The pointer holds the newest run (--top-k 1).
-            self.assertEqual((disc / pointer).read_text().count("| [link]("), 1)
+            self.assertEqual(shortlist_rows((disc / pointer).read_text()), 1)
 
     def test_an_explicit_out_path_is_still_written_verbatim(self):
         fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)

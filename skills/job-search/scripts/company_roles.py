@@ -244,8 +244,14 @@ def dump_jd(entry: dict, needle: str, *, digest: bool = False,
                         f"built; a digest of it would not be smaller.")
             else:
                 try:
+                    # ``p.title`` is the ATS board's own posting title — the
+                    # authoritative one, printed on the header line below. Pass it:
+                    # without it the digest guesses a title off the first body line,
+                    # so a JD that opens with marketing copy reports that paragraph
+                    # as TITLE and classifies seniority from it.
                     built = build_digest(
-                        text, jd_path=str(out) if out else _NOT_SAVED, byte_count=n)
+                        text, jd_path=str(out) if out else _NOT_SAVED, byte_count=n,
+                        title=p.title)
                 except Exception as exc:  # noqa: BLE001 — recovery outranks the digest
                     # Same discipline as fetch_jd._emit_digest: a digest is a
                     # best-effort add-on, so a failure degrades to the verbatim JD

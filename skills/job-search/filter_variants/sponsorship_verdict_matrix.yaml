@@ -1,0 +1,1187 @@
+# Frozen verdict matrix for the sponsorship classifier.
+#
+# WHY THIS FILE EXISTS. `assess_sponsorship` has been revised five times, and
+# the first three revisions each fixed one direction of the same rule by
+# reopening the other (`memory/decisions/sponsorship-an-unsettled-denial-is-
+# review-not-a-silent-drop.md`). What finally worked was a matrix of readings
+# measured BEFORE and AFTER every single change, in which "change nothing" is an
+# allowed outcome for any row. That matrix was rebuilt by hand each time and
+# never tracked, so each pass paid to rediscover it. This is that matrix, frozen.
+#
+# HOW TO READ A ROW.
+#   `baseline` is the reading measured at the commit named in `baseline_ref`.
+#     It is HISTORY: never edit it, never re-measure it. Some baselines are
+#     deliberately WRONG — that is the point, they record what the classifier
+#     actually did before a change, not what it should do.
+#   `expect` is the asserted CURRENT reading. It appears only on rows a landed
+#     change deliberately moved. When absent, `baseline` is what is asserted.
+#   `change` is the prediction that was recorded before the work started:
+#     `expected-unchanged` rows are tripwires and may never carry an `expect`
+#     block; `expected-change` rows are targets, and a target that did not move
+#     is a reported outcome, not a failure.
+#
+# HOW TO RUN IT.
+#   .venv/bin/python skills/job-search/scripts/sponsorship_matrix.py --check
+#   .venv/bin/python skills/job-search/scripts/sponsorship_matrix.py --diff
+# `--check` is also wired into the unit suite
+# (`skills/job-search/scripts/tests/test_sponsorship_matrix.py`).
+#
+# All text here is FICTIONAL. This file is public.
+schema_version: 1
+baseline_ref: 399a6ec2cd4acd5076919435332035ff8d48dd8c
+rows:
+- id: sponsorship-explicit-offer
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: Visa sponsorship is available for qualified candidates.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - visa sponsorship is available
+    rule_ids:
+    - sponsorship.positive.visa sponsorship is available
+- id: sponsorship-explicit-denial
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: This role does not offer sponsorship.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - not offer sponsorship
+    - does not offer sponsorship
+    rule_ids:
+    - sponsorship.negative.not offer sponsorship
+    - sponsorship.negative.does not offer sponsorship
+- id: sponsorship-unrelated-program
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We sponsor employee learning programs and community events.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: sponsorship-conflicting-role-language
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We sponsor work visas in some cases, but this role has no sponsorship.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - no sponsorship
+    - sponsor work visas
+    rule_ids:
+    - sponsorship.negative.no sponsorship
+    - sponsorship.positive.sponsor work visas
+- id: sponsorship-negated-offer-phrase
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: This role does not currently offer visa sponsorship.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - 'negated: offer visa sponsorship'
+    rule_ids:
+    - sponsorship.negated_offer.offer visa sponsorship
+- id: sponsorship-negated-offer-distant-cue
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We will not consider applicants for employment immigration sponsorship or support
+    for this position.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - 'negated: immigration sponsorship'
+    rule_ids:
+    - sponsorship.negated_offer.immigration sponsorship
+- id: sponsorship-negated-offer-after-semicolon
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: Must be eligible to work in the United States; no H1-B visa sponsorship available.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - 'negated: visa sponsorship available'
+    - 'negated: sponsorship available'
+    rule_ids:
+    - sponsorship.negated_offer.visa sponsorship available
+    - sponsorship.negated_offer.sponsorship available
+- id: sponsorship-double-negation-is-ambiguous
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: It is not true that we cannot sponsor work visas.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence: []
+    rule_ids:
+    - sponsorship.ambiguous.double_negation
+- id: sponsorship-offer-after-clause-restart
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: There is no relocation budget, and visa sponsorship is available for this role.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - visa sponsorship is available
+    rule_ids:
+    - sponsorship.positive.visa sponsorship is available
+- id: sponsorship-export-control-is-not-a-denial
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: Candidates must be eligible to obtain the required authorizations without sponsorship
+    for an export license.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence: []
+    rule_ids:
+    - sponsorship.non_immigration.export_control
+- id: sponsorship-export-control-beside-a-real-denial
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: Access to export-controlled data is required. We do not provide visa sponsorship for
+    this role.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - 'negated: provide visa sponsorship'
+    rule_ids:
+    - sponsorship.negated_offer.provide visa sponsorship
+- id: sponsorship-caveated-offer-stays-offer
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: Visa sponsorship is available for this role, though sponsorship is not guaranteed.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - visa sponsorship is available
+    rule_ids:
+    - sponsorship.positive.visa sponsorship is available
+- id: sponsorship-offer-then-scope-limit-is-an-offer
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: 'Visa sponsorship: we do sponsor visas. That said, we are not able to sponsor visas
+    for every role and every candidate. If we make you an offer we will make every reasonable
+    effort to obtain one for you.'
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - 'scope-limited: not able to sponsor'
+    - sponsor visas
+    rule_ids:
+    - sponsorship.scope_limit.not able to sponsor
+    - sponsorship.positive.sponsor visas
+- id: sponsorship-scope-limit-alone-is-not-an-offer
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We are not able to sponsor every candidate who applies.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'scope-limited: not able to sponsor'
+    rule_ids:
+    - sponsorship.scope_limit.not able to sponsor
+- id: sponsorship-quantified-denial-beside-an-offer-is-not-an-offer
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We offer green card sponsorship to existing employees after two years. We are unable
+    to sponsor visas for all new hires.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: unable to sponsor'
+    - green card sponsorship
+    rule_ids:
+    - sponsorship.unsettled_denial.unable to sponsor
+    - sponsorship.positive.green card sponsorship
+- id: sponsorship-quantified-denial-alone-is-not-a-confident-refusal
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We are unable to sponsor visas for all new hires.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: unable to sponsor'
+    rule_ids:
+    - sponsorship.unsettled_denial.unable to sponsor
+- id: sponsorship-unsettled-denial-with-an-unlisted-offer-is-kept
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: Our immigration team supports H-1B and green card cases, but we do not sponsor all
+    roles.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: do not sponsor'
+    rule_ids:
+    - sponsorship.unsettled_denial.do not sponsor
+- id: sponsorship-a-settled-denial-outranks-an-unsettled-one
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We are unable to sponsor visas for all new hires. This role does not offer sponsorship.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - not offer sponsorship
+    - does not offer sponsorship
+    - 'unsettled: unable to sponsor'
+    rule_ids:
+    - sponsorship.negative.not offer sponsorship
+    - sponsorship.negative.does not offer sponsorship
+    - sponsorship.unsettled_denial.unable to sponsor
+- id: sponsorship-do-not-sponsor-all-candidates-is-a-denial
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: H-1B sponsorship is part of our benefits package for tenured staff. We do not sponsor
+    all candidates.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: do not sponsor'
+    - h-1b sponsorship
+    rule_ids:
+    - sponsorship.unsettled_denial.do not sponsor
+    - sponsorship.positive.h-1b sponsorship
+- id: sponsorship-at-all-is-still-a-flat-denial
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We cannot sponsor visas at all for this position.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - cannot sponsor
+    rule_ids:
+    - sponsorship.negative.cannot sponsor
+- id: sponsorship-all-as-requirement-subject-stays-a-denial
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: All roles require work authorization without sponsorship.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - without sponsorship
+    - work authorization without sponsorship
+    rule_ids:
+    - sponsorship.negative.without sponsorship
+    - sponsorship.negative.work authorization without sponsorship
+- id: sponsorship-hedged-offer-is-unclear
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: Limited immigration sponsorship may be available for this role.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'hedged: immigration sponsorship'
+    rule_ids:
+    - sponsorship.hedged_offer.immigration sponsorship
+- id: sponsorship-hedge-across-a-coordinator-leaves-the-offer
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We sponsor H-1B visas, and relocation may be discussed separately.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - sponsor h-1b
+    - we sponsor
+    rule_ids:
+    - sponsorship.positive.sponsor h-1b
+    - sponsorship.positive.we sponsor
+- id: sponsorship-offer-then-unrelated-negation-stays-an-offer
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We sponsor visas for this role. We do not offer relocation assistance.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - sponsor visas
+    rule_ids:
+    - sponsorship.positive.sponsor visas
+- id: sponsorship-non-immigration-sponsee-is-not-a-denial
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We do not sponsor community events.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: sponsorship-bare-verb-denial-with-immigration-context-stands
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We cannot sponsor visas at all for this position.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - cannot sponsor
+    rule_ids:
+    - sponsorship.negative.cannot sponsor
+- id: sponsorship-denial-naming-sponsorship-needs-no-context
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: This role does not offer sponsorship for candidates.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - not offer sponsorship
+    - does not offer sponsorship
+    rule_ids:
+    - sponsorship.negative.not offer sponsorship
+    - sponsorship.negative.does not offer sponsorship
+- id: sponsorship-off-list-denial-with-a-coordinated-object
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We do not offer relocation or visa sponsorship.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated offer verb
+    rule_ids:
+    - sponsorship.negative.negated offer verb
+- id: sponsorship-off-list-denial-other-offer-verbs
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We cannot extend visa sponsorship for this position.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated offer verb
+    rule_ids:
+    - sponsorship.negative.negated offer verb
+- id: sponsorship-eeo-copy-is-not-a-denial
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We do not discriminate against candidates who need visa sponsorship.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: sponsorship-off-list-denial-window-stays-tight
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We do not offer relocation or housing or transit or gym or childcare or visa sponsorship.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: sponsorship-unreachable-cue-is-not-an-offer
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We are unable, given current headcount constraints and the timeline for this particular
+    opening, to offer visa sponsorship.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unreachable-cue: offer visa sponsorship'
+    rule_ids:
+    - sponsorship.unreachable_cue.offer visa sponsorship
+- id: sponsorship-unreachable-cue-over-the-token-budget
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: We are unable, given current headcount constraints for this particular opening, to
+    offer visa sponsorship.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unreachable-cue: offer visa sponsorship'
+    rule_ids:
+    - sponsorship.unreachable_cue.offer visa sponsorship
+- id: sponsorship-settled-denial-outranks-an-unreachable-cue
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: This role does not offer sponsorship. We are unable, given current headcount constraints
+    and the timeline for this particular opening, to offer visa sponsorship.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - not offer sponsorship
+    - does not offer sponsorship
+    - 'unreachable-cue: offer visa sponsorship'
+    rule_ids:
+    - sponsorship.negative.not offer sponsorship
+    - sponsorship.negative.does not offer sponsorship
+    - sponsorship.unreachable_cue.offer visa sponsorship
+- id: sponsorship-silence-is-unknown
+  group: corpus
+  change: expected-unchanged
+  note: Pre-existing labeled corpus case.
+  text: Build backend services in Go. Competitive salary and equity.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: repro-coordinated-object-denial
+  group: known-issue-reproduction
+  change: expected-unchanged
+  note: Reproduction line 1 of the negation-phrase known issue; closed 2026-08-02.
+  text: We do not offer relocation or visa sponsorship.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated offer verb
+    rule_ids:
+    - sponsorship.negative.negated offer verb
+- id: repro-non-immigration-sponsee
+  group: known-issue-reproduction
+  change: expected-unchanged
+  note: Reproduction line 2; a non-immigration sponsee must never read as a denial.
+  text: We do not sponsor community events.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: repro-unreachable-cue-parenthetical
+  group: known-issue-reproduction
+  change: expected-unchanged
+  note: Reproduction line 3, the high-severity one; closed 2026-08-02.
+  text: We are unable, given current headcount constraints and the timeline for this particular
+    opening, to offer visa sponsorship.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unreachable-cue: offer visa sponsorship'
+    rule_ids:
+    - sponsorship.unreachable_cue.offer visa sponsorship
+- id: not-fixed-green-card-offer-plus-all-new-hires
+  group: deliberately-not-fixed
+  change: expected-unchanged
+  note: 'Known-issue table row 1: an ambiguous ''all'' unsettles the denial.'
+  text: We support the green card process for eligible employees. We are unable to sponsor
+    visas for all new hires.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: unable to sponsor'
+    - green card process
+    rule_ids:
+    - sponsorship.unsettled_denial.unable to sponsor
+    - sponsorship.positive.green card process
+- id: not-fixed-immigration-support-plus-every-applicant
+  group: deliberately-not-fixed
+  change: expected-unchanged
+  note: 'Known-issue table row 2, NOT believed to be wrong: a distributive ''every'' limits
+    an offer. Narrowing this is the regression the rule exists to stop.'
+  text: We provide relocation and immigration support. We cannot sponsor every applicant.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - 'scope-limited: cannot sponsor'
+    - immigration support
+    - relocation and immigration
+    rule_ids:
+    - sponsorship.scope_limit.cannot sponsor
+    - sponsorship.positive.immigration support
+    - sponsorship.positive.relocation and immigration
+- id: not-fixed-h1b-benefits-plus-all-candidates
+  group: deliberately-not-fixed
+  change: expected-unchanged
+  note: 'Known-issue table row 3: an ambiguous ''all'' unsettles the denial.'
+  text: Our benefits include H-1B sponsorship. We do not sponsor all candidates.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: do not sponsor'
+    - h-1b sponsorship
+    rule_ids:
+    - sponsorship.unsettled_denial.do not sponsor
+    - sponsorship.positive.h-1b sponsorship
+- id: no-signal-us-citizens-only
+  group: no-signal-citizenship-denial
+  change: expected-unchanged
+  note: Carries no sponsorship/visa/immigration word at all.
+  text: Applicants must be US citizens only.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - us citizens only
+    rule_ids:
+    - sponsorship.negative.us citizens only
+- id: no-signal-permanent-resident-only
+  group: no-signal-citizenship-denial
+  change: expected-unchanged
+  note: Carries no sponsorship/visa/immigration word at all.
+  text: Permanent resident only for this role.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - permanent resident only
+    rule_ids:
+    - sponsorship.negative.permanent resident only
+- id: no-signal-gc-only
+  group: no-signal-citizenship-denial
+  change: expected-unchanged
+  note: Carries no sponsorship/visa/immigration word at all.
+  text: GC only.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - gc only
+    rule_ids:
+    - sponsorship.negative.gc only
+- id: no-signal-citizenship-is-required
+  group: no-signal-citizenship-denial
+  change: expected-unchanged
+  note: Carries no sponsorship/visa/immigration word at all.
+  text: Citizenship is required for this position.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - citizenship is required
+    rule_ids:
+    - sponsorship.negative.citizenship is required
+- id: no-signal-must-be-a-us-citizen
+  group: no-signal-citizenship-denial
+  change: expected-unchanged
+  note: Carries no sponsorship/visa/immigration word at all.
+  text: Must be a U.S. citizen.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - must be a u.s. citizen
+    rule_ids:
+    - sponsorship.negative.must be a u.s. citizen
+- id: gap-cannot-sponsor-or-support-transfers
+  group: denial-coverage-gap
+  change: expected-change
+  note: '#238a: the adverb breaks the contiguous ''cannot sponsor'' phrase.'
+  text: We cannot currently sponsor or support visa transfers.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated coordinated sponsor verb
+    rule_ids:
+    - sponsorship.negative.negated coordinated sponsor verb
+- id: gap-cannot-sponsor-or-support-transfers-bare
+  group: denial-coverage-gap
+  change: expected-unchanged
+  note: 'TRIPWIRE: the same shape WITHOUT the adverb already reads correctly through ''cannot
+    sponsor''; the new rule must be a fallback and leave it.'
+  text: This team cannot sponsor or support visa transfers.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - cannot sponsor
+    rule_ids:
+    - sponsorship.negative.cannot sponsor
+- id: gap-without-the-need-for-sponsorship
+  group: denial-coverage-gap
+  change: expected-change
+  note: '#238a: ''without the need for ... sponsorship'' is a denial the list misses.'
+  text: Applicants must be authorized to work in the U.S. without the need for current or
+    future visa sponsorship.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - sponsorship stated as unnecessary
+    rule_ids:
+    - sponsorship.negative.sponsorship stated as unnecessary
+- id: gap-without-the-need-for-sponsorship-now-or-any-time
+  group: denial-coverage-gap
+  change: expected-change
+  note: '#238a: the ''now or at any time'' variant.'
+  text: Candidates must be authorized to work without the need for employer sponsorship now
+    or at any time in the future.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - sponsorship stated as unnecessary
+    rule_ids:
+    - sponsorship.negative.sponsorship stated as unnecessary
+- id: gap-not-require-sponsorship-now-or-at-any-time
+  group: denial-coverage-gap
+  change: expected-unchanged
+  note: 'TRIPWIRE: already covered by the ''must not require sponsorship'' phrase.'
+  text: Applicants must not require sponsorship now or at any time in the future.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - must not require sponsorship
+    rule_ids:
+    - sponsorship.negative.must not require sponsorship
+- id: gap-not-sponsoring-employment-based-visas
+  group: denial-coverage-gap
+  change: expected-change
+  note: '#238a: ''sponsoring'' is a form neither list carries.'
+  text: We are not currently sponsoring employment-based visas.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated sponsoring of visas
+    rule_ids:
+    - sponsorship.negative.negated sponsoring of visas
+- id: gap-not-sponsoring-foreseeable-future
+  group: denial-coverage-gap
+  change: expected-change
+  note: '#238a: the foreseeable-future variant.'
+  text: We are not sponsoring employment-based visas in the foreseeable future.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated sponsoring of visas
+    rule_ids:
+    - sponsorship.negative.negated sponsoring of visas
+- id: gap-citizenship-required-colon-yes
+  group: denial-coverage-gap
+  change: expected-change
+  note: '#238a: a Q/A table row, not a sentence.'
+  text: 'Citizenship required: Yes'
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - citizenship stated as required
+    rule_ids:
+    - sponsorship.negative.citizenship stated as required
+- id: gap-us-citizenship-required-question-yes
+  group: denial-coverage-gap
+  change: expected-change
+  note: '#238a: the question-mark form of the same table row.'
+  text: U.S. Citizenship Required? Yes
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - citizenship stated as required
+    rule_ids:
+    - sponsorship.negative.citizenship stated as required
+- id: gap-visa-gc-citizens-table
+  group: denial-coverage-gap
+  change: expected-change
+  note: '#238a: a compact table cell naming the accepted statuses.'
+  text: 'Visa: GC/Citizens'
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - visa field limited to citizens
+    rule_ids:
+    - sponsorship.negative.visa field limited to citizens
+- id: gap-us-citizen-required-label
+  group: denial-coverage-gap
+  change: expected-change
+  note: '#238a: a label/value pair.'
+  text: 'U.S. citizen: required'
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - citizen status stated as required
+    rule_ids:
+    - sponsorship.negative.citizen status stated as required
+- id: conditional-offer-if-approved-by-counsel
+  group: conditional-offer
+  change: expected-unchanged
+  note: 'Currently graded as an unhedged offer, which is the dangerous direction. OUT of scope
+    here (the bounded #238a list does not cover conditionals); recorded so a later pass starts
+    from a frozen baseline.'
+  text: If approved by counsel, the company will sponsor H-1B candidates.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - sponsor h-1b
+    - will sponsor
+    rule_ids:
+    - sponsorship.positive.sponsor h-1b
+    - sponsorship.positive.will sponsor
+- id: conditional-offer-subject-to-approval
+  group: conditional-offer
+  change: expected-unchanged
+  note: Same class as the row above; recorded, not fixed.
+  text: Subject to internal approval, we sponsor work visas for this role.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - sponsor work visas
+    rule_ids:
+    - sponsorship.positive.sponsor work visas
+- id: conditional-offer-provided-that-business-need
+  group: conditional-offer
+  change: expected-unchanged
+  note: Same class as the row above; recorded, not fixed.
+  text: Provided that a business need is established, we will sponsor visas.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - sponsor visas
+    rule_ids:
+    - sponsorship.positive.sponsor visas
+- id: transfer-friendly-new-petition-denial
+  group: h1b-transfer-scope
+  change: expected-change
+  note: '#265: the denial''s scope is bounded to NEW petitions and the same JD carries a transfer-friendly
+    signal, yet the posting is dropped silently.'
+  text: We are unable to sponsor new H-1B petitions; H-1B transfer candidates are encouraged
+    to apply.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - unable to sponsor
+    rule_ids:
+    - sponsorship.negative.unable to sponsor
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: unable to sponsor'
+    rule_ids:
+    - sponsorship.unsettled_denial.unable to sponsor
+- id: transfer-friendly-initial-petition-denial
+  group: h1b-transfer-scope
+  change: expected-change
+  note: '#265: the ''initial petition'' wording of the same shape.'
+  text: We do not sponsor initial H-1B petitions. Candidates who can transfer their H-1B are
+    welcome.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - do not sponsor
+    rule_ids:
+    - sponsorship.negative.do not sponsor
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: do not sponsor'
+    rule_ids:
+    - sponsorship.unsettled_denial.do not sponsor
+- id: transfer-friendly-cap-subject-denial
+  group: h1b-transfer-scope
+  change: expected-change
+  note: '#265: the ''cap-subject'' wording. Already `review` through the conflict branch,
+    so only the EVIDENCE moves — the denial becomes unsettled.'
+  text: This role cannot sponsor cap-subject H-1B petitions; we are cap-exempt for transfers.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - cannot sponsor
+    - cap-exempt
+    rule_ids:
+    - sponsorship.negative.cannot sponsor
+    - sponsorship.positive.cap-exempt
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: cannot sponsor'
+    - cap-exempt
+    rule_ids:
+    - sponsorship.unsettled_denial.cannot sponsor
+    - sponsorship.positive.cap-exempt
+- id: transfer-signal-with-unbounded-denial-stays-a-denial
+  group: h1b-transfer-scope
+  change: expected-unchanged
+  note: '#265 TRIPWIRE: the denial is not lexically bounded to new petitions, so the transfer
+    signal must not soften it.'
+  text: We do not offer sponsorship of any kind. Please do not ask about transferring your
+    H-1B.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - not offer sponsorship
+    - do not offer sponsorship
+    rule_ids:
+    - sponsorship.negative.not offer sponsorship
+    - sponsorship.negative.do not offer sponsorship
+- id: new-petition-denial-without-transfer-signal-stays-a-denial
+  group: h1b-transfer-scope
+  change: expected-unchanged
+  note: '#265 TRIPWIRE: no transfer-friendly signal in the JD, so the bounded denial stands
+    settled.'
+  text: We are unable to sponsor new H-1B petitions for this position.
+  baseline:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - unable to sponsor
+    rule_ids:
+    - sponsorship.negative.unable to sponsor
+- id: control-generic-eeo-citizenship-copy
+  group: control
+  change: expected-unchanged
+  note: Generic EEO copy is not a denial.
+  text: We consider all applicants regardless of citizenship, national origin, or any other
+    protected characteristic.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-eeo-does-not-discriminate-on-sponsorship-need
+  group: control
+  change: expected-unchanged
+  note: EEO copy that names sponsorship is the OPPOSITE of a denial.
+  text: We do not discriminate against candidates who need visa sponsorship.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-citizenship-required-answer-no
+  group: control
+  change: expected-unchanged
+  note: 'TRIPWIRE for the #238a Q/A rule: the same field with the opposite answer must never
+    read as a denial.'
+  text: 'Citizenship required: No'
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-citizenship-is-not-required
+  group: control
+  change: expected-unchanged
+  note: 'TRIPWIRE for the #238a Q/A rule: a negated requirement is not a denial.'
+  text: Citizenship is not required for this role.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-visa-field-lists-h1b
+  group: control
+  change: expected-unchanged
+  note: 'TRIPWIRE for the #238a visa-field rule: a field that ALSO lists H-1B is not a citizens-only
+    field.'
+  text: 'Visa: H-1B, OPT, GC, Citizens'
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-open-to-sponsoring-visas
+  group: control
+  change: expected-unchanged
+  note: 'TRIPWIRE for the #238a ''not sponsoring visas'' rule: the positive form must stay
+    an offer.'
+  text: We are open to sponsoring employment-based visas.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-conference-booth-sponsorship
+  group: control
+  change: expected-unchanged
+  note: Event sponsorship is not immigration sponsorship.
+  text: Our team sponsors a booth at two developer conferences each year.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-community-event-sponsorship-budget
+  group: control
+  change: expected-unchanged
+  note: A non-immigration sponsee must never read as a visa denial.
+  text: We do not sponsor local sports teams or community fundraisers.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-do-not-sponsor-or-support-charities
+  group: control
+  change: expected-unchanged
+  note: 'TRIPWIRE for the #238a coordinated-verb rule: it is a bare-verb denial and must stay
+    behind the immigration gate.'
+  text: We do not sponsor or support local charities.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-offer-then-scope-limit-stays-an-offer
+  group: control
+  change: expected-unchanged
+  note: An offer followed by a distributive scope limit is still an offer.
+  text: We sponsor work visas and support the green card process, but we cannot sponsor every
+    candidate.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - 'scope-limited: cannot sponsor'
+    - we sponsor
+    - sponsor work visas
+    - green card process
+    rule_ids:
+    - sponsorship.scope_limit.cannot sponsor
+    - sponsorship.positive.we sponsor
+    - sponsorship.positive.sponsor work visas
+    - sponsorship.positive.green card process
+- id: control-offer-then-role-scope-limit
+  group: control
+  change: expected-unchanged
+  note: The same shape written across a semicolon.
+  text: Visa sponsorship is available; it is not offered for every opening.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - visa sponsorship is available
+    rule_ids:
+    - sponsorship.positive.visa sponsorship is available
+- id: control-plain-offer-stays-an-offer
+  group: control
+  change: expected-unchanged
+  note: The clearest offer in the module must never move.
+  text: Visa sponsorship is available for this role and we sponsor H-1B transfers.
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - sponsor h-1b
+    - visa sponsorship is available
+    - we sponsor
+    rule_ids:
+    - sponsorship.positive.sponsor h-1b
+    - sponsorship.positive.visa sponsorship is available
+    - sponsorship.positive.we sponsor
+- id: control-silence-stays-unknown
+  group: control
+  change: expected-unchanged
+  note: No sponsorship evidence at all.
+  text: You will build and operate a data platform for a distributed team.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-export-control-licensing
+  group: control
+  change: expected-unchanged
+  note: Export-control licensing is not immigration evidence.
+  text: Candidates must be able to obtain the required authorizations without sponsorship
+    for an export license under ITAR.
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence: []
+    rule_ids:
+    - sponsorship.non_immigration.export_control

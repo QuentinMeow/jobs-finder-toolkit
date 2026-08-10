@@ -203,6 +203,476 @@ class TokenTests(unittest.TestCase):
             export_public._deny_reason("config.example.yaml", ["ZZZ-absent-token"]))
 
 
+# ── token matching: the MUST-STILL-CATCH regression list ─────────────────────
+# Every string below is a real leak shape the guard catches, and it must STAY
+# caught however the matching rule evolves. The list exists because the obvious
+# fix for the guard's false positives — requiring a word boundary around every
+# token — silently drops the five GLUED shapes marked below, and a leak the
+# guard used to catch is the only kind of regression that cannot be undone
+# after a push.
+#
+# The token set is DERIVED from the fictional persona by the guard's own
+# ``_identity_tokens``, never hand-listed. A hand-listed set would pin the
+# tokens of the day and pass forever while the derivation that actually runs in
+# a maintainer checkout drifted underneath it.
+FICTIONAL_CONTACT = (
+    "City, ST • jordan.rivers" + "@" + "example.com"
+    " • linkedin.com/in/jordanrivers • github.com/jordanrivers"
+)
+# A home-directory basename with nothing to do with the persona, so a case that
+# must be caught by a NAME-derived token can never pass on the home token by
+# accident. Patched in rather than read, so the tokens do not depend on the
+# machine running the suite.
+FICTIONAL_HOME = "/home/" + "nobody"
+
+# ``(label, text)``. Labels name the leak SHAPE so a failure says which one.
+MUST_STILL_CATCH = [
+    ("plain full name", "Contact: Jordan Rivers"),
+    ("possessive", "Jordan's resume is attached"),
+    ("surname-first, comma", "Rivers, Jordan — Senior Engineer"),
+    ("shouted", "JORDAN RIVERS"),
+    ("hyphenated surname", "Maria Garcia-Rivers reviewed it"),
+    # A dotted local part: the surname is glued to an initial by a '.'.
+    ("dotted email local part", "j.rivers" + "@" + "corp.com"),
+    ("full email", "jordan.rivers" + "@" + "example.com"),
+    ("absolute home path", "/Users/jordan/code/x"),
+    ("traceback home path", 'File "/Users/jordan/x.py", line 3'),
+    ("kebab application slug",
+     "applications/1_applied/acme-jordan-rivers/meta.yaml"),
+    ("DOCX run split", "<w:t>Jordan</w:t><w:t>Rivers</w:t>"),
+    ("query parameter", "?owner=jordan&x=1"),
+    ("URL path segment", "https://example.com/u/jordan/profile"),
+    # ── the five GLUED shapes a boundary-only rule would drop ──
+    ("GLUED linkedin handle", "linkedin.com/in/jordanrivers"),
+    ("GLUED camelCase handle in a URL", "github.com/JordanRivers"),
+    ("GLUED initial+surname local part", "jrivers" + "@" + "corp.com"),
+    ("GLUED slug with no separator", "applications/acme-jordanrivers/meta.yaml"),
+    ("GLUED home basename", "/Users/jordanrivers/code/x"),
+    # ── back to shapes any rule should get ──
+    ("CamelCase filename", "JordanRivers_Resume_2026.docx"),
+    ("snake_case export name", "exports/jordan_rivers_baseline.yaml"),
+    ("snake_case JSON key", '{"candidate_jordan": 1}'),
+    ("glued document extraction", "JordanRiversSeniorEngineer"),
+]
+
+# The subset that is a PATH, scanned by the same rule through a different code
+# path (``rel_lower``), so both are pinned.
+MUST_STILL_CATCH_PATHS = [
+    "applications/1_applied/acme-jordan-rivers/meta.yaml",
+    "applications/acme-jordanrivers/meta.yaml",
+    "exports/jordan_rivers_baseline.yaml",
+    "docs/JordanRivers_Resume_2026.md",
+]
+
+
+class _RealConfigStub:
+    """A config layer resolving to a REAL (non-example) config for the persona.
+
+    ``_identity_tokens`` returns nothing for the example config by design, so a
+    stub that wants tokens has to look like a maintainer checkout: an active
+    path whose bytes differ from the example's.
+    """
+
+    def __init__(self, active: Path, example: Path):
+        self._active = active
+        self.EXAMPLE_CONFIG = example
+
+    def config_path(self) -> Path:
+        return self._active
+
+    @staticmethod
+    def candidate_name() -> str:
+        return "Jordan Rivers"
+
+    @staticmethod
+    def contact_line() -> str:
+        return FICTIONAL_CONTACT
+
+
+def fictional_identity_tokens() -> list[str]:
+    """The identity tokens the guard itself derives for the fictional persona."""
+    with tempfile.TemporaryDirectory() as td:
+        active = Path(td) / "config.yaml"
+        active.write_text("candidate:\n  name: a maintainer checkout\n",
+                          encoding="utf-8")
+        example = Path(td) / "config.example.yaml"
+        example.write_text("candidate:\n  name: the shipped example\n",
+                           encoding="utf-8")
+        with mock.patch.object(check_public.Path, "home",
+                               return_value=Path(FICTIONAL_HOME)):
+            return sorted(check_public._identity_tokens(
+                _RealConfigStub(active, example)))
+
+
+class TokenMatchingRegressionTests(unittest.TestCase):
+    """Leak shapes that are caught today and must never stop being caught."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tokens = fictional_identity_tokens()
+
+    def _token_hits(self, files: dict) -> list:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, files)
+            result = check_public.scan(root=root, tracked=tracked,
+                                       tokens=self.tokens)
+        # Asserted on the TOKEN category specifically: several fixtures also trip
+        # the path denylist or the structural-PII scan, and a pass for the wrong
+        # reason would hide exactly the regression this list exists to catch.
+        return result["violations"]["personal_token"]
+
+    def test_the_persona_tokens_are_actually_derived(self):
+        # A silently empty token set would make every case below vacuous.
+        self.assertIn("Jordan", self.tokens)
+        self.assertIn("Rivers", self.tokens)
+        self.assertIn("jordanrivers", self.tokens)
+
+    def test_every_regression_string_is_caught_in_content(self):
+        for label, text in MUST_STILL_CATCH:
+            with self.subTest(shape=label):
+                hits = self._token_hits({"notes.md": text + "\n"})
+                self.assertTrue(
+                    hits, f"leak shape '{label}' is no longer caught in CONTENT")
+
+    def test_every_regression_path_is_caught_in_the_path_scan(self):
+        for rel in MUST_STILL_CATCH_PATHS:
+            with self.subTest(path=rel):
+                hits = self._token_hits({rel: "placeholder\n"})
+                self.assertTrue(
+                    [h for h in hits if h["where"] == "path"],
+                    f"path '{rel}' is no longer caught by the PATH scan")
+
+    def test_a_clean_file_is_not_flagged(self):
+        # The control: the fixture machinery itself must not manufacture hits.
+        self.assertEqual(
+            self._token_hits({"notes.md": "an ordinary sentence about work\n"}),
+            [])
+
+
+# ── token matching: the MUST-NOW-ALLOW list ──────────────────────────────────
+# ``(text, surname)``. Every one of these fired under pure containment, and none
+# of them is a leak: the surname sits INSIDE an ordinary word. On the real
+# tracked tree these accounted for hundreds of false violations per surname —
+# enough that an owner named King, Ross, Green or Ward could not commit at all.
+#
+# "Menlo Park" is deliberately absent. No boundary rule can separate the place
+# from the surname — "Alex Park" has exactly the same shape — so it is covered by
+# the opt-in English-word allowance tests instead.
+MUST_NOW_ALLOW = [
+    ("agreed on the plan", "Reed"),
+    ("they disagreed", "Reed"),
+    ("the buffer is freed", "Reed"),
+    ("matched greedily", "Reed"),
+    ("the run parked the job", "Park"),
+    ("sparkling water", "Park"),
+    ("time.sleep() blocks", "Lee"),
+    ("the abstraction bleeds", "Lee"),
+    ("raise FileExistsError", "Lee"),
+    ("a shallow clone", "Hall"),
+    ("the challenge is real", "Hall"),
+    ("making progress", "King"),
+    ("a blocking call", "King"),
+    ("cross-session context", "Ross"),
+    ("outward facing", "Ward"),
+    ("read the quickstart", "Quick"),
+    ("Blacksmith patterns", "Smith"),
+]
+
+
+class TokenMatchingFalsePositiveTests(unittest.TestCase):
+    """Ordinary words that must stop being reported as an identity leak."""
+
+    def _token_hits(self, text: str, tokens: list[str]) -> list:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, {"notes.md": text + "\n"})
+            result = check_public.scan(root=root, tracked=tracked, tokens=tokens)
+        return result["violations"]["personal_token"]
+
+    def test_a_surname_inside_an_ordinary_word_is_not_a_leak(self):
+        for text, token in MUST_NOW_ALLOW:
+            with self.subTest(word=text, token=token):
+                self.assertEqual(
+                    self._token_hits(text, [token]), [],
+                    f"'{token}' still fires inside {text!r}")
+
+    def test_the_same_surname_standing_alone_is_still_a_leak(self):
+        # The other half. Boundary matching narrows WHERE a token counts; it
+        # must not stop the token counting.
+        for _, token in MUST_NOW_ALLOW:
+            with self.subTest(token=token):
+                self.assertTrue(self._token_hits(f"Contact: Alex {token}", [token]))
+                self.assertTrue(self._token_hits(f"alex-{token.lower()}/notes", [token]))
+                self.assertTrue(self._token_hits(f"Alex{token}Resume.md", [token]))
+
+
+class TokenClassificationTests(unittest.TestCase):
+    """Which rule a token gets, and why. The hinge of the whole change."""
+
+    def _mode(self, token: str, tokens=None, forced=None) -> str:
+        specs = check_public.classify_tokens(tokens or [token],
+                                             force_substring=forced)
+        return next(s.mode for s in specs if s.token == token)
+
+    def test_a_bare_name_part_is_boundary_matched(self):
+        self.assertEqual(self._mode("Rivers"), check_public.TOKEN_BOUNDARY)
+
+    def test_anything_carrying_punctuation_keeps_containment(self):
+        for token in ("jordan.rivers" + "@" + "example.com", "jordan.rivers",
+                      "field-notes", "jordan_rivers"):
+            with self.subTest(token=token):
+                self.assertEqual(self._mode(token), check_public.TOKEN_SUBSTRING)
+
+    def test_a_handle_with_a_digit_keeps_containment(self):
+        self.assertEqual(self._mode("jrivers7"), check_public.TOKEN_SUBSTRING)
+
+    def test_a_compound_of_two_tokens_keeps_containment(self):
+        # THE property that lets the boundary rule be safe, and the one that has
+        # to survive a flat round trip through $JOBHUNT_PERSONAL_TOKENS: no
+        # provenance is supplied here, only the token set.
+        flat = ["Jordan", "Rivers", "jordanrivers", "jrivers"]
+        self.assertEqual(self._mode("jordanrivers", flat),
+                         check_public.TOKEN_SUBSTRING)
+        self.assertEqual(self._mode("jrivers", flat),
+                         check_public.TOKEN_SUBSTRING)
+        self.assertEqual(self._mode("Jordan", flat), check_public.TOKEN_BOUNDARY)
+
+    def test_declared_provenance_overrides_shape(self):
+        # A one-word linkedin handle or home basename is a bare word by shape;
+        # its provenance is what keeps it on containment.
+        self.assertEqual(self._mode("riverside", forced={"riverside"}),
+                         check_public.TOKEN_SUBSTRING)
+
+    def test_an_empty_token_is_dropped_rather_than_matching_everything(self):
+        self.assertEqual(check_public.classify_tokens(["", "   "]), [])
+
+    def test_overlapping_occurrences_are_all_considered(self):
+        # A non-overlapping scan consumes 'annA' (edges fail) and never sees
+        # 'Anna' starting one character later (edges pass). The zero-width
+        # lookahead in _boundary_pattern is what stops that being a miss.
+        specs = check_public.classify_tokens(["Anna"])
+        self.assertIsNotNone(check_public.first_token_hit(specs, "annAnna"))
+
+
+class NameCompoundDerivationTests(unittest.TestCase):
+    """The compounds that pay for the boundary rule must actually be derived."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tokens = set(fictional_identity_tokens())
+
+    def test_glued_and_joined_forms_are_derived(self):
+        for compound in ("jordanrivers", "riversjordan", "jrivers", "jordanr",
+                         "jordan rivers", "jordan-rivers", "jordan_rivers"):
+            with self.subTest(compound=compound):
+                self.assertIn(compound, self.tokens)
+
+    def test_compounds_are_high_specificity(self):
+        with mock.patch.object(check_public, "_load_shared_config",
+                               return_value=_ExampleConfigStub):
+            # The example persona contributes nothing at all — the gate that
+            # keeps a public clone from arming on the fictional identity.
+            self.assertEqual(check_public.high_specificity_tokens(), set())
+        self.assertIn("jordanrivers", check_public._name_compounds(
+            ["Jordan", "Rivers"]))
+
+    def test_a_short_pairing_is_not_shipped_as_a_compound(self):
+        # 'liwu' would start hitting inside base64 and hex runs — a new class of
+        # false positive is not a fix for the old one.
+        self.assertEqual(check_public._name_compounds(["Li", "Wu"]), set())
+
+
+class EnglishWordAllowanceTests(unittest.TestCase):
+    """The opt-in allowance for a name that is ALSO an ordinary English word.
+
+    Boundaries fix a surname hiding inside a word; they cannot fix a surname that
+    IS a word ('Menlo Park' and 'Alex Park' are the same string in the same
+    shape). This is the only mechanism in the guard that deliberately gives up
+    protection, so every constraint on it is pinned here: opt-in, loud, narrow,
+    and still arming.
+    """
+
+    def setUp(self):
+        self._saved_env = os.environ.pop(check_public.WORD_ALLOWANCE_ENV_VAR, None)
+
+    def tearDown(self):
+        os.environ.pop(check_public.WORD_ALLOWANCE_ENV_VAR, None)
+        if self._saved_env is not None:
+            os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = self._saved_env
+
+    def _scan(self, text: str, tokens: list[str], allowances=None,
+              forced=None) -> dict:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, {"notes.md": text + "\n"})
+            return check_public.scan(root=root, tracked=tracked, tokens=tokens,
+                                     allowances=allowances,
+                                     force_substring=forced)
+
+    def _hits(self, result: dict) -> list:
+        return result["violations"]["personal_token"]
+
+    # ── opt-in ──────────────────────────────────────────────────────────────
+    def test_without_a_declaration_the_word_still_fires(self):
+        # The baseline the allowance is measured against. 'Menlo Park' is a real
+        # boundary hit for the surname Park and nothing infers otherwise.
+        self.assertTrue(self._hits(self._scan("offices in Menlo Park", ["Park"])))
+
+    def test_with_a_declaration_the_word_is_allowed(self):
+        result = self._scan("offices in Menlo Park", ["Park"],
+                            allowances={"park"})
+        self.assertEqual(self._hits(result), [])
+
+    def test_a_declaration_is_never_inferred_from_the_word_itself(self):
+        # Nothing in the guard consults a dictionary: an ordinary English word
+        # that was NOT declared keeps full protection.
+        for word in ("Green", "Long", "Quick", "Hall"):
+            with self.subTest(word=word):
+                self.assertTrue(
+                    self._hits(self._scan(f"the {word} report", [word])))
+
+    def test_the_env_channel_declares_an_allowance(self):
+        os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = "# note\nGreen, Long\n"
+        with mock.patch.object(check_public, "_load_shared_config",
+                               return_value=None):
+            self.assertEqual(check_public.word_token_allowances(),
+                             {"green", "long"})
+
+    def test_the_example_config_declares_nothing(self):
+        # A public clone must never inherit an allowance it did not choose.
+        stub = _ExampleConfigStub
+        with mock.patch.object(check_public, "_load_shared_config",
+                               return_value=stub):
+            self.assertEqual(check_public.word_token_allowances(), set())
+
+    # ── loud ────────────────────────────────────────────────────────────────
+    def test_the_report_names_the_token_and_the_count(self):
+        result = self._scan("Park it. The Park is closed. Menlo Park.", ["Park"],
+                            allowances={"park"})
+        self.assertEqual(result["word_allowances"]["reduced"], {"Park": 3})
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        text = buf.getvalue()
+        self.assertIn("word allowance", text)
+        self.assertIn("'Park'", text)
+        self.assertIn("REDUCED", text)
+        self.assertIn("3 occurrence(s) SKIPPED", text)
+
+    def test_the_report_prints_even_on_a_clean_tree(self):
+        # Silence on a green run is how an allowance becomes something nobody
+        # remembers granting.
+        result = self._scan("nothing to see", ["Park"], allowances={"park"})
+        self.assertTrue(result["ok"], result["violations"])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        self.assertIn("word allowance", buf.getvalue())
+
+    def test_a_declaration_that_reaches_nothing_is_reported_as_ineffective(self):
+        result = self._scan("nothing", ["jordan.rivers"], allowances={"jordan.rivers"})
+        self.assertEqual(result["word_allowances"]["ineffective"], ["jordan.rivers"])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        self.assertIn("NO effect", buf.getvalue())
+
+    # ── narrow: never reaches a high-specificity token ──────────────────────
+    def test_an_allowance_cannot_weaken_an_email_a_handle_or_a_home_basename(self):
+        cases = [
+            ("jordan.rivers" + "@" + "example.com", "the address is "),
+            ("jordanrivers", "linkedin.com/in/"),
+            # The sharpest case: a home-directory basename that IS an ordinary
+            # word. Declaring it changes nothing, because provenance put it on
+            # containment and an allowance only ever reaches a boundary token.
+            ("green", "/Users/"),
+        ]
+        for token, prefix in cases:
+            with self.subTest(token=token):
+                result = self._scan(prefix + token, [token],
+                                    allowances={check_public._normalize_safe_word(token)},
+                                    forced={token})
+                self.assertTrue(self._hits(result),
+                                f"an allowance weakened high-specificity {token!r}")
+
+    def test_an_allowance_cannot_weaken_a_name_compound(self):
+        tokens = sorted(check_public._name_compounds(["Alex", "Green"]) | {"Green"})
+        forced = check_public._name_compounds(["Alex", "Green"])
+        # 'green' is declared; every compound spelling of the full name is not.
+        # Split literals again (see the module docstring): a contiguous
+        # '/Users/<name>' or 'linkedin.com/in/<handle>' in this tracked source
+        # would trip the guard's own structural-PII scan.
+        for text in ("linkedin.com/in/" + "alexgreen", "/Users/" + "alexgreen/x",
+                     "agreen" + "@" + "corp.com", "acme-alex-green/meta.yaml",
+                     "Contact: Alex Green"):
+            with self.subTest(text=text):
+                result = self._scan(text, tokens, allowances={"green"},
+                                    forced=forced)
+                self.assertTrue(self._hits(result),
+                                f"the full name went unreported in {text!r}")
+
+    def test_the_full_name_is_caught_even_when_both_parts_are_allowed(self):
+        # The worst case the allowance has to survive: BOTH name parts are
+        # ordinary words. Only the joined/glued compounds stand between the
+        # owner's full name and a public repo.
+        parts = ["Long", "Green"]
+        compounds = check_public._name_compounds(parts)
+        tokens = sorted(compounds | set(parts))
+        both = {"long", "green"}
+        for text in ("Contact: Long Green", "Green, Long", "long-green/resume",
+                     "LongGreen_Resume.docx", "long_green"):
+            with self.subTest(text=text):
+                result = self._scan(text, tokens, allowances=both,
+                                    forced=compounds)
+                self.assertTrue(self._hits(result),
+                                f"the full name went unreported in {text!r}")
+
+    # ── still armed ─────────────────────────────────────────────────────────
+    def test_an_allowed_token_still_arms_the_guard(self):
+        # An allowance narrows WHERE a token is reported. It must never remove
+        # the token, because an empty identity set is the unarmed exit-2 state
+        # in which everything reports "Safe to publish".
+        os.environ[check_public.TOKENS_ENV_VAR] = "Green"
+        os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = "Green"
+        try:
+            with mock.patch.object(check_public, "_load_shared_config",
+                                   return_value=_ExampleConfigStub):
+                self.assertIn("Green", check_public.identity_tokens())
+                self.assertIn("green", check_public.word_token_allowances())
+        finally:
+            os.environ.pop(check_public.TOKENS_ENV_VAR, None)
+
+    def test_no_declaration_means_no_allowance_block_at_all(self):
+        result = self._scan("ordinary text", ["Rivers"])
+        self.assertIsNone(result["word_allowances"])
+
+
+class ExporterMatchesTheGuardTests(unittest.TestCase):
+    """The exporter's exclusion screen and the guard must agree, always.
+
+    A rule that differed would either drop files the guard passes (a silently
+    incomplete export) or ship files the guard fails (an export that cannot be
+    published at all).
+    """
+
+    def test_a_word_internal_hit_no_longer_excludes_a_file(self):
+        # 'Ever' occurs in config.example.yaml only inside 'never'. Under pure
+        # containment that excluded the file from every export.
+        self.assertIsNone(export_public._deny_reason("config.example.yaml",
+                                                     ["Ever"]))
+
+    def test_a_real_leak_still_excludes_a_file(self):
+        reason = export_public._deny_reason("config.example.yaml", ["Rivers"])
+        self.assertIsNotNone(reason)
+        self.assertTrue(reason.startswith("token"))
+
+    def test_a_glued_compound_still_excludes_a_file(self):
+        reason = export_public._deny_reason("config.example.yaml",
+                                            ["jordanrivers"])
+        self.assertIsNotNone(reason)
+
+
 class PrivateSkillTests(unittest.TestCase):
     def test_private_skill_with_tracked_files_flags(self):
         with tempfile.TemporaryDirectory() as td:
