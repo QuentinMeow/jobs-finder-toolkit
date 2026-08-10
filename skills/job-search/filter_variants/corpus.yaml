@@ -582,6 +582,220 @@ variants:
       verdict: unknown
       confidence: unknown
 
+  # --- denial shapes written as patterns rather than phrases ----------------
+  # Each pair below is a target and its tripwire, kept adjacent on purpose: the
+  # rules here are the first ones in this module that can CREATE a denial from a
+  # wording no phrase list contains, and a denial drops the posting under both
+  # visa policies. The tripwire is what says the rule stopped where it should.
+
+  - id: sponsorship-coordinated-sponsor-verb-with-adverb
+    domain: sponsorship
+    # An adverb between the cue and the verb defeats every contiguous phrase
+    # ("cannot sponsor" is not present), so this used to read as silence.
+    input:
+      text: We cannot currently sponsor or support visa transfers.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-coordinated-sponsor-verb-needs-immigration-context
+    domain: sponsorship
+    # TRIPWIRE for the rule above: its "sponsor" is a bare transitive verb, so
+    # it stays behind the immigration gate and a charity is not a visa denial.
+    input:
+      text: We do not sponsor or support local charities.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-stated-as-unnecessary-is-a-denial
+    domain: sponsorship
+    # "Be authorized without needing sponsorship" is a refusal stated as a
+    # requirement; the phrase list needs "without sponsorship" contiguous.
+    input:
+      text: >-
+        Applicants must be authorized to work in the U.S. without the need for
+        current or future visa sponsorship.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-needed-by-a-candidate-is-not-a-denial
+    domain: sponsorship
+    # TRIPWIRE: EEO copy names the same words in the opposite polarity.
+    input:
+      text: We do not discriminate against candidates who need visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-not-sponsoring-visas-is-a-denial
+    domain: sponsorship
+    # The gerund is a form neither phrase tuple carries.
+    input:
+      text: We are not currently sponsoring employment-based visas.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-open-to-sponsoring-is-still-an-offer
+    domain: sponsorship
+    # TRIPWIRE for the rule above: the negation is part of that pattern rather
+    # than left to the clause scope, so the positive form cannot reach it.
+    input:
+      text: We are open to sponsoring an employment-based visa for this role.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-citizenship-required-field-is-a-denial
+    domain: sponsorship
+    # A Q/A row or table header rather than a sentence.
+    input:
+      text: 'Citizenship required: Yes'
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-citizenship-required-field-answered-no
+    domain: sponsorship
+    # TRIPWIRE: the same field with the opposite answer is the opposite claim.
+    input:
+      text: 'Citizenship required: No'
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-citizenship-is-not-required-is-not-a-denial
+    domain: sponsorship
+    # TRIPWIRE: a negated requirement must not read as a requirement.
+    input:
+      text: Citizenship is not required for this role.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-visa-field-limited-to-citizens-is-a-denial
+    domain: sponsorship
+    # A compact field naming every accepted status, none of which is a visa.
+    input:
+      text: 'Visa: GC/Citizens'
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-visa-field-listing-h1b-is-not-a-denial
+    domain: sponsorship
+    # TRIPWIRE: the value list must be EXHAUSTED by citizen/green-card terms.
+    # A field that also lists H-1B is the opposite of a citizens-only field, and
+    # the leading term is not what decides it.
+    input:
+      text: 'Visa: H-1B, OPT, GC, Citizens'
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-visa-field-citizens-then-h1b-is-not-a-denial
+    domain: sponsorship
+    # TRIPWIRE, and a real hole found by measurement: without a word boundary
+    # after each status term, "citizens?" matches "citizen" INSIDE "Citizens",
+    # stranding an "s" that the exhaustiveness check then reads as the end of
+    # the list — so this field graded a confident denial while offering H-1B.
+    input:
+      text: 'Visa: GC/Citizens/H-1B'
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-us-citizen-required-label-is-a-denial
+    domain: sponsorship
+    # The same field written with the status noun instead of the abstract one.
+    input:
+      text: 'U.S. citizen: required'
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  # --- a denial scoped to NEW petitions, beside a welcome for transfers ------
+  # One sentence saying both things was read as only the first half, and dropped
+  # under both visa policies with an empty review_reasons — a posting inviting
+  # exactly this candidate, deleted without a trace. The denial is KEPT (so no
+  # promotion is reachable) and only its confidence is withdrawn.
+
+  - id: sponsorship-new-petition-denial-beside-a-transfer-welcome
+    domain: sponsorship
+    input:
+      text: >-
+        We are unable to sponsor new H-1B petitions; H-1B transfer candidates
+        are encouraged to apply.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+      evidence_contains: ['unsettled: unable to sponsor']
+
+  - id: sponsorship-initial-petition-denial-beside-a-transfer-welcome
+    domain: sponsorship
+    input:
+      text: >-
+        We do not sponsor initial H-1B petitions. Candidates who can transfer
+        their H-1B are welcome.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-new-petition-denial-without-a-transfer-signal-stands
+    domain: sponsorship
+    # TRIPWIRE: half the rule is the OTHER half. With nothing in the posting
+    # welcoming a transfer, a bounded refusal is still a refusal.
+    input:
+      text: We are unable to sponsor new H-1B petitions for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-unbounded-denial-beside-a-transfer-mention-stands
+    domain: sponsorship
+    # TRIPWIRE: the denial's scope is not limited to new petitions, so a
+    # transfer mention elsewhere must not soften it.
+    input:
+      text: >-
+        We do not offer sponsorship of any kind. Please do not ask about
+        transferring your H-1B.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-new-hires-is-not-a-new-petition-scope
+    domain: sponsorship
+    # TRIPWIRE: "new" alone must not bound a denial. "for new hires" is a flat
+    # refusal that happens to contain the word, which is why the rule requires a
+    # petition/filing/case noun after it.
+    input:
+      text: >-
+        We are unable to sponsor visas for new hires. H-1B transfer candidates
+        should not apply.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
   - id: title-member-of-technical-staff
     domain: title
     input:

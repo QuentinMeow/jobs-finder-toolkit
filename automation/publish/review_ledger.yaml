@@ -3013,6 +3013,83 @@
 - base: 8c39c9f6
   reviewed_by: agent
   date: 2026-08-09
+  files: 3
+  digest: sha256:72a293fb74fc0163
+  finding: 'Read the complete staged three-file diff: a frozen 79-row verdict matrix for
+    the sponsorship classifier, its replay runner, and the unit test that wires the runner
+    into the suite. Every matrix row text is fictional and generic ("we", "this role",
+    "applicants"); 35 rows are copied verbatim from the already-public filter-variant
+    corpus and the rest are newly written for this file. The private-company cross-reference
+    did NOT run (no overlay mounted), so the diff was read directly for company names: none
+    present. No real identity, employer, school, salary, private item name, absolute home
+    path, or dated personal job-hunt content.'
+- base: a15e6162
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 11
+  digest: sha256:bc78af81f0d2115d
+  finding: 'Read the complete staged eleven-file diff: a derived word-set gate in front of
+    the bounded phrase scan, the duplicate phrase scans removed from the sponsorship
+    assessment, the duplicate assessment removed from the search visa gate, a new test module
+    for the gate, three regenerated vendored copies, and four regenerated example-store
+    fixtures whose only change is the module content hash in their `by:` provenance line
+    (every derived value is byte-identical). Comments and test text are timeless engineering
+    prose about phrase matching and are fictional where they carry sample text. The
+    private-company cross-reference did NOT run (no overlay mounted), so the diff was read
+    directly for company names: only the fictional examplecorp / ghostworks / remoteworks
+    fixtures appear. No real identity, employer, school, salary, private item name, absolute
+    home path, or dated personal job-hunt content.'
+- base: 90d4e75f
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 11
+  digest: sha256:51702930bb8b8093
+  finding: 'Read the complete staged eleven-file diff: six pattern-based denial rules plus
+    their derived word gate, a new test module, thirteen new fictional corpus cases, the
+    verdict-matrix rows recording the nine intended moves, three regenerated vendored copies,
+    and four example-store fixtures whose only change is the module content hash in their
+    `by:` provenance line. Every example sentence in the code comments, tests, corpus and
+    matrix is invented for this diff and names no real employer. The rules were also
+    measured against a private posting snapshot; only AGGREGATE counts appear anywhere in
+    the tracked diff or the commit message, and no matched span, company, title or URL from
+    that snapshot is quoted. The private-company cross-reference did NOT run (no overlay
+    mounted), so the diff was read directly for company names: only the fictional examplecorp
+    / ghostworks / remoteworks fixtures appear. No real identity, employer, school, salary,
+    private item name, absolute home path, or dated personal job-hunt content.'
+- base: c71f6230
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 12
+  digest: sha256:e5cba9136a8161e6
+  finding: 'Read the complete staged twelve-file diff: a demotion-only rule that unsettles a
+    denial scoped to new/initial/cap-subject petitions when the same posting welcomes
+    transfers, its two bounding patterns, a new shared test module, three new visa-policy
+    tests, five new fictional corpus cases, the verdict-matrix rows recording the three
+    intended moves, three regenerated vendored copies, and four example-store fixtures whose
+    only change is the module content hash in their `by:` provenance line. Every example
+    sentence is invented for this diff and names no real employer. The rule was measured
+    against a private posting snapshot; only AGGREGATE counts appear in the tracked diff and
+    the commit message, and no span, company, title or URL from that snapshot is quoted. The
+    private-company cross-reference did NOT run (no overlay mounted), so the diff was read
+    directly for company names: only the fictional examplecorp / ghostworks / remoteworks
+    fixtures and the example.com test URL appear. No real identity, employer, school,
+    salary, private item name, absolute home path, or dated personal job-hunt content.'
+- base: 48de170c
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 2
+  digest: sha256:4cca8bd44eab7605
+  finding: 'Read the complete staged two-file diff: a delta appended to the sponsorship
+    known-issue recording that the frozen verdict matrix is now a tracked artifact (with its
+    paths, its rules, and what the sixth pass measured), and one backlog task for the
+    conditional-offer shape that was frozen rather than fixed. No prior text was deleted or
+    overwritten. Both files are timeless engineering prose; the only sample sentences are
+    the three fictional conditional offers already carried by the public verdict matrix. No
+    real identity, employer, school, salary, private item name, absolute home path, or dated
+    personal job-hunt content.'
+- base: 8c39c9f6
+  reviewed_by: agent
+  date: 2026-08-09
   files: 7
   digest: sha256:ad1aaa4c91f3262f
   finding: 'Read the complete staged seven-file diff: a narrowed title-gate precedence rule
@@ -3207,3 +3284,21 @@
     whose conflict was two branches appending under an identical base/date header; both
     rows are kept verbatim and the YAML re-parses to 329 well-formed rows. No real identity,
     employer, school, salary, private item name, or dated personal job-hunt content.'
+- base: f25cfbac
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 51
+  digest: sha256:d2751debd93f6308
+  finding: 'Merge of origin/main into this branch. Every file in the range is work already
+    reviewed on its own branch and already landed: PRs #329 leak guard, #332 onboarding,
+    #330 location gate, #331 JD-metadata parser and #333 title-gate precedence. Their rows
+    are already in this ledger above; this row reconciles the range for THIS branch history.
+    Two files were hand-resolved. This ledger, whose conflict was two branches appending
+    under an identical base/date header, keeps both rows verbatim (335 well-formed rows).
+    The four example-store posting fixtures are generator output, not hand-maintained, and
+    both branches had regenerated them; they were regenerated once from the merged code with
+    automation/store/generate_fixture_store.py, and test_store_validation now agrees the
+    tracked fixture matches a fresh generator run. Verified after the merge: vendored copies
+    in sync, the 79-row sponsorship verdict matrix clean, shared 764 tests OK, job-search 614
+    tests OK. No real identity, employer, school, salary, private item name, or dated
+    personal job-hunt content.'
