@@ -3042,3 +3042,13 @@
     triage and remediation work. Names only branch names, PR numbers, queue item slugs and
     aggregate counts. No real identity, employer, school, salary, private item name, or
     dated personal job-hunt content.'
+- base: 059a4b1f
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 1
+  digest: sha256:034229432ba2c5fa
+  finding: 'Read the complete staged one-file diff: the handover updated now that the ninth
+    branch is pushed and its PR open, plus two dead ends recorded (a union-alternation regex
+    rewrite that silently drops a match, and an early return that four call sites depend on).
+    Branch names, PR numbers and aggregate counts only; no real identity, employer, school,
+    salary, private item name, or dated personal job-hunt content.'

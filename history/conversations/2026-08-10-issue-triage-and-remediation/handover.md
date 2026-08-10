@@ -5,11 +5,8 @@
 
 ## What happened
 
-- **Nothing is on fire.** Eight PRs (#329-#336) are open against `main`, each green
-  locally on a full 30-gate run. One more branch, `fix/sponsorship-perf-and-coverage`,
-  is committed but **not yet pushed and has no PR** — its agent had finished the frozen
-  verdict matrix and the performance work but not the two semantic fixes when this
-  session's report was written. That branch is the only loose end.
+- **Nothing is on fire and nothing is left in flight.** Nine PRs (#329-#337) are open
+  against `main`, each green on a full 30-gate run locally and green in CI.
 - All 69 issues opened on 2026-08-03 now have a verified verdict recorded in the task
   above. Roughly 30 shipped; the rest are deferred, decided, or closed with a reason.
 - Four filings are materially wrong and the index says so: #276 was already fixed before
@@ -21,9 +18,12 @@
 
 - **In review**: #329 leak guard · #330 location gate · #331 JD metadata · #332
   onboarding · #333 title precedence · #334 store identity · #335 report integrity ·
-  #336 this triage index.
-- **Committed, unpushed**: `fix/sponsorship-perf-and-coverage` — two commits
-  (`a15e616` matrix, `90d4e75` prefilter).
+  #336 this triage index · #337 sponsorship performance and denial coverage.
+- #337 carries a **frozen 79-row sponsorship verdict matrix** committed *before* any
+  behaviour changed, and now wired into CI. This module had already oscillated through
+  three revisions; the matrix is what stops a fourth. Run it with
+  `sponsorship_matrix.py --check`. Note its runner imports the skill's vendored copy, so
+  a mid-change run measures the last vendored state until you re-vendor.
 - **Merge order does not matter for correctness**, but it does for effort: a probe rebase
   showed the code merges cleanly between every pair and the **only** conflict is
   `automation/publish/review_ledger.yaml`. After the first merge, each remaining branch
@@ -77,6 +77,14 @@
 - **The performance fix #231 proposes in its own body** is unsafe: gating on a
   sponsorship signal word silently downgrades five settled citizenship denials to
   `unknown`, and no existing test catches it.
+- **The union-alternation rewrite for the sponsorship prefilter.** Benchmarked at 9x
+  elsewhere, but a union `finditer` returns non-overlapping matches and takes the first
+  alternative that fits, so it drops the `not offer sponsorship` hit inside `does not
+  offer sponsorship`. A word-set prefilter that is byte-identical by construction was
+  shipped instead, and measured faster anyway (22x).
+- **Moving the sponsorship work behind the `needs_sponsorship` early return.** Looks free
+  and is not: the label and hits are read regardless by the scorer, the report column,
+  the handoff payload and the recall auditor.
 
 ## Needs your attention
 
