@@ -3010,3 +3010,15 @@
     and temporary bridges. The armed staged leak guard reports zero findings. Timeless public
     guidance only; no real identity, employer, school, salary, private item name, or dated
     personal job-hunt content.'
+- base: 8c39c9f6
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 8
+  digest: sha256:281e19619d5f60d6
+  finding: 'Read the complete staged eight-file diff: a quoted quickstart clone URL with the
+    zsh redirection trap explained, a new stdlib-only Python-version preflight plus its tests,
+    a runnable first-search section, a create-a-profile destination that exists on a fresh
+    clone, a tracked-but-empty example searches directory with a matching gitignore rule, and
+    one reversible owner decision about the clone URL. Verified with the staged leak guard
+    armed via JOBHUNT_PERSONAL_TOKENS: zero findings. Timeless public guidance only; no real
+    identity, employer, school, salary, private item name, or dated personal job-hunt content.'
