@@ -73,6 +73,12 @@ ALLOWLIST_FILES = [
     # The one-shot "make my checkout work" step README.md / CONTRIBUTING.md /
     # docs/handbook/private-overlay.md all tell a new user to run.
     "automation/bootstrap_overlay.py",
+    # The setup preflight the README quickstart and CONTRIBUTING's dev-setup block
+    # both invoke by path, on line 2 of the very first thing a new user runs. It is
+    # also the one script in the tree that must run BEFORE the venv exists, so a
+    # mirror without it ships a quickstart whose second command is missing — and
+    # the exported verify_links.py reads those fences, so the mirror would go red.
+    "automation/check_python.py",
 ]
 
 # Allowlisted directory trees (every TRACKED file under them, denylist-filtered).
