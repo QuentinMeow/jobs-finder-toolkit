@@ -1,6 +1,7 @@
 """Offline tests for registry linting and opt-in polling batches."""
 from __future__ import annotations
 
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ _SCRIPTS = Path(__file__).resolve().parents[1]
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+import registry as registry_mod  # noqa: E402
 from registry import Registry, comparable_base, lint_entries  # noqa: E402
 
 
@@ -83,6 +85,85 @@ class PollBatchTests(unittest.TestCase):
                 tags=["ai-native"], batches=["ai-expansion-02"]),
             [],
         )
+
+
+class TagSelectionSemanticsTests(unittest.TestCase):
+    """`None` (unset), `[]` (explicitly none) and `["*"]` (all) are three requests.
+
+    `if tags:` collapsed the first two, so a user who CLEARED their tags got the
+    single broadest crawl the registry can produce instead of nothing.
+    """
+
+    def setUp(self):
+        self.registry = Registry([
+            _entry("Legacy AI", "legacy"),
+            _entry("Other AI", "other", tags=["data-platform"]),
+        ])
+
+    def test_unset_tags_keep_selecting_every_unbatched_board(self):
+        self.assertEqual([r["name"] for r in self.registry.poll_companies(None)],
+                         ["Legacy AI", "Other AI"])
+
+    def test_explicitly_empty_tags_select_nothing(self):
+        stream = io.StringIO()
+        self.assertEqual(self.registry.poll_companies([], stream=stream), [])
+        # ...and never silently: clearing your tags must not read as a no-op.
+        self.assertIn("explicitly EMPTY", stream.getvalue())
+        self.assertIn(registry_mod.ALL_TAGS, stream.getvalue())
+
+    def test_the_all_sentinel_selects_everything(self):
+        self.assertEqual(
+            [r["name"] for r in self.registry.poll_companies([registry_mod.ALL_TAGS])],
+            ["Legacy AI", "Other AI"])
+
+    def test_empty_and_unset_are_no_longer_the_same_answer(self):
+        self.assertNotEqual(self.registry.poll_companies(None),
+                            self.registry.poll_companies([], stream=io.StringIO()))
+
+
+class EmptySelectionExplainerTests(unittest.TestCase):
+    """A valid tag whose every company is batched selects zero and looks broken."""
+
+    def setUp(self):
+        self.registry = Registry([
+            _entry("Legacy AI", "legacy"),
+            _entry("Northwind Robotics", "northwind", tags=["robotics"],
+                   poll_batch="ai-expansion-02"),
+            _entry("Larkspur Robotics", "larkspur", tags=["robotics"],
+                   poll_batch="ai-expansion-03"),
+        ])
+
+    def test_a_batched_only_tag_names_its_batches_and_the_exact_command(self):
+        self.assertEqual(self.registry.poll_companies(["robotics"]), [])
+        hint = self.registry.explain_empty_selection(["robotics"])
+        self.assertIn("Northwind Robotics", hint)
+        self.assertIn("--company-batches ai-expansion-02,ai-expansion-03", hint)
+        self.assertIn("--company-tags robotics", hint)
+
+    def test_the_printed_command_actually_selects_the_boards(self):
+        hint = self.registry.explain_empty_selection(["robotics"])
+        batches = hint.split("--company-batches ")[1].split()[0].split(",")
+        self.assertEqual(
+            [r["name"] for r in self.registry.poll_companies(["robotics"], batches)],
+            ["Northwind Robotics", "Larkspur Robotics"])
+
+    def test_an_unknown_tag_is_named_as_unknown_not_as_filtered(self):
+        hint = self.registry.explain_empty_selection(["robotic"])
+        self.assertIn("unknown", hint)
+        self.assertIn("robotics", hint)          # the near-miss suggestion
+        self.assertNotIn("--company-batches", hint)
+
+    def test_a_tag_that_does_select_boards_explains_nothing(self):
+        self.assertTrue(self.registry.poll_companies(["ai-native"]))
+        self.assertEqual(self.registry.explain_empty_selection(["ai-native"]), "")
+
+    def test_unset_tags_explain_nothing(self):
+        self.assertEqual(self.registry.explain_empty_selection(None), "")
+
+    def test_the_explainer_never_widens_the_selection(self):
+        """It reports only — auto-including batches is the crawl poll_batch prevents."""
+        self.registry.explain_empty_selection(["robotics"])
+        self.assertEqual(self.registry.poll_companies(["robotics"]), [])
 
 
 class BlacklistIdentityTests(unittest.TestCase):

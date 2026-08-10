@@ -40,6 +40,12 @@ _WS_RE = re.compile(r"\s+")
 _BATCH_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _SLUGIFY_RE = re.compile(r"[^a-z0-9]+")
 
+# The one tag value that means "every pollable board". Selecting all of them is a
+# real request, but it has to be ASKED for: an empty ``company_tags`` list used to
+# be indistinguishable from an absent one, so clearing your tags quietly produced
+# the single broadest crawl the registry can generate. See ``poll_companies``.
+ALL_TAGS = "*"
+
 # Trailing legal / company-style suffix tokens. Two names that differ ONLY by a
 # run of these trailing tokens (plus surrounding punctuation / a trailing
 # possessive) name the same employer for identity purposes — e.g. "Acme" ==
@@ -365,12 +371,26 @@ class Registry:
         self,
         tags: list[str] | None = None,
         batches: list[str] | None = None,
+        *,
+        stream=None,
     ) -> list[dict]:
         """Return pollable entries selected by domain tags and explicit batches.
 
         Rows carrying ``poll_batch`` are opt-in so a large research expansion never
         turns an ordinary profile run into a thousand-board crawl. Supplying batches
         selects only those batches; omitting them keeps only unbatched legacy rows.
+
+        ``tags`` distinguishes THREE states, because an empty list and an absent
+        one are different requests and used to be indistinguishable:
+
+        * ``None`` — unset. No tag filter; every pollable row in scope. This is
+          what a profile with no ``company_tags`` key means.
+        * ``[ALL_TAGS]`` (``["*"]``) — "every board", asked for explicitly.
+        * ``[]`` — an EXPLICITLY empty selection, which selects nothing. A user who
+          cleared their tags was previously handed the single broadest crawl the
+          registry can produce; now they get none, and a warning on ``stream``
+          saying how to ask for all of them, because silently selecting nothing is
+          its own recall cliff.
         """
         pollable = [e for e in self.entries if e.get("ats")]
         if batches:
@@ -381,13 +401,93 @@ class Registry:
             ]
         else:
             pollable = [e for e in pollable if not e.get("poll_batch")]
-        if tags:
-            tagset = {str(t).strip().lower() for t in tags if str(t).strip()}
-            pollable = [
-                c for c in pollable
-                if tagset & {str(t).lower() for t in (c.get("tags") or [])}
-            ]
-        return pollable
+        if tags is None:
+            return pollable
+        tagset = {str(t).strip().lower() for t in tags if str(t).strip()}
+        if ALL_TAGS in tagset:
+            return pollable
+        if not tagset:
+            print(f"registry: company_tags is an explicitly EMPTY list, so NO "
+                  f"company boards were selected. Remove the key to poll every "
+                  f"unbatched board, or set `company_tags: [\"{ALL_TAGS}\"]` to ask "
+                  f"for all of them.", file=stream if stream is not None else sys.stderr)
+            return []
+        return [
+            c for c in pollable
+            if tagset & {str(t).lower() for t in (c.get("tags") or [])}
+        ]
+
+    def explain_empty_selection(
+        self,
+        tags: list[str] | None = None,
+        batches: list[str] | None = None,
+    ) -> str:
+        """Say WHY a tag selection produced no boards; ``""`` when tags are not the cause.
+
+        A valid tag whose every company sits behind an opt-in ``poll_batch``
+        selects zero boards and is indistinguishable, from the caller's error
+        message alone, from a typo'd tag or an empty registry. This re-runs the
+        tag match IGNORING ``poll_batch`` and, when that finds rows, names the
+        batches holding them and prints the exact flags that would include them.
+
+        It only ever EXPLAINS. Auto-including batched rows would reinstate the
+        thousand-board crawl ``poll_batch`` exists to prevent.
+        """
+        if tags is None:
+            return ""
+        tagset = {str(t).strip().lower() for t in tags if str(t).strip()}
+        if ALL_TAGS in tagset:
+            return ""
+        if not tagset:
+            return (f"company_tags is an explicitly EMPTY list, which selects no "
+                    f"company boards. Remove the key to poll every unbatched board, "
+                    f"or set `company_tags: [\"{ALL_TAGS}\"]` for all of them.")
+
+        matched = [e for e in self.entries
+                   if e.get("ats")
+                   and tagset & {str(t).lower() for t in (e.get("tags") or [])}]
+        wanted = ",".join(sorted(tagset))
+        if not matched:
+            known = sorted({str(t).strip().lower()
+                            for e in self.entries if e.get("ats")
+                            for t in (e.get("tags") or []) if str(t).strip()})
+            near = [t for t in known if any(q in t or t in q for q in tagset)]
+            msg = (f"No pollable company in the registry carries the tag(s) "
+                   f"{wanted} — the tag is unknown, not merely filtered.")
+            if near:
+                msg += f" Did you mean: {', '.join(near[:5])}?"
+            return msg
+
+        # Apply the SAME batch filter `poll_companies` does. If anything survives it,
+        # the tag really did select boards and the empty run has another cause —
+        # explaining the batches here would send the reader down a false trail.
+        if batches:
+            batchset = {str(b).strip().lower() for b in batches if str(b).strip()}
+            survived = [e for e in matched
+                        if str(e.get("poll_batch") or "").strip().lower() in batchset]
+        else:
+            survived = [e for e in matched
+                        if not str(e.get("poll_batch") or "").strip()]
+        if survived:
+            return ""
+
+        held = sorted({str(e.get("poll_batch")).strip() for e in matched
+                       if str(e.get("poll_batch") or "").strip()})
+        unbatched = [e for e in matched if not str(e.get("poll_batch") or "").strip()]
+        if not held:
+            return ""
+        names = ", ".join(str(e.get("name") or "?") for e in matched[:4])
+        more = f", +{len(matched) - 4} more" if len(matched) > 4 else ""
+        msg = (f"{len(matched)} company board(s) carry {wanted} ({names}{more}), but "
+               f"they sit in opt-in poll batches, so none was selected. Batches are "
+               f"opt-in so a research expansion never turns an ordinary run into a "
+               f"thousand-board crawl.\n"
+               f"To include them, re-run with:\n"
+               f"    --company-tags {wanted} --company-batches {','.join(held)}")
+        if unbatched and batches:
+            msg += (f"\n({len(unbatched)} unbatched board(s) also carry {wanted} but "
+                    f"were excluded by --company-batches; drop that flag to poll them.)")
+        return msg
 
 
 def _overlay_blacklist_entries() -> list[dict]:

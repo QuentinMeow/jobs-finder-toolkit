@@ -1428,7 +1428,9 @@ def main() -> int:
                       file=sys.stderr)
 
         if not tasks:
-            sys.exit("No sources selected. Check company_tags / aggregators / --stage.")
+            hint = registry.explain_empty_selection(tags, batches)
+            sys.exit("No sources selected. Check company_tags / aggregators / --stage."
+                     + (f"\n{hint}" if hint else ""))
 
         print(f"Stage {stage}: fetching {len(companies)} company boards + "
               f"{len(agg_labels)} aggregator sources "
