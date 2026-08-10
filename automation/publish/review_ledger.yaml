@@ -3036,3 +3036,17 @@
     this tree, not identity. The armed staged leak guard reports zero findings. No real
     identity, employer, school, salary, private item name, or dated personal job-hunt
     content.'
+- base: f6a329eb
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 11
+  digest: sha256:79b29a0553a4f408
+  finding: 'Read the complete staged eleven-file diff: an opt-in, loudly reported
+    allowance letting the owner declare an identity word that is also an ordinary
+    English word, its config accessor and the five mechanical vendored copies, a
+    commented-out example block using the neutral placeholder "Green", the tests that
+    pin opt-in / loud / narrow / still-arming, and the owner decision item. Every
+    persona value is fictional and every real-looking address or home path in the tests
+    is assembled from split fragments. The armed staged leak guard reports zero
+    findings. No real identity, employer, school, salary, private item name, or dated
+    personal job-hunt content.'

@@ -340,7 +340,9 @@ def _token_specs(tokens: list[str]) -> list:
     specs = _TOKEN_SPEC_CACHE.get(key)
     if specs is None:
         specs = _TOKEN_SPEC_CACHE[key] = check_public.classify_tokens(
-            tokens, force_substring=check_public.high_specificity_tokens())
+            tokens,
+            force_substring=check_public.high_specificity_tokens(),
+            allowances=check_public.word_token_allowances())
     return specs
 
 

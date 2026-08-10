@@ -483,6 +483,171 @@ class NameCompoundDerivationTests(unittest.TestCase):
         self.assertEqual(check_public._name_compounds(["Li", "Wu"]), set())
 
 
+class EnglishWordAllowanceTests(unittest.TestCase):
+    """The opt-in allowance for a name that is ALSO an ordinary English word.
+
+    Boundaries fix a surname hiding inside a word; they cannot fix a surname that
+    IS a word ('Menlo Park' and 'Alex Park' are the same string in the same
+    shape). This is the only mechanism in the guard that deliberately gives up
+    protection, so every constraint on it is pinned here: opt-in, loud, narrow,
+    and still arming.
+    """
+
+    def setUp(self):
+        self._saved_env = os.environ.pop(check_public.WORD_ALLOWANCE_ENV_VAR, None)
+
+    def tearDown(self):
+        os.environ.pop(check_public.WORD_ALLOWANCE_ENV_VAR, None)
+        if self._saved_env is not None:
+            os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = self._saved_env
+
+    def _scan(self, text: str, tokens: list[str], allowances=None,
+              forced=None) -> dict:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, {"notes.md": text + "\n"})
+            return check_public.scan(root=root, tracked=tracked, tokens=tokens,
+                                     allowances=allowances,
+                                     force_substring=forced)
+
+    def _hits(self, result: dict) -> list:
+        return result["violations"]["personal_token"]
+
+    # ── opt-in ──────────────────────────────────────────────────────────────
+    def test_without_a_declaration_the_word_still_fires(self):
+        # The baseline the allowance is measured against. 'Menlo Park' is a real
+        # boundary hit for the surname Park and nothing infers otherwise.
+        self.assertTrue(self._hits(self._scan("offices in Menlo Park", ["Park"])))
+
+    def test_with_a_declaration_the_word_is_allowed(self):
+        result = self._scan("offices in Menlo Park", ["Park"],
+                            allowances={"park"})
+        self.assertEqual(self._hits(result), [])
+
+    def test_a_declaration_is_never_inferred_from_the_word_itself(self):
+        # Nothing in the guard consults a dictionary: an ordinary English word
+        # that was NOT declared keeps full protection.
+        for word in ("Green", "Long", "Quick", "Hall"):
+            with self.subTest(word=word):
+                self.assertTrue(
+                    self._hits(self._scan(f"the {word} report", [word])))
+
+    def test_the_env_channel_declares_an_allowance(self):
+        os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = "# note\nGreen, Long\n"
+        with mock.patch.object(check_public, "_load_shared_config",
+                               return_value=None):
+            self.assertEqual(check_public.word_token_allowances(),
+                             {"green", "long"})
+
+    def test_the_example_config_declares_nothing(self):
+        # A public clone must never inherit an allowance it did not choose.
+        stub = _ExampleConfigStub
+        with mock.patch.object(check_public, "_load_shared_config",
+                               return_value=stub):
+            self.assertEqual(check_public.word_token_allowances(), set())
+
+    # ── loud ────────────────────────────────────────────────────────────────
+    def test_the_report_names_the_token_and_the_count(self):
+        result = self._scan("Park it. The Park is closed. Menlo Park.", ["Park"],
+                            allowances={"park"})
+        self.assertEqual(result["word_allowances"]["reduced"], {"Park": 3})
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        text = buf.getvalue()
+        self.assertIn("word allowance", text)
+        self.assertIn("'Park'", text)
+        self.assertIn("REDUCED", text)
+        self.assertIn("3 occurrence(s) SKIPPED", text)
+
+    def test_the_report_prints_even_on_a_clean_tree(self):
+        # Silence on a green run is how an allowance becomes something nobody
+        # remembers granting.
+        result = self._scan("nothing to see", ["Park"], allowances={"park"})
+        self.assertTrue(result["ok"], result["violations"])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        self.assertIn("word allowance", buf.getvalue())
+
+    def test_a_declaration_that_reaches_nothing_is_reported_as_ineffective(self):
+        result = self._scan("nothing", ["jordan.rivers"], allowances={"jordan.rivers"})
+        self.assertEqual(result["word_allowances"]["ineffective"], ["jordan.rivers"])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        self.assertIn("NO effect", buf.getvalue())
+
+    # ── narrow: never reaches a high-specificity token ──────────────────────
+    def test_an_allowance_cannot_weaken_an_email_a_handle_or_a_home_basename(self):
+        cases = [
+            ("jordan.rivers" + "@" + "example.com", "the address is "),
+            ("jordanrivers", "linkedin.com/in/"),
+            # The sharpest case: a home-directory basename that IS an ordinary
+            # word. Declaring it changes nothing, because provenance put it on
+            # containment and an allowance only ever reaches a boundary token.
+            ("green", "/Users/"),
+        ]
+        for token, prefix in cases:
+            with self.subTest(token=token):
+                result = self._scan(prefix + token, [token],
+                                    allowances={check_public._normalize_safe_word(token)},
+                                    forced={token})
+                self.assertTrue(self._hits(result),
+                                f"an allowance weakened high-specificity {token!r}")
+
+    def test_an_allowance_cannot_weaken_a_name_compound(self):
+        tokens = sorted(check_public._name_compounds(["Alex", "Green"]) | {"Green"})
+        forced = check_public._name_compounds(["Alex", "Green"])
+        # 'green' is declared; every compound spelling of the full name is not.
+        # Split literals again (see the module docstring): a contiguous
+        # '/Users/<name>' or 'linkedin.com/in/<handle>' in this tracked source
+        # would trip the guard's own structural-PII scan.
+        for text in ("linkedin.com/in/" + "alexgreen", "/Users/" + "alexgreen/x",
+                     "agreen" + "@" + "corp.com", "acme-alex-green/meta.yaml",
+                     "Contact: Alex Green"):
+            with self.subTest(text=text):
+                result = self._scan(text, tokens, allowances={"green"},
+                                    forced=forced)
+                self.assertTrue(self._hits(result),
+                                f"the full name went unreported in {text!r}")
+
+    def test_the_full_name_is_caught_even_when_both_parts_are_allowed(self):
+        # The worst case the allowance has to survive: BOTH name parts are
+        # ordinary words. Only the joined/glued compounds stand between the
+        # owner's full name and a public repo.
+        parts = ["Long", "Green"]
+        compounds = check_public._name_compounds(parts)
+        tokens = sorted(compounds | set(parts))
+        both = {"long", "green"}
+        for text in ("Contact: Long Green", "Green, Long", "long-green/resume",
+                     "LongGreen_Resume.docx", "long_green"):
+            with self.subTest(text=text):
+                result = self._scan(text, tokens, allowances=both,
+                                    forced=compounds)
+                self.assertTrue(self._hits(result),
+                                f"the full name went unreported in {text!r}")
+
+    # ── still armed ─────────────────────────────────────────────────────────
+    def test_an_allowed_token_still_arms_the_guard(self):
+        # An allowance narrows WHERE a token is reported. It must never remove
+        # the token, because an empty identity set is the unarmed exit-2 state
+        # in which everything reports "Safe to publish".
+        os.environ[check_public.TOKENS_ENV_VAR] = "Green"
+        os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = "Green"
+        try:
+            with mock.patch.object(check_public, "_load_shared_config",
+                                   return_value=_ExampleConfigStub):
+                self.assertIn("Green", check_public.identity_tokens())
+                self.assertIn("green", check_public.word_token_allowances())
+        finally:
+            os.environ.pop(check_public.TOKENS_ENV_VAR, None)
+
+    def test_no_declaration_means_no_allowance_block_at_all(self):
+        result = self._scan("ordinary text", ["Rivers"])
+        self.assertIsNone(result["word_allowances"])
+
+
 class ExporterMatchesTheGuardTests(unittest.TestCase):
     """The exporter's exclusion screen and the guard must agree, always.
 
