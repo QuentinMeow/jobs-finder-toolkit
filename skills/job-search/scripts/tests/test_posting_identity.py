@@ -81,6 +81,48 @@ class PlatformKeyTests(unittest.TestCase):
         b = ident.content_key("co", "SWE", ["SF", "NYC"])
         self.assertEqual(a, b)
 
+    def test_a_generic_listing_url_is_not_identity(self):
+        """A board root is the SAME string for every row a source returns.
+
+        RemoteOK can hand back its bare listing URL instead of a per-job
+        permalink. Hashing it would give unrelated jobs one entity key, and the
+        store builder folds one key into one entity — welding one job's title to
+        another job's JD and dropping a posting with no trace.
+        """
+        for board in ("https://remoteok.com/remote-jobs/",
+                      "https://remoteok.com/remote-jobs",
+                      "https://boards.example.com/jobs",
+                      "https://boards.example.com/careers/search",
+                      "https://boards.example.com/"):
+            self.assertFalse(ident.url_identifies_a_posting(board), board)
+            self.assertIsNone(ident.url_key(board), board)
+
+    def test_a_real_posting_url_still_keys_on_its_url(self):
+        for posting in ("https://remoteok.com/remote-jobs/104221-backend-northwind",
+                        "https://boards.example.com/jobs/4471",
+                        "https://boards.example.com/viewjob?jk=a1b2c3",
+                        "https://boards.example.com/jobs/northwind/staff-engineer"):
+            self.assertTrue(ident.url_identifies_a_posting(posting), posting)
+            self.assertTrue((ident.url_key(posting) or "").startswith("url-"), posting)
+
+    def test_two_jobs_under_one_generic_url_do_not_share_a_key(self):
+        """The precondition for the store's chimera: same URL, different jobs."""
+        board = "https://remoteok.com/remote-jobs/"
+        a = {"source": "remoteok", "native_id": "aa-1", "url": board,
+             "title": "Senior Backend Engineer", "company_name": "Northwind Systems",
+             "location": "Remote"}
+        b = {"source": "remoteok", "native_id": "bb-2", "url": board,
+             "title": "Staff Data Scientist", "company_name": "Larkspur Analytics",
+             "location": "Remote"}
+        key_a, strength_a = ident.identify(a, company_slug="northwind-systems")
+        key_b, strength_b = ident.identify(b, company_slug="larkspur-analytics")
+        self.assertNotEqual(key_a, key_b)
+        # Falling through to the content key is the documented last resort, and it
+        # is marked weak so nothing downstream mistakes it for a stable id.
+        for key, strength in ((key_a, strength_a), (key_b, strength_b)):
+            self.assertTrue(key.startswith("ck-"), key)
+            self.assertEqual(strength, ident.WEAK)
+
     def test_new_source_platform_keys(self):
         for src, native, prefix in (("smartrecruiters", "744000", "sr"),
                                     ("amazon", "2851234", "amazon"),

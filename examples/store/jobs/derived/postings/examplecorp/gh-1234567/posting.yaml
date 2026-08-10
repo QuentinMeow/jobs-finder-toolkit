@@ -12,6 +12,9 @@ jd:
   content_hash: 57b1111df417602ea827fb766ba214da4a0eeefcdb4b1468b91789aebea4f4ed
   fetched_verbatim: true
   file: jd.md
+  from:
+    id: '1234567'
+    source: greenhouse
   normalizer_version: 3
 key: gh-1234567
 last_seen: '2026-07-15T09:30:00Z'
@@ -36,7 +39,7 @@ opinions:
 profiles:
 - profile-01
 provenance:
-  built_by: build_postings.py@6cd1dbd7
+  built_by: build_postings.py@94fd83e7
   canonicalizer_version: 1
   fetch_ids:
   - 20260714T093000Z-000001-a1b2c3

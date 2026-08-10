@@ -10,7 +10,10 @@ available, in order (design 02 §3):
 2. **Workday requisition, namespaced by the registry's canonical company** —
    ``wd-<company-slug>-<req>`` (req is unique only *per company*).
 3. **Canonicalized-URL key** — ``url-<12-hex>`` for aggregator rows that carry a
-   stable embedded id (LinkedIn/Indeed/jobicy/remoteok/themuse).
+   stable embedded id (LinkedIn/Indeed/jobicy/remoteok/themuse). Only a URL that
+   names ONE posting qualifies: a source that returns its bare listing root for
+   every row (RemoteOK does) would otherwise give unrelated jobs one key and fuse
+   them into a single entity — see ``url_identifies_a_posting``.
 4. **Content key** (last resort) — ``ck-<hash>`` over company + normalized title +
    the SORTED location set (sorted because some sources return locations in
    unstable order). Content-keyed entities are marked ``identity: weak``.
@@ -66,10 +69,60 @@ def _sha12(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
-def url_key(url: str) -> str | None:
-    """``url-<12-hex sha256 prefix>`` over the canonicalized URL, or ``None``."""
+# ── does a URL name a POSTING, or a BOARD? ───────────────────
+# A URL is identity only when it names ONE posting. Some sources emit their
+# listing root for every row they return — RemoteOK, for instance, can hand back
+# the bare ``https://remoteok.com/remote-jobs/`` instead of a per-job permalink.
+# Hashing that string gives every one of those unrelated jobs the SAME ``url-``
+# key, so the store builder folds them into a single entity: one job's title ends
+# up welded to another job's JD, and the absorbed posting disappears. Rejecting
+# such a URL sends the row to the weak content key instead, which keeps two
+# different jobs apart.
+#
+# The test is structural, not a blocklist: after canonicalization a posting URL
+# carries SOMETHING posting-specific — a query string, or at least one path
+# segment that is not a generic listing word. A URL built only from listing words
+# ("/remote-jobs", "/jobs/search") names a board.
+#
+# The asymmetry is deliberate. Wrongly rejecting a real posting URL costs weak
+# identity — a documented, visible state that re-keys on rebuild. Wrongly
+# ACCEPTING a board URL fuses unrelated postings and silently loses one. So when
+# in doubt, reject.
+_LISTING_PATH_SEGMENTS = frozenset({
+    "job", "jobs", "joblist", "joblistings", "job-list", "job-listings",
+    "remote", "remote-job", "remote-jobs", "remotejobs",
+    "career", "careers", "opening", "openings", "position", "positions",
+    "vacancy", "vacancies", "opportunity", "opportunities",
+    "listing", "listings", "board", "boards", "search", "browse", "all",
+})
+
+
+def url_identifies_a_posting(url: str) -> bool:
+    """True when ``url`` names one posting rather than a board/listing index."""
     canon = canonicalize_url(url)
-    return f"url-{_sha12(canon)}" if canon else None
+    if not canon:
+        return False
+    parts = urllib.parse.urlsplit(canon)
+    if parts.query:
+        # ``?jk=...`` / ``?gh_jid=...`` — the id lives in the query string.
+        return True
+    segments = [s for s in (parts.path or "").split("/") if s]
+    if not segments:
+        return False  # bare host: never a posting
+    return any(s.lower() not in _LISTING_PATH_SEGMENTS for s in segments)
+
+
+def url_key(url: str) -> str | None:
+    """``url-<12-hex sha256 prefix>`` over the canonicalized URL, or ``None``.
+
+    ``None`` also when the URL names a BOARD rather than a posting (see
+    :func:`url_identifies_a_posting`) — a listing root is the same string for
+    every row a source returns, so it cannot be an identity.
+    """
+    canon = canonicalize_url(url)
+    if not canon or not url_identifies_a_posting(canon):
+        return None
+    return f"url-{_sha12(canon)}"
 
 
 # ── content key (weak identity, last resort) ─────────────────
@@ -172,7 +225,9 @@ def identify(row: dict, *, company_slug: str) -> tuple[str, str]:
     if source == "workday" and native:
         return workday_key(company_slug or "unknown", native), STRONG
 
-    # Aggregator / scrape rows: a stable URL is the preferred identity.
+    # Aggregator / scrape rows: a stable POSTING url is the preferred identity.
+    # A board/listing root is rejected here (``url_key`` returns None) so two
+    # unrelated jobs published under one generic URL never share an entity.
     uk = url_key(row.get("url", ""))
     if uk is not None:
         return uk, STRONG
