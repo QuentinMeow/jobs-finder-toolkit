@@ -117,6 +117,29 @@ def _nontechnical_occupation_hits(ntitle: str) -> list[str]:
             if pattern.search(ntitle)]
 
 
+def _is_clean_include_match(matched: list[str]) -> bool:
+    """True when the profile's include list named this title's OCCUPATION.
+
+    The generic occupation lexicon above encodes what a *default* software search
+    does not want; the candidate's own ``titles.include`` encodes what THIS search
+    does want. When the two disagree the profile is the more specific statement,
+    so a title the profile explicitly names must not be hard-dropped by the
+    lexicon (issue #232: a profile with ``include: [account executive]`` still lost
+    every account-executive posting to ``title.nontechnical_occupation.sales``).
+
+    "Clean" is the load-bearing word, and it means "matched by at least one
+    include term that is not merely a BROAD DOMAIN token". A broad-domain token
+    (``infrastructure``, ``platform``, ``compute``, ... — the SAME
+    ``_BROAD_DOMAIN_TOKENS`` set the residual guard below already uses) names a
+    technical AREA, never an occupation, so it is not a declaration that the
+    candidate wants that occupation: "Capital Markets - Infrastructure Financing",
+    "Assistant General Counsel, Infrastructure" and "Strategic Finance, Compute"
+    all match one, and all are exactly the finance/legal postings the lexicon
+    exists to drop. Those titles therefore still face the lexicon.
+    """
+    return any(normalize(t) not in _BROAD_DOMAIN_TOKENS for t in matched)
+
+
 # Research occupation heads. The lexicon's hard drop is gated on "this title has
 # no engineering role NOUN", and `_ROLE_NOUN_RE` carries none of these — so
 # "Machine Learning Scientist, Clinical Imaging", "Applied Scientist, Marketing
@@ -168,7 +191,9 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
 
     Precedence: explicit exclude family (manager/director/…) — except a narrow
     `manager`-only product-name suffix ambiguity, which is downgraded to review —
-    -> generic non-technical-occupation lexicon -> not-included/broad-domain-without-role
+    -> generic non-technical-occupation lexicon, SKIPPED for a title the profile's
+    own `titles.include` cleanly names (`_is_clean_include_match`) ->
+    not-included/broad-domain-without-role
     residual (-> review, `title.occupation_ambiguous`) -> leadership ambiguity
     (review) -> match. Only (i) an explicit profile exclude (outside that narrow
     ambiguity) and (ii) a definite
@@ -223,11 +248,20 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
             "no_match", level, level_signal,
             rule_ids=[f"title.excluded.{normalize(t)}" for t in excluded])
 
+    matched = [t for t in include if term_matches(t, ntitle)]
+
     # Generic non-technical-occupation lexicon: hard no_match, but ONLY when the
     # title carries no engineering role noun — a co-occurring role noun (e.g.
     # "Customer Success Engineer", "Sales Engineer") makes the occupation
-    # genuinely ambiguous rather than definite, so it falls through instead.
-    if not _title_has_role(ntitle_excl) and not _RESEARCH_ROLE_RE.search(ntitle_excl):
+    # genuinely ambiguous rather than definite, so it falls through instead — and
+    # ONLY when the profile's own include list did not CLEANLY name this title
+    # (see `_is_clean_include_match`): the generic default must never overrule the
+    # candidate's explicit occupation declaration. Skipping the lexicon can only
+    # move a row later down this chain, never add a drop, so the rule is strictly
+    # recall-increasing.
+    if (not _is_clean_include_match(matched)
+            and not _title_has_role(ntitle_excl)
+            and not _RESEARCH_ROLE_RE.search(ntitle_excl)):
         nontechnical = _nontechnical_occupation_hits(ntitle_excl)
         if nontechnical:
             return _title_result(
@@ -235,7 +269,6 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
                 rule_ids=[f"title.nontechnical_occupation.{h}" for h in nontechnical],
                 evidence=[f"nontechnical_occupation:{','.join(nontechnical)}"])
 
-    matched = [t for t in include if term_matches(t, ntitle)]
     residual_rule_id, broad = None, []
     if include and not matched:
         residual_rule_id = "title.not_included"
@@ -491,12 +524,28 @@ def experience_ok(posting: JobPosting, profile: dict) -> bool:
 
     Uses the shared ``assess_required_yoe`` so the hard filter, the score penalty,
     and the variant corpus all agree on which requirements are decisive.
+
+    A ``review`` verdict is a KEEP, and a bare boolean lost the reason for it. A
+    posting that states 12 years against a cap of 6, in wording the extractor is
+    not confident enough to act on, used to land on the MAIN shortlist with an
+    empty ``review_reasons`` — indistinguishable from a posting that stated no
+    requirement at all. Naming the verdict routes the row to the review lane,
+    which is what "not confident enough to DROP it" was always supposed to mean;
+    the tri-state itself is unchanged, and only a stated minimum ABOVE the cap
+    earns the reason (a silent YOE, or one inside the cap, is not a finding).
     """
     cap = profile.get("max_years_experience")
     if cap is None:
         return True
     blob = "\n".join(x for x in (posting.title, posting.description) if x)
-    return assess_required_yoe(blob, cap=int(cap))["decision"] != "no_match"
+    assessment = assess_required_yoe(blob, cap=int(cap))
+    posting.filter_assessments["experience"] = assessment
+    minimum = assessment.get("min")
+    if assessment["decision"] == "review" and minimum is not None \
+            and float(minimum) > float(cap):
+        posting.review_reasons = list(dict.fromkeys(
+            [*posting.review_reasons, "experience_over_cap"]))
+    return assessment["decision"] != "no_match"
 
 
 # --------------------------------------------------------------------------- #

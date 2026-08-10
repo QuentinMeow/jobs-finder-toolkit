@@ -312,5 +312,107 @@ class ExtractResumeTests(unittest.TestCase):
         )
 
 
+class ContactLineTests(unittest.TestCase):
+    """Contact headers that are NOT the repo's own `@example.com` fixture shape.
+
+    Every tracked fixture uses `City, ST • name@example.com • linkedin.com/...`,
+    which is exactly what the old detector tested for — so nothing caught the four
+    ordinary real-resume headers below returning '' with exit 0 and no warning.
+    """
+
+    def setUp(self):
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp_dir.cleanup)
+        self.temp_dir = Path(self._temp_dir.name)
+
+    def _extract(self, *preamble: str):
+        path = self.temp_dir / f"resume-{abs(hash(preamble))}.docx"
+        document = Document()
+        document.add_paragraph("Jordan Rivers")
+        for line in preamble:
+            document.add_paragraph(line)
+        document.add_heading("Experience", level=1)
+        document.add_paragraph(
+            "Northwind Systems – Software Engineer  2020 – Present | Portland, OR")
+        document.add_paragraph("• Built reliable fictional services.")
+        document.save(path)
+        return extract_with_diagnostics(path)
+
+    def test_recovers_the_four_shapes_that_used_to_be_dropped(self):
+        for line in (
+            "Springfield, IL | (555) 019-2837",                # phone, no email
+            "City, State - Phone Number - E-mail",             # unfilled template
+            "Austin, TX | jordanrivers.dev | 555-0100",        # personal domain
+            "Austin, TX | github.com/jordanrivers | 555-0100",  # github, not linkedin
+        ):
+            with self.subTest(contact=line):
+                result = self._extract(line)
+                self.assertTrue(result.ok)
+                self.assertEqual(result.data["contact_line"], line)
+                self.assertEqual(result.diagnostics, [])
+
+    def test_the_original_example_shape_still_works(self):
+        line = "Portland, OR • jordan.rivers@example.com • linkedin.com/in/jordanrivers"
+        result = self._extract(line)
+        self.assertEqual(result.data["contact_line"], line)
+        self.assertEqual(result.diagnostics, [])
+
+    def test_unclassifiable_preamble_line_is_kept_verbatim_and_named(self):
+        # The whole point: never return '' silently. A line the parser cannot
+        # classify is preserved AND reported, so a human can see what happened.
+        prose = ("Experienced backend engineer with eight years building "
+                 "distributed systems.")
+        result = self._extract(prose)
+        self.assertTrue(result.ok)  # a warning, not a fatal
+        self.assertEqual(result.data["contact_line"], prose)
+        self.assertEqual([d.code for d in result.diagnostics],
+                         ["UNRECOGNIZED_CONTACT_LINE"])
+        self.assertIn(prose, result.diagnostics[0].message)
+
+    def test_a_real_contact_line_wins_over_a_preceding_summary_line(self):
+        # Position alone is not enough — the shape decides which candidate wins.
+        contact = "Portland, OR | jordan.rivers@example.com | 555-0100"
+        result = self._extract("Backend engineer and occasional woodworker.", contact)
+        self.assertEqual(result.data["contact_line"], contact)
+        self.assertEqual(result.diagnostics, [])
+
+    def test_no_preamble_after_the_name_is_reported_not_silent(self):
+        result = self._extract()
+        self.assertTrue(result.ok)
+        self.assertEqual(result.data["contact_line"], "")
+        self.assertEqual([d.code for d in result.diagnostics],
+                         ["MISSING_CONTACT_LINE"])
+
+    def test_the_cli_prints_the_warning_and_still_exits_zero(self):
+        # A warning nobody sees is not a warning: the CLI used to print
+        # diagnostics only when extraction FAILED.
+        path = self.temp_dir / "warn.docx"
+        document = Document()
+        document.add_paragraph("Jordan Rivers")
+        document.add_paragraph("Backend engineer and occasional woodworker.")
+        document.add_heading("Experience", level=1)
+        document.add_paragraph(
+            "Northwind Systems – Software Engineer  2020 – Present | Portland, OR")
+        document.add_paragraph("• Built reliable fictional services.")
+        document.save(path)
+
+        process = subprocess.run(
+            [sys.executable, str(EXTRACT_SCRIPT), str(path)],
+            capture_output=True, text=True, check=False)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertIn("[UNRECOGNIZED_CONTACT_LINE]", process.stderr)
+        self.assertNotIn("Traceback", process.stderr)
+        self.assertIn("contact_line:", process.stdout)  # YAML still on stdout
+
+    def test_a_prose_paragraph_far_below_the_name_is_never_captured(self):
+        # Only the first few preamble paragraphs are eligible, so a tagline block
+        # cannot supply the contact line from four lines down.
+        result = self._extract("Line one.", "Line two.", "Line three.",
+                               "jordan.rivers@example.com")
+        self.assertNotEqual(result.data["contact_line"], "jordan.rivers@example.com")
+        self.assertEqual([d.code for d in result.diagnostics],
+                         ["UNRECOGNIZED_CONTACT_LINE"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -43,6 +43,20 @@ paths:
   # Leave them unset unless you mean it.
 job_search:
   default_profile: "example"
+#leak_guard:
+#  # OPT-IN, and only if you need it. Name a part of your identity that is ALSO
+#  # an ordinary English word — a surname like Green, Long, Park or Quick. The
+#  # publish leak guard stops reporting that ONE bare word, because otherwise its
+#  # word-boundary matching still flags hundreds of honest sentences and no rule
+#  # can tell "Menlo Park" from "Alex Park".
+#  #
+#  # What you give up is exactly that one word standing alone. Your email
+#  # address, your linkedin/github handles, your home-directory basename and
+#  # every derived name compound (alexgreen, agreen, alex-green, "alex green")
+#  # keep full protection, so your full name written any way at all is still
+#  # caught. The guard prints the word and the number of occurrences it skipped
+#  # on every run — that line is the whole safety story, so read it.
+#  english_word_tokens: ["Green"]
 generation:
   # Token-usage mode for search + application drafting.
   #   token_saving (default) — routine card-first path: capped render cycles,

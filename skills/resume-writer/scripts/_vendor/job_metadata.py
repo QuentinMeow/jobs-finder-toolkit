@@ -12,7 +12,11 @@ small:
     ``{min, max, confidence, source}`` — years of experience the posting asks
     for (``min``/``max`` may be ``null``).
 ``salary_range``
-    ``{min, max, confidence, source}`` or ``None`` — posted pay, assumed USD/year.
+    ``{min, max, period, currency, confidence, source}`` or ``None`` — posted
+    pay. ``period``/``currency`` are stated, never assumed: a band parsed from
+    the JD is always ``year`` (nothing else reaches this field), but a band
+    supplied by an aggregator's structured pay field may be hourly or monthly,
+    and the unit is the difference between "$30/hour" and "$30k/year".
 ``workplace``
     one word — ``onsite`` / ``hybrid`` / ``remote`` / ``unknown`` — the work
     arrangement (separate from the ``location`` city string).
@@ -469,6 +473,37 @@ _NEXT_YOE_CLAUSE_RE = re.compile(
     re.I,
 )
 
+# Function words that can sit between "years" and "experience" WITHOUT naming a
+# tool or a domain. They exist as a block-list because the second branch of
+# ``_CONTEXTUAL_YOE_RE`` had an optional ``(?:of\s+)?`` in front of its domain
+# token, and an optional group is a BACKTRACK: when the literal "of " could not
+# be followed by a domain token, the engine dropped the optional group and let
+# "of" itself BE the domain token. So "10+ years of experience" matched as
+# "years <of> experience" — the single most common phrasing in English job
+# posts, graded tool-specific/medium. Only HIGH confidence is decisive
+# (``assess_required_yoe``), so the documented ``max_years_experience`` cap
+# silently did nothing on those postings: with a cap of 6, "Minimum 7 years of
+# experience" was KEPT while "Minimum 7 years of professional experience" — the
+# same requirement, one adjective apart — was correctly dropped.
+_YOE_NON_DOMAIN_TOKENS = r"of|in|with|as|at|on|for|to|and|or|the|an?"
+_CONTEXTUAL_YOE_RE = re.compile(
+    # Branch 1 — "<N> years [of experience] <preposition> <tool/domain>".
+    # Bare "with" belongs here for the same reason the block-list exists: the
+    # genuinely tool-specific readings that USED to be caught by the "of"
+    # backtrack ("8+ years of experience with Kubernetes") must keep their
+    # contextual grade, and "with" is the preposition that carries them. Without
+    # it, "Required: 8+ years of experience with Kubernetes" would become a
+    # high-confidence GENERAL requirement and hard-drop a specialty posting.
+    r"\byears?(?:\s+of\s+experience)?\s+"
+    r"(?:working\s+with|using|with|in)\s+"
+    r"(?!software engineering\b|engineering\b|industry\b|professional\b)|"
+    # Branch 2 — "<N> years [of] <tool/domain> experience".
+    rf"\byears?\s+(?:of\s+)?(?!professional\b|industry\b|work\b|relevant\b|"
+    rf"software engineering\b|engineering\b|(?:{_YOE_NON_DOMAIN_TOKENS})\b)"
+    r"[a-z0-9+#.-]+\s+experience\b",
+    re.I,
+)
+
 # The NUMBER is digit-anchored at both ends. Unanchored, the bare 2-3 digit
 # alternative reads a FRAGMENT of a longer figure: in "$3240 - $175,000" the scan
 # slid past "3" and matched "240", then paired that fragment with a real salary,
@@ -477,9 +512,24 @@ _NEXT_YOE_CLAUSE_RE = re.compile(
 # one level down — there the boundary that was missing was a word, here it is a
 # digit. ``(?![.,]\d)`` covers the same slide across a thousands/decimal
 # separator ("$1.240" -> "240").
+#
+# CENTS are part of the figure, not a fragment after it. The trailing guard was
+# strict enough to reject every well-formed decimal it was meant to protect:
+# "$60,000.00 - $90,000.00 per year" parsed as NOTHING, because "60,000" hit
+# ``(?![.,]\d)`` on the ".0" that follows it and the 2-3 digit alternative then
+# hit the same guard on the comma. Dropping the cents by hand made the same line
+# parse, which is the tell. The grouped form ``(?:\.\d{2})?`` is therefore part
+# of the comma-separated alternative — the only shape a cents figure takes — and
+# the guard still runs AFTER it, so the fragment routes stay closed: "$3240"
+# still matches nothing (no comma for the first alternative; "324"/"32" still
+# rejected by ``(?!\d)``), and ``\.\d{2}`` is exact, so a three-decimal figure
+# ("60,000.000") is refused rather than truncated. Pinned by
+# ``test_a_digit_fragment_of_a_longer_figure_is_not_a_salary_bound`` and
+# ``test_cents_do_not_void_a_salary_band``.
 _AMOUNT = (
     r"(?:(USD|CAD|EUR|GBP)\s*)?([$€£])?\s*"
-    r"((?<![\d.,])(?:\d{1,3}(?:,\d{3})+|\d{2,3}(?:\.\d+)?)(?!\d|[.,]\d))\s*([kK])?"
+    r"((?<![\d.,])(?:\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d{2,3}(?:\.\d+)?)"
+    r"(?!\d|[.,]\d))\s*([kK])?"
 )
 _PER_AMOUNT_PERIOD = (
     r"(?:\s*(per\s+(?:year|month|week|day|hour)|"
@@ -499,11 +549,22 @@ _TOTAL_TERMS = (
     "on target earnings",
     "ote",
 )
+# The keyword that says "the numbers nearby are PAY". An hourly posting states
+# it in its own vocabulary — "the target hourly range is $21-$25", "the hourly
+# rate for this role" — and neither spelling was on this list, so an
+# hourly-stated band parsed as ``None`` while the same band under the words "pay
+# range" parsed fine. The two hourly spellings are pay keywords exactly like
+# "pay range"; they say nothing about the PERIOD, which ``_compensation_period``
+# reads separately, and nothing about whether the band is annualisable, which
+# ``_salary_envelope`` decides separately (an hourly band still never reaches the
+# annual ``salary_range`` field).
 _SALARY_TERMS = (
     "base salary",
     "base pay",
     "salary range",
     "pay range",
+    "hourly range",
+    "hourly rate",
     "annual salary",
     "annual base",
     "base compensation",
@@ -642,8 +703,21 @@ def _money(value: str, suffix: str | None) -> int:
 
 
 def _source_text(value: str | None) -> str:
-    """Undo common Markdown escapes before running JD regexes."""
-    return re.sub(r"\\([+$])", r"\1", value or "")
+    """Undo common Markdown escapes before running JD regexes.
+
+    The HYPHEN belongs on this list for the same reason ``+`` and ``$`` do, and
+    its absence was not cosmetic: markdownify (the HTML->Markdown step every
+    JobSpy-sourced JD goes through) escapes a hyphen that could start a list
+    item, so a real posting arrives as ``3\\-5 years of experience``. With the
+    backslash still in the text ``_YOE_RANGE_RE`` cannot see a range separator
+    at all, the range is missed, and one of the ``_YOE_MIN_PATTERNS`` then reads
+    the range's UPPER bound as a standalone minimum — ``3\\-5 years`` was
+    extracted as ``min: 5``, so the band's CEILING became its FLOOR and a
+    posting the candidate qualifies for was hard-dropped by the
+    ``max_years_experience`` gate. Escaped and unescaped text must parse
+    identically; ``test_escaped_range_dash_still_parses_as_a_range`` pins that.
+    """
+    return re.sub(r"\\([-+$])", r"\1", value or "")
 
 
 def source_to_tier(source: str | None) -> str | None:
@@ -934,15 +1008,7 @@ def _yoe_candidate_confidence(blob: str, match: re.Match) -> tuple[str, str] | N
     if _COMBINED_YOE_RE.search(f"{attribution[-40:]} {matched} {after[:40]}"):
         return None
     match_context = f"{matched} {after[:80]}"
-    contextual = bool(re.search(
-        r"\byears?(?:\s+of\s+experience)?\s+"
-        r"(?:working\s+with|using|in)\s+"
-        r"(?!software engineering\b|engineering\b|industry\b|professional\b)|"
-        r"\byears?\s+(?:of\s+)?(?!professional\b|industry\b|work\b|relevant\b|"
-        r"software engineering\b|engineering\b)[a-z0-9+#.-]+\s+experience\b",
-        match_context,
-        re.I,
-    ))
+    contextual = bool(_CONTEXTUAL_YOE_RE.search(match_context))
     requirement_window = f"{before[-80:]} {matched} {after[:30]}"
     required_signal = bool(_REQUIRED_YOE_RE.search(requirement_window))
     general = bool(_GENERAL_EXPERIENCE_RE.search(match_context))
@@ -2634,29 +2700,66 @@ def _salary_envelope(fact: dict) -> tuple[int | float | None, int | float | None
     return fact.get("min"), fact.get("max")
 
 
-def _bare_salary(description: str, supplied: dict | None) -> dict | None:
-    """A flat ANNUAL ``{min, max, confidence, source}`` salary, or ``None``.
+def _fact_currency(fact: dict) -> str | None:
+    """The one currency a salary fact states, or ``None`` when its bands disagree."""
+    bands = fact.get("bands")
+    if isinstance(bands, list) and bands:
+        codes = {
+            band.get("currency") for band in bands
+            if isinstance(band, dict) and band.get("period") == "year"
+            and band.get("currency")
+        }
+        return next(iter(codes)) if len(codes) == 1 else None
+    currency = fact.get("currency")
+    return str(currency) if currency else None
 
-    Only a band the posting stated per year reaches this field; see
-    ``_salary_envelope`` for why a non-annual band is refused rather than
-    converted. The aggregator fallback is unchanged and still gets its turn.
+
+def _bare_salary(description: str, supplied: dict | None) -> dict | None:
+    """A flat ``{min, max, currency, period, confidence, source}`` salary, or ``None``.
+
+    THE UNIT TRAVELS WITH THE NUMBER. It used to be dropped here, and the two
+    routes into this field do not agree on what the number means, so dropping it
+    silently mixed two scales in one column:
+
+    * the JD route is annual by construction — ``_salary_envelope`` refuses any
+      band the posting did not state per year (see its docstring for why it
+      refuses rather than annualising);
+    * the AGGREGATOR route is whatever the board's structured pay field said.
+      ``common.provided_salary_range`` accepts hour/day/week/month/year and
+      only ever emits a range that carries BOTH an explicit currency and an
+      explicit period — so a contract role's ``{30, 35, hour, USD}`` arrived
+      here fully labelled and left as a bare ``{30, 35}``, which the discovery
+      table printed as ``30-35``, pixel-identical to a $30k-$35k annual band.
+      Nothing downstream could tell a $30/hour role from a $30k one.
+
+    Carrying ``currency`` and ``period`` through costs two keys and makes the
+    unit readable at every consumer (``search_jobs._format_comp`` renders it).
+    A JD band with no single agreed currency reports none rather than guessing.
     """
     fact = extract_salary_range(description)
     if fact:
         low, high = _salary_envelope(fact)
         if low is not None or high is not None:
+            currency = _fact_currency(fact)
             return {
                 "min": _num_or_none(low),
                 "max": _num_or_none(high),
+                # ``_salary_envelope`` returns a value only for an ANNUAL band.
+                "period": "year",
+                **({"currency": currency} if currency else {}),
                 "confidence": "high",
                 "source": "job_description",
             }
     if isinstance(supplied, dict):
         low, high = supplied.get("min"), supplied.get("max")
         if low is not None or high is not None:
+            period = supplied.get("period")
+            currency = supplied.get("currency")
             return {
                 "min": _num_or_none(low),
                 "max": _num_or_none(high),
+                **({"period": str(period)} if period else {}),
+                **({"currency": str(currency)} if currency else {}),
                 "confidence": "medium",
                 "source": str(supplied.get("source") or "aggregator"),
             }

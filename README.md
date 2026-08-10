@@ -50,21 +50,65 @@ malformed, and unsupported-layout inputs with expected outputs.
 ## Try it in three commands
 
 Works out of the box on a fresh clone — no config needed; every tool falls back to
-the fictional "Jordan Rivers" example candidate. Requires Python 3.11+
-(`python3 --version` first) and, for PDF output, LibreOffice (`brew install --cask
+the fictional "Jordan Rivers" example candidate. Requires Python 3.11+ and, for PDF
+output, LibreOffice (`brew install --cask
 libreoffice` on macOS; `sudo apt install libreoffice` inside Ubuntu/WSL). Windows users
 must run the toolkit through WSL2 and should start with the
 [`windows-environment` skill](skills/windows-environment/SKILL.md). Without a converter the render stops and says the
 one-page check could not run; add `--no-pdf` if you deliberately want a DOCX-only draft.
 
 ```bash
-git clone https://github.com/<owner>/jobs-finder-toolkit.git && cd jobs-finder-toolkit   # or your fork
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# Paste this repo's own URL — the green "Code" button above, or your fork's.
+git clone "https://github.com/<owner>/jobs-finder-toolkit.git" && cd jobs-finder-toolkit
+python3 automation/check_python.py && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python skills/resume-writer/scripts/render.py examples/me/applications/6_drafted/example-corp-senior-software-engineer/
 ```
 
+**Keep the quotes around the clone URL.** Unquoted, `zsh` (the macOS default
+shell) reads `<owner>` as an input redirection and the line dies with
+`no such file or directory: owner` before `git` ever starts — an error that
+names a file you never mentioned. Quoted, a URL you forgot to fill in fails as
+what it is: a bad URL.
+
+The first half of the next line is a real gate, not a formality. Bare `python3`
+still resolves to a 3.7-era interpreter on plenty of macOS boxes, and
+`python3 -m venv` on one of those **exits 0** and quietly installs an obsolete
+pip — so the only symptom arrives minutes later as a misleading
+`No matching distribution found for python-jobspy`. `check_python.py` stops
+before the venv exists and names a newer interpreter it found on your PATH; the
+recovery is to create the venv with that one —
+`python3.13 -m venv .venv` (or `uv venv --python 3.13`) — and re-run the pip
+install.
+
 That renders and validates the example resume + cover letter you see above. Then
 open the repo in your AI agent and just talk to it — the skills route themselves.
+
+### Your first search
+
+This one needs **network access** — it queries public company job boards and
+keyless aggregators live. Nothing else in the quickstart goes online.
+
+```bash
+.venv/bin/python skills/job-search/scripts/search_jobs.py --profile example
+```
+
+`example` is the tracked, personal-detail-free profile at
+[`skills/job-search/profiles/example.yaml`](skills/job-search/profiles/example.yaml),
+so this runs on a fresh clone with no config and no private overlay. The ranked
+shortlist is written to `examples/market/scans/current/<YYYYMMDD>-example.md`
+(git-ignored) and a compact summary prints to your terminal.
+
+Three knobs in that profile are worth editing before you trust the results:
+
+| Knob | What it does |
+|---|---|
+| `titles.include` | The title gate — a posting is only a candidate if its title contains one of these terms. Widen or narrow it first; everything downstream is filtered by it. |
+| `location.*` | `preferred` boosts metros, `allow_remote`/`us_only` bound the geography, and `require_match: true` turns the boost into a hard filter. |
+| `max_age_days` | Recency window (`null` = no age filter). Set it to `7` for "posted this week". |
+
+Copy the file before you tune it — see
+[`skills/job-search/profiles/README.md`](skills/job-search/profiles/README.md)
+for the full field reference and how to run a profile of your own.
 
 ## The workflow
 
