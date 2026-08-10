@@ -3013,6 +3013,48 @@
 - base: 8c39c9f6
   reviewed_by: agent
   date: 2026-08-09
+  files: 3
+  digest: sha256:4268867ca9126dba
+  finding: 'Read the complete staged three-file diff: a triage index recording verified
+    verdicts for 69 open GitHub issues, and two owner decision items (preferred-metro
+    suburb matching, and whether a negative-score row should be labelled a match). Two
+    employer names that had appeared in an example were redacted to generic descriptions
+    before staging; city names were kept because the search code itself reasons in metros.
+    Timeless public guidance and issue analysis only; no real identity, school, salary,
+    private item name, or dated personal job-hunt content.'
+- base: fc045d97
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 2
+  digest: sha256:e6c5f40d44747090
+  finding: 'Read the complete staged two-file diff: two owner decision items produced by a
+    structured design debate — whether an explicit title exclude should outrank the newer
+    word-filter list when the user writes the same word in both, and whether the review cap
+    should be reprioritised across lanes. Both carry a default path of changing no filtering
+    rule. Corpus figures are aggregate counts and generic job titles only; no employer name,
+    real identity, school, salary, private item name, or dated personal job-hunt content.'
+- base: 82a4b7fb
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 1
+  digest: sha256:d6ef717cd9e9bb4f
+  finding: 'Read the complete staged one-file diff: the session handover for the issue
+    triage and remediation work. Names only branch names, PR numbers, queue item slugs and
+    aggregate counts. No real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content.'
+- base: 059a4b1f
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 1
+  digest: sha256:034229432ba2c5fa
+  finding: 'Read the complete staged one-file diff: the handover updated now that the ninth
+    branch is pushed and its PR open, plus two dead ends recorded (a union-alternation regex
+    rewrite that silently drops a match, and an early return that four call sites depend on).
+    Branch names, PR numbers and aggregate counts only; no real identity, employer, school,
+    salary, private item name, or dated personal job-hunt content.'
+- base: 8c39c9f6
+  reviewed_by: agent
+  date: 2026-08-09
   files: 4
   digest: sha256:f1f1b39ad770efaa
   finding: 'Read the complete staged four-file diff: job-search run artifacts gain a
@@ -3390,3 +3432,17 @@
     the shortlist table only and still requires exactly 1 and 3 rows. job-search 662 tests OK
     after the merge. No real identity, employer, school, salary, private item name, or dated
     personal job-hunt content.'
+- base: bccb23a9
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 73
+  digest: sha256:8d2777fb6053df44
+  finding: 'Merge of origin/main into this branch. Every file in the range is work already
+    reviewed on its own branch and already landed: PRs #329 leak guard, #332 onboarding,
+    #330 location gate, #331 JD-metadata parser, #333 title-gate precedence, #337 sponsorship,
+    #334 store identity and #335 report integrity. Their rows are already in this ledger
+    above; this row reconciles the range for THIS branch history. The only hand-resolved file
+    was this ledger, whose conflict was two branches appending under an identical base/date
+    header; both rows are kept verbatim and the YAML re-parses to 346 well-formed rows. This
+    branch itself adds only a task file, queue items and a handover. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content.'
