@@ -317,6 +317,52 @@ class VisaPolicyBindingTests(unittest.TestCase):
         self.assertEqual(posting.visa_label, "unclear")
         self.assertIn("sponsorship_requires_review", posting.review_reasons)
 
+    def test_a_new_petition_denial_beside_a_transfer_welcome_is_kept_and_flagged(self):
+        # GH #265, end to end and in the direction that costs a real job. The JD
+        # says both things in one sentence — no NEW petitions, transfers welcome
+        # — and the classifier read only the first half: dropped under BOTH
+        # policies with an EMPTY review_reasons, so the posting vanished with no
+        # trace, from the one candidate it was addressed to. The transfer half
+        # was not even hard to see: `visa_tags` on this same text already
+        # returns `h1b_transfer_friendly`. Fictional wording.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting(
+                    "We are unable to sponsor new H-1B petitions; H-1B transfer "
+                    "candidates are encouraged to apply.")
+                self.assertIn("h1b_transfer_friendly",
+                              visa_tags(posting.description))
+                self.assertTrue(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "unclear")
+                self.assertEqual(posting.sponsorship, "unknown")
+                self.assertIn("sponsorship_requires_review",
+                              posting.review_reasons)
+
+    def test_a_new_petition_denial_is_never_promoted_to_an_offer(self):
+        # The invariant every pass over this classifier has kept: a demotion may
+        # withdraw confidence, never create an offer. `require_positive` is the
+        # policy that would surface one.
+        profile = {"visa": {"needs_sponsorship": True, "policy": "require_positive"}}
+        posting = self._posting(
+            "We are unable to sponsor new H-1B petitions; H-1B transfer "
+            "candidates are encouraged to apply.")
+        visa_ok(posting, profile)
+        self.assertNotEqual(posting.visa_label, "yes")
+        self.assertNotEqual(posting.sponsorship, "likely")
+
+    def test_a_denial_that_is_not_scoped_to_new_petitions_is_still_dropped(self):
+        # Half the rule is the OTHER half. A flat refusal beside a transfer
+        # mention is still a flat refusal, under both policies.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting(
+                    "We do not offer sponsorship of any kind. Please do not ask "
+                    "about transferring your H-1B.")
+                self.assertFalse(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "no")
+
 
 if __name__ == "__main__":
     unittest.main()

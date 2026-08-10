@@ -104,6 +104,62 @@ class AssembleJobspyTasksTests(unittest.TestCase):
         self.assertEqual(stream.getvalue(), "")
 
 
+class ReliableSitesKeyTests(unittest.TestCase):
+    """The staged planner reads `reliable_sites`; the profiles taught `sites`.
+
+    A profile asking for Indeed only through the obsolete key was ignored, so the
+    run fell back to [indeed, google] and doubled its fetch volume — silently.
+    """
+
+    def _plan(self, cfg, stream):
+        _, labels, _ = search_jobs.assemble_jobspy_tasks(
+            jobspy_on=True, stage=1, jobspy_cfg=cfg, query_terms=["x"], max_age=3,
+            available=True, stream=stream)
+        return labels
+
+    def test_the_obsolete_sites_key_is_honoured_not_ignored(self):
+        stream = io.StringIO()
+        self.assertEqual(self._plan({"sites": ["indeed"]}, stream),
+                         ["jobspy:indeed"])
+
+    def test_the_obsolete_key_warns_and_names_the_rename(self):
+        stream = io.StringIO()
+        self._plan({"sites": ["indeed"]}, stream)
+        warning = stream.getvalue()
+        self.assertIn("sites", warning)
+        self.assertIn("reliable_sites", warning)
+
+    def test_the_canonical_key_is_silent(self):
+        stream = io.StringIO()
+        self.assertEqual(self._plan({"reliable_sites": ["indeed"]}, stream),
+                         ["jobspy:indeed"])
+        self.assertEqual(stream.getvalue(), "")
+
+    def test_the_canonical_key_wins_when_both_are_set(self):
+        stream = io.StringIO()
+        self.assertEqual(
+            self._plan({"reliable_sites": ["indeed"], "sites": ["google"]}, stream),
+            ["jobspy:indeed"])
+        self.assertIn("IGNORING", stream.getvalue())
+
+    def test_neither_key_falls_back_to_the_documented_default(self):
+        stream = io.StringIO()
+        self.assertEqual(self._plan({}, stream), ["jobspy:indeed,google"])
+        self.assertEqual(stream.getvalue(), "")
+
+    def test_the_bare_jobspy_aggregator_name_reads_the_same_key(self):
+        """`build_aggregator_tasks`'s legacy path must not disagree with the planner."""
+        stream = io.StringIO()
+        self.assertEqual(
+            aggregators.resolve_reliable_sites({"reliable_sites": ["indeed"]},
+                                               stream=stream),
+            ["indeed"])
+        tasks = aggregators.build_aggregator_tasks(
+            ["jobspy"], ["x"], "US", 3, {"reliable_sites": ["indeed"]})
+        self.assertTrue(all("indeed" in label and "google" not in label
+                            for label, _ in tasks), [t[0] for t in tasks])
+
+
 class RequirementsTxtTests(unittest.TestCase):
     def test_requirements_lists_python_jobspy(self):
         # REPO_ROOT resolves skills/job-search -> toolkit root; requirements.txt
@@ -117,7 +173,12 @@ class ShippedProfileDefaultsTests(unittest.TestCase):
         profile = search_jobs.load_yaml(
             search_jobs.SKILL_DIR / "profiles" / "example.yaml")
         self.assertTrue(profile["sources"]["jobspy"]["enabled"])
-        self.assertEqual(profile["sources"]["jobspy"]["sites"], ["indeed", "google"])
+        # The canonical key the staged planner actually reads. The shipped
+        # profiles taught `sites:` while the planner read `reliable_sites`, so a
+        # profile narrowing its sites was ignored and Google got scraped anyway.
+        self.assertEqual(profile["sources"]["jobspy"]["reliable_sites"],
+                         ["indeed", "google"])
+        self.assertNotIn("sites", profile["sources"]["jobspy"])
 
 
 if __name__ == "__main__":

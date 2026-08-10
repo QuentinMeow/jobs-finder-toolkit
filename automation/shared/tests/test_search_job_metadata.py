@@ -117,5 +117,54 @@ class SearchJobMetadataTests(unittest.TestCase):
         self.assertEqual(posting.workplace, "remote")
 
 
+class OverCapReviewRoutingTests(unittest.TestCase):
+    """A `review` verdict is a KEEP, and a bare boolean lost the reason for it.
+
+    `experience_ok` returned only pass/fail, so a posting stating 12 years
+    against a cap of 6 — in wording the extractor is not confident enough to act
+    on — landed on the MAIN shortlist with an empty `review_reasons`,
+    indistinguishable from a posting that stated no requirement at all. The
+    tri-state is unchanged; what changes is that the verdict is now named.
+    """
+
+    def _posting(self, description):
+        return JobPosting(
+            source="test", company="Acme", title="Software Engineer",
+            url="https://example.test/jobs/1", description=description)
+
+    def test_an_over_cap_review_verdict_is_named(self):
+        posting = self._posting(
+            "Requires 12+ years of experience with Kubernetes.")
+        self.assertTrue(experience_ok(posting, {"max_years_experience": 6}))
+        self.assertIn("experience_over_cap", posting.review_reasons)
+        self.assertEqual(
+            posting.filter_assessments["experience"]["decision"], "review")
+
+    def test_a_requirement_inside_the_cap_is_not_a_finding(self):
+        posting = self._posting(
+            "Requires 3+ years of experience with Kubernetes.")
+        self.assertTrue(experience_ok(posting, {"max_years_experience": 6}))
+        self.assertEqual(posting.review_reasons, [])
+
+    def test_a_silent_posting_is_not_a_finding(self):
+        posting = self._posting("We value curiosity and grit.")
+        self.assertTrue(experience_ok(posting, {"max_years_experience": 6}))
+        self.assertEqual(posting.review_reasons, [])
+
+    def test_a_decisive_over_cap_requirement_still_hard_drops(self):
+        # The decisive path is untouched: it is a DROP, so there is no row to
+        # route and no reason to attach.
+        posting = self._posting(
+            "Requires at least 12 years of professional experience.")
+        self.assertFalse(experience_ok(posting, {"max_years_experience": 6}))
+        self.assertEqual(posting.review_reasons, [])
+
+    def test_no_cap_configured_reaches_no_verdict_at_all(self):
+        posting = self._posting("Requires 12+ years of experience.")
+        self.assertTrue(experience_ok(posting, {}))
+        self.assertEqual(posting.review_reasons, [])
+        self.assertNotIn("experience", posting.filter_assessments)
+
+
 if __name__ == "__main__":
     unittest.main()

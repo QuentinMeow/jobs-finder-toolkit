@@ -180,7 +180,15 @@ company_search_log:
   first_search_max_age_days: null   # null = no posting-age filter at all on a first
                                     # search ("find all available roles"); or a number
 
-# ---- Compensation (optional) ----
+# ---- Compensation (NOT IMPLEMENTED) ----
+# Nothing reads these. There is no pay floor in the pipeline: no filter, score,
+# or report consults min_base/min_total, so setting either one changes no result.
+# Leave them null. If you set a number anyway, search_jobs.py prints a "Profile:"
+# warning to stderr so the setting cannot silently do nothing.
+# Why they are not implemented: a floor needs a trustworthy parsed salary, and a
+# posting whose pay is stated in a shape the parser does not recognise comes back
+# as "none parsed" — a floor would drop it for being too low rather than for
+# being unknown. Filter by pay after reading the shortlist.
 comp:
   min_base: null
   min_total: null
@@ -200,7 +208,7 @@ sources:
   query_location: "United States"
   jobspy:
     enabled: true           # Stage 1 Indeed/Google baseline (needs python-jobspy)
-    sites: [indeed, google]
+    reliable_sites: [indeed, google]   # STAGE 1. (`sites:` is the obsolete name)
     location: "United States"
     results_wanted: 25
     max_terms: 3

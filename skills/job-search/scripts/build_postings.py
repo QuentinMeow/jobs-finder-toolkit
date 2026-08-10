@@ -359,6 +359,35 @@ def _obs_sort_key(o: Observation):
     return (o.fetched_at or "", o.fetch_id or "", o.row.get("native_id") or "")
 
 
+def _posting_sid(row: dict) -> tuple | None:
+    """``(source, native_id)`` — WHICH posting this row is, or ``None`` if unknowable.
+
+    Only the source's own posting id can distinguish two postings that landed on
+    one entity key; a row without one cannot be told apart from any other row of
+    the same source, so it answers ``None`` (unknown) rather than a value that
+    would compare unequal to everything.
+    """
+    source = row.get("source")
+    native = row.get("native_id")
+    if not source or not native:
+        return None
+    return (str(source), str(native))
+
+
+def _jd_origin_of(posting: dict) -> tuple | None:
+    """Read a resumed entity's ``jd.from`` back into a ``(source, id)`` sid.
+
+    Entities written before ``jd.from`` existed simply have no such field and
+    resume as ``None`` (unknown) — the conservative state, which leaves their JD
+    exactly where it is until a fresh observation re-establishes the origin.
+    """
+    src = ((posting or {}).get("jd") or {}).get("from") or {}
+    source, native = src.get("source"), src.get("id")
+    if not source or not native:
+        return None
+    return (str(source), str(native))
+
+
 class EntityBuild:
     """The computed derived artifacts for one entity (pre-serialization).
 
@@ -400,7 +429,8 @@ class _Fold:
     """
 
     __slots__ = ("key", "source_ids", "_seen_sid", "jd_versions", "events", "prior",
-                 "started", "profiles", "fetch_ids", "jd_text", "last", "first_at")
+                 "started", "profiles", "fetch_ids", "jd_text", "jd_origin", "last",
+                 "first_at")
 
     def __init__(self, key: str) -> None:
         self.key = key
@@ -413,18 +443,29 @@ class _Fold:
         self.profiles: set = set()
         self.fetch_ids: set = set()
         self.jd_text = ""
+        # WHICH posting supplied ``jd_text`` — (source, native_id). The title and
+        # location come from the LATEST observation, which is normally the same
+        # posting; when it is not, the entity would ship one job's title welded to
+        # another job's body, so ``_finish`` needs to be able to tell. ``None``
+        # means "no JD yet" and is not a posting.
+        self.jd_origin: tuple | None = None
         self.last: Observation | None = None
         self.first_at = ""
 
     # ── rehydration (incremental path only) ──
     def resume(self, *, source_ids, profiles, fetch_ids, events, jd_text, prior,
-               first_at, jd_versions=None) -> None:
+               first_at, jd_versions=None, jd_origin=None) -> None:
         """Restore the accumulator to the end of a previously folded history.
 
         ``jd_versions`` stays empty for the derived-backed resume (the prior
         ``jd-*.md`` siblings are already on disk and ``_write_entity`` never
         deletes). A frozen-snapshot resume passes them, because a ``--rebuild``
         writes into a fresh dir and the snapshot is the only copy left.
+
+        ``jd_origin`` is read back from the entity's own ``jd.from`` (derived
+        expresses it, so the fold cache does not have to). A resumed fold that
+        cannot recover it keeps ``None`` — unknown, so ``_finish`` leaves the JD
+        alone rather than dropping a good one on a guess.
         """
         self.source_ids = [dict(s) for s in source_ids]
         self._seen_sid = {(s.get("source"), s.get("id"), s.get("url", ""))
@@ -434,6 +475,7 @@ class _Fold:
         self.events = list(events)
         self.jd_versions = dict(jd_versions or {})
         self.jd_text = jd_text
+        self.jd_origin = jd_origin
         self.prior = dict(prior)
         self.first_at = first_at
         self.started = True
@@ -449,6 +491,7 @@ class _Fold:
                                     "url": row.get("url", "")})
         if row.get("description"):
             self.jd_text = row["description"]
+            self.jd_origin = _posting_sid(row)
         if o.profile:
             self.profiles.add(o.profile)
         self.fetch_ids.add(o.fetch_id)
@@ -509,7 +552,29 @@ class _Fold:
 
 
 def _finish(fold: _Fold, stamps: dict) -> EntityBuild:
-    """Turn a completed accumulator into the entity's derived artifacts."""
+    """Turn a completed accumulator into the entity's derived artifacts.
+
+    ``title``/``location``/``company`` come from the LATEST observation — freshest
+    wins, which is what a re-titled or relocated posting needs. The JD is
+    different: ``_Fold.add`` keeps the last JD it was GIVEN, so an observation
+    that carries no description leaves the previous one standing. For one real
+    posting re-observed by a listing-only scrape that is exactly right (the JD is
+    stale, not foreign). But if two DIFFERENT postings ever fold under one key,
+    the same rule welds one job's title to another job's body and ships it as a
+    single entity — a chimera no reader can detect.
+
+    So the JD is kept only while it can still belong to the posting the rest of
+    the entity describes: same ``(source, native_id)``, or an unknown id on either
+    side (unprovable, so not disturbed). When the JD demonstrably belongs to a
+    DIFFERENT posting, it is dropped and ``provenance.jd_conflict`` names both
+    postings — losing a JD that is regenerable from raw beats publishing a body
+    that was never this job's. When it is kept, ``jd.from`` records which posting
+    supplied it, so title and body never come from different observations
+    silently.
+
+    This mutates ``fold.jd_text`` on the drop path so ``carried_state`` describes
+    the artifacts actually written rather than the ones that were not.
+    """
     latest = fold.last
     company = latest.company
     partition = validate_slug(_slugify(company) or "unknown", field="company partition")
@@ -525,6 +590,20 @@ def _finish(fold: _Fold, stamps: dict) -> EntityBuild:
     if latest_row.get("workplace_raw"):
         facts["workplace_raw"] = latest_row["workplace_raw"]
 
+    # ── entity coherence: does the folded JD belong to THIS posting? ──
+    latest_sid = _posting_sid(latest_row)
+    jd_sid = fold.jd_origin
+    jd_conflict = None
+    if fold.jd_text and jd_sid is not None and latest_sid is not None \
+            and jd_sid != latest_sid:
+        jd_conflict = {
+            "reason": "jd_from_another_posting",
+            "jd_from": {"source": jd_sid[0], "id": jd_sid[1]},
+            "entity_from": {"source": latest_sid[0], "id": latest_sid[1]},
+        }
+        fold.jd_text = ""
+        fold.jd_origin = None
+        jd_sid = None
     jd_text = fold.jd_text
     posting = {
         "schema_version": POSTING_SCHEMA_VERSION,
@@ -548,6 +627,8 @@ def _finish(fold: _Fold, stamps: dict) -> EntityBuild:
             "canonicalizer_version": ident.CANONICALIZER_VERSION,
         },
     }
+    if jd_conflict is not None:
+        posting["provenance"]["jd_conflict"] = jd_conflict
     if jd_text:
         posting["jd"] = {
             "file": "jd.md",
@@ -555,6 +636,10 @@ def _finish(fold: _Fold, stamps: dict) -> EntityBuild:
             "normalizer_version": parsers.NORMALIZER_VERSION,
             "fetched_verbatim": True,
         }
+        if jd_sid is not None:
+            # Which posting the body came from — the title above may be a LATER
+            # observation's, and this is what says so.
+            posting["jd"]["from"] = {"source": jd_sid[0], "id": jd_sid[1]}
     return EntityBuild(fold.key, partition, posting, jd_text, fold.jd_versions,
                        fold.events, fold.carried_state())
 
@@ -1254,6 +1339,7 @@ def _resume_from_frozen(fold: _Fold, frozen: dict, fresh_fetches: set) -> set | 
         fetch_ids=(fentity.get("provenance") or {}).get("fetch_ids") or [],
         events=events,
         jd_text=jd_text,
+        jd_origin=_jd_origin_of(fentity),
         prior=_frozen_prior(fentity, jd_text),
         first_at=fentity.get("first_seen") or "",
         jd_versions={name[len("jd-"):-len(".md")]: text
@@ -1780,6 +1866,7 @@ def _resume_fold(key: str, entry: dict, entity_dir: Path) -> _Fold:
                 fetch_ids=(posting.get("provenance") or {}).get("fetch_ids") or [],
                 events=read_jsonl(entity_dir / "events.jsonl"),
                 jd_text=jd_text,
+                jd_origin=_jd_origin_of(posting),
                 prior=dict(entry["f"].get("s") or {}),
                 first_at=posting.get("first_seen") or "")
     # `_jd_text` is read only when the previous observation carried a JD, and in
