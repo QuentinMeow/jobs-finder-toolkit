@@ -611,20 +611,45 @@ def _format_yoe(posting) -> str:
     return f"{low:g}-{high:g}y" if high is not None else f"{low:g}+y"
 
 
+# The unit suffix printed after a non-annual band. An annual band gets no
+# suffix: the column has always meant USD/year, so adding "/yr" to every row
+# would cost width without telling the reader anything new.
+_COMP_PERIOD_SUFFIX = {"hour": "/hr", "day": "/day", "week": "/wk", "month": "/mo"}
+
+
 def _format_comp(value: dict | None) -> str:
-    """Compact USD/year salary range for the discovery table."""
+    """Compact salary range for the discovery table, WITH its unit.
+
+    An aggregator's structured pay field may be hourly, and this column used to
+    print such a band as a bare ``30-35`` — the exact rendering a $30k-$35k
+    annual band gets. Two different pay scales printed the same string, so the
+    reader had no way to tell a contract hourly rate from a (very low) annual
+    salary. A band that states a period other than ``year`` now carries it, and
+    a currency other than USD is named rather than implied.
+    """
     if not value:
         return "?"
     low, high = value.get("min"), value.get("max")
     if low is None and high is None:
         return "?"
+    period = str(value.get("period") or "").strip().lower()
+    suffix = _COMP_PERIOD_SUFFIX.get(period, "")
+    currency = str(value.get("currency") or "").strip().upper()
+    if currency and currency != "USD":
+        suffix += f" {currency}"
+
+    # Thousands-compaction reads as an annual figure; a sub-annual rate is small
+    # and exact, so print it as stated.
+    sub_annual = period in _COMP_PERIOD_SUFFIX
 
     def compact(number):
         if number is None:
             return "?"
+        if sub_annual:
+            return f"{number:g}"
         return f"{number / 1000:g}k" if number >= 1000 else f"{number:g}"
 
-    return f"{compact(low)}-{compact(high)}"
+    return f"{compact(low)}-{compact(high)}{suffix}"
 
 
 def render_markdown(kept, profile, meta) -> str:

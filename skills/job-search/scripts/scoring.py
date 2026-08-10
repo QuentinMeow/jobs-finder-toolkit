@@ -472,12 +472,28 @@ def experience_ok(posting: JobPosting, profile: dict) -> bool:
 
     Uses the shared ``assess_required_yoe`` so the hard filter, the score penalty,
     and the variant corpus all agree on which requirements are decisive.
+
+    A ``review`` verdict is a KEEP, and a bare boolean lost the reason for it. A
+    posting that states 12 years against a cap of 6, in wording the extractor is
+    not confident enough to act on, used to land on the MAIN shortlist with an
+    empty ``review_reasons`` — indistinguishable from a posting that stated no
+    requirement at all. Naming the verdict routes the row to the review lane,
+    which is what "not confident enough to DROP it" was always supposed to mean;
+    the tri-state itself is unchanged, and only a stated minimum ABOVE the cap
+    earns the reason (a silent YOE, or one inside the cap, is not a finding).
     """
     cap = profile.get("max_years_experience")
     if cap is None:
         return True
     blob = "\n".join(x for x in (posting.title, posting.description) if x)
-    return assess_required_yoe(blob, cap=int(cap))["decision"] != "no_match"
+    assessment = assess_required_yoe(blob, cap=int(cap))
+    posting.filter_assessments["experience"] = assessment
+    minimum = assessment.get("min")
+    if assessment["decision"] == "review" and minimum is not None \
+            and float(minimum) > float(cap):
+        posting.review_reasons = list(dict.fromkeys(
+            [*posting.review_reasons, "experience_over_cap"]))
+    return assessment["decision"] != "no_match"
 
 
 # --------------------------------------------------------------------------- #

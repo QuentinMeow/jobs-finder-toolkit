@@ -3021,3 +3021,14 @@
     lines only). Every example string is fictional (Acme, Example Corp) or a generic
     technology name. No real identity, employer, school, salary, private item name, or
     dated personal job-hunt content.'
+- base: f0f6e79f
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 4
+  digest: sha256:115369a8e8382c4e
+  finding: 'Read the complete staged four-file diff: the required-experience gate now names
+    a non-decisive over-cap verdict as a review reason instead of silently keeping the row,
+    the discovery table prints a pay band''s unit, and two test modules cover both. Every
+    example string is fictional (Acme, Example Corp) or a generic technology name. No real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content.'

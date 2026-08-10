@@ -539,6 +539,100 @@ class LowQualityVisibilityTests(unittest.TestCase):
         self.assertEqual(meta["n_low_quality"], 1)
 
 
+class OverCapExperienceRoutingTests(unittest.TestCase):
+    """An over-cap requirement the extractor cannot act on belongs in review.
+
+    `experience_ok` returned a bare bool, so a `review` verdict was a silent
+    KEEP: the row reached the MAIN shortlist with `review_reasons: []`, reading
+    exactly like a posting that stated no requirement. Nothing about it invited
+    the reader to check the years by hand. Naming the verdict routes it to the
+    review lane, which is what "not confident enough to DROP it" always meant.
+    """
+
+    NOW = datetime(2026, 7, 22, tzinfo=timezone.utc)
+
+    def _ctx(self):
+        return {"considered_urls": set(), "considered_pairs": set(),
+                "skip_days": 0, "search_tokens": [],
+                "ignore_search_log": True, "ai_native_keys": set()}
+
+    def _run(self, description):
+        posting = JobPosting(
+            source="board", company="Example Corp", title="Software Engineer",
+            url="https://example.test/jobs/yoe", location="Remote, United States",
+            description=description)
+        profile = {"titles": TITLES_CFG, "max_years_experience": 6}
+        return search_jobs.filter_score_rank(
+            [posting], profile, self._ctx(), max_age=None, top_k=40,
+            max_per_company=10, sponsor_index=None, company_levels={},
+            registry=Registry([]), now=self.NOW)
+
+    def test_a_non_decisive_over_cap_row_lands_in_the_review_lane(self):
+        kept, counts = self._run(
+            "Requires 12+ years of experience with Kubernetes. "
+            "Python, distributed systems.")
+        self.assertEqual(kept, [])
+        self.assertEqual(counts["n_review"], 1)
+        self.assertIn("experience_over_cap",
+                      counts["review_postings"][0].review_reasons)
+
+    def test_a_decisive_over_cap_row_is_still_dropped_outright(self):
+        kept, counts = self._run(
+            "Requires at least 12 years of professional experience. "
+            "Python, distributed systems.")
+        self.assertEqual(kept, [])
+        self.assertEqual(counts["n_review"], 0)
+
+    def test_a_row_inside_the_cap_still_reaches_the_main_shortlist(self):
+        kept, counts = self._run(
+            "Requires 3+ years of experience with Kubernetes. "
+            "Python, distributed systems.")
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0].review_reasons, [])
+        self.assertEqual(counts["n_review"], 0)
+
+
+class CompensationColumnUnitTests(unittest.TestCase):
+    """The discovery table's pay column must state the unit it is printing.
+
+    An aggregator's structured pay field may be hourly. The column compacted
+    every band to thousands and printed no unit, so $30-$35 PER HOUR rendered as
+    `30-35` — the same string a $30k-$35k annual band produces.
+    """
+
+    def test_an_hourly_band_prints_its_unit(self):
+        self.assertEqual(
+            search_jobs._format_comp(
+                {"min": 30, "max": 35, "period": "hour", "currency": "USD"}),
+            "30-35/hr")
+
+    def test_an_annual_band_is_unchanged(self):
+        for value, expected in (
+            ({"min": 150000, "max": 190000, "period": "year",
+              "currency": "USD"}, "150k-190k"),
+            ({"min": 150000, "max": 190000}, "150k-190k"),
+            (None, "?"),
+            ({"min": None, "max": None}, "?"),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(search_jobs._format_comp(value), expected)
+
+    def test_a_non_usd_currency_is_named(self):
+        self.assertEqual(
+            search_jobs._format_comp(
+                {"min": 60000, "max": 80000, "period": "year",
+                 "currency": "EUR"}),
+            "60k-80k EUR")
+
+    def test_monthly_and_daily_bands_carry_their_own_unit(self):
+        self.assertEqual(
+            search_jobs._format_comp(
+                {"min": 3000, "max": 4000, "period": "month"}), "3000-4000/mo")
+        self.assertEqual(
+            search_jobs._format_comp(
+                {"min": 400, "max": 600, "period": "day"}), "400-600/day")
+
+
 class SponsorIndexCompanyKeyTests(unittest.TestCase):
     """DOL filings use legal names; postings use short registry names."""
 
