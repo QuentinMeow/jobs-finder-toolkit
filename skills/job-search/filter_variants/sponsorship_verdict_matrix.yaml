@@ -920,6 +920,14 @@ rows:
     - unable to sponsor
     rule_ids:
     - sponsorship.negative.unable to sponsor
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: unable to sponsor'
+    rule_ids:
+    - sponsorship.unsettled_denial.unable to sponsor
 - id: transfer-friendly-initial-petition-denial
   group: h1b-transfer-scope
   change: expected-change
@@ -934,6 +942,14 @@ rows:
     - do not sponsor
     rule_ids:
     - sponsorship.negative.do not sponsor
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: do not sponsor'
+    rule_ids:
+    - sponsorship.unsettled_denial.do not sponsor
 - id: transfer-friendly-cap-subject-denial
   group: h1b-transfer-scope
   change: expected-change
@@ -949,6 +965,16 @@ rows:
     - cap-exempt
     rule_ids:
     - sponsorship.negative.cannot sponsor
+    - sponsorship.positive.cap-exempt
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'unsettled: cannot sponsor'
+    - cap-exempt
+    rule_ids:
+    - sponsorship.unsettled_denial.cannot sponsor
     - sponsorship.positive.cap-exempt
 - id: transfer-signal-with-unbounded-denial-stays-a-denial
   group: h1b-transfer-scope

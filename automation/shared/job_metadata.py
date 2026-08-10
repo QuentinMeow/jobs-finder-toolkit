@@ -2047,6 +2047,63 @@ def _sponsor_scope_unsettled(source: str, start: int, end: int) -> bool:
                                       _SPONSOR_AMBIGUOUS_SCOPE_RE)
 
 
+# --- a denial scoped to NEW petitions, beside an offer to take transfers ------
+# "We are unable to sponsor new H-1B petitions; H-1B transfer candidates are
+# encouraged to apply" is one sentence that says both things, and the classifier
+# read only the first half: ``no_match``/``unlikely``/high, dropped under BOTH
+# visa policies with an EMPTY ``review_reasons`` — a posting that invites exactly
+# this candidate, deleted without a trace. The transfer half is not even hard to
+# see; ``visa.visa_tags()`` on the same text already returns
+# ``h1b_transfer_friendly``. The signal was computed and thrown away.
+#
+# This is the SAME move the quantifier ambiguity got in
+# `memory/decisions/sponsorship-an-unsettled-denial-is-review-not-a-silent-drop.md`,
+# applied to a different ambiguity, and it is deliberately a DEMOTION ONLY:
+#
+#   * EVIDENCE — the denial stays a denial. It never moves to ``scope_limited``,
+#     is never counted as positive, and never leaves the ``denial`` list, so
+#     every branch that could reach ``match``/``likely`` is preempted exactly as
+#     before. No promotion is reachable through this pattern, structurally.
+#   * VERDICT — a posting whose ONLY denial is unsettled this way lands
+#     ``review``/``unknown``/low, which ``visa_ok`` keeps and flags with
+#     ``sponsorship_requires_review`` under both policies.
+#
+# Both halves are required, and each is a separate bound:
+#
+#   1. the denial's scope is LEXICALLY limited to a new/initial/cap-subject
+#      PETITION. The petition noun is load-bearing: "we do not sponsor visas for
+#      new hires" is a flat refusal that happens to contain "new", and a bare
+#      new/initial cue would demote it;
+#   2. the SAME posting carries a transfer-friendly signal. Without one there is
+#      nothing to weigh against the refusal and it stays settled.
+_SPONSOR_NEW_PETITION_RE = re.compile(
+    r"\b(?:new|initial|first[- ]time|cap[- ]subject)\b"
+    r"[^.;:!?]{0,24}?\b(?:petitions?|filings?|cases?)\b",
+    re.I,
+)
+# Kept lexically aligned with ``visa._H1B_TRANSFER_RE``, which is what already
+# tags these postings ``h1b_transfer_friendly`` downstream, plus the possessive
+# forms a JD actually writes ("transfer their H-1B").
+_SPONSOR_TRANSFER_FRIENDLY_RE = re.compile(
+    r"\b(?:h-?1bs?\s+transfers?|transfer(?:s|red|ring)?\s+"
+    r"(?:your|their|an\s+existing|a\s+current|the\s+existing)\s+"
+    r"(?:h-?1b|visa)|cap[- ]exempt)\b",
+    re.I,
+)
+
+
+def _sponsor_denial_scoped_to_new_petitions(source: str, start: int,
+                                            end: int) -> bool:
+    """True when this denial refuses only NEW/initial/cap-subject petitions.
+
+    Reuses ``_sponsor_quantifier_bounds`` — the same adjacency reading the two
+    quantifier questions share — so no third notion of "what a denial's scope
+    reaches" enters the module.
+    """
+    return _sponsor_quantifier_bounds(source, start, end,
+                                      _SPONSOR_NEW_PETITION_RE)
+
+
 def _sponsor_window(source: str, start: int, end: int) -> str:
     """The text either context gate reads around a phrase match."""
     return source[max(0, start - _SPONSOR_CONTEXT_WINDOW_CHARS):
@@ -2306,6 +2363,10 @@ def assess_sponsorship(text: str | None) -> dict:
     negative: list[str] = []
     scope_limited: list[str] = []
     unsettled: list[str] = []
+    # The subset of ``unsettled`` that got there by being scoped to new
+    # petitions, tracked only so the reason line can say which ambiguity it was.
+    unsettled_transfer: list[str] = []
+    transfer_friendly: bool | None = None
     ambiguous = False
     for phrase, negative_match in negative_matches:
         if _sponsor_denial_is_negated(source, negative_match.start()):
@@ -2328,6 +2389,20 @@ def assess_sponsorship(text: str | None) -> dict:
             # as a non-immigration OFFER phrase is, so the posting reads
             # `unknown` — kept and flagged — instead of being deleted.
             continue
+        if _sponsor_denial_scoped_to_new_petitions(
+                source, negative_match.start(), negative_match.end()):
+            # A refusal of NEW petitions in a posting that welcomes transfers
+            # does not settle its own reading. The denial is kept — only its
+            # confidence is withdrawn — so no promotion is reachable here.
+            if transfer_friendly is None:
+                transfer_friendly = bool(
+                    _SPONSOR_TRANSFER_FRIENDLY_RE.search(source))
+            if transfer_friendly:
+                if phrase not in unsettled:
+                    unsettled.append(phrase)
+                if phrase not in unsettled_transfer:
+                    unsettled_transfer.append(phrase)
+                continue
         if phrase not in negative:
             negative.append(phrase)
     positive: list[str] = []
@@ -2382,6 +2457,8 @@ def assess_sponsorship(text: str | None) -> dict:
     # elsewhere: one flat refusal is enough, however many quantified ones surround it.
     unsettled = [phrase for phrase in unsettled
                  if phrase not in negative and phrase not in negated_offer]
+    unsettled_transfer = [phrase for phrase in unsettled_transfer
+                          if phrase in unsettled]
     settled = [*negative, *negated_offer]
     denial = [*settled, *unsettled]
     # An offer phrase with an unreachable cue in front of it is a POSSIBLE
@@ -2400,8 +2477,12 @@ def assess_sponsorship(text: str | None) -> dict:
         )
     elif unsettled:
         decision, verdict, confidence = "review", "unknown", "low"
-        reason = ("The posting's only denial is bounded by a quantifier that reads "
-                  "either way, so it is not read as a settled refusal.")
+        reason = (
+            "The posting's only denial covers NEW petitions while the posting "
+            "also welcomes transfers, so it is not read as a settled refusal."
+            if unsettled_transfer and len(unsettled_transfer) == len(unsettled)
+            else "The posting's only denial is bounded by a quantifier that reads "
+                 "either way, so it is not read as a settled refusal.")
     elif ambiguous:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = ("Double-negated sponsorship language; the posting is not read "
