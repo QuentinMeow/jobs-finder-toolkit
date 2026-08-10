@@ -392,6 +392,111 @@ platform. This role is hybrid in San Mateo, CA.
 """
 
 
+# The title-divergence corpus. EVERY other fixture in this file opens with its own
+# title, so none of them can catch a wrong TITLE line — these two do. Both are
+# real shapes: a JD whose first line is company marketing copy, and one that opens
+# with a section heading instead of the role.
+JD_MARKETING_LEAD = """At Example Corp, we're building the modern cloud platform that
+thousands of engineering teams rely on every day, and we believe the best
+infrastructure is the kind nobody has to think about.
+
+Location: Austin, TX (Hybrid)
+
+## Requirements
+- 8+ years of professional software engineering experience.
+"""
+
+JD_HEADING_LEAD = """ABOUT THE ROLE
+
+You will own the ingestion platform end to end.
+
+Location: Remote (US)
+We are unable to provide visa sponsorship for this role.
+"""
+
+
+class DigestTitleDivergenceTests(unittest.TestCase):
+    """When the caller has the real title, the body must not out-vote it."""
+
+    def _digest(self, text: str, title=None) -> str:
+        return fetch_jd.build_digest(
+            text, jd_path="/x/JD.md", byte_count=len(text.encode("utf-8")),
+            title=title)
+
+    def _line(self, digest: str, prefix: str) -> str:
+        return next(l for l in digest.splitlines() if l.startswith(prefix))
+
+    def test_marketing_paragraph_is_reported_as_the_title_without_one(self):
+        # The bug, pinned: with no authoritative title the digest titles the
+        # posting with its opening marketing sentence AND classifies seniority
+        # from it, so a Senior role reads "unknown".
+        d = self._digest(JD_MARKETING_LEAD)
+        self.assertTrue(self._line(d, "TITLE:").startswith("TITLE: At Example Corp"))
+        self.assertIn("LEVEL (job_metadata.classify_level on title): unknown", d)
+
+    def test_authoritative_title_replaces_the_marketing_paragraph(self):
+        d = self._digest(JD_MARKETING_LEAD, title="Senior Software Engineer")
+        self.assertEqual(self._line(d, "TITLE:"), "TITLE: Senior Software Engineer")
+        self.assertIn("LEVEL (job_metadata.classify_level on title): senior", d)
+
+    def test_the_derived_title_is_kept_on_its_own_line_not_discarded(self):
+        d = self._digest(JD_MARKETING_LEAD, title="Senior Software Engineer")
+        derived = self._line(d, "TITLE (derived from the JD body):")
+        self.assertIn("At Example Corp", derived)
+
+    def test_section_heading_lead_is_replaced_too(self):
+        d = self._digest(JD_HEADING_LEAD, title="Staff Data Engineer")
+        self.assertEqual(self._line(d, "TITLE:"), "TITLE: Staff Data Engineer")
+        self.assertIn("LEVEL (job_metadata.classify_level on title): staff", d)
+        self.assertIn("TITLE (derived from the JD body): ABOUT THE ROLE", d)
+
+    def test_no_derived_line_when_the_two_titles_agree(self):
+        # The overwhelmingly common case must stay byte-identical to before.
+        with_title = self._digest(JD_REMOTE_DENIAL, title="Senior Backend Engineer")
+        without = self._digest(JD_REMOTE_DENIAL)
+        self.assertEqual(with_title, without)
+        self.assertNotIn("TITLE (derived from the JD body)", with_title)
+
+    def test_a_titleless_authoritative_value_falls_back_to_the_body(self):
+        for empty in (None, "", "   "):
+            with self.subTest(title=empty):
+                self.assertEqual(self._digest(JD_REMOTE_DENIAL, title=empty),
+                                 self._digest(JD_REMOTE_DENIAL))
+
+    def test_authoritative_title_without_seniority_keeps_the_body_title_level(self):
+        # A page-level title like "Careers at Example Corp" must not COST the
+        # seniority the body title would have given — it is reported as a labeled
+        # fallback instead of silently vanishing.
+        d = self._digest("# Senior Engineering Manager\n\nLocation: Remote (US)\n",
+                         title="Example Corp — Careers")
+        self.assertIn("LEVEL (job_metadata.classify_level on title): unknown", d)
+        self.assertIn("LEVEL FALLBACK (job_metadata.classify_level on the JD-body "
+                      "title): senior", d)
+
+
+class DigestPageTitleTests(unittest.TestCase):
+    """``<title>`` is chrome to the reader but the page's own name for the role."""
+
+    def test_page_title_is_extracted_and_entity_decoded(self):
+        html = "<html><head><title>Senior  Engineer &amp; Lead</title></head></html>"
+        self.assertEqual(fetch_jd.extract_page_title(html),
+                         "Senior Engineer & Lead")
+
+    def test_missing_title_tag_yields_empty_string(self):
+        self.assertEqual(fetch_jd.extract_page_title("<html><body>x</body></html>"), "")
+
+    def test_page_title_is_not_in_the_saved_jd_text(self):
+        # The saved JD stays verbatim page CONTENT; <title> is head chrome.
+        self.assertNotIn("Nimbus Robotics — Careers",
+                         fetch_jd.extract_readable_text(ATS_PAGE))
+
+    def test_body_h1_wins_over_the_page_title(self):
+        # ATS_PAGE titles the SITE and h1s the ROLE; the CLI must not swap them.
+        text = fetch_jd.extract_readable_text(ATS_PAGE)
+        self.assertEqual(fetch_jd._body_h1(text.splitlines()),
+                         "Senior Platform Engineer")
+
+
 class DigestHardeningTests(unittest.TestCase):
     def _digest(self, text: str) -> str:
         return fetch_jd.build_digest(
@@ -660,6 +765,42 @@ class DigestCliTests(unittest.TestCase):
         self.assertIn("JD DIGEST", stdout)
         # ATS_PAGE carries a sponsorship offer sentence — it must be located.
         self.assertIn("We sponsor H-1B transfers", stdout)
+
+    def test_digest_titles_a_headingless_page_from_its_title_tag(self):
+        # A page whose body opens with marketing copy and has NO <h1>: the digest
+        # must take the page's own <title>, not the first prose sentence, and the
+        # seniority read must follow it.
+        page = (
+            "<!doctype html><html><head>"
+            "<title>Senior Cloud Engineer - Example Corp</title></head><body>"
+            "<main><p>At Example Corp, we're building the modern cloud platform "
+            "that thousands of engineering teams rely on every day.</p>"
+            "<p>Location: Austin, TX (Hybrid)</p>"
+            "<p>We are unable to provide visa sponsorship for this role.</p>"
+            "</main></body></html>"
+        )
+        (self.tmp / "lead.html").write_text(page, encoding="utf-8")
+        out = self.tmp / "JD.md"
+        code, stdout, _stderr = _run_cli(
+            [(self.tmp / "lead.html").as_uri(), "--out", str(out), "--digest"])
+        self.assertEqual(code, 0)
+        self.assertIn("TITLE: Senior Cloud Engineer - Example Corp", stdout)
+        self.assertIn("LEVEL (job_metadata.classify_level on title): senior", stdout)
+        self.assertIn("TITLE (derived from the JD body): At Example Corp", stdout)
+        # The saved JD itself is untouched — still the verbatim page content.
+        self.assertNotIn("Senior Cloud Engineer",
+                         out.read_text(encoding="utf-8"))
+
+    def test_digest_keeps_the_body_h1_when_the_page_titles_the_site(self):
+        # ATS_PAGE: <title> is "Nimbus Robotics — Careers", <h1> is the role.
+        url = (self.tmp / "ats.html").as_uri()
+        (self.tmp / "ats.html").write_text(ATS_PAGE, encoding="utf-8")
+        out = self.tmp / "JD.md"
+        code, stdout, _stderr = _run_cli([url, "--out", str(out), "--digest"])
+        self.assertEqual(code, 0)
+        self.assertIn("TITLE: Senior Platform Engineer", stdout)
+        self.assertNotIn("Nimbus Robotics — Careers", stdout)
+        self.assertNotIn("TITLE (derived from the JD body)", stdout)
 
     def test_digest_from_kept_existing_file_without_refetch(self):
         # The common flow: handoff.py already saved the JD; --digest on the existing
