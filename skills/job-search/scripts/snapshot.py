@@ -62,12 +62,17 @@ def posting_from_dict(d: dict) -> JobPosting:
     return JobPosting(**kwargs)
 
 
-def _stamp(fetched_at: datetime) -> str:
-    """Compact, sortable, filesystem-safe UTC timestamp for a snapshot filename."""
-    return fetched_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+def run_stamp(moment: datetime) -> str:
+    """Compact, sortable, filesystem-safe UTC timestamp for a run artifact filename.
+
+    Public because every per-run artifact this skill writes — snapshots, the filter
+    review report, the discoveries Markdown — has to be nameable by the run that
+    produced it, and one stamp format keeps them sorting together in a listing.
+    """
+    return moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _atomic_write(path: Path, text: str) -> None:
+def atomic_write(path: Path, text: str) -> None:
     """Write via a same-directory temp + ``os.replace`` (never a partial file).
 
     A plain ``write_text``/``shutil.copyfile`` truncates the destination first, so
@@ -113,10 +118,10 @@ def write_snapshot(
         "postings": [posting_to_dict(p) for p in postings],
     }
     body = json.dumps(payload, indent=2)
-    snap_path = cache_dir / f"{label}-stage{stage}-{_stamp(fetched_at)}.json"
-    _atomic_write(snap_path, body)
+    snap_path = cache_dir / f"{label}-stage{stage}-{run_stamp(fetched_at)}.json"
+    atomic_write(snap_path, body)
     latest_path = cache_dir / f"{label}-stage{stage}-latest.json"
-    _atomic_write(latest_path, body)
+    atomic_write(latest_path, body)
     return snap_path, latest_path
 
 

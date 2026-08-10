@@ -155,18 +155,28 @@ class RefilterEquivalenceTests(unittest.TestCase):
             profile="example", include_considered=False,
             search_log_skip_days=None, include_recent=False)
         ctx = search_jobs.build_filter_context(profile, registry, args_ns)
-        kept, counts = search_jobs.filter_score_rank(
-            copy.deepcopy(postings), profile, ctx, max_age=max_age, top_k=top_k,
-            max_per_company=max_per_company, sponsor_index=None,
-            company_levels=company_levels, registry=registry, now=fetched_at)
-        meta = search_jobs.build_meta(
-            profile, args_ns, stage=1, n_companies=5,
-            aggregators=["jobicy", "themuse"], n_raw=len(postings), counts=counts,
-            max_age=max_age, max_per_company=max_per_company, errors=[], now=fetched_at)
-        md_direct = search_jobs.render_markdown(kept, profile, meta)
-        self.assertEqual(len(kept), 3)   # sanity: 3 survive, 2 filtered
 
         with TemporaryDirectory() as tmp:
+            # The direct call has to reproduce every input main() feeds the renderer
+            # — including the pre-dedupe unique count and the review artifact's
+            # stable pointer path — or this test compares two different questions.
+            pipeline_input = copy.deepcopy(postings)
+            kept, counts = search_jobs.filter_score_rank(
+                pipeline_input, profile, ctx, max_age=max_age, top_k=top_k,
+                max_per_company=max_per_company, sponsor_index=None,
+                company_levels=company_levels, registry=registry, now=fetched_at)
+            meta = search_jobs.build_meta(
+                profile, args_ns, stage=1, n_companies=5,
+                aggregators=["jobicy", "themuse"], n_raw=len(postings),
+                counts=counts, max_age=max_age, max_per_company=max_per_company,
+                errors=[], now=fetched_at,
+                n_raw_unique=len(search_jobs.dedupe(pipeline_input)))
+            md_direct = search_jobs.render_markdown(
+                kept, profile, meta,
+                review_path=Path(tmp) / "example-filter-review.json",
+                review_postings=counts.get("review_postings", []))
+            self.assertEqual(len(kept), 3)   # sanity: 3 survive, 2 filtered
+
             snap_path, _ = snapshot.write_snapshot(
                 Path(tmp), profile="example", stage=1, fetched_at=fetched_at,
                 source_selection={
@@ -227,6 +237,100 @@ class RefilterEquivalenceTests(unittest.TestCase):
         self.assertEqual(kept, [])
         self.assertEqual(counts["n_review"], 1)
         self.assertEqual(counts["review_postings"][0].company, "Review Systems")
+
+
+class DiscoveriesRunIdentityTests(unittest.TestCase):
+    """Two runs of one profile on one day must leave two reports, not one.
+
+    The default discoveries name is fixed per (day, profile), and the refilter path
+    dates the report by the SNAPSHOT's fetch time — so refiltering yesterday's
+    snapshot today used to rewrite yesterday's report in the owner's tree.
+    """
+
+    def test_a_second_run_does_not_overwrite_the_first_report(self):
+        fetched_at = datetime.now(timezone.utc) - timedelta(days=1)
+        postings = _synthetic_postings(fetched_at)
+        original_dir = search_jobs.discoveries_dir
+        with TemporaryDirectory() as tmp:
+            disc = Path(tmp) / "1_discoveries"
+            disc.mkdir(parents=True, exist_ok=True)
+            search_jobs.discoveries_dir = lambda: disc
+            try:
+                snap_path, _ = snapshot.write_snapshot(
+                    Path(tmp), profile="example", stage=1, fetched_at=fetched_at,
+                    source_selection={"n_companies": 0, "aggregators": [],
+                                      "max_age_days_at_fetch": None},
+                    postings=postings, errors=[])
+                base = ["--profile", "example", "--cache-dir", tmp,
+                        "--refilter", str(snap_path), "--allow-stale",
+                        "--sponsor-index", str(Path(tmp) / "none.json")]
+                self.assertEqual(_run_main([*base, "--top-k", "3"])[0], 0)
+                first = sorted(p.name for p in disc.iterdir())
+                self.assertEqual(_run_main([*base, "--top-k", "1"])[0], 0)
+                second = sorted(p.name for p in disc.iterdir())
+            finally:
+                search_jobs.discoveries_dir = original_dir
+
+            pointer = f"{fetched_at.strftime('%Y%m%d')}-example.md"
+            self.assertIn(pointer, first)          # the path docs/habits name
+            self.assertEqual(len(first), 2)        # + this run's own copy
+            # Run 2 adds its own file and never removes run 1's.
+            self.assertEqual(len(second), 3)
+            self.assertTrue(set(first) <= set(second))
+            run_files = [n for n in second if n != pointer]
+            bodies = {(disc / n).read_text() for n in run_files}
+            self.assertEqual(len(bodies), 2)       # two different answers, both kept
+            rows = sorted(body.count("| [link](") for body in bodies)
+            self.assertEqual(rows, [1, 3])         # --top-k 1 and --top-k 3 survive
+            # The pointer holds the newest run (--top-k 1).
+            self.assertEqual((disc / pointer).read_text().count("| [link]("), 1)
+
+    def test_an_explicit_out_path_is_still_written_verbatim(self):
+        fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        with TemporaryDirectory() as tmp:
+            snap_path, _ = snapshot.write_snapshot(
+                Path(tmp), profile="example", stage=1, fetched_at=fetched_at,
+                source_selection={"n_companies": 0, "aggregators": [],
+                                  "max_age_days_at_fetch": None},
+                postings=_synthetic_postings(fetched_at), errors=[])
+            out_md = Path(tmp) / "exact.md"
+            code, _out, _err = _run_main([
+                "--profile", "example", "--cache-dir", tmp,
+                "--refilter", str(snap_path), "--out", str(out_md),
+                "--sponsor-index", str(Path(tmp) / "none.json")])
+            self.assertEqual(code, 0)
+            self.assertTrue(out_md.is_file())
+            self.assertEqual([p.name for p in Path(tmp).glob("*.md")], ["exact.md"])
+
+    def test_the_review_artifact_is_written_even_with_no_review_rows(self):
+        fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        with TemporaryDirectory() as tmp:
+            snap_path, _ = snapshot.write_snapshot(
+                Path(tmp), profile="example", stage=1, fetched_at=fetched_at,
+                source_selection={"n_companies": 0, "aggregators": [],
+                                  "max_age_days_at_fetch": None},
+                postings=_synthetic_postings(fetched_at), errors=[])
+            code, _out, _err = _run_main([
+                "--profile", "example", "--cache-dir", tmp,
+                "--refilter", str(snap_path), "--out", str(Path(tmp) / "x.md"),
+                "--sponsor-index", str(Path(tmp) / "none.json")])
+            self.assertEqual(code, 0)
+            pointer = Path(tmp) / "example-filter-review.json"
+            self.assertTrue(pointer.is_file())
+            payload = json.loads(pointer.read_text())
+            self.assertEqual(payload["count"], len(payload["postings"]))
+            self.assertEqual(payload["snapshot"], str(snap_path))
+            # Both lanes: the bounded review list and the cap's overflow, each with
+            # one run file plus its stable pointer.
+            overflow = Path(tmp) / "example-filter-review-overflow.json"
+            self.assertTrue(overflow.is_file())
+            self.assertEqual(json.loads(overflow.read_text())["kind"],
+                             "filter-review-overflow")
+            runs = [p.name for p in Path(tmp).glob("example-filter-review-2*.json")]
+            over_runs = [p.name for p in
+                         Path(tmp).glob("example-filter-review-overflow-2*.json")]
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(len(over_runs), 1)
 
 
 class RefilterTTLTests(unittest.TestCase):
