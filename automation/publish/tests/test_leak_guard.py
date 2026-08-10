@@ -350,6 +350,164 @@ class TokenMatchingRegressionTests(unittest.TestCase):
             [])
 
 
+# ── token matching: the MUST-NOW-ALLOW list ──────────────────────────────────
+# ``(text, surname)``. Every one of these fired under pure containment, and none
+# of them is a leak: the surname sits INSIDE an ordinary word. On the real
+# tracked tree these accounted for hundreds of false violations per surname —
+# enough that an owner named King, Ross, Green or Ward could not commit at all.
+#
+# "Menlo Park" is deliberately absent. No boundary rule can separate the place
+# from the surname — "Alex Park" has exactly the same shape — so it is covered by
+# the opt-in English-word allowance tests instead.
+MUST_NOW_ALLOW = [
+    ("agreed on the plan", "Reed"),
+    ("they disagreed", "Reed"),
+    ("the buffer is freed", "Reed"),
+    ("matched greedily", "Reed"),
+    ("the run parked the job", "Park"),
+    ("sparkling water", "Park"),
+    ("time.sleep() blocks", "Lee"),
+    ("the abstraction bleeds", "Lee"),
+    ("raise FileExistsError", "Lee"),
+    ("a shallow clone", "Hall"),
+    ("the challenge is real", "Hall"),
+    ("making progress", "King"),
+    ("a blocking call", "King"),
+    ("cross-session context", "Ross"),
+    ("outward facing", "Ward"),
+    ("read the quickstart", "Quick"),
+    ("Blacksmith patterns", "Smith"),
+]
+
+
+class TokenMatchingFalsePositiveTests(unittest.TestCase):
+    """Ordinary words that must stop being reported as an identity leak."""
+
+    def _token_hits(self, text: str, tokens: list[str]) -> list:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, {"notes.md": text + "\n"})
+            result = check_public.scan(root=root, tracked=tracked, tokens=tokens)
+        return result["violations"]["personal_token"]
+
+    def test_a_surname_inside_an_ordinary_word_is_not_a_leak(self):
+        for text, token in MUST_NOW_ALLOW:
+            with self.subTest(word=text, token=token):
+                self.assertEqual(
+                    self._token_hits(text, [token]), [],
+                    f"'{token}' still fires inside {text!r}")
+
+    def test_the_same_surname_standing_alone_is_still_a_leak(self):
+        # The other half. Boundary matching narrows WHERE a token counts; it
+        # must not stop the token counting.
+        for _, token in MUST_NOW_ALLOW:
+            with self.subTest(token=token):
+                self.assertTrue(self._token_hits(f"Contact: Alex {token}", [token]))
+                self.assertTrue(self._token_hits(f"alex-{token.lower()}/notes", [token]))
+                self.assertTrue(self._token_hits(f"Alex{token}Resume.md", [token]))
+
+
+class TokenClassificationTests(unittest.TestCase):
+    """Which rule a token gets, and why. The hinge of the whole change."""
+
+    def _mode(self, token: str, tokens=None, forced=None) -> str:
+        specs = check_public.classify_tokens(tokens or [token],
+                                             force_substring=forced)
+        return next(s.mode for s in specs if s.token == token)
+
+    def test_a_bare_name_part_is_boundary_matched(self):
+        self.assertEqual(self._mode("Rivers"), check_public.TOKEN_BOUNDARY)
+
+    def test_anything_carrying_punctuation_keeps_containment(self):
+        for token in ("jordan.rivers" + "@" + "example.com", "jordan.rivers",
+                      "field-notes", "jordan_rivers"):
+            with self.subTest(token=token):
+                self.assertEqual(self._mode(token), check_public.TOKEN_SUBSTRING)
+
+    def test_a_handle_with_a_digit_keeps_containment(self):
+        self.assertEqual(self._mode("jrivers7"), check_public.TOKEN_SUBSTRING)
+
+    def test_a_compound_of_two_tokens_keeps_containment(self):
+        # THE property that lets the boundary rule be safe, and the one that has
+        # to survive a flat round trip through $JOBHUNT_PERSONAL_TOKENS: no
+        # provenance is supplied here, only the token set.
+        flat = ["Jordan", "Rivers", "jordanrivers", "jrivers"]
+        self.assertEqual(self._mode("jordanrivers", flat),
+                         check_public.TOKEN_SUBSTRING)
+        self.assertEqual(self._mode("jrivers", flat),
+                         check_public.TOKEN_SUBSTRING)
+        self.assertEqual(self._mode("Jordan", flat), check_public.TOKEN_BOUNDARY)
+
+    def test_declared_provenance_overrides_shape(self):
+        # A one-word linkedin handle or home basename is a bare word by shape;
+        # its provenance is what keeps it on containment.
+        self.assertEqual(self._mode("riverside", forced={"riverside"}),
+                         check_public.TOKEN_SUBSTRING)
+
+    def test_an_empty_token_is_dropped_rather_than_matching_everything(self):
+        self.assertEqual(check_public.classify_tokens(["", "   "]), [])
+
+    def test_overlapping_occurrences_are_all_considered(self):
+        # A non-overlapping scan consumes 'annA' (edges fail) and never sees
+        # 'Anna' starting one character later (edges pass). The zero-width
+        # lookahead in _boundary_pattern is what stops that being a miss.
+        specs = check_public.classify_tokens(["Anna"])
+        self.assertIsNotNone(check_public.first_token_hit(specs, "annAnna"))
+
+
+class NameCompoundDerivationTests(unittest.TestCase):
+    """The compounds that pay for the boundary rule must actually be derived."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tokens = set(fictional_identity_tokens())
+
+    def test_glued_and_joined_forms_are_derived(self):
+        for compound in ("jordanrivers", "riversjordan", "jrivers", "jordanr",
+                         "jordan rivers", "jordan-rivers", "jordan_rivers"):
+            with self.subTest(compound=compound):
+                self.assertIn(compound, self.tokens)
+
+    def test_compounds_are_high_specificity(self):
+        with mock.patch.object(check_public, "_load_shared_config",
+                               return_value=_ExampleConfigStub):
+            # The example persona contributes nothing at all — the gate that
+            # keeps a public clone from arming on the fictional identity.
+            self.assertEqual(check_public.high_specificity_tokens(), set())
+        self.assertIn("jordanrivers", check_public._name_compounds(
+            ["Jordan", "Rivers"]))
+
+    def test_a_short_pairing_is_not_shipped_as_a_compound(self):
+        # 'liwu' would start hitting inside base64 and hex runs — a new class of
+        # false positive is not a fix for the old one.
+        self.assertEqual(check_public._name_compounds(["Li", "Wu"]), set())
+
+
+class ExporterMatchesTheGuardTests(unittest.TestCase):
+    """The exporter's exclusion screen and the guard must agree, always.
+
+    A rule that differed would either drop files the guard passes (a silently
+    incomplete export) or ship files the guard fails (an export that cannot be
+    published at all).
+    """
+
+    def test_a_word_internal_hit_no_longer_excludes_a_file(self):
+        # 'Ever' occurs in config.example.yaml only inside 'never'. Under pure
+        # containment that excluded the file from every export.
+        self.assertIsNone(export_public._deny_reason("config.example.yaml",
+                                                     ["Ever"]))
+
+    def test_a_real_leak_still_excludes_a_file(self):
+        reason = export_public._deny_reason("config.example.yaml", ["Rivers"])
+        self.assertIsNotNone(reason)
+        self.assertTrue(reason.startswith("token"))
+
+    def test_a_glued_compound_still_excludes_a_file(self):
+        reason = export_public._deny_reason("config.example.yaml",
+                                            ["jordanrivers"])
+        self.assertIsNotNone(reason)
+
+
 class PrivateSkillTests(unittest.TestCase):
     def test_private_skill_with_tracked_files_flags(self):
         with tempfile.TemporaryDirectory() as td:
