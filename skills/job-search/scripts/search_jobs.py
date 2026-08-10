@@ -64,7 +64,7 @@ for _p in (str(SKILL_SCRIPTS), str(_VENDOR)):
 
 from aggregators import (  # noqa: E402
     KEYED, KEYLESS, build_aggregator_tasks, build_jobspy_tasks, jobspy_available,
-    keyed_available,
+    keyed_available, resolve_reliable_sites,
 )
 from common import days_since, drain_source_warnings  # noqa: E402
 from job_metadata import analyze_job_metadata, load_company_levels  # noqa: E402
@@ -724,7 +724,7 @@ def assemble_jobspy_tasks(jobspy_on, stage, jobspy_cfg, query_terms, max_age,
     """
     if not jobspy_on:
         return [], [], []
-    reliable = jobspy_cfg.get("reliable_sites") or ["indeed", "google"]
+    reliable = resolve_reliable_sites(jobspy_cfg, stream=stream)
     extended = (jobspy_cfg.get("extended_sites") or ["linkedin"]) if stage >= 2 else []
     wanted = list(reliable) + list(extended)
     ok = jobspy_available() if available is None else available
