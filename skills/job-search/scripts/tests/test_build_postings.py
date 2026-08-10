@@ -1785,5 +1785,112 @@ class SwapCrashRecoveryTests(_StoreCase):
         self.assertEqual(self._index_keys(), {"gh-111", "gh-222"})
 
 
+class FoldCoherenceTests(unittest.TestCase):
+    """Two observations under ONE key must not produce a chimera.
+
+    `_Fold.add` keeps the last JD it was *given*, so an observation carrying no
+    description leaves the previous one standing, while `_finish` takes title and
+    location from the latest observation unconditionally. For one posting
+    re-observed by a listing-only scrape that is right. For two DIFFERENT postings
+    folded under one key it welds one job's title to another job's body — and
+    nothing in the finished entity reveals it.
+
+    These drive the real `_Fold`/`_finish`, not a stand-in.
+    """
+
+    BOARD = "https://remoteok.com/remote-jobs/"
+
+    def _row(self, native_id, title, company, description, url=None):
+        return {"source": "remoteok", "operation": "scrape", "native_id": native_id,
+                "title": title, "url": url if url is not None else self.BOARD,
+                "location": "Remote", "company_name": company,
+                "description": description, "workplace_raw": "remote",
+                "posted_at": None, "salary_text": None, "salary_range": None}
+
+    def _fold(self, *rows_and_days):
+        """Fold rows into ONE entity key, oldest first, and finish it."""
+        fold = bp._Fold("url-testkey")
+        for row, day in rows_and_days:
+            fold.add(bp.Observation(
+                key="url-testkey", strength=bp.ident.STRONG, row=row,
+                fetch_id=f"f-{day:04d}", fetched_at=f"2026-08-{day:02d}T00:00:00Z",
+                company="Northwind Systems", company_slug="northwind-systems",
+                manifest_path=f"m/{day}.json", profile="p"), {})
+        return bp._finish(fold, bp._stamps())
+
+    def test_a_foreign_jd_is_never_welded_to_another_jobs_title(self):
+        backend = self._row("aa-1", "Senior Backend Engineer", "Northwind Systems",
+                            "Northwind Systems is hiring a backend engineer to own "
+                            "the billing ledger. Go and Postgres.")
+        # A DIFFERENT posting, observed later, carrying no description of its own.
+        scientist = self._row("bb-2", "Staff Data Scientist", "Larkspur Analytics", "")
+        eb = self._fold((backend, 1), (scientist, 2))
+
+        self.assertEqual(eb.posting["title"], "Staff Data Scientist")
+        # The backend JD belongs to the OTHER posting: it must not ship here.
+        self.assertEqual(eb.jd_text, "")
+        self.assertNotIn("jd", eb.posting)
+        conflict = eb.posting["provenance"].get("jd_conflict")
+        self.assertIsNotNone(conflict, "dropping a JD must never be silent")
+        self.assertEqual(conflict["jd_from"], {"source": "remoteok", "id": "aa-1"})
+        self.assertEqual(conflict["entity_from"], {"source": "remoteok", "id": "bb-2"})
+
+    def test_neither_absorbed_posting_loses_its_provenance(self):
+        a = self._row("aa-1", "Senior Backend Engineer", "Northwind Systems", "JD A")
+        b = self._row("bb-2", "Staff Data Scientist", "Larkspur Analytics", "JD B")
+        eb = self._fold((a, 1), (b, 2))
+        # Both postings stay named in source_ids even though one entity resulted.
+        self.assertEqual([s["id"] for s in eb.posting["source_ids"]], ["aa-1", "bb-2"])
+
+    def test_a_listing_only_rescrape_keeps_the_same_postings_jd(self):
+        """The ordinary case must not regress: same posting, JD kept, title fresh.
+
+        A re-scrape of ONE posting that returns no description is stale, not
+        foreign — dropping its JD here would throw away the store's main content.
+        """
+        first = self._row("aa-1", "Senior Backend Engineer", "Northwind Systems",
+                          "Own the billing ledger. Go and Postgres.")
+        retitled = self._row("aa-1", "Senior Backend Engineer II",
+                             "Northwind Systems", "")
+        eb = self._fold((first, 1), (retitled, 2))
+        self.assertEqual(eb.posting["title"], "Senior Backend Engineer II")
+        self.assertEqual(eb.jd_text, "Own the billing ledger. Go and Postgres.")
+        self.assertNotIn("jd_conflict", eb.posting["provenance"])
+        # ...and the entity SAYS which observation the body came from.
+        self.assertEqual(eb.posting["jd"]["from"], {"source": "remoteok", "id": "aa-1"})
+
+    def test_an_unknown_posting_id_leaves_a_good_jd_alone(self):
+        """Two rows with no id cannot be proven different — do not drop on a guess."""
+        first = self._row(None, "Senior Backend Engineer", "Northwind Systems",
+                          "Own the billing ledger.")
+        later = self._row(None, "Senior Backend Engineer", "Northwind Systems", "")
+        eb = self._fold((first, 1), (later, 2))
+        self.assertEqual(eb.jd_text, "Own the billing ledger.")
+        self.assertNotIn("jd_conflict", eb.posting["provenance"])
+
+    def test_a_resumed_fold_recovers_the_jd_origin_from_derived(self):
+        """Incremental must reach the same verdict as a rebuild.
+
+        The origin is read back from the entity's own `jd.from`, so a fold resumed
+        from derived files still refuses a foreign JD.
+        """
+        fold = bp._Fold("url-testkey")
+        fold.resume(source_ids=[{"source": "remoteok", "id": "aa-1", "url": self.BOARD}],
+                    profiles=["p"], fetch_ids=["f-0001"], events=[],
+                    jd_text="Own the billing ledger.",
+                    jd_origin=bp._jd_origin_of(
+                        {"jd": {"from": {"source": "remoteok", "id": "aa-1"}}}),
+                    prior={}, first_at="2026-08-01T00:00:00Z")
+        fold.add(bp.Observation(
+            key="url-testkey", strength=bp.ident.STRONG,
+            row=self._row("bb-2", "Staff Data Scientist", "Larkspur Analytics", ""),
+            fetch_id="f-0002", fetched_at="2026-08-02T00:00:00Z",
+            company="Northwind Systems", company_slug="northwind-systems",
+            manifest_path="m/2.json", profile="p"), {})
+        eb = bp._finish(fold, bp._stamps())
+        self.assertEqual(eb.jd_text, "")
+        self.assertIn("jd_conflict", eb.posting["provenance"])
+
+
 if __name__ == "__main__":
     unittest.main()

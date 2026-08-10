@@ -91,7 +91,7 @@ sources:
   query_location: "United States"
   jobspy:
     enabled: true           # Stage 1 Indeed/Google baseline (needs python-jobspy)
-    sites: [indeed, google]
+    reliable_sites: [indeed, google]   # STAGE 1. (`sites:` is the obsolete name)
     location: "United States"
     results_wanted: 25
     max_terms: 3

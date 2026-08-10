@@ -22,11 +22,48 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import urllib.parse
 
 import capture_hooks
 from common import (JobPosting, http_get_full, http_get_json, parse_dt,
                     provided_salary_range, strip_html)
+
+# The stage-1 JobSpy site list. `reliable_sites` is the canonical key — it is the
+# one the staged planner reads and the one the docs describe — but the shipped
+# profiles taught `sites:` for long enough that it has to keep working. A profile
+# asking for Indeed only through the obsolete key used to be ignored in silence,
+# so the run scraped Google as well and doubled its fetch volume.
+JOBSPY_SITES_KEY = "reliable_sites"
+JOBSPY_SITES_ALIAS = "sites"
+DEFAULT_RELIABLE_SITES = ["indeed", "google"]
+
+
+def resolve_reliable_sites(jobspy_cfg: dict | None, *, stream=None) -> list:
+    """Return the stage-1 JobSpy sites, honouring the `sites` alias out loud.
+
+    `reliable_sites` wins when both are present. Either way, an obsolete `sites`
+    key produces a warning naming the rename — never a silent default, because
+    silently ignoring it is exactly what made a narrowed site list expand back to
+    the full default.
+    """
+    cfg = jobspy_cfg or {}
+    canonical = cfg.get(JOBSPY_SITES_KEY)
+    alias = cfg.get(JOBSPY_SITES_ALIAS)
+    out = stream if stream is not None else sys.stderr
+    if alias:
+        if canonical:
+            print(f"jobspy: profile sets BOTH `{JOBSPY_SITES_KEY}` and the obsolete "
+                  f"`{JOBSPY_SITES_ALIAS}`; using {JOBSPY_SITES_KEY}={list(canonical)} "
+                  f"and IGNORING {JOBSPY_SITES_ALIAS}={list(alias)}. Delete the "
+                  f"`{JOBSPY_SITES_ALIAS}` line.", file=out)
+        else:
+            print(f"jobspy: `sources.jobspy.{JOBSPY_SITES_ALIAS}` is the obsolete name "
+                  f"for `{JOBSPY_SITES_KEY}`. Honouring it this run "
+                  f"({list(alias)}), but rename it to `{JOBSPY_SITES_KEY}` — earlier "
+                  f"versions ignored it and scraped {DEFAULT_RELIABLE_SITES} instead.",
+                  file=out)
+    return list(canonical or alias or DEFAULT_RELIABLE_SITES)
 
 
 def _redact_url(url: str, drop_params: tuple[str, ...]) -> str:
@@ -326,7 +363,7 @@ def fetch_jobspy(query_terms, max_age_days, jobspy_cfg: dict,
         raise RuntimeError("jobspy not installed. Run: "
                            ".venv/bin/python -m pip install python-jobspy") from exc
     import math
-    sites = sites or jobspy_cfg.get("sites") or ["indeed", "google"]
+    sites = sites or resolve_reliable_sites(jobspy_cfg)
     results_wanted = int(jobspy_cfg.get("results_wanted", 25))
     loc_cfg = loc_cfg or {"location": jobspy_cfg.get("location") or "United States"}
     loc = loc_cfg.get("location") or "United States"
@@ -487,7 +524,7 @@ def build_aggregator_tasks(names, query_terms, location, max_age_days, jobspy_cf
             tasks.append((f"agg:{name}",
                           lambda fn=fn: fn(query_terms, location, max_age_days)))
         elif name == "jobspy":
-            sites = (jobspy_cfg or {}).get("sites") or ["indeed", "google"]
+            sites = resolve_reliable_sites(jobspy_cfg)
             tasks.extend(build_jobspy_tasks(query_terms, jobspy_cfg or {},
                                             sites, max_age_days))
         else:
