@@ -203,6 +203,153 @@ class TokenTests(unittest.TestCase):
             export_public._deny_reason("config.example.yaml", ["ZZZ-absent-token"]))
 
 
+# ── token matching: the MUST-STILL-CATCH regression list ─────────────────────
+# Every string below is a real leak shape the guard catches, and it must STAY
+# caught however the matching rule evolves. The list exists because the obvious
+# fix for the guard's false positives — requiring a word boundary around every
+# token — silently drops the five GLUED shapes marked below, and a leak the
+# guard used to catch is the only kind of regression that cannot be undone
+# after a push.
+#
+# The token set is DERIVED from the fictional persona by the guard's own
+# ``_identity_tokens``, never hand-listed. A hand-listed set would pin the
+# tokens of the day and pass forever while the derivation that actually runs in
+# a maintainer checkout drifted underneath it.
+FICTIONAL_CONTACT = (
+    "City, ST • jordan.rivers" + "@" + "example.com"
+    " • linkedin.com/in/jordanrivers • github.com/jordanrivers"
+)
+# A home-directory basename with nothing to do with the persona, so a case that
+# must be caught by a NAME-derived token can never pass on the home token by
+# accident. Patched in rather than read, so the tokens do not depend on the
+# machine running the suite.
+FICTIONAL_HOME = "/home/" + "nobody"
+
+# ``(label, text)``. Labels name the leak SHAPE so a failure says which one.
+MUST_STILL_CATCH = [
+    ("plain full name", "Contact: Jordan Rivers"),
+    ("possessive", "Jordan's resume is attached"),
+    ("surname-first, comma", "Rivers, Jordan — Senior Engineer"),
+    ("shouted", "JORDAN RIVERS"),
+    ("hyphenated surname", "Maria Garcia-Rivers reviewed it"),
+    # A dotted local part: the surname is glued to an initial by a '.'.
+    ("dotted email local part", "j.rivers" + "@" + "corp.com"),
+    ("full email", "jordan.rivers" + "@" + "example.com"),
+    ("absolute home path", "/Users/jordan/code/x"),
+    ("traceback home path", 'File "/Users/jordan/x.py", line 3'),
+    ("kebab application slug",
+     "applications/1_applied/acme-jordan-rivers/meta.yaml"),
+    ("DOCX run split", "<w:t>Jordan</w:t><w:t>Rivers</w:t>"),
+    ("query parameter", "?owner=jordan&x=1"),
+    ("URL path segment", "https://example.com/u/jordan/profile"),
+    # ── the five GLUED shapes a boundary-only rule would drop ──
+    ("GLUED linkedin handle", "linkedin.com/in/jordanrivers"),
+    ("GLUED camelCase handle in a URL", "github.com/JordanRivers"),
+    ("GLUED initial+surname local part", "jrivers" + "@" + "corp.com"),
+    ("GLUED slug with no separator", "applications/acme-jordanrivers/meta.yaml"),
+    ("GLUED home basename", "/Users/jordanrivers/code/x"),
+    # ── back to shapes any rule should get ──
+    ("CamelCase filename", "JordanRivers_Resume_2026.docx"),
+    ("snake_case export name", "exports/jordan_rivers_baseline.yaml"),
+    ("snake_case JSON key", '{"candidate_jordan": 1}'),
+    ("glued document extraction", "JordanRiversSeniorEngineer"),
+]
+
+# The subset that is a PATH, scanned by the same rule through a different code
+# path (``rel_lower``), so both are pinned.
+MUST_STILL_CATCH_PATHS = [
+    "applications/1_applied/acme-jordan-rivers/meta.yaml",
+    "applications/acme-jordanrivers/meta.yaml",
+    "exports/jordan_rivers_baseline.yaml",
+    "docs/JordanRivers_Resume_2026.md",
+]
+
+
+class _RealConfigStub:
+    """A config layer resolving to a REAL (non-example) config for the persona.
+
+    ``_identity_tokens`` returns nothing for the example config by design, so a
+    stub that wants tokens has to look like a maintainer checkout: an active
+    path whose bytes differ from the example's.
+    """
+
+    def __init__(self, active: Path, example: Path):
+        self._active = active
+        self.EXAMPLE_CONFIG = example
+
+    def config_path(self) -> Path:
+        return self._active
+
+    @staticmethod
+    def candidate_name() -> str:
+        return "Jordan Rivers"
+
+    @staticmethod
+    def contact_line() -> str:
+        return FICTIONAL_CONTACT
+
+
+def fictional_identity_tokens() -> list[str]:
+    """The identity tokens the guard itself derives for the fictional persona."""
+    with tempfile.TemporaryDirectory() as td:
+        active = Path(td) / "config.yaml"
+        active.write_text("candidate:\n  name: a maintainer checkout\n",
+                          encoding="utf-8")
+        example = Path(td) / "config.example.yaml"
+        example.write_text("candidate:\n  name: the shipped example\n",
+                           encoding="utf-8")
+        with mock.patch.object(check_public.Path, "home",
+                               return_value=Path(FICTIONAL_HOME)):
+            return sorted(check_public._identity_tokens(
+                _RealConfigStub(active, example)))
+
+
+class TokenMatchingRegressionTests(unittest.TestCase):
+    """Leak shapes that are caught today and must never stop being caught."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tokens = fictional_identity_tokens()
+
+    def _token_hits(self, files: dict) -> list:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracked = _write_tree(root, files)
+            result = check_public.scan(root=root, tracked=tracked,
+                                       tokens=self.tokens)
+        # Asserted on the TOKEN category specifically: several fixtures also trip
+        # the path denylist or the structural-PII scan, and a pass for the wrong
+        # reason would hide exactly the regression this list exists to catch.
+        return result["violations"]["personal_token"]
+
+    def test_the_persona_tokens_are_actually_derived(self):
+        # A silently empty token set would make every case below vacuous.
+        self.assertIn("Jordan", self.tokens)
+        self.assertIn("Rivers", self.tokens)
+        self.assertIn("jordanrivers", self.tokens)
+
+    def test_every_regression_string_is_caught_in_content(self):
+        for label, text in MUST_STILL_CATCH:
+            with self.subTest(shape=label):
+                hits = self._token_hits({"notes.md": text + "\n"})
+                self.assertTrue(
+                    hits, f"leak shape '{label}' is no longer caught in CONTENT")
+
+    def test_every_regression_path_is_caught_in_the_path_scan(self):
+        for rel in MUST_STILL_CATCH_PATHS:
+            with self.subTest(path=rel):
+                hits = self._token_hits({rel: "placeholder\n"})
+                self.assertTrue(
+                    [h for h in hits if h["where"] == "path"],
+                    f"path '{rel}' is no longer caught by the PATH scan")
+
+    def test_a_clean_file_is_not_flagged(self):
+        # The control: the fixture machinery itself must not manufacture hits.
+        self.assertEqual(
+            self._token_hits({"notes.md": "an ordinary sentence about work\n"}),
+            [])
+
+
 class PrivateSkillTests(unittest.TestCase):
     def test_private_skill_with_tracked_files_flags(self):
         with tempfile.TemporaryDirectory() as td:

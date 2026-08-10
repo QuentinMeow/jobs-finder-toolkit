@@ -3010,3 +3010,16 @@
     and temporary bridges. The armed staged leak guard reports zero findings. Timeless public
     guidance only; no real identity, employer, school, salary, private item name, or dated
     personal job-hunt content.'
+- base: 8c39c9f6
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 1
+  digest: sha256:433327864b2e6e43
+  finding: 'Read the complete staged one-file diff: a new leak-guard test class pinning
+    22 leak SHAPES the token scan catches today (plain name, possessive, hyphenated,
+    dotted and glued email local parts, home paths, kebab/snake/camel slugs, DOCX run
+    split, URL and query forms) plus four path-scan cases, all built from the fictional
+    Jordan Rivers persona and a fictional home basename. Real-looking addresses are
+    assembled from split fragments so the file itself stays guard-clean. No real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content.'
