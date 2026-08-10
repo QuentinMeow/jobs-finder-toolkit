@@ -19,6 +19,7 @@ import sys
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 _SCRIPTS = Path(__file__).resolve().parents[1]
 for _p in (_SCRIPTS, _SCRIPTS / "_vendor"):
@@ -109,6 +110,49 @@ class PrecedenceTests(unittest.TestCase):
         """' manager' and 'manager' are the same word in two classes."""
         wf = _filter(hard=[" manager"], include=["manager"])
         self.assertTrue(any("'manager'" in w for w in wf.warnings), wf.warnings)
+
+    def test_a_word_in_titles_exclude_and_a_rescue_class_is_reported(self):
+        """The collision that was invisible: two BLOCKS contradicting each other.
+
+        `titles.exclude` says drop; `word_filter.soft_exclude`/`include` say never
+        drop, mark for judgement. Both cannot hold, and the word_filter runs later
+        and wins — so the profile's own exclude silently never takes effect for
+        that word.
+        """
+        for cls, kwargs in (("soft_exclude", {"soft": [" manager"]}),
+                            ("include", {"include": ["data scientist"]})):
+            with self.subTest(cls=cls):
+                word = list(kwargs.values())[0][0].strip()
+                profile = _profile(**kwargs)
+                profile["titles"]["exclude"] = ["manager", "data scientist"]
+                warnings = title_filter.load_word_lists(profile).warnings
+                hit = [w for w in warnings if repr(word) in w
+                       and "titles.exclude" in w]
+                self.assertTrue(hit, warnings)
+                self.assertIn(f"titles.word_filter.{cls} wins", hit[0])
+
+    def test_a_hard_exclude_that_agrees_with_titles_exclude_is_not_a_collision(self):
+        """Both say drop — a duplicate, not a contradiction; nothing to warn about."""
+        profile = _profile(hard=["manager"])
+        profile["titles"]["exclude"] = ["manager"]
+        self.assertEqual(title_filter.load_word_lists(profile).warnings, ())
+
+    def test_the_shipped_example_profile_trips_the_cross_block_warning(self):
+        """The finding, not a nuisance: the public example contradicts itself.
+
+        `manager`, `data scientist` and `research scientist` are in BOTH
+        `titles.exclude` and `word_filter.soft_exclude`, so the exclude list never
+        drops them. Which list SHOULD win is an owner decision; the warning is what
+        makes the question visible instead of silent.
+        """
+        import yaml
+        profile = yaml.safe_load(
+            (_SCRIPTS.parent / "profiles" / "example.yaml").read_text())
+        warnings = title_filter.load_word_lists(profile).warnings
+        cross = [w for w in warnings if "titles.exclude" in w]
+        self.assertEqual(len(cross), 3, cross)
+        for word in ("manager", "data scientist", "research scientist"):
+            self.assertTrue(any(repr(word) in w for w in cross), cross)
 
     def test_include_and_soft_hits_both_reach_review_together(self):
         wf = _filter(soft=["manager"], include=["principal"])
@@ -339,6 +383,71 @@ class SoftAndIncludeReachTheAiJudgementStepTests(_PipelineCase):
         kept, counts = self._run([posting], profile)
         self.assertEqual(kept, [])
         self.assertEqual(counts["n_review"], 0)
+
+    def test_a_title_gate_drop_is_counted_per_term_not_silent(self):
+        """The pipeline's biggest drop used to increment no counter at all.
+
+        `titles.exclude` and the non-technical-occupation lexicon together removed
+        thousands of postings per run with no number in `counts`, the meta, the
+        markdown or stderr — so a wrong exclude term cost the candidate real
+        postings and nothing said so.
+        """
+        profile = {"titles": {"include": ["software engineer"],
+                              "exclude": ["manager", "data scientist"]},
+                   "location": {"us_only": False, "allow_remote": True}}
+        kept, counts = self._run(
+            [_posting("Engineering Manager"),
+             _posting("Engineering Manager", company="Other Corp"),
+             _posting("Senior Data Scientist"),
+             _posting("Registered Nurse"),
+             _posting("Software Engineer, Platform")], profile)
+        self.assertEqual([p.title for p in kept], ["Software Engineer, Platform"])
+        self.assertEqual(counts["n_title_excluded"], 3)
+        self.assertEqual(counts["title_excluded_terms"],
+                         {"manager": 2, "data scientist": 1})
+        self.assertEqual(counts["n_title_nontechnical_occupation"], 1)
+
+    def test_a_rescued_row_is_not_counted_as_a_drop(self):
+        """`n_title_excluded` counts DROPS; a word-filter rescue is not one."""
+        profile = {"titles": {"include": ["software engineer"],
+                              "exclude": ["manager"],
+                              "word_filter": {"soft_exclude": [" manager"]}},
+                   "location": {"us_only": False, "allow_remote": True}}
+        _, counts = self._run([_posting("Engineering Manager")], profile)
+        self.assertEqual(counts["n_title_excluded"], 0)
+        self.assertEqual(counts["n_title_word_filter_review"], 1)
+
+    def test_the_run_summary_names_the_terms_that_cost_the_most_postings(self):
+        meta = {"n_title_excluded": 1155,
+                "title_excluded_terms": {"manager": 1077, "data scientist": 42,
+                                         "research scientist": 35, "designer": 1},
+                "n_title_nontechnical_occupation": 6421}
+        line = search_jobs._render_title_gate_drops(meta)
+        self.assertIn("Your excludes dropped 1155 postings", line)
+        self.assertIn("manager 1077, data scientist 42, research scientist 35", line)
+        self.assertNotIn("designer", line)      # truncated to the biggest few
+        self.assertIn("6421", line)
+
+    def test_the_run_summary_line_is_absent_when_the_gate_dropped_nothing(self):
+        self.assertIsNone(search_jobs._render_title_gate_drops(
+            {"n_title_excluded": 0, "n_title_nontechnical_occupation": 0}))
+
+    def test_the_counts_reach_the_meta_the_json_and_the_summary(self):
+        counts = {"n_blacklisted": 0, "n_considered": 0, "n_recently_searched": 0,
+                  "n_title_excluded": 4,
+                  "title_excluded_terms": {"manager": 4},
+                  "n_title_nontechnical_occupation": 2}
+        args = SimpleNamespace(profile="example")
+        meta = search_jobs.build_meta(
+            {}, args, stage=1, n_companies=0, aggregators=[], n_raw=6,
+            counts=counts, max_age=None, max_per_company=0, errors=[],
+            now=self.NOW)
+        self.assertEqual(meta["n_title_excluded"], 4)
+        self.assertEqual(meta["title_excluded_terms"], {"manager": 4})
+        self.assertEqual(meta["n_title_nontechnical_occupation"], 2)
+        summary = search_jobs.render_run_summary(
+            meta, [], snapshot_display="-", discoveries_path="-", json_path="-")
+        self.assertIn("Your excludes dropped 4 postings (manager 4)", summary)
 
     def test_an_unconfigured_profile_changes_nothing_in_the_pipeline(self):
         profile = {"titles": {"include": ["software engineer"],

@@ -484,6 +484,138 @@ class LexiconVersusProfileIncludeTests(unittest.TestCase):
                          "review")
 
 
+class ProfileIncludeOutranksTheOccupationLexiconTests(unittest.TestCase):
+    """#232: the generic occupation lexicon ran BEFORE `titles.include`.
+
+    The lexicon encodes what a default SOFTWARE search does not want. A profile's
+    own `titles.include` encodes what THIS search does want, and it is the more
+    specific statement — so a candidate whose profile says
+    ``include: [account executive]`` was still losing every account-executive
+    posting to ``title.nontechnical_occupation.sales``. Verified broken across
+    sales, finance, customer success, clinical, design and recruiting profiles:
+    not one explicit include phrase survived.
+
+    The fix is deliberately NARROW: only a CLEAN include match skips the lexicon.
+    A title matched solely by a BROAD DOMAIN token (``infrastructure``,
+    ``platform``, ``compute``) still faces it, because such a token names a
+    technical AREA, not an occupation — see
+    `BroadDomainOnlyIncludeStillFacesTheLexiconTests` below, which pins the eight
+    real finance/legal/comms shapes that the wide form of this rule wrongly
+    rescued.
+    """
+
+    SALES = {"include": ["account executive", "sales executive",
+                         "business development representative"],
+             "exclude": ["manager", "director", "vp", "intern"]}
+    CLINICAL = {"include": ["clinical research associate"],
+                "exclude": ["director", "vp"]}
+    RECRUITING = {"include": ["technical recruiter"], "exclude": ["director", "vp"]}
+
+    def test_an_explicitly_included_sales_title_is_a_match(self):
+        for title in ("Account Executive", "Enterprise Account Executive",
+                      "Sales Executive", "Business Development Representative"):
+            with self.subTest(title=title):
+                assessment = assess_title(title, self.SALES)
+                self.assertEqual(assessment["decision"], "match")
+                self.assertFalse([r for r in assessment["rule_ids"]
+                                  if r.startswith("title.nontechnical_occupation.")])
+
+    def test_an_explicit_exclude_still_beats_the_include(self):
+        """Precedence is unchanged above the lexicon: excludes still run first."""
+        assessment = assess_title("Sales Manager", self.SALES)
+        self.assertEqual(assessment["decision"], "no_match")
+        self.assertEqual(assessment["rule_ids"], ["title.excluded.manager"])
+
+    def test_the_lexicon_still_drops_a_title_the_profile_never_named(self):
+        """The lexicon is skipped for INCLUDED titles only, not switched off."""
+        assessment = assess_title("Registered Nurse", self.SALES)
+        self.assertEqual(assessment["decision"], "no_match")
+        self.assertIn("title.nontechnical_occupation.clinical",
+                      assessment["rule_ids"])
+
+    def test_a_clinical_profile_keeps_its_own_roles_and_drops_the_rest(self):
+        self.assertEqual(
+            assess_title("Clinical Research Associate", self.CLINICAL)["decision"],
+            "match")
+        self.assertEqual(
+            assess_title("Registered Nurse", self.CLINICAL)["decision"], "no_match")
+
+    def test_a_recruiting_profile_keeps_its_own_roles_and_drops_the_rest(self):
+        self.assertEqual(
+            assess_title("Technical Recruiter", self.RECRUITING)["decision"], "match")
+        self.assertEqual(
+            assess_title("Head of People Operations", self.RECRUITING)["decision"],
+            "no_match")
+
+    def test_title_ok_keeps_the_included_posting_in_the_pipeline(self):
+        posting = JobPosting(
+            source="board", company="Example Corp", title="Account Executive",
+            url="https://example.test/jobs/ae")
+        self.assertTrue(title_ok(posting, {"titles": self.SALES}))
+        self.assertEqual(posting.filter_assessments["title"]["decision"], "match")
+
+
+class BroadDomainOnlyIncludeStillFacesTheLexiconTests(unittest.TestCase):
+    """The wide form of the #232 fix ("any include match skips the lexicon") was
+    MEASURED wrong: on a real corpus it changed eight rows and all eight got
+    worse, turning finance/legal/communications postings from `no_match` into
+    review-queue noise. Every one of them matched only a broad-domain token
+    (``infrastructure``, ``platform``, ``compute``), which is a technical AREA and
+    not an occupation declaration. The FICTIONAL titles below reproduce those
+    eight shapes so the wide form cannot be reintroduced silently.
+    """
+
+    CFG = {"include": ["software engineer", "infrastructure", "platform",
+                       "compute", "distributed systems"],
+           "exclude": ["manager", "director"]}
+
+    def test_broad_domain_only_finance_and_legal_titles_stay_hard_dropped(self):
+        for title in ("Strategic Finance Partner, Compute",
+                      "Capital Markets Associate - Infrastructure Financing",
+                      "Commercial Counsel, Platform Marketplace",
+                      "Associate General Counsel, Infrastructure",
+                      "Utilities and Infrastructure Counsel",
+                      "Communications Specialist, Platform",
+                      "Platform Partnerships Lead, Programs",
+                      "Commercial Counsel-Infrastructure and Go To Market"):
+            with self.subTest(title=title):
+                assessment = assess_title(title, self.CFG)
+                self.assertEqual(assessment["decision"], "no_match")
+                self.assertTrue([r for r in assessment["rule_ids"]
+                                 if r.startswith("title.nontechnical_occupation.")],
+                                assessment["rule_ids"])
+
+    def test_the_broad_domain_set_is_the_one_the_residual_guard_already_uses(self):
+        """One definition, not two — a second copy would drift out of agreement."""
+        self.assertFalse(scoring._is_clean_include_match(["infrastructure"]))
+        self.assertFalse(scoring._is_clean_include_match(["platform", "compute"]))
+        self.assertTrue(scoring._is_clean_include_match(["account executive"]))
+        self.assertTrue(scoring._is_clean_include_match(
+            ["infrastructure", "software engineer"]))
+        self.assertFalse(scoring._is_clean_include_match([]))
+
+    def test_skipping_the_lexicon_can_never_introduce_a_new_drop(self):
+        """The fix only moves an existing hard drop later in the chain.
+
+        Every path below the lexicon ends in `match` or `review`, so a title that
+        skips it cannot be dropped by something further down — which is why the
+        measured row-change count on a software profile is zero.
+        """
+        for title in ("Account Executive", "Registered Nurse",
+                      "Software Engineer, Platform", "Marketing Partnerships Lead",
+                      "Strategic Finance Partner, Compute"):
+            with self.subTest(title=title):
+                widened = assess_title(title, self.CFG)["decision"]
+                self.assertIn(widened, {"match", "review", "no_match"})
+                if widened == "no_match":
+                    # Still dropped -> it was dropped by an exclude or by the
+                    # lexicon it never skipped, never by a rule below them.
+                    self.assertTrue(
+                        [r for r in assess_title(title, self.CFG)["rule_ids"]
+                         if r.startswith("title.excluded.")
+                         or r.startswith("title.nontechnical_occupation.")])
+
+
 class DedupeIdentityTests(unittest.TestCase):
     """One title published as several per-location requisitions is several jobs."""
 

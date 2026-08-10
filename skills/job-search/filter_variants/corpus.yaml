@@ -1441,3 +1441,88 @@ variants:
     expect:
       decision: match
       category: us_remote
+
+  - id: title-explicit-exclude-names-the-rule-id
+    domain: title
+    # `titles.exclude` is the pipeline's HARDEST and largest title drop, and until
+    # now no corpus case pinned its rule ID — only the coarse decision. The rule
+    # ID is what `search_jobs` reads to attribute the drop to a TERM (the
+    # `n_title_excluded` / `title_excluded_terms` counters), so a rename that left
+    # `decision: no_match` intact would silently blank that breakdown.
+    input:
+      title: Engineering Manager, Platform
+      profile:
+        titles:
+          include: [software engineer, platform engineer]
+          exclude: [manager, director]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.excluded.manager]
+
+  - id: title-profile-include-outranks-the-occupation-lexicon
+    domain: title
+    # Issue #232: the generic non-technical-occupation lexicon ran BEFORE
+    # `titles.include`, so a candidate whose profile explicitly names an
+    # occupation still lost every posting for it. The lexicon states what a
+    # DEFAULT software search does not want; the profile states what THIS search
+    # does want, and the profile is the more specific statement.
+    input:
+      title: Enterprise Account Executive
+      profile:
+        titles:
+          include: [account executive, sales executive]
+          exclude: [manager, director, vp]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.account executive]
+
+  - id: title-lexicon-still-drops-an-occupation-the-profile-never-named
+    domain: title
+    # The include list exempts the titles it names — it does not switch the
+    # lexicon off. A clinical title under a sales profile is still a hard drop.
+    input:
+      title: Registered Nurse
+      profile:
+        titles:
+          include: [account executive, sales executive]
+          exclude: [manager, director, vp]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.nontechnical_occupation.clinical]
+
+  - id: title-broad-domain-only-include-still-faces-the-lexicon
+    domain: title
+    # The NARROW form of the #232 fix. A title matched only by a BROAD DOMAIN
+    # token (`infrastructure`, `platform`, `compute`) is not an occupation
+    # declaration — the token names a technical AREA — so it still faces the
+    # lexicon. The wide form ("any include match skips it") was measured on a real
+    # corpus and made every affected row worse, promoting finance/legal postings
+    # like this one into the review queue.
+    input:
+      title: Commercial Counsel, Platform Marketplace
+      profile:
+        titles:
+          include: [software engineer, infrastructure, platform, compute]
+          exclude: [manager, director]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.nontechnical_occupation.legal]
+
+  - id: title-explicit-exclude-still-beats-an-included-occupation
+    domain: title
+    # Precedence above the lexicon is unchanged: an explicit exclude runs first
+    # and still wins, even over an occupation the include list names.
+    input:
+      title: Sales Manager
+      profile:
+        titles:
+          include: [account executive, sales executive]
+          exclude: [manager, director, vp]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.excluded.manager]
