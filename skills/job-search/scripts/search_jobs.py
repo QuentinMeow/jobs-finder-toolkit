@@ -679,7 +679,131 @@ def _format_comp(value: dict | None) -> str:
     return f"{compact(low)}-{compact(high)}{suffix}"
 
 
-def render_markdown(kept, profile, meta) -> str:
+CLIP_MARK = "…"
+# Column budgets for the discoveries table. Every one of these used to be a raw
+# slice (or, for Company, no limit at all), so a clipped cell read as a complete
+# value: "Distributed Systems Engineer (Pl" is a title a human will believe.
+CLIP_COMPANY = 24
+CLIP_TITLE = 46
+CLIP_LOC = 30
+CLIP_WHY = 100
+# Characters a clip may back up to, so the cut lands between words rather than
+# inside one. A cut earlier than half the budget throws away more than it saves,
+# so below that the hard cut wins.
+_CLIP_BOUNDARIES = " \t;,/"
+
+
+def _clip(text: str, limit: int) -> str:
+    """Clip ``text`` to ``limit`` chars at a word/``;`` boundary, marked with ``…``.
+
+    The mark is part of the budget, so the result is never longer than ``limit``, and
+    a reader can always tell a shortened cell from a short one.
+    """
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    if limit <= 1:
+        return CLIP_MARK[:limit]
+    head = text[: limit - 1]
+    cut = max((head.rfind(ch) for ch in _CLIP_BOUNDARIES), default=-1)
+    if cut >= limit // 2:
+        head = head[:cut]
+    return head.rstrip(_CLIP_BOUNDARIES) + CLIP_MARK
+
+
+def _clip_reasons(reasons, limit: int = CLIP_WHY) -> str:
+    """Join ``reasons`` within ``limit`` chars, taking WHOLE reasons only.
+
+    A reason is either fully present or fully absent — never a fragment — and the
+    count of what did not fit is stated rather than implied. This column carries the
+    mismatch marks (``over-leveled (-N)``, ``visa: …``), which are appended last and
+    are therefore exactly what a character-level clip amputated mid-word.
+    """
+    items = [str(r).strip().replace("|", "/") for r in (reasons or [])
+             if str(r).strip()]
+    if not items:
+        return ""
+
+    def fit(reserve: int) -> list[str]:
+        kept, used = [], 0
+        for item in items:
+            cost = len(item) + (2 if kept else 0)      # "; " separator
+            if used + cost > limit - reserve:
+                break
+            kept.append(item)
+            used += cost
+        return kept
+
+    kept = fit(0)
+    if len(kept) == len(items):
+        return "; ".join(kept)
+    while kept:
+        marker = f" +{len(items) - len(kept)} more"
+        body = "; ".join(kept)
+        if len(body) + len(marker) <= limit:
+            return body + marker
+        kept = kept[:-1]
+    return _clip(items[0], limit)      # not even one whole reason fits
+
+
+def render_review_section(meta, review_path=None, review_postings=(),
+                          *, overflow_path=None, preview: int = 10) -> list[str]:
+    """The ``## Manual review`` block: where the preserved rows are, and a sample.
+
+    The persistent report used to say "{n} preserved for filter review" in prose and
+    name the artifact nowhere — the path existed only in transient stdout, so a reader
+    opening the report later saw a bare count and had no way to reach the rows. Empty
+    when the run preserved nothing and capped nothing, so a clean run reads clean.
+
+    Only the TABLE is bounded (``preview``); the artifact holds every row, and the
+    rows the occupation cap demoted are named with their own artifact rather than
+    reduced to an integer.
+    """
+    n_review = meta.get("n_review", 0) or 0
+    overflow = meta.get("n_occupation_ambiguous_overflow", 0) or 0
+    if not n_review and not overflow:
+        return []
+    rows = list(review_postings)[:preview]
+    lines = ["", f"## Manual review ({len(rows)} shown of {n_review})", "",
+             "Postings a filter would not decide alone: preserved instead of dropped, "
+             "and NOT part of the ranked table above."]
+    if review_path:
+        lines += ["",
+                  f"- Artifact: `{review_path}` — all {n_review} row(s)",
+                  f"- Inspect: `.venv/bin/python -m json.tool \"{review_path}\"`"]
+    else:
+        lines += ["", "- Artifact: not written for this run."]
+    lines.append(f"- By review reason: "
+                 f"{format_families(meta.get('review_families') or [])}")
+    if overflow:
+        where = (f" and were written in full to `{overflow_path}`" if overflow_path
+                 else " and were NOT persisted")
+        lines.append(
+            f"- Capped: {overflow} ambiguous-occupation posting(s) exceeded "
+            f"`titles.occupation_review_cap`, so they are not in the artifact above"
+            f"{where}. Raise the cap to keep them in the main review lane. "
+            f"By review reason: "
+            f"{format_families(meta.get('overflow_families') or [])}")
+    if rows:
+        lines += ["",
+                  f"Top {len(rows)} by score:",
+                  "",
+                  "| Score | Company | Title | Review reason | Link |",
+                  "|-------|---------|-------|---------------|------|"]
+        for p in rows:
+            why = _clip_reasons(getattr(p, "review_reasons", []) or [], CLIP_WHY)
+            lines.append(
+                f"| {p.score:g} | {_clip(p.company.replace('|', '/'), CLIP_COMPANY)} "
+                f"| {_clip(p.title.replace('|', '/'), CLIP_TITLE)} | {why} "
+                f"| [link]({p.url}) |")
+        if n_review > len(rows):
+            lines += ["", f"_{n_review - len(rows)} further row(s) are in the "
+                          "artifact only._"]
+    return lines
+
+
+def render_markdown(kept, profile, meta, *, review_path=None,
+                    review_postings=(), overflow_path=None) -> str:
     preferred = [p.lower() for p in (profile.get("location", {}) or {}).get("preferred", [])]
     age_desc = (f"\u2264 {meta['max_age_days']} days"
                 if meta["max_age_days"] is not None else "any (not filtered)")
@@ -694,6 +818,24 @@ def render_markdown(kept, profile, meta) -> str:
                      + ")")
     cap = meta.get("max_per_company")
     cap_desc = (f"{cap}/company" if cap and cap > 0 else "off")
+    # `Scanned` counts RAW fetched rows; `matches` and `review` are counted after
+    # dedupe, so the two sides of the arrow are not the same population — say so,
+    # or the funnel reads as arithmetic that does not add up.
+    unique = meta.get("n_raw_unique")
+    scanned = f"Scanned {meta['n_raw']} postings"
+    if unique is not None:
+        scanned += f" ({unique} unique)"
+    # The rescue count comes from the FINAL review list. It used to be counted per
+    # RAW posting while `n_review` was counted after dedupe AND the occupation cap,
+    # so the nested clause could claim more rescues than there were review rows at
+    # all (an audit saw "420 preserved... of which 561 were kept"). The pre-dedupe
+    # total is still reported — beside the nested number, never inside it.
+    rescued = meta.get("n_title_word_filter_review_kept", 0)
+    rescued_raw = meta.get("n_title_word_filter_review", 0)
+    rescue_desc = f"{rescued} of them kept by titles.word_filter instead of dropped"
+    if rescued_raw != rescued:
+        rescue_desc += (f"; titles.word_filter rescued {rescued_raw} raw postings "
+                        "before dedupe and the review cap")
     lines = [f"# Job matches — {profile.get('name', meta['profile'])}",
              "",
              f"- Profile: `{meta['profile']}`",
@@ -702,15 +844,14 @@ def render_markdown(kept, profile, meta) -> str:
              f"visa policy: {meta['visa_policy']} | per-employer cap: {cap_desc}",
              f"- Stage {meta.get('stage', 1)}: {meta['n_companies']} company boards + "
              f"aggregators [{', '.join(meta['aggregators']) or 'none'}]",
-             f"- Scanned {meta['n_raw']} postings \u2192 {len(kept)} matches "
+             f"- {scanned} \u2192 {len(kept)} matches "
              f"(skipped {meta.get('n_blacklisted', 0)} blacklisted + "
              f"{meta.get('n_considered', 0)} already-considered + "
              f"{meta.get('n_recently_searched', 0)} recently-searched + "
              f"{meta.get('n_low_quality', 0)} unfilled-template + "
              f"{meta.get('n_title_hard_excluded', 0)} title hard-excluded; "
-             f"{meta.get('n_review', 0)} preserved for filter review, of which "
-             f"{meta.get('n_title_word_filter_review', 0)} were kept by "
-             f"titles.word_filter instead of dropped)",
+             f"{meta.get('n_review', 0)} preserved for filter review, "
+             f"{rescue_desc})",
              ""]
     if meta["errors"]:
         lines += ["> Source errors / not inspected: "
@@ -728,17 +869,20 @@ def render_markdown(kept, profile, meta) -> str:
             display_loc = f"Remote — {display_loc}" if display_loc else "Remote"
         elif p.workplace == "hybrid":
             display_loc = f"Hybrid — {display_loc}" if display_loc else "Hybrid"
-        loc = (display_loc[:30] or p.remote)
-        why = "; ".join(p.reasons)[:100].replace("|", "/")
-        title = p.title.replace("|", "/")[:46]
+        loc = (_clip(display_loc, CLIP_LOC) or p.remote)
+        why = _clip_reasons(p.reasons, CLIP_WHY)
+        title = _clip(p.title.replace("|", "/"), CLIP_TITLE)
+        company = _clip(p.company.replace("|", "/"), CLIP_COMPANY)
         lines.append(
-            f"| {i} | {p.score:g} | {p.company} | {title} | {_format_level(p)} | "
+            f"| {i} | {p.score:g} | {company} | {title} | {_format_level(p)} | "
             f"{_format_yoe(p)} | {_format_comp(p.salary_range)} | {loc} | "
             f"{age} | {p.visa_label} | {p.source} | {why} | [link]({p.url}) |")
     lines += ["",
               "_Visa labels are heuristic (JD-text scan): `yes` = sponsorship stated, "
               "`no` = explicitly excluded, `unclear` = not mentioned. Always confirm "
               "with the employer before relying on it._"]
+    lines += render_review_section(meta, review_path, review_postings,
+                                   overflow_path=overflow_path)
     return "\n".join(lines)
 
 
@@ -969,6 +1113,14 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
     review_postings = dedupe(review_postings)
     kept.sort(key=lambda p: p.score, reverse=True)
     review_postings.sort(key=lambda p: p.score, reverse=True)
+    # Rows the cap demotes. The cap bounds what is RENDERED and carried in the
+    # bounded review list; it must not make the rows themselves disappear. They used
+    # to leave nothing behind but an integer, so a measured run demoted 1,659 real
+    # postings (57% engineering-role titles) that were recoverable only by knowing to
+    # re-run --refilter inside the snapshot's 6h TTL with a cap the user was never
+    # shown. Returned here so the caller can persist them; the cap value and the
+    # order it applies in are unchanged.
+    overflow_postings: list = []
     if occupation_review_cap is not None:
         cap = max(0, int(occupation_review_cap))
         bounded_review = []
@@ -977,6 +1129,7 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
             if "title_occupation_ambiguous" in posting.review_reasons:
                 if ambiguous_kept >= cap:
                     n_occupation_ambiguous_overflow += 1
+                    overflow_postings.append(posting)
                     continue
                 ambiguous_kept += 1
             bounded_review.append(posting)
@@ -1002,12 +1155,22 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
         "widening_active": widening_active,
         "n_review": len(review_postings),
         "review_postings": review_postings,
+        "overflow_postings": overflow_postings,
     }
     return kept, counts
 
 
 def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
-               max_age, max_per_company, errors, now) -> dict:
+               max_age, max_per_company, errors, now, n_raw_unique=None) -> dict:
+    # Counted on the FINAL review list (post-dedupe, post-cap), which is the only
+    # population `n_review` describes. Derived here rather than inside
+    # filter_score_rank so the report's arithmetic can never drift from the list it
+    # is describing.
+    review_postings = counts.get("review_postings") or []
+    overflow_postings = counts.get("overflow_postings") or []
+    n_word_filter_kept = sum(
+        1 for p in review_postings
+        if "title_word_filter_override" in (getattr(p, "review_reasons", None) or []))
     return {
         "profile": args.profile,
         "generated": now.strftime("%Y-%m-%d %H:%M UTC"),
@@ -1017,6 +1180,9 @@ def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
         "aggregators": aggregators,
         "stage": stage,
         "n_raw": n_raw,
+        # Distinct (company, title, location) rows among the scanned postings.
+        # `n_raw` is pre-dedupe while every downstream count is post-dedupe.
+        "n_raw_unique": n_raw_unique,
         "n_blacklisted": counts["n_blacklisted"],
         "n_considered": counts["n_considered"],
         "n_recently_searched": counts["n_recently_searched"],
@@ -1027,11 +1193,18 @@ def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
         "n_review": counts.get("n_review", 0),
         "n_occupation_ambiguous_overflow": counts.get(
             "n_occupation_ambiguous_overflow", 0),
+        # Which RULES produced each lane. A single total cannot say that the capped
+        # lane and the uncapped one are different populations.
+        "review_families": reason_families(review_postings),
+        "overflow_families": reason_families(overflow_postings),
         # Title word classes + first-search recency widening. Both are reported
         # because both change what the run could POSSIBLY have returned, and the
         # whole point of each is that its effect is never silent.
         "n_title_hard_excluded": counts.get("n_title_hard_excluded", 0),
+        # ..._review counts RAW rescues; ..._review_kept counts the rescues that
+        # actually survived into the review list the report points at.
         "n_title_word_filter_review": counts.get("n_title_word_filter_review", 0),
+        "n_title_word_filter_review_kept": n_word_filter_kept,
         # The ordinary title gate's own hard drops (`titles.exclude` per term, and
         # the generic non-technical-occupation lexicon). Reported for the same
         # reason `n_low_quality` is: a hard drop nobody counts is a loss nobody
@@ -1098,7 +1271,8 @@ def _render_title_gate_drops(meta, *, top_terms: int = 3) -> str | None:
 
 
 def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
-                       json_path, review_path=None, store_line=None) -> str:
+                       json_path, review_path=None, overflow_path=None,
+                       store_line=None) -> str:
     """~5-line run summary printed above the compact table on default stdout."""
     aggs = meta["aggregators"]
     lines = [
@@ -1111,7 +1285,17 @@ def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
         f"JSON:        {json_path or '-'}",
     ]
     if review_path:
-        lines.append(f"Review:      {review_path}")
+        lines.append(
+            f"Review:      {review_path} — {meta.get('n_review', 0)} row(s) "
+            f"[{format_families(meta.get('review_families') or [], limit=3)}]")
+    overflow = meta.get("n_occupation_ambiguous_overflow", 0)
+    if overflow:
+        # A cap that trims rows out of a lane has to say where they went; an integer
+        # on stderr is not a place a posting can be read from.
+        lines.append(
+            f"Overflow:    {overflow_path or '-'} — {overflow} row(s) over "
+            f"titles.occupation_review_cap "
+            f"[{format_families(meta.get('overflow_families') or [], limit=3)}]")
     if meta.get("n_first_search_widened"):
         first = meta.get("first_search_max_age_days")
         window = f"≤ {first}d" if first is not None else "no age filter"
@@ -1267,25 +1451,119 @@ def write_json_output(path: str | Path, kept, url_map) -> Path:
     return out
 
 
-def write_review_report(postings, cache_dir: Path, profile: str) -> Path | None:
-    """Write uncertain high-stakes filter rows to gitignored scratch storage."""
-    path = Path(cache_dir) / f"{snapshot.safe_label(profile)}-filter-review.json"
-    if not postings:
-        path.unlink(missing_ok=True)
-        return None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schema": 1,
+def unique_run_path(path: Path) -> Path:
+    """``path``, or the first ``-2``/``-3``/... variant that does not exist yet.
+
+    Run identity is second-resolution, so two runs finishing inside one second would
+    otherwise write the same "per-run" filename — and the whole point of the stamp is
+    that a run artifact is never silently replaced by the next one.
+    """
+    if not path.exists():
+        return path
+    for n in range(2, 1000):
+        candidate = path.with_name(f"{path.stem}-{n}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+    return path
+
+
+def reason_families(postings) -> list[tuple[str, int]]:
+    """``[(review_reason, n_postings), ...]``, most frequent first.
+
+    The review lane is several rules sharing one queue; a single total hides which
+    rule is producing the volume (and which one a cap is truncating).
+    """
+    counter: Counter = Counter()
+    for p in postings:
+        for reason in dict.fromkeys(getattr(p, "review_reasons", None) or []):
+            counter[str(reason)] += 1
+    return sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def format_families(families, limit: int = 6) -> str:
+    """``a 900; b 714`` — the per-rule split, bounded, with the remainder counted."""
+    pairs = list(families)
+    if not pairs:
+        return "none"
+    head = "; ".join(f"{name} {n}" for name, n in pairs[:limit])
+    if len(pairs) > limit:
+        head += f"; +{len(pairs) - limit} more rules"
+    return head
+
+
+def review_payload(postings, profile: str, *, generated: str,
+                   kind: str = "filter-review",
+                   snapshot_path: Path | str | None = None) -> dict:
+    """The filter-review JSON body (also written when there is nothing to review)."""
+    rows = []
+    for p in postings:
+        row = p.to_dict()
+        # `to_dict` clips the description to 400 chars for light JSON. A reviewer
+        # judging a filter decision needs to know the text is a preview, and where
+        # the untruncated JD lives — the snapshot round-trips it in full.
+        row["description_truncated"] = len(p.description or "") > len(
+            row.get("description") or "")
+        rows.append(row)
+    return {
+        "schema": 2,
+        "kind": kind,
         "profile": profile,
-        "count": len(postings),
+        "generated": generated,
+        "snapshot": str(snapshot_path) if snapshot_path else None,
+        "count": len(rows),
+        # The rule ids that put each row here, rolled up. Every row also carries its
+        # own `review_reasons` (and `filter_assessments`) untouched.
+        "families": dict(reason_families(postings)),
         "instruction": (
             "Run validate_filter_variants.py --snapshot <snapshot> and label "
-            "new structural variants before changing a hard filter."
+            "new structural variants before changing a hard filter. Descriptions "
+            "here are 400-char previews; the snapshot named above holds the full JD."
         ),
-        "postings": [p.to_dict() for p in postings],
+        "postings": rows,
     }
-    path.write_text(json.dumps(payload, indent=2))
-    return path
+
+
+REVIEW_KIND = "filter-review"
+OVERFLOW_KIND = "filter-review-overflow"
+
+
+def write_review_report(postings, cache_dir: Path, profile: str, *,
+                        kind: str = REVIEW_KIND,
+                        stamp: str | None = None,
+                        generated: str | None = None,
+                        snapshot_path: Path | str | None = None) -> tuple[Path, Path]:
+    """Write uncertain filter rows to gitignored scratch, per run + a stable pointer.
+
+    Mirrors :func:`snapshot.write_snapshot`: a per-run
+    ``<label>-<kind>-<stamp>.json`` plus a ``<label>-<kind>.json`` pointer holding a
+    full copy of the same body, so the path every doc and script already names keeps
+    resolving to the newest run while no earlier run's evidence is overwritten.
+    Returns ``(run_path, pointer_path)``.
+
+    An EMPTY list writes an empty-but-valid report rather than deleting anything.
+    This function used to ``unlink`` the pointer when a run had no review rows, which
+    silently destroyed the *previous* run's artifact and left "this run flagged
+    nothing" indistinguishable from "no run ever wrote one".
+
+    ``kind`` selects the lane: the bounded review list (``filter-review``) or the rows
+    the occupation cap demoted out of it (``filter-review-overflow``). The cap bounds
+    what is shown; both lanes are persisted in full.
+    """
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    stamp = stamp or snapshot.run_stamp(now)
+    label = snapshot.safe_label(profile)
+    body = json.dumps(
+        review_payload(postings, profile, kind=kind,
+                       generated=generated or now.isoformat(),
+                       snapshot_path=snapshot_path),
+        indent=2)
+    run_path = unique_run_path(cache_dir / f"{label}-{kind}-{stamp}.json")
+    snapshot.atomic_write(run_path, body)
+    pointer_path = cache_dir / f"{label}-{kind}.json"
+    snapshot.atomic_write(pointer_path, body)
+    return run_path, pointer_path
 
 
 def main() -> int:
@@ -1413,6 +1691,12 @@ def main() -> int:
               "(hard_exclude / soft_exclude / include) — the coarse title filter "
               "is inert this run and titles.include/exclude decides alone. See "
               "skills/job-search/profiles/_TEMPLATE.yaml.", file=sys.stderr)
+
+    # Identity of THIS run, taken from the wall clock — not from `now`, which the
+    # refilter path anchors to the snapshot's fetch time. Two refilters of one
+    # snapshot are two runs with two different answers; naming their artifacts after
+    # the snapshot would make the second silently replace the first.
+    run_id = snapshot.run_stamp(datetime.now(timezone.utc))
 
     # Store integration runs on the FETCH path only (refilter is snapshot-only and
     # never builds); defaults keep the refilter output byte-identical to today.
@@ -1601,14 +1885,23 @@ def main() -> int:
         postings, profile, ctx, max_age=max_age, top_k=top_k,
         max_per_company=max_per_company, sponsor_index=sponsor_index,
         company_levels=company_levels, registry=registry, now=now)
-    review_path = write_review_report(
-        counts.get("review_postings", []), cache_dir, args.profile)
-    if review_path:
-        print(
-            f"Preserved {counts['n_review']} uncertain posting(s) for manual "
-            f"filter review -> {review_path}",
-            file=sys.stderr,
-        )
+    review_postings = counts.get("review_postings", [])
+    overflow_postings = counts.get("overflow_postings", [])
+    # Always written, even at zero rows: "this run flagged nothing" is a fact worth
+    # recording, and the previous run's artifact is never removed to say it.
+    review_run_path, review_path = write_review_report(
+        review_postings, cache_dir, args.profile, stamp=run_id,
+        snapshot_path=snap_path)
+    # The occupation cap bounds the review LANE; the rows it demotes are still real
+    # postings, so they get their own durable artifact instead of an integer.
+    overflow_run_path, overflow_path = write_review_report(
+        overflow_postings, cache_dir, args.profile, kind=OVERFLOW_KIND,
+        stamp=run_id, snapshot_path=snap_path)
+    print(
+        f"Preserved {counts['n_review']} uncertain posting(s) for manual "
+        f"filter review -> {review_path} (this run: {review_run_path.name})",
+        file=sys.stderr,
+    )
 
     if (counts["n_blacklisted"] or counts["n_considered"]
             or counts["n_recently_searched"] or counts["n_non_ai"]
@@ -1626,25 +1919,41 @@ def main() -> int:
             f"NOTE: {counts['n_occupation_ambiguous_overflow']} ambiguous-"
             f"occupation posting(s) exceeded the review cap ({cap}) and were "
             "omitted from the bounded review report after gating and scoring; "
-            "the overflow count remains visible. Raise "
-            "titles.occupation_review_cap to include them.",
+            f"every one of them is written in full to {overflow_path} "
+            f"(this run: {overflow_run_path.name}). Raise "
+            "titles.occupation_review_cap to keep them in the main review lane.",
             file=sys.stderr,
         )
 
     meta = build_meta(profile, args, stage=stage, n_companies=n_companies,
                       aggregators=agg_labels, n_raw=n_raw, counts=counts,
                       max_age=max_age, max_per_company=max_per_company,
-                      errors=errors, now=now)
-    md = render_markdown(kept, profile, meta)
+                      errors=errors, now=now,
+                      # Company names are canonicalized in-place by the pipeline
+                      # above, so this dedupe sees the same identities it does.
+                      n_raw_unique=len(dedupe(postings)))
+    md = render_markdown(kept, profile, meta, review_path=review_path,
+                         review_postings=review_postings,
+                         overflow_path=overflow_path)
 
     out_path = args.out
+    run_out_path = None
     if out_path is None:
+        # Default naming is fixed per (day, profile) and the refilter path dates the
+        # report by the SNAPSHOT's fetch time, so refiltering yesterday's snapshot
+        # today used to rewrite yesterday's report in the owner's discoveries tree.
+        # Same shape as the snapshot cache: a per-run file plus a stable pointer at
+        # the path every doc, skill and habit already names.
         disc = discoveries_dir()
         disc.mkdir(parents=True, exist_ok=True)
-        out_path = disc / f"{now.strftime('%Y%m%d')}-{profile_slug(args.profile)}.md"
+        slug = profile_slug(args.profile)
+        out_path = disc / f"{now.strftime('%Y%m%d')}-{slug}.md"
+        run_out_path = unique_run_path(disc / f"{run_id}-{slug}.md")
+        snapshot.atomic_write(run_out_path, md)
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(out_path).write_text(md)
-    print(f"Wrote {len(kept)} matches -> {out_path}", file=sys.stderr)
+    snapshot.atomic_write(Path(out_path), md)
+    run_note = f" (this run: {run_out_path.name})" if run_out_path else ""
+    print(f"Wrote {len(kept)} matches -> {out_path}{run_note}", file=sys.stderr)
 
     if args.json_out:
         json_path = write_json_output(args.json_out, kept, store_url_map)
@@ -1658,7 +1967,9 @@ def main() -> int:
     else:
         print(render_run_summary(meta, kept, snapshot_display=snapshot_display,
                                  discoveries_path=out_path, json_path=args.json_out,
-                                 review_path=review_path, store_line=store_line))
+                                 review_path=review_path,
+                                 overflow_path=overflow_path,
+                                 store_line=store_line))
         print()
         print(render_compact_table(kept))
     return 0
