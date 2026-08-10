@@ -3013,6 +3013,19 @@
 - base: 8c39c9f6
   reviewed_by: agent
   date: 2026-08-09
+  files: 7
+  digest: sha256:ad1aaa4c91f3262f
+  finding: 'Read the complete staged seven-file diff: a narrowed title-gate precedence rule
+    in the job-search scorer, two new visibility counters plus a run-summary line, a
+    cross-block profile-collision warning, five deterministic filter-variant corpus cases,
+    two unit-test additions, and one corrective paragraph in the search-recall-audit skill.
+    Every posting title, profile snippet, and corpus case is fictional and generic; the eight
+    broad-domain regression shapes were paraphrased rather than copied from a private
+    snapshot. No real identity, employer, company name, school, salary, URL, private item
+    name, or dated personal job-hunt content.'
+- base: 8c39c9f6
+  reviewed_by: agent
+  date: 2026-08-09
   files: 10
   digest: sha256:81f637ade1e42b5a
   finding: 'Read the complete staged ten-file diff: three JD-metadata parser fixes in the
@@ -3180,3 +3193,17 @@
     appending under an identical base/date header; both rows are kept verbatim and the YAML
     re-parses to 327 well-formed rows. No real identity, employer, school, salary, private
     item name, or dated personal job-hunt content.'
+- base: e7ee9580
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 48
+  digest: sha256:c65037140e52f807
+  finding: 'Merge of origin/main into this branch. Every file in the range is work already
+    reviewed on its own branch and already landed: the leak-guard token-boundary change
+    (PR #329), the onboarding/digest/extraction changes (PR #332), the location-gate change
+    (PR #330), and the JD-metadata parser changes (PR #331). Their rows are already in this
+    ledger above; this row reconciles the range for THIS branch history, which the merge
+    made new relative to its own last review. The only hand-resolved file was this ledger,
+    whose conflict was two branches appending under an identical base/date header; both
+    rows are kept verbatim and the YAML re-parses to 329 well-formed rows. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content.'

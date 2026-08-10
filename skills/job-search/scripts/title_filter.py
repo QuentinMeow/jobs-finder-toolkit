@@ -225,7 +225,10 @@ def load_word_lists(profile: dict | None) -> TitleWordFilter:
     Missing block, missing keys, empty lists and non-list values all degrade to
     the inert filter rather than to a built-in list (see the module docstring).
     A word listed in more than one class is reported in ``warnings`` naming the
-    winner, so the precedence rule is visible at load time.
+    winner, so the precedence rule is visible at load time. The same is done for
+    the CROSS-BLOCK collision that used to be invisible: a word in both
+    ``titles.exclude`` and this block's ``include``/``soft_exclude``
+    (see :func:`_cross_block_warnings`).
     """
     raw = (((profile or {}).get(TITLES_KEY) or {}).get(WORD_FILTER_KEY) or {})
     if not isinstance(raw, dict):
@@ -272,9 +275,60 @@ def load_word_lists(profile: dict | None) -> TitleWordFilter:
             else:
                 owner[key] = name
 
+    warnings.extend(_cross_block_warnings(profile, lists))
+
     return TitleWordFilter(
         hard_exclude=lists[HARD_EXCLUDE],
         include=lists[INCLUDE],
         soft_exclude=lists[SOFT_EXCLUDE],
         warnings=tuple(warnings),
     )
+
+
+# The two rescue classes. Both KEEP a title the ordinary gate would have thrown
+# away (see `search_jobs.filter_score_rank`: a `review` verdict sets
+# `title_flagged`, and a flagged row that `title_ok` rejects is rescued to the
+# review queue instead of dropped), so a word in either of them CONTRADICTS the
+# same word in `titles.exclude` rather than merely duplicating it.
+_RESCUE_CLASSES = (INCLUDE, SOFT_EXCLUDE)
+EXCLUDE_KEY = "exclude"
+
+
+def _cross_block_warnings(profile: dict | None,
+                          lists: dict[str, tuple[str, ...]]) -> list[str]:
+    """Warn when a word is in BOTH ``titles.exclude`` and a rescue class here.
+
+    The in-block collision check above only sees the three ``word_filter``
+    classes, so the sharper contradiction was silent: ``titles.exclude`` says
+    "drop this title" while ``word_filter.soft_exclude``/``include`` says "never
+    drop it, mark it for judgement". They cannot both hold, and the word_filter
+    is the one that runs later and wins — the posting reaches the review queue
+    and the profile's own exclude never takes effect for it. Reporting it at load
+    time is the difference between a visible policy choice and a profile that
+    quietly contradicts itself.
+    """
+    titles = ((profile or {}).get(TITLES_KEY) or {})
+    raw_excludes = titles.get(EXCLUDE_KEY)
+    if not isinstance(raw_excludes, (list, tuple)):
+        return []
+    excludes: dict[str, None] = {}
+    for term in raw_excludes:
+        if term is None:
+            continue
+        key = _normalize_word(term).strip()
+        if key:
+            excludes.setdefault(key, None)
+
+    out: list[str] = []
+    for name in _RESCUE_CLASSES:
+        for word in lists.get(name, ()):
+            key = word.strip()
+            if key in excludes:
+                out.append(
+                    f"{TITLES_KEY}: {key!r} is listed in both "
+                    f"{TITLES_KEY}.{EXCLUDE_KEY} and "
+                    f"{TITLES_KEY}.{WORD_FILTER_KEY}.{name}; "
+                    f"{TITLES_KEY}.{WORD_FILTER_KEY}.{name} wins — the posting is "
+                    f"kept and sent to review, so {TITLES_KEY}.{EXCLUDE_KEY} never "
+                    f"drops it.")
+    return out

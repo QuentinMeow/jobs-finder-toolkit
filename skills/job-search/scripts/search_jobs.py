@@ -845,6 +845,16 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
     n_blacklisted = n_considered = n_recently_searched = n_non_ai = n_low_quality = 0
     n_occupation_ambiguous_overflow = 0
     n_title_hard_excluded = n_title_word_filter_review = n_first_search_widened = 0
+    # The ordinary title gate's two HARD drops. Both were entirely uncounted: on
+    # the shipped example profile they are together the largest drop in the whole
+    # pipeline (thousands of postings per run) and neither appeared in `counts`,
+    # the meta, the markdown, or stderr — so a wrong `titles.exclude` term or a
+    # lexicon false positive cost the candidate real postings with no number
+    # anywhere to notice it by. `title_excluded_terms` breaks the exclude drop
+    # down per term, because "your excludes dropped 1155" is only actionable when
+    # you know WHICH word did it.
+    n_title_excluded = n_title_nontechnical = 0
+    title_excluded_terms: Counter[str] = Counter()
     word_filter = ctx.get("title_word_filter") or title_filter.INERT
     # First-search recency widening. Inert unless a narrow window is actually in
     # force: with `max_age` None nothing is filtered by age anyway.
@@ -890,6 +900,20 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
         title_flagged = title_verdict.action == title_filter.ACTION_REVIEW
         if not title_ok(p, profile):
             if not title_flagged:
+                # Name the gate before dropping the row. `assess_title` already
+                # recorded WHY on the posting; reading its rule ids here is what
+                # turns the pipeline's biggest silent loss into a number the run
+                # summary can print.
+                rule_ids = (p.filter_assessments.get("title") or {}).get(
+                    "rule_ids") or []
+                terms = [r.split(".", 2)[2] for r in rule_ids
+                         if r.startswith("title.excluded.")]
+                if terms:
+                    n_title_excluded += 1
+                    title_excluded_terms.update(terms)
+                elif any(r.startswith("title.nontechnical_occupation.")
+                         for r in rule_ids):
+                    n_title_nontechnical += 1
                 continue
             # Rescued. `title_word_filter_override` says the ordinary title gate
             # would have dropped this row and which class kept it alive, so the
@@ -967,6 +991,12 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
         "n_occupation_ambiguous_overflow": n_occupation_ambiguous_overflow,
         "n_title_hard_excluded": n_title_hard_excluded,
         "n_title_word_filter_review": n_title_word_filter_review,
+        "n_title_excluded": n_title_excluded,
+        # Sorted highest-first so the summary's top-N slice names the terms that
+        # actually cost the candidate postings.
+        "title_excluded_terms": dict(
+            sorted(title_excluded_terms.items(), key=lambda kv: (-kv[1], kv[0]))),
+        "n_title_nontechnical_occupation": n_title_nontechnical,
         "n_first_search_widened": n_first_search_widened,
         "first_search_max_age_days": first_search_max_age if widening_active else None,
         "widening_active": widening_active,
@@ -1002,6 +1032,14 @@ def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
         # whole point of each is that its effect is never silent.
         "n_title_hard_excluded": counts.get("n_title_hard_excluded", 0),
         "n_title_word_filter_review": counts.get("n_title_word_filter_review", 0),
+        # The ordinary title gate's own hard drops (`titles.exclude` per term, and
+        # the generic non-technical-occupation lexicon). Reported for the same
+        # reason `n_low_quality` is: a hard drop nobody counts is a loss nobody
+        # can see.
+        "n_title_excluded": counts.get("n_title_excluded", 0),
+        "title_excluded_terms": counts.get("title_excluded_terms", {}),
+        "n_title_nontechnical_occupation": counts.get(
+            "n_title_nontechnical_occupation", 0),
         "n_first_search_widened": counts.get("n_first_search_widened", 0),
         "first_search_widening": counts.get("widening_active", False),
         "first_search_max_age_days": counts.get("first_search_max_age_days"),
@@ -1035,6 +1073,30 @@ def render_compact_table(kept) -> str:
     return "\n".join(rows)
 
 
+def _render_title_gate_drops(meta, *, top_terms: int = 3) -> str | None:
+    """One summary line for the title gate's hard drops, or None when there were none.
+
+    Phrased in the second person because the exclude list is the CANDIDATE's, and
+    the number is only useful if it reads as "this is what your own configuration
+    removed". The per-term breakdown is truncated to the biggest few terms: the
+    full map lives in the meta/JSON for anyone who needs the tail.
+    """
+    n_excluded = meta.get("n_title_excluded", 0)
+    n_lexicon = meta.get("n_title_nontechnical_occupation", 0)
+    if not n_excluded and not n_lexicon:
+        return None
+    parts = []
+    if n_excluded:
+        terms = list((meta.get("title_excluded_terms") or {}).items())[:top_terms]
+        breakdown = ", ".join(f"{term} {n}" for term, n in terms)
+        parts.append(f"Your excludes dropped {n_excluded} postings"
+                     + (f" ({breakdown})" if breakdown else ""))
+    if n_lexicon:
+        parts.append(f"the non-technical occupation lexicon dropped {n_lexicon}"
+                     + (" more" if n_excluded else " postings"))
+    return "; ".join(parts)
+
+
 def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
                        json_path, review_path=None, store_line=None) -> str:
     """~5-line run summary printed above the compact table on default stdout."""
@@ -1061,6 +1123,9 @@ def render_run_summary(meta, kept, *, snapshot_display, discoveries_path,
             f"Title words: {meta.get('n_title_hard_excluded', 0)} hard-excluded, "
             f"{meta.get('n_title_word_filter_review', 0)} sent to review instead of "
             "dropped (titles.word_filter)")
+    title_gate_line = _render_title_gate_drops(meta)
+    if title_gate_line:
+        lines.append(title_gate_line)
     # Store line (fetch path only; absent when the store is disabled → identical
     # output to pre-store-integration).
     if store_line:

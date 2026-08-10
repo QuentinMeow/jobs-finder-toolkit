@@ -96,6 +96,15 @@ per-JD verdicts (match? covered? verdict).
 >    research scientist). Exception: "member of technical staff" is an IC title and
 >    is KEPT (it is in `exclude_neutralize`). Staff/Staff+/Principal/entry/new-grad
 >    fall outside a mid–senior target band → exclude.
+>    **`titles.exclude` is NOT the only hard title drop.** `scoring.assess_title`
+>    also hard-drops a title that hits its generic non-technical-occupation
+>    lexicon (sales / marketing / recruiting / finance / legal / clinical /
+>    education) while carrying no engineering role noun — so a drop you cannot
+>    explain from `titles.exclude` is not automatically a bug. That lexicon is
+>    SKIPPED for a title the profile's own `titles.include` cleanly names (a match
+>    on a broad-domain token alone — infrastructure / platform / compute — does not
+>    count as naming it). Always confirm the actual gate with `trace` in Step 3
+>    rather than reasoning from the two lists alone.
 >    **Special recall flag:** if the TITLE would FAIL the include-list but the JD
 >    BODY is clearly an in-scope IC role for the profile, flag it as
 >    `TITLE_GATE_FALSE_NEGATIVE` (a real recall risk).
