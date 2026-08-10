@@ -29,6 +29,7 @@ from job_metadata import (  # noqa: E402
     extract_salary_range,
     load_company_levels,
     pick_candidate,
+    validate_job_metadata,
     validate_meta,
 )
 
@@ -95,6 +96,29 @@ class YoeExtractionTests(unittest.TestCase):
     def test_handles_markdown_escaped_plus(self):
         self.assertEqual(extract_required_yoe(r"Requires 5\+ years of experience.")["min"], 5)
 
+    def test_escaped_range_dash_still_parses_as_a_range(self):
+        # markdownify escapes a hyphen that could start a list item, so a JD
+        # fetched through JobSpy arrives as "3\-5 years". The escape hid the
+        # range separator, the range matched nothing, and a min-only pattern then
+        # read the range's UPPER bound as a standalone minimum: the band's
+        # CEILING became its FLOOR, which over-states the requirement and
+        # hard-drops a posting the candidate qualifies for. Escaped and
+        # unescaped text must grade identically, bound for bound.
+        for escaped, plain in (
+            (r"1\-3 years of experience.", "1-3 years of experience."),
+            (r"3\-5+ years of experience.", "3-5+ years of experience."),
+            (r"Requires 5 \- 8 years of professional experience.",
+             "Requires 5 - 8 years of professional experience."),
+        ):
+            with self.subTest(text=escaped):
+                self.assertEqual(
+                    extract_required_yoe_details(escaped),
+                    extract_required_yoe_details(plain),
+                )
+        # And the specific numbers, so an equal-but-both-wrong pair cannot pass.
+        details = extract_required_yoe_details(r"3\-5+ years of experience.")
+        self.assertEqual((details["min"], details["max"]), (3, 5))
+
     def test_ignores_preferred_yoe_and_keeps_required_yoe(self):
         text = (
             "Requires at least 4 years of professional experience. "
@@ -159,6 +183,74 @@ class YoeExtractionTests(unittest.TestCase):
         self.assertEqual(result["min"], 8)
         self.assertEqual(result["confidence"], "medium")
         self.assertEqual(result["requirement_kind"], "contextual")
+
+
+class GeneralVersusToolSpecificYoeTests(unittest.TestCase):
+    """The boundary the confidence grade turns on, from BOTH sides.
+
+    "<N> years of experience" is the most common way an English job post states
+    a seniority requirement, and it was graded tool-specific: the contextual
+    regex's optional ``(?:of\\s+)?`` backtracked and let the preposition "of" BE
+    the tool name, so "8 years <of> experience" read as a domain requirement.
+    Only a HIGH-confidence grade is decisive, so the documented
+    ``max_years_experience`` cap silently did nothing on exactly those postings.
+
+    The fix must move ONLY that side. A specialty requirement ("8 years of
+    experience WITH Kubernetes") is deliberately non-decisive — the candidate
+    may well be hired without eight Kubernetes years — so it must stay medium
+    even when the sentence carries a hard requirement cue.
+    """
+
+    CUES = ("Requirements: ", "Minimum ", "At least ", "You must have ",
+            "Qualifications: ")
+
+    def test_a_cued_general_requirement_is_decisive(self):
+        for cue in self.CUES:
+            text = f"Software Engineer\n{cue}8+ years of experience."
+            with self.subTest(cue=cue):
+                details = extract_required_yoe_details(text)
+                self.assertEqual(details["min"], 8)
+                self.assertEqual(details["confidence"], "high")
+                self.assertEqual(details["requirement_kind"], "required")
+                self.assertEqual(
+                    assess_required_yoe(text, cap=6)["decision"], "no_match")
+                self.assertEqual(
+                    assess_required_yoe(text, cap=10)["decision"], "match")
+
+    def test_a_cued_tool_specific_requirement_stays_non_decisive(self):
+        # The other side of the same boundary: same cue, same number, one
+        # prepositional phrase apart. None of these may become a hard drop.
+        tails = (
+            "of experience with Kubernetes.",
+            "of experience in distributed systems.",
+            "of experience with Python, Go, and Kubernetes.",
+            "working with Terraform.",
+            "of Kubernetes experience.",
+        )
+        for cue in self.CUES:
+            for tail in tails:
+                text = f"Software Engineer\n{cue}8+ years {tail}"
+                with self.subTest(cue=cue, tail=tail):
+                    details = extract_required_yoe_details(text)
+                    self.assertEqual(details["min"], 8)
+                    self.assertEqual(details["confidence"], "medium")
+                    self.assertEqual(details["requirement_kind"], "contextual")
+                    self.assertEqual(
+                        assess_required_yoe(text, cap=6)["decision"], "review")
+
+    def test_an_uncued_general_requirement_stays_medium(self):
+        # Unchanged, deliberate design (corpus case `yoe-weak-general-required`):
+        # no requirement cue AND no professional/industry qualifier is a review,
+        # not a gate. The fix corrects the KIND without promoting the grade.
+        details = extract_required_yoe_details(
+            "Software Engineer\n8+ years of experience.")
+        self.assertEqual(details["confidence"], "medium")
+        self.assertEqual(details["requirement_kind"], "required")
+        self.assertEqual(
+            assess_required_yoe("Software Engineer\n8+ years of experience.",
+                                cap=6)["decision"],
+            "review",
+        )
 
 
 class ThirdPartyYoeAttributionTests(unittest.TestCase):
@@ -325,6 +417,46 @@ class ImplausibleSalaryBandTests(unittest.TestCase):
         # read "240" as the low bound of a real $175,000 high.
         self.assertIsNone(extract_salary_range(
             "The annual base salary is $3240 - $175,000 per year."))
+
+    def test_cents_do_not_void_a_salary_band(self):
+        # The digit guard that closes the fragment route above was strict enough
+        # to reject every well-formed decimal too: a posting that writes its band
+        # with cents parsed as NOTHING, and deleting the cents by hand made the
+        # same sentence parse. Cents are part of the figure, so the band is read
+        # and rounded — the guard still runs after the cents group, which is what
+        # keeps the fragment case above passing.
+        for text, expected in (
+            ("The base salary range is $60,000.00 - $90,000.00 per year.",
+             (60000, 90000)),
+            ("The base salary range is $120,500.50 - $150,750.25 per year.",
+             (120500, 150750)),
+            ("The base salary range is $1,000,000.00 - $1,200,000.00 per year.",
+             (1000000, 1200000)),
+        ):
+            with self.subTest(text=text):
+                salary = extract_salary_range(text)
+                self.assertIsNotNone(salary)
+                self.assertEqual((salary["min"], salary["max"]), expected)
+        # A three-decimal figure is not a cents figure; refuse rather than
+        # truncate, so the guard cannot become a new fragment route.
+        self.assertIsNone(extract_salary_range(
+            "The base salary range is $60,000.000 - $90,000.000 per year."))
+
+    def test_hourly_range_and_hourly_rate_are_pay_keywords(self):
+        # An hourly posting states pay in its own vocabulary. Neither spelling
+        # was on the salary-keyword list, so the identical band parsed under
+        # "pay range" and vanished under "hourly range" / "hourly rate".
+        for text in (
+            "The target hourly range for this role is $21 - $25 per hour.",
+            "The hourly rate is $21 - $25 per hour.",
+            "The pay range is $21 - $25 per hour.",
+        ):
+            with self.subTest(text=text):
+                salary = extract_salary_range(text)
+                self.assertIsNotNone(salary)
+                self.assertEqual(
+                    (salary["min"], salary["max"], salary["period"]),
+                    (21, 25, "hour"))
 
     def test_stitched_envelope_orders_of_magnitude_apart_reports_nothing(self):
         # The backstop, unit-tested directly: even when every band is individually
@@ -542,6 +674,75 @@ class AnalyzeTests(unittest.TestCase):
             description="Requires 5+ years of experience.",
         )
         self.assertIsNone(metadata["salary_range"])
+
+    def test_the_supplied_range_keeps_its_unit(self):
+        # The unit used to be dropped here. `common.provided_salary_range` only
+        # ever emits a range carrying BOTH an explicit currency and an explicit
+        # period, so a contract role arrived fully labelled as $30-$35 per HOUR
+        # and left as a bare {30, 35} — the same shape a $30k-$35k annual band
+        # takes. Nothing downstream could tell the two apart.
+        hourly = analyze_job_metadata(
+            company="Acme",
+            title="Contract Engineer",
+            description="No pay information here.",
+            supplied_salary_range={
+                "min": 30, "max": 35, "currency": "USD",
+                "period": "hour", "source": "jobspy_api",
+            },
+        )["salary_range"]
+        self.assertEqual(
+            (hourly["min"], hourly["max"], hourly["period"], hourly["currency"]),
+            (30, 35, "hour", "USD"))
+        annual = analyze_job_metadata(
+            company="Acme",
+            title="Engineer",
+            description="No pay information here.",
+            supplied_salary_range={
+                "min": 30000, "max": 35000, "currency": "USD",
+                "period": "year", "source": "jobspy_api",
+            },
+        )["salary_range"]
+        self.assertEqual(annual["period"], "year")
+        # A supplied range with no unit invents none rather than assuming annual.
+        bare = analyze_job_metadata(
+            company="Acme",
+            title="Engineer",
+            description="No pay information here.",
+            supplied_salary_range={"min": 30, "max": 35, "source": "legacy"},
+        )["salary_range"]
+        self.assertNotIn("period", bare)
+        self.assertNotIn("currency", bare)
+
+    def test_a_jd_parsed_salary_is_labelled_annual(self):
+        # _salary_envelope only ever returns an ANNUAL band, so the flat field
+        # can state its unit as fact rather than leaving the reader to assume it.
+        salary = analyze_job_metadata(
+            company="Acme",
+            title="Senior Engineer",
+            description="The base salary range is £170,000-£210,000 per year.",
+        )["salary_range"]
+        self.assertEqual(
+            (salary["period"], salary["currency"]), ("year", "GBP"))
+
+    def test_the_unit_survives_schema_validation(self):
+        # salary_range is written into meta.yaml; the two new keys must not make
+        # a generated record fail the schema the tracker validates against.
+        metadata = analyze_job_metadata(
+            company="Acme",
+            title="Contract Engineer",
+            description="No pay information here.",
+            supplied_salary_range={
+                "min": 30, "max": 35, "currency": "USD",
+                "period": "hour", "source": "jobspy_api",
+            },
+        )
+        record = {
+            "role": "Contract Engineer",
+            "status": "drafted",
+            "progress": {"phase": "application_prep", "state": "action_required"},
+            **metadata,
+        }
+        self.assertEqual(validate_job_metadata(record), [])
 
 
 class WorkplaceTests(unittest.TestCase):

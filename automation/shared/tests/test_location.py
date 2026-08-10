@@ -10,7 +10,10 @@ SHARED_DIR = Path(__file__).resolve().parents[1]
 if str(SHARED_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_DIR))
 
-from location import assess_location, classify_location, classify_locations  # noqa: E402
+from location import (  # noqa: E402
+    assess_location, classify_location, classify_locations,
+    _onsite_rule_hits, _remote_rule_hits,
+)
 
 # A representative us_only policy with a couple of preferred metros.
 _POLICY = {
@@ -637,6 +640,268 @@ class BareRemoteWithoutUsScopeTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(
                     assess_location(raw, self.POLICY).category, "us_remote")
+
+
+class PolicyFlagIndependenceTests(unittest.TestCase):
+    """`require_match` and `us_only` gate two DIFFERENT categories.
+
+    The decision cascade used to read them conjoined — a single
+    ``not require_match and not us_only`` branch — which made
+    ``require_match: false`` a no-op for any policy that also set
+    ``us_only: true``. That is exactly what both shipped search profiles set
+    (``profiles/example.yaml``, ``profiles/_TEMPLATE.yaml``), so the documented
+    "false = keep all US + remote, boost preferred" behaviour never happened and
+    every non-preferred US city was dropped as ``no_match`` before review.
+
+    The full 2x2 is pinned here because three of the four cells must NOT move:
+    only ``require_match: false`` + ``us_only: true`` (the shipped profile) was
+    wrong.
+    """
+
+    BASE = {
+        "metro": ["san francisco", "new york", "boston", "austin"],
+        "allow_us_remote": True,
+    }
+    OTHER_US = "Chicago, IL"
+    FOREIGN = "Berlin, Germany"
+    METRO = "San Francisco, CA"
+    US_REMOTE = "Remote - US"
+
+    def _decision(self, raw, *, require_match, us_only):
+        return assess_location(
+            raw,
+            {**self.BASE, "require_match": require_match, "us_only": us_only},
+        ).decision
+
+    def test_shipped_profile_flags_keep_non_preferred_us_cities(self):
+        """require_match: false + us_only: true — the shipped profile.
+
+        This is the cell the conjunction broke: these are US cities, the policy
+        does not hard-filter to preferred metros, and they must survive to the
+        review queue rather than being dropped.
+        """
+        for raw in ("Chicago, IL", "Bellevue, WA", "Manhattan, NY",
+                    "Denver, CO", "Seattle, WA", "Pittsburgh, PA",
+                    "Raleigh, NC", "Miami, FL"):
+            with self.subTest(raw=raw):
+                result = assess_location(
+                    raw, {**self.BASE, "require_match": False,
+                          "us_only": True})
+                self.assertEqual(result.category, "other_us")
+                self.assertEqual(result.decision, "match")
+
+    def test_shipped_profile_flags_still_drop_foreign(self):
+        """us_only: true keeps doing its job when require_match is false.
+
+        The point of splitting the flags is that relaxing the US-city filter
+        must not also open the border.
+        """
+        for raw in ("Berlin, Germany", "London, United Kingdom",
+                    "Toronto, Canada"):
+            with self.subTest(raw=raw):
+                result = assess_location(
+                    raw, {**self.BASE, "require_match": False,
+                          "us_only": True})
+                self.assertEqual(result.category, "foreign")
+                self.assertEqual(result.decision, "no_match")
+
+    def test_require_match_true_still_hard_filters_us_cities(self):
+        for us_only in (True, False):
+            with self.subTest(us_only=us_only):
+                self.assertEqual(
+                    self._decision(self.OTHER_US, require_match=True,
+                                   us_only=us_only),
+                    "no_match")
+
+    def test_both_flags_false_keeps_foreign_unchanged(self):
+        """The pending decision's default path: change no default value.
+
+        `message-queue/needs-human/decisions/job-search-us-only-default-asymmetry.md`
+        is open, and its default path is "change nothing". Both flags false has
+        always KEPT foreign postings, and this fix must not quietly narrow that
+        while the owner is still deciding. Pinned so a later edit cannot move it
+        silently.
+        """
+        for raw in ("Berlin, Germany", "London, United Kingdom",
+                    "Toronto, Canada", "Singapore"):
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    self._decision(raw, require_match=False, us_only=False),
+                    "match")
+
+    def test_both_flags_false_keeps_us_cities(self):
+        self.assertEqual(
+            self._decision(self.OTHER_US, require_match=False, us_only=False),
+            "match")
+
+    def test_preferred_metro_and_us_remote_match_under_every_combination(self):
+        for require_match in (True, False):
+            for us_only in (True, False):
+                for raw in (self.METRO, self.US_REMOTE):
+                    with self.subTest(raw=raw, require_match=require_match,
+                                      us_only=us_only):
+                        self.assertEqual(
+                            self._decision(raw, require_match=require_match,
+                                           us_only=us_only),
+                            "match")
+
+    def test_us_only_alone_governs_foreign(self):
+        """us_only: false admits foreign geography whatever require_match says.
+
+        `require_match` is the preferred-metro/US-city filter; it carries no
+        opinion about the border, so it cannot re-impose a US-only rule the
+        policy has switched off.
+        """
+        self.assertEqual(
+            self._decision(self.FOREIGN, require_match=True, us_only=False),
+            "match")
+
+    def test_an_unclassifiable_location_is_still_reviewed(self):
+        """Splitting the flags must not turn `unknown` into a silent match.
+
+        Only `other_us` and `foreign` moved out of the permissive catch-all; a
+        location nothing could classify still has to reach a human.
+        """
+        result = assess_location(
+            "", {**self.BASE, "require_match": True, "us_only": True})
+        self.assertEqual(result.decision, "review")
+
+
+class NegatedRemoteFieldTests(unittest.TestCase):
+    """A remote field label whose VALUE is "No" is not a remote grant.
+
+    Boards emit the workplace mode as a labelled field. `jd_remote_role` matched
+    the "Remote Position" half of "Remote Position: No" and read an office-bound
+    role as remote — the label is worded identically to a genuine grant, so only
+    the value can tell them apart.
+    """
+
+    def test_negated_remote_field_is_not_remote_evidence(self):
+        for text in ("Remote Position: No", "Remote: No", "Remote? No",
+                     "Fully Remote: No", "Remote Role - No",
+                     "Remote Position: None"):
+            with self.subTest(text=text):
+                self.assertEqual(_remote_rule_hits(text), [])
+
+    def test_affirmative_remote_field_is_still_remote_evidence(self):
+        self.assertIn("jd_remote_role",
+                      _remote_rule_hits("Remote Position: Yes"))
+
+    def test_ordinary_remote_prose_is_unaffected(self):
+        self.assertIn("jd_remote_role",
+                      _remote_rule_hits("This is a remote position."))
+
+    def test_a_sentence_ending_before_no_is_not_a_negated_field(self):
+        """The guard requires a field SEPARATOR, not merely a nearby "No".
+
+        "...a fully remote role. No prior experience needed." is a remote grant
+        followed by an unrelated sentence; a looser guard would silently discard
+        it.
+        """
+        hits = _remote_rule_hits(
+            "This is a fully remote role. No prior experience needed.")
+        self.assertIn("jd_fully_remote", hits)
+
+    def test_a_negated_label_does_not_suppress_a_real_grant_elsewhere(self):
+        hits = _remote_rule_hits(
+            "Remote Position: No\n\nHowever, this is a remote position for "
+            "our support team.")
+        self.assertIn("jd_remote_role", hits)
+
+    def test_negated_remote_label_does_not_classify_the_role_remote(self):
+        """End to end, not just the rule table."""
+        result = assess_location(
+            "Chicago, IL",
+            {"metro": ["san francisco"], "allow_us_remote": True,
+             "us_only": True, "require_match": True},
+            description="Remote Position: No\nYou will join our Chicago team.",
+        )
+        self.assertNotEqual(result.workplace, "remote")
+        self.assertNotIn("jd_remote_role", result.evidence)
+
+
+class OnsiteVocabularyTests(unittest.TestCase):
+    """Onsite phrasings the rule table did not carry.
+
+    `jd_onsite_required` needs a requirement verb or a day count nearby, so an
+    absolute ("100% onsite") or a structured field ("Position Role Type:
+    Onsite") produced no workplace evidence at all and the posting read as
+    having an unstated work mode.
+    """
+
+    def test_absolute_onsite_phrasings_are_recognized(self):
+        for text in ("This role is 100% onsite.",
+                     "This role is 100% on-site.",
+                     "This is a fully onsite position.",
+                     "The position is fully on-site.",
+                     "This role is entirely in-office.",
+                     "Work is 100 % in person."):
+            with self.subTest(text=text):
+                self.assertIn("jd_onsite_absolute", _onsite_rule_hits(text))
+
+    def test_structured_onsite_fields_are_recognized(self):
+        for text in ("Position Role Type: Onsite",
+                     "Work Setting: In-office",
+                     "Role Type: On-Site",
+                     "Work Arrangement: In Office",
+                     "Workplace Type - Onsite"):
+            with self.subTest(text=text):
+                self.assertIn("jd_onsite_field", _onsite_rule_hits(text))
+
+    def test_a_negated_absolute_onsite_is_not_an_onsite_obligation(self):
+        """The existing negation guard now covers the new absolute rule too."""
+        self.assertNotIn(
+            "jd_onsite_absolute",
+            _onsite_rule_hits("This role is not 100% onsite."))
+
+    def test_a_remote_field_value_does_not_fire_the_onsite_field_rule(self):
+        self.assertEqual(_onsite_rule_hits("Work Setting: Remote"), [])
+
+    def test_structured_onsite_field_drives_the_workplace_assessment(self):
+        result = assess_location(
+            "Chicago, IL",
+            {"metro": ["san francisco"], "allow_us_remote": True,
+             "us_only": True, "require_match": True},
+            description="Position Role Type: Onsite\nYou will join our team.",
+        )
+        self.assertEqual(result.workplace, "onsite")
+
+
+class WorkFromHomeVocabularyTests(unittest.TestCase):
+    """"work from home" / "WFH" are remote grants too.
+
+    The table carried only the ADVERB form ("work remotely"), so a JD whose only
+    statement was "Work From Home 100% of the time" was not recognized as remote
+    at all.
+    """
+
+    def test_work_from_home_phrasings_are_recognized(self):
+        for text in ("Work From Home 100% of the time.",
+                     "This role is WFH.",
+                     "You may work from home.",
+                     "The engineer works from home full time.",
+                     "Working from home is supported."):
+            with self.subTest(text=text):
+                self.assertIn("jd_work_from_home", _remote_rule_hits(text))
+
+    def test_a_work_from_home_perk_is_not_a_remote_grant(self):
+        """A benefits line describes a stipend, not where the job is done."""
+        for text in ("Benefits include a work from home stipend.",
+                     "We offer a WFH allowance and a learning budget.",
+                     "Perks: work from home equipment."):
+            with self.subTest(text=text):
+                self.assertEqual(_remote_rule_hits(text), [])
+
+    def test_work_from_home_with_us_scope_classifies_us_remote(self):
+        result = assess_location(
+            "Remote",
+            {"metro": ["san francisco"], "allow_us_remote": True,
+             "us_only": True, "require_match": True},
+            description="You will work from home 100% of the time, anywhere "
+                        "in the United States.",
+        )
+        self.assertEqual(result.category, "us_remote")
+        self.assertEqual(result.decision, "match")
 
 
 if __name__ == "__main__":

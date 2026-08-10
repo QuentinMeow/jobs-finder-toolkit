@@ -582,6 +582,220 @@ variants:
       verdict: unknown
       confidence: unknown
 
+  # --- denial shapes written as patterns rather than phrases ----------------
+  # Each pair below is a target and its tripwire, kept adjacent on purpose: the
+  # rules here are the first ones in this module that can CREATE a denial from a
+  # wording no phrase list contains, and a denial drops the posting under both
+  # visa policies. The tripwire is what says the rule stopped where it should.
+
+  - id: sponsorship-coordinated-sponsor-verb-with-adverb
+    domain: sponsorship
+    # An adverb between the cue and the verb defeats every contiguous phrase
+    # ("cannot sponsor" is not present), so this used to read as silence.
+    input:
+      text: We cannot currently sponsor or support visa transfers.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-coordinated-sponsor-verb-needs-immigration-context
+    domain: sponsorship
+    # TRIPWIRE for the rule above: its "sponsor" is a bare transitive verb, so
+    # it stays behind the immigration gate and a charity is not a visa denial.
+    input:
+      text: We do not sponsor or support local charities.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-stated-as-unnecessary-is-a-denial
+    domain: sponsorship
+    # "Be authorized without needing sponsorship" is a refusal stated as a
+    # requirement; the phrase list needs "without sponsorship" contiguous.
+    input:
+      text: >-
+        Applicants must be authorized to work in the U.S. without the need for
+        current or future visa sponsorship.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-needed-by-a-candidate-is-not-a-denial
+    domain: sponsorship
+    # TRIPWIRE: EEO copy names the same words in the opposite polarity.
+    input:
+      text: We do not discriminate against candidates who need visa sponsorship.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-not-sponsoring-visas-is-a-denial
+    domain: sponsorship
+    # The gerund is a form neither phrase tuple carries.
+    input:
+      text: We are not currently sponsoring employment-based visas.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-open-to-sponsoring-is-still-an-offer
+    domain: sponsorship
+    # TRIPWIRE for the rule above: the negation is part of that pattern rather
+    # than left to the clause scope, so the positive form cannot reach it.
+    input:
+      text: We are open to sponsoring an employment-based visa for this role.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-citizenship-required-field-is-a-denial
+    domain: sponsorship
+    # A Q/A row or table header rather than a sentence.
+    input:
+      text: 'Citizenship required: Yes'
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-citizenship-required-field-answered-no
+    domain: sponsorship
+    # TRIPWIRE: the same field with the opposite answer is the opposite claim.
+    input:
+      text: 'Citizenship required: No'
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-citizenship-is-not-required-is-not-a-denial
+    domain: sponsorship
+    # TRIPWIRE: a negated requirement must not read as a requirement.
+    input:
+      text: Citizenship is not required for this role.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-visa-field-limited-to-citizens-is-a-denial
+    domain: sponsorship
+    # A compact field naming every accepted status, none of which is a visa.
+    input:
+      text: 'Visa: GC/Citizens'
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-visa-field-listing-h1b-is-not-a-denial
+    domain: sponsorship
+    # TRIPWIRE: the value list must be EXHAUSTED by citizen/green-card terms.
+    # A field that also lists H-1B is the opposite of a citizens-only field, and
+    # the leading term is not what decides it.
+    input:
+      text: 'Visa: H-1B, OPT, GC, Citizens'
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-visa-field-citizens-then-h1b-is-not-a-denial
+    domain: sponsorship
+    # TRIPWIRE, and a real hole found by measurement: without a word boundary
+    # after each status term, "citizens?" matches "citizen" INSIDE "Citizens",
+    # stranding an "s" that the exhaustiveness check then reads as the end of
+    # the list — so this field graded a confident denial while offering H-1B.
+    input:
+      text: 'Visa: GC/Citizens/H-1B'
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: unknown
+
+  - id: sponsorship-us-citizen-required-label-is-a-denial
+    domain: sponsorship
+    # The same field written with the status noun instead of the abstract one.
+    input:
+      text: 'U.S. citizen: required'
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  # --- a denial scoped to NEW petitions, beside a welcome for transfers ------
+  # One sentence saying both things was read as only the first half, and dropped
+  # under both visa policies with an empty review_reasons — a posting inviting
+  # exactly this candidate, deleted without a trace. The denial is KEPT (so no
+  # promotion is reachable) and only its confidence is withdrawn.
+
+  - id: sponsorship-new-petition-denial-beside-a-transfer-welcome
+    domain: sponsorship
+    input:
+      text: >-
+        We are unable to sponsor new H-1B petitions; H-1B transfer candidates
+        are encouraged to apply.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+      evidence_contains: ['unsettled: unable to sponsor']
+
+  - id: sponsorship-initial-petition-denial-beside-a-transfer-welcome
+    domain: sponsorship
+    input:
+      text: >-
+        We do not sponsor initial H-1B petitions. Candidates who can transfer
+        their H-1B are welcome.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-new-petition-denial-without-a-transfer-signal-stands
+    domain: sponsorship
+    # TRIPWIRE: half the rule is the OTHER half. With nothing in the posting
+    # welcoming a transfer, a bounded refusal is still a refusal.
+    input:
+      text: We are unable to sponsor new H-1B petitions for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-unbounded-denial-beside-a-transfer-mention-stands
+    domain: sponsorship
+    # TRIPWIRE: the denial's scope is not limited to new petitions, so a
+    # transfer mention elsewhere must not soften it.
+    input:
+      text: >-
+        We do not offer sponsorship of any kind. Please do not ask about
+        transferring your H-1B.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-new-hires-is-not-a-new-petition-scope
+    domain: sponsorship
+    # TRIPWIRE: "new" alone must not bound a denial. "for new hires" is a flat
+    # refusal that happens to contain the word, which is why the rule requires a
+    # petition/filing/case noun after it.
+    input:
+      text: >-
+        We are unable to sponsor visas for new hires. H-1B transfer candidates
+        should not apply.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
   - id: title-member-of-technical-staff
     domain: title
     input:
@@ -1016,6 +1230,40 @@ variants:
       confidence: high
       requirement_kind: required
 
+  - id: yoe-cued-general-phrasing-is-decisive
+    domain: yoe
+    # The most common way an English job post states a seniority requirement.
+    # It used to grade tool-specific/medium: the contextual regex's optional
+    # "(?:of\s+)?" backtracked and let the preposition "of" BE the tool name, so
+    # "8 years <of> experience" read as a domain requirement. Only a HIGH grade
+    # is decisive, so the documented max_years_experience cap silently did
+    # nothing on these — "Minimum 7 years of experience" was kept at a cap of 6
+    # while "Minimum 7 years of professional experience", the same requirement
+    # one adjective apart, was correctly dropped.
+    input:
+      text: "Requirements: 8+ years of experience."
+    expect:
+      decision: match
+      min: 8
+      confidence: high
+      requirement_kind: required
+
+  - id: yoe-escaped-range-dash
+    domain: yoe
+    # markdownify escapes a hyphen that could start a list item, so a JD fetched
+    # through JobSpy arrives as "3\-5 years". The escape hid the range separator
+    # entirely: the range matched nothing and a min-only pattern then read the
+    # range's UPPER bound as a standalone minimum, turning the band's CEILING
+    # into its FLOOR. Escaped and unescaped text must grade identically.
+    input:
+      text: 'Requires 3\-5 years of professional experience.'
+    expect:
+      decision: match
+      min: 3
+      max: 5
+      confidence: high
+      requirement_kind: required
+
   # --- Intentional, recurring LOCATION review families ------------------------
   # These preserve a posting for manual review at scale; each is a KNOWN shape so
   # the strict snapshot audit does not fail on it, while runtime search still
@@ -1441,3 +1689,88 @@ variants:
     expect:
       decision: match
       category: us_remote
+
+  - id: title-explicit-exclude-names-the-rule-id
+    domain: title
+    # `titles.exclude` is the pipeline's HARDEST and largest title drop, and until
+    # now no corpus case pinned its rule ID — only the coarse decision. The rule
+    # ID is what `search_jobs` reads to attribute the drop to a TERM (the
+    # `n_title_excluded` / `title_excluded_terms` counters), so a rename that left
+    # `decision: no_match` intact would silently blank that breakdown.
+    input:
+      title: Engineering Manager, Platform
+      profile:
+        titles:
+          include: [software engineer, platform engineer]
+          exclude: [manager, director]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.excluded.manager]
+
+  - id: title-profile-include-outranks-the-occupation-lexicon
+    domain: title
+    # Issue #232: the generic non-technical-occupation lexicon ran BEFORE
+    # `titles.include`, so a candidate whose profile explicitly names an
+    # occupation still lost every posting for it. The lexicon states what a
+    # DEFAULT software search does not want; the profile states what THIS search
+    # does want, and the profile is the more specific statement.
+    input:
+      title: Enterprise Account Executive
+      profile:
+        titles:
+          include: [account executive, sales executive]
+          exclude: [manager, director, vp]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.account executive]
+
+  - id: title-lexicon-still-drops-an-occupation-the-profile-never-named
+    domain: title
+    # The include list exempts the titles it names — it does not switch the
+    # lexicon off. A clinical title under a sales profile is still a hard drop.
+    input:
+      title: Registered Nurse
+      profile:
+        titles:
+          include: [account executive, sales executive]
+          exclude: [manager, director, vp]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.nontechnical_occupation.clinical]
+
+  - id: title-broad-domain-only-include-still-faces-the-lexicon
+    domain: title
+    # The NARROW form of the #232 fix. A title matched only by a BROAD DOMAIN
+    # token (`infrastructure`, `platform`, `compute`) is not an occupation
+    # declaration — the token names a technical AREA — so it still faces the
+    # lexicon. The wide form ("any include match skips it") was measured on a real
+    # corpus and made every affected row worse, promoting finance/legal postings
+    # like this one into the review queue.
+    input:
+      title: Commercial Counsel, Platform Marketplace
+      profile:
+        titles:
+          include: [software engineer, infrastructure, platform, compute]
+          exclude: [manager, director]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.nontechnical_occupation.legal]
+
+  - id: title-explicit-exclude-still-beats-an-included-occupation
+    domain: title
+    # Precedence above the lexicon is unchanged: an explicit exclude runs first
+    # and still wins, even over an occupation the include list names.
+    input:
+      title: Sales Manager
+      profile:
+        titles:
+          include: [account executive, sales executive]
+          exclude: [manager, director, vp]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.excluded.manager]

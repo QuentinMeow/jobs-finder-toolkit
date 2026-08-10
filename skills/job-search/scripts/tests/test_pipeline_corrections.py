@@ -31,6 +31,8 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 _SCRIPTS = Path(__file__).resolve().parents[1]
 for _path in (_SCRIPTS, _SCRIPTS / "_vendor"):
     if str(_path) not in sys.path:
@@ -484,6 +486,138 @@ class LexiconVersusProfileIncludeTests(unittest.TestCase):
                          "review")
 
 
+class ProfileIncludeOutranksTheOccupationLexiconTests(unittest.TestCase):
+    """#232: the generic occupation lexicon ran BEFORE `titles.include`.
+
+    The lexicon encodes what a default SOFTWARE search does not want. A profile's
+    own `titles.include` encodes what THIS search does want, and it is the more
+    specific statement — so a candidate whose profile says
+    ``include: [account executive]`` was still losing every account-executive
+    posting to ``title.nontechnical_occupation.sales``. Verified broken across
+    sales, finance, customer success, clinical, design and recruiting profiles:
+    not one explicit include phrase survived.
+
+    The fix is deliberately NARROW: only a CLEAN include match skips the lexicon.
+    A title matched solely by a BROAD DOMAIN token (``infrastructure``,
+    ``platform``, ``compute``) still faces it, because such a token names a
+    technical AREA, not an occupation — see
+    `BroadDomainOnlyIncludeStillFacesTheLexiconTests` below, which pins the eight
+    real finance/legal/comms shapes that the wide form of this rule wrongly
+    rescued.
+    """
+
+    SALES = {"include": ["account executive", "sales executive",
+                         "business development representative"],
+             "exclude": ["manager", "director", "vp", "intern"]}
+    CLINICAL = {"include": ["clinical research associate"],
+                "exclude": ["director", "vp"]}
+    RECRUITING = {"include": ["technical recruiter"], "exclude": ["director", "vp"]}
+
+    def test_an_explicitly_included_sales_title_is_a_match(self):
+        for title in ("Account Executive", "Enterprise Account Executive",
+                      "Sales Executive", "Business Development Representative"):
+            with self.subTest(title=title):
+                assessment = assess_title(title, self.SALES)
+                self.assertEqual(assessment["decision"], "match")
+                self.assertFalse([r for r in assessment["rule_ids"]
+                                  if r.startswith("title.nontechnical_occupation.")])
+
+    def test_an_explicit_exclude_still_beats_the_include(self):
+        """Precedence is unchanged above the lexicon: excludes still run first."""
+        assessment = assess_title("Sales Manager", self.SALES)
+        self.assertEqual(assessment["decision"], "no_match")
+        self.assertEqual(assessment["rule_ids"], ["title.excluded.manager"])
+
+    def test_the_lexicon_still_drops_a_title_the_profile_never_named(self):
+        """The lexicon is skipped for INCLUDED titles only, not switched off."""
+        assessment = assess_title("Registered Nurse", self.SALES)
+        self.assertEqual(assessment["decision"], "no_match")
+        self.assertIn("title.nontechnical_occupation.clinical",
+                      assessment["rule_ids"])
+
+    def test_a_clinical_profile_keeps_its_own_roles_and_drops_the_rest(self):
+        self.assertEqual(
+            assess_title("Clinical Research Associate", self.CLINICAL)["decision"],
+            "match")
+        self.assertEqual(
+            assess_title("Registered Nurse", self.CLINICAL)["decision"], "no_match")
+
+    def test_a_recruiting_profile_keeps_its_own_roles_and_drops_the_rest(self):
+        self.assertEqual(
+            assess_title("Technical Recruiter", self.RECRUITING)["decision"], "match")
+        self.assertEqual(
+            assess_title("Head of People Operations", self.RECRUITING)["decision"],
+            "no_match")
+
+    def test_title_ok_keeps_the_included_posting_in_the_pipeline(self):
+        posting = JobPosting(
+            source="board", company="Example Corp", title="Account Executive",
+            url="https://example.test/jobs/ae")
+        self.assertTrue(title_ok(posting, {"titles": self.SALES}))
+        self.assertEqual(posting.filter_assessments["title"]["decision"], "match")
+
+
+class BroadDomainOnlyIncludeStillFacesTheLexiconTests(unittest.TestCase):
+    """The wide form of the #232 fix ("any include match skips the lexicon") was
+    MEASURED wrong: on a real corpus it changed eight rows and all eight got
+    worse, turning finance/legal/communications postings from `no_match` into
+    review-queue noise. Every one of them matched only a broad-domain token
+    (``infrastructure``, ``platform``, ``compute``), which is a technical AREA and
+    not an occupation declaration. The FICTIONAL titles below reproduce those
+    eight shapes so the wide form cannot be reintroduced silently.
+    """
+
+    CFG = {"include": ["software engineer", "infrastructure", "platform",
+                       "compute", "distributed systems"],
+           "exclude": ["manager", "director"]}
+
+    def test_broad_domain_only_finance_and_legal_titles_stay_hard_dropped(self):
+        for title in ("Strategic Finance Partner, Compute",
+                      "Capital Markets Associate - Infrastructure Financing",
+                      "Commercial Counsel, Platform Marketplace",
+                      "Associate General Counsel, Infrastructure",
+                      "Utilities and Infrastructure Counsel",
+                      "Communications Specialist, Platform",
+                      "Platform Partnerships Lead, Programs",
+                      "Commercial Counsel-Infrastructure and Go To Market"):
+            with self.subTest(title=title):
+                assessment = assess_title(title, self.CFG)
+                self.assertEqual(assessment["decision"], "no_match")
+                self.assertTrue([r for r in assessment["rule_ids"]
+                                 if r.startswith("title.nontechnical_occupation.")],
+                                assessment["rule_ids"])
+
+    def test_the_broad_domain_set_is_the_one_the_residual_guard_already_uses(self):
+        """One definition, not two — a second copy would drift out of agreement."""
+        self.assertFalse(scoring._is_clean_include_match(["infrastructure"]))
+        self.assertFalse(scoring._is_clean_include_match(["platform", "compute"]))
+        self.assertTrue(scoring._is_clean_include_match(["account executive"]))
+        self.assertTrue(scoring._is_clean_include_match(
+            ["infrastructure", "software engineer"]))
+        self.assertFalse(scoring._is_clean_include_match([]))
+
+    def test_skipping_the_lexicon_can_never_introduce_a_new_drop(self):
+        """The fix only moves an existing hard drop later in the chain.
+
+        Every path below the lexicon ends in `match` or `review`, so a title that
+        skips it cannot be dropped by something further down — which is why the
+        measured row-change count on a software profile is zero.
+        """
+        for title in ("Account Executive", "Registered Nurse",
+                      "Software Engineer, Platform", "Marketing Partnerships Lead",
+                      "Strategic Finance Partner, Compute"):
+            with self.subTest(title=title):
+                widened = assess_title(title, self.CFG)["decision"]
+                self.assertIn(widened, {"match", "review", "no_match"})
+                if widened == "no_match":
+                    # Still dropped -> it was dropped by an exclude or by the
+                    # lexicon it never skipped, never by a rule below them.
+                    self.assertTrue(
+                        [r for r in assess_title(title, self.CFG)["rule_ids"]
+                         if r.startswith("title.excluded.")
+                         or r.startswith("title.nontechnical_occupation.")])
+
+
 class DedupeIdentityTests(unittest.TestCase):
     """One title published as several per-location requisitions is several jobs."""
 
@@ -537,6 +671,134 @@ class LowQualityVisibilityTests(unittest.TestCase):
             stage=1, n_companies=0, aggregators=[], n_raw=2, counts=counts,
             max_age=None, max_per_company=10, errors=[], now=self.NOW)
         self.assertEqual(meta["n_low_quality"], 1)
+
+
+class OverCapExperienceRoutingTests(unittest.TestCase):
+    """An over-cap requirement the extractor cannot act on belongs in review.
+
+    `experience_ok` returned a bare bool, so a `review` verdict was a silent
+    KEEP: the row reached the MAIN shortlist with `review_reasons: []`, reading
+    exactly like a posting that stated no requirement. Nothing about it invited
+    the reader to check the years by hand. Naming the verdict routes it to the
+    review lane, which is what "not confident enough to DROP it" always meant.
+    """
+
+    NOW = datetime(2026, 7, 22, tzinfo=timezone.utc)
+
+    def _ctx(self):
+        return {"considered_urls": set(), "considered_pairs": set(),
+                "skip_days": 0, "search_tokens": [],
+                "ignore_search_log": True, "ai_native_keys": set()}
+
+    def _run(self, description):
+        posting = JobPosting(
+            source="board", company="Example Corp", title="Software Engineer",
+            url="https://example.test/jobs/yoe", location="Remote, United States",
+            description=description)
+        profile = {"titles": TITLES_CFG, "max_years_experience": 6}
+        return search_jobs.filter_score_rank(
+            [posting], profile, self._ctx(), max_age=None, top_k=40,
+            max_per_company=10, sponsor_index=None, company_levels={},
+            registry=Registry([]), now=self.NOW)
+
+    def test_a_non_decisive_over_cap_row_lands_in_the_review_lane(self):
+        kept, counts = self._run(
+            "Requires 12+ years of experience with Kubernetes. "
+            "Python, distributed systems.")
+        self.assertEqual(kept, [])
+        self.assertEqual(counts["n_review"], 1)
+        self.assertIn("experience_over_cap",
+                      counts["review_postings"][0].review_reasons)
+
+    def test_a_decisive_over_cap_row_is_still_dropped_outright(self):
+        kept, counts = self._run(
+            "Requires at least 12 years of professional experience. "
+            "Python, distributed systems.")
+        self.assertEqual(kept, [])
+        self.assertEqual(counts["n_review"], 0)
+
+    def test_a_row_inside_the_cap_still_reaches_the_main_shortlist(self):
+        kept, counts = self._run(
+            "Requires 3+ years of experience with Kubernetes. "
+            "Python, distributed systems.")
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0].review_reasons, [])
+        self.assertEqual(counts["n_review"], 0)
+
+
+class CompensationColumnUnitTests(unittest.TestCase):
+    """The discovery table's pay column must state the unit it is printing.
+
+    An aggregator's structured pay field may be hourly. The column compacted
+    every band to thousands and printed no unit, so $30-$35 PER HOUR rendered as
+    `30-35` — the same string a $30k-$35k annual band produces.
+    """
+
+    def test_an_hourly_band_prints_its_unit(self):
+        self.assertEqual(
+            search_jobs._format_comp(
+                {"min": 30, "max": 35, "period": "hour", "currency": "USD"}),
+            "30-35/hr")
+
+    def test_an_annual_band_is_unchanged(self):
+        for value, expected in (
+            ({"min": 150000, "max": 190000, "period": "year",
+              "currency": "USD"}, "150k-190k"),
+            ({"min": 150000, "max": 190000}, "150k-190k"),
+            (None, "?"),
+            ({"min": None, "max": None}, "?"),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(search_jobs._format_comp(value), expected)
+
+    def test_a_non_usd_currency_is_named(self):
+        self.assertEqual(
+            search_jobs._format_comp(
+                {"min": 60000, "max": 80000, "period": "year",
+                 "currency": "EUR"}),
+            "60k-80k EUR")
+
+    def test_monthly_and_daily_bands_carry_their_own_unit(self):
+        self.assertEqual(
+            search_jobs._format_comp(
+                {"min": 3000, "max": 4000, "period": "month"}), "3000-4000/mo")
+        self.assertEqual(
+            search_jobs._format_comp(
+                {"min": 400, "max": 600, "period": "day"}), "400-600/day")
+
+
+class UnimplementedProfileKeyTests(unittest.TestCase):
+    """A salary floor that filters nothing must not look like one that does.
+
+    `comp.min_base` / `comp.min_total` are declared in both shipped profiles and
+    read by nothing. The user sets a number, sees a shortlist, and concludes
+    every row clears the floor. Nothing filtered anything, and no output said so.
+    """
+
+    def test_a_set_floor_is_reported(self):
+        warnings = search_jobs.unimplemented_profile_warnings(
+            {"comp": {"min_base": 180000, "min_total": None}})
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("comp.min_base", warnings[0])
+        self.assertIn("not implemented", warnings[0])
+
+    def test_both_floors_are_reported_separately(self):
+        warnings = search_jobs.unimplemented_profile_warnings(
+            {"comp": {"min_base": 180000, "min_total": 300000}})
+        self.assertEqual(len(warnings), 2)
+
+    def test_the_shipped_profiles_stay_silent(self):
+        for name in ("example.yaml", "_TEMPLATE.yaml"):
+            path = _SCRIPTS.parent / "profiles" / name
+            with self.subTest(profile=name):
+                profile = yaml.safe_load(path.read_text())
+                self.assertEqual(
+                    search_jobs.unimplemented_profile_warnings(profile), [])
+
+    def test_an_absent_block_is_silent(self):
+        self.assertEqual(search_jobs.unimplemented_profile_warnings({}), [])
+        self.assertEqual(
+            search_jobs.unimplemented_profile_warnings({"comp": None}), [])
 
 
 class SponsorIndexCompanyKeyTests(unittest.TestCase):

@@ -64,6 +64,90 @@ _LOCATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Contact-line detection.
+#
+# The old test was `"@" in text or "linkedin" in text or "example.com" in text`,
+# which is the shape of the repo's OWN fixtures and almost nothing else. Four
+# ordinary real-resume headers returned '' with exit 0 and no warning:
+#
+#     Springfield, IL | (555) 019-2837              (no email, no linkedin)
+#     City, State - Phone Number - E-mail           (an unfilled template)
+#     Austin, TX | jordanrivers.dev | 555-0100      (personal domain)
+#     Austin, TX | github.com/jordanrivers | 555-0100
+#
+# A dropped contact line is silent data loss: it renders as an empty header and
+# check.py's locked-field comparison has nothing to compare. So the detector now
+# reads SHAPE, and anything in the contact slot that still matches no shape is
+# kept verbatim under a named warning rather than thrown away.
+#
+# Every pattern is anchored by POSITION too (see _base_result): only the first
+# few preamble paragraphs are eligible, so a summary sentence further down
+# cannot be captured as the contact line.
+# ---------------------------------------------------------------------------
+
+# 7- or 10-digit North-American shapes with the usual separators, plus an
+# optional country code: "(555) 019-2837", "555-0100", "+1 555.019.2837".
+_PHONE_RE = re.compile(
+    r"(?<![\w-])(?:\+\d{1,3}[ .\-]?)?"
+    r"(?:\(\d{3}\)[ .\-]?|\d{3}[ .\-])?"
+    r"\d{3}[ .\-]\d{4}(?![\w-])"
+)
+# Any explicit URL, or a bare host with a plausible TLD ("jordanrivers.dev",
+# "github.com/jordanrivers", a LinkedIn profile path). Deliberately not
+# exhaustive on TLDs — a miss falls through to keep-verbatim, never to ''.
+_URL_RE = re.compile(r"(?:https?://|www\.)\S", re.IGNORECASE)
+_DOMAIN_RE = re.compile(
+    r"\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\."
+    r"(?:com|net|org|io|dev|me|co|ai|app|edu|gov|us|uk|ca|xyz|info|tech|page|site)"
+    r"\b(?:/\S*)?",
+    re.IGNORECASE,
+)
+# An unfilled template header: the words are placeholders, not data, and a
+# resume that still carries them must not silently lose its contact row.
+_CONTACT_WORD_RE = re.compile(
+    r"\b(?:e-?mail|phone(?:\s*(?:number|#))?|mobile|cell|tel(?:ephone)?|"
+    r"linkedin|github|gitlab|portfolio|website|city,\s*state)\b",
+    re.IGNORECASE,
+)
+# The visual signature of a contact line: short fields joined by pipes/bullets.
+_CONTACT_SEPARATOR_RE = re.compile(r"[|•·‧∙●▪]")
+# A contact line is a header row, never a paragraph. Anything longer is prose.
+_CONTACT_MAX_CHARS = 200
+# How far below the name to look. A contact line sits immediately under it; a
+# larger window would start eating summary/tagline paragraphs.
+_CONTACT_PREAMBLE_WINDOW = 3
+
+
+def _contact_signals(text: str) -> list[str]:
+    """Named contact shapes present in ``text`` (empty list = no shape matched).
+
+    Returned as names rather than a bool so a diagnostic can say WHY a line was
+    or was not taken, instead of asserting a verdict the reader cannot check.
+    """
+    found = []
+    if "@" in text:
+        found.append("email")
+    if _PHONE_RE.search(text):
+        found.append("phone")
+    if _URL_RE.search(text) or _DOMAIN_RE.search(text):
+        found.append("url")
+    if _CONTACT_WORD_RE.search(text):
+        found.append("contact-word")
+    if len(_CONTACT_SEPARATOR_RE.findall(text)) >= 2:
+        # Two or more pipe/bullet separators is the header-row shape itself.
+        # Two is the floor on purpose: ordinary prose reaches one em dash easily
+        # and would otherwise be captured as a contact line.
+        found.append("separators")
+    return found
+
+
+def looks_like_contact_line(text: str) -> bool:
+    """True when ``text`` carries at least one contact shape and is header-sized."""
+    stripped = text.strip()
+    return bool(stripped) and len(stripped) <= _CONTACT_MAX_CHARS and bool(
+        _contact_signals(stripped))
+
 
 @dataclass(frozen=True)
 class Diagnostic:
@@ -510,16 +594,56 @@ def _parse_experience(paragraphs: list[_Paragraph]) -> tuple[list[dict[str, Any]
     return employers, diagnostics
 
 
-def _base_result(preamble: list[_Paragraph]) -> dict[str, Any]:
+def _base_result(preamble: list[_Paragraph]) -> tuple[dict[str, Any], list[Diagnostic]]:
+    """Name + contact line off the preamble, plus what could not be classified.
+
+    Returns diagnostics because the contact line used to fail SILENTLY: an
+    unrecognized header produced ``contact_line: ''`` with exit 0, which reads as
+    "this resume has no contact details" rather than "the parser did not
+    understand this one". The fallback keeps the line verbatim and says so.
+    """
     name = ""
     contact = ""
+    diagnostics: list[Diagnostic] = []
+    candidates: list[_Paragraph] = []
+
     for paragraph in preamble:
         if not name and len(paragraph.text) < 60:
             name = paragraph.text
             continue
-        lowered = paragraph.text.lower()
-        if not contact and ("@" in paragraph.text or "linkedin" in lowered or "example.com" in lowered):
+        # Position anchor: the contact line sits directly under the name. Looking
+        # further down is how a summary sentence gets captured instead.
+        if len(candidates) < _CONTACT_PREAMBLE_WINDOW:
+            candidates.append(paragraph)
+
+    for paragraph in candidates:
+        if looks_like_contact_line(paragraph.text):
             contact = paragraph.text
+            break
+
+    if not contact and candidates:
+        # Nothing matched a known shape, but SOMETHING is sitting in the contact
+        # slot. Keeping it beats returning '' — a wrong contact line is visible in
+        # the rendered header and in check.py's locked-field comparison, while an
+        # empty one looks deliberate. The warning is what makes it reviewable.
+        fallback = candidates[0]
+        contact = fallback.text
+        diagnostics.append(Diagnostic(
+            "warning",
+            "UNRECOGNIZED_CONTACT_LINE",
+            f"Kept {fallback.text!r} verbatim as the contact line: it follows the "
+            f"name but carries no email, phone, URL, or separator pattern this "
+            f"parser recognizes. Check it before rendering.",
+        ))
+    elif not contact and not candidates:
+        diagnostics.append(Diagnostic(
+            "warning",
+            "MISSING_CONTACT_LINE",
+            "No contact line was found: nothing follows the name before the first "
+            "section heading. Add one (e.g. 'City, ST | email | phone') or set "
+            "contact_line in the extracted YAML by hand.",
+        ))
+
     return {
         "name": name,
         "contact_line": contact,
@@ -527,7 +651,7 @@ def _base_result(preamble: list[_Paragraph]) -> dict[str, Any]:
         "education_line": "",
         "skills": [],
         "employers": [],
-    }
+    }, diagnostics
 
 
 def _populate_non_experience_sections(
@@ -618,7 +742,8 @@ def extract_with_diagnostics(docx_path: str | Path) -> ExtractionResult:
             "The Experience section contains no paragraph content.",
         )])
 
-    result = _base_result(preamble)
+    result, preamble_diagnostics = _base_result(preamble)
+    diagnostics.extend(preamble_diagnostics)
     _populate_non_experience_sections(result, sections)
     # Preserve the source order when Projects and Experience appear as separate
     # sections. A project block still needs an employer-style owner header; the
@@ -652,6 +777,24 @@ def _print_diagnostics(path: Path, diagnostics: list[Diagnostic]) -> None:
         print(f"  - [{diagnostic.code}] {diagnostic.message}", file=sys.stderr)
 
 
+def _print_warnings(path: Path, diagnostics: list[Diagnostic]) -> None:
+    """Surface non-fatal findings on the SUCCESS path.
+
+    A warning only the Python API can see is not a warning: the CLI used to print
+    diagnostics solely when the extraction FAILED, so ``UNRECOGNIZED_CONTACT_LINE``
+    (and ``IGNORED_DECORATIVE_DRAWING`` before it) reached nobody. Written to
+    stderr so the emitted YAML on stdout stays pipeable, and the exit code stays
+    0 — a warning is something to read, not a failure.
+    """
+    warnings = [item for item in diagnostics if item.severity != "error"]
+    if not warnings:
+        return
+    print(f"Warning: extracted {path} with {len(warnings)} finding(s) to review",
+          file=sys.stderr)
+    for diagnostic in warnings:
+        print(f"  - [{diagnostic.code}] {diagnostic.message}", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Extract resume content from DOCX to YAML")
     parser.add_argument("docx_path", help="Path to the DOCX resume file")
@@ -667,6 +810,7 @@ def main(argv: list[str] | None = None) -> int:
         _print_diagnostics(docx_path, extraction.diagnostics)
         return 2
     assert extraction.data is not None
+    _print_warnings(docx_path, extraction.diagnostics)
 
     yaml_str = yaml.dump(
         extraction.data,
