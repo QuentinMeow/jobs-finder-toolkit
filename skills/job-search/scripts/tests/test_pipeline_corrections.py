@@ -31,6 +31,8 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 _SCRIPTS = Path(__file__).resolve().parents[1]
 for _path in (_SCRIPTS, _SCRIPTS / "_vendor"):
     if str(_path) not in sys.path:
@@ -631,6 +633,40 @@ class CompensationColumnUnitTests(unittest.TestCase):
         self.assertEqual(
             search_jobs._format_comp(
                 {"min": 400, "max": 600, "period": "day"}), "400-600/day")
+
+
+class UnimplementedProfileKeyTests(unittest.TestCase):
+    """A salary floor that filters nothing must not look like one that does.
+
+    `comp.min_base` / `comp.min_total` are declared in both shipped profiles and
+    read by nothing. The user sets a number, sees a shortlist, and concludes
+    every row clears the floor. Nothing filtered anything, and no output said so.
+    """
+
+    def test_a_set_floor_is_reported(self):
+        warnings = search_jobs.unimplemented_profile_warnings(
+            {"comp": {"min_base": 180000, "min_total": None}})
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("comp.min_base", warnings[0])
+        self.assertIn("not implemented", warnings[0])
+
+    def test_both_floors_are_reported_separately(self):
+        warnings = search_jobs.unimplemented_profile_warnings(
+            {"comp": {"min_base": 180000, "min_total": 300000}})
+        self.assertEqual(len(warnings), 2)
+
+    def test_the_shipped_profiles_stay_silent(self):
+        for name in ("example.yaml", "_TEMPLATE.yaml"):
+            path = _SCRIPTS.parent / "profiles" / name
+            with self.subTest(profile=name):
+                profile = yaml.safe_load(path.read_text())
+                self.assertEqual(
+                    search_jobs.unimplemented_profile_warnings(profile), [])
+
+    def test_an_absent_block_is_silent(self):
+        self.assertEqual(search_jobs.unimplemented_profile_warnings({}), [])
+        self.assertEqual(
+            search_jobs.unimplemented_profile_warnings({"comp": None}), [])
 
 
 class SponsorIndexCompanyKeyTests(unittest.TestCase):

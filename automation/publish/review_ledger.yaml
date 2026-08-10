@@ -3032,3 +3032,14 @@
     example string is fictional (Acme, Example Corp) or a generic technology name. No real
     identity, employer, school, salary, private item name, or dated personal job-hunt
     content.'
+- base: 6b964b42
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 4
+  digest: sha256:ac6c672aa15b7131
+  finding: 'Read the complete staged four-file diff: two shipped example profiles gain a
+    comment marking the compensation-floor keys as unimplemented, the search entry point
+    warns when a profile sets one, and a test module covers it. The 180000/300000 figures
+    are invented test inputs, not a real target. Timeless public tooling only; no real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content.'

@@ -288,6 +288,33 @@ def apply_visa_policy(profile: dict, policy: str | None) -> None:
     visa["needs_sponsorship"] = True
 
 
+# Profile keys that exist in the schema but that NOTHING reads. A salary floor is
+# the worst possible thing to accept silently: the user sets `comp.min_base` to
+# the number below which they will not interview, sees a shortlist, and concludes
+# every row on it clears that floor. Nothing filtered anything. It is listed here
+# rather than implemented because the compensation parser cannot yet carry a gate
+# — a posting that merely fails to state pay in a shape `extract_salary_range`
+# recognises parses as `None`, and a floor built on that would drop every such
+# role for "not enough pay" rather than "pay unknown". Implementing the gate is a
+# separate decision (it needs a stated policy for the unparsed case); telling the
+# user their setting does nothing is not.
+UNIMPLEMENTED_PROFILE_KEYS = (("comp", "min_base"), ("comp", "min_total"))
+
+
+def unimplemented_profile_warnings(profile: dict) -> list[str]:
+    """One warning per profile key that is SET but read by nothing."""
+    warnings = []
+    for section, key in UNIMPLEMENTED_PROFILE_KEYS:
+        block = profile.get(section)
+        if isinstance(block, dict) and block.get(key) is not None:
+            warnings.append(
+                f"{section}.{key} is set to {block[key]!r} but is not implemented "
+                f"— no filter, score, or report reads it, and this run applied no "
+                f"pay floor. Remove it, or check pay by hand on each row."
+            )
+    return warnings
+
+
 def resolve_query_terms(profile: dict) -> list[str]:
     terms = (profile.get("sources", {}) or {}).get("query_terms")
     if terms:
@@ -1310,6 +1337,8 @@ def main() -> int:
     ctx = build_filter_context(profile, registry, args)
     word_filter = ctx["title_word_filter"]
     for warning in word_filter.warnings:
+        print(f"Profile: {warning}", file=sys.stderr)
+    for warning in unimplemented_profile_warnings(profile):
         print(f"Profile: {warning}", file=sys.stderr)
     if not word_filter.configured:
         # Not a failure — an unconfigured profile is the documented inert case —
