@@ -30,11 +30,17 @@ violation; otherwise it exits 0 with an "OK" message:
      ``linkedin.com/in/<handle>`` handles are flagged even with 0 tokens. A small
      allowlist keeps the fictional example identity ("Jordan Rivers",
      ``example.com`` addresses) green; real-domain emails still flag.
-  6. Personal-identity token leak. Any file whose PATH or CONTENT contains a
+  6. Personal-identity token leak. Any file whose PATH or CONTENT matches a
      personal-identity token. Tokens are NOT hardcoded here; they are resolved at
      runtime by ``personal_tokens()`` (env var + git-ignored config identity +
      ``private/leak_tokens.txt``) so this shipped guard carries zero real
-     identity.
+     identity. Matching is HYBRID (see the ``TOKEN_BOUNDARY`` section): a bare
+     word like a name part hits only at a word/identifier/case-hump EDGE, so an
+     owner surnamed "King" is not flagged by ``making``; high-specificity tokens
+     (email, handle, home basename, and the name COMPOUNDS derived alongside
+     them — ``jordanrivers``, ``jrivers``, ``jordan-rivers``) keep plain
+     containment, so a glued leak like ``linkedin.com/in/jordanrivers`` is still
+     caught.
   7. Unscannable binaries (fail closed). Document binaries (``.docx``/``.pdf``/...)
      AND images (``.png``/``.jpg``/...) that cannot be text-extracted count as
      FAILURES (they might hide a real name/resume/screenshot). A narrow explicit
@@ -91,6 +97,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import NamedTuple
 
 # The sibling manifest module owns the ONE SKILL.md frontmatter parser in the
 # repo (the exporter and the reconciler read the same one), so the guard's
@@ -516,39 +523,103 @@ def config_identity_status() -> str:
     return f"real config ({active})"
 
 
-def _identity_tokens(config) -> set[str]:
-    """Derive identity tokens from the ACTIVE config — only if it is a real one.
+# Shortest name compound the guard will trust as a high-specificity token,
+# counted in ALPHANUMERICS. Two real name parts glued together are effectively
+# collision-free, but ``li`` + ``wu`` is four letters and would start hitting
+# inside base64 and hex runs, so short pairings are dropped rather than shipped
+# as a new class of false positive.
+_MIN_COMPOUND_LEN = 6
 
-    When the discovered config is the tracked ``config.example.yaml`` fallback
-    (the fictional example persona), this returns an empty set so the example
-    identity is never treated as a leak. "Is it the example" is decided by
+# Separators a written full name is spelled with. Joined forms are what still
+# catches "Long Green" when BOTH parts carry an English-word allowance (see
+# ``word_token_allowances``); the glued forms cover filenames and handles.
+_NAME_JOINERS = (" ", "-", "_", ".", ", ")
+
+
+def _name_compounds(parts: list[str]) -> set[str]:
+    """Two-part combinations of a name — all of them high-specificity.
+
+    ``Jordan`` + ``Rivers`` yields ``jordanrivers``, ``jrivers``, ``jordanr``,
+    ``jordan rivers``, ``jordan-rivers``, ``jordan_rivers``, ``jordan.rivers``,
+    ``jordan, rivers`` and the same list with the parts swapped.
+
+    These are what BUYS the word-boundary rule for the individual parts. Every
+    leak shape that glues the name to something else — ``linkedin.com/in/
+    jordanrivers``, ``github.com/JordanRivers``, ``jrivers@corp``,
+    ``acme-jordanrivers/``, ``/Users/jordanrivers`` — is a compound, so the
+    parts themselves no longer need to match inside ordinary words to be
+    caught. Pinned by ``MUST_STILL_CATCH`` in the test module.
+    """
+    usable = [p.lower() for p in parts if len(p) >= 2]
+    out: set[str] = set()
+    for i, first in enumerate(usable):
+        for j, second in enumerate(usable):
+            if i == j:
+                continue
+            candidates = [first + second, first[0] + second, first + second[0]]
+            candidates += [first + sep + second for sep in _NAME_JOINERS]
+            # The floor is measured on ALPHANUMERICS, so a separator cannot
+            # smuggle a short pairing past it (``li, wu`` is six characters and
+            # four letters — still ``liwu``).
+            out.update(c for c in candidates
+                       if len(re.sub(r"[^A-Za-z0-9]", "", c)) >= _MIN_COMPOUND_LEN)
+    return out
+
+
+def _derive_identity(config) -> tuple[set[str], set[str]]:
+    """``(identity tokens, the subset that keeps SUBSTRING matching)``.
+
+    Derived from the ACTIVE config — only if it is a real one. When the
+    discovered config is the tracked ``config.example.yaml`` fallback (the
+    fictional example persona), BOTH sets are empty so the example identity is
+    never treated as a leak. "Is it the example" is decided by
     ``is_example_config`` — content identity, not an absolute path, because the
     exporter reads the same file from two different trees.
+
+    The second set is the HIGH-SPECIFICITY half: the full email address, the
+    linkedin/github handles, the machine home-directory basename, and the name
+    compounds. Those keep the old containment semantics unconditionally, because
+    a chance collision with ordinary prose is not a real possibility for any of
+    them — and because they are what still catches a glued leak once the bare
+    name parts are boundary-matched. Everything else (the name parts, a bare
+    email local part) is classified by shape in ``classify_tokens``.
     """
     toks: set[str] = set()
+    strict: set[str] = set()
     try:
         active = Path(config.config_path())
         example = Path(config.EXAMPLE_CONFIG)
     except Exception:
-        return toks
+        return toks, strict
     if is_example_config(active, example):
-        return toks
+        return toks, strict
 
     name = config.candidate_name()
-    for part in re.split(r"[^A-Za-z0-9']+", name or ""):
-        part = part.strip("'")
+    parts = [p for p in (raw.strip("'")
+                         for raw in re.split(r"[^A-Za-z0-9']+", name or "")) if p]
+    for part in parts:
         if len(part) >= 3:
             toks.add(part)
+    for compound in _name_compounds(parts):
+        toks.add(compound)
+        strict.add(compound)
 
     contact = config.contact_line() or ""
     for email in re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", contact):
         toks.add(email)
+        strict.add(email)
+        # The LOCAL PART is deliberately not marked high-specificity: it is very
+        # often just the surname (``green@``), and forcing containment on it
+        # would put the false positives straight back. Its usual shapes —
+        # ``jordan.rivers``, ``jrivers`` — are classified as substring anyway,
+        # by punctuation and by compound-containment respectively.
         local = email.split("@", 1)[0]
         if len(local) >= 3:
             toks.add(local)
     for handle in re.findall(r"(?:linkedin\.com/in/|github\.com/)([A-Za-z0-9\-_]+)", contact):
         if len(handle) >= 3:
             toks.add(handle)
+            strict.add(handle)
 
     # The machine home-directory basename (e.g. ``alex``) catches leaked absolute
     # paths like ``/Users/alex/...``. Only added alongside a real config, so CI /
@@ -556,7 +627,29 @@ def _identity_tokens(config) -> set[str]:
     home = Path.home().name
     if len(home) >= 3:
         toks.add(home)
-    return toks
+        strict.add(home)
+    return toks, strict
+
+
+def _identity_tokens(config) -> set[str]:
+    """Identity tokens derived from the ACTIVE config (see ``_derive_identity``)."""
+    return _derive_identity(config)[0]
+
+
+def high_specificity_tokens() -> set[str]:
+    """Identity tokens that keep SUBSTRING matching whatever their shape.
+
+    Only the config derivation knows a token's PROVENANCE, so this is where an
+    email / handle / home basename / name compound is named as such. Tokens that
+    arrive flat through ``$JOBHUNT_PERSONAL_TOKENS`` or ``leak_tokens.txt`` have
+    no provenance to read and are classified by SHAPE instead — punctuation, a
+    digit, or containing another active token — which recovers the mode for
+    every derived compound and every address the exporter forwards.
+    """
+    config = _load_shared_config()
+    if config is None:
+        return set()
+    return _derive_identity(config)[1]
 
 
 def _display_path(path: Path) -> str:
@@ -771,6 +864,302 @@ def supplementary_tokens() -> set[str]:
 def personal_tokens() -> list[str]:
     """The full active token set: ``identity_tokens() | supplementary_tokens()``."""
     return sorted(identity_tokens() | supplementary_tokens())
+
+
+# ── how a token MATCHES (hybrid: word boundary + high-specificity substring) ──
+# Matching used to be pure case-insensitive containment — ``tok.lower() in
+# text.lower()`` — with a ``len(part) >= 3`` filter as its only mitigation. That
+# is unusable for an ordinary surname. Measured on this repo's 1209 tracked
+# files, 17 of the 40 most common US surnames produced false violations: "King"
+# inside ``making`` (491 files), "Long" (374), "Ross" inside ``cross-session``
+# (327), "Green" (268), "Ward" inside ``outward`` (186), "Lee" inside
+# ``time.sleep`` and ``FileExistsError`` (69), "Park" inside ``sparkling`` (50),
+# "Hall" inside ``shallow`` (29), "Reed" inside ``agreed`` (17).
+#
+# That is not a cosmetic defect. The guard runs in pre-commit AND pre-push, so
+# such an owner cannot commit at all, and their only two exits are
+# ``--no-verify`` (forbidden by AGENTS.md) or deleting their identity from
+# config.yaml — which DISARMS the guard completely. The false positive is the
+# pressure that produces a fail-open checkout, which is why fixing it is a
+# safety change and not a convenience one.
+#
+# So a token now carries a MODE:
+#
+#   BOUNDARY   a bare alphabetic word: a name part, a one-word employer, a
+#              one-word skill name. It hits only at a word EDGE, where "edge"
+#              means the seams identifiers and filenames actually use as well as
+#              the ones prose does — punctuation, ``_``, ``-``, ``/``, a digit,
+#              or a case hump (``JordanRivers``, ``HTTPRivers``). ``making``
+#              does not contain "King" at an edge; ``?owner=jordan&`` does.
+#   SUBSTRING  the pre-existing rule, kept verbatim, for tokens specific enough
+#              that a chance collision is not a real possibility: an email
+#              address, a linkedin/github handle, the home-directory basename,
+#              anything carrying punctuation or a digit, and the CONCATENATED
+#              COMPOUNDS derived from the name parts.
+#
+# The compounds are what makes the boundary half safe. A boundary-only fix
+# silently stops catching five real leak shapes the old rule caught —
+# ``linkedin.com/in/jordanrivers``, ``github.com/JordanRivers``,
+# ``jrivers@corp``, ``acme-jordanrivers/``, ``/Users/jordanrivers`` — because in
+# every one of them the name is glued to something. Those five, and seventeen
+# other shapes, are pinned by ``MUST_STILL_CATCH`` in the test module.
+TOKEN_BOUNDARY = "boundary"
+TOKEN_SUBSTRING = "substring"
+
+# ── the English-word allowance (opt-in, loud, never automatic) ───────────────
+# Boundaries fix a surname hiding INSIDE a word. They cannot fix a surname that
+# IS a word. After the edge rule, "Green" still flags 210 files on this tree and
+# "Long" still flags 107 — every one of them the honest English word — and
+# nothing can distinguish ``Menlo Park`` from ``Alex Park``, because they are the
+# same string in the same shape.
+#
+# So the owner may DECLARE such a token an ordinary word, and the guard stops
+# raising that one bare word as a violation. Four properties make that a
+# trade rather than a hole, and each is tested:
+#
+#   OPT-IN       never inferred, never derived from a word list. The owner writes
+#                it in the git-ignored config.yaml (or the env var below). No
+#                agent adds one, and no tracked file can carry one — a public
+#                list of "words that are also my surname" would itself be the
+#                disclosure.
+#   LOUD         every declared word and the COUNT of occurrences it suppressed
+#                is printed on EVERY run, clean or failing.
+#   NARROW       it reaches BOUNDARY tokens only. The email address, the
+#                linkedin/github handles, the home-directory basename and every
+#                name compound (``alexgreen``, ``agreen``, ``alex-green``,
+#                ``alex green``) keep full containment, so the full name written
+#                any way at all is still caught — including when BOTH parts of
+#                the name are allowed words.
+#   STILL ARMED  an allowed token is still an identity token. It counts towards
+#                arming, so declaring one can never push the guard into the
+#                unarmed exit-2 state where everything is "safe to publish".
+#
+# The owner-facing question about whether this trade should exist at all is
+# filed at message-queue/needs-human/decisions/leak-guard-homonym-surname-allowance.md.
+#
+# Env channel, mirroring ``TOKENS_ENV_VAR``: CI and the exporter arm the guard
+# through the environment rather than a config.yaml, so an allowance that lived
+# only in config.yaml would leave the same owner blocked in the one place they
+# cannot edit.
+WORD_ALLOWANCE_ENV_VAR = "JOBHUNT_LEAK_GUARD_WORD_TOKENS"
+
+
+class TokenSpec(NamedTuple):
+    """One active token plus HOW it is allowed to match."""
+
+    token: str
+    mode: str
+    # Compiled for BOUNDARY tokens, None for SUBSTRING ones.
+    pattern: re.Pattern | None
+    # True when the OWNER declared this token an ordinary English word. Its
+    # matches are counted and reported, never raised as violations. Only ever
+    # set on a BOUNDARY token (see ``classify_tokens``).
+    allowed: bool = False
+
+
+def word_token_allowances() -> set[str]:
+    """Tokens the OWNER declared to be ordinary English words (normalized).
+
+    Two declaration channels, both git-ignored and both explicit:
+    ``leak_guard.english_word_tokens`` in ``config.yaml``, and
+    ``$JOBHUNT_LEAK_GUARD_WORD_TOKENS`` for CI / the exporter. Absent is the
+    normal state and yields an empty set.
+
+    The config channel is gated on the config being REAL, exactly like the
+    identity derivation: the fictional example persona declares nothing, so a
+    public clone can never inherit an allowance it did not choose.
+
+    Comparison is by ``_normalize_safe_word`` — case-folded, separators unified —
+    so ``Green`` and ``green`` are the same declaration. A failure to read the
+    config degrades to NO allowance, which widens the scan rather than narrowing
+    it; that is the safe direction and needs no gate of its own.
+    """
+    out: set[str] = set()
+    for line in os.environ.get(WORD_ALLOWANCE_ENV_VAR, "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        for raw in line.split(","):
+            normalized = _normalize_safe_word(raw)
+            if normalized:
+                out.add(normalized)
+    config = _load_shared_config()
+    declared: list = []
+    if config is not None:
+        try:
+            if not is_example_config(Path(config.config_path()),
+                                     Path(config.EXAMPLE_CONFIG)):
+                reader = getattr(config, "leak_guard_english_word_tokens", None)
+                declared = list(reader() or ()) if reader else []
+        except Exception:  # noqa: BLE001 — a broken config widens the scan
+            declared = []
+    for raw in declared:
+        normalized = _normalize_safe_word(str(raw))
+        if normalized:
+            out.add(normalized)
+    return out
+
+
+def _boundary_pattern(token: str) -> re.Pattern:
+    """Case-insensitive finder for every OVERLAPPING occurrence of ``token``.
+
+    The capture-inside-lookahead shape is deliberate. A plain ``finditer``
+    consumes each match, so an occurrence whose edges FAIL would swallow the
+    text of an overlapping one whose edges pass, and the guard would miss it.
+    Zero-width matching sees every start position.
+    """
+    return re.compile(f"(?=({re.escape(token)}))", re.IGNORECASE)
+
+
+def _left_edge(text: str, start: int) -> bool:
+    """Is ``start`` the beginning of a word, an identifier part, or a hump?"""
+    if start <= 0:
+        return True
+    prev = text[start - 1]
+    # Punctuation, whitespace, '/', '_', '-', a quote, a digit. A DIGIT counts:
+    # ``jordan2026_resume`` is a leak, and ordinary English words do not carry
+    # digits mid-word, so this direction costs nothing and catches more.
+    if not prev.isalpha():
+        return True
+    cur = text[start]
+    if prev.islower() and cur.isupper():
+        return True                     # camelCase seam: myJordan
+    if (prev.isupper() and cur.isupper()
+            and start + 1 < len(text) and text[start + 1].islower()):
+        return True                     # acronym seam: JORDANRivers
+    return False
+
+
+def _right_edge(text: str, end: int) -> bool:
+    """Is ``end`` the end of a word, an identifier part, or a hump?"""
+    if end >= len(text):
+        return True
+    nxt = text[end]
+    if not nxt.isalpha():
+        return True
+    last = text[end - 1]
+    if last.islower() and nxt.isupper():
+        return True                     # JordanRivers
+    if (last.isupper() and nxt.isupper()
+            and end + 1 < len(text) and text[end + 1].islower()):
+        return True                     # JORDANRivers
+    return False
+
+
+def _is_boundary_hit(text: str, start: int, end: int) -> bool:
+    return _left_edge(text, start) and _right_edge(text, end)
+
+
+def classify_tokens(tokens, force_substring=None, allowances=None) -> list[TokenSpec]:
+    """Decide each token's matching mode. The ONE place that decision is made.
+
+    ``force_substring`` names the tokens whose PROVENANCE makes them
+    high-specificity (see ``high_specificity_tokens``). Everything else is
+    judged by SHAPE, which is what keeps the mode correct for a token set that
+    arrived flat through ``$JOBHUNT_PERSONAL_TOKENS`` or ``leak_tokens.txt``:
+
+      * not a bare alphabetic word (an email, ``jordan.rivers``, ``field-notes``,
+        a handle with a digit) -> SUBSTRING. Specific by construction.
+      * contains another active token (``jordanrivers`` over ``jordan``)
+        -> SUBSTRING. A concatenation is specific by construction too, and this
+        is what recovers the compounds' mode after a flat round trip.
+      * otherwise -> BOUNDARY.
+
+    ``allowances`` are the owner's declared English words (normalized). The flag
+    is set ONLY on a token that came out BOUNDARY, so an allowance can never
+    reach an email, a handle, the home basename or a name compound however it is
+    spelled — the ``mode`` decision above happens first and is not consulted for
+    permission.
+
+    Ordering is preserved so the reported token is deterministic.
+    """
+    forced = {t.lower() for t in (force_substring or ())}
+    allowed_words = set(allowances or ())
+    lowered = sorted({t.lower() for t in tokens if t and t.strip()})
+    specs: list[TokenSpec] = []
+    for token in tokens:
+        if not token or not token.strip():
+            # An empty token would match everywhere; it is a malformed input,
+            # never a secret.
+            continue
+        low = token.lower()
+        boundary = (
+            low not in forced
+            and low.isalpha()
+            and not any(other != low and len(other) >= 3 and other in low
+                        for other in lowered)
+        )
+        specs.append(TokenSpec(
+            token=token,
+            mode=TOKEN_BOUNDARY if boundary else TOKEN_SUBSTRING,
+            pattern=_boundary_pattern(token) if boundary else None,
+            allowed=boundary and _normalize_safe_word(token) in allowed_words,
+        ))
+    return specs
+
+
+def _spec_match_count(spec: TokenSpec, text: str, text_lower: str) -> int:
+    """How many times ``spec`` matches ``text`` under its own mode."""
+    low = spec.token.lower()
+    if low not in text_lower:
+        # Containment is a necessary condition for BOTH modes, and it is the
+        # cheap C-level test, so it stays the first thing every scan does. For a
+        # SUBSTRING token it is also the whole rule — byte-identical to the
+        # behaviour this guard has always had.
+        return 0
+    if spec.mode == TOKEN_SUBSTRING:
+        return text_lower.count(low)
+    return sum(1 for m in spec.pattern.finditer(text)
+               if _is_boundary_hit(text, m.start(1), m.end(1)))
+
+
+def _spec_hits(spec: TokenSpec, text: str, text_lower: str) -> bool:
+    """Does ``spec`` match ``text`` at all? (Short-circuits; never counts.)"""
+    low = spec.token.lower()
+    if low not in text_lower:
+        return False
+    if spec.mode == TOKEN_SUBSTRING:
+        return True
+    return any(_is_boundary_hit(text, m.start(1), m.end(1))
+               for m in spec.pattern.finditer(text))
+
+
+def first_token_hit(specs, text: str, text_lower: str | None = None) -> str | None:
+    """The first NON-ALLOWED token in ``specs`` that matches ``text``, or None.
+
+    Shared by the guard and the exporter's allowlist screen so the two can never
+    disagree about what counts as a hit — including about an allowance, which
+    must reach both or the export drops files the guard would pass.
+    """
+    text_lower = text.lower() if text_lower is None else text_lower
+    for spec in specs:
+        if spec.allowed:
+            continue
+        if _spec_hits(spec, text, text_lower):
+            return spec.token
+    return None
+
+
+def allowed_specs(specs) -> list[TokenSpec]:
+    """The subset carrying an English-word allowance (usually empty)."""
+    return [spec for spec in specs if spec.allowed]
+
+
+def count_allowance_hits(specs, text: str, counts: dict,
+                         text_lower: str | None = None) -> None:
+    """Tally what the allowance suppressed, so it is never silently in effect.
+
+    ``specs`` here is expected to be the ``allowed_specs`` subset: the caller
+    checks it is non-empty before paying for a second pass over the text, which
+    keeps the ordinary no-allowance run exactly as cheap as before.
+    """
+    if not specs:
+        return
+    text_lower = text.lower() if text_lower is None else text_lower
+    for spec in specs:
+        hits = _spec_match_count(spec, text, text_lower)
+        if hits:
+            counts[spec.token] = counts.get(spec.token, 0) + hits
 
 
 def unarmed_report() -> list[str]:
@@ -1098,11 +1487,15 @@ def _binary_text(path: Path, suffix: str) -> str | None:
 
 
 def _scan_blob(rel: str, blob: str, where: str, note: str,
-               lowered: list[tuple[str, str]],
-               token_viols: list[dict], pii_viols: list[dict]) -> None:
+               specs: list[TokenSpec],
+               token_viols: list[dict], pii_viols: list[dict],
+               allowed: list[TokenSpec] = (), allowance_counts: dict | None = None
+               ) -> None:
     """Scan one whole-file string for tokens (first hit) + structural PII (per kind)."""
     blob_lower = blob.lower()
-    hit = next((tok for tok, low in lowered if low in blob_lower), None)
+    if allowed and allowance_counts is not None:
+        count_allowance_hits(allowed, blob, allowance_counts, blob_lower)
+    hit = first_token_hit(specs, blob, blob_lower)
     if hit is not None:
         token_viols.append({
             "category": "personal_token",
@@ -1127,7 +1520,9 @@ def _scan_blob(rel: str, blob: str, where: str, note: str,
 
 
 def find_token_and_pii_violations(
-    root: Path, tracked: list[str], tokens: list[str]
+    root: Path, tracked: list[str], tokens: list[str],
+    force_substring: set[str] | None = None,
+    allowances: set[str] | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], dict]:
     """Scan file PATHs and CONTENT for personal tokens AND structural PII.
 
@@ -1137,13 +1532,22 @@ def find_token_and_pii_violations(
     fail-closed binaries are reported for manual review. The guard file itself is
     content-exempt (it embeds the detection patterns).
 
+    ``force_substring`` and ``allowances`` are passed straight to
+    ``classify_tokens`` — the tokens whose provenance makes containment the right
+    rule regardless of shape, and the owner's declared English words.
+
     Returns ``(token_violations, structural_pii_violations, unscanned_binaries,
     inspection)``, where ``inspection`` accounts for every tracked path exactly
     once — ``files_read`` + ``files_skipped`` + ``unreadable`` — so a caller can
-    tell "clean" from "inspected nothing" (see the INSPECTION notes above).
+    tell "clean" from "inspected nothing" (see the INSPECTION notes above). It
+    also carries ``allowance_skipped`` / ``allowance_tokens``: what the English-
+    word allowance actually cost, which the report prints on every run.
     """
     root = Path(root)
-    lowered = [(tok, tok.lower()) for tok in tokens]
+    specs = classify_tokens(tokens, force_substring=force_substring,
+                            allowances=allowances)
+    allowed = allowed_specs(specs)
+    allowance_counts: dict[str, int] = {}
     token_viols: list[dict] = []
     pii_viols: list[dict] = []
     unscanned: list[dict] = []
@@ -1154,7 +1558,8 @@ def find_token_and_pii_violations(
 
     for rel in tracked:
         rel_lower = rel.lower()
-        path_tok = next((tok for tok, low in lowered if low in rel_lower), None)
+        count_allowance_hits(allowed, rel, allowance_counts, rel_lower)
+        path_tok = first_token_hit(specs, rel, rel_lower)
         if path_tok is not None:
             token_viols.append({
                 "category": "personal_token",
@@ -1182,7 +1587,7 @@ def find_token_and_pii_violations(
         if src.is_symlink():
             target = os.readlink(src)
             _scan_blob(rel, target, "symlink-target", f"-> {target}",
-                       lowered, token_viols, pii_viols)
+                       specs, token_viols, pii_viols, allowed, allowance_counts)
             if not src.exists():
                 unreadable.append({"path": rel, "reason": UNREADABLE_BROKEN_SYMLINK,
                                    "detail": f"-> {target}"})
@@ -1213,7 +1618,7 @@ def find_token_and_pii_violations(
                 continue
             files_read += 1
             _scan_blob(rel, blob, "binary-content", f"(inside {suffix} text/metadata)",
-                       lowered, token_viols, pii_viols)
+                       specs, token_viols, pii_viols, allowed, allowance_counts)
             continue
 
         lines, status, detail = _read_text_classified(src)
@@ -1231,9 +1636,15 @@ def find_token_and_pii_violations(
         token_found = False
         seen_kinds: set[str] = set()
         for lineno, line in enumerate(lines, start=1):
-            if not token_found:
+            if allowed or not token_found:
                 line_lower = line.lower()
-                hit = next((tok for tok, low in lowered if low in line_lower), None)
+                # Counted on EVERY line, including after a violation was already
+                # found in this file: the printed count is the honest size of the
+                # protection given up, not "however much fitted before we
+                # stopped looking".
+                count_allowance_hits(allowed, line, allowance_counts, line_lower)
+            if not token_found:
+                hit = first_token_hit(specs, line, line_lower)
                 if hit is not None:
                     token_viols.append({
                         "category": "personal_token",
@@ -1259,6 +1670,11 @@ def find_token_and_pii_violations(
         "files_read": files_read,
         "files_skipped": skipped,
         "unreadable": unreadable,
+        # What the English-word allowance cost: the tokens it covers (even at
+        # zero occurrences — an allowance in effect is reported whether or not
+        # it fired) and how many matches it suppressed.
+        "allowance_tokens": [spec.token for spec in allowed],
+        "allowance_skipped": allowance_counts,
         # A SUBSET of files_read (informational, never fatal), so the
         # read + skipped + unreadable == tracked accounting still holds.
         "fallback_decoded": fallback,
@@ -1268,7 +1684,9 @@ def find_token_and_pii_violations(
 
 def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
          tokens: list[str] | None = None,
-         visibility_root: Path | None = None) -> dict:
+         visibility_root: Path | None = None,
+         force_substring: set[str] | None = None,
+         allowances: set[str] | None = None) -> dict:
     """Run every check and return a structured result.
 
     ``root`` may be a git work tree (default: this repo) or any plain directory
@@ -1278,6 +1696,13 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
     defaults to ``root`` and differs only in ``--staged`` mode, where the scanned
     tree holds just the staged blobs while the visibility declarations live in the
     work tree.
+
+    ``force_substring`` and ``allowances`` are only consulted when the caller
+    SUPPLIED ``tokens``. When the guard resolves its own token set it also
+    resolves the provenance and the owner's declarations that go with it
+    (``high_specificity_tokens``, ``word_token_allowances``), and a
+    caller-supplied override there would silently describe a different scan than
+    the one that ran.
 
     NOTE: this function never gates on the token set being armed — it is pure
     detection, so a fixture scan can pass ``tokens=[]`` deliberately. The
@@ -1306,6 +1731,8 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         identity_count = len(identity)
         supplementary_count = len(supplementary - identity)
         tokens = sorted(identity | supplementary)
+        force_substring = high_specificity_tokens()
+        allowances = word_token_allowances()
         # The guard resolved its OWN token set, so a token file that exists but
         # could not be read makes the scan below silently NARROWER than it should
         # be — the exact fail-open shape check 9 exists to stop. When the caller
@@ -1319,8 +1746,25 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
     skill_notes = find_skill_notes_violations(tracked)
     path_denylist = find_path_denylist_violations(tracked)
     token_viols, pii_viols, unscanned, inspection = find_token_and_pii_violations(
-        root, tracked, tokens)
+        root, tracked, tokens, force_substring=force_substring,
+        allowances=allowances)
     unreadable = inspection["unreadable"]
+
+    # What the English-word allowance actually DID, so it is never silently in
+    # effect. ``reduced`` names every token whose protection was narrowed (with
+    # its suppressed count, zero included); ``ineffective`` names a declaration
+    # that reached nothing — most importantly one aimed at a high-specificity
+    # token, which is never weakened however it is declared.
+    word_allowances = None
+    if allowances:
+        reduced_tokens = inspection.get("allowance_tokens") or []
+        skipped_counts = inspection.get("allowance_skipped") or {}
+        word_allowances = {
+            "declared": sorted(allowances),
+            "reduced": {tok: skipped_counts.get(tok, 0) for tok in reduced_tokens},
+            "ineffective": sorted(
+                allowances - {_normalize_safe_word(t) for t in reduced_tokens}),
+        }
 
     violations = {
         "private_skill_tracked": private_skill,
@@ -1347,6 +1791,8 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         "supplementary_token_count": supplementary_count,
         # None when the caller injected tokens (the files were never consulted).
         "safe_words": safe_words_info,
+        # None when the owner declared no English-word allowance (the norm).
+        "word_allowances": word_allowances,
         # WHY the identity count is what it is: a real config, the fictional
         # example, or a config layer that refused/failed. Never raises.
         "config_status": config_identity_status(),
@@ -1578,6 +2024,18 @@ def print_report(result: dict) -> None:
             print(f"  safe words:           '{word}' has NO effect — it also names a "
                   "declared token (config identity / leak_tokens.txt), which safe "
                   "words never remove")
+    allow = result.get("word_allowances")
+    if allow:
+        # Printed on EVERY run, clean or failing. An allowance that is not
+        # reported is an allowance nobody remembers granting.
+        for token, count in sorted(allow["reduced"].items()):
+            print(f"  word allowance:       '{token}' — identity protection REDUCED "
+                  f"(you declared it an ordinary English word); {count} "
+                  "occurrence(s) SKIPPED, not reported below")
+        for word in allow["ineffective"]:
+            print(f"  word allowance:       '{word}' has NO effect — it names no "
+                  "boundary-matched token here; an email, handle, home-directory "
+                  "basename or name compound is never weakened by an allowance")
     print()
 
     if result["ok"]:

@@ -3010,3 +3010,43 @@
     and temporary bridges. The armed staged leak guard reports zero findings. Timeless public
     guidance only; no real identity, employer, school, salary, private item name, or dated
     personal job-hunt content.'
+- base: 8c39c9f6
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 1
+  digest: sha256:433327864b2e6e43
+  finding: 'Read the complete staged one-file diff: a new leak-guard test class pinning
+    22 leak SHAPES the token scan catches today (plain name, possessive, hyphenated,
+    dotted and glued email local parts, home paths, kebab/snake/camel slugs, DOCX run
+    split, URL and query forms) plus four path-scan cases, all built from the fictional
+    Jordan Rivers persona and a fictional home basename. Real-looking addresses are
+    assembled from split fragments so the file itself stays guard-clean. No real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content.'
+- base: d585aa74
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 3
+  digest: sha256:537d787da82d89df
+  finding: 'Read the complete staged three-file diff: the leak guard now matches a bare
+    identity word only at a word/identifier/case-hump edge while emails, handles, the home
+    basename and newly derived name compounds keep containment; the exporter calls the same
+    matcher instead of its own copy; the tests add the false-positive direction and the
+    classification rules. Measured surname counts in the code comment are aggregates over
+    this tree, not identity. The armed staged leak guard reports zero findings. No real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content.'
+- base: f6a329eb
+  reviewed_by: agent
+  date: 2026-08-09
+  files: 11
+  digest: sha256:79b29a0553a4f408
+  finding: 'Read the complete staged eleven-file diff: an opt-in, loudly reported
+    allowance letting the owner declare an identity word that is also an ordinary
+    English word, its config accessor and the five mechanical vendored copies, a
+    commented-out example block using the neutral placeholder "Green", the tests that
+    pin opt-in / loud / narrow / still-arming, and the owner decision item. Every
+    persona value is fictional and every real-looking address or home path in the tests
+    is assembled from split fragments. The armed staged leak guard reports zero
+    findings. No real identity, employer, school, salary, private item name, or dated
+    personal job-hunt content.'
