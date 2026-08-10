@@ -14,7 +14,7 @@ last_seen: '2026-07-14T09:40:00Z'
 location: USA
 opinions:
   level:
-    by: job_metadata.py@3a10bb98
+    by: job_metadata.py@7885f165
     from: 20260714T094000Z-000003-c3d4e5
     value: unknown
   visa:
@@ -23,7 +23,7 @@ opinions:
     hits: []
     label: unclear
   workplace:
-    by: job_metadata.py@3a10bb98
+    by: job_metadata.py@7885f165
     from: 20260714T094000Z-000003-c3d4e5
     value: remote
 profiles:

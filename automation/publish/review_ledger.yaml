@@ -3039,3 +3039,20 @@
     directly for company names: only the fictional examplecorp / ghostworks / remoteworks
     fixtures appear. No real identity, employer, school, salary, private item name, absolute
     home path, or dated personal job-hunt content.'
+- base: 90d4e75f
+  reviewed_by: agent
+  date: 2026-08-10
+  files: 11
+  digest: sha256:51702930bb8b8093
+  finding: 'Read the complete staged eleven-file diff: six pattern-based denial rules plus
+    their derived word gate, a new test module, thirteen new fictional corpus cases, the
+    verdict-matrix rows recording the nine intended moves, three regenerated vendored copies,
+    and four example-store fixtures whose only change is the module content hash in their
+    `by:` provenance line. Every example sentence in the code comments, tests, corpus and
+    matrix is invented for this diff and names no real employer. The rules were also
+    measured against a private posting snapshot; only AGGREGATE counts appear anywhere in
+    the tracked diff or the commit message, and no matched span, company, title or URL from
+    that snapshot is quoted. The private-company cross-reference did NOT run (no overlay
+    mounted), so the diff was read directly for company names: only the fictional examplecorp
+    / ghostworks / remoteworks fixtures appear. No real identity, employer, school, salary,
+    private item name, absolute home path, or dated personal job-hunt content.'

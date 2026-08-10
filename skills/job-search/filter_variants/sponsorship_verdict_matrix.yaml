@@ -673,6 +673,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated coordinated sponsor verb
+    rule_ids:
+    - sponsorship.negative.negated coordinated sponsor verb
 - id: gap-cannot-sponsor-or-support-transfers-bare
   group: denial-coverage-gap
   change: expected-unchanged
@@ -699,6 +707,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - sponsorship stated as unnecessary
+    rule_ids:
+    - sponsorship.negative.sponsorship stated as unnecessary
 - id: gap-without-the-need-for-sponsorship-now-or-any-time
   group: denial-coverage-gap
   change: expected-change
@@ -711,6 +727,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - sponsorship stated as unnecessary
+    rule_ids:
+    - sponsorship.negative.sponsorship stated as unnecessary
 - id: gap-not-require-sponsorship-now-or-at-any-time
   group: denial-coverage-gap
   change: expected-unchanged
@@ -735,6 +759,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated sponsoring of visas
+    rule_ids:
+    - sponsorship.negative.negated sponsoring of visas
 - id: gap-not-sponsoring-foreseeable-future
   group: denial-coverage-gap
   change: expected-change
@@ -746,6 +778,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated sponsoring of visas
+    rule_ids:
+    - sponsorship.negative.negated sponsoring of visas
 - id: gap-citizenship-required-colon-yes
   group: denial-coverage-gap
   change: expected-change
@@ -757,6 +797,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - citizenship stated as required
+    rule_ids:
+    - sponsorship.negative.citizenship stated as required
 - id: gap-us-citizenship-required-question-yes
   group: denial-coverage-gap
   change: expected-change
@@ -768,6 +816,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - citizenship stated as required
+    rule_ids:
+    - sponsorship.negative.citizenship stated as required
 - id: gap-visa-gc-citizens-table
   group: denial-coverage-gap
   change: expected-change
@@ -779,6 +835,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - visa field limited to citizens
+    rule_ids:
+    - sponsorship.negative.visa field limited to citizens
 - id: gap-us-citizen-required-label
   group: denial-coverage-gap
   change: expected-change
@@ -790,6 +854,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - citizen status stated as required
+    rule_ids:
+    - sponsorship.negative.citizen status stated as required
 - id: conditional-offer-if-approved-by-counsel
   group: conditional-offer
   change: expected-unchanged

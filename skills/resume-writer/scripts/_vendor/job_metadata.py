@@ -1682,6 +1682,154 @@ _SPONSOR_HEDGE_RE = re.compile(
 # may be discussed").
 _SPONSOR_HEDGE_MAX_GAP_TOKENS = 3
 
+# --- denial shapes a substring list cannot hold ------------------------------
+# Four wordings below are real denials that match NEITHER phrase tuple, so they
+# reach the candidate as ``review``/``unknown`` with empty evidence — the JD said
+# no in writing and the shortlist reports silence. They cannot become phrases
+# because each carries an OPTIONAL segment ("cannot CURRENTLY sponsor", "without
+# the need for CURRENT OR FUTURE sponsorship"), and enumerating the variants is
+# how a phrase list gets to 67 entries without covering the next wording.
+#
+# So they are patterns. A pattern needs the same word-set gate a phrase gets, and
+# a gate must be DERIVED rather than declared, so each rule is built around a
+# mandatory ANCHOR word: the anchor is spliced into the compiled pattern as an
+# escaped literal wrapped in ``\b``, OUTSIDE every optional group, and the same
+# string is what the gate tests for. The rule and its gate cannot disagree,
+# because they are made from one object.
+#
+# Every rule is a FALLBACK. A match overlapping any listed-phrase span is
+# dropped, so a wording that already had an answer keeps it byte for byte — the
+# integration constraint the off-list denial rule had to learn the hard way
+# (`memory/known-issues/visa-sponsorship-negation-phrase-gap.md`).
+_SPONSOR_PATTERN_ANCHOR_RE = re.compile(r"[a-z0-9]+\Z")
+# Terms a "who may hold this job" field lists when the answer excludes visas.
+# The trailing ``\b`` is load-bearing: without it ``citizens?`` matches "citizen"
+# INSIDE "citizens", which leaves a stray "s" for the exhaustiveness lookahead to
+# trip over and lets "Visa: GC/Citizens/H-1B" — a field that offers H-1B — read
+# as a citizens-only denial.
+_SPONSOR_STATUS_TERM = (
+    r"(?:gc|green\s+card|(?:u\.?\s?s\.?\s+|us\s+)?citizens?(?:hip)?|"
+    r"permanent\s+residents?)\b"
+)
+# A requirement field whose ANSWER is negative is the opposite of a denial, and
+# "Citizenship required: No" is a wording a board really uses.
+_SPONSOR_REQUIRED_NOT_DENIED = r"(?!\s*[:?]?\s*(?:no\b|not\b|false\b|n/a\b))"
+
+
+class _SponsorPatternRule:
+    """One off-list denial shape, plus the word-set gate derived from it."""
+
+    __slots__ = ("label", "pattern", "words", "generic")
+
+    def __init__(self, label: str, prefix: str, anchor: str, suffix: str,
+                 *, generic: bool = False) -> None:
+        # The anchor must be a single word run, or wrapping it in ``\b`` would
+        # not make it a maximal ``[a-z0-9]+`` run in the text and the gate could
+        # skip a rule that would have matched.
+        if not _SPONSOR_PATTERN_ANCHOR_RE.fullmatch(anchor):
+            raise ValueError(f"pattern anchor must be one word run: {anchor!r}")
+        self.label = label
+        self.pattern = re.compile(
+            prefix + r"\b" + re.escape(anchor) + r"\b" + suffix, re.I)
+        self.words = frozenset((anchor,))
+        self.generic = generic
+
+
+_SPONSOR_PATTERN_RULES = (
+    # "we cannot currently sponsor or support visa transfers" — a bare
+    # "sponsor" verb with a coordinated second verb, which no contiguous phrase
+    # reaches once an adverb sits in front of it. Bare verb, so it is GENERIC:
+    # it stays behind the immigration gate, and "we do not sponsor or support
+    # local charities" is not a visa denial.
+    _SponsorPatternRule(
+        "negated coordinated sponsor verb",
+        r"\b(?:cannot|can\s+not|could\s+not|unable\s+to|not\s+able\s+to|"
+        r"do\s+not|does\s+not|did\s+not|will\s+not|are\s+not|is\s+not)\s+"
+        r"(?:currently\s+|presently\s+|at\s+this\s+time\s+|now\s+)?",
+        "sponsor",
+        r"\s+(?:or|nor|and)\s+(?:support|provide|facilitate|assist\s+with)\b",
+        generic=True,
+    ),
+    # "authorized to work without the need for current or future visa
+    # sponsorship" / "... now or at any time". Names sponsorship as the head
+    # noun, so no immigration gate — the object IS sponsorship.
+    _SponsorPatternRule(
+        "sponsorship stated as unnecessary",
+        r"\bwithout\s+(?:the\s+)?need\s+for\s+"
+        r"(?:(?:any\s+)?(?:current|future|ongoing)"
+        r"(?:\s+or\s+(?:current|future|ongoing))?\s+)?"
+        r"(?:visa\s+|employer\s+|employment\s+|immigration\s+|work\s+)?",
+        "sponsorship",
+        r"",
+    ),
+    # "we are not currently sponsoring employment-based visas" — the gerund is a
+    # form neither tuple carries. The negation is part of the pattern rather than
+    # left to the clause scope, so "we are open to sponsoring employment-based
+    # visas" cannot reach it.
+    _SponsorPatternRule(
+        "negated sponsoring of visas",
+        r"\b(?:are\s+not|is\s+not|were\s+not|was\s+not|do\s+not|does\s+not|"
+        r"will\s+not|am\s+not|not)\s+"
+        r"(?:currently\s+|presently\s+|now\s+|at\s+this\s+time\s+)?"
+        r"(?:or\s+in\s+the\s+foreseeable\s+future\s+)?",
+        "sponsoring",
+        r"\s+(?:new\s+|any\s+|additional\s+|further\s+)?"
+        r"(?:employment[-\s]based\s+|employment\s+|work\s+|h-?1b\s+)?visas?\b",
+    ),
+    # "Citizenship required: Yes" / "U.S. Citizenship Required? Yes" /
+    # "Citizenship: required" — a Q/A row or a table header rather than a
+    # sentence. The lookahead is what keeps the OPPOSITE answer out.
+    _SponsorPatternRule(
+        "citizenship stated as required",
+        r"(?:\b(?:u\.?\s?s\.?|us)\s+)?",
+        "citizenship",
+        r"[\s:?-]*(?:is\s+|are\s+)?required\b" + _SPONSOR_REQUIRED_NOT_DENIED,
+    ),
+    # "U.S. citizen: required" — the same field written with the status noun.
+    # ``\bcitizen\b`` cannot reach inside "citizenship", so the two never
+    # double-report on one field.
+    _SponsorPatternRule(
+        "citizen status stated as required",
+        r"(?:\b(?:u\.?\s?s\.?|us)\s+)?",
+        "citizen",
+        r"[\s:?-]*(?:is\s+|are\s+)?required\b" + _SPONSOR_REQUIRED_NOT_DENIED,
+    ),
+    # "Visa: GC/Citizens" — a compact field naming the accepted statuses. The
+    # trailing lookahead requires the value list to be EXHAUSTED by status
+    # terms, so "Visa: H-1B, OPT, GC, Citizens" (which offers H-1B) and
+    # "Visa: GC/Citizens/H-1B" both fail to match.
+    _SponsorPatternRule(
+        "visa field limited to citizens",
+        r"",
+        "visa",
+        r"\s*:\s*" + _SPONSOR_STATUS_TERM
+        + r"(?:\s*[/,&]\s*" + _SPONSOR_STATUS_TERM + r")*"
+        + r"\s*(?:only)?(?!\s*[/,&]\s*\w)",
+    ),
+)
+# The denial labels whose "sponsor" is a bare transitive verb, and so must pass
+# the immigration gate. Derived from the rules, not restated beside them.
+_SPONSOR_GENERIC_DENIALS = _SPONSOR_GENERIC_NEGATIVE | {
+    rule.label for rule in _SPONSOR_PATTERN_RULES if rule.generic
+}
+
+
+def _sponsor_pattern_denials(source: str, covered: list[tuple[int, int]],
+                             words=None):
+    """Off-list denials written as patterns; a fallback, exactly like the phrases.
+
+    ``covered`` is every ``_SPONSOR_NEGATIVE``/``_SPONSOR_POSITIVE`` span, so a
+    wording the tuples already answer is left to them untouched.
+    """
+    for rule in _SPONSOR_PATTERN_RULES:
+        if words is not None and not rule.words <= words:
+            continue
+        for match in rule.pattern.finditer(source):
+            if any(match.start() < end and start < match.end()
+                   for start, end in covered):
+                continue
+            yield rule.label, match
+
 
 def _sponsor_clause_scope(source: str, start: int) -> str:
     """The negation-carrying text that runs up to ``start``.
@@ -1909,10 +2057,12 @@ def _sponsor_denial_is_immigration(phrase: str, source: str,
                                    start: int, end: int) -> bool:
     """Whether a DENIAL phrase is about immigration rather than some other sponsee.
 
-    Only the bare-verb phrases are gated (see ``_SPONSOR_GENERIC_NEGATIVE``);
-    every other denial names sponsorship itself and passes unconditionally.
+    Only the bare-verb denials are gated (see ``_SPONSOR_GENERIC_DENIALS``,
+    which is ``_SPONSOR_GENERIC_NEGATIVE`` plus the pattern rules that share the
+    shape); every other denial names sponsorship itself and passes
+    unconditionally.
     """
-    if phrase not in _SPONSOR_GENERIC_NEGATIVE:
+    if phrase not in _SPONSOR_GENERIC_DENIALS:
         return True
     return bool(_SPONSOR_IMMIGRATION_RE.search(
         _sponsor_window(source, start, end)))
@@ -2147,6 +2297,10 @@ def assess_sponsorship(text: str | None) -> dict:
     ] + [
         (_SPONSOR_OFFER_VERB_DENIAL, match)
         for match in _sponsor_offer_verb_denials(source, covered)
+        if _immigration_sense(match)
+    ] + [
+        (label, match)
+        for label, match in _sponsor_pattern_denials(source, covered, words)
         if _immigration_sense(match)
     ]
     negative: list[str] = []
