@@ -21,49 +21,18 @@ continue. A filed question never gates a merge; only the Guardrails stop you. Se
 
 ## Public vs Private (skills + products)
 
-Two layered repos so timeless tooling can be published while anything tied to a real person
-or job hunt stays private. **Leak rule: never put real names, employers, or dated/time-sensitive
-data in the public tree** — it ships only the fake "Jordan Rivers" example.
+This checkout layers a publishable toolkit over a separate, git-ignored private repo mounted at
+`private/`. The public tree contains timeless tooling and the fictional **Jordan Rivers** example;
+real identity, employers, applications, interviews, dated search data, and private skills belong in
+the overlay. If a tracked path is not under `private/`, every byte must be publishable even when the
+exporter later omits that process folder.
 
-- **Public toolkit repo (this repo)** — timeless tooling (`automation/`, public skills + their
-  scripts), the registry `skills/job-search/companies.yaml` (**identity only** — never
-  specific or dated postings), a FAKE example candidate under `examples/`, general instructions.
-  `config.example.yaml` is the tracked placeholder.
-- **Private overlay repo** — its own git repo, mounted at the git-ignored `private/` dir;
-  `config.yaml` points `paths.*` into it (real identity, profile, baseline, reference DOCX,
-  applications, interviews, and overlay-only skills). See `docs/handbook/private-overlay.md`.
-
-**Skill visibility** is a `visibility: public|private` key in each `SKILL.md`. **PUBLIC skills**
-(SKILL.md + scripts published; PRODUCTS stay private): `ask-me-anything`, `job-search`,
-`resume-writer`, `application-tracker`, `behavioral-interview-prep`, `company-research`,
-`email-assistant`, `interview-calendar`, `gardener`, `search-recall-audit`,
-`github-workflow`, `windows-environment`, `explain-clearly`. **PRIVATE skills are intentionally not enumerated here**:
-each entire skill lives only in the overlay, and bootstrap discovers it dynamically.
-
-**PRODUCTS are always private** and mount under `private/` (real applications, discoveries,
-company-level cache, interviews, profile/baseline/reference DOCX); only the fake `examples/**`
-counterparts ship. **Personal content stays out of `SKILL.md`/`LESSONS.md`** — candidate DATA defers
-to `config.yaml`/the profile; residual personal skill guidance goes in the overlay's per-skill
-skill-notes folder, reached by `config.skill_references_dir()` (exporter prunes it; leak guard
-fails on any tracked file under a `skill-notes/` folder — or its retired name
-`references_private/` — in the public tree).
-**If a path does not start with `private/`, tracked content written there must be
-PUBLISHABLE** — the leak guard scans `git ls-files` wholesale, so every tracked byte
-is screened. Publishable is not the same as *published*: five tracked roots (`tasks/`,
-`memory/`, `message-queue/`, `history/`, `docs/roadmap/` — `review_gate.EXPORT_ABSENT_ROOTS`,
-matching `export_public.py`'s allowlist) are deliberately left OUT of the export, so
-in-flight process prose belongs in one of them rather than in a shipped doc. The only
-local metadata outside the `private/` prefix is the generated runtime
-adapter links described below. The overlay is reached through `config.*()` accessors
-and those adapters. **The leak
-guard** (`automation/publish/check_public.py`) hardcodes NO identity — it derives personal tokens from
-`config.yaml`/overlay/`JOBHUNT_PERSONAL_TOKENS` and scans text + `.docx`/`.pdf`; `export_public.py`
-runs it as the final publish gate. Routing: `skills/` is entirely public and lists
-the public skills; each private skill is reached from generated entries in
-`.agents/skills/`, `.claude/skills/`, and `.cursor/skills/` pointing at
-`private/skills/<name>`. Their exact paths live only in repository-local Git
-metadata; `automation/bootstrap_overlay.py` creates them dynamically.
-Full detail: `docs/handbook/public-private-split.md`.
+Use `config.*()` accessors and generated skill adapters to reach private data; never hardcode private
+paths, identity, filename stems, or search vocabulary. Keep personal guidance out of public
+`SKILL.md`/`LESSONS.md`. The leak guard derives identity tokens from configuration and scans tracked
+text, DOCX, and PDF content; it does not make unpublishable prose safe. Read
+`docs/handbook/public-private-split.md` for the complete boundary, export omissions, skill-visibility
+rules, and adapter layout; read `docs/handbook/private-overlay.md` before overlay setup or migration.
 
 ## Runtime Environment (required preflight)
 
@@ -77,40 +46,18 @@ path. Subagents inherit the top-level environment result and never repeat this p
 
 ## Configuration
 
-Identity, paths, output-filename stems, and search filter words are never hardcoded — they load via
-`automation/shared/config.py` (vendored into each skill's `scripts/_vendor/config.py`). `config.yaml`
-(git-ignored) holds real values; `config.example.yaml` (tracked) is the neutral **"Jordan Rivers"**
-placeholder + fallback (discovery: `$JOBHUNT_CONFIG` → nearest `config.yaml` up from cwd then the
-loader dir → `config.example.yaml`). **Paths** always come from `config.*_path()` functions (profile,
-baseline, reference DOCX, company-levels, applications root, discoveries), never literals — real data
-under `private/`, the public example under `examples/`. **Output stems** come from
-`config.resume_stem()`/`cover_stem()`/`application_stem()`; never hardcode a person's filename stem —
-use `<RESUME_STEM>`. **Search filter words** come from the candidate's profile via
-`config.search_profiles_dir()`, never a literal list in a script — one person's filter logic must
-not sit in tooling everyone runs. **Generation mode**: `config.generation_mode()` returns `token_saving`
-(default) or `full` — a token-usage dial for search + drafting; hard gates run identically in both.
-Full function/path detail: `docs/handbook/configuration.md`.
+Load identity, paths, output stems, search vocabulary, and generation mode through the canonical
+`automation/shared/config.py` accessors (vendored into consuming skills). Real values come from the
+git-ignored `config.yaml`; `config.example.yaml` is the fictional fallback. Never hardcode a real path,
+name, filename stem, or candidate-specific filter in public tooling. Read
+`docs/handbook/configuration.md` for discovery order and the complete accessor map.
 
 ## Repo Map (top level)
 
-Full directory table (every script + per-skill row): `docs/handbook/repo-map.md`.
-
-| Path | Purpose |
-|------|---------|
-| `config.yaml` (git-ignored) / `config.example.yaml` (tracked) | Candidate identity, paths, output-stem config; example is the "Jordan Rivers" placeholder + fallback |
-| `config.profile_md_path()` / `config.baseline_path()` | Candidate profile (source of truth for tailoring) / canonical transcription of the approved resume (start point for every `tailored.yaml`) |
-| `skills/job-search/companies.yaml` | Canonical **public** registry (company identity, ATS config, tags); candidate blacklist rows live in the git-ignored overlay at `config.blacklist_path()` (`private/market/blacklist.yaml`) |
-| `config.applications_root()` / `config.discoveries_dir()` | All applications in the five numbered status folders `2_ignored`…`6_drafted` (the folder is the derived overall status; `0_profile`/`1_discoveries` sit beside them but are **support folders, never statuses** — `automation/shared/layout.py`) / ad-hoc job-search research |
-| `skills/` | Canonical skills dir — **entirely public** (see Public vs Private; private skills live at `private/skills/`) |
-| `automation/` (shared, vendoring, gardener, search-recall-audit, company-levels, metrics, publish, store, reconcile, hooks) | Everything that runs: canonical toolkit modules, vendoring, gardener, pipeline audits, metrics, leak guard, store tools, the reconciler, tracked git hooks |
-| `templates/` | **Single source of truth for every process-file schema** — copy one to create any queue/task/memory item (`templates/README.md`) |
-| `docs/roadmap/` | `desired-state.md` vs `current-state.md` — the gap between them is the backlog's source |
-| `history/` | One folder per working session, each with a `handover.md` |
-| `local/` | Gitignored scratch (purpose-named subfolders); never committed |
-| `message-queue/` (`needs-human/`: `decisions/`, `clarifications/`, `reviews/`; `needs-agent/`: `requests/`, `retries/`) | Async human↔agent messages, one file each, routed by **who acts next** (see Async Collaboration) |
-| `tasks/` (status folders `0_backlog`…`4_done`) | Work items; the folder a task sits in IS its status (`tasks/README.md`) |
-| `memory/` (`decisions/` ADRs, `known-issues/`, `facts/`, `lessons/`) | Long-term project memory; ADRs are immutable — a reversal is a new file |
-| `README.md`, `docs/handbook/architecture.md` (human) / `AGENTS.md`, `docs/handbook/README.md` | Human quickstart + design doc / this agent contract (core) + its extended reference |
+Use `docs/handbook/repo-map.md` as the complete path-to-purpose index. The high-level split is:
+public workflows in `skills/`, executable infrastructure in `automation/`, schema sources in
+`templates/`, private products behind `config.*()` paths, coordination in `message-queue/` and
+`tasks/`, durable decisions in `memory/`, and disposable work only in git-ignored `local/`.
 
 ## Read Order (boot sequence)
 
@@ -317,91 +264,30 @@ Router:
 
 ## Handy Commands
 
-Always use the repo venv `.venv/bin/python` (Python 3.11+). PDF conversion needs LibreOffice
-(override with `JOBHUNT_SOFFICE`). Full cookbook (validate-only, metadata backfill/validate,
-company-level import, log sync/record, DOCX extract, vendoring, hook install, deps): `docs/handbook/command-cookbook.md`.
-
-```bash
-# Render a tailored resume (DOCX + PDF) + one cover letter per JD, then auto-validate.
-.venv/bin/python skills/resume-writer/scripts/render.py applications/6_drafted/<slug>/
-# Show all applications and their status (status = which folder each app lives in)
-.venv/bin/python skills/application-tracker/scripts/status.py
-# Populate/validate schema-v6 metadata (per-job status, progress, level, YOE, salary) from JD + cache
-.venv/bin/python skills/application-tracker/scripts/status.py --enrich-metadata applications/6_drafted/<slug>/
-# Move an application to a different status folder (drafted|applied|in_progress|rejected|ignored)
-.venv/bin/python skills/application-tracker/scripts/status.py --update <slug> applied
-```
+Use the repo venv `.venv/bin/python` (Python 3.11+). The applicable skill owns its routine commands;
+`docs/handbook/command-cookbook.md` owns cross-cutting maintenance and validation commands. PDF
+conversion requires LibreOffice and may use the `JOBHUNT_SOFFICE` override.
 
 ## Conventions (quick reference)
 
-Each expands in a named `docs/handbook/` doc; the bolded name is the canonical section.
+- Memory zones and expiry: `docs/handbook/memory-map.md`.
+- Self-contained skills and vendored shared code: `docs/handbook/skills-and-vendoring.md`.
+- Purpose-first placement and `local/` scratch: `docs/handbook/file-organization.md`.
+- Fan-out limit: `docs/handbook/subagent-budget.md`.
+- Process-item routing and schemas: `message-queue/README.md`, `tasks/README.md`, and
+  `templates/README.md`.
+- Human-readable reports: `docs/handbook/reporting-to-the-owner.md` plus `explain-clearly`.
 
-- **Memory Map** — agent-memory zones (read/append points), retention, writers; promotion plus
-  **forgetting** (TTL/prune/demotion) enforced by the `gardener` (dry-run). Full table: `docs/handbook/memory-map.md`.
-- **Sharing Code Across Skills** — skills are self-contained; a skill's `scripts/` **never** imports
-  repo-root Python. Pure toolkit modules live once in `automation/shared/`, vendored (byte-identical)
-  into each skill's `scripts/_vendor/` via `automation/vendoring/sync_vendored.py`; never edit a copy. Detail: `docs/handbook/skills-and-vendoring.md`.
-- **File & Folder Organization** — group files by purpose in a meaningful subfolder (never a
-  generic *scripts*/*docs*/*data* bucket); reason tree-first before creating any file. Detail (incl. the
-  coding interview file 150-char no-hard-wrap rule): `docs/handbook/file-organization.md`.
-- **Scratch & Temporary Files** — throwaway work (probes, scraped HTML/JSON, sanity checks) lives ONLY
-  under the top-level gitignored **`local/`** in purpose-named subfolders (`local/ats_scripts/`,
-  `local/web_artifacts/`, `local/scratch/`) — never the repo root or a tracked/product folder. Detail: `docs/handbook/file-organization.md`.
-- **Subagent Budget** — a request that fans out launches **at most 8 subagents total** across all
-  waves; reuse/resume or finish in the parent — never a ninth. Repo-wide cap (`docs/handbook/subagent-budget.md`).
-- **Process Folders** — `message-queue/` + `tasks/` (see **Async Collaboration** above) plus the
-  memory zones `memory/decisions/` and `memory/known-issues/` (+ same-name `private/` mirrors for
-  leak-guarded content): one self-contained item per file, schemas in `templates/` (copy, never
-  restate). Hit an owner-owned fork? File it in `message-queue/needs-human/decisions/` (with
-  options + a default path) and continue — don't block, don't guess.
-- **Reporting to the Owner** — outside the live interview exception, the prose every human-read surface owes: the five-part session reply,
-  the PR `## What needs you` section, the handover. Effect not mechanism; a before with every after;
-  uncertainty as a number or "not measured". Full detail: `docs/handbook/reporting-to-the-owner.md`.
-- **Shell & Paths** — the shell is **zsh**; always use **absolute paths** in bash calls (a subagent's
-  working directory resets between calls, so relative paths break), and **quote** any `=`-leading
-  argument or glob (`'--flag=val'`, `'*.md'`) so zsh does not mis-split or expand it.
-  **Never pipe a command whose exit code you are about to read.** `$?` after a pipeline is the LAST
-  stage's status, so `<gate> | tail -5` then `echo $?` prints `tail`'s 0 for a gate that exited 1 —
-  a red gate read as green. Truncating output is not a reason to pipe: **redirect instead** (a
-  redirect is not a pipeline), which keeps the real status —
-  `<gate> > local/scratch/gate.log 2>&1; echo "EXIT=$?"`, then read the log. Reading a pipeline
-  stage's status directly is zsh-specific: the array is `$pipestatus`, **1-indexed**, so the first
-  stage is `${pipestatus[1]}`; bash's `${PIPESTATUS[0]}` expands to the empty string in zsh and
-  reads as "nothing wrong". `$?` after a `for` loop or an `&&` chain has the same trap — it is the
-  last command's status only, and the earlier ones are gone.
-- **Read Hygiene** — never re-Read a file already in context (duplicate reads are pure token waste),
-  **except** the safety re-read of a two-way file immediately before writing it (see **Doc dialogue**
-  above — that re-read is what stops you clobbering owner text, and it is never a duplicate);
-  for a file over ~800 lines, prefer a `grep` or an offset/limit slice over reading the whole file.
+**Shell & Paths.** The shell is zsh. Use absolute paths, quote glob-like or `=`-leading arguments,
+and never pipe a gate whose exit code matters: capture its output with redirection, then read the
+gate's own status. **Read Hygiene.** Do not re-read content already in context except the required
+last-moment safety read of a two-way file.
 
 ## Application Folder Convention
 
-**`applications/` here and in every skill is shorthand for `config.applications_root()`** — never a
-literal folder at the repo root, which is git-ignored and invisible to every tracker command.
-
-Each application is a folder `<company>-<role>-<YYYYMMDD>/` under `applications/6_drafted/`; **each
-`jobs:` entry carries a per-job `status`, and the parent status folder is the derived overall status
-(rollup) — the two must agree** (`2_ignored`…`6_drafted`; the **user** moves folders, or use
-`status.py --update`/`--update-job` — agents never move them unless asked). One resume covers the folder, but
-**cover letters are one-to-one with JDs** — one `<COVER_STEM>_<job title>.pdf` + one bundled
-`<APPLICATION_STEM>_<job title>.txt` per `meta.yaml` role; `render.py`/`cover_letter.py` emit all
-names automatically. Slug: lowercase, hyphens (`google-ml-engineer-20260416`). The
-`application-tracker` skill owns the full `meta.yaml` schema — read it before writing one. Canonical
-file tree:
-
-```
-applications/6_drafted/<slug>/                     # multi-role: repeat cover/txt/JD per posting
-├── meta.yaml                                    # tracking metadata (per-job status; folder = derived rollup)
-├── <RESUME_STEM>.pdf                            # ONE final resume (for humans/email)
-├── <COVER_STEM>_<Role>.pdf                      # one cover-letter PDF per JD
-├── <APPLICATION_STEM>_<Role>.txt               # one bundled copy-paste packet per JD
-├── notes.md                                     # optional interview/company notes
-└── source/                                      # generation inputs/intermediates
-    ├── JD-<job title>.md                        # one per posting, ALWAYS JD-prefixed
-    ├── tailored.yaml                            # AI-tailored resume content (one resume)
-    ├── <RESUME_STEM>.docx                       # submit this DOCX to ATS portals
-    └── <COVER_STEM>_<Role>.docx                 # one per JD
-```
-
-Full status-folder table, numeric-prefix rules, per-file (`meta.yaml`, `.txt` section format,
-`source/`) descriptions, and the divergent-role split: `docs/handbook/application-folders.md`.
+`applications/` always means `config.applications_root()`, never a literal repo-root directory.
+Application status is derived from the numbered parent folder and must agree with every per-job
+status in `meta.yaml`. Agents move applications only when asked. One resume may serve compatible
+roles, but every JD gets its own cover letter and application packet. Read the `application-tracker`
+skill before metadata edits and `docs/handbook/application-folders.md` for the schema and canonical
+tree.

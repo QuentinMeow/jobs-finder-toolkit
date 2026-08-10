@@ -146,6 +146,11 @@ example config) — substitute the resolved path, never a literal folder at the 
 .venv/bin/python automation/gates/run_gates.py --group hook     # just the pre-commit chain
 .venv/bin/python automation/gates/run_gates.py --only reconciler,verify-links --tail 30
 
+# If an unavoidable interactive zsh pipeline needs stage-level status, use the 1-indexed
+# `$pipestatus` array (`${pipestatus[1]}` is the first command). Bash's `${PIPESTATUS[0]}`
+# expands to an empty value in zsh. `$?` after a `for` loop or an `&&` chain likewise reports
+# only the final command, so it cannot prove that every earlier gate passed.
+
 # ── after a post-merge cutover: is the owner's data still intact? ─────────────
 # The `cutover` validation profile. Reuses the gate runner above (no shell, no
 # pipe, per-gate log, a SKIP is never a PASS), with its own five-gate table:
