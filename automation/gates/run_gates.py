@@ -103,6 +103,7 @@ CI_LANES: dict[str, tuple[str, ...]] = {
         "tests-gates",
         "tests-ci-classifier",
         "tests-cutover",
+        "tests-workspace",
         "tests-github-workflow",
     ),
     "render": ("example-render",),
@@ -428,6 +429,14 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
                            "exit-code aggregation, the configured-path doctor's "
                            "fail-closed refusals, and verify_copy's never-overwrite, "
                            "never-delete guarantees.",
+            group="ci",
+        ),
+        Gate(
+            name="tests-workspace",
+            argv=(py, "-m", "unittest", "discover", "automation/workspace/tests"),
+            what_it_proves="The local Git dashboard inventories clean and dirty "
+                           "worktrees, branch locality, cached remote state, and the "
+                           "optional private overlay without depending on the caller's cwd.",
             group="ci",
         ),
 

@@ -117,6 +117,9 @@ ALLOWLIST_DIRS = [
     # that DO ship (post-merge-cutover.md, command-cookbook.md, repo-map.md) name
     # these commands — omitting it leaves 13 broken references inside the export.
     "automation/cutover",
+    # The local Git dashboard and its synthetic tests. The exported handbook names
+    # this command, and the maintenance lane runs its tests through run_gates.py.
+    "automation/workspace",
     "templates",
     ".github",
     ".claude-plugin",

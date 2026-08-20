@@ -811,7 +811,8 @@ class SelectionTests(unittest.TestCase):
             "maintenance": [
                 "tests-reconcile", "tests-gardener", "tests-hooks",
                 "tests-metrics", "tests-evals", "tests-gates",
-                "tests-ci-classifier", "tests-cutover", "tests-github-workflow",
+                "tests-ci-classifier", "tests-cutover", "tests-workspace",
+                "tests-github-workflow",
             ],
             "render": ["example-render"],
             "resume": ["tests-resume-writer"],

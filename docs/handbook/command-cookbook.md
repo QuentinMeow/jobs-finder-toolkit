@@ -7,6 +7,15 @@ which `skills/resume-writer/scripts/pdf_convert.py` finds via
 `JOBHUNT_SOFFICE` selects a binary before those defaults; it does not change
 the permissions inherited by that process.
 
+```bash
+# One local Git dashboard for the public toolkit and its optional private overlay.
+# Compact mode still lists every registered worktree and every local/cached-remote
+# branch; -v adds changed files, commit subjects, upstreams, remote URLs and
+# worktree administrative flags. It reads cached refs and never fetches.
+./automation/workspace/status.py
+./automation/workspace/status.py -v
+```
+
 On macOS, even `--headless` LibreOffice initializes AppKit and needs access to
 LaunchServices. The Codex app sandbox may deny that access. The renderer and
 PDF-producing gate preflight this condition without launching LibreOffice and

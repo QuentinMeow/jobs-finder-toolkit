@@ -111,6 +111,13 @@ class ClassificationTests(unittest.TestCase):
             ("maintenance",),
         )
 
+    def test_workspace_status_tooling_selects_maintenance(self):
+        self.assertFocused(
+            (("M", ("automation/workspace/status.py",)),
+             ("A", ("automation/workspace/tests/test_status.py",))),
+            ("maintenance",),
+        )
+
     def test_resume_implementation_selects_render_and_resume(self):
         self.assertFocused(
             (("M", ("skills/resume-writer/scripts/render.py",)),),

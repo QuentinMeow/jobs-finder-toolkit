@@ -201,7 +201,7 @@ def lanes_for_path(path: bytes) -> tuple[str, ...] | None:
          ("shared",)),
         (("automation/reconcile/", "automation/gardener/", "automation/hooks/",
           "automation/metrics/", "automation/gates/", "automation/evals/",
-          "automation/cutover/",
+          "automation/cutover/", "automation/workspace/",
           "skills/github-workflow/scripts/"), ("maintenance",)),
         (("evals/",), ("maintenance",)),
     )
