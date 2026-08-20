@@ -22,10 +22,10 @@ omit a missing private overlay, and refuse an unrelated copied script.
 
 ## Definition of done
 
-- [ ] A short executable entry point renders both repositories, omitting an
+- [x] A short executable entry point renders both repositories, omitting an
       absent private overlay, and offers compact and verbose modes.
-- [ ] Every registered worktree and every local/cached-remote branch is shown,
+- [x] Every registered worktree and every local/cached-remote branch is shown,
       with dirty/upstream/merged state represented accurately.
-- [ ] Automated tests cover clean, dirty, untracked, local-only, remote-only,
+- [x] Automated tests cover clean, dirty, untracked, local-only, remote-only,
       merged, unmerged, detached-worktree, no-overlay, and outside-CWD behavior.
-- [ ] Focused tests and the applicable repository gates pass.
+- [x] Focused tests and the applicable repository gates pass.
