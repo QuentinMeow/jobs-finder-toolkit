@@ -44,6 +44,13 @@ execution environment: use WSL2. When Windows or WSL is detected, read
 the checkout and temporary files on the Linux filesystem. Ordinary non-WSL Linux follows the CI
 path. Subagents inherit the top-level environment result and never repeat this preflight.
 
+After that runtime check, the top-level agent always runs
+`./automation/workspace/status.py --no-color` before any other Git status, branch, or worktree
+inspection and treats it as the canonical at-a-glance view of local work. Use `-v` when file,
+commit, upstream, or remote detail matters. The dashboard covers the public repo and optional
+private overlay without fetching; `git ws` is the repo-local shorthand when configured. Subagents
+inherit this status snapshot and rerun it only when shared local state may have changed.
+
 ## Configuration
 
 Load identity, paths, output stems, search vocabulary, and generation mode through the canonical

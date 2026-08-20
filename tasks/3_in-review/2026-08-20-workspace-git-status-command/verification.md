@@ -62,3 +62,20 @@ PRIVATE · private
 The absolute repository prefix is redacted above; the command was run from
 `/private/tmp` and exited 0. No skill instruction files changed, so the
 risk-based skill canary gate does not apply.
+
+## Required agent preflight follow-up
+
+```
+$ ./automation/workspace/status.py -v --no-color
+GIT WORKSPACE  2 repositories · 2 worktrees · 1 dirty · 3 local + 2 cached remote branches
+...
+PUBLIC · jobs-finder-toolkit
+  1 worktree · 1 dirty · 2 local + 1 cached remote branches
+...
+PRIVATE · private
+  1 worktree · 0 dirty · 1 local + 1 cached remote branches
+```
+
+The command exited 0 after the contract edit and exposed both repository states
+in the first view. `automation/metrics/instruction_budget.py --strict` also
+exited 0 after the root instruction grew from 293 to 300 lines.

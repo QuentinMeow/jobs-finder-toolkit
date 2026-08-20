@@ -10,12 +10,19 @@
 - Compact output lists every worktree and branch; `-v` expands files, commits,
   upstreams, remote URLs, and worktree flags. Cached remote state is labeled and
   the command never fetches.
-- All 21 selected policy, maintenance, and publication gates passed.
+- The root agent contract now requires this dashboard before narrower Git-state
+  inspection, preventing routine work from silently checking only the public
+  repository. Fresh clones use the tracked script; `git ws` is an optional
+  repository-local shorthand.
+- All 21 selected implementation gates passed. The agent-contract follow-up
+  passed the live two-repository check and strict instruction budget; final
+  CI-equivalent evidence belongs in the PR at its published tip.
 
 ## Where things stand
 
 - Implementation commit `736c240` is on `codex/workspace-status`; task
-  `2026-08-20-workspace-git-status-command` is ready for review.
+  `2026-08-20-workspace-git-status-command` is ready for review with the
+  required-agent-preflight follow-up included.
 
 ## Decisions made for you
 
@@ -26,6 +33,8 @@
   refs are cached-only because fetching would make a status command networked.
 - A copied script refuses unrelated repositories using four toolkit markers;
   the optional `private/` section disappears when that path is not its own repo.
+- The portable script path, not the untracked `git ws` alias, is the enforced
+  agent command; changing that would require only this contract paragraph.
 
 ## If X then Y
 

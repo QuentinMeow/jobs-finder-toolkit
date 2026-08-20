@@ -5,3 +5,5 @@
 - [x] Add fixture-based tests for two-repository, branch, and worktree states.
 - [x] Document the command where maintainers look for repository utilities.
 - [x] Run focused tests and repository gates; record the real outputs.
+- [x] Make the dashboard the required first Git-state check for top-level agents.
+- [x] Run the pre-PR checks and prepare the branch for its public PR.

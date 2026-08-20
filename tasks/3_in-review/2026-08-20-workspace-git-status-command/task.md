@@ -29,3 +29,5 @@ omit a missing private overlay, and refuse an unrelated copied script.
 - [x] Automated tests cover clean, dirty, untracked, local-only, remote-only,
       merged, unmerged, detached-worktree, no-overlay, and outside-CWD behavior.
 - [x] Focused tests and the applicable repository gates pass.
+- [x] The root agent contract requires this dashboard as the first Git-state
+      overview, so routine agent work does not silently omit the private repo.
