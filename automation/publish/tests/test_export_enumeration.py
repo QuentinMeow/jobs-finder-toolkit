@@ -375,6 +375,12 @@ class CIPathsExistInExportTests(unittest.TestCase):
         self.assertTrue((self.export / "requirements.txt").is_file())
         self.assertTrue((self.export / "config.example.yaml").is_file())
 
+    def test_workspace_dashboard_and_its_tests_ship(self):
+        self.assertTrue((self.export / "automation/workspace/status.py").is_file())
+        self.assertTrue(
+            (self.export / "automation/workspace/tests/test_status.py").is_file()
+        )
+
     def test_store_validator_runs_against_the_exported_example_store(self):
         proc = subprocess.run(
             [sys.executable, "automation/store/validate_store.py", "examples/store",
