@@ -388,6 +388,36 @@ class JsonOutputTests(F.SharedShapesTestCase):
         self.assertEqual(payload["schema"], "workspace-status/v1")
 
 
+class PullRequestTests(F.SharedShapesTestCase):
+    """``--pr`` is the one network answer here, so it must fail LOUDLY."""
+
+    def test_an_unanswerable_question_returns_a_reason_never_an_empty_answer(self) -> None:
+        # The fixture's "origin" is a local directory, so `gh` cannot answer for
+        # it — and neither can a machine with no `gh` at all. Both must produce a
+        # REASON: "no pull request" and "nobody could tell us" must not look
+        # alike, or a branch with an open PR reads as abandoned.
+        index, error = status.pull_request_index(self.root, timeout=15.0)
+        self.assertEqual(index, {})
+        self.assertIsNotNone(error)
+        self.assertTrue(error.strip())
+
+    def test_the_reason_is_printed_rather_than_swallowed(self) -> None:
+        repo = status.inspect_repository("PUBLIC", self.root, now=F.FIXED_EPOCH)
+        repo.pr_requested = True
+        repo.pr_error = "gh is not installed"
+        rendered = status.render([repo], self.root, False, status.Palette(False))
+        self.assertIn("pull-request state unavailable: gh is not installed", rendered)
+
+    def test_a_known_pr_state_lands_on_its_branch_row(self) -> None:
+        repo = status.inspect_repository("PUBLIC", self.root, now=F.FIXED_EPOCH)
+        # No network: the index is the seam, and this is what the gh call fills.
+        branches, *_ = status._branches(self.root, repo.worktrees, None,
+                                        {"open-work": "#7 OPEN"}, F.FIXED_EPOCH)
+        rows = {branch.name: branch for branch in branches}
+        self.assertEqual(rows["open-work"].pr, "#7 OPEN")
+        self.assertIsNone(rows["true-merge"].pr)
+
+
 class RenderTests(F.SharedShapesTestCase):
     def setUp(self) -> None:
         super().setUp()

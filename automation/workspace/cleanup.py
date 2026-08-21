@@ -80,7 +80,6 @@ PROTECTED = frozenset({"main", "master", "HEAD"})
 HARNESS_WORKTREE_MARKER = ".claude/worktrees"
 
 # ── fail-closed refusals (each exits 3) ──────────────────────────────────────
-CODE_NOT_A_REPO = "not-a-git-repository"
 CODE_TOOLKIT_GUARD = "not-the-toolkit-repository"
 CODE_MERGE_PROBE_DEGRADED = "merge-probe-degraded"
 CODE_BASE_REF_MISSING = "base-ref-missing"

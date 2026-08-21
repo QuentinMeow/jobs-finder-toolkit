@@ -3519,3 +3519,12 @@
     "acme-corp-onsite-loop" branch proving the overlay is counted and never named. No
     real identity, employer, school, salary, private item name, or dated personal
     job-hunt content is present.'
+- base: c8881c3d
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:61da4a15af43951f
+  finding: 'Reviewed three added tests pinning the --pr fallback (an unanswerable
+    question must return a reason, never an empty answer) and the removal of one
+    unused refusal constant. Fixture data only; no real identity, employer, school,
+    salary, private item name, or dated personal job-hunt content.'
