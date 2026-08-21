@@ -141,5 +141,147 @@ class SkillsDiffTests(unittest.TestCase):
             self.assertIn("1 uncategorized skill", proc.stdout)
 
 
+class MetadataIsNotASkillTests(unittest.TestCase):
+    """Issue #261 — provenance URLs and location/time-zone metadata are not skills.
+
+    The queue is a BLOCKING user decision (Step 7 asks the user to categorize
+    every item), so a token that came from a URL query string or an office
+    address manufactures a false decision and teaches a novice that the
+    extractor cannot be trusted.
+    """
+
+    def test_url_query_parameter_is_not_a_skill(self):
+        jd = ("Source: https://jobs.example.com/acme/01b3e311-43a1?includeCompensation=true\n"
+              "You will run Kubernetes and Docker in production.")
+        self.assertEqual(_queue(jd), [])
+
+    def test_bare_host_with_path_and_query_is_stripped(self):
+        jd = ("Apply: jobs.ashbyhq.com/acme/fe0576f6?includeCompensation=true&sortBy=postedAt\n"
+              "We use Python and PostgreSQL.")
+        self.assertEqual(_queue(jd), [])
+
+    def test_timezone_abbreviations_are_never_skills(self):
+        jd = "Core collaboration hours are 9am-5pm ET/PT for the whole team."
+        self.assertEqual(_queue(jd), [])
+
+    def test_location_metadata_line_is_ignored(self):
+        jd = ("Location: San Francisco, CA / New York, NY — hybrid, ET/PT overlap\n"
+              "Time zone: ET\n"
+              "The stack is Python and Docker.")
+        self.assertEqual(_queue(jd), [])
+
+    def test_metadata_field_drops_its_value_not_the_whole_line(self):
+        # A one-line header keeps the half that names the stack.
+        jd = "Location: NYC, NY | Stack: OpenTelemetry and ClickHouse"
+        self.assertEqual(_queue(jd), ["OpenTelemetry", "ClickHouse"])
+
+    def test_city_state_pair_outside_a_labelled_line_is_ignored(self):
+        jd = "Our engineers sit in Seattle, WA/Remote and use Docker daily."
+        self.assertEqual(_queue(jd), [])
+
+    def test_real_skills_next_to_the_metadata_still_surface(self):
+        jd = ("Source: https://jobs.example.com/acme/01b3?includeCompensation=true\n"
+              "Location: Remote (US) — San Francisco, CA. Core hours 9am-5pm ET/PT.\n"
+              "You will partner with SRE/DevOps teams on OpenTelemetry and "
+              "ClickHouse.")
+        self.assertEqual(_queue(jd), ["SRE", "DevOps", "OpenTelemetry", "ClickHouse"])
+
+    def test_dotted_technology_name_is_not_mistaken_for_a_url(self):
+        # "socket.io" carries a URL-shaped TLD but no path — it, and everything
+        # after it on the line, must survive the URL stripper.
+        jd = "Experience with socket.io and ClickHouse is required."
+        self.assertEqual(_queue(jd), ["socket.io", "ClickHouse"])
+
+
+class CompoundAndQualifiedAliasTests(unittest.TestCase):
+    """Issue #272 — compound skills stay whole and qualified profile entries match.
+
+    A qualified profile entry ("Java basics", "MySQL administration") is already
+    a truthful decision about that concept. Re-queueing the bare token pressures
+    the user into adding a second, BROADER entry — the opposite of the skill
+    gate's purpose.
+    """
+
+    PROFILE = """# Profile
+
+## Skills
+
+### Approved (include in most resumes, if not all)
+
+- Testing: manual testing, test cases, basic SQL queries
+
+### Weak (user-facing: Weak or Selective — include ONLY when the JD mentions it)
+
+- Languages: Java basics
+
+### Never (never include in any resume)
+
+- Out of scope: CI/CD work, MySQL administration, A/B testing
+"""
+
+    def queue(self, jd_text: str) -> list[str]:
+        return skills_diff.uncategorized_queue(jd_text, self.PROFILE)
+
+    def test_slash_compound_is_not_split_when_categorized(self):
+        # Never lists "CI/CD work" — the JD's "CI/CD" is that same concept.
+        self.assertEqual(self.queue("Familiarity with CI/CD pipelines is a plus."), [])
+
+    def test_qualified_profile_entries_cover_the_bare_jd_token(self):
+        jd = "Basic Java and SQL knowledge; MySQL experience is helpful."
+        self.assertEqual(self.queue(jd), [])
+
+    def test_ab_testing_variants_resolve_to_one_concept(self):
+        jd = "Support A/B-testing, A/B testing, and A/B experiments."
+        self.assertEqual(self.queue(jd), [])
+
+    def test_generic_uppercase_word_is_not_a_skill(self):
+        jd = "Write manual test cases for our WEB/mobile products."
+        self.assertEqual(self.queue(jd), [])
+
+    def test_the_full_reported_queue_collapses_to_real_skills(self):
+        jd = ("Source: https://jobs.example.com/qa/12345?includeCompensation=true\n"
+              "Location: San Francisco, CA / New York, NY — 9am-5pm ET/PT\n"
+              "- Write and run manual test cases for our WEB/mobile products.\n"
+              "- Familiarity with CI/CD pipelines is a plus.\n"
+              "- Basic Java and SQL knowledge; MySQL experience helpful.\n"
+              "- Support A/B-testing and A/B experiments.\n"
+              "- Partner with SRE/DevOps on release readiness.\n")
+        self.assertEqual(self.queue(jd), ["SRE", "DevOps"])
+
+    def test_uncategorized_compound_stays_one_concept(self):
+        # Nothing in the profile covers A/B when the Never entry is removed:
+        # the ask must still be ONE concept, not "A/B" plus "A/B-testing".
+        profile = self.PROFILE.replace(", A/B testing", "")
+        queue = skills_diff.uncategorized_queue(
+            "Run A/B-testing and A/B experiments for the team.", profile)
+        self.assertEqual(len(queue), 1, queue)
+        self.assertIn("A/B", queue[0])
+
+    def test_matching_never_broadens_the_declared_proficiency(self):
+        # The tool reports; it never rewrites the profile or restates a
+        # qualified entry as a bare, broader claim.
+        with tempfile.TemporaryDirectory() as tmp:
+            jd = Path(tmp) / "JD-x.md"
+            jd.write_text("Basic Java and MySQL experience helps.", encoding="utf-8")
+            prof = Path(tmp) / "profile.md"
+            prof.write_text(self.PROFILE, encoding="utf-8")
+            before = prof.read_text(encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(SCRIPTS / "skills_diff.py"),
+                 str(jd), "--profile", str(prof)],
+                capture_output=True, text=True, env=dict(os.environ))
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "no uncategorized skills")
+            self.assertEqual(prof.read_text(encoding="utf-8"), before)
+
+    def test_admin_entry_does_not_cover_an_unrelated_database(self):
+        jd = "Operate MySQL and CockroachDB clusters."
+        self.assertEqual(self.queue(jd), ["CockroachDB"])
+
+    def test_uncategorized_compound_without_known_components_is_still_split(self):
+        jd = "Experience with Docker/LXC/LXD is useful."
+        self.assertEqual(self.queue(jd), ["Docker", "LXC", "LXD"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3494,3 +3494,13 @@
     Every string is either generic tooling vocabulary or the public fictional
     example fixture; no real identity, employer, school, salary, private item name,
     or dated personal job-hunt content is present.'
+- base: 48a55cdb
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:d5896ecb3ba51f4c
+  finding: 'Reviewed the skills_diff metadata filter, compound/concept matching and
+    their tests. Company names, URLs and addresses in the fixtures are invented
+    example.com placeholders; no real identity, employer, school, salary, private
+    item name, or dated personal job-hunt content is present. The one "salary" match
+    is a metadata label in a regex, not a value.'
