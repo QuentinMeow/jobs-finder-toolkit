@@ -27,7 +27,11 @@ import urllib.parse
 
 import capture_hooks
 from common import (JobPosting, http_get_full, http_get_json, parse_dt,
-                    provided_salary_range, strip_html)
+                    provided_salary_range, record_source_warning, strip_html)
+# The source-quality repairs are shared with the builder-side parser on purpose:
+# a parity harness asserts the live fetcher and ``posting_parsers`` derive the
+# same fields from the same bytes, so a rule applied on one side only is drift.
+from posting_parsers import remoteok_posting_link, repair_mojibake
 
 # The stage-1 JobSpy site list. `reliable_sites` is the canonical key — it is the
 # one the staged planner reads and the one the docs describe — but the shipped
@@ -176,23 +180,51 @@ def fetch_jobicy(query_terms, location, max_age_days):
 
 
 def fetch_remoteok(query_terms, location, max_age_days):
+    """RemoteOK rows, with the two source-quality defects this feed ships.
+
+    RemoteOK serves some rows whose text is mojibake (UTF-8 read as Latin-1
+    upstream) and whose ``url`` is the bare listing root rather than a permalink
+    — a title with no ASCII in it slugs to nothing, so the URL collapses. Those
+    rows used to survive into the manual-review queue as garbled text behind a
+    link that opens a job board, sharing one URL with every other such row.
+
+    Text is repaired where the damage is provable, and a row with no
+    posting-specific link is QUARANTINED rather than emitted: it is not
+    actionable (the reader cannot open it), it is not de-duplicable (its URL
+    names no posting), and it cannot be logged as an application. The count is
+    reported as a source-quality line so the drop is visible, never silent.
+    """
     data = _get_scrape("remoteok", "https://remoteok.com/api",
                        headers={"User-Agent": "jobs-finder/1.0 (+personal)",
                                 "Accept": "application/json"})
     out = []
+    quarantined: list[str] = []
     for j in data if isinstance(data, list) else []:
-        if not j.get("position"):        # first element is a legal notice
+        if not isinstance(j, dict) or not j.get("position"):
+            continue                     # first element is a legal notice
+        link = remoteok_posting_link(j)
+        if not link:
+            # Ids only in the diagnostic: the row's own text is the garbled
+            # material this is protecting the reader from.
+            quarantined.append(str(j.get("id") or "?"))
             continue
         out.append(JobPosting(
             source="remoteok",
-            company=j.get("company", "") or "",
-            title=(j.get("position") or "").strip(),
-            url=j.get("url") or j.get("apply_url", ""),
-            location=j.get("location", "") or "remote",
+            company=repair_mojibake(j.get("company", "")),
+            title=repair_mojibake(j.get("position") or "").strip(),
+            url=link,
+            location=repair_mojibake(j.get("location", "")) or "remote",
             remote="remote",
             posted_at=parse_dt(j.get("date") or j.get("epoch")),
-            description=strip_html(j.get("description")),
+            description=repair_mojibake(strip_html(j.get("description"))),
         ))
+    if quarantined:
+        shown = ", ".join(quarantined[:5])
+        more = f", +{len(quarantined) - 5} more" if len(quarantined) > 5 else ""
+        record_source_warning(
+            f"remoteok: quarantined {len(quarantined)} posting(s) that carry no "
+            f"posting-specific link — their URL is the generic listing root, so "
+            f"they cannot be opened, de-duplicated or logged (ids: {shown}{more})")
     return out
 
 

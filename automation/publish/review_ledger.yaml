@@ -3512,3 +3512,12 @@
     registry lint rule, plus the offline page fixtures. All fixtures are synthetic
     ("Testco", numbered engineers); no real identity, employer, school, salary,
     private item name, or dated personal job-hunt content is present.'
+- base: 14e0ae1a
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 3
+  digest: sha256:d402f7e8f7bf677a
+  finding: 'Reviewed the RemoteOK text repair, the posting-link requirement shared
+    with the builder parser, and the offline fixtures. The fixture rows are invented
+    ("OceanCo") with generic Greek/Chinese sample words; no real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content is present.'
