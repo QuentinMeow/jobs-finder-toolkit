@@ -3837,6 +3837,68 @@
   reviewed_by: agent
   date: 2026-08-20
   files: 1
+  digest: sha256:d480f8cc83eedb20
+  finding: 'Reviewed the main-working-tree guard added to automation/workspace/cleanup.py.
+    Timeless tooling only: git plumbing (rev-parse --git-dir / --git-common-dir,
+    worktree list --porcelain), path-containment predicates, and prose about why a
+    mv into your own subdirectory is refused. The only concrete paths named are the
+    generic local/workspace/trash-<run id> destination and the .claude/worktrees
+    harness marker that was already public. No real identity, employer, school,
+    date, salary, private item name, or dated personal job-hunt content.'
+- base: bb2659e0
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:6579eea707a9deba
+  finding: 'Reviewed the main-working-tree regression tests plus the emitter''s
+    comment sanitising. Fixture-only content: a throwaway git repo built under a
+    temp directory, the fictional branch names codex/landed, vantage-work,
+    linked-landed, outer-work and inner-work, and a deliberately hostile path used
+    to prove a newline cannot escape a shell comment. No real identity, employer,
+    school, date, salary, private item name, or dated personal job-hunt content.'
+- base: 1baf9bb5
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 3
+  digest: sha256:eb2632eb5f4f0df8
+  finding: 'Reviewed the source-quality gate''s new non-job and title/body-conflict
+    rules (GH #271, part of #293), their 12 corpus variants and 12 unit regressions.
+    All posting text is fictional (Example Telecom / Example Instruments / Example
+    Defense Labs, example.test URLs); the only real-world strings are the existing
+    public aggregator vocabulary (`jobspy:indeed` as a source label) and generic
+    board boilerplate quoted as pattern rationale. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content.'
+- base: 85f23689
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:bee49131c7c9a954
+  finding: 'Reviewed the negated-keyword-scope change to `score_posting` (GH #291)
+    and its 8 unit regressions. All JD text is fictional (Example Defense Labs,
+    Example Data Co, example.test URLs); the only real-world string is the existing
+    public aggregator source label `jobspy:indeed`. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content.'
+- base: 708e1859
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:f9655513816cf3de
+  finding: 'Reviewed one new backlog task file recording what the #271/#293 cluster
+    deliberately did not build (cross-domain posting coherence, missing employer
+    identity, boilerplate-only bodies, structured/body date contradiction). It names
+    public GitHub issues, public file paths, and the fictional example corpus only.
+    No real identity, employer, school, salary, private item name, or dated personal
+    job-hunt content.'
+- base: 038af18b
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:26c49051c2445904
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 1baf9bb5
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
   digest: sha256:fa7f3484c1af5cd9
   finding: 'Reviewed the rewritten `term_matches` in the job-search common helpers:
     separator-equivalent bounded phrase matching and a context guard for the
@@ -3865,3 +3927,9 @@
     two stale profile comments. Repository paths, generic occupation words and
     technology names only. No real identity, employer, school, salary, private item
     name, or dated personal job-hunt content.'
+- base: e87a7818
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 6
+  digest: sha256:15d9cabc7c42a9fe
+  finding: 'Merge of origin/main. Ledger and filter-variant corpus both resolved by keeping BOTH sides whole; no case dropped or rewritten. filter_variants.py --check exits 0 on the result.'
