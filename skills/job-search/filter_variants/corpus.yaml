@@ -2272,3 +2272,114 @@ variants:
     expect:
       decision: review
       verdict: unknown
+
+  - id: title-hyphenated-include-phrase-is-the-same-occupation
+    domain: title
+    # GH #298. A hyphen is a board's formatting choice, not a different job. A
+    # profile that listed BOTH open spellings still lost every hyphenated posting
+    # to the review file, where the Markdown report does not link it.
+    input:
+      title: Front-End Engineer, Search Platform
+      profile:
+        titles:
+          include: [frontend engineer, front end engineer]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.front end engineer]
+
+  - id: title-unicode-dash-include-phrase-is-the-same-occupation
+    domain: title
+    # The same title as a board writes it with an en dash. `normalize()` already
+    # folds en/em dashes and the non-breaking hyphen to `-`, so one rule covers
+    # every spelling instead of one profile line per dash character.
+    input:
+      title: Front–End Engineer, Search Platform
+      profile:
+        titles:
+          include: [frontend engineer, front end engineer]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.front end engineer]
+
+  - id: title-separator-equivalence-is-not-elision
+    domain: title
+    # The bound on the rule above. Separators are EQUIVALENT, never removable:
+    # `front end engineer` must not silently become `frontend engineer`, or a
+    # profile could no longer express the difference at all. A profile that wants
+    # the closed spelling lists it, the way the example profile lists both
+    # `fullstack` and `full stack`.
+    input:
+      title: Frontend Engineer
+      profile:
+        titles:
+          include: [front end engineer]
+    expect:
+      decision: review
+      review_contains: [title_occupation_ambiguous]
+
+  - id: title-hyphenated-exclude-phrase-drops-the-same-occupation
+    domain: title
+    # The OTHER direction of the same widening, and the reason it is recorded
+    # here: making `data scientist` match `Data-Scientist` for an include list
+    # necessarily makes an EXCLUDE list drop it too. That is the same "hyphen is
+    # formatting" reading, but it removes a posting rather than surfacing one.
+    input:
+      title: Data-Scientist, Ads Ranking
+      profile:
+        titles:
+          include: [software engineer]
+          exclude: [data scientist, research scientist]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.excluded.data scientist]
+
+  - id: title-exclude-phrase-still-catches-the-plural
+    domain: title
+    # The trailing-inflection allowance, on the side where losing it LEAKS. A
+    # strictly bounded phrase would stop matching the plural spelling, and a
+    # posting the profile explicitly rejects would reach the shortlist.
+    input:
+      title: Data Scientists, Ads Ranking
+      profile:
+        titles:
+          include: [software engineer]
+          exclude: [data scientist, research scientist]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.excluded.data scientist]
+
+  - id: title-ambiguous-go-does-not-rescue-a-nontechnical-occupation
+    domain: title
+    # GH #279. `go` is both the language and an ordinary English word, and the
+    # title gate reads the same matcher the keyword score does — so an include
+    # term meaning the language used to override a correctly detected finance
+    # occupation on the strength of "Go-To-Market". The word now counts only
+    # where its neighbours read as the language.
+    input:
+      title: Financial Analyst, Go-To-Market (GTM) FP&A
+      profile:
+        titles:
+          include: [go, backend engineer]
+    expect:
+      decision: no_match
+      accepted: false
+      evidence_contains: ["nontechnical_occupation:finance"]
+
+  - id: title-ambiguous-go-still-matches-a-real-go-role
+    domain: title
+    # The bound on the rule above: the guard must not cost the language its own
+    # titles. A technical noun after the word is unambiguous evidence.
+    input:
+      title: Senior Go Engineer, Payments
+      profile:
+        titles:
+          include: [go, backend engineer]
+    expect:
+      decision: match
+      accepted: true
+      level: senior
+      rule_ids: [title.included.go]

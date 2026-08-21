@@ -3844,3 +3844,14 @@
     generic occupations and technology names taken from the public issue text, with
     no company named. No real identity, employer, school, salary, private item name,
     or dated personal job-hunt content.'
+- base: e5a65c7d
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:91ff0aa9baf3b65b
+  finding: 'Reviewed a new job-search test module and seven appended filter-variant
+    corpus cases for the term-matching change. All titles and job-description
+    sentences are invented generic examples (Front-End Engineer, Data Scientist,
+    Go Engineer); the one real product name copied from the public issue was
+    replaced before staging. No real identity, employer, school, salary, private
+    item name, or dated personal job-hunt content.'
