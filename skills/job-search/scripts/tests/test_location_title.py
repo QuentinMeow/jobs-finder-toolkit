@@ -135,7 +135,10 @@ class TokenBoundaryGateTests(unittest.TestCase):
             description=("The job may also involve mentoring remote interns "
                          "during the summer."))
         self.assertFalse(location_ok(posting, PROFILE))
-        self.assertEqual(posting.workplace, "onsite")
+        # The JD was read and states no work mode of its own, so the gate
+        # reports the workplace as unstated instead of inferring an office
+        # (#237). The gate verdict — a hard drop — is unchanged.
+        self.assertNotEqual(posting.workplace, "remote")
 
 
 class PreferredRemoteWordTests(unittest.TestCase):

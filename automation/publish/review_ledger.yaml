@@ -3528,3 +3528,56 @@
   files: 14
   digest: sha256:c2c8eb0c69aa6381
   finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 7
+  digest: sha256:1c3b69a5454ca279
+  finding: 'Reviewed the location-classifier change, its regression tests, the three
+    byte-identical vendored copies, and one shared filter-variant corpus expectation.
+    The diff is generic US geography tables (state names, hub cities, metro-to-state
+    and metro-to-time-zone maps), regular expressions over job-description prose, and
+    fictional test fixtures. No real identity, employer, school, date, salary,
+    private item name, or dated personal job-hunt content is present.'
+- base: 84fd8eff
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 5
+  digest: sha256:961208149f34cfd0
+  finding: 'Reviewed the memoization of the location classifier, its cache tests, and
+    the three byte-identical vendored copies. The diff is lru_cache decorators, a
+    resolved-policy cache key, a shared job-description scan helper, a regex
+    prefilter, and fictional test fixtures. No real identity, employer, school, date,
+    salary, private item name, or dated personal job-hunt content is present.'
+- base: 9d6c08fa
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 5
+  digest: sha256:03b0abb20abd4168
+  finding: 'Reviewed fifteen new filter-variant location fixtures, one clause-scope
+    change in the location classifier, and the three byte-identical vendored copies.
+    Every fixture uses the repository fictional place names or generic public US
+    geography and generic job-description wording. No real identity, employer, school,
+    date, salary, private item name, or dated personal job-hunt content is present.'
+- base: 94349481
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:18a9d562d274b9f4
+  finding: 'Reviewed two backlog task files describing residual public filter-variant
+    corpus work and a public workplace-inference inconsistency. Both reference only
+    tracked public paths, public issue numbers, and fictional example wording. No real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content is present.'
+- base: 2baf7a19
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
+- base: 84c7c0f1
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 5
+  digest: sha256:94f806d3fd120f8c
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
