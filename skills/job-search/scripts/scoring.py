@@ -433,6 +433,152 @@ _PLACEHOLDER_INSTRUCTION_RE = re.compile(
 _PLACEHOLDER_LOREM_RE = re.compile(r"\blorem ipsum\b", re.I)
 _WS_COLLAPSE_RE = re.compile(r"\s+")
 
+# --------------------------------------------------------------------------- #
+# Explicit NON-JOB records. A board row is sometimes not a low-quality job but
+# not a job at all: a deliberate ATS test requisition, a template advertisement,
+# or a talent-pool drop box. The record SAYS SO in words ("not a real job", an
+# internal-test-job declaration, a whole title of `test`), so the evidence is as
+# decisive as a bracketed title placeholder and the row is dropped at gate 0
+# rather than spending a manual-review slot on a posting nobody may apply to.
+#
+# Every pattern below is a generic DECLARATION or a whole-title RECORD TYPE,
+# never a per-company or per-board alias. None of them can fire on a legitimate
+# software-testing role: an SDET title always carries a role noun ("Software
+# Test Engineer", "QA Automation Engineer") that the anchored title patterns
+# reject, and a real JD says what the ENGINEER will test rather than that the
+# POSTING is a test.
+# --------------------------------------------------------------------------- #
+# Every alternative below is a statement ABOUT THIS RECORD. Wording that merely
+# mentions testing is deliberately excluded: a bare "internal test job" matched
+# a real SDET line ("own the internal test job runners"), and a bare "requested
+# not to apply" matched the ordinary "recruitment agencies are requested not to
+# apply" footer, so both now require their declarative frame.
+_NONJOB_DECLARATION_RE = re.compile(
+    r"\bnot\s+a\s+real\s+(?:job|posting|position|vacancy|opening)\b|"
+    r"\bthis\s+(?:job|posting|listing|requisition|req)\s+is\s+"
+    r"(?:only\s+|just\s+|merely\s+)?an?\s+(?:test|dummy|sample|fake)\b|"
+    r"\b(?:internal\s+)?test\s+job\s+(?:used\s+)?(?:to\s+test|for\s+testing)\b|"
+    r"\bthis\s+is\s+(?:only\s+|just\s+)?an?\s+"
+    r"(?:test|dummy|sample|fake|future)\s+(?:job|posting|listing|requisition)\b|"
+    r"\byou\s+are\s+requested\s+not\s+to\s+apply\b",
+    re.I,
+)
+# A WHOLE title that is a placeholder/test token. Anchored end to end: any real
+# role noun ("engineer", "analyst", "sdet") falls outside the alternation, so
+# "Test Engineer" and "Software Test Engineer" can never match while a bare
+# `test`, `Test Job 2`, or `Future Job Test` always does.
+_NONJOB_TITLE_RE = re.compile(
+    r"^(?:(?:future|internal|dummy|sample|demo|fake|ignore|"
+    r"please\s+ignore)\s+)*"
+    r"(?:job\s+)?"
+    r"(?:test|testing|tests|demo|sample|placeholder|dummy|untitled|"
+    r"asdf+|qwerty|x{3,})"
+    r"(?:\s+(?:job|jobs|posting|post|listing|req|requisition|role|position|"
+    r"only|\d+))*$"
+)
+# Whole-title RECORD TYPES that are an open drop box or a content template
+# rather than one opening a resume can be tailored to. Each alternative is
+# anchored so an ordinary role title that merely contains the words
+# ("General Application Support Engineer") is never touched.
+_NONJOB_RECORD_TITLE_RE = re.compile(
+    r"\bapplications?\s+template\b|"
+    r"^(?:spontaneous|speculative|unsolicited|general|open)\s+"
+    r"applications?(?:\s*[-/].*)?$|"
+    r"^talent\s+(?:pool|community|network|pipeline)(?:\s*[-/].*)?$|"
+    r"^(?:future|general|other)\s+opportunit(?:y|ies)(?:\s*[-/].*)?$"
+)
+# Keyboard-mash / encoded junk standing in for a job description. Weak on its
+# own (review, never a drop): a scraped body can carry an opaque tracking blob
+# without being junk, so only a body with SEVERAL such tokens is flagged.
+_LONG_ALPHA_TOKEN_RE = re.compile(r"[a-z]{12,}")
+_CONSONANT_RUN_RE = re.compile(r"[bcdfghjklmnpqrstvwxz]{6,}")
+_REPEATED_LETTER_RE = re.compile(r"(.)\1{3,}")
+_VOWELS = frozenset("aeiouy")
+
+# --------------------------------------------------------------------------- #
+# Title/body coherence. An aggregator row can carry one requisition's structured
+# title with a DIFFERENT requisition's body, so the link, title, dates, salary,
+# and requirements stop describing one job. The decisive, generic signal is the
+# body's own leading heading: when it names an occupation FAMILY disjoint from
+# the structured title's, the record is a chimera and goes to review with the
+# conflict named, rather than being scored as if the title were the job.
+#
+# The families below are deliberately narrow — a heading whose words name no
+# family at all ("About Us", "Company Overview", "Documentation Specialist")
+# yields an empty set and is never a conflict, so the check can only fire on two
+# explicitly different occupations.
+# --------------------------------------------------------------------------- #
+_ROLE_FAMILY_RULES = [
+    ("engineering", re.compile(
+        r"\b(?:engineer|engineers|engineering|developer|developers|programmer|"
+        r"architect|sre|sde|swe|devops)\b")),
+    ("management", re.compile(
+        r"\b(?:manager|director|head\s+of|vice\s+president|vp)\b")),
+    ("product", re.compile(r"\bproduct\s+(?:manager|owner|lead)\b")),
+    ("writing", re.compile(
+        r"\b(?:writer|copywriter|editor|documentation\s+specialist)\b")),
+    ("design", re.compile(r"\b(?:designer|ux|ui|creative\s+director)\b")),
+    ("clinical", re.compile(
+        r"\b(?:nurse|rn|physician|clinician|therapist|pharmacist)\b")),
+    ("sales", re.compile(r"\b(?:sales|account\s+executive)\b")),
+    ("recruiting", re.compile(
+        r"\b(?:recruiter|recruiting|talent\s+acquisition)\b")),
+    ("science", re.compile(
+        r"\b(?:data\s+scientist|research\s+scientist|"
+        r"machine\s+learning\s+scientist)\b")),
+]
+_HEADING_STRIP_RE = re.compile(r"^[\s#*_>\-–—|]+|[\s#*_:|]+$")
+
+
+def _role_families(text: str | None) -> set[str]:
+    ntext = normalize(text)
+    return {name for name, pattern in _ROLE_FAMILY_RULES if pattern.search(ntext)}
+
+
+def _body_heading(description: str | None) -> str | None:
+    """The description's own leading heading line, or None when it has none.
+
+    Only the FIRST non-blank line is considered, and only when it reads like a
+    heading rather than prose: short, a handful of words, and not a sentence.
+    """
+    for raw in (description or "").splitlines():
+        line = _HEADING_STRIP_RE.sub("", raw).strip()
+        if not line:
+            continue
+        words = line.split()
+        if len(line) > 90 or not 2 <= len(words) <= 12 or line.endswith("."):
+            return None
+        return line
+    return None
+
+
+def _title_body_conflict(title: str | None, description: str | None) -> str | None:
+    """Name the occupation conflict between the title and the body's heading."""
+    heading = _body_heading(description)
+    if not heading:
+        return None
+    title_families = _role_families(title)
+    heading_families = _role_families(heading)
+    if not title_families or not heading_families:
+        return None
+    if title_families & heading_families:
+        return None
+    return (f"title {sorted(title_families)} vs body heading "
+            f"{sorted(heading_families)}")
+
+
+def _gibberish_token_hits(description: str | None, *,
+                          min_tokens: int = 2) -> list[str]:
+    """Long alphabetic tokens that no natural language or technology produces."""
+    hits: set[str] = set()
+    for token in _LONG_ALPHA_TOKEN_RE.findall((description or "").lower()):
+        vowels = sum(1 for ch in token if ch in _VOWELS)
+        if (_CONSONANT_RUN_RE.search(token)
+                or _REPEATED_LETTER_RE.search(token)
+                or vowels / len(token) < 0.2):
+            hits.add(token)
+    return sorted(hits) if len(hits) >= min_tokens else []
+
 
 def _repeated_line_hits(description: str, *, min_len: int = 24,
                         min_repeats: int = 3) -> list[str]:
@@ -448,28 +594,64 @@ def _repeated_line_hits(description: str, *, min_len: int = 24,
     return sorted(ln for ln, n in counts.items() if n >= min_repeats)
 
 
-def assess_posting_quality(title: str | None, description: str | None) -> dict:
-    """Detect an unfilled ATS template so it is never accepted as a real match.
+# Each WEAK quality hit names the review lane it belongs in, so the report says
+# which kind of doubt the row carries instead of one undifferentiated reason.
+_QUALITY_REVIEW_REASONS = {
+    "repeated_template_block": "posting_template_placeholder",
+    "placeholder_compensation": "posting_template_placeholder",
+    "placeholder_instructions": "posting_template_placeholder",
+    "gibberish_body": "posting_unreadable_body",
+    "title_body_conflict": "posting_title_body_conflict",
+}
 
-    Tri-state, mirroring the title gate: an unmistakable bracket/placeholder
-    TITLE token is STRONG evidence and a hard `no_match`. A repeated block, bare
-    compensation placeholder (``$XXX,XXX``), or generic instructional phrase is
-    weaker and goes to `review`: legitimate boards sometimes repeat legal,
-    benefit, or boilerplate sentences, so repetition alone must not hard-reject.
+
+def assess_posting_quality(title: str | None, description: str | None) -> dict:
+    """Reject a record that is not a usable job posting before anything scores it.
+
+    Tri-state, mirroring the title gate. STRONG evidence is a hard `no_match`:
+    an unmistakable bracket/placeholder TITLE token, lorem-ipsum body, or an
+    explicit statement that the record is NOT AN OPENING at all — a declared
+    ATS/internal test job, a whole title of `test`, an application template, or
+    a talent-pool drop box. Those are dropped rather than reviewed because no
+    amount of human attention turns them into a job somebody may apply to.
+
+    WEAKER evidence goes to `review`, each with its own reason: a repeated
+    block, a bare compensation placeholder (``$XXX,XXX``), a generic
+    instructional phrase, a keyboard-mash body, or a body whose own leading
+    heading names a different occupation than the structured title (an
+    aggregator title/body chimera). Legitimate boards repeat legal, benefit, and
+    boilerplate sentences and scrape opaque tokens, so none of those may
+    hard-reject on their own.
     """
     blob = f"{title or ''}\n{description or ''}"
+    ntitle = normalize(title)
     strong: list[str] = []
     weak: list[str] = []
+    evidence: list[str] = []
     if _PLACEHOLDER_TITLE_RE.search(blob):
         strong.append("placeholder_title")
     if _PLACEHOLDER_LOREM_RE.search(blob):
         strong.append("placeholder_lorem_ipsum")
+    if _NONJOB_TITLE_RE.match(ntitle):
+        strong.append("nonjob_test_title")
+    if _NONJOB_RECORD_TITLE_RE.search(ntitle):
+        strong.append("nonjob_record_title")
+    declaration = _NONJOB_DECLARATION_RE.search(blob)
+    if declaration:
+        strong.append("nonjob_declaration")
+        evidence.append(_WS_COLLAPSE_RE.sub(" ", declaration.group(0)).lower())
     if _repeated_line_hits(description or ""):
         weak.append("repeated_template_block")
     if _PLACEHOLDER_COMP_RE.search(blob):
         weak.append("placeholder_compensation")
     if _PLACEHOLDER_INSTRUCTION_RE.search(blob):
         weak.append("placeholder_instructions")
+    if _gibberish_token_hits(description):
+        weak.append("gibberish_body")
+    conflict = _title_body_conflict(title, description)
+    if conflict:
+        weak.append("title_body_conflict")
+        evidence.append(conflict)
 
     if strong:
         decision = "no_match"
@@ -478,6 +660,9 @@ def assess_posting_quality(title: str | None, description: str | None) -> dict:
     else:
         decision = "match"
     hits = strong + weak
+    review_reasons = list(dict.fromkeys(
+        _QUALITY_REVIEW_REASONS[h] for h in weak
+        if h in _QUALITY_REVIEW_REASONS)) if decision == "review" else []
     return {
         "domain": "quality",
         "decision": decision,
@@ -485,14 +670,18 @@ def assess_posting_quality(title: str | None, description: str | None) -> dict:
         "accepted": decision != "no_match",
         "confidence": "high" if strong else ("low" if weak else "unknown"),
         "rule_ids": [f"quality.{h}" for h in hits],
-        "evidence": list(hits),
-        "review_reasons": (["posting_template_placeholder"] if decision == "review"
-                           else []),
+        "evidence": [*hits, *evidence],
+        "review_reasons": review_reasons,
     }
 
 
 def posting_quality_ok(posting: JobPosting) -> bool:
-    """Record the quality assessment and drop only a definite unfilled template."""
+    """Record the quality assessment; drop only a definite non-job record.
+
+    "Definite" is an unfilled template or a record that states it is not an
+    opening. Everything weaker keeps the posting and carries its own review
+    reason, so a doubtful row is looked at rather than lost.
+    """
     assessment = assess_posting_quality(posting.title, posting.description)
     posting.filter_assessments["quality"] = assessment
     if assessment["review_reasons"]:
