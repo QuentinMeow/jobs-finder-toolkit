@@ -13,6 +13,7 @@ Routines:
     roadmap-staleness    flag docs/roadmap/current-state.md when its date aged out (report-only)
     skill-drift          flag baseline skills not in the profile's canonical lists (report-only)
     queue-hygiene        flag aging message-queue/ items + dwelling tasks (report-only)
+    workspace-hygiene    flag merged/idle/wedged branches + worktrees (report-only)
     verify-links         check referenced paths + symlinks + vendor drift (exit 1 on break)
     self-measure         recompute the pipeline funnel + memory metrics (--apply writes yaml)
     store-report         raw-data-layer store health (sizes/blobs/locks/validate; report-only)
@@ -40,6 +41,7 @@ import self_measure  # noqa: E402
 import skill_drift  # noqa: E402
 import store_report  # noqa: E402
 import verify_links  # noqa: E402
+import workspace_hygiene  # noqa: E402
 
 # Routine name -> (callable taking apply flag or nothing, supports_apply).
 ROUTINES = {
@@ -51,13 +53,14 @@ ROUTINES = {
     "skill-drift": (lambda apply: skill_drift.run(), False),
     "store-report": (lambda apply: store_report.run(), False),
     "queue-hygiene": (lambda apply: queue_hygiene.run(), False),
+    "workspace-hygiene": (lambda apply: workspace_hygiene.run(), False),
     "verify-links": (lambda apply: verify_links.run(), False),
     "self-measure": (lambda apply: self_measure.run(apply), True),
 }
 # Order used by --all (verify-links last so its exit code is the overall gate).
 ALL_ORDER = ["self-measure", "expire-discoveries", "compact-logs",
              "lessons-report", "card-staleness", "roadmap-staleness", "skill-drift",
-             "store-report", "queue-hygiene", "verify-links"]
+             "store-report", "queue-hygiene", "workspace-hygiene", "verify-links"]
 
 
 def run_all() -> int:

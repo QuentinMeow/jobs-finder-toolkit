@@ -14,6 +14,27 @@ the permissions inherited by that process.
 # worktree administrative flags. It reads cached refs and never fetches.
 ./automation/workspace/status.py
 ./automation/workspace/status.py -v
+
+# Every branch also carries a DERIVED state (active/idle/stale/merged/orphaned/
+# wedged) and its intent — `git branch --edit-description` if it has one, else
+# the branch's first commit subject. Nothing is stored, so nothing goes stale.
+git config branch."$(git branch --show-current)".description "what this branch is for
+next: the single next action"
+./automation/workspace/status.py --json          # the whole model, for tools
+./automation/workspace/status.py --stale 14      # only what nobody has touched
+./automation/workspace/status.py --pr            # ask GitHub via gh (network)
+
+# Plan the retirement of finished branches and worktrees. Dry-run by default and
+# there is no --force: --execute performs ONLY the non-destructive half (backup
+# refs under refs/agent-trash/, pruning worktree metadata whose directory is
+# already gone). The destructive half is written to
+# local/workspace/cleanup-<run-id>.sh for you to read and run.
+./automation/workspace/cleanup.py                       # stale plan (no fetch)
+./automation/workspace/cleanup.py --fetch               # the executable check
+./automation/workspace/cleanup.py --fetch --execute     # + backup refs, prune
+
+# Which branches and worktrees nobody came back to (report-only, always exit 0)
+.venv/bin/python automation/gardener/gardener.py workspace-hygiene
 ```
 
 On macOS, even `--headless` LibreOffice initializes AppKit and needs access to

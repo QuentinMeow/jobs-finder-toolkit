@@ -3507,3 +3507,15 @@
     "acme-corp-onsite-loop-scheduling" branch used to prove the private overlay is
     counted and never named. No real identity, employer, school, salary, private
     item name, or dated personal job-hunt content is present.'
+- base: 81ce44ef
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 8
+  digest: sha256:06494228de479556
+  finding: 'Reviewed the report-only workspace-hygiene gardener routine, its tests,
+    the two handbook rows, the gardener skill row, and the new Closes #N section in
+    the github-workflow reference. The only PR numbers named are this public
+    repository''s own (#329-#337), and the one company-looking string is the invented
+    "acme-corp-onsite-loop" branch proving the overlay is counted and never named. No
+    real identity, employer, school, salary, private item name, or dated personal
+    job-hunt content is present.'
