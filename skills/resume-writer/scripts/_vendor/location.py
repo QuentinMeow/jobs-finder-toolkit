@@ -245,6 +245,49 @@ _FOREIGN_TOKENS = (
 # words; the boundary is the whole point of the entry.
 _FOREIGN_ABBR_RE = re.compile(r"\b(uk|u\.k\.?|eu)\b")
 
+# A foreign city name that is IMMEDIATELY qualified by a US state names the US
+# city of that name. "Vancouver, WA, US" is Vancouver, Washington — it read as
+# mixed US/foreign scope and went to review, and the same shape recurs for every
+# transplanted place name a US map carries (#247).
+#
+# Only a comma-delimited abbreviation or a spelled-out state counts, so "London
+# or Toronto" cannot be rescued by the Oregon abbreviation sitting in "or".
+_US_STATE_SUFFIX_RE = re.compile(
+    r"\s*,\s*(?P<state>"
+    + "|".join(sorted((*(s.lower() for s in _US_STATE_ABBR),
+                       *_US_STATE_NAMES), key=lambda t: (-len(t), t)))
+    + r")(?![a-z0-9])"
+    r"|\s+(?P<name>"
+    + "|".join(sorted(_US_STATE_NAMES, key=lambda t: (-len(t), t)))
+    + r")(?![a-z0-9])")
+
+# Canada's own place tokens. Named separately because a US posting routinely
+# offers the two countries TOGETHER, and that pair is not "mixed scope" — the US
+# branch of it is exactly the eligibility a US candidate needs.
+_CANADA_TOKENS = frozenset({
+    "canada", "toronto", "vancouver", "montreal", "quebec",
+    "british columbia", "alberta", "saskatchewan", "manitoba",
+})
+
+# The US and Canada named as ONE coordinated country-level scope: "Remote in the
+# United States or Canada", "US & Canada", "US/Canada — ET hours", and the ATS
+# short form "USCA". Each of these was reaching `mixed_us_foreign_scope` review
+# (or `weird_location_format`) even though a US candidate plainly satisfies the
+# US branch — a plainly eligible remote role presented as an unclassified
+# location failure (#262, #247).
+#
+# Coordination is required: this recognizes a country PAIR, never the mere
+# co-occurrence of a US and a Canadian place, so "San Francisco, CA / Toronto,
+# Canada" keeps the mixed-scope reading it has always had.
+_US_CANADA_PAIR_RE = re.compile(
+    r"(?<![a-z0-9])(?:"
+    r"(?:united states|u\.s\.a\.?|u\.s\.?|usa|us|north america)"
+    r"\s*(?:,\s*)?(?:/|&|\+|-|or|and)\s*(?:the\s+)?canada"
+    r"|canada\s*(?:,\s*)?(?:/|&|\+|-|or|and)\s*(?:the\s+)?"
+    r"(?:united states|u\.s\.a\.?|u\.s\.?|usa|us)"
+    r"|usca"
+    r")(?![a-z0-9])")
+
 MATCH_CATEGORIES = ("metro", "us_remote")
 
 _WORKPLACE_VALUES = {"remote", "hybrid", "onsite", "unknown"}
@@ -290,6 +333,24 @@ _REMOTE_JD_RULES = (
         r"remot(?:e|ely)\b"
         r")",
         re.I | re.S)),
+    # An employer STATING it will hire remotely. "Hiring for Santa Clara, San
+    # Diego, Austin and Boxborough locations. Open to hire for Remote work as
+    # well." is as explicit a remote grant as a JD gets, and no rule above could
+    # see it: it names no "remote role", no "work remotely", no hub-or-remotely
+    # alternation. The posting therefore carried only its board's `remote` flag,
+    # which — untrusted, uncorroborated — sent a direct-fit role to review
+    # instead of the shortlist (#290).
+    #
+    # The remote NOUN is mandatory. Without it the rule reduces to "open to …
+    # remote" and any JD that welcomes candidates with remote-team experience
+    # becomes a remote posting.
+    ("jd_remote_eligible_offer", re.compile(
+        r"\b(?:open\s+to|available\s+for|eligible\s+for|will\s+consider|"
+        r"can\s+consider|happy\s+to\s+consider|considering)\b"
+        r"[^.;:!?\n]{0,40}?\bremote\b\s*"
+        r"(?:work(?:ers?|ing)?|candidates?|hir(?:e|es|ing)|employees?|"
+        r"applicants?|arrangements?|options?|opportunit(?:y|ies)|roles?|"
+        r"positions?|locations?)\b", re.I)),
 )
 _HYBRID_JD_RULES = (
     ("jd_hybrid_role", re.compile(
@@ -353,6 +414,47 @@ _ONSITE_NEGATABLE_RULES = frozenset({"jd_onsite_required", "jd_onsite_absolute"}
 _REMOTE_NEGATED_VALUE_RE = re.compile(
     r"^\s*[:?=\-–—]\s*(?:no|none|false|n)\b", re.I)
 
+# A remote grant that is NEGATED before it is even stated. The onsite rules have
+# had this guard since "no minimum in-office requirement"; the remote rules had
+# only the trailing field-value guard above, so the mirror-image sentence —
+# "There is NO work from home for this position", "primarily onsite with little
+# or NO WFH" — fired ``jd_work_from_home`` and classified a cleared, badge-in,
+# five-days-a-week role as a confident US-remote MATCH.
+#
+# The window is clause-local by construction: ``[^.;:!?\n]{0,24}$`` cannot cross
+# a sentence break, so a negative statement about something else earlier in the
+# document ("We are not able to sponsor visas. You may work from home.") can
+# never reach the grant.
+_REMOTE_NEGATION_RE = re.compile(
+    r"\b(?:no|not|never|without|cannot|can'?t|isn'?t|aren'?t|nor|zero|little|"
+    r"minimal|unable|rarely|seldom)\b[^.;:!?\n]{0,24}$", re.I)
+
+# The remote rules whose match is PROSE, and so can be reversed by a negation
+# immediately before it. ``jd_office_or_remote`` and ``jd_role_can_be_remote``
+# are excluded: both already bind remote to this role across a span of their
+# own, so their match START sits mid-clause where a preceding word is part of
+# the rule's own subject rather than a negation of it.
+_REMOTE_NEGATABLE_RULES = frozenset({
+    "jd_fully_remote", "jd_remote_role", "jd_work_remotely",
+    "jd_work_from_home", "jd_remote_scope", "jd_remote_eligible_offer",
+})
+
+# A remote allowance with an ANNUAL CEILING is a benefit, not a work mode. Boards
+# print "you may work fully remote from anywhere for up to four weeks per year"
+# in the perks section of a role that is required in-office three days a week;
+# read as a workplace declaration it manufactured a remote/hybrid contradiction
+# and buried an unambiguous local role in a four-digit review queue (#301).
+_LIMITED_REMOTE_BENEFIT_RE = re.compile(
+    r"\b(?:up\s+to\s+)?(?:\d{1,3}|one|two|three|four|five|six|seven|eight|"
+    r"nine|ten|eleven|twelve)\s+(?:business\s+|working\s+|calendar\s+)?"
+    r"(?:days?|weeks?|months?)\b[^.;:!?\n]{0,24}?"
+    r"\b(?:per|a|each|every)\s+(?:calendar\s+)?(?:year|month|quarter)\b", re.I)
+
+# Sentence/clause delimiters. A guard that reads "the text around this match"
+# means the clause it sits in, never the paragraph: crossing a delimiter is how
+# a benefits line comes to speak for a requirement two sentences away.
+_CLAUSE_BREAKS = ".;:!?\n"
+
 # Hybrid framed as an OPTION/opportunity/CHOICE rather than a mandate. When the JD
 # also grants remote work, an optional-hybrid perk — or an explicit
 # "remote or hybrid" choice, where the candidate may simply pick remote — is not a
@@ -407,6 +509,117 @@ _JD_RESIDENCY_RE = re.compile(
 # required") or inside the gap that follows it ("must NOT reside in").
 _RESIDENCY_NEGATION_RE = re.compile(r"(?:\b(?:no|nor|not|never)\b|n't)", re.I)
 _RESIDENCY_NEGATION_WINDOW = 16
+
+
+# ---------------------------------------------------------------------------
+# Residence EXCLUSIONS and time-zone bounds on an otherwise open US-remote grant
+#
+# "Remote - US" is a grant with a hole in it more often than not: the JD then
+# names the states or metros the employer cannot hire in, or the time zones the
+# candidate must sit in. Neither was read, so 27 postings that explicitly could
+# not employ this candidate came back `match` / confidence `high` with no review
+# reason at all (#297), and Washington-excluded / EST-CST-only remote roles were
+# ranked for a Seattle candidate (#242). Remote does not mean hireable from
+# every US location.
+# ---------------------------------------------------------------------------
+
+# The cue that opens an exclusion, plus everything to the end of its clause.
+_RESIDENCE_EXCLUSION_RE = re.compile(
+    r"\b(?:"
+    r"except(?:\s+(?:for|in))?|excluding|exclusive\s+of|"
+    r"not\s+(?:open|available|eligible)\s+(?:to|in|for)|"
+    r"(?:unable|not\s+able)\s+to\s+(?:hire|employ)\s+(?:in|from)|"
+    r"(?:do(?:es)?\s+not|cannot|can'?t)\s+(?:hire|employ)\s+(?:in|from)|"
+    r"ineligible\s+(?:in|from)"
+    r")\b(?P<places>[^.;:!?\n]{2,180})", re.I)
+
+# A pay-geography clause is not a hiring restriction. Colorado/NYC pay
+# transparency law makes employers list states in a COMPENSATION sentence, and
+# reading that as an eligibility list would reject the postings that comply.
+_COMP_CONTEXT_RE = re.compile(
+    r"\$|\b(?:salary|salaries|compensation|pay|paid|wage|bonus|equity|"
+    r"base\s+range|pay\s+range|pay\s+transparency|equal\s+pay)\b", re.I)
+
+# "Washington" the state versus "Washington, DC" the city: an exclusion naming
+# the capital must not exclude a Seattle candidate.
+_WASHINGTON_DC_RE = re.compile(r"washington\s*,?\s*d\.?c\.?", re.I)
+
+# Preferred-metro token -> the US state that contains it, so a JD that excludes
+# a STATE ("open in all US states except … Washington …") is understood to
+# exclude the metro the candidate actually named. Generic US geography, not
+# candidate data: the metro list itself always comes from the policy.
+_METRO_STATE = {
+    "seattle": "washington", "bellevue": "washington", "redmond": "washington",
+    "kirkland": "washington", "tacoma": "washington", "everett": "washington",
+    "portland": "oregon",
+    "san francisco": "california", "bay area": "california",
+    "silicon valley": "california", "mountain view": "california",
+    "palo alto": "california", "menlo park": "california",
+    "sunnyvale": "california", "santa clara": "california",
+    "san jose": "california", "cupertino": "california",
+    "oakland": "california", "redwood city": "california",
+    "san mateo": "california", "foster city": "california",
+    "los angeles": "california", "san diego": "california",
+    "new york": "new york", "nyc": "new york", "brooklyn": "new york",
+    "boston": "massachusetts", "cambridge": "massachusetts",
+    "austin": "texas", "dallas": "texas", "houston": "texas",
+    "richardson": "texas",
+    "denver": "colorado", "boulder": "colorado",
+    "chicago": "illinois", "atlanta": "georgia", "miami": "florida",
+    "phoenix": "arizona", "raleigh": "north carolina",
+    "durham": "north carolina", "pittsburgh": "pennsylvania",
+    "philadelphia": "pennsylvania", "minneapolis": "minnesota",
+    "nashville": "tennessee", "salt lake": "utah", "sandy": "utah",
+    "arlington": "virginia",
+}
+
+# US time zones as a JD writes them, folded onto four buckets.
+_TZ_ZONE_TOKENS = {
+    "est": "ET", "edt": "ET", "et": "ET", "eastern": "ET", "east coast": "ET",
+    "cst": "CT", "cdt": "CT", "ct": "CT", "central": "CT",
+    "mst": "MT", "mdt": "MT", "mt": "MT", "mountain": "MT",
+    "pst": "PT", "pdt": "PT", "pt": "PT", "pacific": "PT", "west coast": "PT",
+}
+_TZ_ZONE_ALT = "|".join(
+    sorted((re.escape(t) for t in _TZ_ZONE_TOKENS), key=lambda t: (-len(t), t)))
+# A zone name is only a BOUND when the clause also carries the noun that makes
+# it one. "CT" in a list of excluded states is Connecticut; "9am-5pm Pacific" is
+# a working-hours note, not a residency rule. Requiring "time zone(s)" or
+# "hours" AFTER the zone name (or the zone after "time zone") separates them.
+# "overlap" is deliberately NOT a bound noun: "4 hours of ET overlap" is a soft
+# expectation that most Pacific candidates satisfy, and hard-rejecting it would
+# lose real roles.
+_TZ_BOUND_RE = re.compile(
+    r"(?<![a-z0-9])(?:" + _TZ_ZONE_ALT + r")(?![a-z0-9])"
+    r"(?:[^.;:!?\n]{0,40}?(?<![a-z0-9])(?:" + _TZ_ZONE_ALT + r")(?![a-z0-9]))*"
+    r"[^.;:!?\n]{0,30}?\b(?:time\s*zones?|hours)\b"
+    r"|\btime\s*zones?\b[^.;:!?\n]{0,30}?"
+    r"(?<![a-z0-9])(?:" + _TZ_ZONE_ALT + r")(?![a-z0-9])", re.I)
+_TZ_ZONE_SCAN_RE = re.compile(
+    r"(?<![a-z0-9])(?:" + _TZ_ZONE_ALT + r")(?![a-z0-9])", re.I)
+# A one-scan prefilter for the pattern above. The bound NOUN is mandatory in
+# both branches, so a JD without it cannot carry a time-zone bound — and the
+# alternative was folding every full job description through the accent-stripping
+# normalizer, which cost a third of the module's runtime on its own.
+_TZ_NOUN_RE = re.compile(r"time\s*zones?|hours", re.I)
+_METRO_TIMEZONE = {
+    "seattle": "PT", "bellevue": "PT", "redmond": "PT", "kirkland": "PT",
+    "tacoma": "PT", "everett": "PT", "portland": "PT",
+    "san francisco": "PT", "bay area": "PT", "silicon valley": "PT",
+    "mountain view": "PT", "palo alto": "PT", "menlo park": "PT",
+    "sunnyvale": "PT", "santa clara": "PT", "san jose": "PT",
+    "cupertino": "PT", "oakland": "PT", "redwood city": "PT",
+    "san mateo": "PT", "foster city": "PT", "los angeles": "PT",
+    "san diego": "PT",
+    "denver": "MT", "boulder": "MT", "salt lake": "MT", "sandy": "MT",
+    "phoenix": "MT",
+    "chicago": "CT", "austin": "CT", "dallas": "CT", "houston": "CT",
+    "richardson": "CT", "minneapolis": "CT", "nashville": "CT",
+    "new york": "ET", "nyc": "ET", "brooklyn": "ET", "boston": "ET",
+    "cambridge": "ET", "atlanta": "ET", "miami": "ET", "raleigh": "ET",
+    "durham": "ET", "pittsburgh": "ET", "philadelphia": "ET",
+    "arlington": "ET", "livingston": "ET",
+}
 
 
 @dataclass(frozen=True)
@@ -504,6 +717,7 @@ def _policy_lists(policy: dict | None):
     )
 
 
+@lru_cache(maxsize=4096)
 def _normalize(text: str | None) -> str:
     if not text:
         return ""
@@ -563,14 +777,37 @@ def _has_us_state(nloc: str) -> bool:
     return _has(_US_STATE_NAMES, nloc)
 
 
+def _state_qualified_us_city(text: str, hit: str, end: int) -> bool:
+    """Whether a foreign city token is immediately qualified by a US state.
+
+    "Vancouver, WA" / "Vancouver, Washington" is the US city; "Vancouver, CA" and
+    "Vancouver, BC" are not. Only a token whose own country CODE is known can be
+    resolved this way, so the shapes the module deliberately leaves contradictory
+    — "Dublin, CA", "Milan, IN" — keep their review, and a code that names the
+    token's OWN country ("Delhi, IN", "Toronto, CA") still reads as foreign.
+    """
+    m = _US_STATE_SUFFIX_RE.match(text, end)
+    if m is None:
+        return False
+    code = _FOREIGN_TOKEN_COUNTRY_CODE.get(hit)
+    if code is None:
+        return False
+    state = m.group("state")
+    if state is None or state in _US_STATE_NAMES:
+        return True
+    return state.upper() != code
+
+
+@lru_cache(maxsize=4096)
 def _foreign_matches(text: str) -> tuple[str, ...]:
-    """Foreign place tokens in ``text``, minus any swallowed by a US place name.
+    """Foreign place tokens in ``text``, minus any a US reading accounts for.
 
     Word boundaries stop a token from riding inside a longer WORD ("india" in
     "Indianapolis"). They do not stop one whole place NAME from sitting inside
     another: "New Mexico" is a US state whose second word is a foreign country.
     So a foreign hit whose span lies inside a US place name's span is not
-    foreign evidence — the longest place name wins.
+    foreign evidence — the longest place name wins. Nor do they stop a foreign
+    city name that a US STATE immediately qualifies ("Vancouver, WA").
     """
     pattern = _token_pattern(_FOREIGN_TOKENS + FOREIGN_REGIONS)
     if not text or pattern is None:
@@ -581,8 +818,135 @@ def _foreign_matches(text: str) -> tuple[str, ...]:
         m.group(0) for m in pattern.finditer(text)
         if not any(start <= m.start() and m.end() <= end
                    for start, end in us_spans)
+        and not _state_qualified_us_city(text, m.group(0), m.end())
     ]
     return tuple(dict.fromkeys(hits))
+
+
+def _us_canada_pair(ntext: str, foreign_hits: tuple[str, ...]) -> bool:
+    """Whether ``ntext`` names the US and Canada as ONE coordinated scope.
+
+    True only when the pair is written as a coordination (or the ``USCA`` short
+    form) AND nothing else foreign is named — a third country makes it a genuine
+    multi-region posting again, and ``uk``/``eu`` never ride along.
+    """
+    if not ntext or not _US_CANADA_PAIR_RE.search(ntext):
+        return False
+    if _FOREIGN_ABBR_RE.search(ntext):
+        return False
+    return all(hit in _CANADA_TOKENS for hit in foreign_hits)
+
+
+@lru_cache(maxsize=2048)
+def _residence_places(description: str) -> tuple[str, ...]:
+    """Normalized place lists from every residence-EXCLUSION clause in a JD.
+
+    Compensation-geography sentences are dropped here — pay-transparency law
+    makes employers list states in a salary sentence, and reading that as an
+    eligibility rule would reject the postings that comply. Whether a clause
+    names a place worth acting on is decided by the caller, which knows the
+    configured metros; this function is cached on the description alone so the
+    regex sweep runs once per JD however many policies ask about it.
+    """
+    out: list[str] = []
+    for m in _RESIDENCE_EXCLUSION_RE.finditer(description or ""):
+        clause = _clause_around(description, m.start(), m.end())
+        if _COMP_CONTEXT_RE.search(clause):
+            continue
+        out.append(_normalize(m.group("places")))
+    return tuple(out)
+
+
+def _names_a_residence(nplaces: str, metro) -> bool:
+    """Whether an exclusion clause names geography this policy can act on.
+
+    A US state or a known hub, or one of the policy's OWN preferred-metro tokens
+    — a profile may name a metro this module's hub list has never heard of, and
+    an exclusion naming exactly that metro is the most decisive kind there is.
+    Ordinary "except as required by applicable law" boilerplate names none of
+    them and is dropped.
+    """
+    return bool(_has_us_state(nplaces) or _has(_US_HUBS, nplaces)
+                or (metro and _has(metro, nplaces)))
+
+
+def _metro_is_excluded(token: str, nplaces: str) -> bool:
+    """Whether one preferred-metro token is named by an exclusion list.
+
+    Either by name ("… excluding … Seattle Metro") or by the state that contains
+    it ("… all US states except … Washington …"). The capital is subtracted from
+    the state reading so "Washington, DC" cannot exclude Seattle.
+    """
+    if _has((token,), nplaces):
+        return True
+    state = _METRO_STATE.get(token)
+    if not state:
+        return False
+    if state == "washington":
+        nplaces = _WASHINGTON_DC_RE.sub(" ", nplaces)
+    return _has((state,), nplaces)
+
+
+@lru_cache(maxsize=2048)
+def _residence_exclusion_verdict(description: str, metro) -> str | None:
+    """How a JD's residence exclusions bear on the configured preferred metros.
+
+    ``"all_excluded"`` — every configured metro is named (directly or by state),
+    so the employer has said it cannot hire this candidate anywhere they asked
+    for. ``"unverifiable"`` — an exclusion exists but the policy configured no
+    metros, so nothing can be checked and a human must read it. ``None`` — no
+    exclusion, or at least one configured metro survives it.
+
+    Deliberately asymmetric, like the residency reader: it can only NARROW an
+    already-granted US-remote posting, never grant one.
+    """
+    clauses = [p for p in _residence_places(description)
+               if _names_a_residence(p, metro)]
+    if not clauses:
+        return None
+    if not metro:
+        return "unverifiable"
+    excluded = {
+        token for token in metro
+        if any(_metro_is_excluded(token, places) for places in clauses)
+    }
+    return "all_excluded" if len(excluded) == len(set(metro)) else None
+
+
+@lru_cache(maxsize=2048)
+def _bounded_timezones(text: str) -> frozenset[str]:
+    """Time zones a posting explicitly BOUNDS itself to, as ET/CT/MT/PT.
+
+    Runs on the RAW text behind a cheap noun prefilter rather than on normalized
+    text: zone names carry no accents, and normalizing every full JD here was
+    measured at a third of this module's filtering cost.
+    """
+    if not text or not _TZ_NOUN_RE.search(text):
+        return frozenset()
+    return frozenset(
+        _TZ_ZONE_TOKENS[re.sub(r"\s+", " ", hit.group(0).lower())]
+        for m in _TZ_BOUND_RE.finditer(text)
+        for hit in _TZ_ZONE_SCAN_RE.finditer(m.group(0))
+    )
+
+
+def _timezone_verdict(allowed: frozenset[str], metro) -> str | None:
+    """Whether a time-zone bound admits any configured preferred metro.
+
+    ``"excluded"`` only when EVERY configured metro maps to a zone and none of
+    them is allowed. One unmappable metro is enough for ``"unresolved"``: it may
+    well sit in an allowed zone, and guessing in the rejecting direction is how
+    a location gate loses real roles.
+    """
+    if not allowed or not metro:
+        return "unresolved" if allowed else None
+    mapped = [_METRO_TIMEZONE.get(token) for token in metro]
+    known = [zone for zone in mapped if zone]
+    if not known:
+        return "unresolved"
+    if any(zone in allowed for zone in known):
+        return None
+    return "excluded" if len(known) == len(mapped) else "unresolved"
 
 
 def _resolve_state_abbrs(
@@ -694,6 +1058,7 @@ def _residency_is_negated(match) -> bool:
                 or _RESIDENCY_NEGATION_RE.search(match.group("gap") or ""))
 
 
+@lru_cache(maxsize=2048)
 def _residency_category(description: str, metro, us_remote_regions) -> str | None:
     """Geography a JD's residency requirement pins a remote grant to.
 
@@ -719,8 +1084,23 @@ def _residency_category(description: str, metro, us_remote_regions) -> str | Non
         return None
     place = match.group("place")
     nplace = _normalize(place)
-    if _foreign_matches(nplace) or _FOREIGN_ABBR_RE.search(nplace):
-        return "foreign"
+    # "Applicants must be located in the EST or CST time zones" is a residency
+    # requirement whose PLACE is a time zone, not a city. Read as an unreadable
+    # place it produced `residency_restriction_unparsed` — a review that hides
+    # the one thing the sentence actually settles. Hand it to the time-zone
+    # reader instead, which can compare it against the configured metros (#242).
+    if _bounded_timezones(place) and not (
+            _has_us_state(nplace) or _has(_US_HUBS, nplace)
+            or _foreign_matches(nplace)):
+        return "timezone"
+    place_foreign = _foreign_matches(nplace)
+    # "You must reside in the United States or Canada" is satisfied by a US
+    # resident. Reading the pair as plain foreign scope made the most common
+    # North-American remote clause a no_match — the same recall bug #262 filed
+    # against the location field, one function over.
+    if not _us_canada_pair(nplace, place_foreign):
+        if place_foreign or _FOREIGN_ABBR_RE.search(nplace):
+            return "foreign"
     if _has(metro, nplace):
         return "metro"
     state_abbr, _contested = _resolve_state_abbrs(place, _foreign_matches(nplace))
@@ -731,6 +1111,7 @@ def _residency_category(description: str, metro, us_remote_regions) -> str | Non
     return "unknown"
 
 
+@lru_cache(maxsize=2048)
 def _jd_names_us_scope(description: str) -> bool:
     """Whether the JD body itself names US geography.
 
@@ -771,22 +1152,67 @@ def _onsite_rule_hits(text: str) -> list[str]:
     return hits
 
 
-def _remote_rule_hits(text: str) -> list[str]:
-    """Remote JD rules with a negative-field-value guard.
+def _clause_around(text: str, start: int, end: int) -> str:
+    """The clause a match sits in, bounded by the nearest sentence delimiters.
 
-    A remote rule that matches only the LABEL of a negated workplace field
-    ("Remote Position: **No**") states the absence of a remote grant and must not
-    be recorded as remote evidence. A rule keeps its hit as long as at least one
-    of its matches is not immediately followed by a negative value.
+    Five ``rfind``/``find`` calls rather than a scan, because this runs once per
+    remote-rule match on every posting's full JD.
+    """
+    left = max((text.rfind(ch, 0, start) for ch in _CLAUSE_BREAKS),
+               default=-1) + 1
+    rights = [p for p in (text.find(ch, end) for ch in _CLAUSE_BREAKS) if p >= 0]
+    return text[left:min(rights) if rights else len(text)]
+
+
+def _remote_rule_hits(text: str) -> list[str]:
+    """Remote JD rules, minus the three shapes that state the OPPOSITE.
+
+    Three guards, each dropping one match rather than the whole rule — a rule
+    keeps its hit as long as at least ONE of its matches survives all three:
+
+    * a negated field VALUE after the match ("Remote Position: **No**");
+    * a negation immediately BEFORE it ("there is **no** work from home for this
+      position", "little or **no** WFH") — the mirror of the onsite guard, whose
+      absence let a badge-in cleared role read as a confident US-remote match;
+    * an annual CEILING in the same clause ("fully remote … for up to four weeks
+      per year"), which is a perk in a benefits list, not this role's work mode.
     """
     text = text or ""
     hits: list[str] = []
     for rule_id, pattern in _REMOTE_JD_RULES:
+        negatable = rule_id in _REMOTE_NEGATABLE_RULES
         for m in pattern.finditer(text):
-            if not _REMOTE_NEGATED_VALUE_RE.match(text[m.end():m.end() + 16]):
-                hits.append(rule_id)
-                break
+            if _REMOTE_NEGATED_VALUE_RE.match(text[m.end():m.end() + 16]):
+                continue
+            if negatable and _REMOTE_NEGATION_RE.search(
+                    text[max(0, m.start() - 30):m.start()]):
+                continue
+            if _LIMITED_REMOTE_BENEFIT_RE.search(
+                    _clause_around(text, m.start(), m.end())):
+                continue
+            hits.append(rule_id)
+            break
     return hits
+
+
+@lru_cache(maxsize=4096)
+def _description_signals(description: str):
+    """Every JD-BODY scan the workplace assessment needs, computed once.
+
+    These four scans are the module's whole regex bill — fifteen patterns, most
+    of them ``re.S`` with ``.{0,120}`` spans, run over a full job description —
+    and they depend on NOTHING but that text. The pipeline assesses the same
+    description at least twice per posting (``scoring.location_ok`` with the
+    profile's policy, then ``job_metadata.classify_workplace`` with a fixed one),
+    so a cache on ``assess_location`` alone cannot collapse them: the policies,
+    titles and hints differ. This one can.
+    """
+    return (
+        tuple(_remote_rule_hits(description)),
+        tuple(_rule_hits(description, _HYBRID_JD_RULES)),
+        tuple(_onsite_rule_hits(description)),
+        _OPTIONAL_HYBRID_RE.search(description) is not None,
+    )
 
 
 def _workplace_assessment(
@@ -805,16 +1231,17 @@ def _workplace_assessment(
     bare_workplace_tag = _is_workplace_word_only(nloc)
     loc_hybrid = _has(("hybrid",), nloc)
     loc_remote = _has(REMOTE_TOKENS, nloc)
-    remote_hits = _remote_rule_hits(description)
-    hybrid_hits = _rule_hits(description, _HYBRID_JD_RULES)
-    onsite_hits = _onsite_rule_hits(description)
+    remote_tuple, hybrid_tuple, onsite_tuple, optional_hybrid = (
+        _description_signals(description or ""))
+    remote_hits = list(remote_tuple)
+    hybrid_hits = list(hybrid_tuple)
+    onsite_hits = list(onsite_tuple)
     # An OPTIONAL hybrid perk alongside a remote grant is not a competing
     # obligation, so drop the hybrid signal before evidence and conflict checks —
     # remote stays the baseline. A required hybrid schedule ("three office days
     # each week") does not match the optional pattern and is preserved as a
     # genuine conflict.
-    if (_OPTIONAL_HYBRID_RE.search(description or "")
-            and (remote_hits or loc_remote)):
+    if optional_hybrid and (remote_hits or loc_remote):
         hybrid_hits = []
         loc_hybrid = False
     evidence: list[str] = []
@@ -869,9 +1296,33 @@ def _workplace_assessment(
     if hint in {"remote", "hybrid"}:
         review.append("uncorroborated_ats_workplace_hint")
         return hint, "low", evidence, review
+    # A city states geographic scope; it does not state how the work is done.
+    # When the JD WAS read and never mentions a work mode, the honest label is
+    # `unknown` — reporting `onsite` turned an inference into a posting fact that
+    # a downstream handoff had no way to tell apart from an explicit "On Site"
+    # field (#237). The location verdict is untouched: an allowed city is still
+    # a preferred-metro match, and this confidence has never been high enough to
+    # reach the `us_scope_without_remote_workplace` branch.
+    if location and (description or "").strip():
+        return "unknown", "medium", evidence, review
+    # No JD at all: the location field is the only statement of record, and a
+    # bare city field has always been read as an office. `classify_workplace`
+    # (metadata, not the gate) calls this way and depends on that reading.
     if location:
         return "onsite", "medium", evidence, review
     return "unknown", "unknown", evidence, review
+
+
+def _policy_key(policy: dict | None) -> tuple:
+    """Everything ``assess_location`` reads out of a policy, as a hashable key.
+
+    A dict cannot key a cache, and two dicts that resolve to the same token
+    lists must share one entry, so the key is the RESOLVED policy rather than
+    the mapping it came from.
+    """
+    metro, remote_tokens, regions, allow_us_remote, us_only = _policy_lists(policy)
+    return (metro, remote_tokens, regions, allow_us_remote, us_only,
+            bool((policy or {}).get("require_match", True)))
 
 
 def assess_location(
@@ -892,21 +1343,36 @@ def assess_location(
     US work eligibility, so it can never carry a posting to a match on its own.
     Full JD text supplies role-level workplace alternatives such as "one of our US
     hubs or remotely in the United States".
+
+    Memoized on the resolved policy plus every input field. The result is a
+    frozen dataclass of tuples, so sharing one instance between callers is safe;
+    ``to_dict`` still builds a fresh mapping each time.
     """
-    original = location or ""
+    return _assess_location_cached(
+        location or "", _policy_key(policy), title or "", description or "",
+        workplace_hint or "", bool(hint_trusted))
+
+
+@lru_cache(maxsize=4096)
+def _assess_location_cached(
+    original: str,
+    policy_key: tuple,
+    title: str,
+    description: str,
+    workplace_hint: str,
+    hint_trusted: bool,
+) -> LocationAssessment:
     nloc = _normalize(original)
     ntitle = _normalize(title)
     # Foreign scope may be asserted by either field; US scope only by the location.
     context = " ".join(x for x in (nloc, ntitle) if x)
-    description = description or ""
-    (metro, _remote_tokens, us_remote_regions,
-     allow_us_remote, us_only) = _policy_lists(policy)
-    policy = policy or {}
-    require_match = bool(policy.get("require_match", True))
+    (metro, _remote_tokens, us_remote_regions, allow_us_remote, us_only,
+     require_match) = policy_key
 
     workplace, confidence, evidence, review = _workplace_assessment(
         original, description, workplace_hint or "", hint_trusted)
-    foreign = (bool(_foreign_matches(context))
+    context_foreign = _foreign_matches(context)
+    foreign = (bool(context_foreign)
                or _FOREIGN_ABBR_RE.search(context) is not None)
     # Only the location may resolve a two-letter code (see _resolve_state_abbrs).
     state_abbr, contested_codes = _resolve_state_abbrs(
@@ -914,6 +1380,14 @@ def assess_location(
     us = (_has(us_remote_regions, nloc) or _has_us_state(nloc)
           or _has(_US_HUBS, nloc) or state_abbr
           or re.search(r"\bus\b", nloc) is not None)
+    # "Remote in the United States or Canada", "US & Canada", "USCA": ONE
+    # coordinated North-American scope whose US branch a US candidate satisfies
+    # outright. It is not mixed scope, and the short form is not an unreadable
+    # region bucket (#262, #247).
+    us_canada = _us_canada_pair(context, context_foreign)
+    if us_canada:
+        foreign = False
+        us = True
     preferred = _has(metro, nloc)
     has_specific_us_office = (_has(_US_HUBS, nloc) or _has_us_state(nloc)
                               or state_abbr)
@@ -929,6 +1403,8 @@ def assess_location(
         and not us
         and not has_workplace_signal
     )
+    if us_canada:
+        evidence.append("us_canada_scope")
 
     if preferred:
         category = "metro"
@@ -955,6 +1431,12 @@ def assess_location(
             # bare-remote check below would otherwise go looking for.
             category = "us_remote"
             evidence.append("jd_residency_us_scope")
+        elif residency == "timezone":
+            # The residency clause bounds TIME, not place. The grant is still an
+            # open US-remote one; the time-zone check below decides whether this
+            # candidate's metros sit inside the bound.
+            category = "us_remote"
+            evidence.append("remote_eligible")
         elif residency in {"other_us", "foreign"}:
             category = residency
             evidence.append("jd_remote_bound_to_residency")
@@ -1018,6 +1500,33 @@ def assess_location(
     if not foreign and _bare_contested_code(nloc, contested_codes):
         review.append("ambiguous_state_or_country_code")
 
+    # A US-remote grant is only as wide as the JD leaves it. Two clauses can take
+    # this candidate out of an otherwise open grant, and neither was read: an
+    # explicit list of residences the employer cannot hire in (#297) and an
+    # explicit bound on which time zones an applicant may sit in (#242). Both are
+    # candidate-eligibility facts, not preferences, so a posting that names every
+    # configured metro in its exclusion list is a decisive no_match rather than a
+    # confident match with no review reason at all.
+    excluded_residence = False
+    if category == "us_remote" and description:
+        residence = _residence_exclusion_verdict(description, metro)
+        if residence == "all_excluded":
+            excluded_residence = True
+            evidence.append("jd_excludes_all_preferred_residences")
+        elif residence == "unverifiable":
+            review.append("residence_exclusion_unverifiable")
+        # Scanned separately so each side hits its own cache: the same JD body
+        # is assessed twice per posting, and the location field repeats across
+        # thousands of rows.
+        zones = _bounded_timezones(description) | _bounded_timezones(original)
+        if zones:
+            verdict = _timezone_verdict(zones, metro)
+            if verdict == "excluded":
+                excluded_residence = True
+                evidence.append("jd_timezone_excludes_preferred_metros")
+            elif verdict == "unresolved":
+                review.append("remote_timezone_restriction_unresolved")
+
     # Definitively foreign-only geography dominates any internal workplace
     # remote/hybrid/onsite tension: the role is out of a US-only search either
     # way, so it is a decisive foreign no_match, not a workplace-conflict review.
@@ -1039,7 +1548,14 @@ def assess_location(
     # categories (an unclassified `unknown`), where both-flags-false has always
     # meant "keep it": splitting only the two categories the flags actually name
     # leaves every other verdict exactly as it was.
-    if review:
+    if excluded_residence:
+        # The JD named this candidate's every configured residence — or every
+        # allowed time zone excludes them. That is settled, not reviewable: a
+        # review here would restate a rejection the posting already spelled out.
+        decision = "no_match"
+        confidence = "high"
+        review = []
+    elif review:
         decision = "review"
         confidence = "low"
     elif category == "metro":
@@ -1065,6 +1581,27 @@ def assess_location(
         evidence=tuple(dict.fromkeys(evidence)),
         review_reasons=tuple(dict.fromkeys(review)),
     )
+
+
+# Every memo this module keeps. Named so a benchmark, a long-lived process, or a
+# test that wants a cold measurement can drop them all in one call; nothing in
+# normal operation needs to, because every cached function is pure.
+_CACHED_FUNCTIONS = (
+    _normalize, _token_pattern, _foreign_matches, _description_signals,
+    _jd_names_us_scope, _residency_category, _residence_places,
+    _residence_exclusion_verdict, _bounded_timezones, _assess_location_cached,
+)
+
+
+def cache_clear() -> None:
+    """Drop every memoized result in this module."""
+    for fn in _CACHED_FUNCTIONS:
+        fn.cache_clear()
+
+
+def cache_stats() -> dict[str, tuple]:
+    """``{function name: (hits, misses, maxsize, currsize)}`` for every memo."""
+    return {fn.__name__: tuple(fn.cache_info()) for fn in _CACHED_FUNCTIONS}
 
 
 def classify_location(loc: str | None, policy: dict | None = None) -> str:

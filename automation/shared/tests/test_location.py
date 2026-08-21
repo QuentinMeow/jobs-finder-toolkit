@@ -11,8 +11,8 @@ if str(SHARED_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_DIR))
 
 from location import (  # noqa: E402
-    assess_location, classify_location, classify_locations,
-    _onsite_rule_hits, _remote_rule_hits,
+    assess_location, cache_clear, cache_stats, classify_location,
+    classify_locations, _onsite_rule_hits, _remote_rule_hits,
 )
 
 # A representative us_only policy with a couple of preferred metros.
@@ -105,14 +105,37 @@ class StateAbbreviationVersusCountryCodeTests(unittest.TestCase):
         self.assertNotEqual(result.decision, "no_match")
         self.assertIn("mixed_us_foreign_scope", result.review_reasons)
 
-    def test_a_city_shared_by_both_countries_stays_undecided(self):
-        # Vancouver WA and Vancouver BC are both real. The code decides it when
-        # it corroborates the country; otherwise a human does.
-        canada = assess_location("Vancouver, CA", _POLICY)
-        self.assertEqual(canada.category, "foreign")
-        shared = assess_location("Vancouver, WA", _POLICY)
-        self.assertEqual(shared.decision, "review")
-        self.assertIn("mixed_us_foreign_scope", shared.review_reasons)
+    def test_a_city_shared_by_both_countries_is_decided_by_its_state(self):
+        # Vancouver WA and Vancouver BC are both real, and the field says WHICH:
+        # "WA" is a US state and is not any country's code, so "Vancouver, WA"
+        # is Washington. It used to reach `mixed_us_foreign_scope` review, which
+        # is the shape #247 counted in a live corpus. A code that names
+        # Vancouver's OWN country still reads as Canada.
+        for raw in ("Vancouver, CA", "Vancouver, BC", "Vancouver, Canada"):
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    assess_location(raw, _POLICY).category, "foreign")
+        for raw in ("Vancouver, WA", "Vancouver, WA, US",
+                    "Vancouver, Washington"):
+            with self.subTest(raw=raw):
+                result = assess_location(raw, _POLICY)
+                self.assertEqual(result.category, "other_us")
+                self.assertNotIn("mixed_us_foreign_scope", result.review_reasons)
+
+    def test_a_state_suffix_never_rescues_the_citys_own_country_code(self):
+        # "IN" after "Delhi" is India's code, not Indiana's; "CA" after
+        # "Toronto" is Canada, not California. The suffix rule resolves a
+        # DIFFERENT country's city, never the token's own.
+        for raw in ("Delhi, IN", "Toronto, CA", "Berlin, DE", "Tel Aviv, IL"):
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    assess_location(raw, _POLICY).category, "foreign")
+
+    def test_an_unmapped_foreign_city_stays_contradictory(self):
+        # "Dublin, CA" (Dublin, California is real) has no country code on
+        # record for "dublin", so the module still refuses to pick a side.
+        result = assess_location("Dublin, CA", _POLICY)
+        self.assertEqual(result.decision, "review")
 
     def test_a_contested_code_alone_is_undecidable(self):
         # Nothing but a code that reads as a state AND as a country: neither
@@ -148,7 +171,11 @@ class RemoteGrantQualifierTests(unittest.TestCase):
                 result = assess_location(
                     "Columbus, OH", _POLICY, description=description)
                 self.assertNotIn("jd_role_can_be_remote", result.evidence)
-                self.assertEqual(result.workplace, "onsite")
+                # The JD was read and states no work mode of its own, so the
+                # workplace is unstated rather than an inferred office (#237).
+                # What matters here is unchanged: it is not REMOTE, and the city
+                # still decides the category.
+                self.assertNotEqual(result.workplace, "remote")
                 self.assertEqual(result.category, "other_us")
 
     def test_genuine_remote_grants_still_read_as_remote(self):
@@ -532,8 +559,12 @@ class UsCountryResidencyTests(unittest.TestCase):
             ("You must reside in the Boston area.", "no_match", "other_us"),
             ("You must reside in the Springfield area.", "match", "metro"),
             ("You must reside in Canada.", "no_match", "foreign"),
+            # "the United States OR Canada" is one coordinated North-American
+            # scope, and a US resident satisfies its US branch outright. Reading
+            # the pair as plain foreign scope was the residency-clause half of
+            # the #262 recall bug and is no longer a rejection.
             ("You must reside in the United States or Canada.",
-             "no_match", "foreign"),
+             "match", "us_remote"),
         ):
             with self.subTest(sentence=sentence):
                 result = self._assess(sentence, location="Remote (US)")
@@ -902,6 +933,480 @@ class WorkFromHomeVocabularyTests(unittest.TestCase):
         )
         self.assertEqual(result.category, "us_remote")
         self.assertEqual(result.decision, "match")
+
+
+class NegatedRemoteProseTests(unittest.TestCase):
+    """A remote phrase that is NEGATED before it is stated is not a grant.
+
+    The onsite rules have carried a preceding-negation guard since "no minimum
+    in-office requirement"; the remote rules carried only the trailing
+    field-value guard, so the mirror-image sentence fired as remote evidence.
+    "There is no work from home for this position" — the closing line of a
+    badge-in, cleared, five-days-a-week posting — classified as
+    ``us_remote / remote`` with decision ``match`` and confidence ``high``.
+    """
+
+    POLICY = {"metro": ["chicago"], "allow_us_remote": True,
+              "us_only": True, "require_match": True}
+
+    def test_negated_work_from_home_is_not_remote_evidence(self):
+        for text in ("There is no work from home for this position.",
+                     "Primarily onsite in a SCIF with little or no work "
+                     "from home.",
+                     "We do not offer work from home for this role.",
+                     "This role has minimal WFH.",
+                     "Employees are not able to work from home."):
+            with self.subTest(text=text):
+                self.assertNotIn("jd_work_from_home", _remote_rule_hits(text))
+
+    def test_other_prose_remote_rules_are_guarded_too(self):
+        for text, rule in (
+            ("This is not a fully remote role.", "jd_fully_remote"),
+            ("This is not a remote position.", "jd_remote_role"),
+            ("You cannot work remotely in this role.", "jd_work_remotely"),
+            ("We are not open to remote candidates.",
+             "jd_remote_eligible_offer"),
+        ):
+            with self.subTest(text=text):
+                self.assertNotIn(rule, _remote_rule_hits(text))
+
+    def test_a_negation_in_an_earlier_sentence_cannot_reach_the_grant(self):
+        # The window is clause-local: a negative statement about something else
+        # must not cancel a real grant one sentence later.
+        hits = _remote_rule_hits(
+            "We are not able to sponsor visas. You may work from home.")
+        self.assertIn("jd_work_from_home", hits)
+
+    def test_genuine_work_from_home_grants_are_unaffected(self):
+        for text in ("Work From Home 100% of the time.",
+                     "This role is WFH.",
+                     "You may work from home.",
+                     "Working from home is supported."):
+            with self.subTest(text=text):
+                self.assertIn("jd_work_from_home", _remote_rule_hits(text))
+
+    def test_a_negated_wfh_posting_is_not_a_us_remote_match(self):
+        """End to end: the cleared onsite role that was shortlisted."""
+        result = assess_location(
+            "Bethesda, MD, US", self.POLICY, title="DevOps Engineer 2",
+            description="There is no work from home for this position.",
+            workplace_hint="unknown", hint_trusted=False)
+        self.assertEqual(result.decision, "no_match")
+        self.assertEqual(result.category, "other_us")
+        self.assertNotEqual(result.workplace, "remote")
+        self.assertNotIn("jd_work_from_home", result.evidence)
+
+
+class UnstatedWorkplaceTests(unittest.TestCase):
+    """A city states geographic scope, not how the work is done (#237).
+
+    Two live finalists whose complete JDs contained zero remote/hybrid/onsite
+    language, with an ``unknown`` ATS hint, were reported ``workplace: onsite``.
+    A downstream handoff has no way to tell that inference apart from an
+    explicit "Work Type: On-Site" field.
+    """
+
+    POLICY = {"metro": ["chicago"], "allow_us_remote": True,
+              "us_only": True, "require_match": False}
+
+    def test_a_silent_jd_leaves_the_workplace_unstated(self):
+        result = assess_location(
+            "Chicago, IL, US", self.POLICY, title="Data Analyst",
+            description="Build SQL dashboards and partner with stakeholders.",
+            workplace_hint="unknown", hint_trusted=False)
+        self.assertEqual(result.workplace, "unknown")
+        # The location verdict is untouched: an allowed city still matches.
+        self.assertEqual(result.category, "metro")
+        self.assertEqual(result.decision, "match")
+
+    def test_explicit_jd_workplace_signals_are_unchanged(self):
+        for description, workplace in (
+            ("This is a 100% onsite role.", "onsite"),
+            ("Work Setting: In-office", "onsite"),
+            ("This is a hybrid role with three office days each week.",
+             "hybrid"),
+            ("This is a fully remote role in the United States.", "remote"),
+        ):
+            with self.subTest(description=description):
+                result = assess_location(
+                    "Chicago, IL, US", self.POLICY, title="Data Analyst",
+                    description=description, workplace_hint="unknown",
+                    hint_trusted=False)
+                self.assertEqual(result.workplace, workplace)
+
+    def test_a_trusted_scraper_hint_still_establishes_the_workplace(self):
+        result = assess_location(
+            "Chicago, IL, US", self.POLICY, title="Data Analyst",
+            description="Build dashboards.", workplace_hint="onsite",
+            hint_trusted=False)
+        self.assertEqual(result.workplace, "onsite")
+
+    def test_an_untrusted_remote_flag_alone_does_not_establish_remote(self):
+        result = assess_location(
+            "Chicago, IL, US", self.POLICY, title="Data Analyst",
+            description="Build dashboards.", workplace_hint="remote",
+            hint_trusted=False)
+        self.assertIn("uncorroborated_ats_workplace_hint", result.review_reasons)
+
+    def test_a_bare_city_with_no_jd_keeps_its_office_reading(self):
+        # `classify_workplace` (metadata, not the gate) calls with no JD at all,
+        # where the location field is the only statement of record.
+        result = assess_location("Chicago, IL, US", self.POLICY,
+                                 title="Data Analyst", description="")
+        self.assertEqual(result.workplace, "onsite")
+
+
+class LimitedRemoteBenefitTests(unittest.TestCase):
+    """An annual work-from-anywhere ceiling is a perk, not a work mode (#301).
+
+    A required-hybrid NYC role advertising "up to four weeks per year of fully
+    remote work" in its benefits section produced ``remote_hybrid_conflict`` and
+    disappeared into a 1,451-row review queue.
+    """
+
+    POLICY = {"metro": ["new york"], "allow_us_remote": True,
+              "us_only": True, "require_match": True}
+
+    def test_a_capped_annual_remote_benefit_is_not_a_remote_grant(self):
+        for text in (
+            "You may work fully remote from anywhere for up to four weeks "
+            "per year.",
+            "Employees can work remotely for 20 days per year.",
+            "Enjoy up to two weeks each year of remote work from anywhere.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(_remote_rule_hits(text), [])
+
+    def test_the_role_scoped_hybrid_schedule_wins(self):
+        result = assess_location(
+            "New York, New York, United States", self.POLICY,
+            title="Data Analyst II",
+            description=(
+                "This role is based in our New York office and is hybrid, "
+                "with three coordinated office days each week. "
+                "Benefits: you may work fully remote from anywhere for up to "
+                "four weeks per year."),
+            workplace_hint="unknown", hint_trusted=False)
+        self.assertEqual(result.decision, "match")
+        self.assertEqual(result.category, "metro")
+        self.assertEqual(result.workplace, "hybrid")
+        self.assertNotIn("remote_hybrid_conflict", result.review_reasons)
+
+    def test_an_uncapped_remote_grant_beside_an_annual_perk_still_reads(self):
+        # The ceiling must attach to the REMOTE phrase's own clause; an
+        # unrelated annual number elsewhere in the sentence changes nothing.
+        result = assess_location(
+            "Remote - US", self.POLICY, title="Data Analyst II",
+            description=("This is a fully remote role. You also get 20 days "
+                         "per year of paid time off."),
+            workplace_hint="remote")
+        self.assertEqual(result.workplace, "remote")
+        self.assertEqual(result.decision, "match")
+
+
+class ExplicitRemoteEligibilityTests(unittest.TestCase):
+    """An employer STATING it will hire remotely corroborates its own flag.
+
+    "Hiring for Santa Clara, San Diego, Austin and Boxborough locations. Open to
+    hire for Remote work as well." matched no rule in the table, so a direct-fit
+    role carried only its board's untrusted `remote` flag and was relegated to
+    manual review as ``uncorroborated_ats_workplace_hint`` (#290).
+    """
+
+    POLICY = {"metro": ["boston"], "allow_us_remote": True,
+              "us_only": True, "require_match": True}
+
+    def test_an_explicit_remote_offer_is_remote_evidence(self):
+        for text in ("Open to hire for Remote work as well.",
+                     "We are open to remote candidates across the US.",
+                     "This position is available for remote work.",
+                     "We will consider remote applicants."):
+            with self.subTest(text=text):
+                self.assertIn("jd_remote_eligible_offer",
+                              _remote_rule_hits(text))
+
+    def test_remote_as_a_qualification_is_not_an_offer(self):
+        # The remote NOUN is mandatory: welcoming candidates who have worked
+        # with remote teams says nothing about where THIS role is performed.
+        for text in ("We are open to candidates with remote team experience.",
+                     "Open to engineers who have supported remote colleagues."):
+            with self.subTest(text=text):
+                self.assertEqual(_remote_rule_hits(text), [])
+
+    def test_the_qualcomm_shape_reaches_the_shortlist(self):
+        result = assess_location(
+            "Boxborough, MA, US", self.POLICY,
+            title="GPU Compiler Engineer - Multiple Levels (Evergreen)",
+            description=("Hiring for Santa Clara, San Diego, Austin and "
+                         "Boxborough locations. Open to hire for Remote work "
+                         "as well."),
+            workplace_hint="remote", hint_trusted=False)
+        self.assertEqual(result.decision, "match")
+        self.assertEqual(result.category, "us_remote")
+        self.assertEqual(result.workplace, "remote")
+        self.assertIn("jd_remote_eligible_offer", result.evidence)
+        self.assertNotIn("uncorroborated_ats_workplace_hint",
+                         result.review_reasons)
+
+
+class UsCanadaScopeTests(unittest.TestCase):
+    """"United States or Canada" is one scope whose US branch a US candidate
+    satisfies — not mixed US/foreign scope (#262), and ``USCA`` is not an
+    unreadable region bucket (#247)."""
+
+    BOSTON = {"metro": ["boston"], "allow_us_remote": True,
+              "us_only": True, "require_match": True}
+    SEATTLE = {"metro": ["seattle"], "allow_us_remote": True,
+               "us_only": True, "require_match": True}
+    REMOTE_JD = ("We are hiring remotely in the United States or Canada, "
+                 "with East Coast overlap.")
+
+    def test_us_or_canada_wording_is_us_eligible(self):
+        for raw in ("Remote in the United States or Canada",
+                    "US & Canada", "US/Canada", "Canada or the United States",
+                    "North America remote", "USCA"):
+            for policy in (self.BOSTON, self.SEATTLE):
+                with self.subTest(raw=raw, metro=policy["metro"]):
+                    result = assess_location(
+                        raw, policy, title="Senior SRE",
+                        description=self.REMOTE_JD, workplace_hint="remote")
+                    self.assertEqual(result.decision, "match")
+                    self.assertEqual(result.category, "us_remote")
+                    self.assertNotIn("mixed_us_foreign_scope",
+                                     result.review_reasons)
+                    self.assertNotIn("weird_location_format",
+                                     result.review_reasons)
+
+    def test_the_pair_is_reported_as_its_own_evidence(self):
+        result = assess_location(
+            "US & Canada", self.BOSTON, title="Senior SRE",
+            description=self.REMOTE_JD, workplace_hint="remote")
+        self.assertIn("us_canada_scope", result.evidence)
+
+    def test_a_third_country_is_still_mixed_scope(self):
+        result = assess_location(
+            "United States, Canada or the United Kingdom", self.BOSTON,
+            title="Senior SRE", description=self.REMOTE_JD,
+            workplace_hint="remote")
+        self.assertEqual(result.decision, "review")
+
+    def test_co_occurrence_without_coordination_is_still_mixed_scope(self):
+        # Two offices listed side by side is not a country-level pair.
+        result = assess_location(
+            "San Francisco, CA / Toronto, Canada", self.BOSTON,
+            title="Senior SRE", description="Build reliable services.")
+        self.assertEqual(result.decision, "review")
+        self.assertIn("mixed_us_foreign_scope", result.review_reasons)
+
+
+class ExcludedResidenceTests(unittest.TestCase):
+    """A US-remote grant is only as wide as the JD leaves it (#297, #242).
+
+    In one bounded live snapshot, 27 postings whose complete JDs excluded every
+    preferred residence in the profile returned ``match`` at confidence ``high``
+    with no review reason at all.
+    """
+
+    SEATTLE = {"metro": ["seattle"], "allow_us_remote": True,
+               "us_only": True, "require_match": True}
+    SEATTLE_NYC = {"metro": ["seattle", "new york"], "allow_us_remote": True,
+                   "us_only": True, "require_match": True}
+    NO_METRO = {"metro": [], "allow_us_remote": True, "us_only": True,
+                "require_match": True}
+
+    def _assess(self, description, policy):
+        return assess_location(
+            "Remote - US", policy, title="Software Engineer",
+            description=description, workplace_hint="remote")
+
+    def test_an_excluded_state_overrides_a_broad_remote_us_grant(self):
+        result = self._assess(
+            "This position is remote and open to candidates in all US states "
+            "except Alaska, Hawaii, Washington and Colorado.", self.SEATTLE)
+        self.assertEqual(result.decision, "no_match")
+        self.assertIn("jd_excludes_all_preferred_residences", result.evidence)
+
+    def test_an_excluded_metro_list_covering_every_preference_is_no_match(self):
+        result = self._assess(
+            "This is a remote position open to candidates based in the United "
+            "States, excluding the San Francisco Bay Area, New York City "
+            "Metro, and Seattle Metro.", self.SEATTLE_NYC)
+        self.assertEqual(result.decision, "no_match")
+        self.assertIn("jd_excludes_all_preferred_residences", result.evidence)
+
+    def test_a_surviving_preference_keeps_the_match(self):
+        result = self._assess(
+            "This role is remote in the United States, excluding California.",
+            self.SEATTLE)
+        self.assertEqual(result.decision, "match")
+        self.assertEqual(result.category, "us_remote")
+
+    def test_a_compensation_state_list_is_not_a_hiring_restriction(self):
+        # Pay-transparency copy names states in a COMPENSATION sentence.
+        # Reading it as eligibility would reject the postings that comply.
+        result = self._assess(
+            "This is a fully remote US role. The base salary range applies to "
+            "all locations except Washington, New York and California, where "
+            "a premium band applies.", self.SEATTLE)
+        self.assertEqual(result.decision, "match")
+
+    def test_ordinary_boilerplate_is_not_an_exclusion(self):
+        result = self._assess(
+            "This is a fully remote role in the United States. All employees "
+            "are treated equally except as required by applicable law.",
+            self.SEATTLE)
+        self.assertEqual(result.decision, "match")
+
+    def test_the_capital_does_not_exclude_the_state_of_washington(self):
+        result = self._assess(
+            "This role is remote in the United States, excluding Washington, "
+            "DC.", self.SEATTLE)
+        self.assertEqual(result.decision, "match")
+
+    def test_an_exclusion_with_no_configured_residence_is_reviewed(self):
+        result = self._assess(
+            "This is a remote position open to candidates based in the United "
+            "States, excluding the New York City Metro and Seattle Metro.",
+            self.NO_METRO)
+        self.assertEqual(result.decision, "review")
+        self.assertIn("residence_exclusion_unverifiable", result.review_reasons)
+
+
+class RemoteTimeZoneBoundTests(unittest.TestCase):
+    """An explicit allowed-time-zone list is a candidate-eligibility fact.
+
+    Two Grafana US-remote platform roles limiting applicants to EST and CST were
+    kept and ranked for a Seattle/Pacific candidate (#242).
+    """
+
+    SEATTLE = {"metro": ["seattle"], "allow_us_remote": True,
+               "us_only": True, "require_match": True}
+    BOSTON = {"metro": ["boston"], "allow_us_remote": True,
+              "us_only": True, "require_match": True}
+    UNMAPPED = {"metro": ["springfield"], "allow_us_remote": True,
+                "us_only": True, "require_match": True}
+    JD = ("This is a fully remote role. Applicants must be located in the EST "
+          "or CST time zones.")
+
+    def test_a_pacific_candidate_is_excluded_by_an_est_cst_bound(self):
+        result = assess_location(
+            "Remote - US", self.SEATTLE, title="Platform Engineer",
+            description=self.JD, workplace_hint="remote")
+        self.assertEqual(result.decision, "no_match")
+        self.assertIn("jd_timezone_excludes_preferred_metros", result.evidence)
+        self.assertNotIn("residency_restriction_unparsed",
+                         result.review_reasons)
+
+    def test_an_eastern_candidate_still_matches(self):
+        result = assess_location(
+            "Remote - US", self.BOSTON, title="Platform Engineer",
+            description=self.JD, workplace_hint="remote")
+        self.assertEqual(result.decision, "match")
+        self.assertEqual(result.category, "us_remote")
+
+    def test_an_unmappable_metro_is_reviewed_not_rejected(self):
+        result = assess_location(
+            "Remote - US", self.UNMAPPED, title="Platform Engineer",
+            description=self.JD, workplace_hint="remote")
+        self.assertEqual(result.decision, "review")
+        self.assertIn("remote_timezone_restriction_unresolved",
+                      result.review_reasons)
+
+    def test_a_time_zone_bound_in_the_location_field_is_read_too(self):
+        result = assess_location(
+            "US/Canada - ET hours", self.SEATTLE, title="Senior SRE",
+            description="We are hiring remotely in the United States or "
+                        "Canada.", workplace_hint="remote")
+        self.assertEqual(result.decision, "no_match")
+        self.assertIn("jd_timezone_excludes_preferred_metros", result.evidence)
+
+    def test_collaboration_across_time_zones_is_not_a_bound(self):
+        for description in (
+            "This is a fully remote role. You will collaborate with teams "
+            "across several time zones.",
+            "This is a fully remote US role. Core hours are 9am-5pm Pacific.",
+        ):
+            with self.subTest(description=description[:40]):
+                result = assess_location(
+                    "Remote - US", self.SEATTLE, title="Platform Engineer",
+                    description=description, workplace_hint="remote")
+                self.assertEqual(result.decision, "match")
+
+    def test_a_state_abbreviation_is_not_a_time_zone(self):
+        # "CT" in a list of states is Connecticut. Without the bound noun
+        # nearby it must not be read as the Central time zone.
+        result = assess_location(
+            "Remote - US", self.SEATTLE, title="Platform Engineer",
+            description=("This is a fully remote role open to candidates in "
+                         "CT, MA and NY."),
+            workplace_hint="remote")
+        self.assertNotIn("jd_timezone_excludes_preferred_metros",
+                         result.evidence)
+
+
+class MemoizationTests(unittest.TestCase):
+    """The memos must be invisible except in the clock (#292, location half).
+
+    ``scoring.location_ok`` and ``job_metadata.classify_workplace`` assess the
+    SAME description with different policies, titles and hints — 26,114 calls
+    for 14,508 postings in the reported run. A cache on ``assess_location``
+    alone cannot collapse that pair, so the JD-body scans are cached separately.
+    Everything cached here is pure; these tests pin that it stays that way.
+    """
+
+    A = {"metro": ["seattle"], "allow_us_remote": True, "us_only": True,
+         "require_match": True}
+    B = {"metro": ["boston"], "allow_us_remote": True, "us_only": True,
+         "require_match": True}
+    JD = ("This is a fully remote role. Applicants must be located in the EST "
+          "or CST time zones.")
+
+    def test_two_policies_over_one_description_do_not_share_a_verdict(self):
+        seattle = assess_location("Remote - US", self.A, description=self.JD,
+                                  workplace_hint="remote")
+        boston = assess_location("Remote - US", self.B, description=self.JD,
+                                 workplace_hint="remote")
+        self.assertEqual(seattle.decision, "no_match")
+        self.assertEqual(boston.decision, "match")
+
+    def test_equal_policies_written_differently_share_one_entry(self):
+        cache_clear()
+        first = assess_location("Remote - US", dict(self.A),
+                                description=self.JD, workplace_hint="remote")
+        second = assess_location("Remote - US", {**self.A},
+                                 description=self.JD, workplace_hint="remote")
+        self.assertIs(first, second)
+        hits, _misses, _max, _curr = cache_stats()["_assess_location_cached"]
+        self.assertGreaterEqual(hits, 1)
+
+    def test_the_jd_body_scan_is_shared_across_call_shapes(self):
+        # The two production call sites differ in policy, title and hint, so
+        # only the description-keyed memo can collapse their shared work.
+        cache_clear()
+        assess_location("Remote - US", self.A, title="Platform Engineer",
+                        description=self.JD, workplace_hint="remote")
+        before = cache_stats()["_description_signals"][0]
+        assess_location("Remote - US", {"allow_us_remote": True,
+                                        "us_only": False,
+                                        "require_match": False},
+                        description=self.JD)
+        after = cache_stats()["_description_signals"][0]
+        self.assertEqual(after, before + 1)
+
+    def test_a_cleared_cache_returns_the_same_verdicts(self):
+        warm = assess_location("Remote - US", self.A, description=self.JD,
+                               workplace_hint="remote").to_dict()
+        cache_clear()
+        cold = assess_location("Remote - US", self.A, description=self.JD,
+                               workplace_hint="remote").to_dict()
+        self.assertEqual(warm, cold)
+
+    def test_none_inputs_and_empty_strings_are_the_same_call(self):
+        self.assertIs(
+            assess_location(None, self.A, title=None, description=None,
+                            workplace_hint=None),
+            assess_location("", self.A, title="", description="",
+                            workplace_hint=""))
 
 
 if __name__ == "__main__":
