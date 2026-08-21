@@ -360,6 +360,127 @@ class NormalizerTests(unittest.TestCase):
                                             "operation": "group"}, b"{}"), [])
 
 
+# --------------------------------------------------------------------------- #
+# RemoteOK source quality (#252): mojibake text behind one shared, non-actionable
+# listing URL. Fixtures are built by DAMAGING known-good UTF-8 the way the feed
+# does (encode UTF-8, read the bytes back as Latin-1), so the repair is tested
+# against the real failure mode rather than a hand-typed approximation.
+# --------------------------------------------------------------------------- #
+_GREEK = "Μηχανικός Λογισμικού"
+_CHINESE = "软件工程师"
+
+
+def _mangle(text: str) -> str:
+    """UTF-8 bytes read back as Latin-1 — exactly how the feed's rows arrive."""
+    return text.encode("utf-8").decode("latin-1")
+
+
+REMOTEOK_DAMAGED = [
+    {"legal": "notice"},
+    # Two unrelated rows, garbled, both pointing at the bare listing root.
+    {"id": "bad-1", "position": _mangle(_GREEK), "company": _mangle("Φανταστικά"),
+     "url": "https://remoteOK.com/remote-jobs/", "location": "Worldwide",
+     "date": "2026-07-08T00:00:00Z", "description": _mangle(_GREEK)},
+    {"id": "bad-2", "position": _mangle(_CHINESE), "company": _mangle("软件公司"),
+     "url": "https://remoteOK.com/remote-jobs/", "location": "Worldwide",
+     "date": "2026-07-08T00:00:00Z", "description": _mangle(_CHINESE)},
+    # Garbled text but a real employer apply link: recoverable, not quarantined.
+    {"id": "ok-apply", "position": _mangle(_GREEK), "company": "OceanCo",
+     "url": "https://remoteOK.com/remote-jobs/",
+     "apply_url": "https://oceanco.example/careers/postings/8891",
+     "location": "Worldwide", "date": "2026-07-08T00:00:00Z",
+     "description": _mangle(_CHINESE)},
+    # Ordinary healthy row.
+    {"id": "ok-1", "position": "Full Stack Dev", "company": "OceanCo",
+     "url": "https://remoteOK.com/remote-jobs/ok-1-full-stack-dev",
+     "location": "Worldwide", "date": "2026-07-08T00:00:00Z",
+     "description": "desc"},
+]
+
+
+class MojibakeRepairTests(unittest.TestCase):
+    def test_damaged_text_is_restored(self):
+        self.assertEqual(pp.repair_mojibake(_mangle(_GREEK)), _GREEK)
+        self.assertEqual(pp.repair_mojibake(_mangle(_CHINESE)), _CHINESE)
+
+    def test_double_damage_is_restored(self):
+        self.assertEqual(pp.repair_mojibake(_mangle(_mangle(_GREEK))), _GREEK)
+
+    def test_healthy_unicode_is_never_touched(self):
+        for good in (_GREEK, _CHINESE, "Zürich, Schweiz", "Café Ops Engineer",
+                     "Señor Backend Engineer", "naïve", "Ça marche", ""):
+            self.assertEqual(pp.repair_mojibake(good), good)
+
+    def test_plain_ascii_is_returned_unchanged(self):
+        self.assertEqual(pp.repair_mojibake("Senior Platform Engineer"),
+                         "Senior Platform Engineer")
+
+    def test_unrepairable_text_is_left_alone_not_mangled(self):
+        # Mojibake mixed with genuinely non-Latin-1 text cannot be re-encoded:
+        # the rule is to leave it rather than guess.
+        mixed = _CHINESE + _mangle(_GREEK)
+        self.assertEqual(pp.repair_mojibake(mixed), mixed)
+
+    def test_none_is_an_empty_string(self):
+        self.assertEqual(pp.repair_mojibake(None), "")
+
+
+class RemoteOkSourceQualityTests(_IsolatedCapture):
+    def setUp(self):
+        super().setUp()
+        common.drain_source_warnings()
+        self.addCleanup(common.drain_source_warnings)
+        self.body = json.dumps(REMOTEOK_DAMAGED).encode()
+        aggregators.http_get_full = lambda *a, **k: _result(self.body)
+
+    def _live(self):
+        return aggregators.fetch_remoteok([], "", None)
+
+    def test_valid_unicode_reaches_the_pipeline(self):
+        row = next(p for p in self._live() if p.url.endswith("/postings/8891"))
+        self.assertEqual(row.title, _GREEK)
+        self.assertEqual(row.description, _CHINESE)
+
+    def test_every_emitted_row_has_a_posting_specific_link(self):
+        urls = [p.url for p in self._live()]
+        self.assertTrue(urls)
+        for url in urls:
+            self.assertTrue(pp.url_identifies_a_posting(url), url)
+        self.assertEqual(len(urls), len(set(urls)))   # no two rows share one URL
+
+    def test_unopenable_rows_are_quarantined_once_with_a_diagnostic(self):
+        out = self._live()
+        self.assertEqual({p.title for p in out},
+                         {_GREEK, "Full Stack Dev"})     # bad-1 / bad-2 dropped
+        warnings = common.drain_source_warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("quarantined 2 posting(s)", warnings[0])
+        self.assertIn("bad-1", warnings[0])
+        self.assertIn("bad-2", warnings[0])
+
+    def test_the_diagnostic_never_repeats_the_garbled_text(self):
+        self._live()
+        warning = common.drain_source_warnings()[0]
+        self.assertNotIn(_mangle(_GREEK), warning)
+
+    def test_a_clean_feed_says_nothing(self):
+        aggregators.http_get_full = lambda *a, **k: _result(
+            json.dumps(REMOTEOK).encode())
+        self.assertEqual(len(self._live()), 1)
+        self.assertEqual(common.drain_source_warnings(), [])
+
+    def test_the_builder_parser_agrees_with_the_live_fetcher(self):
+        live = self._live()
+        rows = pp.parse_remoteok(self.body)
+        self.assertEqual([_core(j) for j in live], [_core_row(r) for r in rows])
+        self.assertEqual([j.company for j in live],
+                         [r["company_name"] for r in rows])
+
+    def test_the_store_keeps_a_stable_id_for_every_materialized_row(self):
+        rows = pp.parse_remoteok(self.body)
+        self.assertEqual([r["native_id"] for r in rows], ["ok-apply", "ok-1"])
+
+
 class ContainmentTests(_IsolatedCapture):
     def test_no_writes_reach_private_data(self):
         def _files():

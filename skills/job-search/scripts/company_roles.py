@@ -43,6 +43,11 @@ Examples:
     .venv/bin/python skills/job-search/scripts/company_roles.py \
         --name Sentry --jd "Control Plane" \
         --out applications/6_drafted/<slug>/source/JD-Control-Plane.md --digest
+
+    # Several open requisitions share ONE title: select by URL / requisition id
+    # (the `url` field --json prints), or by index from the ambiguity listing
+    .venv/bin/python skills/job-search/scripts/company_roles.py \
+        --name Sentry --jd-url 4512890 --out .../source/JD-Backend.md
 """
 from __future__ import annotations
 
@@ -62,6 +67,7 @@ for _p in (SKILL_SCRIPTS, SKILL_SCRIPTS / "_vendor"):
 from _vendor.location import assess_location  # noqa: E402
 from common import drain_source_warnings  # noqa: E402  (the partial-fetch sink)
 from fetch_jd import build_digest  # noqa: E402  (sibling script: the ONE digest builder)
+from posting_identity import canonicalize_url  # noqa: E402  (the ONE URL normalizer)
 from registry import load_registry  # noqa: E402
 from sources import fetch_company  # noqa: E402
 
@@ -182,8 +188,59 @@ _NO_DESCRIPTION = "(no description returned by the ATS API)"
 _NOT_SAVED = "(NOT SAVED — re-run with --out <path> to save the verbatim JD)"
 
 
-def dump_jd(entry: dict, needle: str, *, digest: bool = False,
-            out: Path | None = None) -> int:
+# ── selecting ONE posting out of a board ─────────────────────────────────────
+# Title substring used to be the only JD selector, so a board carrying several
+# open requisitions under one byte-identical title could not be narrowed AT ALL:
+# the error asked the user to narrow `--jd` while listing indistinguishable
+# titles, and this script is the documented recovery path when a posting page is
+# JavaScript-rendered. Two more selectors close that: `--jd-url` (the posting URL
+# or any unique fragment of it, e.g. the requisition id — the field `--json`
+# already prints for every role) and `--jd-index` (1-based, over the ORDER the
+# ambiguity error prints).
+#
+# The order has to be the script's own, not the board's: an ATS may return the
+# same requisitions in a different order on the next call, which would silently
+# re-point an index at another posting. Sorting by (title, canonical URL) makes
+# `--jd-index 2` mean the same posting on every run of the same board.
+def _selection_order(postings):
+    return sorted(postings,
+                  key=lambda p: ((p.title or "").lower(), canonicalize_url(p.url)))
+
+
+def _url_matches(postings, value: str):
+    """Postings whose URL is ``value`` — exact first, else a URL substring.
+
+    Exact (canonicalized) matches win outright when there are any, so pasting a
+    full posting URL can never be diluted by another posting that merely contains
+    it as a substring. The substring pass is what makes a bare requisition id
+    ("7800568003") a usable selector.
+    """
+    wanted = canonicalize_url(value)
+    exact = [p for p in postings if wanted and canonicalize_url(p.url) == wanted]
+    if exact:
+        return exact
+    low = value.strip().lower()
+    return [p for p in postings if low and low in (p.url or "").lower()]
+
+
+def _describe_hits(hits) -> str:
+    """The ambiguity listing: index + location + posted date + URL per posting.
+
+    Printing the titles alone is what made the old error unusable — for
+    same-title requisitions it repeated one string N times. These are the fields
+    that actually differ.
+    """
+    lines = []
+    for i, p in enumerate(hits, 1):
+        posted = p.posted_at.date().isoformat() if p.posted_at else "?"
+        lines.append(f"  [{i}] {p.title}  | loc={p.location or '?'} "
+                     f"| posted={posted}\n      {p.url or '(no url)'}")
+    return "\n".join(lines)
+
+
+def dump_jd(entry: dict, needle: str | None, *, digest: bool = False,
+            out: Path | None = None, url: str | None = None,
+            index: int | None = None) -> int:
     """Print the description of every posting whose title contains `needle`.
 
     Lets a caller capture the exact JD text for a chosen role deterministically
@@ -207,18 +264,43 @@ def dump_jd(entry: dict, needle: str, *, digest: bool = False,
     parses out of a JD body, but not the responsibilities/benefits/culture prose
     that drafting and the honesty gates need — so pair ``--digest`` with ``--out``
     for any posting you intend to keep.
+
+    ``url`` and ``index`` are the unambiguous selectors (see ``_selection_order``):
+    ``url`` keeps postings whose URL is, or contains, that value; ``index`` picks
+    the Nth (1-based) of whatever survives, in the deterministic order the
+    ambiguity error prints. Either may be used alone or with ``needle``.
     """
-    needle_l = needle.lower()
     postings = fetch_company(entry)
     _report_source_warnings()
-    hits = [p for p in postings if needle_l in (p.title or "").lower()]
+    hits = _selection_order(postings)
+    described = []
+    if needle:
+        needle_l = needle.lower()
+        hits = [p for p in hits if needle_l in (p.title or "").lower()]
+        described.append(f"--jd {needle!r}")
+    if url:
+        hits = _url_matches(hits, url)
+        described.append(f"--jd-url {url!r}")
+    criteria = " + ".join(described) or "(no selector)"
     if not hits:
-        print(f"# no posting title contains {needle!r}", file=sys.stderr)
+        print(f"# no posting matches {criteria}", file=sys.stderr)
         return 1
+    if index is not None:
+        if not 1 <= index <= len(hits):
+            print(f"ERROR: --jd-index {index} is out of range: {len(hits)} "
+                  f"posting(s) match {criteria}.\n{_describe_hits(hits)}",
+                  file=sys.stderr)
+            return 2
+        hits = [hits[index - 1]]
     if out is not None and len(hits) > 1:
+        # Same-title requisitions are common, so "narrow --jd" is not always
+        # possible — name the selectors that always are, and show the fields the
+        # postings actually differ in.
         print(f"ERROR: --out names a single file but {len(hits)} postings match "
-              f"{needle!r}: " + "; ".join(p.title for p in hits) +
-              ". Narrow --jd to one posting.", file=sys.stderr)
+              f"{criteria}:\n{_describe_hits(hits)}\n"
+              f"Select one with --jd-url <url-or-requisition-id> (the `url` field "
+              f"--json prints) or --jd-index <N> from the list above.",
+              file=sys.stderr)
         return 2
 
     dumped_bytes = 0
@@ -321,6 +403,15 @@ def main() -> int:
     ap.add_argument("--jd", metavar="TITLE_SUBSTR",
                     help="Dump the full JD text of postings whose title contains this "
                          "substring (for capturing a chosen role's JD)")
+    ap.add_argument("--jd-url", metavar="URL_OR_ID",
+                    help="Select the posting by its URL, or by any unique fragment of "
+                         "it such as the requisition id (the `url` field --json "
+                         "prints). This is the selector that works when several open "
+                         "requisitions share one title. Usable alone or with --jd.")
+    ap.add_argument("--jd-index", metavar="N", type=int,
+                    help="Select the Nth (1-based) matching posting, in the order the "
+                         "ambiguity error lists them — a stable order this script "
+                         "sorts itself, not the board's response order.")
     ap.add_argument("--out", metavar="PATH",
                     help="With --jd: write the VERBATIM recovered JD to PATH instead "
                          "of printing it (parent dirs created; requires exactly one "
@@ -337,8 +428,13 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="Emit JSON instead of a table")
     args = ap.parse_args()
 
-    if (args.out or args.digest) and not args.jd:
-        print("ERROR: --out and --digest apply to --jd only.", file=sys.stderr)
+    selecting = bool(args.jd or args.jd_url or args.jd_index is not None)
+    if (args.out or args.digest) and not selecting:
+        print("ERROR: --out and --digest apply to the JD selectors "
+              "(--jd / --jd-url / --jd-index) only.", file=sys.stderr)
+        return 2
+    if args.jd_index is not None and args.jd_index < 1:
+        print("ERROR: --jd-index is 1-based; N must be >= 1.", file=sys.stderr)
         return 2
 
     if args.name:
@@ -360,10 +456,11 @@ def main() -> int:
     if args.terms:
         entry["search_terms"] = [t.strip() for t in args.terms.split(",") if t.strip()]
 
-    if args.jd:
+    if selecting:
         try:
             return dump_jd(entry, args.jd, digest=args.digest,
-                           out=Path(args.out).expanduser() if args.out else None)
+                           out=Path(args.out).expanduser() if args.out else None,
+                           url=args.jd_url, index=args.jd_index)
         except Exception as exc:  # noqa: BLE001
             print(f"ERROR fetching {entry.get('name')}: {exc}", file=sys.stderr)
             return 1

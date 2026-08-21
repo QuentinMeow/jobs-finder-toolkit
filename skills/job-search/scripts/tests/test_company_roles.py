@@ -220,7 +220,8 @@ class NoFlagRegressionTests(_RecordedBoard):
         code, stdout, stderr = self._dump("Quantum Blacksmith")
         self.assertEqual(code, 1)
         self.assertEqual(stdout, "")
-        self.assertIn("no posting title contains", stderr)
+        self.assertIn("no posting matches", stderr)
+        self.assertIn("Quantum Blacksmith", stderr)
 
 
 class DigestFidelityTests(_RecordedBoard):
@@ -376,7 +377,8 @@ class OutFlagTests(_RecordedBoard):
         self.assertEqual(code, 2)
         self.assertEqual(stdout, "")
         self.assertIn("2 postings match", stderr)
-        self.assertIn("Narrow --jd", stderr)
+        self.assertIn("--jd-url", stderr)
+        self.assertIn("--jd-index", stderr)
         self.assertFalse(dest.exists())
 
     def test_multi_hit_digest_without_out_is_allowed(self):
@@ -498,6 +500,161 @@ class EmptyDescriptionOutTests(_RecordedBoard):
         code, stdout, _stderr = self._dump("Data Analyst")
         self.assertEqual(code, 0)
         self.assertIn(company_roles._NO_DESCRIPTION, stdout)
+
+
+# --------------------------------------------------------------------------- #
+# Same-title requisitions (#230): three live postings, ONE byte-identical title,
+# distinct URLs. Title substring cannot separate them, so before --jd-url /
+# --jd-index this board's JDs were unreachable through the documented CLI.
+# --------------------------------------------------------------------------- #
+
+DUP_TITLE = "Software Engineer (L2)"
+
+DUPLICATE_BOARD = {
+    "apiVersion": "1",
+    "jobs": [
+        {"id": f"dup-{n}", "title": DUP_TITLE, "location": loc,
+         "jobUrl": f"https://jobs.ashbyhq.com/examplecorp/req-{req}",
+         "descriptionPlain": f"{DUP_TITLE}\n\nLocation: {loc}\nTeam {n} charter.\n",
+         "publishedAt": f"2026-07-0{n}T00:00:00Z", "isListed": True,
+         "workplaceType": "Onsite", "secondaryLocations": []}
+        for n, (loc, req) in enumerate(
+            [("Seattle, WA", "4512890"), ("Austin, TX", "4512891"),
+             ("Boston, MA", "4512892")], start=1)
+    ] + [
+        {"id": "dup-mail", "title": f"{DUP_TITLE} Email", "location": "Remote (US)",
+         "jobUrl": "https://jobs.ashbyhq.com/examplecorp/req-4512893",
+         "descriptionPlain": f"{DUP_TITLE} Email\n\nNotification pipelines.\n",
+         "publishedAt": "2026-07-04T00:00:00Z", "isListed": True,
+         "workplaceType": "Remote", "secondaryLocations": []},
+    ],
+}
+
+
+class DuplicateTitleSelectionTests(unittest.TestCase):
+    """A title substring is not always a selector — a URL / index always is."""
+
+    def setUp(self):
+        self._prior_get = sources.http_get_full
+        body = json.dumps(DUPLICATE_BOARD).encode()
+        sources.http_get_full = lambda *a, **k: _result(body)
+        self.addCleanup(lambda: setattr(sources, "http_get_full", self._prior_get))
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self._prior_saving = company_roles._token_saving
+        company_roles._token_saving = lambda: False
+        self.addCleanup(
+            lambda: setattr(company_roles, "_token_saving", self._prior_saving))
+
+    def _dump(self, needle=None, **kwargs) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = company_roles.dump_jd(ENTRY, needle, **kwargs)
+        return code, out.getvalue(), err.getvalue()
+
+    # -- the reported failure ------------------------------------------------ #
+    def test_the_title_alone_still_cannot_narrow_and_says_how(self):
+        dest = self.tmp / "JD.md"
+        code, _stdout, stderr = self._dump(DUP_TITLE, out=dest)
+        self.assertEqual(code, 2)
+        self.assertFalse(dest.exists())
+        # The listing has to show fields that DIFFER, not four copies of a title.
+        for city in ("Seattle", "Austin", "Boston"):
+            self.assertIn(city, stderr)
+        self.assertIn("req-4512890", stderr)
+        self.assertIn("--jd-url", stderr)
+
+    # -- each duplicate is individually reachable ---------------------------- #
+    def test_every_same_title_posting_can_be_selected_by_url(self):
+        for req, city in (("4512890", "Seattle"), ("4512891", "Austin"),
+                          ("4512892", "Boston")):
+            dest = self.tmp / f"JD-{req}.md"
+            code, _stdout, stderr = self._dump(DUP_TITLE, out=dest, url=req)
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(city, dest.read_text(encoding="utf-8"))
+
+    def test_a_full_posting_url_selects_exactly_that_posting(self):
+        dest = self.tmp / "JD.md"
+        code, _stdout, stderr = self._dump(
+            url="https://jobs.ashbyhq.com/examplecorp/req-4512891", out=dest)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Austin", dest.read_text(encoding="utf-8"))
+
+    def test_an_exact_url_is_not_diluted_by_substring_neighbours(self):
+        """`req-451289` is a substring of all four; the exact URL still wins."""
+        dest = self.tmp / "JD.md"
+        code, _stdout, stderr = self._dump(
+            url="https://jobs.ashbyhq.com/examplecorp/req-4512892", out=dest)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Boston", dest.read_text(encoding="utf-8"))
+
+    def test_index_selects_from_the_printed_listing(self):
+        _code, _stdout, stderr = self._dump(DUP_TITLE, out=self.tmp / "x.md")
+        self.assertIn("[2]", stderr)
+        dest = self.tmp / "JD.md"
+        code, _stdout, err2 = self._dump(DUP_TITLE, out=dest, index=2)
+        self.assertEqual(code, 0, err2)
+        # [2] in the listing is the posting the file now carries.
+        listed = [ln for ln in stderr.splitlines() if ln.strip().startswith("[2]")][0]
+        city = listed.split("loc=")[1].split(",")[0]
+        self.assertIn(city, dest.read_text(encoding="utf-8"))
+
+    def test_the_index_order_is_ours_not_the_boards(self):
+        """A board that returns the same requisitions in another order must not
+        silently re-point --jd-index at a different posting."""
+        first = company_roles._selection_order(sources.fetch_company(ENTRY))
+        shuffled = list(reversed(sources.fetch_company(ENTRY)))
+        second = company_roles._selection_order(shuffled)
+        self.assertEqual([p.url for p in first], [p.url for p in second])
+
+    def test_out_of_range_index_names_the_count_and_lists_the_choices(self):
+        code, _stdout, stderr = self._dump(DUP_TITLE, out=self.tmp / "JD.md", index=9)
+        self.assertEqual(code, 2)
+        self.assertIn("out of range", stderr)
+        self.assertIn("4 posting(s)", stderr)
+
+    def test_out_still_refuses_to_combine_several_jds_into_one_file(self):
+        dest = self.tmp / "JD.md"
+        code, _stdout, _stderr = self._dump(url="req-45128", out=dest)
+        self.assertEqual(code, 2)
+        self.assertFalse(dest.exists())
+
+    def test_a_selector_that_matches_nothing_names_what_was_tried(self):
+        code, _stdout, stderr = self._dump(DUP_TITLE, url="req-9999999")
+        self.assertEqual(code, 1)
+        self.assertIn("req-9999999", stderr)
+
+    def test_unique_title_selection_is_unchanged(self):
+        dest = self.tmp / "JD.md"
+        code, _stdout, stderr = self._dump("Email", out=dest)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Notification pipelines", dest.read_text(encoding="utf-8"))
+
+
+class SelectorCliTests(unittest.TestCase):
+    def _cli(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        prior = sys.argv
+        sys.argv = ["company_roles.py", *argv]
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                code = company_roles.main()
+        finally:
+            sys.argv = prior
+        return code, out.getvalue(), err.getvalue()
+
+    def test_out_without_any_jd_selector_is_still_refused(self):
+        code, _stdout, stderr = self._cli(
+            ["--ats", "ashby", "--token", "x", "--out", "/tmp/nope.md"])
+        self.assertEqual(code, 2)
+        self.assertIn("--jd-url", stderr)
+
+    def test_a_zero_or_negative_index_is_rejected_before_any_fetch(self):
+        code, _stdout, stderr = self._cli(
+            ["--ats", "ashby", "--token", "x", "--jd", "X", "--jd-index", "0"])
+        self.assertEqual(code, 2)
+        self.assertIn("1-based", stderr)
 
 
 if __name__ == "__main__":
