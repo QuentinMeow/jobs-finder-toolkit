@@ -3869,3 +3869,12 @@
     Company N) and every URL is on example/jobs.example; real company names quoted
     from the public issue reports were replaced before commit. No real identity,
     employer, school, salary, private item name, or dated personal job-hunt content.'
+- base: 973a68ba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 4
+  digest: sha256:8d0dfee31052beab
+  finding: 'Reviewed four backlog task files recording the residuals of GH #243, #253,
+    #281 and the job-search skill docs. They name public repository files, public issue
+    numbers and the invented fixture shapes only. No real identity, employer, school,
+    salary, private item name, or dated personal job-hunt content.'
