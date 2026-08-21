@@ -3491,3 +3491,40 @@
   files: 14
   digest: sha256:c2c8eb0c69aa6381
   finding: none
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:bf582b4d115372c3
+  finding: 'Reviewed the leak-guard test module change. It rewrites fixture
+    surnames into split string literals, adds a self-scan test, and reflows the
+    surrounding comments. Every value is a synthetic fixture or an ordinary
+    English word; no real identity, employer, school, salary, private item name,
+    or dated personal job-hunt content is present.'
+- base: a9dd89f4
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:b535224822941b2b
+  finding: 'Reviewed the leak-guard fix-hint change and its tests. The added text
+    is operator guidance about the guard''s own opt-in word allowance, plus one
+    fictional-persona address assembled from split literals. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt
+    content is present.'
+- base: b076d2bd
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 3
+  digest: sha256:b3126015d5c98371
+  finding: 'Reviewed the handbook leak-guard paragraph and two backlog task
+    files. The only identity-shaped string is the fictional Jordan Rivers handle
+    already used throughout the public tree as the shipped example. Both task
+    files deliberately avoid naming any surname. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content is
+    present.'
+- base: 66e39b55
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'

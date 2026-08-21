@@ -59,6 +59,36 @@ passing, since `leak_tokens.txt` alone keeps the union non-empty while the name,
 and handles are absent. The exporter (`export_public.py`) always runs it against the
 copied tree as the final gate.
 
+**When your own name blocks the guard.** Matching is hybrid. A bare word — a name part,
+a one-word employer — hits only at a word, identifier or case-hump **edge**, so `making`
+does not flag a three-letter surname buried in it. High-specificity tokens (the email
+address, the linkedin/github handles, the home-directory basename, and the name
+*compounds* the guard derives — `jordanrivers`, `jrivers`, `jordan-rivers`) keep plain
+containment, which is what still catches `linkedin.com/in/jordanrivers`.
+
+Edges cannot help a name that **is** an ordinary word — a colour, a length, a place name.
+Nothing distinguishes a town from a person there, so the repo's own timeless prose flags
+as a leak. For that, and only that, the owner may declare the word in the git-ignored
+`config.yaml`:
+
+```yaml
+leak_guard:
+  english_word_tokens: ["<word>"]      # or $JOBHUNT_LEAK_GUARD_WORD_TOKENS for CI
+```
+
+It is **opt-in** (never inferred from a dictionary, never written by an agent, never
+tracked), **narrow** (it reaches boundary-matched tokens only — the address, the handles,
+the home basename and every full-name compound keep full containment, so the whole name
+written any way at all is still caught), **loud** (every run prints the word and the
+number of occurrences it skipped, clean or failing), and **still arming** (the token
+still counts, so declaring one can never drop the guard into its unarmed exit-2 state).
+The guard names this mechanism in its own check-6 output whenever a boundary token is
+what blocked you.
+
+The alternative an operator reaches for instead — deleting the identity out of
+`config.yaml` — is the one thing to never do: a guard with zero identity tokens is the
+state in which a tree full of the owner's real name reports "Safe to publish".
+
 **Routing**: skills are discovered by listing `skills/` — which is now ENTIRELY public;
 the skills table in `docs/handbook/repo-map.md` names exactly what ships. A private skill lives
 only at `private/skills/<name>/` and reaches the runtime through a git-ignored entry in
