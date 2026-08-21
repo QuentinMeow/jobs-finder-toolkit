@@ -243,33 +243,122 @@ def _sr_counts(body: bytes | None) -> tuple[int | None, int | None]:
     return returned, (total if isinstance(total, int) else None)
 
 
-def fetch_smartrecruiters(company: str, token: str) -> list[JobPosting]:
-    """List postings, then fetch detail (description) for each."""
-    base = f"https://api.smartrecruiters.com/v1/companies/{token}/postings"
-    list_url = f"{base}?limit=100"
-    resp = http_get_full(list_url)
-    returned, total_found = _sr_counts(resp.body)
-    # VERIFIED-AT-IMPLEMENTATION (2026-07-21): SmartRecruiters hard-truncates the
-    # listing at the `limit` cap — probes returned exactly 100 while `totalFound`
-    # was 243 / 280. So this is a `search` (absence means nothing), never attested
-    # complete; `totalFound > returned` (and, as a fallback, returned == cap) is the
-    # truncation signal, recorded verbatim in the request params.
-    truncated = bool(
-        (total_found is not None and returned is not None and total_found > returned)
-        or (returned is not None and returned >= 100))
+# SmartRecruiters serves its listing one PAGE at a time and hard-truncates each
+# page at `limit`. VERIFIED-AT-IMPLEMENTATION (2026-07-21): probes returned
+# exactly 100 rows while `totalFound` said 243 / 280. Reading one page therefore
+# inspects the first 100 rows of a board and silently ignores the rest — on a
+# 357-posting board that is 257 live rows that never reach the title/JD/location/
+# sponsorship gates, and WHICH rows survive is the provider's page ordering.
+_SR_PAGE_LIMIT = 100
+# Per-board ceiling for one run. Reaching it is a DELIBERATE cap (a registry entry
+# may raise it with `max_postings:`), reported as a cap and never as a source
+# failure — the two mean opposite things to a reader of the run summary.
+_SR_MAX_POSTINGS = 1000
+
+
+def _sr_listing_rows(company: str, base: str,
+                     max_postings: int) -> tuple[list[dict], dict]:
+    """Page the SmartRecruiters listing; return (rows, what-we-actually-saw).
+
+    Paging stops on the FIRST of: a short page (fewer rows than ``limit`` — the
+    clean end of the board), ``offset`` reaching a sane ``totalFound``, the
+    ``max_postings`` cap, or a page that contributes no id we have not already
+    seen. That last one is the loop guard: a provider that ignores ``offset`` and
+    replays page 1 forever cannot spin this loop, and a malformed/absent
+    ``totalFound`` changes nothing because no stop condition depends on it alone.
+
+    The FIRST page is load-bearing — a failure there means we saw no board at all
+    and raises, exactly as the single-request version did. A LATER page failing is
+    a partial listing: the rows already in hand are real and are kept, with the
+    shortfall reported. Rows are deduped by posting id, so an overlapping page
+    cannot double-count.
+    """
+    rows: list[dict] = []
+    seen_ids: set[str] = set()
+    offset = 0
+    total_found: int | None = None
+    pages = 0
+    info = {"capped": False, "incomplete": None}
     with capture_hooks.group("search", company, expected=None) as g:
-        capture_hooks.capture_search(
-            company, list_url, resp, source="smartrecruiters", item_count=returned,
-            params={"limit": 100, "returned": returned, "total_found": total_found,
-                    "truncated": truncated}, group=g)
-        g.attest(complete=False)
-    if not resp.ok:
-        raise RuntimeError(f"GET failed for {list_url}: {resp.error}")
-    data = json.loads(resp.body.decode("utf-8", "replace"))
+        g.attest(complete=False)   # a paged search still never attests complete
+        while True:
+            list_url = f"{base}?limit={_SR_PAGE_LIMIT}&offset={offset}"
+            resp = http_get_full(list_url)
+            returned, total = _sr_counts(resp.body)
+            if total is not None:
+                total_found = total
+            capture_hooks.capture_search(
+                company, list_url, resp, source="smartrecruiters",
+                item_count=returned,
+                pagination={"offset": offset, "limit": _SR_PAGE_LIMIT},
+                params={"limit": _SR_PAGE_LIMIT, "offset": offset,
+                        "returned": returned, "total_found": total_found},
+                group=g)
+            if not resp.ok:
+                if not pages:
+                    raise RuntimeError(f"GET failed for {list_url}: {resp.error}")
+                info["incomplete"] = f"page at offset {offset} failed: {resp.error}"
+                break
+            try:
+                data = json.loads(resp.body.decode("utf-8", "replace"))
+            except ValueError as exc:
+                if not pages:
+                    raise RuntimeError(
+                        f"smartrecruiters: unparseable listing for {list_url}") from exc
+                info["incomplete"] = f"page at offset {offset} was unparseable: {exc}"
+                break
+            pages += 1
+            content = data.get("content") if isinstance(data, dict) else None
+            content = content if isinstance(content, list) else []
+            fresh = 0
+            for j in content:
+                if not isinstance(j, dict):
+                    continue
+                key = str(j.get("id") or j.get("ref") or "")
+                if key and key in seen_ids:
+                    continue
+                if key:
+                    seen_ids.add(key)
+                rows.append(j)
+                fresh += 1
+                if len(rows) >= max_postings:
+                    break
+            if len(rows) >= max_postings:
+                info["capped"] = True
+                break
+            if len(content) < _SR_PAGE_LIMIT:
+                break                                    # clean end of the board
+            if not fresh:
+                info["incomplete"] = (
+                    f"the page at offset {offset} repeated rows already seen "
+                    f"(the board is not paging); stopped to avoid a loop")
+                break
+            offset += _SR_PAGE_LIMIT
+            if total_found is not None and total_found > 0 and offset >= total_found:
+                break
+    if (info["incomplete"] is None and not info["capped"]
+            and isinstance(total_found, int) and 0 < len(rows) < total_found):
+        # We walked to the end of the pages and still hold fewer rows than the
+        # board advertises. That is not a clean board: it shifted under the crawl,
+        # or paging stopped short. Either way the shortfall is real and must not
+        # read as full coverage.
+        info["incomplete"] = (
+            f"the listing ended after {len(rows)} rows while totalFound said "
+            f"{total_found}")
+    info["total_found"] = total_found
+    info["pages"] = pages
+    return rows, info
+
+
+def fetch_smartrecruiters(company: str, token: str,
+                          max_postings: int = _SR_MAX_POSTINGS) -> list[JobPosting]:
+    """List postings (paged to the end of the board), then fetch detail for each."""
+    base = f"https://api.smartrecruiters.com/v1/companies/{token}/postings"
+    listing, info = _sr_listing_rows(company, base, max_postings)
     out = []
     attempted = 0
     failures: list[str] = []
-    for j in data.get("content", []):
+    for j in listing:
         loc = j.get("location") or {}
         loc_str = ", ".join(x for x in [loc.get("city"), loc.get("region"),
                                         loc.get("country")] if x)
@@ -313,13 +402,20 @@ def fetch_smartrecruiters(company: str, token: str) -> list[JobPosting]:
             f"smartrecruiters:{company}: {len(failures)} of {attempted} JD detail "
             f"fetches failed (first: {failures[0]}); those postings carry an empty "
             f"description")
-    if truncated and total_found is not None and returned is not None:
-        # The truncation was already computed for the store attestation and told
-        # the live search nothing. Say it out loud: the rest of this board is
-        # invisible to this run.
+    if info["capped"]:
+        # A CAP, not a failure — the two mean opposite things. Name the knob.
+        total = info["total_found"]
+        of_total = f" of {total}" if total else ""
         record_source_warning(
-            f"smartrecruiters:{company}: listing truncated at {returned} of "
-            f"{total_found} postings (limit=100); the remainder was not inspected")
+            f"smartrecruiters:{company}: stopped at the configured per-board cap "
+            f"of {max_postings} postings{of_total}; the remainder was not "
+            f"inspected. Raise it with `max_postings:` on this company's "
+            f"companies.yaml row.")
+    if info["incomplete"]:
+        record_source_warning(
+            f"smartrecruiters:{company}: listing incomplete after "
+            f"{len(listing)} postings — {info['incomplete']}; the remainder was "
+            f"not inspected")
     return out
 
 
@@ -751,6 +847,12 @@ def fetch_company(entry: dict,
     if ats == "meta":
         return fetch_meta(name, entry.get("search_terms"),
                           word_filter=word_filter)
+    if ats == "smartrecruiters":
+        # The only ATS here that PAGES. `max_postings` is the per-board ceiling a
+        # very large employer's row can raise; reaching it is reported as a cap.
+        return fetch_smartrecruiters(
+            name, entry["token"],
+            max_postings=int(entry.get("max_postings") or _SR_MAX_POSTINGS))
     fetcher = FETCHERS.get(ats)
     if not fetcher:
         raise ValueError(f"Unknown ATS '{ats}' for {entry.get('name')}")

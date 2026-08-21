@@ -1,19 +1,19 @@
 # `classify_sponsorship()` still misses denials that match no phrase at all
 
-- **Status**: **CLOSED 2026-08-02** — all three remaining shapes fixed on
-  `fix/visa-classifier` (`5c51576`, `753fdda`, `f016aec`). Re-measured on that branch
-  tip, the three reproduction lines below now print `unlikely`, `unknown`, `unknown`.
-  (Narrowed 2026-07-31; **severity corrected upward 2026-08-01** — the 2026-07-31
+- **Status**: **REOPENED 2026-08-20, then closed again the same day** on
+  `fix/sponsorship-negation-safety` — see the third correction below. The 2026-08-02
+  CLOSED line stands as history and its own three reproduction lines still print
+  `unlikely`, `unknown`, `unknown`; what it got wrong was the CLASS. (Closed 2026-08-02;
+  narrowed 2026-07-31; **severity corrected upward 2026-08-01** — the 2026-07-31
   correction pass wrote a safety claim into this file that the code did not have, see
   the note below.)
-- **Severity**: **was high, now closed.** The high-severity shape — a denial reaching the
-  candidate as an explicit **offer** — no longer reproduces: `--visa-policy
-  require_positive` does not return a posting whose sentence carries an unreachable
-  negation cue. The `unclear` fall-through and the false-denial shape are closed in the
-  same branch. Before the fix this file read: a denial shape returned `verdict: likely`,
-  `confidence: high`, `decision: match`, `classify_visa: yes`, so a posting that refused
-  sponsorship in writing was shortlisted, unflagged, for the one candidate who cannot
-  take it.
+- **Severity**: **was high, reproduced at high again on 2026-08-20, now closed.** The
+  high-severity shape is *a denial reaching the candidate as an explicit **offer***, and
+  on 2026-08-20 it reproduced in four one-clause sentences that had nothing to do with
+  the unreachable-cue mechanism this file was written about. Before the fix this file
+  read: a denial shape returned `verdict: likely`, `confidence: high`, `decision: match`,
+  `classify_visa: yes`, so a posting that refused sponsorship in writing was shortlisted,
+  unflagged, for the one candidate who cannot take it.
 - **Area**: job-search
 - **Source**: GH issue #15 (comment thread); reconfirmed in
   `evals/results/stage2-canary-gate-19c3ff8-20260720.md` and
@@ -31,6 +31,41 @@
 > the pass whose stated purpose was removing false statements from tracked records, so
 > nothing downstream re-checked them. **A severity line is a safety claim; it is
 > re-measured on the tree that ships it, never carried forward from a prior read.**
+
+> **Third correction, 2026-08-20 — the CLASS, not the mechanism and not the wording.**
+> This file has been CLOSED since 2026-08-02 on the strength of a sentence that says the
+> high-severity shape *"no longer reproduces"*. It did reproduce, on `origin/main`, in
+> four sentences shorter and plainer than anything the file discusses:
+>
+> ```text
+> H-1B sponsorship is unavailable.          -> match / likely / HIGH
+> H-1B sponsorship is not offered.          -> match / likely / HIGH
+> Green card sponsorship is unavailable.    -> match / likely / HIGH
+> Immigration sponsorship is not offered …  -> match / likely / HIGH
+> ```
+>
+> Through `scoring.visa_ok` with `needs_sponsorship: true`, under BOTH policies:
+> `kept=True label=yes review_reasons=[]`. Cause: every negation rule in the module reads
+> BACKWARD from the sponsorship phrase, and these sentences put the refusal in the head
+> noun's own PREDICATE, where nothing was looking; `unavailable` was also absent from
+> `_SPONSOR_NEGATION_CUE_RE`, though it carries its negation as a prefix and is the most
+> common word a board refuses with.
+>
+> **The 2026-08-02 entry's own three reproduction lines still print exactly what it says
+> they print** — measured again on the same tree, `unlikely` / `unknown` / `unknown`. So
+> the mechanism-level work was sound and the wording-level claim was true. What was false
+> was the CLASS-level sentence built on top of them: three green wordings do not close
+> "a denial reported as an offer", and this file has now been wrong about that same
+> sentence twice, in the same direction, eighteen days apart.
+>
+> The two prior corrections say a severity line is re-measured on the tree that ships it.
+> That rule was followed and still missed this, because it was applied to the
+> reproductions the file already contained. **A CLOSED line on a defect CLASS is only as
+> good as the sentences it was measured over, and re-running the ones already written
+> down cannot falsify it.** Closing a class needs inputs the fix was not built from —
+> which is what `evals/` and the blind waves in GH #304 are for, and what this entry
+> should have demanded before printing the word CLOSED. Fixed on
+> `fix/sponsorship-negation-safety`; see the 2026-08-20 section below.
 
 > **Second correction, 2026-08-01 — the MECHANISM, not the severity.** The entry above
 > restored a true severity and then explained it with a false cause: it said the
@@ -375,6 +410,71 @@ which `--visa-policy require_positive` returns unflagged. It is the hedged-offer
 grammar one step over. Three readings are frozen as the matrix's `conditional-offer` rows;
 the work is filed as
 `tasks/0_backlog/2026-08-10-conditional-sponsorship-offers-grade-as-unhedged`.
+*(Closed 2026-08-20 — all three `conditional-offer` rows now carry an `expect` block; see
+the 2026-08-20 section.)*
+
+## Fixed on 2026-08-20 — negation is now read on BOTH sides of the head
+
+Branch `fix/sponsorship-negation-safety`, measured on the tracked matrix (now 101 rows,
+101 agreeing) plus the public corpus.
+
+**The defect.** Every negation rule in `job_metadata` read backward from the sponsorship
+phrase. The head noun's own predicate comes *after* it, and that is where a JD writes the
+refusal — so "H-1B sponsorship is unavailable." found no cue, the offer substring
+`h-1b sponsorship` stood unopposed, and the posting graded `match` / `likely` / **high**.
+Two independent causes, both closed:
+
+- **direction.** A forward scope was added: the existing clause scope plus one break the
+  backward side never needed — a relative pronoun or subordinator. That break is the whole
+  safety argument, because it is what separates "sponsorship is not offered" (a denial)
+  from "sponsorship is available for candidates WHO ARE NOT authorized to work here" (an
+  offer). A cue inside the tight budget denies the offer; one the budget refuses lands
+  `review`, the same evidence/verdict split every other ambiguity here uses. The expletive
+  "there" is a forward-only break addition: the shared break set recognizes a coordinated
+  clause by its SUBJECT and lists referring expressions only, so ", and there is no
+  relocation budget" demoted a plain offer until it was added.
+- **vocabulary.** `unavailable` / `unavailability` joined `_SPONSOR_NEGATION_CUE_RE`.
+
+**Shipped in the same pass**, each with its tripwire pinned beside it:
+
+- **#233 / #304 offer recall** — `sponsorship is available` (context-gated, deliberately
+  NOT strong: the bare sentence with no immigration word stays `unknown`, exactly as its
+  contiguous twin always has), `h-1b transfer(s)`, `immigration assistance`, `visa
+  support`. `_SPONSOR_CONTEXT_RE` was anchored on the singular `visa`, so "we sponsor …
+  employment visas" failed its own gate; the nouns are now number-neutral.
+- **#238** — a U.S.-person status list stated as an applicant REQUIREMENT is a denial.
+  Anchored on "must" with a person-noun subject, and defused by a visa/EAD/authorized-to-
+  work escape so the INCLUSIVE form of the same list (#265) and EEO copy stay clear.
+- **#265** — an explicit transfer welcome is an OFFER. A posting that refuses new
+  petitions and invites transfers is now a flagged conflict rather than a silent drop.
+  Consequence recorded because it moved three pinned tests: a flat refusal beside an
+  explicit transfer offer is `review`, not `no_match`. The invariant is unchanged —
+  the denial stays in the evidence and the verdict may never reach `match`/`likely` —
+  but the posting is kept and flagged instead of deleted.
+- **#286 (sponsorship half)** — the export-control sense gate now applies only to phrases
+  containing "sponsor". That ambiguity belongs to ONE noun; a citizenship bar has no
+  second sense, and gating it too suppressed the only evidence a firmware posting carried,
+  after which `signal_present` came back false and the default policy attached no review
+  reason. `signal_present` is now true whenever any rule fired.
+- **#304, the unsafe half only** — a condition FRONTED to the sentence ("If approved by
+  counsel, …", "Once legal signs off, …") and frequency hedges ("sometimes") no longer
+  read as settled offers. This closes the `conditional-offer` rows the sixth pass froze
+  and the backlog item it filed. The rest of #304 — its recall failures and its call for
+  proposition parsing instead of phrase lists — is NOT closed here.
+
+**Measured, on 59 fictional probe sentences that are not in the corpus** (before → after):
+offers 18/25 → 24/25, denials 9/25 → 25/25, neutral 9/9 → 8/9 — the single neutral move is
+the #265 inclusive status list, which #265 asks to be read as an offer. On the 132 tracked
+corpus + matrix rows, `likely` went 20 → 18: three deliberate conditional-offer demotions,
+one recovered offer, and no legitimate positive lost.
+
+**Recorded as method, extending the two notes above.** Passes four and five credited the
+evidence/verdict split and the frozen matrix. Both held here — the matrix caught twelve
+rows this pass would otherwise have moved silently, and every one of them turned out to be
+either a target or an evidence-only addition. Neither instrument could have found the
+defect, because both replay sentences that were already written down. **The matrix proves a
+change did not move what it should not; it cannot tell you the class is closed.** That
+needs sentences the fix was not built from.
 
 ## The repair options, as they stood before the fix (kept as history)
 

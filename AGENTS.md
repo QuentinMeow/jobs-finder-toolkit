@@ -280,7 +280,6 @@ conversion requires LibreOffice and may use the `JOBHUNT_SOFFICE` override.
 - Memory zones and expiry: `docs/handbook/memory-map.md`.
 - Self-contained skills and vendored shared code: `docs/handbook/skills-and-vendoring.md`.
 - Purpose-first placement and `local/` scratch: `docs/handbook/file-organization.md`.
-- Fan-out limit: `docs/handbook/subagent-budget.md`.
 - Process-item routing and schemas: `message-queue/README.md`, `tasks/README.md`, and
   `templates/README.md`.
 - Human-readable reports: `docs/handbook/reporting-to-the-owner.md` plus `explain-clearly`.

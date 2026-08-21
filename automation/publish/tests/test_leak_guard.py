@@ -8,6 +8,14 @@ included) and the leak guard scans it. So every "real-looking" PII fixture value
 below is assembled from split string fragments (``"415" + "-826-" + "1234"``) —
 the literal never appears contiguously in this source, so this test module itself
 stays guard-clean while the runtime fixture files it writes still trip the guard.
+
+That rule covers SURNAMES too, and there it is not cosmetic. A bare common
+surname written contiguously here is a boundary hit for every owner who shares
+it, on a tracked file they never touched — which is the very defect the boundary
+rule exists to fix, reintroduced one indirection later. Nine such surnames were
+spelled out below before this rule was applied to them.
+``ThisModuleIsSurnameCleanTests`` re-scans this file with the guard's own matcher
+and fails if one comes back.
 """
 from __future__ import annotations
 
@@ -354,29 +362,37 @@ class TokenMatchingRegressionTests(unittest.TestCase):
 # ``(text, surname)``. Every one of these fired under pure containment, and none
 # of them is a leak: the surname sits INSIDE an ordinary word. On the real
 # tracked tree these accounted for hundreds of false violations per surname —
-# enough that an owner named King, Ross, Green or Ward could not commit at all.
+# enough that an owner with a short, common surname could not commit at all.
 #
-# "Menlo Park" is deliberately absent. No boundary rule can separate the place
-# from the surname — "Alex Park" has exactly the same shape — so it is covered by
-# the opt-in English-word allowance tests instead.
+# THE SURNAMES ARE SPLIT LITERALS, and that is load-bearing rather than style.
+# Written contiguously they are bare words in a TRACKED file, so this list would
+# block every owner who shares one — the same defect it exists to fix, one
+# indirection later. ``ThisModuleIsSurnameCleanTests`` enforces it. The ordinary
+# word on the left still contains the surname; that it no longer FIRES is the
+# whole point of the boundary rule, so the left column needs no splitting.
+#
+# A surname that is also a PLACE name is deliberately absent here. No boundary
+# rule can separate the place from the person — a first name in front of it has
+# exactly the same shape — so that case belongs to the opt-in English-word
+# allowance tests below instead.
 MUST_NOW_ALLOW = [
-    ("agreed on the plan", "Reed"),
-    ("they disagreed", "Reed"),
-    ("the buffer is freed", "Reed"),
-    ("matched greedily", "Reed"),
-    ("the run parked the job", "Park"),
-    ("sparkling water", "Park"),
-    ("time.sleep() blocks", "Lee"),
-    ("the abstraction bleeds", "Lee"),
-    ("raise FileExistsError", "Lee"),
-    ("a shallow clone", "Hall"),
-    ("the challenge is real", "Hall"),
-    ("making progress", "King"),
-    ("a blocking call", "King"),
-    ("cross-session context", "Ross"),
-    ("outward facing", "Ward"),
-    ("read the quickstart", "Quick"),
-    ("Blacksmith patterns", "Smith"),
+    ("agreed on the plan", "R" + "eed"),
+    ("they disagreed", "R" + "eed"),
+    ("the buffer is freed", "R" + "eed"),
+    ("matched greedily", "R" + "eed"),
+    ("the run parked the job", "P" + "ark"),
+    ("sparkling water", "P" + "ark"),
+    ("time.sleep() blocks", "L" + "ee"),
+    ("the abstraction bleeds", "L" + "ee"),
+    ("raise FileExistsError", "L" + "ee"),
+    ("a shallow clone", "H" + "all"),
+    ("the challenge is real", "H" + "all"),
+    ("making progress", "K" + "ing"),
+    ("a blocking call", "K" + "ing"),
+    ("cross-session context", "R" + "oss"),
+    ("outward facing", "W" + "ard"),
+    ("read the quickstart", "Q" + "uick"),
+    ("Blacksmith patterns", "S" + "mith"),
 ]
 
 
@@ -405,6 +421,60 @@ class TokenMatchingFalsePositiveTests(unittest.TestCase):
                 self.assertTrue(self._token_hits(f"Contact: Alex {token}", [token]))
                 self.assertTrue(self._token_hits(f"alex-{token.lower()}/notes", [token]))
                 self.assertTrue(self._token_hits(f"Alex{token}Resume.md", [token]))
+
+
+class ThisModuleIsSurnameCleanTests(unittest.TestCase):
+    """This file's OWN bytes must not block an owner who shares a fixture name.
+
+    The second-order shape of the same defect. The boundary rule stopped
+    ``making`` from flagging the three-letter surname inside it — and then this
+    file, which is TRACKED and which the guard scans like anything else, spelled
+    that surname out as a fixture literal and flagged the owner anyway, on a
+    file they never touched. Measured before this test existed: three violations
+    tree-wide for that surname, one of them here; two more surnames whose ONLY
+    tracked occurrence in the whole repository was this module.
+
+    The rule that keeps it fixed is the one the module docstring already sets
+    for PII fixtures: assemble the value from split literals so the contiguous
+    string never lands in the source. This test enforces it with the guard's own
+    matcher rather than a hand-rolled search, so it cannot drift from the rule
+    that actually runs.
+
+    Scope is deliberately THIS FILE. The same defect still lives in tracked
+    prose elsewhere in the repo (process records that name surnames while
+    describing this very bug); widening the check to the whole tree is filed
+    separately, because it needs edits outside the guard's own files.
+    """
+
+    # Assembled from split literals — see the class docstring. A contiguous
+    # surname here would be the exact regression this test exists to catch, and
+    # the test would (correctly) fail on itself.
+    COMMON_SURNAMES = [
+        "R" + "eed", "P" + "ark", "L" + "ee", "H" + "all", "K" + "ing",
+        "R" + "oss", "W" + "ard", "Q" + "uick", "S" + "mith",
+    ]
+
+    def test_the_surname_list_is_not_vacuous(self):
+        # A typo that produced empty or truncated tokens would make every
+        # assertion below pass while checking nothing.
+        for surname in self.COMMON_SURNAMES:
+            with self.subTest(surname=surname):
+                self.assertGreaterEqual(len(surname), 3)
+                self.assertTrue(surname[0].isupper())
+
+    def test_no_bare_surname_appears_in_this_tracked_source(self):
+        text = Path(__file__).read_text(encoding="utf-8")
+        lowered = text.lower()
+        for spec in check_public.classify_tokens(self.COMMON_SURNAMES):
+            with self.subTest(surname=spec.token):
+                self.assertEqual(spec.mode, check_public.TOKEN_BOUNDARY)
+                hits = check_public._spec_match_count(spec, text, lowered)
+                self.assertEqual(
+                    hits, 0,
+                    f"{spec.token!r} appears as a bare word in this tracked "
+                    f"file ({hits} occurrence(s)); an owner with that surname "
+                    "cannot commit. Assemble it from split literals instead "
+                    "(see this class's docstring).")
 
 
 class TokenClassificationTests(unittest.TestCase):
@@ -483,14 +553,24 @@ class NameCompoundDerivationTests(unittest.TestCase):
         self.assertEqual(check_public._name_compounds(["Li", "Wu"]), set())
 
 
+# Surnames that are ALSO an ordinary English word or a place name — the case
+# boundaries cannot fix. Split literals, for the reason MUST_NOW_ALLOW gives.
+PLACE_SURNAME = "P" + "ark"          # 'Menlo <it>' and 'Alex <it>' are one shape
+COLOR_SURNAME = "G" + "reen"
+LENGTH_SURNAME = "L" + "ong"
+SPEED_SURNAME = "Q" + "uick"
+ROOM_SURNAME = "H" + "all"
+PLACE_PREFIX = "Menlo "              # the town the place surname belongs to
+
+
 class EnglishWordAllowanceTests(unittest.TestCase):
     """The opt-in allowance for a name that is ALSO an ordinary English word.
 
     Boundaries fix a surname hiding inside a word; they cannot fix a surname that
-    IS a word ('Menlo Park' and 'Alex Park' are the same string in the same
-    shape). This is the only mechanism in the guard that deliberately gives up
-    protection, so every constraint on it is pinned here: opt-in, loud, narrow,
-    and still arming.
+    IS a word — a town called 'Menlo <X>' and a person called 'Alex <X>' are the
+    same string in the same shape. This is the only mechanism in the guard that
+    deliberately gives up protection, so every constraint on it is pinned here:
+    opt-in, loud, narrow, and still arming.
     """
 
     def setUp(self):
@@ -515,29 +595,33 @@ class EnglishWordAllowanceTests(unittest.TestCase):
 
     # ── opt-in ──────────────────────────────────────────────────────────────
     def test_without_a_declaration_the_word_still_fires(self):
-        # The baseline the allowance is measured against. 'Menlo Park' is a real
-        # boundary hit for the surname Park and nothing infers otherwise.
-        self.assertTrue(self._hits(self._scan("offices in Menlo Park", ["Park"])))
+        # The baseline the allowance is measured against. The town name is a
+        # real boundary hit for the surname and nothing infers otherwise.
+        self.assertTrue(self._hits(
+            self._scan("offices in " + PLACE_PREFIX + PLACE_SURNAME,
+                       [PLACE_SURNAME])))
 
     def test_with_a_declaration_the_word_is_allowed(self):
-        result = self._scan("offices in Menlo Park", ["Park"],
-                            allowances={"park"})
+        result = self._scan("offices in " + PLACE_PREFIX + PLACE_SURNAME,
+                            [PLACE_SURNAME],
+                            allowances={PLACE_SURNAME.lower()})
         self.assertEqual(self._hits(result), [])
 
     def test_a_declaration_is_never_inferred_from_the_word_itself(self):
         # Nothing in the guard consults a dictionary: an ordinary English word
         # that was NOT declared keeps full protection.
-        for word in ("Green", "Long", "Quick", "Hall"):
+        for word in (COLOR_SURNAME, LENGTH_SURNAME, SPEED_SURNAME, ROOM_SURNAME):
             with self.subTest(word=word):
                 self.assertTrue(
                     self._hits(self._scan(f"the {word} report", [word])))
 
     def test_the_env_channel_declares_an_allowance(self):
-        os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = "# note\nGreen, Long\n"
+        os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = (
+            f"# note\n{COLOR_SURNAME}, {LENGTH_SURNAME}\n")
         with mock.patch.object(check_public, "_load_shared_config",
                                return_value=None):
             self.assertEqual(check_public.word_token_allowances(),
-                             {"green", "long"})
+                             {COLOR_SURNAME.lower(), LENGTH_SURNAME.lower()})
 
     def test_the_example_config_declares_nothing(self):
         # A public clone must never inherit an allowance it did not choose.
@@ -548,22 +632,25 @@ class EnglishWordAllowanceTests(unittest.TestCase):
 
     # ── loud ────────────────────────────────────────────────────────────────
     def test_the_report_names_the_token_and_the_count(self):
-        result = self._scan("Park it. The Park is closed. Menlo Park.", ["Park"],
-                            allowances={"park"})
-        self.assertEqual(result["word_allowances"]["reduced"], {"Park": 3})
+        text = (f"{PLACE_SURNAME} it. The {PLACE_SURNAME} is closed. "
+                f"{PLACE_PREFIX}{PLACE_SURNAME}.")
+        result = self._scan(text, [PLACE_SURNAME],
+                            allowances={PLACE_SURNAME.lower()})
+        self.assertEqual(result["word_allowances"]["reduced"], {PLACE_SURNAME: 3})
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             check_public.print_report(result)
-        text = buf.getvalue()
-        self.assertIn("word allowance", text)
-        self.assertIn("'Park'", text)
-        self.assertIn("REDUCED", text)
-        self.assertIn("3 occurrence(s) SKIPPED", text)
+        printed = buf.getvalue()
+        self.assertIn("word allowance", printed)
+        self.assertIn(f"'{PLACE_SURNAME}'", printed)
+        self.assertIn("REDUCED", printed)
+        self.assertIn("3 occurrence(s) SKIPPED", printed)
 
     def test_the_report_prints_even_on_a_clean_tree(self):
-        # Silence on a green run is how an allowance becomes something nobody
+        # Silence on a passing run is how an allowance becomes something nobody
         # remembers granting.
-        result = self._scan("nothing to see", ["Park"], allowances={"park"})
+        result = self._scan("nothing to see", [PLACE_SURNAME],
+                            allowances={PLACE_SURNAME.lower()})
         self.assertTrue(result["ok"], result["violations"])
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -586,7 +673,7 @@ class EnglishWordAllowanceTests(unittest.TestCase):
             # The sharpest case: a home-directory basename that IS an ordinary
             # word. Declaring it changes nothing, because provenance put it on
             # containment and an allowance only ever reaches a boundary token.
-            ("green", "/Users/"),
+            (COLOR_SURNAME.lower(), "/Users/"),
         ]
         for token, prefix in cases:
             with self.subTest(token=token):
@@ -597,18 +684,22 @@ class EnglishWordAllowanceTests(unittest.TestCase):
                                 f"an allowance weakened high-specificity {token!r}")
 
     def test_an_allowance_cannot_weaken_a_name_compound(self):
-        tokens = sorted(check_public._name_compounds(["Alex", "Green"]) | {"Green"})
-        forced = check_public._name_compounds(["Alex", "Green"])
-        # 'green' is declared; every compound spelling of the full name is not.
-        # Split literals again (see the module docstring): a contiguous
+        parts = ["Alex", COLOR_SURNAME]
+        compounds = check_public._name_compounds(parts)
+        tokens = sorted(compounds | {COLOR_SURNAME})
+        glued = ("alex" + COLOR_SURNAME.lower())
+        # The surname is declared; every compound spelling of the full name is
+        # not. Split literals again (see the module docstring): a contiguous
         # '/Users/<name>' or 'linkedin.com/in/<handle>' in this tracked source
         # would trip the guard's own structural-PII scan.
-        for text in ("linkedin.com/in/" + "alexgreen", "/Users/" + "alexgreen/x",
-                     "agreen" + "@" + "corp.com", "acme-alex-green/meta.yaml",
-                     "Contact: Alex Green"):
+        for text in ("linkedin.com/in/" + glued, "/Users/" + glued + "/x",
+                     "a" + COLOR_SURNAME.lower() + "@" + "corp.com",
+                     f"acme-alex-{COLOR_SURNAME.lower()}/meta.yaml",
+                     f"Contact: Alex {COLOR_SURNAME}"):
             with self.subTest(text=text):
-                result = self._scan(text, tokens, allowances={"green"},
-                                    forced=forced)
+                result = self._scan(text, tokens,
+                                    allowances={COLOR_SURNAME.lower()},
+                                    forced=compounds)
                 self.assertTrue(self._hits(result),
                                 f"the full name went unreported in {text!r}")
 
@@ -616,12 +707,15 @@ class EnglishWordAllowanceTests(unittest.TestCase):
         # The worst case the allowance has to survive: BOTH name parts are
         # ordinary words. Only the joined/glued compounds stand between the
         # owner's full name and a public repo.
-        parts = ["Long", "Green"]
+        first, last = LENGTH_SURNAME, COLOR_SURNAME
+        parts = [first, last]
         compounds = check_public._name_compounds(parts)
         tokens = sorted(compounds | set(parts))
-        both = {"long", "green"}
-        for text in ("Contact: Long Green", "Green, Long", "long-green/resume",
-                     "LongGreen_Resume.docx", "long_green"):
+        both = {first.lower(), last.lower()}
+        lo_first, lo_last = first.lower(), last.lower()
+        for text in (f"Contact: {first} {last}", f"{last}, {first}",
+                     f"{lo_first}-{lo_last}/resume",
+                     f"{first}{last}_Resume.docx", f"{lo_first}_{lo_last}"):
             with self.subTest(text=text):
                 result = self._scan(text, tokens, allowances=both,
                                     forced=compounds)
@@ -633,19 +727,75 @@ class EnglishWordAllowanceTests(unittest.TestCase):
         # An allowance narrows WHERE a token is reported. It must never remove
         # the token, because an empty identity set is the unarmed exit-2 state
         # in which everything reports "Safe to publish".
-        os.environ[check_public.TOKENS_ENV_VAR] = "Green"
-        os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = "Green"
+        os.environ[check_public.TOKENS_ENV_VAR] = COLOR_SURNAME
+        os.environ[check_public.WORD_ALLOWANCE_ENV_VAR] = COLOR_SURNAME
         try:
             with mock.patch.object(check_public, "_load_shared_config",
                                    return_value=_ExampleConfigStub):
-                self.assertIn("Green", check_public.identity_tokens())
-                self.assertIn("green", check_public.word_token_allowances())
+                self.assertIn(COLOR_SURNAME, check_public.identity_tokens())
+                self.assertIn(COLOR_SURNAME.lower(),
+                              check_public.word_token_allowances())
         finally:
             os.environ.pop(check_public.TOKENS_ENV_VAR, None)
 
     def test_no_declaration_means_no_allowance_block_at_all(self):
         result = self._scan("ordinary text", ["Rivers"])
         self.assertIsNone(result["word_allowances"])
+
+    # ── discoverable: named where the operator is actually standing ─────────
+    def test_the_failure_output_names_the_escape_hatch(self):
+        # The mechanism was reachable only from a config docstring, so the
+        # blocked owner's realistic move was deleting their identity out of
+        # config.yaml — which disarms check 6 for good. The wall has to carry
+        # the exit.
+        result = self._scan("offices in " + PLACE_PREFIX + PLACE_SURNAME,
+                            [PLACE_SURNAME])
+        self.assertTrue(self._hits(result))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        printed = buf.getvalue()
+        self.assertIn("english_word_tokens", printed)
+        self.assertIn(check_public.WORD_ALLOWANCE_ENV_VAR, printed)
+        self.assertIn("config.yaml", printed)
+        # It must name the token that actually blocked this run, not a generic
+        # placeholder the operator has to translate.
+        self.assertIn(repr(PLACE_SURNAME), printed)
+        # And it must say what the trade costs, in the same breath.
+        self.assertIn("UNARMED", printed)
+
+    def test_the_hint_is_silent_on_a_clean_run(self):
+        # Guidance for a wall nobody hit is noise, and noise is how the real
+        # lines stop being read.
+        result = self._scan("nothing to see", [PLACE_SURNAME])
+        self.assertTrue(result["ok"], result["violations"])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        self.assertNotIn("english_word_tokens", buf.getvalue())
+
+    def test_the_hint_is_never_offered_for_a_token_it_cannot_help(self):
+        # Advertising the allowance against an email, a handle or a home
+        # basename would send the owner to a switch that does nothing for them —
+        # and, worse, teach them the guard has an off switch for real leaks.
+        address = "jordan.rivers" + "@" + "example.com"
+        result = self._scan("the address is " + address, [address],
+                            forced={address})
+        self.assertTrue(self._hits(result))
+        self.assertEqual(result["boundary_tokens"], [])
+        self.assertEqual(check_public.word_allowance_hint(result), [])
+
+    def test_the_hint_is_silent_once_the_word_is_already_declared(self):
+        # Nothing left to suggest: the declaration is in force and the run's
+        # remaining hit is a different token entirely.
+        result = self._scan(
+            f"{PLACE_PREFIX}{PLACE_SURNAME} and Contact: Jordan Rivers",
+            [PLACE_SURNAME, "Rivers"],
+            allowances={PLACE_SURNAME.lower()})
+        self.assertTrue(self._hits(result))
+        self.assertNotIn(PLACE_SURNAME, result["boundary_tokens"])
+        hint = "\n".join(check_public.word_allowance_hint(result))
+        self.assertNotIn(repr(PLACE_SURNAME), hint)
 
 
 class ExporterMatchesTheGuardTests(unittest.TestCase):
@@ -1654,9 +1804,10 @@ class SafeWordTests(unittest.TestCase):
                                 check_public._apply_safe_words({folder}), set())
 
     def test_a_safe_word_matches_the_whole_name_not_a_substring(self):
-        # Substring semantics would let a one-letter line exempt every skill.
+        # Substring semantics would let a one-letter line exempt every skill —
+        # and would let either HALF of a compound name exempt the whole thing.
         with tempfile.TemporaryDirectory() as td:
-            safe = self._safe_file(td, "quick\nanswer\na\n")
+            safe = self._safe_file(td, "field\nnotes\na\n")
             with mock.patch.object(check_public, "SAFE_WORDS_FILES", [safe]):
                 self.assertEqual(
                     check_public._apply_safe_words({"field-notes"}),

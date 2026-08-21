@@ -40,7 +40,14 @@ violation; otherwise it exits 0 with an "OK" message:
      (email, handle, home basename, and the name COMPOUNDS derived alongside
      them — ``jordanrivers``, ``jrivers``, ``jordan-rivers``) keep plain
      containment, so a glued leak like ``linkedin.com/in/jordanrivers`` is still
-     caught.
+     caught. Boundaries cannot help a name that IS an ordinary word ("Green",
+     "Long", "Park"): that case has an opt-in, per-token allowance the OWNER
+     declares in the git-ignored ``config.yaml`` as
+     ``leak_guard.english_word_tokens`` (or ``$JOBHUNT_LEAK_GUARD_WORD_TOKENS``
+     for CI / the exporter). It reaches BOUNDARY tokens only — the address, the
+     handles, the home basename and the full-name compounds are never weakened
+     by it — and every run afterwards prints what it skipped. The guard names
+     this itself under check 6 whenever a boundary token is what blocked you.
   7. Unscannable binaries (fail closed). Document binaries (``.docx``/``.pdf``/...)
      AND images (``.png``/``.jpg``/...) that cannot be text-extracted count as
      FAILURES (they might hide a real name/resume/screenshot). A narrow explicit
@@ -1547,6 +1554,12 @@ def find_token_and_pii_violations(
     specs = classify_tokens(tokens, force_substring=force_substring,
                             allowances=allowances)
     allowed = allowed_specs(specs)
+    # Tokens matched by the BOUNDARY rule and not already allowed: exactly the
+    # set an English-word allowance can reach. Carried through so the report can
+    # name the escape hatch AT the moment a bare name part blocks someone, which
+    # is the only moment they will go looking for it.
+    boundary_tokens = [spec.token for spec in specs
+                       if spec.mode == TOKEN_BOUNDARY and not spec.allowed]
     allowance_counts: dict[str, int] = {}
     token_viols: list[dict] = []
     pii_viols: list[dict] = []
@@ -1675,6 +1688,8 @@ def find_token_and_pii_violations(
         # it fired) and how many matches it suppressed.
         "allowance_tokens": [spec.token for spec in allowed],
         "allowance_skipped": allowance_counts,
+        # Tokens an allowance COULD reach (see above). Never a violation itself.
+        "boundary_tokens": boundary_tokens,
         # A SUBSET of files_read (informational, never fatal), so the
         # read + skipped + unreadable == tracked accounting still holds.
         "fallback_decoded": fallback,
@@ -1793,6 +1808,10 @@ def scan(root: Path = REPO_ROOT, tracked: list[str] | None = None,
         "safe_words": safe_words_info,
         # None when the owner declared no English-word allowance (the norm).
         "word_allowances": word_allowances,
+        # Active tokens matched at a word/identifier EDGE and not already
+        # allowed — the only ones ``leak_guard.english_word_tokens`` can reach.
+        # The report turns this into the fix hint printed under check 6.
+        "boundary_tokens": inspection["boundary_tokens"],
         # WHY the identity count is what it is: a real config, the fictional
         # example, or a config layer that refused/failed. Never raises.
         "config_status": config_identity_status(),
@@ -1952,6 +1971,65 @@ def scan_git_object(repo_root: Path, object_name: str,
     return result
 
 
+def word_allowance_hint(result: dict) -> list[str]:
+    """Lines telling a blocked operator that the English-word allowance exists.
+
+    THE FAILURE OUTPUT IS THE ONLY PLACE THIS GETS READ. An owner surnamed for a
+    colour, a length or a place is blocked by this guard on tracked prose they
+    never wrote, in a hook, mid-commit; they will not go and read a handbook to
+    find out that ``leak_guard.english_word_tokens`` exists. Undiscoverable, the
+    mechanism's real-world substitute is deleting the identity out of
+    ``config.yaml`` — which disarms check 6 completely and permanently, and is
+    the one state in which a tree full of the owner's real name reports "Safe to
+    publish". So the hint is printed exactly where the wall is.
+
+    It is printed for BOUNDARY tokens only, because those are the only ones an
+    allowance can reach: an email address, a linkedin/github handle, the
+    home-directory basename and every compound of the full name keep plain
+    containment whatever is declared, and offering the hint for one of those
+    would be advertising a fix that does not work.
+
+    Returns lines rather than printing them so the caller owns the layout, and
+    an empty list when there is nothing eligible — a leak that is genuinely a
+    leak must not come with a suggestion for making it go away.
+    """
+    eligible = {t.lower() for t in (result.get("boundary_tokens") or ())}
+    if not eligible:
+        return []
+    hits = result["violations"]["personal_token"]
+    blocked = sorted({item["token"] for item in hits
+                      if str(item.get("token", "")).lower() in eligible},
+                     key=str.lower)
+    if not blocked:
+        return []
+    named = ", ".join(repr(t) for t in blocked)
+    return [
+        "  Blocked by a name part sitting in this repository's OWN prose?",
+        f"  {named} matched at a word/identifier edge — all a bare name can be",
+        "  matched on. A name that is ALSO an ordinary word or a place name will",
+        "  therefore hit timeless public text, and NO rule can tell that from a real",
+        "  leak: the strings are identical. If that is what the hits above are, you",
+        "  may declare the word. Opt-in, one token at a time:",
+        "",
+        "      # config.yaml (git-ignored; the owner types this, never an agent)",
+        "      leak_guard:",
+        f"        english_word_tokens: [{blocked[0]!r}]",
+        "",
+        "      # CI / the exporter, which have no config.yaml of their own:",
+        f"      export {WORD_ALLOWANCE_ENV_VAR}='<word>[,<word>...]'",
+        "",
+        "  What it costs: that BARE word stops being reported anywhere in the tree.",
+        "  What it never touches: your email address, your linkedin/github handles,",
+        "  your home-directory basename, and every compound of your full name — they",
+        "  keep full containment matching, so the name written any way at all is",
+        "  still caught. Every run afterwards prints what the allowance skipped.",
+        "  What NOT to do instead: emptying your identity out of config.yaml leaves",
+        "  the guard UNARMED, and an unarmed guard prints 'Safe to publish' over a",
+        "  tree that contains your real name.",
+        "",
+    ]
+
+
 def print_report(result: dict) -> None:
     """Print a human-readable report of the scan result."""
     v = result["violations"]
@@ -2103,6 +2181,8 @@ def print_report(result: dict) -> None:
                 print(f"  - CONTENT {item['path']}{loc}  "
                       f"(token: {item['token']!r})  {item['text']!r}")
         print()
+        for line in word_allowance_hint(result):
+            print(line)
 
     if unscanned:
         print(f"[7] Unscannable binaries (fail closed — cannot verify contents) "

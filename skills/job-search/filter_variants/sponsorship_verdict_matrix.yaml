@@ -32,8 +32,10 @@ baseline_ref: 399a6ec2cd4acd5076919435332035ff8d48dd8c
 rows:
 - id: sponsorship-explicit-offer
   group: corpus
-  change: expected-unchanged
-  note: Pre-existing labeled corpus case.
+  change: expected-change
+  note: 'Pre-existing labeled corpus case. Evidence only: the copula offer phrase `sponsorship
+    is available` was added for #233, so this sentence now reports two overlapping offer
+    phrases instead of one. The verdict is untouched.'
   text: Visa sponsorship is available for qualified candidates.
   baseline:
     decision: match
@@ -43,6 +45,16 @@ rows:
     - visa sponsorship is available
     rule_ids:
     - sponsorship.positive.visa sponsorship is available
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - visa sponsorship is available
+    - sponsorship is available
+    rule_ids:
+    - sponsorship.positive.visa sponsorship is available
+    - sponsorship.positive.sponsorship is available
 - id: sponsorship-explicit-denial
   group: corpus
   change: expected-unchanged
@@ -71,8 +83,10 @@ rows:
     rule_ids: []
 - id: sponsorship-conflicting-role-language
   group: corpus
-  change: expected-unchanged
-  note: Pre-existing labeled corpus case.
+  change: expected-change
+  note: 'Pre-existing labeled corpus case. Evidence only: `in some cases` is now read as
+    the frequency hedge it is (#304), so the offer half is reported as hedged rather than
+    unhedged. Same conflict, same review verdict.'
   text: We sponsor work visas in some cases, but this role has no sponsorship.
   baseline:
     decision: review
@@ -84,6 +98,18 @@ rows:
     rule_ids:
     - sponsorship.negative.no sponsorship
     - sponsorship.positive.sponsor work visas
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - no sponsorship
+    - 'hedged: we sponsor'
+    - 'hedged: sponsor work visas'
+    rule_ids:
+    - sponsorship.negative.no sponsorship
+    - sponsorship.hedged_offer.we sponsor
+    - sponsorship.hedged_offer.sponsor work visas
 - id: sponsorship-negated-offer-phrase
   group: corpus
   change: expected-unchanged
@@ -140,8 +166,11 @@ rows:
     - sponsorship.ambiguous.double_negation
 - id: sponsorship-offer-after-clause-restart
   group: corpus
-  change: expected-unchanged
-  note: Pre-existing labeled corpus case.
+  change: expected-change
+  note: 'Pre-existing labeled corpus case. Evidence only: the `sponsorship is available`
+    phrase added for #233 overlaps the same offer. The clause-restart guard is unmoved —
+    this is still an offer, and the forward negation scan does not reach back across the
+    restart either.'
   text: There is no relocation budget, and visa sponsorship is available for this role.
   baseline:
     decision: match
@@ -151,6 +180,16 @@ rows:
     - visa sponsorship is available
     rule_ids:
     - sponsorship.positive.visa sponsorship is available
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - visa sponsorship is available
+    - sponsorship is available
+    rule_ids:
+    - sponsorship.positive.visa sponsorship is available
+    - sponsorship.positive.sponsorship is available
 - id: sponsorship-export-control-is-not-a-denial
   group: corpus
   change: expected-unchanged
@@ -180,8 +219,12 @@ rows:
     - sponsorship.negated_offer.provide visa sponsorship
 - id: sponsorship-caveated-offer-stays-offer
   group: corpus
-  change: expected-unchanged
-  note: Pre-existing labeled corpus case.
+  change: expected-change
+  note: 'Pre-existing labeled corpus case, and the sharpest test of the new forward negation
+    scan: the caveat clause DOES now produce a reading ("sponsorship ... is not guaranteed"),
+    and the scope-limit layer catches it as a bound on the offer rather than a refusal, so
+    the verdict is unchanged. If a later pass makes the forward scan skip the scope-limit
+    check, this row turns red before anything ships.'
   text: Visa sponsorship is available for this role, though sponsorship is not guaranteed.
   baseline:
     decision: match
@@ -191,6 +234,18 @@ rows:
     - visa sponsorship is available
     rule_ids:
     - sponsorship.positive.visa sponsorship is available
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - 'scope-limited: negated sponsorship predicate'
+    - visa sponsorship is available
+    - sponsorship is available
+    rule_ids:
+    - sponsorship.scope_limit.negated sponsorship predicate
+    - sponsorship.positive.visa sponsorship is available
+    - sponsorship.positive.sponsorship is available
 - id: sponsorship-offer-then-scope-limit-is-an-offer
   group: corpus
   change: expected-unchanged
@@ -355,8 +410,11 @@ rows:
     - sponsorship.positive.we sponsor
 - id: sponsorship-offer-then-unrelated-negation-stays-an-offer
   group: corpus
-  change: expected-unchanged
-  note: Pre-existing labeled corpus case.
+  change: expected-change
+  note: 'Pre-existing labeled corpus case. Evidence only: the generic offer phrase `we sponsor`
+    needs an immigration word in its window, and the window pattern was anchored on the
+    SINGULAR "visa" (#304), so the plural in this very sentence failed the gate. Same verdict,
+    one more piece of evidence for it.'
   text: We sponsor visas for this role. We do not offer relocation assistance.
   baseline:
     decision: match
@@ -365,6 +423,16 @@ rows:
     evidence:
     - sponsor visas
     rule_ids:
+    - sponsorship.positive.sponsor visas
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - we sponsor
+    - sponsor visas
+    rule_ids:
+    - sponsorship.positive.we sponsor
     - sponsorship.positive.sponsor visas
 - id: sponsorship-non-immigration-sponsee-is-not-a-denial
   group: corpus
@@ -864,10 +932,11 @@ rows:
     - sponsorship.negative.citizen status stated as required
 - id: conditional-offer-if-approved-by-counsel
   group: conditional-offer
-  change: expected-unchanged
-  note: 'Currently graded as an unhedged offer, which is the dangerous direction. OUT of scope
-    here (the bounded #238a list does not cover conditionals); recorded so a later pass starts
-    from a frozen baseline.'
+  change: expected-change
+  note: 'The later pass the baseline was frozen for. A condition FRONTED to the sentence sits
+    outside the bounded clause scope the hedge rule reads, so a sentence that says the offer
+    has not been decided yet graded as a settled offer. Read over the sentence head instead,
+    it lands where every other undecided offer lands.'
   text: If approved by counsel, the company will sponsor H-1B candidates.
   baseline:
     decision: match
@@ -879,10 +948,20 @@ rows:
     rule_ids:
     - sponsorship.positive.sponsor h-1b
     - sponsorship.positive.will sponsor
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'hedged: sponsor h-1b'
+    - 'hedged: will sponsor'
+    rule_ids:
+    - sponsorship.hedged_offer.sponsor h-1b
+    - sponsorship.hedged_offer.will sponsor
 - id: conditional-offer-subject-to-approval
   group: conditional-offer
-  change: expected-unchanged
-  note: Same class as the row above; recorded, not fixed.
+  change: expected-change
+  note: Same class as the row above; fixed by the same sentence-head condition scan.
   text: Subject to internal approval, we sponsor work visas for this role.
   baseline:
     decision: match
@@ -892,10 +971,20 @@ rows:
     - sponsor work visas
     rule_ids:
     - sponsorship.positive.sponsor work visas
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'hedged: we sponsor'
+    - 'hedged: sponsor work visas'
+    rule_ids:
+    - sponsorship.hedged_offer.we sponsor
+    - sponsorship.hedged_offer.sponsor work visas
 - id: conditional-offer-provided-that-business-need
   group: conditional-offer
-  change: expected-unchanged
-  note: Same class as the row above; recorded, not fixed.
+  change: expected-change
+  note: Same class as the row above; fixed by the same sentence-head condition scan.
   text: Provided that a business need is established, we will sponsor visas.
   baseline:
     decision: match
@@ -905,6 +994,16 @@ rows:
     - sponsor visas
     rule_ids:
     - sponsorship.positive.sponsor visas
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - 'hedged: will sponsor'
+    - 'hedged: sponsor visas'
+    rule_ids:
+    - sponsorship.hedged_offer.will sponsor
+    - sponsorship.hedged_offer.sponsor visas
 - id: transfer-friendly-new-petition-denial
   group: h1b-transfer-scope
   change: expected-change
@@ -926,8 +1025,10 @@ rows:
     confidence: low
     evidence:
     - 'unsettled: unable to sponsor'
+    - h-1b transfer
     rule_ids:
     - sponsorship.unsettled_denial.unable to sponsor
+    - sponsorship.positive.h-1b transfer
 - id: transfer-friendly-initial-petition-denial
   group: h1b-transfer-scope
   change: expected-change
@@ -1067,9 +1168,12 @@ rows:
     rule_ids: []
 - id: control-open-to-sponsoring-visas
   group: control
-  change: expected-unchanged
+  change: expected-change
   note: 'TRIPWIRE for the #238a ''not sponsoring visas'' rule: the positive form must stay
-    an offer.'
+    an offer. The baseline records that it was NOT one — the offer phrase `open to sponsoring`
+    matched and was then dropped by an immigration gate anchored on the singular "visa",
+    so the tripwire was green while reporting silence on an explicit offer. Widening that
+    gate to the plural is what moves it (#304).'
   text: We are open to sponsoring employment-based visas.
   baseline:
     decision: review
@@ -1077,6 +1181,14 @@ rows:
     confidence: unknown
     evidence: []
     rule_ids: []
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - open to sponsoring
+    rule_ids:
+    - sponsorship.positive.open to sponsoring
 - id: control-conference-booth-sponsorship
   group: control
   change: expected-unchanged
@@ -1133,8 +1245,10 @@ rows:
     - sponsorship.positive.green card process
 - id: control-offer-then-role-scope-limit
   group: control
-  change: expected-unchanged
-  note: The same shape written across a semicolon.
+  change: expected-change
+  note: 'The same shape written across a semicolon. Evidence only: the `sponsorship is available`
+    phrase (#233) overlaps the same offer. The semicolon still stops the forward negation
+    scan dead, which is what this row guards.'
   text: Visa sponsorship is available; it is not offered for every opening.
   baseline:
     decision: match
@@ -1144,10 +1258,22 @@ rows:
     - visa sponsorship is available
     rule_ids:
     - sponsorship.positive.visa sponsorship is available
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - visa sponsorship is available
+    - sponsorship is available
+    rule_ids:
+    - sponsorship.positive.visa sponsorship is available
+    - sponsorship.positive.sponsorship is available
 - id: control-plain-offer-stays-an-offer
   group: control
-  change: expected-unchanged
-  note: The clearest offer in the module must never move.
+  change: expected-change
+  note: 'The clearest offer in the module must never move — and the VERDICT does not. Evidence
+    only: `sponsorship is available` (#233) and `h-1b transfers` (#233/#265) both name the
+    same offer this sentence already made.'
   text: Visa sponsorship is available for this role and we sponsor H-1B transfers.
   baseline:
     decision: match
@@ -1161,6 +1287,22 @@ rows:
     - sponsorship.positive.sponsor h-1b
     - sponsorship.positive.visa sponsorship is available
     - sponsorship.positive.we sponsor
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - sponsor h-1b
+    - visa sponsorship is available
+    - we sponsor
+    - sponsorship is available
+    - h-1b transfers
+    rule_ids:
+    - sponsorship.positive.sponsor h-1b
+    - sponsorship.positive.visa sponsorship is available
+    - sponsorship.positive.we sponsor
+    - sponsorship.positive.sponsorship is available
+    - sponsorship.positive.h-1b transfers
 - id: control-silence-stays-unknown
   group: control
   change: expected-unchanged
@@ -1185,3 +1327,436 @@ rows:
     evidence: []
     rule_ids:
     - sponsorship.non_immigration.export_control
+- id: forward-negation-h1b-sponsorship-unavailable
+  group: forward-negation
+  change: expected-change
+  note: 'THE headline defect. Every negation rule read BACKWARD from the phrase, and this
+    sentence puts the refusal in the head noun''s own PREDICATE, so the OFFER substring stood
+    unopposed at HIGH confidence — kept and labelled `yes` under both visa policies with an
+    empty review_reasons.'
+  text: "H-1B sponsorship is unavailable."
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - h-1b sponsorship
+    rule_ids:
+    - sponsorship.positive.h-1b sponsorship
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - "negated: h-1b sponsorship"
+    rule_ids:
+    - sponsorship.negated_offer.h-1b sponsorship
+- id: forward-negation-h1b-sponsorship-not-offered
+  group: forward-negation
+  change: expected-change
+  note: 'Same defect, the other cue. Recorded separately because a repair aimed at the
+    morphological negative alone would leave this one open.'
+  text: "H-1B sponsorship is not offered."
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - h-1b sponsorship
+    rule_ids:
+    - sponsorship.positive.h-1b sponsorship
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - "negated: h-1b sponsorship"
+    rule_ids:
+    - sponsorship.negated_offer.h-1b sponsorship
+- id: forward-negation-green-card-sponsorship-unavailable
+  group: forward-negation
+  change: expected-change
+  note: 'Same defect, a different head noun. The head prefix set is what generalizes it.'
+  text: "Green card sponsorship is unavailable."
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - green card sponsorship
+    rule_ids:
+    - sponsorship.positive.green card sponsorship
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - "negated: green card sponsorship"
+    rule_ids:
+    - sponsorship.negated_offer.green card sponsorship
+- id: forward-negation-immigration-sponsorship-not-offered
+  group: forward-negation
+  change: expected-change
+  note: 'Same defect on the generic head, with a trailing qualifier after the predicate.'
+  text: "Immigration sponsorship is not offered for this role."
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - immigration sponsorship
+    rule_ids:
+    - sponsorship.positive.immigration sponsorship
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - "negated: immigration sponsorship"
+    rule_ids:
+    - sponsorship.negated_offer.immigration sponsorship
+- id: forward-negation-bare-head-predicate
+  group: forward-negation
+  change: expected-change
+  note: 'The bare head with no offer phrase over it: previously silence rather than a false
+    offer, but the JD refused in writing either way.'
+  text: "Employment-visa sponsorship is unavailable through this employer."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated sponsorship predicate
+    rule_ids:
+    - sponsorship.negative.negated sponsorship predicate
+- id: forward-negation-field-row-separator
+  group: forward-negation
+  change: expected-change
+  note: 'A field row, not a sentence. The separator is a clause break to every other rule, which
+    would leave the forward scope empty.'
+  text: "Visa sponsorship: not available."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated sponsorship predicate
+    rule_ids:
+    - sponsorship.negative.negated sponsorship predicate
+- id: control-forward-relative-clause-keeps-the-offer
+  group: control
+  change: expected-change
+  note: 'TRIPWIRE. The bound without which a forward rule invents refusals out of the clearest
+    offer wording: `not` modifies the CANDIDATES. Evidence-only move (the #233 copula phrase
+    overlaps the same offer); the verdict may never leave `match`.'
+  text: "H-1B sponsorship is available for candidates who are not currently authorized to work in the United States."
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - h-1b sponsorship
+    rule_ids:
+    - sponsorship.positive.h-1b sponsorship
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - h-1b sponsorship
+    - sponsorship is available
+    rule_ids:
+    - sponsorship.positive.h-1b sponsorship
+    - sponsorship.positive.sponsorship is available
+- id: control-forward-coordinated-clause-keeps-the-offer
+  group: control
+  change: expected-change
+  note: 'TRIPWIRE for the expletive-subject break. The shared break set recognizes a coordinated
+    clause by its SUBJECT and lists referring expressions only, so "and there is ..." read as
+    part of the sponsorship predicate.'
+  text: "Visa sponsorship is available, and there is no relocation budget."
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - visa sponsorship is available
+    rule_ids:
+    - sponsorship.positive.visa sponsorship is available
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - visa sponsorship is available
+    - sponsorship is available
+    rule_ids:
+    - sponsorship.positive.visa sponsorship is available
+    - sponsorship.positive.sponsorship is available
+- id: forward-negation-cue-out-of-reach
+  group: forward-negation
+  change: expected-change
+  note: 'The two-step, forward. The refusal is real but the adjacency test refuses to assert it
+    across a comma at a nine-token gap, and an unreadable sentence is not evidence of an offer
+    either.'
+  text: "H-1B sponsorship for engineering roles based in our Austin, Texas office is not offered."
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - h-1b sponsorship
+    rule_ids:
+    - sponsorship.positive.h-1b sponsorship
+  expect:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence:
+    - "unreachable-cue: h-1b sponsorship"
+    rule_ids:
+    - sponsorship.unreachable_cue.h-1b sponsorship
+- id: gap-us-person-status-stated-as-required
+  group: us-person-requirement
+  change: expected-change
+  note: '#238: the compact field rules reached "Visa: GC/Citizens" and the phrase list reached
+    the singular "must be a u.s. citizen"; the same bar as an ordinary sentence produced no
+    evidence at all.'
+  text: "The successful candidate must establish U.S. Citizen, National, Lawful Permanent Resident, Refugee, or Asylee status."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - us person status stated as an applicant requirement
+    rule_ids:
+    - sponsorship.negative.us person status stated as an applicant requirement
+- id: gap-us-citizens-plural-requirement
+  group: us-person-requirement
+  change: expected-change
+  note: '#238, the plural without the article — one character outside the phrase list.'
+  text: "Applicants for this role must be U.S. citizens."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - us person status stated as an applicant requirement
+    rule_ids:
+    - sponsorship.negative.us person status stated as an applicant requirement
+- id: control-eeo-citizenship-copy-is-not-a-requirement
+  group: control
+  change: expected-unchanged
+  note: 'TRIPWIRE for the row above: non-discrimination boilerplate names the same nouns and is
+    the opposite of a bar.'
+  text: "We are an equal opportunity employer and do not discriminate on the basis of citizenship or national origin."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: control-inclusive-status-list-is-not-a-bar
+  group: control
+  change: expected-change
+  note: '#265: the same status nouns OFFERED rather than required, with the applicant''s own
+    pathway among them. Moves to an offer, which is what #265 asks for; a rule firing on the
+    nouns alone would drop a posting that invites this candidate.'
+  text: "U.S. Citizens, Green Card Holders, EAD Holders, and H-1B transfer candidates are encouraged to apply."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - h-1b transfer
+    rule_ids:
+    - sponsorship.positive.h-1b transfer
+- id: export-control-citizenship-bar-survives
+  group: us-person-requirement
+  change: expected-change
+  note: '#286, sponsorship half. The export-control sense gate exists for ONE ambiguous word and
+    a citizenship bar has no second sense; gating it too suppressed the only evidence a firmware
+    posting carried and the row became the top match.'
+  text: "Applicants must be a U.S. citizen, lawful permanent resident, or protected individual, and must be eligible for a security clearance under the International Traffic in Arms Regulations (ITAR)."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: low
+    evidence: []
+    rule_ids:
+    - sponsorship.non_immigration.export_control
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - must be a u.s. citizen
+    rule_ids:
+    - sponsorship.negative.must be a u.s. citizen
+- id: control-ordinary-fronted-clause-keeps-the-offer
+  group: control
+  change: expected-unchanged
+  note: 'TRIPWIRE for the conditional-offer rule: the subordinator alone is not a condition on
+    the offer, or every sentence opening with "if" would lose its offer.'
+  text: "If you are interested in this role, we offer visa sponsorship."
+  baseline:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - offer visa sponsorship
+    rule_ids:
+    - sponsorship.positive.offer visa sponsorship
+- id: gap-support-h1b-transfers-is-an-offer
+  group: offer-recall
+  change: expected-change
+  note: '#233: an explicit transfer welcome is a sponsorship commitment — a transfer is a
+    petition the employer files.'
+  text: "We support H-1B transfers for qualified candidates."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - h-1b transfers
+    rule_ids:
+    - sponsorship.positive.h-1b transfers
+- id: gap-sponsorship-is-available-with-context
+  group: offer-recall
+  change: expected-change
+  note: '#233/#304 replay control: the copula form of an offer the list only carried
+    contiguously.'
+  text: "Sponsorship is available to applicants requiring H-1B status."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - sponsorship is available
+    rule_ids:
+    - sponsorship.positive.sponsorship is available
+- id: control-bare-sponsorship-offer-stays-unknown
+  group: control
+  change: expected-unchanged
+  note: 'TRIPWIRE and the deliberate limit on the row above: with no immigration word anywhere
+    this is the wording an event-sponsorship sentence uses, so it earns a positive only with
+    context in the window.'
+  text: "Sponsorship is available."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+- id: gap-denial-through-an-offer-synonym
+  group: denial-relation
+  change: expected-change
+  note: '#304: the relation between the negation and the head is not one verb, and a synonym the
+    list lacks turns a written refusal back into silence.'
+  text: "This employer does not arrange or fund visa sponsorship."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated offer verb
+    rule_ids:
+    - sponsorship.negative.negated offer verb
+- id: gap-denial-through-an-offer-noun
+  group: denial-relation
+  change: expected-change
+  note: '#304: the same proposition with the relation spelled as a noun.'
+  text: "This employer has no program for visa sponsorship."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: no_match
+    verdict: unlikely
+    confidence: high
+    evidence:
+    - negated offer verb
+    rule_ids:
+    - sponsorship.negative.negated offer verb
+- id: gap-immigration-assistance-is-an-offer
+  group: offer-recall
+  change: expected-change
+  note: '#304: an offer noun the list did not carry.'
+  text: "We provide successful candidates with immigration assistance."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []
+  expect:
+    decision: match
+    verdict: likely
+    confidence: high
+    evidence:
+    - immigration assistance
+    rule_ids:
+    - sponsorship.positive.immigration assistance
+- id: control-need-is-not-an-offer-relation
+  group: control
+  change: expected-unchanged
+  note: 'TRIPWIRE for the two rows above: "need" INVERTS the relation, and EEO copy uses it five
+    tokens from the head.'
+  text: "We do not discriminate against candidates who need visa sponsorship."
+  baseline:
+    decision: review
+    verdict: unknown
+    confidence: unknown
+    evidence: []
+    rule_ids: []

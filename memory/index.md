@@ -26,6 +26,7 @@
 - `memory/decisions/sponsorship-an-unsettled-denial-is-review-not-a-silent-drop.md` — Sponsorship: an ambiguous quantifier unsettles a denial, it does not decide one
 - `memory/decisions/sponsorship-offer-versus-denial.md` — Sponsorship: an offer plus a limit on that offer is not a denial
 - `memory/decisions/sponsorship-scope-limits-need-a-distributive-quantifier.md` — Sponsorship: only a distributive quantifier makes a negation a scope limit
+- `memory/decisions/subagent-counts-are-unconstrained.md` — Do not constrain subagent counts in repository instructions
 - `memory/decisions/tree-instruction-growth-policy.md` — Grow folder-scoped instructions reactively
 - `memory/decisions/workspace-layout-public-root-plus-review-gate.md` — Workspace layout: keep the public repo as the working root; defend by naming + a review gate
 

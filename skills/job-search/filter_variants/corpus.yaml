@@ -1526,7 +1526,11 @@ variants:
     expect:
       decision: no_match
       category: other_us
-      workplace: onsite
+      # The JD was read and never states a work mode, so the workplace is
+      # unstated rather than an inferred office (#237). What this case pins is
+      # unchanged: the third-party mention grants no remote work, and the city
+      # still decides the category and the decision.
+      workplace: unknown
 
   - id: location-remote-grant-bound-to-a-non-preferred-metro
     domain: location
@@ -1774,3 +1778,497 @@ variants:
       decision: no_match
       accepted: false
       rule_ids: [title.excluded.manager]
+
+  # --- Location structural groups the live-corpus audit left unlabeled (#247) ---
+  # Each of these is a shape a fresh public snapshot produced in bulk while the
+  # variant policy had no expected disposition for it. One fixture per group,
+  # with fictional wording carrying the same structure as the live text.
+
+  - id: location-vancouver-washington-is-not-canada
+    domain: location
+    # A foreign city name that a US STATE immediately qualifies is the US city
+    # of that name. This reached `mixed_us_foreign_scope` review in bulk.
+    input:
+      title: Software Engineer
+      location: Vancouver, WA, US
+      workplace_hint: unknown
+      description: Build and operate the ingestion platform with your team.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: other_us
+      evidence_contains: [specific_us_office]
+
+  - id: location-vancouver-canada-stays-foreign
+    domain: location
+    # The control for the case above: a code or a country naming Vancouver's OWN
+    # country keeps the foreign reading.
+    input:
+      title: Software Engineer
+      location: Vancouver, BC
+      workplace_hint: unknown
+      description: Build and operate the ingestion platform with your team.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: foreign
+
+  - id: location-usca-short-form-resolves-to-us-and-canada
+    domain: location
+    # `USCA` is an ATS short form for "US & Canada", not an unreadable region
+    # bucket. It was landing on `weird_location_format` review.
+    input:
+      title: Senior Site Reliability Engineer
+      location: USCA
+      workplace_hint: remote
+      description: >-
+        We are hiring remotely across the United States or Canada.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      evidence_contains: [us_canada_scope]
+
+  - id: location-us-or-canada-remote-is-us-eligible
+    domain: location
+    # One coordinated North-American scope whose US branch a US candidate
+    # satisfies — not mixed US/foreign scope.
+    input:
+      title: Senior Site Reliability Engineer
+      location: Remote in the United States or Canada
+      workplace_hint: remote
+      description: >-
+        This role is remote. We hire in the United States or Canada.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+      evidence_contains: [us_canada_scope]
+
+  - id: location-hybrid-role-with-a-capped-annual-remote-benefit
+    domain: location
+    # A benefits line offering a few fully remote weeks a year is a perk, not a
+    # work mode. Read as a workplace declaration it manufactured
+    # `remote_hybrid_conflict` on an unambiguous local hybrid role.
+    input:
+      title: Data Analyst II
+      location: Springfield, ST
+      workplace_hint: unknown
+      description: >-
+        This role is based in our Springfield office and is hybrid, with three
+        coordinated office days each week. Benefits: you may work fully remote
+        from anywhere for up to four weeks per year.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: metro
+      workplace: hybrid
+      evidence_contains: [jd_hybrid_role]
+
+  - id: location-us-remote-with-a-conditional-office-expectation
+    domain: location
+    # "Remote in the US, and if you live near an office we would like to see you
+    # a few days a week" is a US-remote grant with a conditional courtesy, not a
+    # competing office obligation.
+    input:
+      title: Software Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This role is remote within the United States. Employees who live near
+        an office are expected to come in a few days per week.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+
+  - id: location-explicit-remote-offer-corroborates-the-source-hint
+    domain: location
+    # An employer STATING it will hire remotely is a remote grant. Without a rule
+    # for it the posting carried only its board's untrusted flag and was
+    # relegated to `uncorroborated_ats_workplace_hint` review.
+    input:
+      title: Compiler Engineer
+      location: Riverton, ST, US
+      workplace_hint: remote
+      hint_trusted: false
+      description: >-
+        Hiring for our Riverton, Lakeside and Fairview locations. Open to hire
+        for Remote work as well.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+      evidence_contains: [jd_remote_eligible_offer]
+
+  - id: location-remote-us-excluding-every-preferred-residence
+    domain: location
+    # Remote does not mean hireable from every US location. When the JD names
+    # every configured metro in its exclusion list the verdict is settled.
+    input:
+      title: Technical Support Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a remote position open to candidates based in the United
+        States, excluding the Fairview Metro and the Springfield Metro.
+    policy:
+      metro: [springfield, fairview]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: us_remote
+      evidence_contains: [jd_excludes_all_preferred_residences]
+
+  - id: location-remote-us-excluding-a-place-the-candidate-did-not-ask-for
+    domain: location
+    # The control: one surviving preference keeps the match.
+    input:
+      title: Technical Support Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This role is remote in the United States, excluding California.
+    policy:
+      metro: [springfield, fairview]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+
+  - id: location-compensation-state-list-is-not-a-hiring-restriction
+    domain: location
+    # Pay-transparency copy names places in a COMPENSATION sentence. Reading it
+    # as an eligibility list would reject the postings that comply with the law.
+    input:
+      title: Software Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a fully remote US role. The base salary range applies to all
+        locations except Springfield and Fairview, where a premium band
+        applies.
+    policy:
+      metro: [springfield, fairview]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+
+  - id: location-remote-bounded-to-time-zones-the-candidate-is-outside
+    domain: location
+    # An explicit allowed-time-zone list is a candidate-eligibility fact, not a
+    # preference. A Pacific candidate cannot satisfy an EST/CST-only remote role.
+    input:
+      title: Platform Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a fully remote role. Applicants must be located in the EST or
+        CST time zones.
+    policy:
+      metro: [seattle]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: us_remote
+      evidence_contains: [jd_timezone_excludes_preferred_metros]
+
+  - id: location-remote-time-zone-bound-the-candidate-satisfies
+    domain: location
+    input:
+      title: Platform Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a fully remote role. Applicants must be located in the EST or
+        CST time zones.
+    policy:
+      metro: [boston]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+
+  - id: location-remote-time-zone-bound-with-an-unmappable-metro-is-reviewed
+    domain: location
+    # A metro this module cannot place in a time zone may well sit inside the
+    # bound, so the answer is a human's, never a rejection.
+    input:
+      title: Platform Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a fully remote role. Applicants must be located in the EST or
+        CST time zones.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [remote_timezone_restriction_unresolved]
+
+  - id: location-negated-work-from-home-is-not-a-remote-grant
+    domain: location
+    # "There is no work from home for this position" is the OPPOSITE of a remote
+    # grant. Without a preceding-negation guard it classified badge-in onsite
+    # roles as confident US-remote matches.
+    input:
+      title: DevOps Engineer
+      location: Riverton, WY
+      workplace_hint: unknown
+      description: >-
+        Primarily onsite with little or no work from home. There is no work
+        from home for this position.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: other_us
+
+  - id: location-silent-jd-leaves-the-workplace-unstated
+    domain: location
+    # A city states geographic scope, not how the work is done. When the JD was
+    # read and never mentions a work mode, the honest label is `unknown` — and
+    # the location verdict is unchanged.
+    input:
+      title: Data Analyst
+      location: Springfield, ST, US
+      workplace_hint: unknown
+      hint_trusted: false
+      description: Build SQL dashboards and partner with stakeholders.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: metro
+      workplace: unknown
+
+  - id: sponsorship-refusal-in-the-heads-own-predicate
+    domain: sponsorship
+    # The worst reading this classifier has produced. Every negation rule in the
+    # module read BACKWARD from the sponsorship phrase, and this sentence puts
+    # the whole refusal in the head noun's own PREDICATE — so no cue was found,
+    # the OFFER substring "h-1b sponsorship" stood unopposed, and the posting
+    # graded match/likely/HIGH. Through the live gate with needs_sponsorship it
+    # came back kept, labelled `yes`, with an EMPTY review_reasons under BOTH
+    # policies: an employer refusing in writing, recommended without a warning
+    # to the one candidate who cannot take the job.
+    input:
+      text: H-1B sponsorship is unavailable.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-unavailable-is-a-negation-cue
+    domain: sponsorship
+    # Half of the same defect, and independent of direction: "unavailable"
+    # carries its negation as a PREFIX, so there is no separate "not" for a cue
+    # list to find, and it is the most common word a board refuses with.
+    input:
+      text: Green card sponsorship is unavailable for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-forward-negation-stops-at-a-relative-clause
+    domain: sponsorship
+    # The guardrail without which a forward rule invents refusals out of the
+    # clearest offers. "not" here modifies the CANDIDATES, and the relative
+    # pronoun is the only thing that says so.
+    input:
+      text: >-
+        H-1B sponsorship is available for candidates who are not currently
+        authorized to work in the United States.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-forward-cue-out-of-reach-is-not-an-offer
+    domain: sponsorship
+    # The other side of the same bound. The refusal is real but the adjacency
+    # test refuses to assert it across a comma at a nine-token gap — and an
+    # unreadable sentence is not evidence of an offer either, so it is kept and
+    # flagged rather than asserted in either direction.
+    input:
+      text: >-
+        H-1B sponsorship for engineering roles based in our Austin, Texas
+        office is not offered.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-field-row-writes-its-predicate-after-a-separator
+    domain: sponsorship
+    # A compact field row, not a sentence. The separator is a clause break to
+    # every other rule in the module, which would leave the forward scope empty.
+    input:
+      text: 'Visa sponsorship: not available.'
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-us-person-requirement-is-a-denial
+    domain: sponsorship
+    # GH #238. The compact field rules reached "Visa: GC/Citizens" and the phrase
+    # list reached "must be a u.s. citizen" (singular, with the article); the
+    # same bar written as an ordinary sentence produced no evidence at all, and a
+    # live posting requiring exactly these statuses ranked near the top for a
+    # candidate in none of them.
+    input:
+      text: >-
+        The successful candidate must establish U.S. Citizen, National, Lawful
+        Permanent Resident, Refugee, or Asylee status.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-eeo-citizenship-copy-is-not-a-requirement
+    domain: sponsorship
+    # The tripwire beside it: non-discrimination boilerplate names the same
+    # nouns and is the opposite of a bar. Reading it as one would delete every
+    # employer that publishes an EEO statement.
+    input:
+      text: >-
+        We are an equal opportunity employer and do not discriminate on the
+        basis of citizenship or national origin.
+    expect:
+      decision: review
+      verdict: unknown
+
+  - id: sponsorship-inclusive-status-list-is-not-a-bar
+    domain: sponsorship
+    # GH #265. The same status nouns, OFFERED rather than required — and the
+    # applicant's own pathway is named in them. A rule that fires on the nouns
+    # alone would drop a posting that explicitly invites this candidate.
+    input:
+      text: >-
+        U.S. Citizens, Green Card Holders, EAD Holders, and H-1B transfer
+        candidates are encouraged to apply.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-transfer-welcome-beside-a-new-petition-denial
+    domain: sponsorship
+    # GH #265's live shape. The posting says both things, so it is contradictory
+    # on its face: kept and flagged for a human read, never dropped and never
+    # promoted.
+    input:
+      text: >-
+        We are unable to sponsor new H-1B petitions for this position. H-1B
+        transfer candidates are encouraged to apply.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-conditional-offer-is-not-a-settled-offer
+    domain: sponsorship
+    # GH #304, the direction that costs the candidate. A condition FRONTED to the
+    # sentence sits outside the bounded clause scope the hedge rule reads, so a
+    # sentence saying the offer has not been decided yet graded likely/HIGH.
+    input:
+      text: If approved by counsel, the company will sponsor H-1B candidates.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-ordinary-fronted-clause-leaves-the-offer-alone
+    domain: sponsorship
+    # The bound on the rule above: the subordinator alone is not a condition on
+    # the offer, or every sentence that opens with "if" would lose its offer.
+    input:
+      text: If you are interested in this role, we offer visa sponsorship.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-citizenship-bar-survives-export-control-copy
+    domain: sponsorship
+    # GH #286, sponsorship half. The export-control sense gate exists for ONE
+    # ambiguous word — "sponsorship" also means ITAR/EAR licensing — and a
+    # citizenship bar has no second sense. Gating it too suppressed the only
+    # evidence a firmware posting carried, and the row became the top match for
+    # a candidate the complete JD bars outright.
+    input:
+      text: >-
+        Applicants must be a U.S. citizen, lawful permanent resident, or
+        protected individual, and must be eligible for a security clearance
+        under the International Traffic in Arms Regulations (ITAR).
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-bare-offer-without-immigration-context-stays-unknown
+    domain: sponsorship
+    # The deliberate limit on the #233 recall repair. "Sponsorship is available"
+    # with no immigration word anywhere is the wording a conference-booth or
+    # employee-programme sentence uses, so it earns a positive only with
+    # immigration context in the window — the rule its contiguous twin
+    # "sponsorship available" has always followed.
+    input:
+      text: Sponsorship is available.
+    expect:
+      decision: review
+      verdict: unknown

@@ -46,7 +46,7 @@ change is a separate, human-reviewed edit to `job-search` — never made on a hu
   candidate's applied-to companies violate the public leak rule — file them under
   `private/tasks/0_backlog/` and `private/memory/known-issues/` (copy the schema
   from `templates/`), never the public `tasks/` / `memory/`.
-- **Subagent budget:** at most 8 subagents total per request (AGENTS.md). Always use `.venv/bin/python`.
+- Always use `.venv/bin/python`.
 
 ## Models (read before fanning out)
 
@@ -197,7 +197,7 @@ parser fixes + tests. Key gotcha: **do NOT naively fold every raw location field
 `location.name` (NOISY_FIELD). Weird strings (region buckets "West"/"Central") get
 a `weird_location_format` review reason → `review`, never a silent guess. Same
 guardrails as above (QA harness, read-only pipeline, local/ artifacts, private
-findings, ≤8 subagents). See LESSONS "Field-fidelity" + known-issue
+findings). See LESSONS "Field-fidelity" + known-issue
 `location-field-fidelity-parser-drops.md`.
 
 ## Files
