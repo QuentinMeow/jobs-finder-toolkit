@@ -109,3 +109,35 @@ not measure how often a stale PR check would actually catch something, and have
 not asked whether you delete these branches on GitHub already.
 
 **Your answer:** ______
+
+## Measured evidence (orchestrator, 2026-08-21)
+
+Gathered with commands that do NOT route through this repo's own tooling, so the
+verdicts below are independent of the planner being changed.
+
+**All 17 non-`main` remote branches are ancestors of `origin/main`.** For each,
+`git merge-tree --write-tree origin/main <branch>` yields `origin/main`'s exact tree
+and `git rev-list --count origin/main..<branch>` is `0`. Deleting all of them would
+lose no commit. They were merge commits, not squashes, so every SHA survives.
+
+**The risk surface was empty at the time of measurement:** `gh pr list --state open`
+returned 0 PRs, so no base branch could be pulled out from under a child; and of the
+3 closed-without-merge PRs, none of their branches is among the 17.
+
+**The ledger objection does not apply here.** Running this repo's own `ledger_risk()`
+over these branches names 348 ledger commits and finds **0 at risk** — again because
+the merges preserved every SHA.
+
+**If the answer is ever yes, the deletion primitive matters.** A plain
+`git push origin --delete <b>` was measured to succeed unconditionally and to lose
+commits raced in after planning. `git push origin --force-with-lease=refs/heads/<b>:<sha> :refs/heads/<b>`
+refuses on a stale lease. `--atomic` across the batch was measured to let ONE stale
+lease abort all 17, so deletions would have to be emitted independently.
+
+**The strongest argument for "no", stated as its own advocate would state it:**
+containment is only as good as the base it was measured against, and the base is not
+permanent. A separate open decision in this queue proposes rewriting public history
+for privacy. If that is ever executed, `origin/main` is rebuilt and every
+"contained in `origin/main`" verdict recorded beforehand becomes false retroactively —
+a branch deleted as redundant could hold the only copy of a commit the rewrite dropped.
+Keeping the branches costs disk and answers this objection completely.

@@ -4132,3 +4132,9 @@
   files: 1
   digest: sha256:35d2d91efa3527e4
   finding: 'One session handover under history/conversations/. Describes workspace tooling defects, the decisions taken, and two open items; names only branches, files and git behaviour. No real identity, employer, application, or dated job-hunt content.'
+- base: d1436cab
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 1
+  digest: sha256:bd855b818b83c60b
+  finding: 'Appends measured evidence to an existing owner decision file in message-queue. Cites branch names, SHAs, gh/git command results and counts only; no identity, employer, application, or dated job-hunt content.'
