@@ -11,8 +11,8 @@ if str(SHARED_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_DIR))
 
 from location import (  # noqa: E402
-    assess_location, classify_location, classify_locations,
-    _onsite_rule_hits, _remote_rule_hits,
+    assess_location, cache_clear, cache_stats, classify_location,
+    classify_locations, _onsite_rule_hits, _remote_rule_hits,
 )
 
 # A representative us_only policy with a couple of preferred metros.
@@ -1342,6 +1342,71 @@ class RemoteTimeZoneBoundTests(unittest.TestCase):
             workplace_hint="remote")
         self.assertNotIn("jd_timezone_excludes_preferred_metros",
                          result.evidence)
+
+
+class MemoizationTests(unittest.TestCase):
+    """The memos must be invisible except in the clock (#292, location half).
+
+    ``scoring.location_ok`` and ``job_metadata.classify_workplace`` assess the
+    SAME description with different policies, titles and hints — 26,114 calls
+    for 14,508 postings in the reported run. A cache on ``assess_location``
+    alone cannot collapse that pair, so the JD-body scans are cached separately.
+    Everything cached here is pure; these tests pin that it stays that way.
+    """
+
+    A = {"metro": ["seattle"], "allow_us_remote": True, "us_only": True,
+         "require_match": True}
+    B = {"metro": ["boston"], "allow_us_remote": True, "us_only": True,
+         "require_match": True}
+    JD = ("This is a fully remote role. Applicants must be located in the EST "
+          "or CST time zones.")
+
+    def test_two_policies_over_one_description_do_not_share_a_verdict(self):
+        seattle = assess_location("Remote - US", self.A, description=self.JD,
+                                  workplace_hint="remote")
+        boston = assess_location("Remote - US", self.B, description=self.JD,
+                                 workplace_hint="remote")
+        self.assertEqual(seattle.decision, "no_match")
+        self.assertEqual(boston.decision, "match")
+
+    def test_equal_policies_written_differently_share_one_entry(self):
+        cache_clear()
+        first = assess_location("Remote - US", dict(self.A),
+                                description=self.JD, workplace_hint="remote")
+        second = assess_location("Remote - US", {**self.A},
+                                 description=self.JD, workplace_hint="remote")
+        self.assertIs(first, second)
+        hits, _misses, _max, _curr = cache_stats()["_assess_location_cached"]
+        self.assertGreaterEqual(hits, 1)
+
+    def test_the_jd_body_scan_is_shared_across_call_shapes(self):
+        # The two production call sites differ in policy, title and hint, so
+        # only the description-keyed memo can collapse their shared work.
+        cache_clear()
+        assess_location("Remote - US", self.A, title="Platform Engineer",
+                        description=self.JD, workplace_hint="remote")
+        before = cache_stats()["_description_signals"][0]
+        assess_location("Remote - US", {"allow_us_remote": True,
+                                        "us_only": False,
+                                        "require_match": False},
+                        description=self.JD)
+        after = cache_stats()["_description_signals"][0]
+        self.assertEqual(after, before + 1)
+
+    def test_a_cleared_cache_returns_the_same_verdicts(self):
+        warm = assess_location("Remote - US", self.A, description=self.JD,
+                               workplace_hint="remote").to_dict()
+        cache_clear()
+        cold = assess_location("Remote - US", self.A, description=self.JD,
+                               workplace_hint="remote").to_dict()
+        self.assertEqual(warm, cold)
+
+    def test_none_inputs_and_empty_strings_are_the_same_call(self):
+        self.assertIs(
+            assess_location(None, self.A, title=None, description=None,
+                            workplace_hint=None),
+            assess_location("", self.A, title="", description="",
+                            workplace_hint=""))
 
 
 if __name__ == "__main__":

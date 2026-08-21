@@ -594,9 +594,14 @@ _TZ_BOUND_RE = re.compile(
     r"(?:[^.;:!?\n]{0,40}?(?<![a-z0-9])(?:" + _TZ_ZONE_ALT + r")(?![a-z0-9]))*"
     r"[^.;:!?\n]{0,30}?\b(?:time\s*zones?|hours)\b"
     r"|\btime\s*zones?\b[^.;:!?\n]{0,30}?"
-    r"(?<![a-z0-9])(?:" + _TZ_ZONE_ALT + r")(?![a-z0-9])")
+    r"(?<![a-z0-9])(?:" + _TZ_ZONE_ALT + r")(?![a-z0-9])", re.I)
 _TZ_ZONE_SCAN_RE = re.compile(
-    r"(?<![a-z0-9])(?:" + _TZ_ZONE_ALT + r")(?![a-z0-9])")
+    r"(?<![a-z0-9])(?:" + _TZ_ZONE_ALT + r")(?![a-z0-9])", re.I)
+# A one-scan prefilter for the pattern above. The bound NOUN is mandatory in
+# both branches, so a JD without it cannot carry a time-zone bound — and the
+# alternative was folding every full job description through the accent-stripping
+# normalizer, which cost a third of the module's runtime on its own.
+_TZ_NOUN_RE = re.compile(r"time\s*zones?|hours", re.I)
 _METRO_TIMEZONE = {
     "seattle": "PT", "bellevue": "PT", "redmond": "PT", "kirkland": "PT",
     "tacoma": "PT", "everett": "PT", "portland": "PT",
@@ -712,6 +717,7 @@ def _policy_lists(policy: dict | None):
     )
 
 
+@lru_cache(maxsize=4096)
 def _normalize(text: str | None) -> str:
     if not text:
         return ""
@@ -792,6 +798,7 @@ def _state_qualified_us_city(text: str, hit: str, end: int) -> bool:
     return state.upper() != code
 
 
+@lru_cache(maxsize=4096)
 def _foreign_matches(text: str) -> tuple[str, ...]:
     """Foreign place tokens in ``text``, minus any a US reading accounts for.
 
@@ -830,7 +837,8 @@ def _us_canada_pair(ntext: str, foreign_hits: tuple[str, ...]) -> bool:
     return all(hit in _CANADA_TOKENS for hit in foreign_hits)
 
 
-def _residence_places(description: str) -> list[str]:
+@lru_cache(maxsize=2048)
+def _residence_places(description: str) -> tuple[str, ...]:
     """Normalized place lists from every residence-EXCLUSION clause in a JD.
 
     A clause is kept only when it is not a compensation-geography sentence and
@@ -846,7 +854,7 @@ def _residence_places(description: str) -> list[str]:
         if not (_has_us_state(nplaces) or _has(_US_HUBS, nplaces)):
             continue
         out.append(nplaces)
-    return out
+    return tuple(out)
 
 
 def _metro_is_excluded(token: str, nplaces: str) -> bool:
@@ -866,6 +874,7 @@ def _metro_is_excluded(token: str, nplaces: str) -> bool:
     return _has((state,), nplaces)
 
 
+@lru_cache(maxsize=2048)
 def _residence_exclusion_verdict(description: str, metro) -> str | None:
     """How a JD's residence exclusions bear on the configured preferred metros.
 
@@ -890,17 +899,21 @@ def _residence_exclusion_verdict(description: str, metro) -> str | None:
     return "all_excluded" if len(excluded) == len(set(metro)) else None
 
 
+@lru_cache(maxsize=2048)
 def _bounded_timezones(text: str) -> frozenset[str]:
-    """Time zones a posting explicitly BOUNDS itself to, as ET/CT/MT/PT."""
-    ntext = _normalize(text)
-    if not ntext:
+    """Time zones a posting explicitly BOUNDS itself to, as ET/CT/MT/PT.
+
+    Runs on the RAW text behind a cheap noun prefilter rather than on normalized
+    text: zone names carry no accents, and normalizing every full JD here was
+    measured at a third of this module's filtering cost.
+    """
+    if not text or not _TZ_NOUN_RE.search(text):
         return frozenset()
-    zones = {
-        _TZ_ZONE_TOKENS[hit.group(0)]
-        for m in _TZ_BOUND_RE.finditer(ntext)
+    return frozenset(
+        _TZ_ZONE_TOKENS[re.sub(r"\s+", " ", hit.group(0).lower())]
+        for m in _TZ_BOUND_RE.finditer(text)
         for hit in _TZ_ZONE_SCAN_RE.finditer(m.group(0))
-    }
-    return frozenset(zones)
+    )
 
 
 def _timezone_verdict(allowed: frozenset[str], metro) -> str | None:
@@ -1031,6 +1044,7 @@ def _residency_is_negated(match) -> bool:
                 or _RESIDENCY_NEGATION_RE.search(match.group("gap") or ""))
 
 
+@lru_cache(maxsize=2048)
 def _residency_category(description: str, metro, us_remote_regions) -> str | None:
     """Geography a JD's residency requirement pins a remote grant to.
 
@@ -1083,6 +1097,7 @@ def _residency_category(description: str, metro, us_remote_regions) -> str | Non
     return "unknown"
 
 
+@lru_cache(maxsize=2048)
 def _jd_names_us_scope(description: str) -> bool:
     """Whether the JD body itself names US geography.
 
@@ -1166,6 +1181,26 @@ def _remote_rule_hits(text: str) -> list[str]:
     return hits
 
 
+@lru_cache(maxsize=4096)
+def _description_signals(description: str):
+    """Every JD-BODY scan the workplace assessment needs, computed once.
+
+    These four scans are the module's whole regex bill — fifteen patterns, most
+    of them ``re.S`` with ``.{0,120}`` spans, run over a full job description —
+    and they depend on NOTHING but that text. The pipeline assesses the same
+    description at least twice per posting (``scoring.location_ok`` with the
+    profile's policy, then ``job_metadata.classify_workplace`` with a fixed one),
+    so a cache on ``assess_location`` alone cannot collapse them: the policies,
+    titles and hints differ. This one can.
+    """
+    return (
+        tuple(_remote_rule_hits(description)),
+        tuple(_rule_hits(description, _HYBRID_JD_RULES)),
+        tuple(_onsite_rule_hits(description)),
+        _OPTIONAL_HYBRID_RE.search(description) is not None,
+    )
+
+
 def _workplace_assessment(
     location: str,
     description: str,
@@ -1182,16 +1217,17 @@ def _workplace_assessment(
     bare_workplace_tag = _is_workplace_word_only(nloc)
     loc_hybrid = _has(("hybrid",), nloc)
     loc_remote = _has(REMOTE_TOKENS, nloc)
-    remote_hits = _remote_rule_hits(description)
-    hybrid_hits = _rule_hits(description, _HYBRID_JD_RULES)
-    onsite_hits = _onsite_rule_hits(description)
+    remote_tuple, hybrid_tuple, onsite_tuple, optional_hybrid = (
+        _description_signals(description or ""))
+    remote_hits = list(remote_tuple)
+    hybrid_hits = list(hybrid_tuple)
+    onsite_hits = list(onsite_tuple)
     # An OPTIONAL hybrid perk alongside a remote grant is not a competing
     # obligation, so drop the hybrid signal before evidence and conflict checks —
     # remote stays the baseline. A required hybrid schedule ("three office days
     # each week") does not match the optional pattern and is preserved as a
     # genuine conflict.
-    if (_OPTIONAL_HYBRID_RE.search(description or "")
-            and (remote_hits or loc_remote)):
+    if optional_hybrid and (remote_hits or loc_remote):
         hybrid_hits = []
         loc_hybrid = False
     evidence: list[str] = []
@@ -1263,6 +1299,18 @@ def _workplace_assessment(
     return "unknown", "unknown", evidence, review
 
 
+def _policy_key(policy: dict | None) -> tuple:
+    """Everything ``assess_location`` reads out of a policy, as a hashable key.
+
+    A dict cannot key a cache, and two dicts that resolve to the same token
+    lists must share one entry, so the key is the RESOLVED policy rather than
+    the mapping it came from.
+    """
+    metro, remote_tokens, regions, allow_us_remote, us_only = _policy_lists(policy)
+    return (metro, remote_tokens, regions, allow_us_remote, us_only,
+            bool((policy or {}).get("require_match", True)))
+
+
 def assess_location(
     location: str | None,
     policy: dict | None = None,
@@ -1281,17 +1329,31 @@ def assess_location(
     US work eligibility, so it can never carry a posting to a match on its own.
     Full JD text supplies role-level workplace alternatives such as "one of our US
     hubs or remotely in the United States".
+
+    Memoized on the resolved policy plus every input field. The result is a
+    frozen dataclass of tuples, so sharing one instance between callers is safe;
+    ``to_dict`` still builds a fresh mapping each time.
     """
-    original = location or ""
+    return _assess_location_cached(
+        location or "", _policy_key(policy), title or "", description or "",
+        workplace_hint or "", bool(hint_trusted))
+
+
+@lru_cache(maxsize=4096)
+def _assess_location_cached(
+    original: str,
+    policy_key: tuple,
+    title: str,
+    description: str,
+    workplace_hint: str,
+    hint_trusted: bool,
+) -> LocationAssessment:
     nloc = _normalize(original)
     ntitle = _normalize(title)
     # Foreign scope may be asserted by either field; US scope only by the location.
     context = " ".join(x for x in (nloc, ntitle) if x)
-    description = description or ""
-    (metro, _remote_tokens, us_remote_regions,
-     allow_us_remote, us_only) = _policy_lists(policy)
-    policy = policy or {}
-    require_match = bool(policy.get("require_match", True))
+    (metro, _remote_tokens, us_remote_regions, allow_us_remote, us_only,
+     require_match) = policy_key
 
     workplace, confidence, evidence, review = _workplace_assessment(
         original, description, workplace_hint or "", hint_trusted)
@@ -1439,7 +1501,10 @@ def assess_location(
             evidence.append("jd_excludes_all_preferred_residences")
         elif residence == "unverifiable":
             review.append("residence_exclusion_unverifiable")
-        zones = _bounded_timezones(original + "\n" + description)
+        # Scanned separately so each side hits its own cache: the same JD body
+        # is assessed twice per posting, and the location field repeats across
+        # thousands of rows.
+        zones = _bounded_timezones(description) | _bounded_timezones(original)
         if zones:
             verdict = _timezone_verdict(zones, metro)
             if verdict == "excluded":
@@ -1502,6 +1567,27 @@ def assess_location(
         evidence=tuple(dict.fromkeys(evidence)),
         review_reasons=tuple(dict.fromkeys(review)),
     )
+
+
+# Every memo this module keeps. Named so a benchmark, a long-lived process, or a
+# test that wants a cold measurement can drop them all in one call; nothing in
+# normal operation needs to, because every cached function is pure.
+_CACHED_FUNCTIONS = (
+    _normalize, _token_pattern, _foreign_matches, _description_signals,
+    _jd_names_us_scope, _residency_category, _residence_places,
+    _residence_exclusion_verdict, _bounded_timezones, _assess_location_cached,
+)
+
+
+def cache_clear() -> None:
+    """Drop every memoized result in this module."""
+    for fn in _CACHED_FUNCTIONS:
+        fn.cache_clear()
+
+
+def cache_stats() -> dict[str, tuple]:
+    """``{function name: (hits, misses, maxsize, currsize)}`` for every memo."""
+    return {fn.__name__: tuple(fn.cache_info()) for fn in _CACHED_FUNCTIONS}
 
 
 def classify_location(loc: str | None, policy: dict | None = None) -> str:

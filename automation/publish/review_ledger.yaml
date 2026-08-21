@@ -3496,3 +3496,13 @@
     and metro-to-time-zone maps), regular expressions over job-description prose, and
     fictional test fixtures. No real identity, employer, school, date, salary,
     private item name, or dated personal job-hunt content is present.'
+- base: 84fd8eff
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 5
+  digest: sha256:961208149f34cfd0
+  finding: 'Reviewed the memoization of the location classifier, its cache tests, and
+    the three byte-identical vendored copies. The diff is lru_cache decorators, a
+    resolved-policy cache key, a shared job-description scan helper, a regex
+    prefilter, and fictional test fixtures. No real identity, employer, school, date,
+    salary, private item name, or dated personal job-hunt content is present.'
