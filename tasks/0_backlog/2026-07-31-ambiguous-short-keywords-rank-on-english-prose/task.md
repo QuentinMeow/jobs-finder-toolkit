@@ -2,44 +2,50 @@
 
 - **Priority**: P2 (someday)
 - **Area**: job-search
-- **Source**: adversarial audit #2, finding 33; triaged as ACCEPTED (not fixed) by
-  the branch that cleared the audit's tail, with the reason recorded in
-  `skills/job-search/scripts/common.py` (`term_matches` docstring)
+- **Source**: adversarial audit #2, finding 33; originally triaged as ACCEPTED
+  (not fixed). GH #279 re-filed it with live evidence and the `go` case was fixed
+  in code on 2026-08-20 — see below for what is left
 - **Claimed-by**: <(set when work starts, before the first change)>
 
 ## Goal
 
-A profile can say "Go, the programming language" without also matching
-"go-to-market", "go live" and "go above and beyond".
+A profile can say "Go, the programming language" — or R, or C, or Swift —
+without also matching "go-to-market", "R&D", "plan C" and "a swift response".
 
-## Context
+## What has already shipped (2026-08-20, GH #279 parts 1-2)
 
-`common.term_matches` builds `\b<term>\b` for any single alphanumeric token, which
-is the strongest match it can express. `skills/job-search/profiles/example.yaml`
-ships `go` in `keywords.strong`, so a pure Ruby posting whose JD says "go-to-
-market" earns `strong: go` (+4, or +8 when the word is in the title).
+`common.term_matches` no longer accepts an ambiguous term on the strength of a
+word boundary alone. `_AMBIGUOUS_TERM_GUARDS` maps such a term to a guard that
+must ALSO read the occurrence as the technology; `_go_is_the_language` is the
+one shipped guard, and `skills/job-search/scripts/tests/test_term_matching.py`
+pins nine English phrasings that no longer score and eleven Go phrasings that
+still do.
 
-Measured effect: score only. Keywords never gate — no posting is dropped or kept
-because of one — so the whole cost is a few points of ranking noise on a row that
-was already going to appear. `\b` already handles the cases that matter: `java`
-correctly does not match *javascript*, and `ml` / `ai` / `api` are fine.
+That took no profile-schema change, which is what the original triage said any
+fix would need. It also closed the title-gate half of #279 for this one word:
+a `go` include term no longer rescues a finance title the occupation lexicon
+rejected.
 
-**Why it was not fixed in the audit-tail branch.** Every fix worth having is a
-new per-keyword profile field (`phrase_only`, or a required-companion list like
-`go` + `golang|goroutine|go modules`). That is a profile-SCHEMA change: the
-example profile, the profile loader, `validate_filter_variants`, and every
-private profile move together, and the schema then has to answer "what happens
-when an old profile omits the field". A repo this heavily gated pays for every
-change in review surface, and this one buys back a +4 nudge.
+## What is left
 
-Pick this up when a profile change is already in flight for another reason, or
-when a real search shows the noise actually reordering a shortlist.
+1. **Other ambiguous terms have no guard.** A profile listing `r` matches every
+   "R&D" (`normalize()` turns `R&D` into `r d`), `c` matches "plan C", `swift`
+   matches "a swift response", `rust` matches literal rust. Each needs its own
+   guard entry, and each guard is a small vocabulary of frames — cheap
+   individually, but nobody should write six of them speculatively. Add one when
+   a real search shows that term producing noise.
+2. **A profile still cannot DECLARE its own ambiguous term.** The guard table is
+   code, so a candidate whose vocabulary contains an ambiguity the repo never
+   anticipated has no way to express it. That is still the profile-SCHEMA change
+   the original triage priced: the example profile, the loader,
+   `validate_filter_variants` and every private profile move together, and the
+   schema has to answer what an old profile omitting the field means.
 
 ## Definition of done
 
-- [ ] A profile can express an ambiguous short keyword unambiguously (design
-      choice open: phrase-only flag, companion-term requirement, or a regex form)
-- [ ] `skills/job-search/profiles/example.yaml` uses it for `go`
-- [ ] One test proving a "go-to-market" JD no longer scores `strong: go`, and one
-      proving a genuine Go posting still does
+- [ ] Either a guard exists for each ambiguous term a real search shows scoring
+      on prose, or a profile can declare one (design choice still open:
+      phrase-only flag, companion-term requirement, or a regex form)
+- [ ] A test per added term: one prose JD that no longer scores it, one genuine
+      JD that still does — the shape `test_term_matching.GoIsNotEveryGo` uses
 - [ ] `skills/job-search/scripts/validate_filter_variants.py --check` clean

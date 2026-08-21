@@ -3855,3 +3855,13 @@
     Go Engineer); the one real product name copied from the public issue was
     replaced before staging. No real identity, employer, school, salary, private
     item name, or dated personal job-hunt content.'
+- base: c277d3d7
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:38ca09083cb07aab
+  finding: 'Reviewed two backlog task files: a rewrite of the ambiguous-keyword item
+    around what the term-matching fix actually closed, and a new doc follow-up for
+    two stale profile comments. Repository paths, generic occupation words and
+    technology names only. No real identity, employer, school, salary, private item
+    name, or dated personal job-hunt content.'
