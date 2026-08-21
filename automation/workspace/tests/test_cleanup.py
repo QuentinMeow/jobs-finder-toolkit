@@ -424,7 +424,16 @@ class MainWorktreeScenario(F.GitTestCase):
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
+            # Each item is now its own guarded block, so the `mv` a shell runs
+            # sits inside an `if`/`elif` CONDITION rather than on a line of its
+            # own. Peel the keywords instead of matching only bare lines — a
+            # helper that quietly stopped finding the moves would let every
+            # containment assertion below pass by finding nothing.
+            if stripped.endswith("; then"):
+                stripped = stripped[: -len("; then")]
             parts = shlex.split(stripped)
+            while parts and parts[0] in ("if", "elif", "else", "then", "!"):
+                parts.pop(0)
             if parts and parts[0] == "mv":
                 self.assertEqual(len(parts), 3, f"unexpected mv shape: {line}")
                 moves.append((Path(parts[1]), Path(parts[2])))
@@ -1332,6 +1341,109 @@ class DeleteRefusalIsPredictedTests(DeletableBranchesScenario):
                          f"the emitted script failed:\n{result.stdout}\n{result.stderr}")
         self.assertNotIn("codex/one", self.local_branches())
         self.assertIn("codex/two", self.local_branches())
+
+
+# ── one refusal must not cancel the items after it ───────────────────────────
+#
+# THE BUG THESE PIN. The emitted script was a bare `set -eu` list. When the
+# unpredicted `git branch -d` above was refused, the shell exited on that line
+# and the two remaining, perfectly safe deletions never ran — leaving the
+# operator a failure that named neither what had worked nor what had not. What
+# must stay fatal is a backup ref that does not read back: that still stops ITS
+# OWN item's deletion, because a deletion standing behind nothing is the hazard
+# the backup exists for.
+
+
+class OneRefusalDoesNotCancelTheRestTests(DeletableBranchesScenario):
+    def sabotage_middle(self, script: str) -> str:
+        """Make the MIDDLE emitted deletion refuse at RUN time, not plan time.
+
+        Prediction now stops a doomed `-d` being written at all, so a refusal
+        can only be produced the way the real gap produces one: the plan is
+        written, and the branch moves before the owner runs the script.
+        """
+        names = self.deletions_in(script)
+        self.assertEqual(len(names), 3, f"expected three deletions, got {names}")
+        target = names[1]
+        self.git(self.root, "branch", "-f", target, "refs/heads/codex/spare")
+        return target
+
+    def test_the_two_safe_items_still_run_and_the_run_still_fails(self) -> None:
+        self.build_repo("codex/one", "codex/two", "codex/three")
+        self.git(self.root, "switch", "-q", "-c", "codex/spare", "main")
+        F.write(self.root / "spare.txt", "never merged\n")
+        self.commit(self.root, "codex/spare: unmerged work")
+        self.git(self.root, "switch", "-q", "main")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        _, _, script, path = self.plan()
+        refused = self.sabotage_middle(script)
+        safe = [name for name in self.deletions_in(script) if name != refused]
+
+        result = self.run_script(path)
+        self.assertNotEqual(result.returncode, 0,
+                            "a refusal must never be reported as success")
+        survivors = self.local_branches()
+        for name in safe:
+            with self.subTest(branch=name):
+                self.assertNotIn(
+                    name, survivors,
+                    f"{name} was independent of {refused} and never ran")
+        self.assertIn(refused, survivors, "the refused branch must survive")
+
+        combined = result.stdout + result.stderr
+        self.assertIn("workspace cleanup summary", combined)
+        self.assertIn(f"REFUSED  branch {refused}", combined,
+                      f"the summary must name the refusal:\n{combined}")
+        for name in safe:
+            with self.subTest(branch=name):
+                self.assertIn(f"done     branch {name}", combined,
+                              f"the summary must name what succeeded:\n{combined}")
+
+    def test_a_backup_ref_that_cannot_be_written_still_stops_its_own_delete(
+            self) -> None:
+        # The line that may NOT become advisory. A ref cannot be created where a
+        # directory of refs already stands, so pre-creating a child of one
+        # item's backup ref makes its `update-ref` fail — and that item's
+        # `git branch -d` must not run, while the others still do.
+        self.build_repo("codex/one", "codex/two", "codex/three")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        _, _, script, path = self.plan()
+        names = self.deletions_in(script)
+        self.assertEqual(len(names), 3, names)
+        blocked = names[0]
+        ref = [row["backup_ref"] for row in json.loads(
+            path.with_suffix(".json").read_text(encoding="utf-8"))["branches"]
+            if row["name"] == blocked][0]
+        self.git(self.root, "update-ref", f"{ref}/occupied",
+                 self.out(self.root, "rev-parse", "main"))
+
+        result = self.run_script(path)
+        self.assertNotEqual(result.returncode, 0)
+        survivors = self.local_branches()
+        self.assertIn(blocked, survivors,
+                      "a branch whose backup ref failed was deleted anyway")
+        for name in names[1:]:
+            with self.subTest(branch=name):
+                self.assertNotIn(name, survivors)
+        self.assertIn("backup ref did not read back",
+                      result.stdout + result.stderr)
+
+    def test_a_plan_with_nothing_refused_still_exits_zero(self) -> None:
+        # The other half of "exit non-zero if anything refused": a clean run
+        # must not start failing because the script grew a summary.
+        self.build_repo("codex/one", "codex/two")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+        _, _, script, path = self.plan()
+        result = self.run_script(path)
+        self.assertEqual(result.returncode, 0,
+                         f"{result.stdout}\n{result.stderr}")
+        self.assertIn("every item in this plan completed.", result.stdout)
+        self.assertFalse({"codex/one", "codex/two"} & self.local_branches())
 
 
 class MoveContainmentUnitTests(F.GitTestCase):

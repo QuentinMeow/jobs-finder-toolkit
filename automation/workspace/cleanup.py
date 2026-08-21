@@ -80,6 +80,20 @@ unioned with two more signals; an unanswerable probe keeps; and the emitter
 re-checks it independently, because ``build_script`` is the only place a
 destructive line is ever written and that is where "impossible" has to be true.
 
+ONE ITEM REFUSING MUST NOT CANCEL THE INDEPENDENT ITEMS AFTER IT. The emitted
+script used to be a bare ``set -eu`` list, so the first ``git branch -d`` that
+declined ended the run: measured on this repository, one refusal left two
+perfectly safe deletions unperformed and handed the operator a failure with no
+statement of which items had been fine. Each item is now its own guarded block —
+a refusal is RECORDED and the next item still runs — while everything that is
+not an item stays fatal (``cd`` into the root, ``mkdir -p`` of the trash
+directory, an unset variable). What may never become per-item is the backup ref:
+a pin that does not read back still stops THAT item's ``git branch -d`` or
+``mv``, because a deletion standing behind nothing is the failure this whole
+design exists to prevent. The script prints a summary naming every item that
+completed and every item that refused, and exits 1 if anything refused, so a
+refusal can never be read as success.
+
 Exit codes:
     0  fresh remote knowledge and every proposal cleared every precondition
     1  readable, but stale (no --fetch) or something needs judgement
@@ -1292,15 +1306,116 @@ def apply_emitter_refusals(root: Path, run_id: str,
             f"the emitter refused to write its deletion: {why}")
 
 
-def _guarded_ref_write(ref: str, oid: str, warning: str, note: str) -> list[str]:
-    """``update-ref`` + read-back + ``exit 1``. The shape both halves emit."""
-    quoted = shlex.quote(ref)
+# ── per-item isolation in the emitted script ─────────────────────────────────
+#
+# `set -eu` stays at the top: `cd` into the wrong directory, a trash directory
+# that could not be created, or an unset variable must all still stop everything
+# before a destructive line runs. What must NOT be fatal to the whole run is one
+# ITEM declining. Measured on this repository: the plan proposed three branches,
+# the first `git branch -d` was refused, and `set -e` ended the script there —
+# two safe deletions never ran and the operator was left with a failure that
+# named neither what had worked nor what had not.
+#
+# The shape below puts every item's guards in an `if` CONDITION, where POSIX
+# suspends `set -e` (verified on sh, bash --posix, zsh and dash for a failing
+# command, a failing function, and a braced `&&` chain). The backup ref keeps
+# its veto — it just vetoes THAT item now instead of the file — and the run
+# still fails overall through the summary's `exit 1`.
+#
+# The `git update-ref <ref> <oid>` line is written out literally rather than
+# hidden behind a shell helper. This script's whole justification is that a
+# human reads it before running it, and "which object is being pinned where" is
+# the one thing that reader must be able to check without resolving an
+# indirection.
+
+_SUMMARY_DONE = "cleanup_done"
+_SUMMARY_REFUSED = "cleanup_refused"
+_SUMMARY_COUNT = "cleanup_refusals"
+
+
+def _pin_condition(backups: Sequence[tuple[str, str]]) -> list[str]:
+    """The guard clause: pin every ref and read every one of them back.
+
+    Emitted as a single ``if ! { … && … ; }`` condition so that one unresolved
+    backup ref stops this item's destructive line and nothing else's.
+    """
+    if not backups:
+        return []
+    lines: list[str] = []
+    for index, (ref, oid) in enumerate(backups):
+        lead = "if ! { " if index == 0 else "       "
+        verify = shlex.quote(ref + "^{commit}")
+        lines.append(f"{lead}git update-ref {shlex.quote(ref)} {oid} "
+                     f"-m 'pre-delete backup' &&")
+        lines.append(f"       git rev-parse --verify --quiet {verify} "
+                     f">/dev/null &&")
+    # Drop the trailing `&&` of the last verify and close the group.
+    lines[-1] = lines[-1][:-len(" &&")] + "; }; then"
+    return lines
+
+
+def _record(kind: str, subject: str, detail: str = "") -> str:
+    """One call to the summary bookkeeping the script defines for itself."""
+    if kind == "done":
+        return f"    record_done {shlex.quote(_comment(subject))}"
+    return (f"    record_refused {shlex.quote(_comment(subject))} "
+            f"{shlex.quote(_comment(detail))}")
+
+
+def _summary_helpers() -> list[str]:
+    """The bookkeeping every item reports into, and nothing else.
+
+    Entries carry their own trailing newline, so the summary prints with
+    ``printf %s`` and needs no separator handling — and no temporary file, which
+    this script may not create. The newline is built with the ``printf '\\nx'``
+    idiom rather than written literally between two quotes: a raw newline inside
+    a shell string leaves a line of this file holding one unbalanced quote, and
+    an emitted script has to stay parseable line by line — the suite's own
+    ``mv``-auditing helper reads it that way, and so does a human.
+    """
     return [
-        f"#   {_comment(note)}",
-        f"git update-ref {quoted} {oid} -m 'pre-delete backup'",
-        f"git rev-parse --verify --quiet {shlex.quote(ref + '^{commit}')} "
-        ">/dev/null || {",
-        f"    echo {shlex.quote(_comment(warning))} >&2; exit 1; }}",
+        "# Per-item bookkeeping. One item refusing is a FINDING to report, not a",
+        "# reason to abandon the independent items after it — but the run still",
+        "# fails at the end, so a refusal can never be read as success.",
+        f"{_SUMMARY_DONE}=''",
+        f"{_SUMMARY_REFUSED}=''",
+        f"{_SUMMARY_COUNT}=0",
+        "cleanup_nl=$(printf '\\nx')",
+        "cleanup_nl=${cleanup_nl%x}",
+        "record_done() {",
+        f'    {_SUMMARY_DONE}="${{{_SUMMARY_DONE}}}  done     $1${{cleanup_nl}}"',
+        "}",
+        "record_refused() {",
+        f'    {_SUMMARY_REFUSED}="${{{_SUMMARY_REFUSED}}}  REFUSED  '
+        f'$1${{cleanup_nl}}           $2${{cleanup_nl}}"',
+        f"    {_SUMMARY_COUNT}=$(({_SUMMARY_COUNT} + 1))",
+        "}",
+        "",
+    ]
+
+
+def _summary_footer() -> list[str]:
+    """Name what completed, name what refused, and exit non-zero if any did."""
+    note = ("A refusal is a finding: report it, and read the header of this "
+            "file before reaching for a stronger flag.")
+    return [
+        "# The summary. An operator who scrolled past the middle of this run has",
+        "# to be able to read the outcome of every item off the last few lines,",
+        "# and an exit code that is 0 only when every item completed.",
+        "echo ''",
+        "echo 'workspace cleanup summary'",
+        f'printf %s "${{{_SUMMARY_DONE}}}"',
+        f'printf %s "${{{_SUMMARY_REFUSED}}}"',
+        f'if [ "${{{_SUMMARY_COUNT}}}" -ne 0 ]; then',
+        f'    echo "${{{_SUMMARY_COUNT}}} item(s) refused; the items above them '
+        f'still ran." >&2',
+        "    echo 'Nothing was lost: every tip is pinned to its "
+        "refs/agent-trash ref.' >&2",
+        f"    echo {shlex.quote(note)} >&2",
+        "    exit 1",
+        "fi",
+        "echo 'every item in this plan completed.'",
+        "",
     ]
 
 
@@ -1327,6 +1442,12 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         "# used deliberately: it refuses an unmerged branch. IF IT REFUSES, THAT",
         "# IS A FINDING — report it. Do not reach for -D; there is no --force in",
         "# this tooling at all.",
+        "# Each item stands alone: one refusal is recorded and the remaining",
+        "# items still run, because half a cleanup with no statement of which",
+        "# half is worse than either outcome. A backup ref that does not read",
+        "# back still stops ITS OWN item — never the deletion behind nothing.",
+        "# The summary at the end names every item, and this script exits 1 if",
+        "# any item refused.",
         "# Worktree directories are MOVED, never removed: untracked and ignored",
         "# files have no git recovery story whatsoever, and each one's own",
         "# reflog — which `git worktree prune` deletes — is swept first, so any",
@@ -1371,9 +1492,15 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
             "#   agree.",
             "",
         ]
+    if moves or proposed:
+        body += _summary_helpers()
     if moves:
+        # Fatal on purpose, and outside every item: with no trash directory
+        # there is nowhere for ANY move to land, so this is a precondition of
+        # the run rather than a step of one item.
         body += [f"mkdir -p {shlex.quote(str(trash))}", ""]
     for item, destination in moves:
+        subject = f"worktree {item.path}"
         body += [
             f"# worktree {_comment(item.path)}",
             f"#   clean, and its branch's content is already in "
@@ -1385,42 +1512,70 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
             # BEFORE the move, always. `git worktree prune` below deletes this
             # worktree's `logs/HEAD`, and these commits are reachable from
             # nothing else — so the pin has to already have happened, and the
-            # read-back has to be able to stop the script.
+            # read-back has to be able to stop this move.
             body.append(
                 f"#   {len(item.backups)} commit(s) live only in this "
                 f"worktree's reflog, which `git worktree prune` deletes:")
-        for ref, oid in item.backups:
-            body += _guarded_ref_write(
-                ref, oid, f"reflog backup ref missing — not moving "
-                          f"{_comment(item.path)}", f"pinning {oid[:8]}")
+            body += [f"#     pinning {oid[:8]} to {_comment(ref)}"
+                     for ref, oid in item.backups]
+            body += _pin_condition(item.backups)
+            body += [
+                _record("refused", subject,
+                        "a reflog backup ref did not read back — NOT moved, so "
+                        "nothing that reflog holds can be orphaned"),
+                f"elif mv {shlex.quote(item.path)} "
+                f"{shlex.quote(str(destination))}; then",
+            ]
+        else:
+            body.append(f"if mv {shlex.quote(item.path)} "
+                        f"{shlex.quote(str(destination))}; then")
         body += [
-            f"mv {shlex.quote(item.path)} {shlex.quote(str(destination))}",
-            "git worktree prune",
+            "    if git worktree prune; then",
+            f"    {_record('done', subject)}",
+            "    else",
+            f"    {_record('refused', subject, 'moved, but git worktree prune failed — run it yourself')}",
+            "    fi",
+            "else",
+            _record("refused", subject,
+                    "the move itself failed — the directory is untouched and "
+                    "its registration was left alone"),
+            "fi",
             "",
         ]
     for item in proposed:
         ref = (item.backup_ref or
                f"{TRASH_REF_ROOT}/{run_id}/{slug(item.name)}")
+        subject = f"branch {item.name}"
         # `intent` is the first line of `git branch --edit-description`, and a
         # description is MULTI-LINE by design. It is single-line by the time it
         # arrives here, but that is a promise made in another module — one
         # refactor from putting a raw newline inside a `#` comment, where the
-        # tail becomes a command. The echo is quoted whole for the same reason:
-        # it used to sit inside hand-written single quotes and depend on
-        # `_SAFE_NAME_RE` never admitting an apostrophe.
+        # tail becomes a command. Every interpolation below is `shlex.quote`d
+        # for the same reason: it used to sit inside hand-written single quotes
+        # and depend on `_SAFE_NAME_RE` never admitting an apostrophe.
         body += [
             f"# branch {_comment(item.name)} — tip {item.tip[:8]}",
             f"#   {_comment(item.intent)}" if item.intent
             else "#   (no stated intent)",
+            f"#   pinning the tip {item.tip[:8]}; the delete runs only if that "
+            f"ref reads back",
         ]
-        body += _guarded_ref_write(
-            ref, item.tip,
-            f"backup ref missing — refusing to delete {_comment(item.name)}",
-            f"pinning the tip {item.tip[:8]}")
+        body += _pin_condition([(ref, item.tip)])
         body += [
-            f"git branch -d {shlex.quote(item.name)}",
+            _record("refused", subject,
+                    "its backup ref did not read back — NOT deleted, because a "
+                    "deletion standing behind nothing is the whole hazard"),
+            f"elif git branch -d {shlex.quote(item.name)}; then",
+            _record("done", subject),
+            "else",
+            _record("refused", subject,
+                    "git branch -d declined it — report this; the tip is still "
+                    "pinned and this tool has no stronger flag"),
+            "fi",
             "",
         ]
+    if moves or proposed:
+        body += _summary_footer()
     if not any(line and not line.startswith("#") for line in body):
         body += ["# nothing is proposed for removal in this run.", ""]
     if stale:
