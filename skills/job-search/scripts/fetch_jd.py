@@ -19,6 +19,14 @@ failure or an empty extraction exits non-zero with a clear stderr message; a
 suspiciously tiny extraction still saves but warns that the page may be
 JavaScript-rendered and suggests saving it manually.
 
+A LONG page can also carry no posting — consumer-product navigation followed by
+"No job found." sails past the tiny-extraction floor. Such a page is detected by
+its own dead-page wording (``detect_dead_page``) and is never saved as a JD: the
+posting is first recovered from the Greenhouse board API when the URL or the page
+resolves to one (``--gh-board`` supplies the token otherwise), and failing that
+the run exits non-zero saying which of "the posting is gone" and "we could not
+check" applies, plus the command that recovers it another way.
+
 ``--digest`` additionally prints (after the saved path line, and whether the file
 was freshly fetched or kept) a compact, deterministic LOCATOR over the saved JD:
 it points a verifying agent at exactly the lines the hard gates read — title /
@@ -39,6 +47,7 @@ is passed, keeping the default path dependency-free.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import urllib.error
@@ -180,7 +189,149 @@ class _ReadableTextExtractor(HTMLParser):
 
 
 class FetchError(RuntimeError):
-    """A network / HTTP failure while downloading the posting page."""
+    """A network / HTTP failure while downloading the posting page.
+
+    ``status`` is the HTTP status when there was one (``None`` for a transport
+    failure). Callers that must tell "this posting is GONE" (404) apart from
+    "we could not reach the API" read it instead of parsing the message.
+    """
+
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+# --------------------------------------------------------------------------- #
+# Dead-page detection (--out must never receive a shell)
+#
+# An ATS-backed careers page can serve a full, long, perfectly valid HTML page
+# that contains no posting: consumer-product navigation, then "No job found."
+# It sails past the tiny-extraction floor, so the fetch reported success and the
+# saved file became "the JD" for drafting and the honesty gates — unrelated page
+# text turned into application evidence, while the board API still served the
+# real posting at the same moment.
+#
+# The markers below are phrases that DECLARE the absence of a posting. They are
+# matched only against a SHORT STANDALONE LINE (the shape a shell's one message
+# takes), never against prose, so a JD that discusses these words in a sentence
+# is untouched. Plural "no jobs found" is deliberately absent: that is what an
+# empty "similar jobs" widget on a perfectly good posting page says.
+#
+# Erring: a marker refuses the fetch (non-zero, nothing written) unless the
+# posting can be recovered from the board API. Refusing a good page costs a
+# re-run and says exactly which line triggered it; ACCEPTING a shell writes
+# unrelated text into an application folder and reports it as verified. So the
+# refusal wins, and the marker set stays narrow to keep that cost near zero.
+_DEAD_PAGE_MARKERS = (
+    "no job found",
+    "job not found",
+    "job no longer exists",
+    "this job is no longer available",
+    "this job posting is no longer available",
+    "this position is no longer available",
+    "this posting is no longer available",
+    "this position has been filled",
+    "this role is no longer open",
+    "the job you are looking for",
+    "no longer accepting applications",
+)
+_DEAD_PAGE_LINE_MAX = 90        # a shell states it in a line, not a paragraph
+
+
+def detect_dead_page(text: str) -> str | None:
+    """The verbatim line declaring this page carries no posting, else ``None``."""
+    for raw in (text or "").splitlines():
+        line = raw.strip().lstrip("#-*•> ").strip()
+        if not line or len(line) > _DEAD_PAGE_LINE_MAX:
+            continue
+        norm = _WS_RE.sub(" ", line).strip().lower().rstrip(".!?")
+        if any(marker in norm for marker in _DEAD_PAGE_MARKERS):
+            return line
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# Greenhouse recovery: the same posting, from the board API that still has it.
+# --------------------------------------------------------------------------- #
+_GH_HOST_JOB_RE = re.compile(
+    r"https?://(?:boards|job-boards)\.greenhouse\.io/(?:embed/job_board/?\?for=)?"
+    r"([A-Za-z0-9_-]+)/jobs/(\d+)", re.I)
+_GH_JID_RE = re.compile(r"[?&]gh_jid=(\d+)", re.I)
+# The board token an embedded Greenhouse widget names in the page it renders.
+_GH_BOARD_IN_HTML_RE = re.compile(
+    r"(?:greenhouse\.io/[^\"'<>\s]*?[?&]for=|"
+    r"boards-api\.greenhouse\.io/v1/boards/)([A-Za-z0-9_-]+)", re.I)
+
+
+def greenhouse_reference(url: str, html: str = "",
+                         board: str | None = None) -> tuple[str, str] | None:
+    """``(board_token, job_id)`` for a Greenhouse-backed posting, else ``None``.
+
+    The token comes from the URL when the posting lives on a Greenhouse host,
+    from ``board`` when the caller supplies it, and otherwise from the embed
+    token the employer's own page names while rendering the widget — which is
+    how a `company.com/careers/job/<id>?gh_jid=<id>` URL is resolvable at all.
+    """
+    direct = _GH_HOST_JOB_RE.search(url or "")
+    if direct:
+        return direct.group(1), direct.group(2)
+    jid = _GH_JID_RE.search(url or "")
+    if not jid:
+        return None
+    token = (board or "").strip()
+    if not token:
+        found = _GH_BOARD_IN_HTML_RE.search(html or "")
+        token = found.group(1) if found else ""
+    return (token, jid.group(1)) if token else None
+
+
+def fetch_greenhouse_job(board: str, job_id: str, timeout: float = 25.0) -> dict | None:
+    """The board API's record for one posting, or ``None`` when it is GONE.
+
+    ``None`` means HTTP 404 — the board itself no longer lists this job, which is
+    the one case where a dead page is telling the truth. Anything else raises, so
+    "the posting is gone" is never confused with "we could not reach the API".
+    """
+    api = (f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{job_id}"
+           f"?questions=false")
+    try:
+        body = fetch_page(api, timeout)
+    except FetchError as exc:
+        if exc.status == 404:
+            return None
+        raise
+    try:
+        data = json.loads(body)
+    except ValueError as exc:
+        raise FetchError(f"Greenhouse API returned unparseable JSON for {api}: "
+                         f"{exc}") from exc
+    return data if isinstance(data, dict) else None
+
+
+def greenhouse_job_text(record: dict, *, board: str, job_id: str) -> str:
+    """Render a board-API record as saved-JD text (verbatim content, no rewriting).
+
+    Greenhouse ``content`` is entity-escaped HTML, so it is unescaped once and
+    then run through this module's OWN reader — the same extractor the page path
+    uses, so a recovered JD and a fetched one read identically downstream.
+    """
+    title = _WS_RE.sub(" ", str(record.get("title") or "")).strip()
+    location = _WS_RE.sub(
+        " ", str((record.get("location") or {}).get("name") or "")).strip()
+    body = extract_readable_text(unescape(str(record.get("content") or "")))
+    if not body.strip():
+        # A title and a provenance note are not a JD. Returning "" here keeps the
+        # caller's one emptiness check honest: the header must never make a
+        # contentless record look like a recovered posting.
+        return ""
+    head = [f"> SOURCE: the page at the posting's public URL carried no job; this "
+            f"text is the posting's own content, recovered verbatim from the "
+            f"Greenhouse board API (board {board}, job {job_id}).", ""]
+    if title:
+        head += [f"# {title}", ""]
+    if location:
+        head += [f"Location: {location}", ""]
+    return "\n".join(head) + body
 
 
 def extract_readable_text(html_text: str) -> str:
@@ -862,7 +1013,8 @@ def fetch_page(url: str, timeout: float) -> str:
             headers=(dict(exc.headers.items()) if exc.headers else {}),
             content_type=(exc.headers.get_content_type() if exc.headers else None),
             ok=False, error=f"HTTP {exc.code} {exc.reason}")
-        raise FetchError(f"HTTP {exc.code} {exc.reason} for {url}") from exc
+        raise FetchError(f"HTTP {exc.code} {exc.reason} for {url}",
+                         status=exc.code) from exc
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         reason = getattr(exc, "reason", exc)
         _capture_jd_page(url, status=0, body=b"", ok=False, error=str(reason))
@@ -917,6 +1069,11 @@ def main(argv: list[str] | None = None) -> int:
                          "(default: keep the existing file and report it).")
     ap.add_argument("--timeout", type=float, default=25.0,
                     help="Network timeout in seconds (default: %(default)s).")
+    ap.add_argument("--gh-board", metavar="TOKEN",
+                    help="Greenhouse board token for this employer. Only used when "
+                         "the fetched page turns out to carry no posting: the JD is "
+                         "then recovered from the board API. Needed only when the "
+                         "page does not name its own embed token.")
     ap.add_argument("--digest", action="store_true",
                     help="Also print a compact, deterministic LOCATOR over the saved "
                          "JD (title/level, required YOE, workplace/location, "
@@ -942,6 +1099,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     page_title = ""
+    page_html = ""
     try:
         text = fetch_source_native_text(args.url)
         if text is None:
@@ -957,6 +1115,13 @@ def main(argv: list[str] | None = None) -> int:
               f"likely JavaScript-rendered; open it in a browser and save the "
               f"posting text manually.", file=sys.stderr)
         return 1
+
+    marker = detect_dead_page(text)
+    if marker:
+        recovered = _recover_dead_page(args, page_html, marker, out_path)
+        if recovered is None:
+            return 1                       # nothing is written on this path
+        text, page_title = recovered, ""
 
     data = text.encode("utf-8")
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -979,6 +1144,67 @@ def main(argv: list[str] | None = None) -> int:
         _emit_digest(text, out_path, n,
                      title=("" if _body_h1(text.splitlines()) else page_title))
     return 0
+
+
+def _recover_dead_page(args, page_html: str, marker: str,
+                       out_path: Path) -> str | None:
+    """Recover the posting the dead page hid, or explain and refuse.
+
+    Returns the recovered JD text, or ``None`` after printing WHY — and the why
+    matters, because three very different things look identical from the page
+    alone and the caller's next move differs for each:
+
+    * the board API still serves the posting -> we fetched it badly; recovered.
+    * the board API returns 404 -> the posting is genuinely GONE; stop looking.
+    * we cannot ask (not Greenhouse, or no board token) -> unknown; here is the
+      exact command that recovers it another way.
+
+    Nothing is written to ``out_path`` on any refusing path, so a JD an earlier
+    run already recovered is never overwritten with a shell.
+    """
+    head = (f'fetch_jd: the page at {args.url} says "{marker}" — that is a '
+            f"dead-page shell, not this posting's JD. Nothing was written to "
+            f"{out_path}.")
+    ref = greenhouse_reference(args.url, page_html, getattr(args, "gh_board", None))
+    if ref is None:
+        print(f"{head}\n"
+              f"  Could not resolve it to a Greenhouse posting (no board token or "
+              f"job id in the URL or the page). Recover the JD from the "
+              f"employer's board instead:\n"
+              f"      company_roles.py --name <Company> --jd-url <url-or-req-id> "
+              f"--out {out_path}\n"
+              f"  or pass the Greenhouse board token with --gh-board <token>, or "
+              f"open the posting in a browser and save its text manually.",
+              file=sys.stderr)
+        return None
+    board, job_id = ref
+    try:
+        record = fetch_greenhouse_job(board, job_id, args.timeout)
+    except FetchError as exc:
+        print(f"{head}\n"
+              f"  Could not check whether the posting is still live: {exc}\n"
+              f"  Retry, or recover the JD with "
+              f"company_roles.py --name <Company> --jd-url {job_id} "
+              f"--out {out_path}.", file=sys.stderr)
+        return None
+    if record is None:
+        print(f"{head}\n"
+              f"  The posting is GONE: the Greenhouse board {board!r} returns "
+              f"HTTP 404 for job {job_id}. The page is telling the truth — do not "
+              f"apply through this URL.", file=sys.stderr)
+        return None
+    text = greenhouse_job_text(record, board=board, job_id=job_id)
+    if not text.strip():
+        print(f"{head}\n"
+              f"  The Greenhouse board {board!r} still lists job {job_id}, but its "
+              f"record carries no content. Open it in a browser and save the "
+              f"posting text manually.", file=sys.stderr)
+        return None
+    print(f"fetch_jd: the page at {args.url} carried no job "
+          f'("{marker}"), so the JD below was recovered VERBATIM from the '
+          f"Greenhouse board API (board {board}, job {job_id}), which still "
+          f"lists it.", file=sys.stderr)
+    return text
 
 
 def _emit_digest(text: str, out_path: Path, byte_count: int,

@@ -3494,6 +3494,256 @@
 - base: 9355efba
   reviewed_by: agent
   date: 2026-08-20
+  files: 1
+  digest: sha256:bf582b4d115372c3
+  finding: 'Reviewed the leak-guard test module change. It rewrites fixture
+    surnames into split string literals, adds a self-scan test, and reflows the
+    surrounding comments. Every value is a synthetic fixture or an ordinary
+    English word; no real identity, employer, school, salary, private item name,
+    or dated personal job-hunt content is present.'
+- base: a9dd89f4
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:b535224822941b2b
+  finding: 'Reviewed the leak-guard fix-hint change and its tests. The added text
+    is operator guidance about the guard''s own opt-in word allowance, plus one
+    fictional-persona address assembled from split literals. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt
+    content is present.'
+- base: b076d2bd
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 3
+  digest: sha256:b3126015d5c98371
+  finding: 'Reviewed the handbook leak-guard paragraph and two backlog task
+    files. The only identity-shaped string is the fictional Jordan Rivers handle
+    already used throughout the public tree as the shipped example. Both task
+    files deliberately avoid naming any surname. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content is
+    present.'
+- base: 66e39b55
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 7
+  digest: sha256:1c3b69a5454ca279
+  finding: 'Reviewed the location-classifier change, its regression tests, the three
+    byte-identical vendored copies, and one shared filter-variant corpus expectation.
+    The diff is generic US geography tables (state names, hub cities, metro-to-state
+    and metro-to-time-zone maps), regular expressions over job-description prose, and
+    fictional test fixtures. No real identity, employer, school, date, salary,
+    private item name, or dated personal job-hunt content is present.'
+- base: 84fd8eff
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 5
+  digest: sha256:961208149f34cfd0
+  finding: 'Reviewed the memoization of the location classifier, its cache tests, and
+    the three byte-identical vendored copies. The diff is lru_cache decorators, a
+    resolved-policy cache key, a shared job-description scan helper, a regex
+    prefilter, and fictional test fixtures. No real identity, employer, school, date,
+    salary, private item name, or dated personal job-hunt content is present.'
+- base: 9d6c08fa
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 5
+  digest: sha256:03b0abb20abd4168
+  finding: 'Reviewed fifteen new filter-variant location fixtures, one clause-scope
+    change in the location classifier, and the three byte-identical vendored copies.
+    Every fixture uses the repository fictional place names or generic public US
+    geography and generic job-description wording. No real identity, employer, school,
+    date, salary, private item name, or dated personal job-hunt content is present.'
+- base: 94349481
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:18a9d562d274b9f4
+  finding: 'Reviewed two backlog task files describing residual public filter-variant
+    corpus work and a public workplace-inference inconsistency. Both reference only
+    tracked public paths, public issue numbers, and fictional example wording. No real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content is present.'
+- base: 2baf7a19
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
+- base: 84c7c0f1
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 5
+  digest: sha256:94f806d3fd120f8c
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:d30d702ff441aa93
+  finding: 'Reviewed the company-registry tag-selection diagnostic and its offline
+    tests. The diff carries only timeless registry logic and fictional company rows
+    (Northwind/Larkspur Robotics); no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content is present.'
+- base: 787783bf
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:b532eb3d82b89f28
+  finding: 'Reviewed the new unambiguous JD selectors in company_roles.py and their
+    offline tests. Everything is timeless CLI logic over the fictional ExampleCorp
+    board with invented requisition ids; no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content is present.'
+- base: 933f0f56
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 4
+  digest: sha256:a3a9f5ed2e66062c
+  finding: 'Reviewed SmartRecruiters listing pagination, its per-board cap and the
+    registry lint rule, plus the offline page fixtures. All fixtures are synthetic
+    ("Testco", numbered engineers); no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content is present.'
+- base: 14e0ae1a
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 3
+  digest: sha256:d402f7e8f7bf677a
+  finding: 'Reviewed the RemoteOK text repair, the posting-link requirement shared
+    with the builder parser, and the offline fixtures. The fixture rows are invented
+    ("OceanCo") with generic Greek/Chinese sample words; no real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content is present.'
+- base: f33bf117
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:e69ce75ad7f61fd5
+  finding: 'Reviewed dead-page detection in fetch_jd.py, its Greenhouse board-API
+    recovery, and the offline page/API fixtures. Every fixture is the fictional
+    "Nimbus Robotics" employer with an invented job id; no real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content is present.'
+- base: 4cafcd54
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:2d2b847125f1ffa2
+  finding: 'Reviewed one backlog task file describing Workday rate-limit recovery.
+    It cites public repository paths and a public GitHub issue only; no real
+    identity, employer, school, salary, private item name, or dated personal
+    job-hunt content is present.'
+- base: d6f801e8
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
+- base: 1d707042
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:198d9c781b90335a
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:91bc32a2b2ad0644
+  finding: 'Reviewed the tailoring-card key-number extractor rewrite and its tests.
+    Every string is either generic tooling vocabulary or the public fictional
+    example fixture; no real identity, employer, school, salary, private item name,
+    or dated personal job-hunt content is present.'
+- base: 48a55cdb
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:d5896ecb3ba51f4c
+  finding: 'Reviewed the skills_diff metadata filter, compound/concept matching and
+    their tests. Company names, URLs and addresses in the fixtures are invented
+    example.com placeholders; no real identity, employer, school, salary, private
+    item name, or dated personal job-hunt content is present. The one "salary" match
+    is a metadata label in a regex, not a value.'
+- base: fb49ee7a
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:0121febb3263e2ee
+  finding: 'Reviewed the backlog task filing the documentation follow-up for the
+    skills_diff precision rules. It names only public script paths and public skill
+    documentation; no real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content is present.'
+- base: 11f2e340
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:778b4160c4418870
+  finding: 'Reviewed the city/state guard that keeps an uppercase conjunction ("OR")
+    from being read as a postal abbreviation, plus its test. Public tooling text and
+    invented example strings only; no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content is present.'
+- base: a0d2749d
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
+- base: c4ad11ff
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 27
+  digest: sha256:3315aaaf6483c2e0
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:e139c18bd860717c
+  finding: 'Reviewed the job-search store-identity fix and its tests. The change is
+    a read-only store-index lookup on the refilter path plus synthetic fixtures
+    (Northwind Robotics, greenhouse job 777, temp directories). No real identity,
+    employer, school, salary, private item name, absolute home path, or dated
+    personal job-hunt content is present.'
+- base: e012119c
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:27d34a41e2ec99ef
+  finding: 'Reviewed the search-JSON provenance fields, the filter-review payload
+    additions, the unique run id, and the new refilter tests. Everything is public
+    pipeline behavior plus synthetic fixtures (Northwind Robotics, Cobalt Systems,
+    temp directories); no real identity, employer, school, salary, private item
+    name, absolute home path, or dated personal job-hunt content is present.'
+- base: 9f65cc71
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:44b0a6ba222cc67e
+  finding: 'Reviewed the backlog task describing the job-search JSON provenance doc
+    need. It names only public scripts, fields, and issue numbers; no real identity,
+    employer, school, salary, private item name, absolute home path, or dated
+    personal job-hunt content is present.'
+- base: 61aecb84
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main into this branch. Verified the files this row covers
+    are byte-identical to origin/main, where they are already published; the merge
+    introduces no new public content. The review_ledger conflict was resolved by
+    appending this branch''s authored rows whole onto main''s file, not by a line
+    union.'
+- base: 6e4876c0
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 32
+  digest: sha256:deb299ac3861a526
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
   files: 4
   digest: sha256:fda664d70e669296
   finding: 'Reviewed the sponsorship-classifier change and its three byte-identical
@@ -3528,3 +3778,9 @@
   files: 14
   digest: sha256:c2c8eb0c69aa6381
   finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
+- base: 6c62ce28
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 36
+  digest: sha256:bbad0d01b2dea466
+  finding: 'Merge of origin/main. Two conflicts, both resolved by keeping BOTH sides whole: the review ledger (append-only rows) and the filter-variant corpus (two branches each appended new cases at the end). No case was dropped or rewritten; filter_variants.py --check exits 0 on the result.'

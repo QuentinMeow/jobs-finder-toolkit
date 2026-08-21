@@ -15,6 +15,7 @@ JOBHUNT_DATA_ROOT, so no test writes into a real store.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -311,17 +312,145 @@ class SmartRecruitersDetailOutageTests(_FetchCase):
         self.assertEqual(common.drain_source_warnings(), [])
 
 
-class SmartRecruitersTruncationReportTests(_FetchCase):
-    def test_truncated_listing_is_reported_to_the_run_not_only_to_the_store(self):
-        # The listing caps at `limit`; totalFound says how much was NOT returned.
-        body = (b'{"content": [{"id": "1", "name": "Platform Engineer", '
-                b'"location": {}}], "totalFound": 280}')
+def _sr_page(offset: int, total: int, *, limit=None) -> bytes:
+    """One SmartRecruiters listing page: rows [offset, offset+limit) of `total`."""
+    limit = sources._SR_PAGE_LIMIT if limit is None else limit
+    rows = [{"id": str(i), "name": f"Engineer {i}", "location": {}}
+            for i in range(offset, min(offset + limit, total))]
+    return json.dumps({"content": rows, "totalFound": total,
+                       "offset": offset, "limit": limit}).encode()
+
+
+class SmartRecruitersPaginationTests(_FetchCase):
+    """A board is not its first 100 rows (#236).
+
+    Reading one page inspected the first `limit` postings and ignored the rest —
+    deterministic recall loss on any employer with a big board, before a single
+    gate ran, with WHICH rows survive decided by the provider's page ordering.
+    """
+
+    def _serve(self, total, *, fail_at=None, replay=False, limit=None):
+        """Serve a `total`-row board a page at a time; record every offset asked."""
+        self.offsets = []
+
+        def _get(url, *a, **k):
+            offset = int(url.split("offset=")[1].split("&")[0])
+            self.offsets.append(offset)
+            if fail_at is not None and offset == fail_at:
+                return HttpResult(url=url, status=503, body=b"", headers={},
+                                  duration_ms=1, ok=False,
+                                  error="HTTP 503 Service Unavailable", method="GET",
+                                  content_type=None)
+            served = 0 if replay else offset
+            return _result(_sr_page(served, total, limit=limit))
+
+        sources.http_get_full = _get
+        sources.http_get_json = lambda *a, **k: _SR_DETAIL
+
+    def test_a_233_row_board_is_inspected_whole(self):
+        self._serve(233)
+        out = sources.fetch_smartrecruiters("Testco", "testco")
+        self.assertEqual(len(out), 233)
+        self.assertEqual(self.offsets, [0, 100, 200])          # 100 + 100 + 33
+        self.assertEqual(common.drain_source_warnings(), [])   # nothing was missed
+
+    def test_paging_stops_on_a_short_page_without_asking_for_more(self):
+        self._serve(150)
+        self.assertEqual(len(sources.fetch_smartrecruiters("Testco", "testco")), 150)
+        self.assertEqual(self.offsets, [0, 100])
+
+    def test_an_exact_multiple_of_the_page_size_stops_at_total_found(self):
+        self._serve(200)
+        self.assertEqual(len(sources.fetch_smartrecruiters("Testco", "testco")), 200)
+        self.assertEqual(self.offsets, [0, 100])
+
+    def test_overlapping_pages_deduplicate_by_posting_id(self):
+        # Page 2 re-serves rows 50-149 (the board shifted under us mid-crawl).
+        pages = [_sr_page(0, 233), _sr_page(50, 233), _sr_page(200, 233)]
+        calls = {"n": 0}
+
+        def _get(*a, **k):
+            body = pages[min(calls["n"], len(pages) - 1)]
+            calls["n"] += 1
+            return _result(body)
+
+        sources.http_get_full = _get
+        sources.http_get_json = lambda *a, **k: _SR_DETAIL
+        out = sources.fetch_smartrecruiters("Testco", "testco")
+        self.assertEqual(len(out), len({p.url for p in out}))   # no double-count
+
+    def test_a_board_that_ignores_offset_cannot_spin_forever(self):
+        self._serve(500, replay=True)          # every page is page 1
+        out = sources.fetch_smartrecruiters("Testco", "testco")
+        self.assertEqual(len(out), 100)
+        self.assertLessEqual(len(self.offsets), 3)
+        self.assertTrue(any("not paging" in w for w in common.drain_source_warnings()))
+
+    def test_a_malformed_total_cannot_loop_or_stop_the_crawl_early(self):
+        body = json.dumps({"content": [{"id": str(i), "name": "E", "location": {}}
+                                       for i in range(100)],
+                           "totalFound": "lots"}).encode()
+        tail = json.dumps({"content": [], "totalFound": None}).encode()
+        bodies = [body, tail]
+        calls = {"n": 0}
+
+        def _get(*a, **k):
+            out = bodies[min(calls["n"], len(bodies) - 1)]
+            calls["n"] += 1
+            return _result(out)
+
+        sources.http_get_full = _get
+        sources.http_get_json = lambda *a, **k: _SR_DETAIL
+        self.assertEqual(len(sources.fetch_smartrecruiters("Testco", "testco")), 100)
+        self.assertEqual(calls["n"], 2)
+
+    # -- a cap is not a failure --------------------------------------------- #
+    def test_the_per_board_cap_is_reported_as_a_cap_naming_its_knob(self):
+        self._serve(1000)
+        out = sources.fetch_smartrecruiters("Testco", "testco", max_postings=150)
+        self.assertEqual(len(out), 150)
+        warnings = common.drain_source_warnings()
+        said = " ".join(warnings)
+        self.assertIn("configured per-board cap", said)
+        self.assertIn("max_postings", said)
+        self.assertNotIn("failed", said)
+
+    def test_a_registry_row_can_raise_the_cap(self):
+        self._serve(1000)
+        out = sources.fetch_company({"name": "Testco", "ats": "smartrecruiters",
+                                     "token": "testco", "max_postings": 250})
+        self.assertEqual(len(out), 250)
+        common.drain_source_warnings()
+
+    # -- failure semantics --------------------------------------------------- #
+    def test_a_first_page_failure_still_raises(self):
+        self._serve(233, fail_at=0)
+        with self.assertRaises(RuntimeError):
+            sources.fetch_smartrecruiters("Testco", "testco")
+
+    def test_a_later_page_failure_keeps_the_rows_already_in_hand(self):
+        self._serve(233, fail_at=100)
+        out = sources.fetch_smartrecruiters("Testco", "testco")
+        self.assertEqual(len(out), 100)          # dropping these would be worse
+        warnings = common.drain_source_warnings()
+        self.assertTrue(any("listing incomplete" in w for w in warnings), warnings)
+
+    def test_a_small_board_reports_nothing_at_all(self):
+        self._serve(12)
+        self.assertEqual(len(sources.fetch_smartrecruiters("Testco", "testco")), 12)
+        self.assertEqual(common.drain_source_warnings(), [])
+
+    def test_ending_short_of_total_found_is_still_reported(self):
+        # The board says 5 and hands back 2 with no further page: paging ended,
+        # but coverage did not. Silence here would read as a fully inspected board.
+        body = json.dumps({"content": [{"id": "1", "name": "SWE", "location": {}},
+                                       {"id": "2", "name": "Infra", "location": {}}],
+                           "totalFound": 5}).encode()
         sources.http_get_full = lambda *a, **k: _result(body)
         sources.http_get_json = lambda *a, **k: _SR_DETAIL
-        sources.fetch_smartrecruiters("Testco", "testco")
+        self.assertEqual(len(sources.fetch_smartrecruiters("Testco", "testco")), 2)
         warnings = common.drain_source_warnings()
-        self.assertTrue(any("truncated at 1 of 280" in w for w in warnings),
-                        f"no truncation report in {warnings!r}")
+        self.assertTrue(any("totalFound said 5" in w for w in warnings), warnings)
 
 
 class SourceWarningSinkTests(unittest.TestCase):
