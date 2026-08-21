@@ -4126,3 +4126,9 @@
   files: 3
   digest: sha256:d959828aaa848609
   finding: 'Workspace cleanup planner, its tests, and one queue decision item. Cached remote branches are now listed with the reasons each is not a deletion candidate; nothing about them reaches the emitted script and the tool still makes exactly one network call. The open owner decision about ever planning remote deletions is filed with this listing as its default path. Public tooling, git semantics and synthetic fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: f61f3c8b
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 1
+  digest: sha256:35d2d91efa3527e4
+  finding: 'One session handover under history/conversations/. Describes workspace tooling defects, the decisions taken, and two open items; names only branches, files and git behaviour. No real identity, employer, application, or dated job-hunt content.'
