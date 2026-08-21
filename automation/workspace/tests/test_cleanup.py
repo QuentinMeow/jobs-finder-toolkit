@@ -378,7 +378,12 @@ class MainWorktreeScenario(F.GitTestCase):
         # real repository ignores it; a fixture that did not would report the
         # main working tree DIRTY from the second run onward and keep it for the
         # wrong reason, hiding the very bug these tests exist to pin.
-        F.write(root / ".gitignore", "local/\n")
+        # `/.claude/worktrees/` is ignored for the same reason and with the same
+        # spelling the real repository uses: a harness worktree living inside
+        # the main working tree must not make that tree dirty, or every
+        # harness scenario below would be kept by the dirty-tree rule and prove
+        # nothing about the harness rule.
+        F.write(root / ".gitignore", "local/\n/.claude/worktrees/\n")
         F.write(root / "seed.txt", "seed\n")
         self.commit(root, "base commit")
         F.add_origin(self, root)
@@ -949,6 +954,133 @@ class WorktreeReflogUnitTests(WorktreeReflogScenario):
                                                    "0" * 40)
         self.assertFalse(worktree_ref.startswith(branch_ref + "/"))
         self.assertNotEqual(worktree_ref, branch_ref)
+
+
+# ── harness-owned worktrees: kept by default, retirable only on request ───────
+#
+# The owner's stated pain is that agent worktrees pile up and get cleaned by
+# hand — with `git worktree remove`, which
+# `docs/handbook/post-merge-cutover.md` names as prohibited. Keeping them
+# unconditionally is what pushed an operator to that command; proposing them
+# unconditionally would put a second sweeper on directories the Claude Code
+# harness already sweeps. The flag is the third answer: opt-in, auditable, and
+# subject to every precondition an ordinary worktree faces.
+
+
+class HarnessWorktreeScenario(MainWorktreeScenario):
+    def build_harness(self, *, name: str = "agent-1", branch: str = "harness-work",
+                      start: str = "main") -> Path:
+        self.build_scenario(root_on="codex/landed")
+        harness = self.root / ".claude" / "worktrees" / name
+        harness.parent.mkdir(parents=True, exist_ok=True)
+        self.git(self.root, "worktree", "add", "-q", "-b", branch,
+                 str(harness), start)
+        self.assertEqual(
+            self.out(self.root, "status", "--porcelain"), "",
+            "`.claude/worktrees` must be ignored, or the main working tree is "
+            "merely dirty and this scenario proves nothing")
+        return harness
+
+
+class HarnessWorktreeDefaultTests(HarnessWorktreeScenario):
+    def test_by_default_it_is_kept_and_the_reason_names_the_flag(self) -> None:
+        harness = self.build_harness()
+        _, plan, _ = self.plan_from(self.root)
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "keep", row["keep_reasons"])
+        self.assertIn(cleanup.KEEP_HARNESS, row["keep_reasons"])
+        self.assertIn("--include-harness-worktrees", cleanup.KEEP_HARNESS,
+                      "an operator reading the plan must learn the supported "
+                      "path, or they reach for `git worktree remove` instead")
+
+    def test_the_flag_proposes_it_and_says_the_tool_still_only_emits(self) -> None:
+        harness = self.build_harness()
+        code, plan, script = self.plan_from(self.root,
+                                            "--include-harness-worktrees")
+        self.assertIn(code, (0, 1))
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "retire", row["keep_reasons"])
+        self.assertTrue(plan["include_harness_worktrees"])
+        moved = [source.resolve() for source, _ in self.emitted_moves(script)]
+        self.assertIn(harness.resolve(), moved)
+        header = script.split("set -eu", 1)[0]
+        self.assertIn("post-merge-cutover.md", header)
+        self.assertIn("worktree remove", header,
+                      "the header must name the command this tool still does "
+                      "not run, or the tension is undocumented")
+
+    def test_the_report_carries_the_same_note(self) -> None:
+        self.build_harness()
+        buffer = io.StringIO()
+        cleanup.main(["--repo-root", str(self.root), "--fetch",
+                      "--include-harness-worktrees"], out=buffer)
+        report = buffer.getvalue()
+        self.assertIn("post-merge-cutover.md", report)
+        self.assertIn("--include-harness-worktrees", report)
+
+
+class HarnessWorktreePreconditionTests(HarnessWorktreeScenario):
+    def test_the_flag_does_not_waive_the_dirty_tree_rule(self) -> None:
+        harness = self.build_harness()
+        F.write(harness / "scratch.md", "untracked — no git recovery story\n")
+        _, plan, script = self.plan_from(self.root, "--include-harness-worktrees")
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "keep", row["keep_reasons"])
+        self.assertTrue(any(cleanup.KEEP_DIRTY in reason
+                            for reason in row["keep_reasons"]))
+        moved = [source.resolve() for source, _ in self.emitted_moves(script)]
+        self.assertNotIn(harness.resolve(), moved)
+
+    def test_the_flag_does_not_waive_the_unmerged_rule(self) -> None:
+        harness = self.build_harness()
+        F.write(harness / "unpushed.txt", "work that exists nowhere else\n")
+        self.git(harness, "add", "-A")
+        self.git(harness, "commit", "-q", "-m", "harness: unmerged, unpushed work")
+        _, plan, script = self.plan_from(self.root, "--include-harness-worktrees")
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "keep", row["keep_reasons"])
+        self.assertIn(cleanup.KEEP_UNMERGED, row["keep_reasons"])
+        moved = [source.resolve() for source, _ in self.emitted_moves(script)]
+        self.assertNotIn(harness.resolve(), moved)
+
+    def test_the_flag_does_not_waive_the_locked_rule(self) -> None:
+        harness = self.build_harness()
+        self.git(self.root, "worktree", "lock", "--reason",
+                 "a live agent session holds this", str(harness))
+        _, plan, _ = self.plan_from(self.root, "--include-harness-worktrees")
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "keep", row["keep_reasons"])
+        self.assertIn(cleanup.KEEP_LOCKED, row["keep_reasons"])
+
+    def test_the_flag_does_not_waive_the_reflog_sweep(self) -> None:
+        harness = self.build_harness(start="codex/landed")
+        self.git(harness, "switch", "-q", "--detach", "HEAD")
+        F.write(harness / "detached.txt", "only the worktree reflog holds this\n")
+        self.git(harness, "add", "-A")
+        self.git(harness, "commit", "-q", "-m", "harness: detached work")
+        orphan = self.out(harness, "rev-parse", "HEAD")
+        self.git(harness, "switch", "-q", "harness-work")
+        self.git(harness, "clean", "-qfd")
+        _, plan, script = self.plan_from(self.root, "--include-harness-worktrees")
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "retire", row["keep_reasons"])
+        backups = {entry["commit"]: entry["ref"] for entry in row["backup_refs"]}
+        self.assertIn(orphan, backups)
+        self.assertIn(f"git update-ref {shlex.quote(backups[orphan])} {orphan}",
+                      script)
+
+    def test_the_emitted_script_still_moves_and_never_removes(self) -> None:
+        self.build_harness()
+        _, _, script = self.plan_from(self.root, "--include-harness-worktrees")
+        commands = [line for line in script.splitlines()
+                    if line.strip() and not line.strip().startswith("#")]
+        joined = "\n".join(commands)
+        for forbidden in ("rm -", "rm ", "git clean", "worktree remove",
+                          "branch -D", "--force", "reset --hard"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, joined)
+        self.assertIn("mv ", joined)
+        self.assert_root_is_never_moved(script)
 
 
 class MoveContainmentUnitTests(F.GitTestCase):

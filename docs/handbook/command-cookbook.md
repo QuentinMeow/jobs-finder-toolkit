@@ -33,6 +33,15 @@ next: the single next action"
 ./automation/workspace/cleanup.py --fetch               # the executable check
 ./automation/workspace/cleanup.py --fetch --execute     # + backup refs, prune
 
+# Agent worktrees under .claude/worktrees are KEPT by default (the Claude Code
+# harness sweeps them itself). To have them judged like any other worktree —
+# clean tree, contained in the fetched base, unlocked, and its own reflog swept
+# for commits no ref holds — ask for them explicitly. This is the supported way
+# to clear that pile; `git worktree remove` is prohibited
+# (docs/handbook/post-merge-cutover.md), and this flag changes nothing about
+# what the tool RUNS: the retirement is still an emitted `mv` you run yourself.
+./automation/workspace/cleanup.py --fetch --include-harness-worktrees
+
 # Which branches and worktrees nobody came back to (report-only, always exit 0)
 .venv/bin/python automation/gardener/gardener.py workspace-hygiene
 ```

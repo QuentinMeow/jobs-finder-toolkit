@@ -116,8 +116,34 @@ PROTECTED = frozenset({"main", "master", "HEAD"})
 # releasing locks whose process exited, never releasing a lock a human set, and
 # skipping any worktree holding changed files or unpushed commits. A second
 # sweeper on the same directory is how two correct programs delete live work,
-# so this one reports them and proposes nothing.
+# so by DEFAULT this one reports them and proposes nothing.
+#
+# WHY THERE IS AN OPT-IN NOW. Keeping them unconditionally did not make anyone
+# safer; it made the tool silent about the one pile the owner actually cleans by
+# hand. An operator, reading a plan that proposed none of eleven agent
+# worktrees, ran eleven `git worktree remove` calls outside the plan — the exact
+# command `docs/handbook/post-merge-cutover.md` names as prohibited. A tool
+# whose output routes people to a prohibited command has not prevented the
+# risk, it has moved it somewhere with no backup refs and no report.
+#
+# `--include-harness-worktrees` is therefore the supported path, and the KEEP
+# reason names it so a reader of the plan finds it. It waives ONE thing — this
+# marker — and nothing else: clean tree, contained in the fetched base,
+# unlocked, not the main working tree, not the planner's own directory, and the
+# per-worktree reflog sweep above all still decide. And it changes nothing about
+# what this tool RUNS: the retirement is still emitted as `mv` into a trash
+# directory for the owner to read and run, so the handbook's prohibition on this
+# tool performing `git worktree remove` is untouched.
 HARNESS_WORKTREE_MARKER = ".claude/worktrees"
+
+# One line, printed in the report and in the emitted script's header, so the
+# tension is visible to whoever runs the script rather than buried here.
+HARNESS_HANDBOOK_NOTE = (
+    "harness worktrees are included by request (--include-harness-worktrees): "
+    "`docs/handbook/post-merge-cutover.md` forbids this TOOL from running "
+    "`git worktree remove`, and it still runs nothing — the retirement below is "
+    "an emitted `mv` into a trash directory, and the script is the owner's to "
+    "read and run.")
 
 # The most commits one worktree's reflog sweep will pin. A HEAD reflog is finite
 # but not small-by-definition, and a script with a thousand `update-ref` lines
@@ -148,7 +174,11 @@ KEEP_UNPUSHED = "commit(s) reachable from no remote-tracking ref"
 KEEP_LEDGER = "a review-ledger row names it"
 KEEP_UNSAFE_NAME = "the name would need shell quoting this tool will not guess"
 KEEP_NO_BACKUP = "the backup ref did not resolve"
-KEEP_HARNESS = "harness-owned worktree — Claude Code sweeps these itself"
+KEEP_HARNESS = (
+    "harness-owned worktree — Claude Code sweeps these itself, so this planner "
+    "keeps them by default. Pass --include-harness-worktrees to have them "
+    "judged like any other worktree (every other precondition still applies); "
+    "that is the supported path — do NOT reach for `git worktree remove`")
 KEEP_NO_REFLOG = (
     "its own reflog could not be read, so the commits `git worktree prune` is "
     "about to destroy cannot be enumerated")
@@ -251,6 +281,7 @@ class WorktreeItem:
     locked: bool = False
     dirty_paths: int = 0
     pruned: bool = False
+    harness: bool = False
     # (backup ref, commit) for every commit this worktree's own reflog is the
     # only thing holding. Empty is the ordinary answer — a worktree whose HEAD
     # never left its branch has nothing here.
@@ -265,6 +296,7 @@ class WorktreeItem:
             "branch": self.branch,
             "dirty_paths": self.dirty_paths,
             "gone": self.gone,
+            "harness_owned": self.harness,
             "keep_reasons": list(self.keep_reasons),
             "locked": self.locked,
             "path": self.path,
@@ -552,6 +584,22 @@ def _comment(text: str) -> str:
     return _CONTROL_RE.sub("?", str(text))
 
 
+def _wrap(text: str, width: int = 72) -> list[str]:
+    """Break a fixed note into comment-width lines. Never splits a word."""
+    lines: list[str] = []
+    current = ""
+    for word in _comment(text).split():
+        candidate = f"{current} {word}".strip()
+        if current and len(candidate) > width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
 def path_is_describable(path: str) -> bool:
     return _CONTROL_RE.search(path) is None
 
@@ -670,8 +718,9 @@ def plan_worktree_backups(repo: Path, item: WorktreeItem, worktree: Path, *,
 
 # ── classification ───────────────────────────────────────────────────────────
 
-def classify(repo: status.Repository, root: Path, *, run_id: str,
-             ledger: str) -> tuple[list[BranchItem], list[WorktreeItem]]:
+def classify(repo: status.Repository, root: Path, *, run_id: str, ledger: str,
+             include_harness: bool = False,
+             ) -> tuple[list[BranchItem], list[WorktreeItem]]:
     base_ref = repo.base_ref
     worktree_refs = {
         branch.ref.full_name for branch in repo.branches if branch.worktree_path
@@ -754,7 +803,8 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
             item.keep_reasons.append(KEEP_SELF_NESTING)
         if not path_is_describable(path):
             item.keep_reasons.append(KEEP_UNSAFE_PATH)
-        if HARNESS_WORKTREE_MARKER in path.replace("\\", "/"):
+        item.harness = HARNESS_WORKTREE_MARKER in path.replace("\\", "/")
+        if item.harness and not include_harness:
             item.keep_reasons.append(KEEP_HARNESS)
         if item.locked:
             item.keep_reasons.append(KEEP_LOCKED)
@@ -963,7 +1013,8 @@ def _guarded_ref_write(ref: str, oid: str, warning: str, note: str) -> list[str]
 
 def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
                  branches: Sequence[BranchItem],
-                 worktrees: Sequence[WorktreeItem]) -> str:
+                 worktrees: Sequence[WorktreeItem],
+                 include_harness: bool = False) -> str:
     trash = _trash_root(root, run_id)
     proposed = [item for item in branches if item.proposed]
     moves, refused = plan_moves(root=root, run_id=run_id, worktrees=worktrees)
@@ -989,6 +1040,10 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         "# commit only it was holding is pinned to a ref before the move.",
         "#",
     ]
+    if include_harness:
+        wrapped = _wrap(HARNESS_HANDBOOK_NOTE)
+        lines += [f"# NOTE: {wrapped[0]}"]
+        lines += [f"#       {line}" for line in wrapped[1:]] + ["#"]
     if stale:
         lines += [
             "# ======================================================================",
@@ -1020,6 +1075,8 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
             f"#   clean, and its branch's content is already in "
             f"{_comment(base_ref)}",
         ]
+        if item.harness:
+            body += [f"#   {_comment(line)}" for line in _wrap(HARNESS_HANDBOOK_NOTE)]
         if item.backups:
             # BEFORE the move, always. `git worktree prune` below deletes this
             # worktree's `logs/HEAD`, and these commits are reachable from
@@ -1088,11 +1145,15 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
 def build_plan(*, run_id: str, root: Path, repo: status.Repository,
                branches: Sequence[BranchItem], worktrees: Sequence[WorktreeItem],
                blocking: Sequence[Blocking], fetched: bool, executed: bool,
-               private_counts: dict | None) -> dict:
+               private_counts: dict | None, include_harness: bool = False) -> dict:
     stale = not fetched
     judgement = [item for item in branches
                  if KEEP_UNKNOWN_MERGE in item.keep_reasons
                  or KEEP_NO_BACKUP in item.keep_reasons]
+    # `--include-harness-worktrees` deliberately does NOT push the exit code to
+    # 1. It is the operator's judgement, already exercised at the command line;
+    # a proposal it unlocks cleared every precondition an ordinary worktree
+    # clears, so calling it "needs judgement" would train people to ignore a 1.
     # Nothing here exits 3: every fail-closed condition refuses BEFORE a plan
     # exists. A dropped item (its backup ref did not resolve) leaves the rest of
     # the plan readable and correct, which is exactly what exit 1 means.
@@ -1106,6 +1167,7 @@ def build_plan(*, run_id: str, root: Path, repo: status.Repository,
         "exit_code": exit_code,
         "generated_at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "generator": {"tool": TOOL, "merge_probe": repo.merge_probe},
+        "include_harness_worktrees": include_harness,
         "private_overlay": private_counts,
         "remote_knowledge": {"fetched": fetched,
                              "state": "stale" if stale else "fresh"},
@@ -1130,6 +1192,9 @@ def print_report(plan: dict, branches: Sequence[BranchItem],
               "commented out and nothing here is executable.", file=out)
     else:
         print("remote knowledge: FRESH (fetched origin)", file=out)
+    if plan.get("include_harness_worktrees"):
+        for line in _wrap(HARNESS_HANDBOOK_NOTE, width=76):
+            print(line, file=out)
     print("", file=out)
 
     proposed = [item for item in branches if item.proposed]
@@ -1204,6 +1269,14 @@ def build_parser() -> argparse.ArgumentParser:
              "Deleting anything remains the emitted script's job, and the "
              "owner's decision.")
     parser.add_argument(
+        "--include-harness-worktrees", action="store_true",
+        help="judge worktrees under .claude/worktrees like any other worktree "
+             "instead of keeping them for the Claude Code harness. This waives "
+             "ONE rule and no others: a clean tree, containment in the fetched "
+             "base, an unlocked registration and the per-worktree reflog sweep "
+             "all still decide. Nothing is executed either way — the retirement "
+             "is emitted as `mv` into a trash directory for you to run.")
+    parser.add_argument(
         "--archive-tag", action="store_true",
         help="with --execute, also write an annotated archive/<slug>-<sha> tag "
              "for each proposed branch (the repo's established retirement idiom)")
@@ -1271,8 +1344,10 @@ def _plan(argv: Sequence[str] | None, out) -> int:
     if base_ref != repo.base_ref:
         repo = _recompute_against(repo, root, base_ref)
 
+    include_harness = args.include_harness_worktrees
     branches, worktrees = classify(repo, root, run_id=run_id,
-                                   ledger=ledger_names(root))
+                                   ledger=ledger_names(root),
+                                   include_harness=include_harness)
     apply_emitter_refusals(root, run_id, worktrees)
 
     executed = False
@@ -1286,12 +1361,14 @@ def _plan(argv: Sequence[str] | None, out) -> int:
     private_counts = _private_counts(root)
     plan = build_plan(run_id=run_id, root=root, repo=repo, branches=branches,
                       worktrees=worktrees, blocking=blocking, fetched=fetched,
-                      executed=executed, private_counts=private_counts)
+                      executed=executed, private_counts=private_counts,
+                      include_harness=include_harness)
 
     print_report(plan, branches, worktrees, out)
 
     script = build_script(run_id=run_id, root=root, base_ref=base_ref,
-                          stale=not fetched, branches=branches, worktrees=worktrees)
+                          stale=not fetched, branches=branches,
+                          worktrees=worktrees, include_harness=include_harness)
     destination = root / OUTPUT_DIR
     try:
         destination.mkdir(parents=True, exist_ok=True)

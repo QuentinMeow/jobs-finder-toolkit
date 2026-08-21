@@ -4059,3 +4059,13 @@
     Both are generic git tooling: reflog enumeration, ref names, temp-repo
     fixtures and invented branch/worktree names. No real identity, employer,
     school, salary, private item name, or dated personal job-hunt content.'
+- base: aae164a3
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 3
+  digest: sha256:ebebf3ab5fb1280d
+  finding: 'Reviewed the harness-worktree opt-in flag, its unittest coverage and
+    the command-cookbook entry. All three name public repository files, the
+    handbook page and invented fixture worktree names only. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt
+    content.'
