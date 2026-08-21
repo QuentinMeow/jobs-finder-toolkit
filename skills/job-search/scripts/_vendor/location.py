@@ -841,20 +841,33 @@ def _us_canada_pair(ntext: str, foreign_hits: tuple[str, ...]) -> bool:
 def _residence_places(description: str) -> tuple[str, ...]:
     """Normalized place lists from every residence-EXCLUSION clause in a JD.
 
-    A clause is kept only when it is not a compensation-geography sentence and
-    it actually names US geography — which is what keeps ordinary "except as
-    required by law" boilerplate out.
+    Compensation-geography sentences are dropped here — pay-transparency law
+    makes employers list states in a salary sentence, and reading that as an
+    eligibility rule would reject the postings that comply. Whether a clause
+    names a place worth acting on is decided by the caller, which knows the
+    configured metros; this function is cached on the description alone so the
+    regex sweep runs once per JD however many policies ask about it.
     """
     out: list[str] = []
     for m in _RESIDENCE_EXCLUSION_RE.finditer(description or ""):
         clause = _clause_around(description, m.start(), m.end())
         if _COMP_CONTEXT_RE.search(clause):
             continue
-        nplaces = _normalize(m.group("places"))
-        if not (_has_us_state(nplaces) or _has(_US_HUBS, nplaces)):
-            continue
-        out.append(nplaces)
+        out.append(_normalize(m.group("places")))
     return tuple(out)
+
+
+def _names_a_residence(nplaces: str, metro) -> bool:
+    """Whether an exclusion clause names geography this policy can act on.
+
+    A US state or a known hub, or one of the policy's OWN preferred-metro tokens
+    — a profile may name a metro this module's hub list has never heard of, and
+    an exclusion naming exactly that metro is the most decisive kind there is.
+    Ordinary "except as required by applicable law" boilerplate names none of
+    them and is dropped.
+    """
+    return bool(_has_us_state(nplaces) or _has(_US_HUBS, nplaces)
+                or (metro and _has(metro, nplaces)))
 
 
 def _metro_is_excluded(token: str, nplaces: str) -> bool:
@@ -887,7 +900,8 @@ def _residence_exclusion_verdict(description: str, metro) -> str | None:
     Deliberately asymmetric, like the residency reader: it can only NARROW an
     already-granted US-remote posting, never grant one.
     """
-    clauses = _residence_places(description)
+    clauses = [p for p in _residence_places(description)
+               if _names_a_residence(p, metro)]
     if not clauses:
         return None
     if not metro:

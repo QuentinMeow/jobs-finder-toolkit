@@ -3506,3 +3506,13 @@
     resolved-policy cache key, a shared job-description scan helper, a regex
     prefilter, and fictional test fixtures. No real identity, employer, school, date,
     salary, private item name, or dated personal job-hunt content is present.'
+- base: 9d6c08fa
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 5
+  digest: sha256:03b0abb20abd4168
+  finding: 'Reviewed fifteen new filter-variant location fixtures, one clause-scope
+    change in the location classifier, and the three byte-identical vendored copies.
+    Every fixture uses the repository fictional place names or generic public US
+    geography and generic job-description wording. No real identity, employer, school,
+    date, salary, private item name, or dated personal job-hunt content is present.'
