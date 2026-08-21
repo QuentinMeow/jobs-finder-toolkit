@@ -4108,3 +4108,9 @@
   files: 2
   digest: sha256:f58a91d06ceca814
   finding: 'Workspace cleanup planner and its test suite. The emitted shell script now isolates each item, so one refusal no longer cancels the safe items after it, and prints a summary plus a non-zero exit when anything refused. Public tooling, shell semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 7
+  digest: sha256:c2ada91be0ab0aaf
+  finding: 'Workspace status dashboard and its test suites. The private overlay is now rendered as structure, counts, ages and lifecycle states only (branch names degrade to an ordinal behind a conventional prefix); `merged` is judged against the remote-tracking base and the base is printed; the checked-out branch gets a freshness verdict carrying its behind-count and the age of the last fetch; and a non-zero `git merge-tree` exit is treated as no answer rather than as containment. Public tooling, git semantics and fabricated fixture data only (the overlay fixture uses the invented token "zzyzxrobotics"); no real identity, employer, application, or dated job-hunt content.'

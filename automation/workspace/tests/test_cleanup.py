@@ -298,8 +298,33 @@ class RefusalTests(PlannerTestCase):
         self.assertIn(cleanup.CODE_FETCH_FAILED, report)
 
     def test_a_fresh_run_with_nothing_needing_judgement_exits_zero(self) -> None:
+        # The matrix now contains a branch the merge probe REFUSES to answer for
+        # (a binary conflict), and an unanswered probe is by definition something
+        # needing judgement. Retire it first so this test still measures the
+        # thing it is named after; the exit-1 half is pinned just below.
+        self.git(self.root, "branch", "-q", "-D", "binary-conflict")
         code, _ = self.run_planner("--fetch")
         self.assertEqual(code, 0)
+
+    def test_a_branch_the_merge_probe_cannot_answer_for_is_kept_and_asks(self) -> None:
+        """Fail closed, twice over: keep the branch AND make the run exit 1.
+
+        `merge-tree` cannot merge a binary file, so it conflicts and hands back
+        a tree identical to the base — which an exit-code-tolerant probe read as
+        `merged`. This planner would then have proposed deleting a branch whose
+        content is nowhere in main, so `unknown` has to reach the plan intact.
+        """
+        code, report = self.run_planner("--fetch")
+        self.assertEqual(code, 1)
+        rows = [line for line in report.splitlines() if "binary-conflict" in line]
+        self.assertTrue(rows, report)
+        self.assertIn("keep", rows[0])
+        self.assertIn("unknown", rows[0])
+        self.assertIn(cleanup.KEEP_UNKNOWN_MERGE, report)
+        record = [item for item in self.plan_json()["branches"]
+                  if item["name"] == "binary-conflict"][0]
+        self.assertFalse(record["proposed"])
+        self.assertEqual(record["merged"], "unknown")
 
     def test_the_process_boundary_reports_the_same_exit_code(self) -> None:
         # An exit code read any other way is not the exit code a caller sees.
