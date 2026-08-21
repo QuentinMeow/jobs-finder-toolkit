@@ -3933,3 +3933,9 @@
   files: 6
   digest: sha256:15d9cabc7c42a9fe
   finding: 'Merge of origin/main. Ledger and filter-variant corpus both resolved by keeping BOTH sides whole; no case dropped or rewritten. filter_variants.py --check exits 0 on the result.'
+- base: b9d6bbb6
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:cd235970f34141b6
+  finding: 'Session record for the agent-work-lifecycle work. Public repository behaviour, PR numbers, branch names and measured counts only. One home path was caught by the leak guard during review and replaced with a placeholder before this commit.'
