@@ -18,6 +18,16 @@ Covers:
   - Decision (e): the posting-quality gate hard-rejects an unfilled ATS
     template (placeholder title + repeated instructional block) and sends a
     JD with only a bare compensation placeholder to review instead.
+  - GH #271: an explicit NON-JOB record (a declared ATS test job, a bare `test`
+    title over a keyboard-mash body, an application template, a talent-pool drop
+    box) is hard-rejected at gate 0, while a legitimate software-TESTING role
+    and ordinary prose that merely mentions testing stay untouched.
+  - GH #293: an aggregator title/body chimera — a structured title whose body
+    heading names a disjoint occupation family — is quarantined for review with
+    the conflict named, instead of being scored as if the title were the job.
+  - GH #291: a keyword whose only mentions sit inside an explicit negative-scope
+    statement ("Not interested in ... database management") is treated as
+    unmentioned, for the positive lists and the negative one alike.
 """
 from __future__ import annotations
 
@@ -358,6 +368,251 @@ class PostingQualityGateTests(unittest.TestCase):
         self.assertEqual([], posting.review_reasons)
         self.assertEqual(
             posting.filter_assessments["quality"]["decision"], "match")
+
+
+class ExplicitNonJobRecordTests(unittest.TestCase):
+    """GH #271: a record that SAYS it is not an opening — a declared ATS test
+    job, a bare `test` title over a keyboard-mash body, an application template,
+    a talent-pool drop box — is dropped at gate 0 rather than spending a manual-
+    review slot. The controls are the point of the issue: a legitimate software-
+    TESTING role, and ordinary prose that merely mentions testing, must be
+    untouched."""
+
+    def _decision(self, title, description):
+        return assess_posting_quality(title, description)["decision"]
+
+    def test_a_declared_ats_test_job_is_hard_rejected(self):
+        assessment = assess_posting_quality(
+            "Senior Automation Engineer",
+            "We are looking for a Senior Automation Engineer to build test "
+            "frameworks.\nINTERNAL TEST JOB: please note that this is a test "
+            "job used to test the apply production system. This is NOT A REAL "
+            "JOB and you are requested not to apply.")
+        self.assertEqual(assessment["decision"], "no_match")
+        self.assertIn("quality.nonjob_declaration", assessment["rule_ids"])
+
+    def test_a_bare_test_title_over_a_gibberish_body_is_hard_rejected(self):
+        assessment = assess_posting_quality(
+            "test",
+            "test ookjyutyytrtcvyibuinjjjj kkjhgfdsaqwertyuiop mnbvcxzlkjhgfdsa")
+        self.assertEqual(assessment["decision"], "no_match")
+        self.assertIn("quality.nonjob_test_title", assessment["rule_ids"])
+        self.assertIn("quality.gibberish_body", assessment["rule_ids"])
+
+    def test_a_future_job_declaration_is_hard_rejected(self):
+        self.assertEqual(
+            "no_match",
+            self._decision("Senior Backend Engineer",
+                           "This is a future job. We may open it later."))
+
+    def test_a_template_or_drop_box_record_is_hard_rejected(self):
+        for title in ("Vendor Application Template",
+                      "Friendship Application Template",
+                      "Spontaneous Application",
+                      "Talent Pool - Software Engineers"):
+            with self.subTest(title=title):
+                assessment = assess_posting_quality(
+                    title, "Send us your CV and we will be in touch.")
+                self.assertEqual(assessment["decision"], "no_match")
+                self.assertIn("quality.nonjob_record_title",
+                              assessment["rule_ids"])
+
+    def test_posting_quality_ok_drops_the_non_job_record(self):
+        posting = JobPosting(
+            source="board", company="Example Telecom", title="test",
+            url="https://example.test/jobs/junk",
+            description="test ookjyutyytrtcvyibuinjjjj kkjhgfdsaqwertyuiop "
+                        "mnbvcxzlkjhgfdsa")
+        self.assertFalse(posting_quality_ok(posting))
+        self.assertEqual(
+            posting.filter_assessments["quality"]["decision"], "no_match")
+
+    def test_a_legitimate_software_testing_role_is_never_rejected(self):
+        # Every one of these is the false positive the issue warns about: a real
+        # role whose title or body contains the word the junk rules look for.
+        for title, description in (
+                ("Senior Software Test Engineer",
+                 "Build and maintain automated test suites for our distributed "
+                 "platform. You will write integration tests and improve CI."),
+                ("Test Engineer",
+                 "Own the regression test strategy for our payments platform."),
+                ("QA Automation Engineer II",
+                 "Design and run automated tests across web and mobile."),
+                ("Software Engineer, Test Infrastructure",
+                 "Own the internal test job runners and the CI fleet that "
+                 "executes them."),
+                ("Senior Software Engineer",
+                 "You will test production systems and own the release process."),
+                ("Senior Backend Engineer",
+                 "Own our payments services. Recruitment agencies are requested "
+                 "not to apply."),
+                ("General Application Support Engineer",
+                 "Support our enterprise applications and triage incidents."),
+                ("Open Source Application Developer",
+                 "Contribute to our open source client libraries."),
+        ):
+            with self.subTest(title=title):
+                self.assertEqual("match", self._decision(title, description))
+
+    def test_a_gibberish_body_alone_is_review_not_a_hard_reject(self):
+        posting = JobPosting(
+            source="board", company="Example Telecom",
+            title="Senior Platform Engineer",
+            url="https://example.test/jobs/mash",
+            description="Own our platform. ookjyutyytrtcvyibuinjjjj "
+                        "kkjhgfdsaqwertyuiop mnbvcxzlkjhgfdsa")
+        self.assertTrue(posting_quality_ok(posting))
+        self.assertIn("posting_unreadable_body", posting.review_reasons)
+
+    def test_ordinary_long_technical_words_are_not_gibberish(self):
+        assessment = assess_posting_quality(
+            "Senior Software Engineer",
+            "Responsibilities include internationalization, containerization, "
+            "instrumentation, and interoperability work across PostgreSQL and "
+            "Kubernetes with cross-functional collaboration.")
+        self.assertEqual(assessment["decision"], "match")
+
+
+class TitleBodyChimeraTests(unittest.TestCase):
+    """GH #293: an aggregator row can carry one requisition's structured title
+    with a DIFFERENT requisition's body, so the link, title, dates, salary and
+    requirements stop describing one job. When the body's own leading heading
+    names a disjoint occupation family, the row is quarantined for review with
+    the conflict named — never scored as if the title were the job."""
+
+    CHIMERA_TITLE = "Technical Writer"
+    CHIMERA_BODY = (
+        "Global Product Manager - Service and Sensors\n"
+        "January 13, 2026\n\n"
+        "We are seeking a Global Product Manager to own the service and sensors "
+        "portfolio. 2-5 years of product management experience required."
+    )
+
+    def test_the_chimera_is_quarantined_for_review(self):
+        assessment = assess_posting_quality(self.CHIMERA_TITLE, self.CHIMERA_BODY)
+        self.assertEqual(assessment["decision"], "review")
+        self.assertIn("quality.title_body_conflict", assessment["rule_ids"])
+
+    def test_the_conflict_itself_is_visible_in_the_evidence(self):
+        assessment = assess_posting_quality(self.CHIMERA_TITLE, self.CHIMERA_BODY)
+        conflict = [e for e in assessment["evidence"] if "vs body heading" in e]
+        self.assertEqual(len(conflict), 1, assessment["evidence"])
+        self.assertIn("writing", conflict[0])
+        self.assertIn("product", conflict[0])
+
+    def test_the_row_carries_its_own_review_reason_through_the_gate(self):
+        posting = JobPosting(
+            source="jobspy:indeed", company="Example Instruments",
+            title=self.CHIMERA_TITLE,
+            url="https://example.test/jobs/chimera",
+            description=self.CHIMERA_BODY)
+        self.assertTrue(posting_quality_ok(posting))
+        self.assertIn("posting_title_body_conflict", posting.review_reasons)
+
+    def test_a_heading_in_the_same_occupation_family_is_not_a_conflict(self):
+        assessment = assess_posting_quality(
+            "Software Engineer",
+            "Senior Software Engineer, Payments\n\n"
+            "Build and operate our payments services.")
+        self.assertEqual(assessment["decision"], "match")
+
+    def test_an_ordinary_company_opener_is_not_a_conflict(self):
+        for body in ("About Example Telecom\n\nWe are hiring a technical writer.",
+                     "Company Overview\n\nWe write docs for developers.",
+                     "We are hiring a technical writer to own our API docs."):
+            with self.subTest(body=body.split("\n", 1)[0]):
+                self.assertEqual(
+                    "match",
+                    assess_posting_quality("Technical Writer", body)["decision"])
+
+
+class NegatedKeywordScoringTests(unittest.TestCase):
+    """GH #291: a JD that explicitly rules a domain OUT used to hand that domain
+    its full positive keyword score, so the strongest reason printed for a
+    posting could be the reverse of what the JD says. A term whose only mentions
+    sit inside an explicit negative-scope statement is treated as unmentioned."""
+
+    PROFILE = {
+        "keywords": {"strong": ["database"], "good": ["java", "go"],
+                     "negative": []},
+        "seniority": {"target": ["senior"]},
+    }
+
+    def _scored(self, title, description, profile=None):
+        posting = JobPosting(
+            source="jobspy:indeed", company="Example Defense Labs",
+            title=title, url="https://example.test/jobs/negated",
+            description=description)
+        score_posting(posting, profile or self.PROFILE)
+        return posting
+
+    NEGATED_BODY = (
+        "Develop autonomy algorithms in Java and Go for defense platforms. "
+        "Not interested in front end UI/UX or database management/interaction. "
+        "Must be able to obtain a security clearance."
+    )
+
+    def test_an_explicitly_negated_domain_earns_no_positive_score(self):
+        posting = self._scored(
+            "Autonomy Algorithms Senior Software Engineer", self.NEGATED_BODY)
+        self.assertNotIn("strong: database", posting.reasons)
+        # Java + Go (3.0) and the senior title (3.0) are the whole score; the
+        # negated `database` keyword contributes nothing either way.
+        self.assertEqual(posting.score, 6.0)
+
+    def test_the_negation_is_named_instead_of_the_reverse_claim(self):
+        posting = self._scored(
+            "Autonomy Algorithms Senior Software Engineer", self.NEGATED_BODY)
+        self.assertIn("jd explicitly excludes: database", posting.reasons)
+
+    def test_a_negated_core_domain_routes_the_row_to_review(self):
+        posting = self._scored(
+            "Autonomy Algorithms Senior Software Engineer", self.NEGATED_BODY)
+        self.assertIn("keyword_domain_negated", posting.review_reasons)
+
+    def test_a_real_domain_mention_still_scores_and_stays_off_review(self):
+        posting = self._scored(
+            "Senior Software Engineer",
+            "Build our distributed database storage engine in Java and Go. "
+            "You will own query planning and replication.")
+        self.assertIn("strong: database", posting.reasons)
+        self.assertEqual(posting.score, 10.0)
+        self.assertEqual([], posting.review_reasons)
+
+    def test_a_title_mention_still_earns_the_full_title_bump(self):
+        posting = self._scored(
+            "Senior Database Engineer",
+            "Not interested in front end UI/UX or database administration.")
+        self.assertIn("strong: database", posting.reasons)
+        self.assertEqual([], posting.review_reasons)
+
+    def test_a_friendly_does_not_require_line_is_not_a_domain_negation(self):
+        # "Does not require X" speaks to the BAR, not to what the role is about,
+        # so it must not silence the keyword.
+        posting = self._scored(
+            "Senior Software Engineer",
+            "Own our database platform in Java. This role does not require a "
+            "graduate degree.")
+        self.assertIn("strong: database", posting.reasons)
+
+    def test_a_negated_negative_keyword_is_not_penalized_either(self):
+        profile = {"keywords": {"strong": [], "good": [],
+                                "negative": ["blockchain"]},
+                   "seniority": {"target": ["senior"]}}
+        posting = self._scored(
+            "Senior Software Engineer",
+            "This role does not involve blockchain or smart contracts.",
+            profile=profile)
+        self.assertNotIn("mismatch: blockchain", posting.reasons)
+        self.assertIn("jd explicitly excludes: blockchain", posting.reasons)
+        self.assertEqual([], posting.review_reasons)
+
+    def test_a_polarity_flip_ends_the_negated_scope(self):
+        posting = self._scored(
+            "Senior Software Engineer",
+            "We are not looking for front end specialists, but you will own our "
+            "database platform end to end.")
+        self.assertIn("strong: database", posting.reasons)
 
 
 class OccupationAmbiguousBoundedRolloutTests(unittest.TestCase):

@@ -2272,3 +2272,268 @@ variants:
     expect:
       decision: review
       verdict: unknown
+
+  # ── GH #271: explicit NON-JOB records ──────────────────────────────────────
+  # A record that says in words that it is not an opening is dropped at gate 0,
+  # not reviewed: no amount of human attention turns it into a job. The three
+  # "legit" controls below are the whole reason the rules are worded as
+  # declarations — a real software-TESTING role must stay untouched.
+
+  - id: quality-nonjob-declared-ats-test-job
+    domain: quality
+    input:
+      title: Senior Automation Engineer
+      description: >-
+        We are looking for a Senior Automation Engineer to build test
+        frameworks. INTERNAL TEST JOB: please note that this is a test job used
+        to test the apply production system. This is NOT A REAL JOB and you are
+        requested not to apply.
+    expect:
+      decision: no_match
+      accepted: false
+      evidence_contains: [nonjob_declaration]
+
+  - id: quality-nonjob-test-title-with-gibberish-body
+    domain: quality
+    input:
+      title: test
+      description: >-
+        test ookjyutyytrtcvyibuinjjjj kkjhgfdsaqwertyuiop mnbvcxzlkjhgfdsa
+    expect:
+      decision: no_match
+      accepted: false
+      evidence_contains: [nonjob_test_title, gibberish_body]
+
+  - id: quality-nonjob-future-job-declaration
+    domain: quality
+    input:
+      title: Senior Backend Engineer
+      description: This is a future job. We may open it later this year.
+    expect:
+      decision: no_match
+      accepted: false
+      evidence_contains: [nonjob_declaration]
+
+  - id: quality-nonjob-application-template-record
+    domain: quality
+    input:
+      title: Vendor Application Template
+      description: >-
+        Use this template to collect vendor applications on your intranet.
+    expect:
+      decision: no_match
+      accepted: false
+      evidence_contains: [nonjob_record_title]
+
+  - id: quality-nonjob-spontaneous-application-drop-box
+    domain: quality
+    input:
+      title: Spontaneous Application
+      description: >-
+        Send us your CV and we will get back to you when a role opens up.
+    expect:
+      decision: no_match
+      accepted: false
+
+  - id: quality-legit-software-test-engineer-untouched
+    domain: quality
+    input:
+      title: Senior Software Test Engineer
+      description: >-
+        Build and maintain automated test suites for our distributed platform.
+        You will write integration tests and improve CI reliability.
+    expect:
+      decision: match
+      accepted: true
+
+  - id: quality-legit-internal-test-job-runners-untouched
+    domain: quality
+    # The bare phrase "internal test job" is ORDINARY SDET prose. Only the
+    # declarative frame ("this is a test job used to test ...") is evidence.
+    input:
+      title: Software Engineer, Test Infrastructure
+      description: >-
+        Own the internal test job runners and the CI fleet that executes them.
+    expect:
+      decision: match
+      accepted: true
+
+  - id: quality-legit-agency-footer-untouched
+    domain: quality
+    # "Requested not to apply" is a real recruiter-agency footer; only the
+    # candidate-directed form is a non-job declaration.
+    input:
+      title: Senior Backend Engineer
+      description: >-
+        Own our payments services. Recruitment agencies are requested not to
+        apply.
+    expect:
+      decision: match
+      accepted: true
+
+  - id: quality-legit-general-application-support-untouched
+    domain: quality
+    # The drop-box rule is anchored, so an ordinary role whose title merely
+    # contains the same words is never touched.
+    input:
+      title: General Application Support Engineer
+      description: >-
+        Support our enterprise applications and troubleshoot customer incidents.
+    expect:
+      decision: match
+      accepted: true
+
+  # ── GH #293: aggregator title/body chimera ─────────────────────────────────
+  # One requisition's structured title carrying another requisition's body. The
+  # body's own leading heading names a disjoint occupation family, so the row is
+  # quarantined for review with the conflict named instead of being scored as if
+  # the title described the job.
+
+  - id: quality-title-body-occupation-conflict-review
+    domain: quality
+    input:
+      title: Technical Writer
+      description: |-
+        Global Product Manager - Service and Sensors
+
+        We are seeking a Global Product Manager to own the service and sensors
+        portfolio. 2-5 years of product management experience required.
+    expect:
+      decision: review
+      accepted: true
+      review_contains: [posting_title_body_conflict]
+
+  - id: quality-title-body-same-family-heading-is-not-a-conflict
+    domain: quality
+    input:
+      title: Software Engineer
+      description: |-
+        Senior Software Engineer, Payments
+
+        Build and operate our payments services.
+    expect:
+      decision: match
+      accepted: true
+
+  - id: quality-title-body-company-overview-opener-is-not-a-conflict
+    domain: quality
+    input:
+      title: Technical Writer
+      description: |-
+        About Example Telecom
+
+        We are hiring a technical writer to own our API documentation.
+    expect:
+      decision: match
+      accepted: true
+
+  - id: title-hyphenated-include-phrase-is-the-same-occupation
+    domain: title
+    # GH #298. A hyphen is a board's formatting choice, not a different job. A
+    # profile that listed BOTH open spellings still lost every hyphenated posting
+    # to the review file, where the Markdown report does not link it.
+    input:
+      title: Front-End Engineer, Search Platform
+      profile:
+        titles:
+          include: [frontend engineer, front end engineer]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.front end engineer]
+
+  - id: title-unicode-dash-include-phrase-is-the-same-occupation
+    domain: title
+    # The same title as a board writes it with an en dash. `normalize()` already
+    # folds en/em dashes and the non-breaking hyphen to `-`, so one rule covers
+    # every spelling instead of one profile line per dash character.
+    input:
+      title: Front–End Engineer, Search Platform
+      profile:
+        titles:
+          include: [frontend engineer, front end engineer]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.front end engineer]
+
+  - id: title-separator-equivalence-is-not-elision
+    domain: title
+    # The bound on the rule above. Separators are EQUIVALENT, never removable:
+    # `front end engineer` must not silently become `frontend engineer`, or a
+    # profile could no longer express the difference at all. A profile that wants
+    # the closed spelling lists it, the way the example profile lists both
+    # `fullstack` and `full stack`.
+    input:
+      title: Frontend Engineer
+      profile:
+        titles:
+          include: [front end engineer]
+    expect:
+      decision: review
+      review_contains: [title_occupation_ambiguous]
+
+  - id: title-hyphenated-exclude-phrase-drops-the-same-occupation
+    domain: title
+    # The OTHER direction of the same widening, and the reason it is recorded
+    # here: making `data scientist` match `Data-Scientist` for an include list
+    # necessarily makes an EXCLUDE list drop it too. That is the same "hyphen is
+    # formatting" reading, but it removes a posting rather than surfacing one.
+    input:
+      title: Data-Scientist, Ads Ranking
+      profile:
+        titles:
+          include: [software engineer]
+          exclude: [data scientist, research scientist]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.excluded.data scientist]
+
+  - id: title-exclude-phrase-still-catches-the-plural
+    domain: title
+    # The trailing-inflection allowance, on the side where losing it LEAKS. A
+    # strictly bounded phrase would stop matching the plural spelling, and a
+    # posting the profile explicitly rejects would reach the shortlist.
+    input:
+      title: Data Scientists, Ads Ranking
+      profile:
+        titles:
+          include: [software engineer]
+          exclude: [data scientist, research scientist]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.excluded.data scientist]
+
+  - id: title-ambiguous-go-does-not-rescue-a-nontechnical-occupation
+    domain: title
+    # GH #279. `go` is both the language and an ordinary English word, and the
+    # title gate reads the same matcher the keyword score does — so an include
+    # term meaning the language used to override a correctly detected finance
+    # occupation on the strength of "Go-To-Market". The word now counts only
+    # where its neighbours read as the language.
+    input:
+      title: Financial Analyst, Go-To-Market (GTM) FP&A
+      profile:
+        titles:
+          include: [go, backend engineer]
+    expect:
+      decision: no_match
+      accepted: false
+      evidence_contains: ["nontechnical_occupation:finance"]
+
+  - id: title-ambiguous-go-still-matches-a-real-go-role
+    domain: title
+    # The bound on the rule above: the guard must not cost the language its own
+    # titles. A technical noun after the word is unambiguous evidence.
+    input:
+      title: Senior Go Engineer, Payments
+      profile:
+        titles:
+          include: [go, backend engineer]
+    expect:
+      decision: match
+      accepted: true
+      level: senior
+      rule_ids: [title.included.go]
