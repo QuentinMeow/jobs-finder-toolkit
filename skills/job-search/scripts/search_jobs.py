@@ -1421,6 +1421,42 @@ def _read_store_status(layout) -> tuple[str | None, dict]:
     return line, url_map
 
 
+def read_store_status_for_replay() -> tuple[str | None, dict]:
+    """Store status for the ``--refilter`` path: READ the index, never build it.
+
+    The fetch path writes its snapshot BEFORE the store build runs, so the rows a
+    snapshot preserves carry no store identity. Replaying one therefore used to emit
+    ``store_key: null`` on every row while a fresh run of the byte-identical postings
+    emitted real keys — the replay silently lost the identity linkage that meta.yaml,
+    the skip-log and every store-keyed consumer join on.
+
+    Reading the already-built index restores it deterministically: one file read, NO
+    lock, no write — a replay is not a fetch, so it must never build. Same total guard
+    as the fetch path: a disabled, absent, or broken store yields ``(None, {})`` and
+    the search is unaffected.
+    """
+    if config is None:
+        return None, {}
+    try:
+        data_root = config.data_root()
+    except Exception:  # noqa: BLE001
+        return None, {}
+    if data_root is None:
+        return None, {}
+    try:
+        from _vendor.store.paths import domain_layout
+        layout = domain_layout(data_root, "jobs")
+        if not (layout.index / "postings.jsonl").exists():
+            # A configured store that has never been built is not an error: the
+            # replay simply has no identity to restore, exactly as before.
+            return None, {}
+        return _read_store_status(layout)
+    except Exception as exc:  # noqa: BLE001 — a store bug must never break a refilter
+        print(f"store: identity lookup skipped ({exc}); search unaffected",
+              file=sys.stderr)
+        return None, {}
+
+
 def _json_rows_with_store_key(kept, url_map) -> list[dict]:
     """--json-out rows = to_dict() + a store_key looked up by canonicalized URL.
 
@@ -1698,8 +1734,10 @@ def main() -> int:
     # the snapshot would make the second silently replace the first.
     run_id = snapshot.run_stamp(datetime.now(timezone.utc))
 
-    # Store integration runs on the FETCH path only (refilter is snapshot-only and
-    # never builds); defaults keep the refilter output byte-identical to today.
+    # The store BUILD runs on the FETCH path only (a refilter is snapshot-only and
+    # must never build). Store identity is read on both paths — see
+    # read_store_status_for_replay: a replay that dropped store_key made the two
+    # paths disagree about who a posting is.
     store_line: str | None = None
     store_url_map: dict = {}
 
@@ -1756,6 +1794,11 @@ def main() -> int:
         snapshot_display = f"{snap_path} (refilter; age {age})"
         print(f"Refilter: loaded {n_raw} normalized postings from the snapshot.",
               file=sys.stderr)
+        # Restore store identity for the replay. The snapshot was written before its
+        # run's store build, so these rows have none of their own; without this a
+        # no-change refilter emitted store_key: null for postings the store knows,
+        # weakening exactly the provenance the user is told to refilter before using.
+        store_line, store_url_map = read_store_status_for_replay()
     else:
         # ---- FETCH: assemble tasks (two stages), fetch, then snapshot ----
         # Tell the capture shim which profile is running (its neutral profile-NN
