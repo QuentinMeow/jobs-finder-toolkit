@@ -3504,3 +3504,12 @@
     example.com placeholders; no real identity, employer, school, salary, private
     item name, or dated personal job-hunt content is present. The one "salary" match
     is a metadata label in a regex, not a value.'
+- base: fb49ee7a
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:0121febb3263e2ee
+  finding: 'Reviewed the backlog task filing the documentation follow-up for the
+    skills_diff precision rules. It names only public script paths and public skill
+    documentation; no real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content is present.'
