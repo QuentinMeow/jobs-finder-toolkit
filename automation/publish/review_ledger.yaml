@@ -3845,3 +3845,16 @@
     employer, school, salary, private item name, or dated personal job-hunt content.'
   files: 10
   digest: sha256:b331f95abb9003d8
+- base: abeefb04
+  reviewed_by: agent
+  date: 2026-08-20
+  finding: 'Reviewed the management-scope level change for #288: the new scope enum
+    and its null Google-equivalent entries, the people-manager title rules with their
+    two precision guards, the stated management-evidence reader, and the
+    analyze_job_metadata wiring, plus unit tests. Every title and JD string is
+    invented ("Engineering Manager", "Head of Platform", "Software Engineer - Mission
+    Manager") and the one company name is the fictional Acme fixture. The
+    example-store fixture changes are module digest lines only. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content.'
+  files: 9
+  digest: sha256:f078797463879212

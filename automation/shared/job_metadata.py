@@ -327,6 +327,21 @@ def migrate_job_progress(status: str | None, stage: str | None) -> dict:
     return out
 
 
+# PEOPLE-MANAGEMENT SCOPES ARE NOT RUNGS OF THE IC LADDER. They live in the same
+# ``normalized`` field because one posting has one level, but they carry NO
+# Google equivalent (see ``GENERIC_GOOGLE_EQUIVALENTS`` below): a manager's
+# position is set by team size, whether they manage managers, and the scope they
+# own, none of which the IC ladder measures. Rendering them on it produced an
+# inconsistent, meaningless column — the same job family read ``mid (L4.0-L4.8)``
+# at one employer and ``senior (L5.0-L5.8)`` at the next, purely from which
+# adjective the title happened to carry (issue #288).
+MANAGEMENT_SCOPES = (
+    "line_manager",
+    "senior_manager",
+    "director",
+    "executive",
+)
+
 NORMALIZED_LEVELS = {
     "intern",
     "entry",
@@ -336,6 +351,7 @@ NORMALIZED_LEVELS = {
     "senior_staff",
     "principal",
     "distinguished",
+    *MANAGEMENT_SCOPES,
     "unknown",
 }
 
@@ -344,6 +360,13 @@ CONFIDENCE_VALUES = {"high", "medium", "low", "unknown"}
 # Generic fallback used only when no company-specific reference matches. Decimal
 # bounds communicate approximate equivalence without pretending that companies'
 # ladders align exactly at integer boundaries.
+#
+# A management scope maps to NOTHING here on purpose, and the ``None`` is the
+# answer rather than a gap: the column then reads "line manager (?)" instead of
+# an IC rung nobody sourced, and ``scoring.level_fit_delta`` already treats an
+# absent range as "do not penalise". A management row that DOES deserve a ladder
+# position gets one the only defensible way — an explicit ``google_equivalent``
+# on its company-levels row, which ``_google_range`` still honours.
 GENERIC_GOOGLE_EQUIVALENTS = {
     "intern": {"min": 2.0, "max": 2.8},
     "entry": {"min": 3.0, "max": 3.8},
@@ -353,6 +376,7 @@ GENERIC_GOOGLE_EQUIVALENTS = {
     "senior_staff": {"min": 7.0, "max": 7.8},
     "principal": {"min": 8.0, "max": 8.8},
     "distinguished": {"min": 9.0, "max": 10.0},
+    **{scope: {"min": None, "max": None} for scope in MANAGEMENT_SCOPES},
     "unknown": {"min": None, "max": None},
 }
 
@@ -746,6 +770,79 @@ _LEVEL_RULES = [
         re.I,
     )),
 ]
+
+# --- people-management titles ------------------------------------------------
+# Read BEFORE ``_LEVEL_RULES`` so a manager's adjective ("Senior Engineering
+# Manager") names a management scope instead of an IC rung. Two guards decide
+# what is NOT a people-manager, because "manager" is the most overloaded noun on
+# a job board:
+#
+#   * ``_INDIVIDUAL_MANAGER_TITLE_RE`` — the "<domain> Manager" families that are
+#     individual-contributor or quota-carrying roles (Product, Program, Account,
+#     Category, Case, Facilities ...). They fall through to the IC rules and keep
+#     behaving exactly as they do today;
+#   * an IC role noun EARLIER in the title than the management word ("Software
+#     Engineer - Mission Manager"), which is a product name in the suffix, not a
+#     reporting line. The same shape ``scoring._is_ambiguous_manager_product_suffix``
+#     protects from the profile's `manager` exclude.
+#
+# Neither guard promotes anything: a guarded title is classified exactly as it
+# was before this section existed.
+_INDIVIDUAL_MANAGER_TITLE_RE = re.compile(
+    r"\b(?:product|program|programme|project|portfolio|account|partner|"
+    r"partnership|alliance|channel|category|brand|marketing|content|community|"
+    r"social|communications?|campaign|sales|territory|district|store|"
+    r"restaurant|property|facilit(?:y|ies)|office|case|care|clinical|risk|"
+    r"compliance|audit|vendor|supplier|procurement|inventory|logistics|"
+    r"traffic|asset|wealth|fund|investment|relationship|success|events?|"
+    r"talent|recruiting|payroll|benefits?|contract|construction|quality|"
+    r"safety|environmental)\s+manager\b",
+    re.I,
+)
+_IC_ROLE_NOUN_RE = re.compile(
+    r"\b(?:engineer|developer|programmer|scientist|architect|analyst|"
+    r"designer|researcher|consultant|specialist|technician|nurse|"
+    r"accountant|attorney|counsel)\b",
+    re.I,
+)
+_MANAGEMENT_TITLE_RULES = [
+    ("executive", re.compile(
+        r"\bchief\s+[a-z]+\s+officer\b|\b(?:cto|ceo|coo|cio|cfo|cpo|cmo)\b|"
+        r"\b(?:svp|evp|vice\s+president|vp)\b",
+        re.I,
+    )),
+    ("director", re.compile(r"\bdirectors?\b|\bhead\s+of\b", re.I)),
+    ("senior_manager", re.compile(
+        r"\b(?:senior|sr\.?|group|principal|global|regional|area|second[- ]line)"
+        r"\s+(?:[\w&/-]+[\s,]+){0,2}managers?\b|"
+        r"\bmanagers?\s+of\s+managers\b",
+        re.I,
+    )),
+    ("line_manager", re.compile(r"\bmanagers?\b", re.I)),
+]
+
+
+def classify_management_scope(title: str | None) -> tuple[str, str | None]:
+    """A people-management scope from a title, or ``("", None)``.
+
+    Returns one of ``MANAGEMENT_SCOPES`` with the title words that said so.
+    Deliberately conservative: an ambiguous "<something> Manager" is left to the
+    IC rules rather than promoted, because an unwarranted manager label is as
+    misleading as an unwarranted ladder rung.
+    """
+    value = _MTS_NEUTRALIZE_RE.sub(" ", title or "")
+    ic_noun = _IC_ROLE_NOUN_RE.search(value)
+    for scope, pattern in _MANAGEMENT_TITLE_RULES:
+        match = pattern.search(value)
+        if not match:
+            continue
+        if ic_noun is not None and ic_noun.start() < match.start():
+            return "", None
+        if scope in ("senior_manager", "line_manager") \
+                and _INDIVIDUAL_MANAGER_TITLE_RE.search(value):
+            return "", None
+        return scope, match.group(0)
+    return "", None
 
 
 def _clean(value: Any) -> str:
@@ -1550,8 +1647,17 @@ def salary_review_reason(text: str | None, supplied: dict | None = None) -> str 
 
 
 def classify_level(title: str | None) -> tuple[str, str]:
-    """Return ``(normalized_level, stated_signal)`` from a generic title."""
+    """Return ``(normalized_level, stated_signal)`` from a generic title.
+
+    A people-management title resolves to a management SCOPE (see
+    ``MANAGEMENT_SCOPES``) and is read first, so "Senior Engineering Manager"
+    reports the reporting line it names rather than the IC rung its adjective
+    happens to share with "Senior Software Engineer".
+    """
     value = title or ""
+    scope, signal = classify_management_scope(value)
+    if scope:
+        return scope, signal or value.strip()
     # Drop "Member of Technical Staff" so its trailing "Staff" can't mislabel an
     # MTS role as Staff-level; any real seniority word (senior/principal/...) that
     # prefixes the MTS phrase still survives and classifies normally.
@@ -1561,6 +1667,60 @@ def classify_level(title: str | None) -> tuple[str, str]:
         if match:
             return normalized, match.group(0)
     return "unknown", value.strip() or "Not stated"
+
+
+# --- management evidence -----------------------------------------------------
+# What a manager row must show INSTEAD of a ladder rung. Each read is explicit —
+# a stated team size, a stated manager-of-managers reporting line, a stated
+# management tenure — and absent evidence is reported as absent, never inferred
+# from the title.
+_TEAM_SIZE_RE = re.compile(
+    rf"\b(?:teams?|orgs?|organi[sz]ations?|groups?)\s+of\s+{_YOE_NUM}\b|"
+    rf"\b(?:manage|managing|lead|leading|oversee|overseeing|grow|growing|"
+    rf"build|building|hire|hiring)\s+(?:an?\s+)?(?:teams?\s+of\s+)?{_YOE_NUM}"
+    rf"{_YOE_PLUS}?\s*(?:engineers|developers|people|employees|reports|"
+    rf"direct\s+reports|individual\s+contributors|ics|team\s+members)\b",
+    re.I,
+)
+_MANAGES_MANAGERS_RE = re.compile(
+    r"\bmanagers?\s+of\s+managers\b|\bmanaging\s+managers\b|"
+    r"\bmanage\s+(?:other\s+)?managers\b|\bsecond[- ]line\s+manage\w*\b|"
+    r"\bmanagers?\s+(?:will\s+)?report(?:ing)?\s+to\s+(?:you|this\s+role)\b|"
+    r"\bleaders?\s+of\s+leaders\b",
+    re.I,
+)
+_MANAGEMENT_YOE_RE = re.compile(
+    rf"{_YOE_NUM}{_YOE_PLUS}?\s*(?:years?|yrs?\.?)\s+(?:of\s+)?"
+    r"(?:(?:people|engineering|team|line|direct|technical)\s+)?"
+    r"(?:management|managing|people\s+leadership|leadership)\b",
+    re.I,
+)
+
+
+def extract_management_evidence(text: str | None) -> dict:
+    """Stated management scope evidence: team size, manager-of-managers, tenure.
+
+    Every value is ``None``/``False`` unless the posting says so — this is the
+    evidence a manager row is judged on, so a guess here would be worse than the
+    ladder rung it replaces.
+    """
+    blob = _source_text(text)
+    sizes = []
+    for match in _TEAM_SIZE_RE.finditer(blob):
+        for group in (match.group(1), match.group(2)):
+            value = _yoe_number(group) if group else None
+            if value is not None and 0 < value <= 99:
+                sizes.append(value)
+    tenures = []
+    for match in _MANAGEMENT_YOE_RE.finditer(blob):
+        value = _yoe_number(match.group(1))
+        if value is not None and 0 <= value <= 50:
+            tenures.append(value)
+    return {
+        "team_size": _number(max(sizes)) if sizes else None,
+        "manages_managers": bool(_MANAGES_MANAGERS_RE.search(blob)),
+        "management_yoe": _number(max(tenures)) if tenures else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -3241,16 +3401,26 @@ def classify_sponsorship(text: str | None) -> str:
 # ---------------------------------------------------------------------------
 # Application meta.yaml layer (the flat, human-facing schema v6).
 # ---------------------------------------------------------------------------
+def _states_google_equivalent(level_entry: dict | None) -> bool:
+    """Whether a company-levels row states its OWN Google equivalence.
+
+    The one thing that makes a ladder position sourced rather than assumed, and
+    therefore the only thing that lets a management row carry one.
+    """
+    if not isinstance(level_entry, dict):
+        return False
+    google = level_entry.get("google_equivalent")
+    return isinstance(google, dict) and (
+        google.get("min") is not None or google.get("max") is not None)
+
+
 def _google_range(normalized: str, level_entry: dict | None) -> tuple[float | None, float | None]:
-    if isinstance(level_entry, dict):
-        google = level_entry.get("google_equivalent")
-        if isinstance(google, dict) and (
-            google.get("min") is not None or google.get("max") is not None
-        ):
-            return (
-                float(google["min"]) if google.get("min") is not None else None,
-                float(google["max"]) if google.get("max") is not None else None,
-            )
+    if _states_google_equivalent(level_entry):
+        google = level_entry["google_equivalent"]
+        return (
+            float(google["min"]) if google.get("min") is not None else None,
+            float(google["max"]) if google.get("max") is not None else None,
+        )
     generic = GENERIC_GOOGLE_EQUIVALENTS.get(
         normalized, GENERIC_GOOGLE_EQUIVALENTS["unknown"])
     return generic["min"], generic["max"]
@@ -3393,11 +3563,19 @@ def analyze_job_metadata(
     yoe_details = extract_required_yoe_details(f"{title}\n{description}")
 
     # --- job level -------------------------------------------------------
-    if level_entry:
+    title_level, _title_signal = classify_level(title)
+    # A management title takes an IC ladder position from the company-levels
+    # reference ONLY when that row states the equivalence itself. Otherwise the
+    # row's generic ``normalized`` word would be expanded by ``_google_range``
+    # into exactly the unsourced IC rung this scope exists to avoid.
+    reference_usable = bool(level_entry) and (
+        title_level not in MANAGEMENT_SCOPES
+        or _states_google_equivalent(level_entry))
+    if reference_usable:
         normalized = str(level_entry.get("normalized") or "unknown").strip().lower()
         level_source, level_confidence = "company_reference", "medium"
     else:
-        normalized, _signal = classify_level(title)
+        normalized = title_level
         if normalized != "unknown":
             level_source, level_confidence = "title", "medium"
         elif yoe_details.get("min") is not None:
@@ -3418,7 +3596,7 @@ def analyze_job_metadata(
                 level_source, level_confidence = "generic", "low"
     if normalized not in NORMALIZED_LEVELS:
         normalized = "unknown"
-    low, high = _google_range(normalized, level_entry)
+    low, high = _google_range(normalized, level_entry if reference_usable else None)
     job_level = {
         "normalized": normalized,
         "min": low,
@@ -3426,6 +3604,13 @@ def analyze_job_metadata(
         "confidence": level_confidence,
         "source": level_source,
     }
+    # What a manager row is judged on instead of a ladder rung. Attached only
+    # when the posting actually states some of it, so an IC row keeps exactly the
+    # shape it has always had.
+    if normalized in MANAGEMENT_SCOPES:
+        evidence = extract_management_evidence(f"{title}\n{description}")
+        if any(value not in (None, False) for value in evidence.values()):
+            job_level["management"] = evidence
 
     # --- required years of experience -----------------------------------
     cached_yoe = level_entry.get("required_yoe") if isinstance(level_entry, dict) else None

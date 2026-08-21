@@ -21,9 +21,11 @@ from job_metadata import (  # noqa: E402
     assess_required_yoe,
     assess_sponsorship,
     classify_level,
+    classify_management_scope,
     classify_sponsorship,
     classify_workplace,
     derive_status,
+    extract_management_evidence,
     extract_required_yoe,
     extract_required_yoe_details,
     extract_salary_range,
@@ -851,6 +853,136 @@ class AnalyzeTests(unittest.TestCase):
         # Genuine Staff-level titles are unaffected.
         self.assertEqual(classify_level("Staff Software Engineer")[0], "staff")
         self.assertEqual(classify_level("Senior Staff Engineer")[0], "senior_staff")
+
+    def test_management_titles_leave_the_ic_ladder(self):
+        # Issue #288: engineering-manager rows rendered `mid (L4.0-L4.8)` at one
+        # employer and `senior (L5.0-L5.8)` at the next, purely from which
+        # adjective the title carried. The column CLAIMS a Google equivalent, and
+        # nothing sourced one for a management role.
+        for title, scope in (
+            ("Engineering Manager", "line_manager"),
+            ("Software Development Manager", "line_manager"),
+            ("Manager, Software Engineering", "line_manager"),
+            ("Senior Engineering Manager", "senior_manager"),
+            ("Group Engineering Manager", "senior_manager"),
+            ("Manager of Managers, Infrastructure", "senior_manager"),
+            ("Director of Engineering", "director"),
+            ("Head of Platform", "director"),
+            ("VP of Engineering", "executive"),
+            ("Chief Technology Officer", "executive"),
+        ):
+            with self.subTest(title=title):
+                metadata = analyze_job_metadata(
+                    company="Unknown", title=title,
+                    description="Lead the platform team. 5+ years of "
+                                "professional experience required.")
+                level = metadata["job_level"]
+                self.assertEqual(level["normalized"], scope)
+                self.assertIsNone(level["min"])
+                self.assertIsNone(level["max"])
+
+    def test_ic_titles_keep_their_ladder_position(self):
+        for title, normalized, band in (
+            ("Senior Software Engineer", "senior", (5.0, 5.8)),
+            ("Staff Software Engineer", "staff", (6.0, 6.8)),
+            ("Principal Engineer", "principal", (8.0, 8.8)),
+        ):
+            with self.subTest(title=title):
+                level = analyze_job_metadata(
+                    company="Unknown", title=title,
+                    description="Build distributed systems.")["job_level"]
+                self.assertEqual(level["normalized"], normalized)
+                self.assertEqual((level["min"], level["max"]), band)
+
+    def test_an_ic_role_with_a_manager_product_suffix_is_not_a_manager(self):
+        # "Software Engineer - Mission Manager" names a product in its suffix,
+        # not a reporting line: an IC role noun earlier in the title wins.
+        self.assertEqual(
+            classify_management_scope("Software Engineer - Mission Manager"),
+            ("", None))
+        self.assertEqual(
+            classify_management_scope("Senior Product Manager"), ("", None))
+        self.assertEqual(
+            classify_management_scope("Technical Program Manager"), ("", None))
+        self.assertEqual(
+            classify_management_scope("Enterprise Account Manager"), ("", None))
+        # ... and those titles keep exactly the IC level they had before.
+        self.assertEqual(classify_level("Senior Product Manager")[0], "senior")
+
+    def test_a_manager_row_reports_its_management_evidence(self):
+        metadata = analyze_job_metadata(
+            company="Unknown",
+            title="Senior Engineering Manager",
+            description=(
+                "You will lead a team of 12 engineers, with managers reporting "
+                "to you, and bring 6+ years of engineering management."),
+        )
+        self.assertEqual(metadata["job_level"]["management"], {
+            "team_size": 12, "manages_managers": True, "management_yoe": 6})
+
+    def test_an_ic_row_carries_no_management_key(self):
+        level = analyze_job_metadata(
+            company="Unknown", title="Senior Software Engineer",
+            description="Lead a team of 12 engineers.")["job_level"]
+        self.assertNotIn("management", level)
+
+    def test_management_evidence_is_absent_when_unstated(self):
+        self.assertEqual(
+            extract_management_evidence("Own the roadmap for our platform."),
+            {"team_size": None, "manages_managers": False,
+             "management_yoe": None})
+
+    def test_a_documented_company_ladder_still_maps_a_manager(self):
+        # The one defensible way a management row gets an IC ladder position: the
+        # company-levels row states the equivalence itself.
+        reference = {
+            "companies": [{
+                "name": "Acme",
+                "last_verified": "2026-07-19",
+                "levels": [{
+                    "name": "M1",
+                    "title_patterns": ["Engineering Manager"],
+                    "normalized": "senior",
+                    "google_equivalent": {"min": 5.0, "max": 6.0},
+                }],
+            }],
+        }
+        level = analyze_job_metadata(
+            company="Acme", title="Engineering Manager",
+            description="Lead a team.", company_levels=reference)["job_level"]
+        self.assertEqual((level["min"], level["max"]), (5.0, 6.0))
+        self.assertEqual(level["source"], "company_reference")
+
+    def test_an_undocumented_company_row_does_not_ladder_a_manager(self):
+        # The same reference WITHOUT a stated equivalence: expanding its generic
+        # `normalized` word through the generic map is exactly the unsourced rung
+        # this scope exists to avoid, so the management scope wins instead.
+        reference = {
+            "companies": [{
+                "name": "Acme",
+                "last_verified": "2026-07-19",
+                "levels": [{
+                    "name": "M1",
+                    "title_patterns": ["Engineering Manager"],
+                    "normalized": "senior",
+                }],
+            }],
+        }
+        level = analyze_job_metadata(
+            company="Acme", title="Engineering Manager",
+            description="Lead a team.", company_levels=reference)["job_level"]
+        self.assertEqual(level["normalized"], "line_manager")
+        self.assertIsNone(level["min"])
+        self.assertIsNone(level["max"])
+
+    def test_a_management_level_passes_schema_validation(self):
+        job = _valid_job(job_level={
+            "normalized": "line_manager", "min": None, "max": None,
+            "confidence": "medium", "source": "title",
+            "management": {"team_size": 8, "manages_managers": False,
+                           "management_yoe": None},
+        })
+        self.assertEqual(validate_job_metadata(job), [])
 
     def test_live_jd_salary_is_flat_and_high_confidence(self):
         metadata = analyze_job_metadata(
