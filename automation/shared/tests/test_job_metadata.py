@@ -21,14 +21,17 @@ from job_metadata import (  # noqa: E402
     assess_required_yoe,
     assess_sponsorship,
     classify_level,
+    classify_management_scope,
     classify_sponsorship,
     classify_workplace,
     derive_status,
+    extract_management_evidence,
     extract_required_yoe,
     extract_required_yoe_details,
     extract_salary_range,
     load_company_levels,
     pick_candidate,
+    salary_review_reason,
     validate_job_metadata,
     validate_meta,
 )
@@ -183,6 +186,182 @@ class YoeExtractionTests(unittest.TestCase):
         self.assertEqual(result["min"], 8)
         self.assertEqual(result["confidence"], "medium")
         self.assertEqual(result["requirement_kind"], "contextual")
+
+
+class NestedSpecialtyYoeTests(unittest.TestCase):
+    """A year count NESTED inside another is a specialty, not the role's bar.
+
+    Issue #257. "8-10+ years of product management experience, including at
+    least 2 years owning AI/ML products" states ONE requirement. Both counts
+    matched; the nested one carried its own "at least" cue and graded HIGH while
+    the eight-year bar (whose domain words are neither a recognised general
+    adjective nor a single-token tool name) graded medium. Only the strongest
+    confidence class survives selection, so the eight-year bar was DISCARDED and
+    a Principal role published as a 2-year requirement — which, after the #251
+    confidence fix landed, decisively PASSED a 5-year cap rather than merely
+    surviving it.
+    """
+
+    SMARTSHEET = (
+        "Principal Product Manager, AI Creation & Growth\n"
+        "Requirements:\n"
+        "- 8-10+ years of product management experience, including at least "
+        "2 years of experience owning AI/ML powered products\n"
+    )
+
+    def test_the_primary_bar_is_not_replaced_by_the_nested_clause(self):
+        details = extract_required_yoe_details(self.SMARTSHEET)
+        self.assertEqual(details["min"], 8)
+        self.assertEqual(details["max"], 10)
+        self.assertEqual(details["requirement_kind"], "required")
+
+    def test_the_nested_clause_is_reported_separately(self):
+        details = extract_required_yoe_details(self.SMARTSHEET)
+        self.assertEqual(details["specialty"], {
+            "min": 2, "max": None, "confidence": "high"})
+
+    def test_a_principal_role_no_longer_passes_a_junior_cap(self):
+        self.assertEqual(
+            assess_required_yoe(self.SMARTSHEET, cap=5)["decision"], "no_match")
+        self.assertEqual(
+            assess_required_yoe(self.SMARTSHEET, cap=12)["decision"], "match")
+
+    def test_the_nested_cue_makes_the_primary_bar_decisive(self):
+        # "including AT LEAST 2 years" is a requirement cue for the SENTENCE, so
+        # it belongs to the count the sentence is about. Without inheriting it the
+        # eight-year bar stays medium and the cap still cannot act on it.
+        details = extract_required_yoe_details(self.SMARTSHEET)
+        self.assertEqual(details["confidence"], "high")
+
+    def test_a_lone_specialty_clause_is_still_the_requirement(self):
+        # The control: with nothing to nest inside, a specialty clause IS the
+        # posting's only stated bar and must not be demoted or hidden.
+        details = extract_required_yoe_details(
+            "Requirements: at least 2 years of experience owning AI/ML products.")
+        self.assertEqual(details["min"], 2)
+        self.assertIsNone(details["specialty"])
+
+    def test_coordinate_clauses_are_both_primary(self):
+        # "and" coordinates, it does not nest: the greater of two independent
+        # requirements still wins, and neither is filed as a specialty.
+        details = extract_required_yoe_details(
+            "Requirements: 5 years of engineering experience and 1 year of "
+            "leadership experience.")
+        self.assertEqual(details["min"], 5)
+        self.assertIsNone(details["specialty"])
+
+    def test_two_coordinate_tool_clauses_keep_their_non_decisive_grade(self):
+        # Guardrail: the gap "of experience with Kubernetes and" ends in a NOUN,
+        # not a nesting connective, so nothing is nested and this pair behaves
+        # exactly as it did before.
+        details = extract_required_yoe_details(
+            "Requires 8+ years of experience with Kubernetes and 5+ years "
+            "working with Terraform.")
+        self.assertEqual(details["min"], 8)
+        self.assertEqual(details["confidence"], "medium")
+        self.assertEqual(details["requirement_kind"], "contextual")
+        self.assertIsNone(details["specialty"])
+
+    def test_a_nested_clause_never_promotes_a_tool_specific_bar(self):
+        # A specialty bar stays non-decisive even when the clause nested inside
+        # it carries a hard cue: promoting it would turn a Kubernetes preference
+        # into a hard drop.
+        details = extract_required_yoe_details(
+            "Requires 8+ years of experience with Kubernetes, including at "
+            "least 2 years with Istio.")
+        self.assertEqual(details["min"], 8)
+        self.assertEqual(details["confidence"], "medium")
+
+
+class SpelledOutYoeTests(unittest.TestCase):
+    """Issue #264: a year count written in words is still a year count.
+
+    Every shape below reproduced as ``required_yoe: unknown`` on a live posting —
+    a STATED requirement reported as absent, so the cap could not compare it and
+    the row carried no experience figure at all.
+    """
+
+    def test_at_least_five_years(self):
+        details = extract_required_yoe_details(
+            "We require at least five years of SRE and on-call experience.")
+        self.assertEqual(details["min"], 5)
+        self.assertEqual(details["confidence"], "high")
+
+    def test_the_contract_form_with_the_figure_in_brackets(self):
+        details = extract_required_yoe_details(
+            "Bachelor's degree plus six (6) years of experience in Software "
+            "Development.")
+        self.assertEqual(details["min"], 6)
+
+    def test_a_word_number_with_a_spelled_out_plus(self):
+        details = extract_required_yoe_details(
+            "Minimum of five plus years of relevant recruiting experience.")
+        self.assertEqual(details["min"], 5)
+        self.assertEqual(details["confidence"], "high")
+
+    def test_a_spelled_out_range(self):
+        details = extract_required_yoe_details(
+            "Requires three to five years of professional experience.")
+        self.assertEqual(details["min"], 3)
+        self.assertEqual(details["max"], 5)
+
+    def test_a_word_number_hard_gates_like_a_digit(self):
+        text = "A minimum of ten years of professional experience is required."
+        self.assertEqual(assess_required_yoe(text, cap=8)["decision"], "no_match")
+
+    def test_a_year_word_inside_another_word_is_not_a_count(self):
+        details = extract_required_yoe_details(
+            "Tenure and one-team culture matter here; oneyears is not a word.")
+        self.assertIsNone(details["min"])
+
+
+class MetadataReviewReasonTests(unittest.TestCase):
+    """Issue #264: a stated fact reported as absent must SAY it was dropped.
+
+    ``required_yoe: unknown`` and ``salary_range: null`` each cover two very
+    different postings — one that said nothing, and one that said something this
+    module declined to publish. Only the second is a finding, and it was
+    invisible.
+    """
+
+    def test_years_this_module_cannot_read_are_named(self):
+        details = extract_required_yoe_details(
+            "Ideal candidates have 5 years under their belt of hands-on "
+            "production experience.")
+        self.assertIsNone(details["min"])
+        self.assertEqual(details["review_reasons"], ["yoe_stated_but_unparsed"])
+
+    def test_a_parsed_requirement_is_not_a_finding(self):
+        details = extract_required_yoe_details(
+            "Requires 5+ years of professional experience.")
+        self.assertEqual(details["review_reasons"], [])
+
+    def test_a_year_count_that_is_not_about_experience_is_not_a_finding(self):
+        # A waiting period, a notice period or a contract term counts years too.
+        details = extract_required_yoe_details(
+            "We offer green card sponsorship to existing employees after two "
+            "years.")
+        self.assertEqual(details["review_reasons"], [])
+
+    def test_a_non_annual_band_names_why_the_annual_field_is_empty(self):
+        self.assertEqual(
+            salary_review_reason(
+                "The base salary range for this role is $21 - $25 per hour."),
+            "pay_stated_not_annual")
+
+    def test_pay_under_a_pay_keyword_that_parsed_to_nothing_is_named(self):
+        self.assertEqual(
+            salary_review_reason(
+                "The base salary range for this role is $2,000 - $3,000."),
+            "pay_stated_but_unparsed")
+
+    def test_a_published_annual_band_is_not_a_finding(self):
+        self.assertIsNone(salary_review_reason(
+            "The base salary range is $115,000 - $152,500."))
+
+    def test_silence_about_pay_is_not_a_finding(self):
+        self.assertIsNone(salary_review_reason(
+            "We offer great benefits and a collaborative team."))
 
 
 class GeneralVersusToolSpecificYoeTests(unittest.TestCase):
@@ -458,6 +637,45 @@ class ImplausibleSalaryBandTests(unittest.TestCase):
                     (salary["min"], salary["max"], salary["period"]),
                     (21, 25, "hour"))
 
+    def test_an_unlabelled_annual_band_is_read_rather_than_refused(self):
+        # Issue #264. "$115,000-$152,500" under a pay keyword names no period, so
+        # the extractor refused it outright and a Greenhouse posting with its pay
+        # stated plainly in the JD published `salary_range: null` and rendered "?".
+        # No employer pays $115,000 per hour, week or month.
+        for text in (
+            "The base salary range for this position is $115,000-$152,500.",
+            "Compensation: the salary range is $180,000 - $240,000.",
+            "The pay range for this role is $120k - $150k.",
+        ):
+            with self.subTest(text=text):
+                salary = extract_salary_range(text)
+                self.assertIsNotNone(salary)
+                self.assertEqual(salary["period"], "year")
+
+    def test_a_small_unlabelled_band_is_still_refused(self):
+        # The other side of the same rule: below the annual floor the band could
+        # genuinely be hourly, weekly or monthly, so there is nothing to infer.
+        self.assertIsNone(extract_salary_range(
+            "The base salary range for this role is $2,000 - $3,000."))
+
+    def test_a_rate_labelled_on_both_ends_is_pay_without_a_keyword(self):
+        # A range whose two ends each name a period is self-labelling pay; a live
+        # "Compensation: $21/hr to $25/hr" line matched no keyword on the list and
+        # parsed as None.
+        salary = extract_salary_range(
+            "Compensation: $21/hr to $25/hr depending on experience.")
+        self.assertIsNotNone(salary)
+        self.assertEqual((salary["min"], salary["max"], salary["period"]),
+                         (21, 25, "hour"))
+
+    def test_a_singly_labelled_perk_range_is_not_pay(self):
+        # Requiring the marker on BOTH ends is what keeps a benefit range out: a
+        # stipend states its period once, in passing.
+        self.assertIsNone(extract_salary_range(
+            "We offer a $2,000 - $5,000 annual learning stipend."))
+        self.assertIsNone(extract_salary_range(
+            "Interview travel is reimbursed at $200 - $400 per trip."))
+
     def test_stitched_envelope_orders_of_magnitude_apart_reports_nothing(self):
         # The backstop, unit-tested directly: even when every band is individually
         # credible, the collapse can hand back a pair no posting stated. There is
@@ -635,6 +853,136 @@ class AnalyzeTests(unittest.TestCase):
         # Genuine Staff-level titles are unaffected.
         self.assertEqual(classify_level("Staff Software Engineer")[0], "staff")
         self.assertEqual(classify_level("Senior Staff Engineer")[0], "senior_staff")
+
+    def test_management_titles_leave_the_ic_ladder(self):
+        # Issue #288: engineering-manager rows rendered `mid (L4.0-L4.8)` at one
+        # employer and `senior (L5.0-L5.8)` at the next, purely from which
+        # adjective the title carried. The column CLAIMS a Google equivalent, and
+        # nothing sourced one for a management role.
+        for title, scope in (
+            ("Engineering Manager", "line_manager"),
+            ("Software Development Manager", "line_manager"),
+            ("Manager, Software Engineering", "line_manager"),
+            ("Senior Engineering Manager", "senior_manager"),
+            ("Group Engineering Manager", "senior_manager"),
+            ("Manager of Managers, Infrastructure", "senior_manager"),
+            ("Director of Engineering", "director"),
+            ("Head of Platform", "director"),
+            ("VP of Engineering", "executive"),
+            ("Chief Technology Officer", "executive"),
+        ):
+            with self.subTest(title=title):
+                metadata = analyze_job_metadata(
+                    company="Unknown", title=title,
+                    description="Lead the platform team. 5+ years of "
+                                "professional experience required.")
+                level = metadata["job_level"]
+                self.assertEqual(level["normalized"], scope)
+                self.assertIsNone(level["min"])
+                self.assertIsNone(level["max"])
+
+    def test_ic_titles_keep_their_ladder_position(self):
+        for title, normalized, band in (
+            ("Senior Software Engineer", "senior", (5.0, 5.8)),
+            ("Staff Software Engineer", "staff", (6.0, 6.8)),
+            ("Principal Engineer", "principal", (8.0, 8.8)),
+        ):
+            with self.subTest(title=title):
+                level = analyze_job_metadata(
+                    company="Unknown", title=title,
+                    description="Build distributed systems.")["job_level"]
+                self.assertEqual(level["normalized"], normalized)
+                self.assertEqual((level["min"], level["max"]), band)
+
+    def test_an_ic_role_with_a_manager_product_suffix_is_not_a_manager(self):
+        # "Software Engineer - Mission Manager" names a product in its suffix,
+        # not a reporting line: an IC role noun earlier in the title wins.
+        self.assertEqual(
+            classify_management_scope("Software Engineer - Mission Manager"),
+            ("", None))
+        self.assertEqual(
+            classify_management_scope("Senior Product Manager"), ("", None))
+        self.assertEqual(
+            classify_management_scope("Technical Program Manager"), ("", None))
+        self.assertEqual(
+            classify_management_scope("Enterprise Account Manager"), ("", None))
+        # ... and those titles keep exactly the IC level they had before.
+        self.assertEqual(classify_level("Senior Product Manager")[0], "senior")
+
+    def test_a_manager_row_reports_its_management_evidence(self):
+        metadata = analyze_job_metadata(
+            company="Unknown",
+            title="Senior Engineering Manager",
+            description=(
+                "You will lead a team of 12 engineers, with managers reporting "
+                "to you, and bring 6+ years of engineering management."),
+        )
+        self.assertEqual(metadata["job_level"]["management"], {
+            "team_size": 12, "manages_managers": True, "management_yoe": 6})
+
+    def test_an_ic_row_carries_no_management_key(self):
+        level = analyze_job_metadata(
+            company="Unknown", title="Senior Software Engineer",
+            description="Lead a team of 12 engineers.")["job_level"]
+        self.assertNotIn("management", level)
+
+    def test_management_evidence_is_absent_when_unstated(self):
+        self.assertEqual(
+            extract_management_evidence("Own the roadmap for our platform."),
+            {"team_size": None, "manages_managers": False,
+             "management_yoe": None})
+
+    def test_a_documented_company_ladder_still_maps_a_manager(self):
+        # The one defensible way a management row gets an IC ladder position: the
+        # company-levels row states the equivalence itself.
+        reference = {
+            "companies": [{
+                "name": "Acme",
+                "last_verified": "2026-07-19",
+                "levels": [{
+                    "name": "M1",
+                    "title_patterns": ["Engineering Manager"],
+                    "normalized": "senior",
+                    "google_equivalent": {"min": 5.0, "max": 6.0},
+                }],
+            }],
+        }
+        level = analyze_job_metadata(
+            company="Acme", title="Engineering Manager",
+            description="Lead a team.", company_levels=reference)["job_level"]
+        self.assertEqual((level["min"], level["max"]), (5.0, 6.0))
+        self.assertEqual(level["source"], "company_reference")
+
+    def test_an_undocumented_company_row_does_not_ladder_a_manager(self):
+        # The same reference WITHOUT a stated equivalence: expanding its generic
+        # `normalized` word through the generic map is exactly the unsourced rung
+        # this scope exists to avoid, so the management scope wins instead.
+        reference = {
+            "companies": [{
+                "name": "Acme",
+                "last_verified": "2026-07-19",
+                "levels": [{
+                    "name": "M1",
+                    "title_patterns": ["Engineering Manager"],
+                    "normalized": "senior",
+                }],
+            }],
+        }
+        level = analyze_job_metadata(
+            company="Acme", title="Engineering Manager",
+            description="Lead a team.", company_levels=reference)["job_level"]
+        self.assertEqual(level["normalized"], "line_manager")
+        self.assertIsNone(level["min"])
+        self.assertIsNone(level["max"])
+
+    def test_a_management_level_passes_schema_validation(self):
+        job = _valid_job(job_level={
+            "normalized": "line_manager", "min": None, "max": None,
+            "confidence": "medium", "source": "title",
+            "management": {"team_size": 8, "manages_managers": False,
+                           "management_yoe": None},
+        })
+        self.assertEqual(validate_job_metadata(job), [])
 
     def test_live_jd_salary_is_flat_and_high_confidence(self):
         metadata = analyze_job_metadata(

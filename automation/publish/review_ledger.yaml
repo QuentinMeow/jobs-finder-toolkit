@@ -4000,3 +4000,53 @@
   files: 2
   digest: sha256:cd235970f34141b6
   finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 1baf9bb5
+  reviewed_by: agent
+  date: 2026-08-20
+  finding: 'Reviewed the JD-metadata parser change for #257/#264: nested-specialty YOE
+    selection, spelled-out year counts, unlabelled annual and doubly-labelled hourly
+    pay bands, and the two new review-reason readers, plus their unit tests and nine
+    appended filter-variant corpus cases. Every literal is invented JD wording
+    (Kubernetes/Terraform/Istio, "AI/ML powered products", fictional dollar bands).
+    The example-store fixture changes are module digest lines only. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content.'
+  files: 10
+  digest: sha256:b331f95abb9003d8
+- base: abeefb04
+  reviewed_by: agent
+  date: 2026-08-20
+  finding: 'Reviewed the management-scope level change for #288: the new scope enum
+    and its null Google-equivalent entries, the people-manager title rules with their
+    two precision guards, the stated management-evidence reader, and the
+    analyze_job_metadata wiring, plus unit tests. Every title and JD string is
+    invented ("Engineering Manager", "Head of Platform", "Software Engineer - Mission
+    Manager") and the one company name is the fictional Acme fixture. The
+    example-store fixture changes are module digest lines only. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content.'
+  files: 9
+  digest: sha256:f078797463879212
+- base: 2de89715
+  reviewed_by: agent
+  date: 2026-08-20
+  finding: 'Reviewed three new tasks/0_backlog task.md files recording the residuals
+    of GH #257/#264/#288 that a job_metadata change cannot own. They name public
+    repository files, public issue numbers and invented example titles only. No real
+    identity, employer, school, salary, private item name, or dated personal
+    job-hunt content.'
+  files: 3
+  digest: sha256:8b88afc0ffd2ea69
+- base: 4738dd37
+  reviewed_by: agent
+  date: 2026-08-20
+  finding: 'Reviewed one added history/conversations handover.md summarising the
+    GH #257/#264/#288 work. It names public repository files, public issue numbers,
+    invented JD wording and the branch name only. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content.'
+  files: 1
+  digest: sha256:1bcc91516fd00a40
+- base: fd9d668a
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 19
+  digest: sha256:59bf3ec435d7d7d4
+  finding: 'Merge of origin/main. Ledger and filter-variant corpus resolved by keeping BOTH sides whole; no case dropped or rewritten. filter_variants.py --check exits 0 on the result.'

@@ -327,6 +327,21 @@ def migrate_job_progress(status: str | None, stage: str | None) -> dict:
     return out
 
 
+# PEOPLE-MANAGEMENT SCOPES ARE NOT RUNGS OF THE IC LADDER. They live in the same
+# ``normalized`` field because one posting has one level, but they carry NO
+# Google equivalent (see ``GENERIC_GOOGLE_EQUIVALENTS`` below): a manager's
+# position is set by team size, whether they manage managers, and the scope they
+# own, none of which the IC ladder measures. Rendering them on it produced an
+# inconsistent, meaningless column — the same job family read ``mid (L4.0-L4.8)``
+# at one employer and ``senior (L5.0-L5.8)`` at the next, purely from which
+# adjective the title happened to carry (issue #288).
+MANAGEMENT_SCOPES = (
+    "line_manager",
+    "senior_manager",
+    "director",
+    "executive",
+)
+
 NORMALIZED_LEVELS = {
     "intern",
     "entry",
@@ -336,6 +351,7 @@ NORMALIZED_LEVELS = {
     "senior_staff",
     "principal",
     "distinguished",
+    *MANAGEMENT_SCOPES,
     "unknown",
 }
 
@@ -344,6 +360,13 @@ CONFIDENCE_VALUES = {"high", "medium", "low", "unknown"}
 # Generic fallback used only when no company-specific reference matches. Decimal
 # bounds communicate approximate equivalence without pretending that companies'
 # ladders align exactly at integer boundaries.
+#
+# A management scope maps to NOTHING here on purpose, and the ``None`` is the
+# answer rather than a gap: the column then reads "line manager (?)" instead of
+# an IC rung nobody sourced, and ``scoring.level_fit_delta`` already treats an
+# absent range as "do not penalise". A management row that DOES deserve a ladder
+# position gets one the only defensible way — an explicit ``google_equivalent``
+# on its company-levels row, which ``_google_range`` still honours.
 GENERIC_GOOGLE_EQUIVALENTS = {
     "intern": {"min": 2.0, "max": 2.8},
     "entry": {"min": 3.0, "max": 3.8},
@@ -353,6 +376,7 @@ GENERIC_GOOGLE_EQUIVALENTS = {
     "senior_staff": {"min": 7.0, "max": 7.8},
     "principal": {"min": 8.0, "max": 8.8},
     "distinguished": {"min": 9.0, "max": 10.0},
+    **{scope: {"min": None, "max": None} for scope in MANAGEMENT_SCOPES},
     "unknown": {"min": None, "max": None},
 }
 
@@ -381,38 +405,87 @@ SOURCE_TIER_MAP = {
 
 _WS_RE = re.compile(r"\s+")
 _RANGE_SEP = r"(?:-|–|—|to|through)"
+
+# A YEAR COUNT IS NOT ALWAYS A DIGIT. Recruiters write the number in words far
+# more often than the digit-only patterns assumed — "at least five years",
+# "six (6) years of experience", "a minimum of five plus years" — and every one
+# of those parsed as ``not_stated``: a STATED requirement reported as absent, so
+# the ``max_years_experience`` cap could not compare it and the row carried no
+# YOE at all (issue #264, reproduced on live Sanity, Stripe and AAR postings).
+#
+# The word list stops at twenty because that is where spelled-out career lengths
+# stop in practice; anything longer is written as a digit. The optional
+# parenthesised digit after a word is the "six (6) years" contract shape — the
+# WORD is what the group captures, and ``_yoe_number`` reads it, so the digit in
+# brackets never has to agree with a second capture group.
+_YOE_WORD_NUMBERS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+    "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+}
+_YOE_WORD_ALT = "|".join(sorted(_YOE_WORD_NUMBERS, key=len, reverse=True))
+# One year count: a digit, or a spelled-out word optionally followed by the same
+# figure in brackets. Always ONE capturing group, so the patterns below keep
+# their group numbering.
+_YOE_NUM = rf"(\d{{1,2}}(?:\.\d+)?|(?:{_YOE_WORD_ALT})\b(?:\s*\(\s*\d{{1,2}}\s*\))?)"
+# "5+ years" and "five plus years" are the same requirement written twice.
+_YOE_PLUS = r"(?:\s*(?:\+|plus)\s*)"
+
+
+def _yoe_number(token: str) -> float | None:
+    """A year count written as a digit or a word -> ``float``, else ``None``."""
+    text = re.sub(r"\(.*?\)", " ", str(token or "")).strip().lower()
+    if text in _YOE_WORD_NUMBERS:
+        return float(_YOE_WORD_NUMBERS[text])
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 _YOE_RANGE_RE = re.compile(
-    rf"\b(\d{{1,2}}(?:\.\d+)?)\s*{_RANGE_SEP}\s*"
-    r"(\d{1,2}(?:\.\d+)?)\s*(?:\+?\s*)?(?:years?|yrs?\.?)"
+    rf"\b{_YOE_NUM}\s*{_RANGE_SEP}\s*"
+    rf"{_YOE_NUM}\s*{_YOE_PLUS}?\s*(?:years?|yrs?\.?)"
     r"(?:\s+(?:of\s+)?(?:professional\s+)?experience)?",
     re.I,
 )
 _YOE_MIN_PATTERNS = [
     re.compile(
-        r"\b(?:minimum|min\.?)\s*(?:of\s*)?(\d{1,2}(?:\.\d+)?)\s*\+?\s*"
+        rf"\b(?:minimum|min\.?)\s*(?:of\s*)?{_YOE_NUM}{_YOE_PLUS}?\s*"
         r"(?:years?|yrs?\.?)(?:\s+(?:of\s+)?(?:professional\s+)?experience)?",
         re.I,
     ),
     re.compile(
-        r"\bat least\s+(\d{1,2}(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?\.?)",
+        rf"\bat least\s+{_YOE_NUM}{_YOE_PLUS}?\s*(?:years?|yrs?\.?)",
         re.I,
     ),
     re.compile(
-        r"\b(\d{1,2}(?:\.\d+)?)\+\s*(?:years?|yrs?\.?)"
+        rf"\b{_YOE_NUM}{_YOE_PLUS}(?:years?|yrs?\.?)"
         r"(?:\s+(?:of\s+)?(?:[\w-]+\s+){0,4}experience)?",
         re.I,
     ),
     re.compile(
-        r"\b(\d{1,2}(?:\.\d+)?)\s*(?:or more)\s*(?:years?|yrs?\.?)",
+        rf"\b{_YOE_NUM}\s*(?:or more)\s*(?:years?|yrs?\.?)",
         re.I,
     ),
     re.compile(
-        r"\b(\d{1,2}(?:\.\d+)?)\s*(?:years?|yrs?\.?)(?:['’]\s*)?\s+"
+        rf"\b{_YOE_NUM}\s*(?:years?|yrs?\.?)(?:['’]\s*)?\s+"
         r"(?:of\s+)?"
         r"(?:[\w-]+\s+){0,3}experience",
         re.I,
     ),
 ]
+# "<count> years" in ANY shape this module can read a number in. Used to tell
+# "this posting states no experience requirement" apart from "this posting
+# states one and the patterns above could not read it" — the second is a
+# metadata-review finding (#264), the first is not.
+_YOE_PHRASE_RE = re.compile(
+    rf"\b(?:\d{{1,2}}(?:\.\d+)?|(?:{_YOE_WORD_ALT})\b)"
+    rf"(?:\s*\(\s*\d{{1,2}}\s*\))?{_YOE_PLUS}?\s*(?:years?|yrs?\.?)\b",
+    re.I,
+)
+_EXPERIENCE_WORD_RE = re.compile(r"\bexperien(?:ce|ced)\b", re.I)
 _PREFERRED_YOE_RE = re.compile(
     r"\b(preferred|ideally|nice[- ]to[- ]have|bonus|a plus|desired|optional)\b",
     re.I,
@@ -468,10 +541,74 @@ _COMBINED_YOE_RE = re.compile(r"\bcombined\b", re.I)
 # contaminate this match's confidence/kind — the later clause is scored on its
 # own pass. Kept deliberately loose (any "<n> years" mention) so any conjunction
 # or punctuation between the two clauses still ends the window.
-_NEXT_YOE_CLAUSE_RE = re.compile(
-    r"\b\d{1,2}(?:\.\d+)?\s*\+?\s*(?:years?|yrs?\.?)",
+_NEXT_YOE_CLAUSE_RE = _YOE_PHRASE_RE
+
+# --- nested specialty clauses ------------------------------------------------
+# A JD sentence can state TWO year counts that are not two requirements. "8-10+
+# years of product management experience, INCLUDING at least 2 years owning
+# AI/ML products" states one bar — eight years — and then narrows part of it to
+# a specialty. Both counts matched, both were classified independently, and the
+# nested one won: it carries its own "at least" cue, so it graded HIGH while the
+# primary count (whose domain word, "product management", is neither a
+# recognised general-experience adjective nor a single-token tool name) graded
+# medium. ``extract_required_yoe_details`` keeps only the strongest confidence
+# class, so the eight-year bar was discarded and a Principal role was published
+# as a 2-year requirement — decisively PASSING a 5-year cap (issue #257).
+#
+# Subordination is read from the GAP between two counts in one sentence, not
+# from the words around either one: the gap must END in a nesting connective,
+# with nothing after it but quantifier filler. That is what separates
+# "8-10 years ..., including at least 2 years ..." (nested) from "8+ years with
+# Kubernetes AND 5+ years with Terraform" (two coordinate clauses, gap ends in
+# "Kubernetes and"), which must keep behaving exactly as before.
+_YOE_SUBORDINATE_CUE_RE = re.compile(
+    r"\b(?:including|includes|included|incl\.?|of which|of these|thereof|"
+    r"which\s+includes?|with|within|plus|comprising|comprised\s+of)\b",
     re.I,
 )
+_YOE_SUBORDINATE_FILLER_RE = re.compile(
+    r"[\s,;:()\[\]/&+.\-–—]*"
+    r"(?:(?:at\s+least|a\s+minimum\s+of|minimum(?:\s+of)?|min\.?|over|"
+    r"more\s+than|no\s+less\s+than|up\s+to|the|an?|of|in|on)"
+    r"[\s,;:()\[\]/&+.\-–—]*)*",
+    re.I,
+)
+
+
+def _yoe_line_start(blob: str, start: int) -> int:
+    """First index of the sentence/line that contains ``start``."""
+    return max(blob.rfind("\n", 0, start), blob.rfind(".", 0, start)) + 1
+
+
+def _yoe_phrase_reads_as_experience(blob: str) -> bool:
+    """Whether ``blob`` states "<count> years" in a sentence ABOUT experience.
+
+    The narrow question this answers is "did we miss something", so it has to be
+    precise about what counts: a year count is not automatically a requirement
+    ("green card sponsorship to existing employees after two years" is a waiting
+    period, not a bar). Requiring the word EXPERIENCE in the same sentence is the
+    cheapest separator that keeps the shapes issue #264 is about — every one of
+    them says "years of ... experience" — and drops the tenure/notice/contract
+    sentences that merely count years.
+    """
+    for match in _YOE_PHRASE_RE.finditer(blob):
+        line_start = _yoe_line_start(blob, match.start())
+        ends = [value for value in (blob.find("\n", match.end()),
+                                    blob.find(".", match.end())) if value >= 0]
+        line_end = min(ends) if ends else len(blob)
+        if _EXPERIENCE_WORD_RE.search(blob[line_start:line_end]):
+            return True
+    return False
+
+
+def _yoe_gap_is_subordinating(gap: str) -> bool:
+    """Whether ``gap`` nests what follows it inside what precedes it."""
+    cue = None
+    for cue in _YOE_SUBORDINATE_CUE_RE.finditer(gap):
+        pass
+    if cue is None:
+        return False
+    return bool(_YOE_SUBORDINATE_FILLER_RE.fullmatch(gap[cue.end():]))
 
 # Function words that can sit between "years" and "experience" WITHOUT naming a
 # tool or a domain. They exist as a block-list because the second branch of
@@ -633,6 +770,79 @@ _LEVEL_RULES = [
         re.I,
     )),
 ]
+
+# --- people-management titles ------------------------------------------------
+# Read BEFORE ``_LEVEL_RULES`` so a manager's adjective ("Senior Engineering
+# Manager") names a management scope instead of an IC rung. Two guards decide
+# what is NOT a people-manager, because "manager" is the most overloaded noun on
+# a job board:
+#
+#   * ``_INDIVIDUAL_MANAGER_TITLE_RE`` — the "<domain> Manager" families that are
+#     individual-contributor or quota-carrying roles (Product, Program, Account,
+#     Category, Case, Facilities ...). They fall through to the IC rules and keep
+#     behaving exactly as they do today;
+#   * an IC role noun EARLIER in the title than the management word ("Software
+#     Engineer - Mission Manager"), which is a product name in the suffix, not a
+#     reporting line. The same shape ``scoring._is_ambiguous_manager_product_suffix``
+#     protects from the profile's `manager` exclude.
+#
+# Neither guard promotes anything: a guarded title is classified exactly as it
+# was before this section existed.
+_INDIVIDUAL_MANAGER_TITLE_RE = re.compile(
+    r"\b(?:product|program|programme|project|portfolio|account|partner|"
+    r"partnership|alliance|channel|category|brand|marketing|content|community|"
+    r"social|communications?|campaign|sales|territory|district|store|"
+    r"restaurant|property|facilit(?:y|ies)|office|case|care|clinical|risk|"
+    r"compliance|audit|vendor|supplier|procurement|inventory|logistics|"
+    r"traffic|asset|wealth|fund|investment|relationship|success|events?|"
+    r"talent|recruiting|payroll|benefits?|contract|construction|quality|"
+    r"safety|environmental)\s+manager\b",
+    re.I,
+)
+_IC_ROLE_NOUN_RE = re.compile(
+    r"\b(?:engineer|developer|programmer|scientist|architect|analyst|"
+    r"designer|researcher|consultant|specialist|technician|nurse|"
+    r"accountant|attorney|counsel)\b",
+    re.I,
+)
+_MANAGEMENT_TITLE_RULES = [
+    ("executive", re.compile(
+        r"\bchief\s+[a-z]+\s+officer\b|\b(?:cto|ceo|coo|cio|cfo|cpo|cmo)\b|"
+        r"\b(?:svp|evp|vice\s+president|vp)\b",
+        re.I,
+    )),
+    ("director", re.compile(r"\bdirectors?\b|\bhead\s+of\b", re.I)),
+    ("senior_manager", re.compile(
+        r"\b(?:senior|sr\.?|group|principal|global|regional|area|second[- ]line)"
+        r"\s+(?:[\w&/-]+[\s,]+){0,2}managers?\b|"
+        r"\bmanagers?\s+of\s+managers\b",
+        re.I,
+    )),
+    ("line_manager", re.compile(r"\bmanagers?\b", re.I)),
+]
+
+
+def classify_management_scope(title: str | None) -> tuple[str, str | None]:
+    """A people-management scope from a title, or ``("", None)``.
+
+    Returns one of ``MANAGEMENT_SCOPES`` with the title words that said so.
+    Deliberately conservative: an ambiguous "<something> Manager" is left to the
+    IC rules rather than promoted, because an unwarranted manager label is as
+    misleading as an unwarranted ladder rung.
+    """
+    value = _MTS_NEUTRALIZE_RE.sub(" ", title or "")
+    ic_noun = _IC_ROLE_NOUN_RE.search(value)
+    for scope, pattern in _MANAGEMENT_TITLE_RULES:
+        match = pattern.search(value)
+        if not match:
+            continue
+        if ic_noun is not None and ic_noun.start() < match.start():
+            return "", None
+        if scope in ("senior_manager", "line_manager") \
+                and _INDIVIDUAL_MANAGER_TITLE_RE.search(value):
+            return "", None
+        return scope, match.group(0)
+    return "", None
 
 
 def _clean(value: Any) -> str:
@@ -965,7 +1175,7 @@ def lookup_company_level(company: str, title: str, reference: dict) -> tuple[dic
 # JD text extraction (years of experience, pay, seniority).
 # ---------------------------------------------------------------------------
 def _yoe_match_context(blob: str, start: int, end: int) -> tuple[str, str, str]:
-    line_start = max(blob.rfind("\n", 0, start), blob.rfind(".", 0, start)) + 1
+    line_start = _yoe_line_start(blob, start)
     newline_end = blob.find("\n", end)
     sentence_end = blob.find(".", end)
     ends = [value for value in (newline_end, sentence_end) if value >= 0]
@@ -1019,54 +1229,150 @@ def _yoe_candidate_confidence(blob: str, match: re.Match) -> tuple[str, str] | N
     return confidence, "contextual" if contextual else "required"
 
 
+def _nest_yoe_candidates(blob: str, candidates: list[dict]) -> None:
+    """Mark each candidate that is NESTED inside an earlier one, in place.
+
+    A candidate's parent is the nearest candidate in the same sentence that ends
+    at or before it starts; it is nested when the text between them ends in a
+    subordinating connective (see ``_yoe_gap_is_subordinating``). One number can
+    produce several overlapping candidates ("at least 2 years" and "2 years of
+    experience" are two matches of one clause) — each is resolved against the
+    same parent, so they agree.
+    """
+    ordered = sorted(candidates, key=lambda item: (item["start"], item["end"]))
+    for index, candidate in enumerate(ordered):
+        parent = None
+        for other in ordered[:index]:
+            if other["line_start"] != candidate["line_start"]:
+                continue
+            if other["end"] > candidate["start"]:
+                continue
+            if parent is None or other["end"] > parent["end"]:
+                parent = other
+        if parent is None:
+            continue
+        gap = blob[parent["end"]:candidate["start"]]
+        if not _yoe_gap_is_subordinating(gap):
+            continue
+        candidate["nested"] = True
+        candidate["parent"] = parent
+        # The narrowing clause's own requirement cue ("... including AT LEAST 2
+        # years ...") is a statement about the whole sentence, so it belongs to
+        # the count the sentence is actually about. Without this the primary bar
+        # stays medium — non-decisive — and ``max_years_experience`` still cannot
+        # act on a requirement the posting states plainly.
+        candidate["cued_parent"] = bool(
+            _REQUIRED_YOE_RE.search(f"{gap} {candidate['text']}"))
+
+
 def extract_required_yoe_details(text: str | None) -> dict:
     """Extract required YOE with requirement kind and confidence.
 
     High-confidence general requirements take precedence over contextual
     technology/domain requirements. Within one confidence class, the greatest
     lower bound wins; a finite upper bound is retained only from that same range.
+
+    A year count NESTED inside another ("8-10 years of product management
+    experience, including at least 2 years owning AI/ML products") is a
+    specialty, not the role's bar: it is reported under ``specialty`` and can
+    never replace the count it narrows. ``review_reasons`` names the one case
+    this extractor cannot resolve — a posting that plainly states years in a
+    shape none of the patterns read.
     """
     blob = _source_text(text)
-    candidates: list[tuple[float, float | None, str, str, str]] = []
+    candidates: list[dict] = []
     range_spans: list[tuple[int, int]] = []
-    for match in _YOE_RANGE_RE.finditer(blob):
-        low = float(match.group(1))
-        high = float(match.group(2))
+    raw_matches = 0
+
+    def _add(match: re.Match, low: float, high: float | None) -> None:
         classified = _yoe_candidate_confidence(blob, match)
-        if 0 <= low <= high <= 50 and classified:
-            confidence, kind = classified
-            candidates.append((low, high, match.group(0), confidence, kind))
-            range_spans.append(match.span())
+        if not classified:
+            return
+        confidence, kind = classified
+        candidates.append({
+            "min": low,
+            "max": high,
+            "text": match.group(0),
+            "confidence": confidence,
+            "kind": kind,
+            "start": match.start(),
+            "end": match.end(),
+            "line_start": _yoe_line_start(blob, match.start()),
+            "nested": False,
+            "parent": None,
+            "cued_parent": False,
+        })
+
+    for match in _YOE_RANGE_RE.finditer(blob):
+        raw_matches += 1
+        low = _yoe_number(match.group(1))
+        high = _yoe_number(match.group(2))
+        if low is None or high is None or not 0 <= low <= high <= 50:
+            continue
+        _add(match, low, high)
+        range_spans.append(match.span())
     for pattern in _YOE_MIN_PATTERNS:
         for match in pattern.finditer(blob):
             if any(start <= match.start() < end for start, end in range_spans):
                 continue
-            low = float(match.group(1))
-            classified = _yoe_candidate_confidence(blob, match)
-            if 0 <= low <= 50 and classified:
-                confidence, kind = classified
-                candidates.append((low, None, match.group(0), confidence, kind))
+            raw_matches += 1
+            low = _yoe_number(match.group(1))
+            if low is None or not 0 <= low <= 50:
+                continue
+            _add(match, low, None)
 
     if not candidates:
+        # A posting that states no years and one whose wording this module cannot
+        # read both end here, and only the second is a finding: silently calling a
+        # stated requirement absent is what made spelled-out years invisible.
+        unread = raw_matches == 0 and _yoe_phrase_reads_as_experience(blob)
         return {
             "min": None,
             "max": None,
             "source": "not_stated",
             "confidence": "unknown",
             "requirement_kind": "not_stated",
+            "specialty": None,
+            "review_reasons": ["yoe_stated_but_unparsed"] if unread else [],
         }
 
-    strongest = "high" if any(item[3] == "high" for item in candidates) else "medium"
-    eligible = [item for item in candidates if item[3] == strongest]
-    greatest = max(item[0] for item in eligible)
-    same_min = [item for item in eligible if item[0] == greatest]
-    chosen = next((item for item in same_min if item[1] is not None), same_min[0])
+    _nest_yoe_candidates(blob, candidates)
+    for candidate in candidates:
+        if not candidate["cued_parent"]:
+            continue
+        parent = candidate["parent"]
+        while parent is not None and parent["nested"]:
+            parent = parent["parent"]
+        if parent is not None and parent["kind"] != "contextual":
+            parent["confidence"] = "high"
+
+    primary = [item for item in candidates if not item["nested"]] or candidates
+    nested = [item for item in candidates if item["nested"]]
+
+    def _pick(pool: list[dict]) -> dict:
+        strongest = "high" if any(x["confidence"] == "high" for x in pool) else "medium"
+        eligible = [x for x in pool if x["confidence"] == strongest]
+        greatest = max(x["min"] for x in eligible)
+        same_min = [x for x in eligible if x["min"] == greatest]
+        return next((x for x in same_min if x["max"] is not None), same_min[0])
+
+    chosen = _pick(primary)
+    specialty = None
+    if nested:
+        narrow = _pick(nested)
+        specialty = {
+            "min": _number(narrow["min"]),
+            "max": _number(narrow["max"]) if narrow["max"] is not None else None,
+            "confidence": narrow["confidence"],
+        }
     return {
-        "min": _number(chosen[0]),
-        "max": _number(chosen[1]) if chosen[1] is not None else None,
+        "min": _number(chosen["min"]),
+        "max": _number(chosen["max"]) if chosen["max"] is not None else None,
         "source": "job_description",
-        "confidence": chosen[3],
-        "requirement_kind": chosen[4],
+        "confidence": chosen["confidence"],
+        "requirement_kind": chosen["kind"],
+        "specialty": specialty,
+        "review_reasons": [],
     }
 
 
@@ -1147,6 +1453,39 @@ def _compensation_period(match: re.Match, context: str) -> str | None:
     return next(iter(cues)) if len(cues) == 1 else None
 
 
+def _stated_period_on_both_ends(match: re.Match) -> bool:
+    """Whether BOTH amounts carry their own explicit period ("$21/hr to $25/hr").
+
+    A range whose two ends each name a period is self-labelling pay: nothing else
+    in a JD is written that way. It is the only signal ``_compensation_range``
+    accepts in place of a nearby pay keyword, because keyword lists are always one
+    employer's vocabulary short — a live "Compensation: $21/hr to $25/hr" line
+    stated its rate twice and still parsed as ``None`` (issue #264). Requiring the
+    marker on BOTH ends is what keeps a singly-labelled perk range ("a $500/month
+    stipend") from reading as the role's pay.
+    """
+    return bool(_normalize_period(match.group(5))) and \
+        bool(_normalize_period(match.group(10)))
+
+
+def _implied_annual_period(low: float, high: float) -> str | None:
+    """The period a large, unlabelled band under a pay keyword must be.
+
+    "The base salary range for this position is $115,000-$152,500" names no
+    period, and ``_compensation_range`` REFUSED it outright rather than guess —
+    so a Greenhouse posting with its pay stated plainly in the JD published
+    ``salary_range: null`` and rendered "?" (issue #264). There is nothing to
+    guess: no employer pays $115,000 per hour, week or month, and the annual
+    floor this module already uses to sanity-check a yearly band
+    (``_PERIOD_PAY_FLOOR["year"]``) is the same line. Both ends must clear it, so
+    a small unlabelled band — which genuinely could be hourly or monthly — is
+    still refused, and this only ever runs after a pay keyword has already said
+    the numbers are compensation.
+    """
+    floor = _PERIOD_PAY_FLOOR["year"]
+    return "year" if low >= floor and high >= floor else None
+
+
 def _is_pay_band(low: float, high: float, period: str | None) -> bool:
     """Whether ``low``-``high`` is credible as ONE pay band stated for ``period``.
 
@@ -1206,7 +1545,7 @@ def _compensation_range(text: str | None, *, total: bool) -> dict | None:
         if total:
             if not has_total:
                 continue
-        elif has_total or not has_salary:
+        elif has_total or not (has_salary or _stated_period_on_both_ends(match)):
             continue
         first_currency = _amount_currency(match.group(1), match.group(2))
         second_currency = _amount_currency(match.group(6), match.group(7))
@@ -1220,7 +1559,8 @@ def _compensation_range(text: str | None, *, total: bool) -> dict | None:
             low, high = high, low
         if low <= 0 or high > 10_000_000:
             continue
-        period = _compensation_period(match, context + " " + match.group(0))
+        period = _compensation_period(match, context + " " + match.group(0)) \
+            or _implied_annual_period(low, high)
         if not period:
             continue
         # Drop the BAND, not the whole fact: a compensation paragraph that also
@@ -1262,9 +1602,62 @@ def extract_salary_range(text: str | None) -> dict | None:
     return _compensation_range(text, total=False)
 
 
+def salary_review_reason(text: str | None, supplied: dict | None = None) -> str | None:
+    """Why the ANNUAL ``salary_range`` is empty for a posting that states pay.
+
+    ``salary_range`` is null for two very different reasons and the field cannot
+    tell them apart: the posting was silent about pay, or it stated pay this
+    module then declined to publish. Only the second is a finding, and it was
+    invisible — the row read "?" either way, so a reader had no way to know the
+    JD had the number in it (issue #264).
+
+    Three shapes, each named rather than merged:
+
+    * ``pay_stated_not_annual`` — a band was read, but for an hour/week/month, so
+      ``_salary_envelope`` correctly refuses to publish it as a yearly figure;
+    * ``pay_bands_conflict`` — several annual bands were read and collapse to a
+      pair no posting stated, so the envelope reports neither;
+    * ``pay_stated_but_unparsed`` — a money range sits under this module's own pay
+      vocabulary and still produced nothing.
+
+    Returns ``None`` when the annual value is present, or when the posting simply
+    never mentioned pay — silence is not a finding.
+    """
+    fact = extract_salary_range(text)
+    if fact:
+        low, high = _salary_envelope(fact)
+        if low is not None or high is not None:
+            return None
+        bands = fact.get("bands")
+        if isinstance(bands, list) and any(
+                isinstance(band, dict) and band.get("period") == "year"
+                for band in bands):
+            return "pay_bands_conflict"
+        return "pay_stated_not_annual"
+    if isinstance(supplied, dict) and (
+            supplied.get("min") is not None or supplied.get("max") is not None):
+        return None
+    blob = _source_text(text)
+    for match in _MONEY_RANGE_RE.finditer(blob):
+        before = blob[max(0, match.start() - 120):match.start()].lower()
+        if _last_bounded_start(before, _SALARY_TERMS) >= 0 \
+                or _last_bounded_start(before, _TOTAL_TERMS) >= 0:
+            return "pay_stated_but_unparsed"
+    return None
+
+
 def classify_level(title: str | None) -> tuple[str, str]:
-    """Return ``(normalized_level, stated_signal)`` from a generic title."""
+    """Return ``(normalized_level, stated_signal)`` from a generic title.
+
+    A people-management title resolves to a management SCOPE (see
+    ``MANAGEMENT_SCOPES``) and is read first, so "Senior Engineering Manager"
+    reports the reporting line it names rather than the IC rung its adjective
+    happens to share with "Senior Software Engineer".
+    """
     value = title or ""
+    scope, signal = classify_management_scope(value)
+    if scope:
+        return scope, signal or value.strip()
     # Drop "Member of Technical Staff" so its trailing "Staff" can't mislabel an
     # MTS role as Staff-level; any real seniority word (senior/principal/...) that
     # prefixes the MTS phrase still survives and classifies normally.
@@ -1274,6 +1667,60 @@ def classify_level(title: str | None) -> tuple[str, str]:
         if match:
             return normalized, match.group(0)
     return "unknown", value.strip() or "Not stated"
+
+
+# --- management evidence -----------------------------------------------------
+# What a manager row must show INSTEAD of a ladder rung. Each read is explicit —
+# a stated team size, a stated manager-of-managers reporting line, a stated
+# management tenure — and absent evidence is reported as absent, never inferred
+# from the title.
+_TEAM_SIZE_RE = re.compile(
+    rf"\b(?:teams?|orgs?|organi[sz]ations?|groups?)\s+of\s+{_YOE_NUM}\b|"
+    rf"\b(?:manage|managing|lead|leading|oversee|overseeing|grow|growing|"
+    rf"build|building|hire|hiring)\s+(?:an?\s+)?(?:teams?\s+of\s+)?{_YOE_NUM}"
+    rf"{_YOE_PLUS}?\s*(?:engineers|developers|people|employees|reports|"
+    rf"direct\s+reports|individual\s+contributors|ics|team\s+members)\b",
+    re.I,
+)
+_MANAGES_MANAGERS_RE = re.compile(
+    r"\bmanagers?\s+of\s+managers\b|\bmanaging\s+managers\b|"
+    r"\bmanage\s+(?:other\s+)?managers\b|\bsecond[- ]line\s+manage\w*\b|"
+    r"\bmanagers?\s+(?:will\s+)?report(?:ing)?\s+to\s+(?:you|this\s+role)\b|"
+    r"\bleaders?\s+of\s+leaders\b",
+    re.I,
+)
+_MANAGEMENT_YOE_RE = re.compile(
+    rf"{_YOE_NUM}{_YOE_PLUS}?\s*(?:years?|yrs?\.?)\s+(?:of\s+)?"
+    r"(?:(?:people|engineering|team|line|direct|technical)\s+)?"
+    r"(?:management|managing|people\s+leadership|leadership)\b",
+    re.I,
+)
+
+
+def extract_management_evidence(text: str | None) -> dict:
+    """Stated management scope evidence: team size, manager-of-managers, tenure.
+
+    Every value is ``None``/``False`` unless the posting says so — this is the
+    evidence a manager row is judged on, so a guess here would be worse than the
+    ladder rung it replaces.
+    """
+    blob = _source_text(text)
+    sizes = []
+    for match in _TEAM_SIZE_RE.finditer(blob):
+        for group in (match.group(1), match.group(2)):
+            value = _yoe_number(group) if group else None
+            if value is not None and 0 < value <= 99:
+                sizes.append(value)
+    tenures = []
+    for match in _MANAGEMENT_YOE_RE.finditer(blob):
+        value = _yoe_number(match.group(1))
+        if value is not None and 0 <= value <= 50:
+            tenures.append(value)
+    return {
+        "team_size": _number(max(sizes)) if sizes else None,
+        "manages_managers": bool(_MANAGES_MANAGERS_RE.search(blob)),
+        "management_yoe": _number(max(tenures)) if tenures else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2954,16 +3401,26 @@ def classify_sponsorship(text: str | None) -> str:
 # ---------------------------------------------------------------------------
 # Application meta.yaml layer (the flat, human-facing schema v6).
 # ---------------------------------------------------------------------------
+def _states_google_equivalent(level_entry: dict | None) -> bool:
+    """Whether a company-levels row states its OWN Google equivalence.
+
+    The one thing that makes a ladder position sourced rather than assumed, and
+    therefore the only thing that lets a management row carry one.
+    """
+    if not isinstance(level_entry, dict):
+        return False
+    google = level_entry.get("google_equivalent")
+    return isinstance(google, dict) and (
+        google.get("min") is not None or google.get("max") is not None)
+
+
 def _google_range(normalized: str, level_entry: dict | None) -> tuple[float | None, float | None]:
-    if isinstance(level_entry, dict):
-        google = level_entry.get("google_equivalent")
-        if isinstance(google, dict) and (
-            google.get("min") is not None or google.get("max") is not None
-        ):
-            return (
-                float(google["min"]) if google.get("min") is not None else None,
-                float(google["max"]) if google.get("max") is not None else None,
-            )
+    if _states_google_equivalent(level_entry):
+        google = level_entry["google_equivalent"]
+        return (
+            float(google["min"]) if google.get("min") is not None else None,
+            float(google["max"]) if google.get("max") is not None else None,
+        )
     generic = GENERIC_GOOGLE_EQUIVALENTS.get(
         normalized, GENERIC_GOOGLE_EQUIVALENTS["unknown"])
     return generic["min"], generic["max"]
@@ -3106,11 +3563,19 @@ def analyze_job_metadata(
     yoe_details = extract_required_yoe_details(f"{title}\n{description}")
 
     # --- job level -------------------------------------------------------
-    if level_entry:
+    title_level, _title_signal = classify_level(title)
+    # A management title takes an IC ladder position from the company-levels
+    # reference ONLY when that row states the equivalence itself. Otherwise the
+    # row's generic ``normalized`` word would be expanded by ``_google_range``
+    # into exactly the unsourced IC rung this scope exists to avoid.
+    reference_usable = bool(level_entry) and (
+        title_level not in MANAGEMENT_SCOPES
+        or _states_google_equivalent(level_entry))
+    if reference_usable:
         normalized = str(level_entry.get("normalized") or "unknown").strip().lower()
         level_source, level_confidence = "company_reference", "medium"
     else:
-        normalized, _signal = classify_level(title)
+        normalized = title_level
         if normalized != "unknown":
             level_source, level_confidence = "title", "medium"
         elif yoe_details.get("min") is not None:
@@ -3131,7 +3596,7 @@ def analyze_job_metadata(
                 level_source, level_confidence = "generic", "low"
     if normalized not in NORMALIZED_LEVELS:
         normalized = "unknown"
-    low, high = _google_range(normalized, level_entry)
+    low, high = _google_range(normalized, level_entry if reference_usable else None)
     job_level = {
         "normalized": normalized,
         "min": low,
@@ -3139,6 +3604,13 @@ def analyze_job_metadata(
         "confidence": level_confidence,
         "source": level_source,
     }
+    # What a manager row is judged on instead of a ladder rung. Attached only
+    # when the posting actually states some of it, so an IC row keeps exactly the
+    # shape it has always had.
+    if normalized in MANAGEMENT_SCOPES:
+        evidence = extract_management_evidence(f"{title}\n{description}")
+        if any(value not in (None, False) for value in evidence.values()):
+            job_level["management"] = evidence
 
     # --- required years of experience -----------------------------------
     cached_yoe = level_entry.get("required_yoe") if isinstance(level_entry, dict) else None

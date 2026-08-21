@@ -2537,3 +2537,127 @@ variants:
       accepted: true
       level: senior
       rule_ids: [title.included.go]
+
+  # --- nested specialty YOE clauses and spelled-out counts (#257, #264) ---
+
+  - id: yoe-nested-specialty-does-not-replace-the-primary-bar
+    domain: yoe
+    # GH #257. One sentence, two counts: the eight-year bar and the two-year
+    # specialty that narrows PART of it. The nested clause carries its own
+    # "at least" cue so it graded high while the bar graded medium, and only the
+    # strongest class survives selection — the bar was discarded and a Principal
+    # role published as a 2-year requirement. The nested cue belongs to the
+    # sentence, so the bar inherits it and becomes decisive.
+    input:
+      text: >-
+        8-10+ years of product management experience, including at least 2
+        years of experience owning AI/ML powered products.
+    expect:
+      decision: match
+      min: 8
+      max: 10
+      confidence: high
+      requirement_kind: required
+
+  - id: yoe-a-lone-specialty-clause-is-still-the-requirement
+    domain: yoe
+    # The control for the case above: with nothing to nest inside, a specialty
+    # clause IS the posting's only stated bar and must not be demoted or hidden.
+    input:
+      text: >-
+        Requirements: at least 2 years of experience owning AI/ML products.
+    expect:
+      decision: match
+      min: 2
+      confidence: high
+      requirement_kind: required
+
+  - id: yoe-coordinate-clauses-are-both-primary
+    domain: yoe
+    # "and" coordinates, it does not nest: two independent requirements, the
+    # greater of which is the bar. Nothing is filed as a specialty.
+    input:
+      text: >-
+        Requirements: 5 years of engineering experience and 1 year of
+        leadership experience.
+    expect:
+      decision: match
+      min: 5
+      confidence: high
+      requirement_kind: required
+
+  - id: yoe-a-nested-clause-never-promotes-a-tool-specific-bar
+    domain: yoe
+    # Guardrail on the cue inheritance: a specialty bar stays non-decisive even
+    # when the clause nested inside it carries a hard cue, so a Kubernetes
+    # preference never becomes a hard drop.
+    input:
+      text: >-
+        Requires 8+ years of experience with Kubernetes, including at least 2
+        years with Istio.
+    expect:
+      decision: review
+      min: 8
+      confidence: medium
+      requirement_kind: contextual
+
+  - id: yoe-spelled-out-minimum-is-a-requirement
+    domain: yoe
+    # GH #264. A year count written in words is still a year count; this shape
+    # reported `not_stated` on a live posting, so the cap had nothing to compare.
+    input:
+      text: We require at least five years of SRE and on-call experience.
+    expect:
+      decision: match
+      min: 5
+      confidence: high
+      requirement_kind: required
+
+  - id: yoe-spelled-out-count-with-the-figure-in-brackets
+    domain: yoe
+    # The contract wording "six (6) years". The WORD is the count; the bracketed
+    # figure repeats it.
+    input:
+      text: >-
+        Bachelor's degree plus six (6) years of experience in Software
+        Development.
+    expect:
+      min: 6
+
+  - id: yoe-spelled-out-range
+    domain: yoe
+    input:
+      text: Requires three to five years of professional experience.
+    expect:
+      decision: match
+      min: 3
+      max: 5
+      confidence: high
+
+  - id: yoe-stated-years-this-module-cannot-read-are-flagged
+    domain: yoe
+    # GH #264's other half: `required_yoe: unknown` covers both "the posting said
+    # nothing" and "the posting said something we could not read". Only the
+    # second is a finding, and it used to be invisible.
+    input:
+      text: >-
+        Ideal candidates have 5 years under their belt of hands-on production
+        experience.
+    expect:
+      decision: review
+      min: null
+      requirement_kind: not_stated
+      review_contains: [yoe_stated_but_unparsed]
+
+  - id: yoe-a-year-count-that-is-not-about-experience-is-not-a-finding
+    domain: yoe
+    # Precision guard for the flag above: waiting periods, notice periods and
+    # contract terms count years too, and none of them is an experience bar.
+    input:
+      text: >-
+        We offer green card sponsorship to existing employees after two years.
+    expect:
+      decision: review
+      min: null
+      requirement_kind: not_stated
+      review_reasons: []
