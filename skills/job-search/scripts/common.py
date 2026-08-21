@@ -222,24 +222,206 @@ def normalize(text: str | None) -> str:
     return t.strip()
 
 
-def term_matches(term: str, normalized_text: str) -> bool:
-    """Word-boundary match for plain tokens, substring for multiword/symbol terms.
+# A profile term and the text it is matched against must share ONE alphabet, and
+# a hyphen must never be a different word than a space.
+#
+# ``normalize()`` runs on the TEXT; the term used to arrive raw, so any character
+# ``normalize()`` folds away could never match (`fp&a analyst` became `fp a
+# analyst` in the text and stayed `fp&a analyst` as the term — an include phrase
+# that can never fire). Both sides now go through ``normalize()``.
+#
+# Separators are then EQUIVALENT, not literal: ``front end``, ``front-end`` and
+# the Unicode-dash spellings ``normalize()`` already folds to ``-`` are one
+# phrase, because hyphenation is a board's formatting choice and not a different
+# occupation (issue #298: a profile listing BOTH `frontend engineer` and `front
+# end engineer` still lost every `Front-End Engineer` posting to review). They are
+# equivalent, never ELIDABLE: ``front end`` still does not match *frontend*, so a
+# profile that wants the closed spelling lists it — as the shipped example
+# profile already does for `fullstack` / `full stack`.
+#
+# This cuts BOTH ways and is meant to: the same widening makes an `exclude: data
+# scientist` rule drop `Data-Scientist`, which is the same "hyphen is formatting"
+# reading applied to the drop side.
+_TERM_SEPARATOR_RE = re.compile(r"[ \-]+")
 
-    ACCEPTED, not fixed: a short profile keyword that is also an ordinary English
-    word matches ordinary prose — ``go`` scores on "go-to-market" / "go live" the
-    same as on the language. Nothing is dropped by it (keywords only rank), and
-    expressing "Go, the language" needs a new per-keyword profile field whose
-    review surface costs more than a +4 nudge on one row's score. Tracked in
-    ``tasks/0_backlog/2026-07-31-ambiguous-short-keywords-rank-on-english-prose``.
-    ``\\b`` already handles the cases that matter: ``java`` does not match
-    *javascript*, and ``ml``/``ai``/``api`` are fine.
+
+@lru_cache(maxsize=4096)
+def _term_spec(term: str) -> tuple[str, re.Pattern | None]:
+    """Normalize one profile term and compile (once) its bounded phrase pattern.
+
+    Returns the normalized term plus its pattern, or ``(norm, None)`` when the
+    term carries no matchable content. Cached because scoring calls this for every
+    profile keyword on every posting.
     """
-    term = term.lower().strip()
-    if not term:
+    norm = normalize(term)
+    parts = [p for p in _TERM_SEPARATOR_RE.split(norm) if p]
+    if not parts:
+        return norm, None
+    # Boundaries are asserted only where the phrase's own edge is alphanumeric, so
+    # a symbol term such as ``c++`` or ``.net`` keeps matching on that edge.
+    #
+    # The right edge allows ``_INFLECTION``, the SAME allowance
+    # ``bounded_phrase_re`` makes below and for the same reason: a multiword term
+    # used to be matched as a bare SUBSTRING, which got plurals and gerunds for
+    # free, and a strict boundary would silently lose them. Measured over the
+    # corpus + test titles with the example profile, a strict right edge dropped
+    # 11 include matches (`software engineer` stopped matching *Software
+    # Engineering, Backend* / *Software Engineers, Platform*) and 2 exclude
+    # matches (`data scientist` stopped matching *Data Scientists, Ads* — a
+    # widening that LEAKS a posting the profile rejects). With the allowance the
+    # change is additive in both directions: nothing that matched before stops.
+    # `-al` (*Internal*), `-y` (*Directory*) and `-force` (*Salesforce*) are still
+    # nothing like an inflection, so the `\b` protections the old single-token
+    # path gave — `intern` is not *Internal*, `java` is not *javascript* — hold.
+    prefix = r"(?<![a-z0-9])" if parts[0][0].isalnum() else ""
+    suffix = _INFLECTION + r"(?![a-z0-9])" if parts[-1][-1].isalnum() else ""
+    core = _TERM_SEPARATOR_RE.pattern.join(re.escape(p) for p in parts)
+    return norm, re.compile(prefix + core + suffix)
+
+
+def term_matches(term: str, normalized_text: str) -> bool:
+    """Bounded, separator-insensitive phrase match for one profile term.
+
+    ``term`` is a raw profile string (an include/exclude title phrase, a keyword,
+    an AI-company signal); ``normalized_text`` has already been through
+    ``normalize()``. Both sides are normalized, separators (space/hyphen) are
+    interchangeable, and the match is bounded apart from a trailing English
+    inflection — ``java`` does not match *javascript* and ``intern`` does not
+    match *Internal*, but ``data scientist`` still matches *Data Scientists*.
+
+    A handful of terms are BOTH an ordinary English word and a technology name.
+    For those the bounded match is necessary but not sufficient: the occurrence
+    must also read as the technology (``_AMBIGUOUS_TERM_GUARDS``). See
+    ``_go_is_the_language`` for the one shipped case.
+    """
+    norm, pattern = _term_spec(term)
+    if pattern is None:
         return False
-    if re.fullmatch(r"[a-z0-9]+", term):
-        return re.search(rf"\b{re.escape(term)}\b", normalized_text) is not None
-    return term in normalized_text
+    if pattern.search(normalized_text) is None:
+        return False
+    guard = _AMBIGUOUS_TERM_GUARDS.get(norm)
+    return True if guard is None else guard(normalized_text)
+
+
+# --------------------------------------------------------------------------- #
+# Ambiguous terms: a word that is both ordinary English and a technology
+# --------------------------------------------------------------------------- #
+# Issue #279. ``go`` is the whole family in one token: a profile that means the
+# programming language scored `strong: go` on "you'll **go** through a unified
+# interview process" (a C++/Python/Java posting) and on three counts of
+# "**go**-to-market" in a payments JD — and, because the same helper backs the
+# title gate, `title include signal: go` rescued a financial-analyst posting the
+# occupation lexicon had correctly rejected.
+#
+# The fix is context, not a new profile field: an occurrence counts as the
+# technology only when the words around it read that way. Order matters, and the
+# order is deliberate — the token AFTER the word disambiguates far better than the
+# token before it, because "go <particle>" is always the English verb while "go
+# <technical noun>" is always the language:
+#
+#   1. followed by a technical noun            -> the language   ("go developer")
+#   2. followed by an English particle/idiom   -> ordinary English ("go to", "go live")
+#   3. preceded by a technology frame          -> the language   ("written in go")
+#   4. preceded by an English subject/idiom    -> ordinary English ("you'll go", "ready to go")
+#   5. another technology name within the window -> the language ("go, python, rust")
+#   6. otherwise                               -> NOT evidence
+#
+# Step 6 is the load-bearing default: silence is not evidence, so an English use
+# that nobody listed still fails to score. Steps 2 and 4 exist only to beat step 5
+# — without them "watch your code go live" would score on the neighbouring "code".
+#
+# Adding another ambiguous term (``r``, ``c``, ``swift``, ``rust``) means adding a
+# guard here; the remaining design question — letting a PROFILE declare its own
+# ambiguous terms — stays in
+# ``tasks/0_backlog/2026-07-31-ambiguous-short-keywords-rank-on-english-prose``.
+_WORD_TOKEN_RE = re.compile(r"[a-z0-9+#.]+")
+_VERSION_TOKEN_RE = re.compile(r"^\d+\.\d")
+
+# Technical nouns that, following the word, name the language outright.
+_GO_LANGUAGE_NEXT = frozenset("""
+lang golang language languages developer developers dev devs engineer engineers
+engineering programmer programmers programming code codebase codebases coding
+service services microservice microservices backend api apis sdk sdks module
+modules routine routines goroutines goroutine concurrency channels generics
+compiler runtime toolchain binary binaries template templates stdlib standard
+library libraries based application applications server servers tooling testing
+experience expertise proficiency skills
+""".split())
+
+# Particles, prepositions and idiom heads that make it the English verb.
+_GO_ENGLISH_NEXT = frozenset("""
+to live through beyond above back forward ahead out into over up down on off
+away home public global dark deep deeper wide big fast far further wrong right
+first straight viral remote hybrid unnoticed unanswered smoothly well getter
+get the a an all hand head toe no nowhere somewhere anywhere where when hunting
+""".split())
+
+# Frames that introduce a technology as their object.
+_GO_LANGUAGE_PREV = frozenset("""
+in with using use uses used write writes writing written wrote learn learns
+learning learned know knows knowledge proficiency proficient expertise
+experienced fluent fluency familiarity familiar prefer prefers preferred
+preferably plus bonus language languages stack backend engineer engineers
+developer developers sre including includes include especially primarily mainly
+mostly mastery strong solid deep as like e.g. eg ie golang python java rust
+kotlin scala ruby elixir erlang typescript javascript
+""".split()) | {
+    "written in", "rewritten in", "migrating to", "migrate to", "migrated to",
+    "moving to", "move to", "moved to", "porting to", "port to", "ported to",
+    "switch to", "switched to", "switching to", "introduction to", "new to",
+    "exposure to", "transition to", "transitioning to", "such as", "familiar with",
+}
+
+# Subjects and idioms that make it the English verb.
+_GO_ENGLISH_PREV = frozenset("""
+we you i they he she it ll let lets things that which who must can cannot cant
+could would should will wont may might never always often usually rarely no not
+everyone everything customers users people teams candidates applicants
+""".split()) | {
+    "ready to", "able to", "want to", "wants to", "wanted to", "need to",
+    "needs to", "needed to", "have to", "has to", "had to", "how to", "where to",
+    "willing to", "going to", "used to", "eager to", "try to", "trying to",
+    "tried to", "chance to", "time to", "place to", "allowed to", "let s",
+    "here we", "on the", "it a", "we ll", "you ll", "they ll",
+}
+
+# Neighbouring technology names that make an unframed occurrence credible — a
+# language list ("Go, Python, Rust") or a stack sentence, never a job word like
+# "engineer" or "experience" that every JD carries.
+_GO_CONTEXT = frozenset("""
+golang goroutines python java javascript typescript rust kotlin scala ruby php
+perl elixir erlang haskell clojure swift c++ c# node nodejs sql grpc protobuf
+kubernetes docker terraform microservices microservice backend concurrency
+compiler compiled runtime programming stdlib
+""".split())
+_GO_CONTEXT_WINDOW = 4
+
+
+def _go_is_the_language(normalized_text: str) -> bool:
+    """True when at least one ``go`` in the text reads as the Go language."""
+    tokens = [t for t in (m.group(0).strip(".")
+                          for m in _WORD_TOKEN_RE.finditer(normalized_text)) if t]
+    for i, token in enumerate(tokens):
+        if token != "go":
+            continue
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+        prev = tokens[i - 1] if i else ""
+        prev_bigram = f"{tokens[i - 2]} {prev}" if i >= 2 else ""
+        if nxt in _GO_LANGUAGE_NEXT or _VERSION_TOKEN_RE.match(nxt):
+            return True
+        if nxt in _GO_ENGLISH_NEXT:
+            continue
+        if prev in _GO_LANGUAGE_PREV or prev_bigram in _GO_LANGUAGE_PREV:
+            return True
+        if prev in _GO_ENGLISH_PREV or prev_bigram in _GO_ENGLISH_PREV:
+            continue
+        window = tokens[max(0, i - _GO_CONTEXT_WINDOW):i + _GO_CONTEXT_WINDOW + 1]
+        if any(w in _GO_CONTEXT for w in window):
+            return True
+    return False
+
+
+_AMBIGUOUS_TERM_GUARDS = {"go": _go_is_the_language}
 
 
 # A lexicon phrase is matched BOUNDED — never as a bare substring. An unanchored
@@ -258,6 +440,10 @@ def term_matches(term: str, normalized_text: str) -> bool:
 #
 # The boundary is asserted only where the phrase's own edge is alphanumeric, so a
 # phrase such as ".ics" still matches inside "invite.ics".
+#
+# ``_term_spec`` above shares this allowance, for the same reason: profile
+# include/exclude phrases were substrings too, and tightening them without it
+# would silently stop matching *Software Engineers* and *Data Scientists*.
 _INFLECTION = r"(?:s|es|d|ed|ing|er|ers)?"
 
 
