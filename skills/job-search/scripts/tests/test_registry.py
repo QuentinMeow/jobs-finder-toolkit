@@ -165,6 +165,53 @@ class EmptySelectionExplainerTests(unittest.TestCase):
         self.registry.explain_empty_selection(["robotics"])
         self.assertEqual(self.registry.poll_companies(["robotics"]), [])
 
+    # -- the hint has to reach a run that still has OTHER sources (#289) ------ #
+    def test_selection_itself_says_the_tag_was_batched_away(self):
+        """`explain_empty_selection` is only reached when the WHOLE run has no
+        tasks. With aggregators enabled the run has tasks, so zero boards were
+        polled in silence and the tag looked like it had no employers."""
+        stream = io.StringIO()
+        self.assertEqual(self.registry.poll_companies(["robotics"], stream=stream), [])
+        said = stream.getvalue()
+        self.assertIn("robotics", said)
+        self.assertIn("ai-expansion-02,ai-expansion-03", said)
+        self.assertIn("--company-batches", said)
+
+    def test_a_tag_that_selects_boards_says_nothing(self):
+        stream = io.StringIO()
+        self.assertTrue(self.registry.poll_companies(["ai-native"], stream=stream))
+        self.assertEqual(stream.getvalue(), "")
+
+    def test_an_unknown_tag_is_not_reported_as_batched(self):
+        stream = io.StringIO()
+        self.assertEqual(self.registry.poll_companies(["robotic"], stream=stream), [])
+        self.assertNotIn("--company-batches", stream.getvalue())
+
+    def test_the_named_batches_are_the_ones_that_work(self):
+        stream = io.StringIO()
+        self.registry.poll_companies(["robotics"], stream=stream)
+        batches = stream.getvalue().split("--company-batches ")[1].split()[0].split(",")
+        self.assertEqual(
+            [r["name"] for r in self.registry.poll_companies(["robotics"], batches)],
+            ["Northwind Robotics", "Larkspur Robotics"])
+
+    def test_batches_that_exclude_only_unbatched_rows_are_named_too(self):
+        """--company-batches also silently drops the UNBATCHED rows a tag matches."""
+        reg = Registry([_entry("Plain Robotics", "plain", tags=["robotics"])])
+        stream = io.StringIO()
+        self.assertEqual(
+            reg.poll_companies(["robotics"], ["ai-expansion-02"], stream=stream), [])
+        self.assertIn("Drop --company-batches", stream.getvalue())
+        self.assertIn("Drop that flag",
+                      reg.explain_empty_selection(["robotics"], ["ai-expansion-02"]))
+
+    def test_one_source_of_truth_for_the_named_batches(self):
+        line = self.registry.batched_only_line(["robotics"])
+        long_form = self.registry.explain_empty_selection(["robotics"])
+        for batch in self.registry.batched_only_selection(["robotics"])["held"]:
+            self.assertIn(batch, line)
+            self.assertIn(batch, long_form)
+
 
 class BlacklistIdentityTests(unittest.TestCase):
     def test_blacklist_applies_to_aliases(self):
