@@ -21,6 +21,7 @@ import io
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -1644,6 +1645,828 @@ class MoveContainmentUnitTests(F.GitTestCase):
             chosen.append(destination)
         self.assertEqual(len(set(chosen)), 3, chosen)
         self.assertEqual(chosen[0], trash / "agent-1")
+
+
+# ── the reflog `git worktree prune` was destroying ───────────────────────────
+#
+# THE MEASURED LOSS, with its control arm. `classify` used to send a worktree
+# whose directory is gone straight to `action="prune"` and `continue` — BEFORE
+# the reflog sweep — and `--execute` then ran `git worktree prune`, which
+# deletes `.git/worktrees/<id>/` entire. A commit made while that worktree's
+# HEAD was detached lives only in the `logs/HEAD` inside it.
+#
+# The control arm is what makes this a defect rather than a caveat: the OWNER
+# deleting the directory and running `git gc --prune=now` does NOT lose the
+# commit. Running this tool did. Both arms are asserted below.
+
+
+class GoneWorktreeReflogScenario(F.GitTestCase):
+    """A registration whose directory is gone, holding a reflog-only commit."""
+
+    def build(self) -> None:
+        self.root = self.scratch / "toolkit"
+        self.root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.root)],
+                       check=True, env=dict(os.environ))
+        F.add_toolkit_markers(self.root)
+        F.write(self.root / ".gitignore", "local/\n")
+        F.write(self.root / "seed.txt", "seed\n")
+        self.commit(self.root, "base commit")
+        F.add_origin(self, self.root)
+
+        self.worktree = self.scratch / "gone"
+        self.git(self.root, "worktree", "add", "-q", "-b", "gone-work",
+                 str(self.worktree), "main")
+        # The shape with NO common reflog behind it at all: committed on a
+        # detached HEAD, then HEAD returns to the branch.
+        self.git(self.worktree, "switch", "-q", "--detach")
+        F.write(self.worktree / "orphan.txt", "only the worktree reflog has this\n")
+        self.git(self.worktree, "add", "-A")
+        self.git(self.worktree, "commit", "-q", "-m", "detached experiment")
+        self.orphan = self.out(self.worktree, "rev-parse", "HEAD")
+        self.git(self.worktree, "switch", "-q", "gone-work")
+        self.assertEqual(
+            self.out(self.root, "for-each-ref", "--contains", self.orphan,
+                     "--format=%(refname)"), "",
+            "the fixture must hold a commit NO ref reaches")
+        shutil.rmtree(self.worktree)
+
+    def plan(self, *argv: str) -> tuple[int, dict, str]:
+        buffer = io.StringIO()
+        code = cleanup.main(["--repo-root", str(self.root), "--fetch", *argv],
+                            out=buffer)
+        produced = sorted((self.root / "local" / "workspace").glob("cleanup-*.json"))
+        self.assertTrue(produced, "no plan was written")
+        plan = json.loads(produced[-1].read_text(encoding="utf-8"))
+        return code, plan, buffer.getvalue()
+
+    def row(self, plan: dict) -> dict:
+        target = Path(self.worktree).resolve()
+        rows = [r for r in plan["worktrees"]
+                if Path(r["path"]).resolve() == target]
+        self.assertEqual(len(rows), 1, plan["worktrees"])
+        return rows[0]
+
+
+class PrunePathSweepsTheReflogTests(GoneWorktreeReflogScenario):
+    def test_the_owner_doing_it_by_hand_does_not_lose_the_commit(self) -> None:
+        # THE CONTROL ARM. Without this the test below proves only that git
+        # keeps commits alive, not that the tool was the thing destroying them.
+        self.build()
+        self.git(self.root, "gc", "--prune=now", "--quiet")
+        self.assertEqual(
+            self.git(self.root, "cat-file", "-e", self.orphan,
+                     check=False).returncode, 0,
+            "the per-worktree reflog should still be protecting this commit")
+
+    def test_execute_pins_the_reflog_only_commit_before_it_prunes(self) -> None:
+        self.build()
+        code, plan, report = self.plan("--execute")
+        self.assertIn(code, (0, 1))
+        row = self.row(plan)
+        self.assertEqual(row["action"], "prune", row["keep_reasons"])
+        self.assertTrue(row["pruned"], "the registration was not pruned")
+        backups = {e["commit"]: e["ref"] for e in row["backup_refs"]}
+        self.assertIn(self.orphan, backups,
+                      "no backup ref was written for the commit `git worktree "
+                      "prune` was about to destroy")
+        self.assertTrue(row["backups_written"])
+
+        # The registration — and its `logs/HEAD` — really is gone now.
+        self.assertNotIn(str(self.worktree.resolve()),
+                         self.out(self.root, "worktree", "list", "--porcelain"))
+        self.git(self.root, "gc", "--prune=now", "--quiet")
+        self.assertEqual(
+            self.git(self.root, "cat-file", "-e", self.orphan,
+                     check=False).returncode, 0,
+            "`--execute` destroyed a commit only the worktree reflog held")
+        self.assertEqual(
+            self.out(self.root, "rev-parse", "--verify",
+                     backups[self.orphan] + "^{commit}"), self.orphan)
+        # And the branch is un-wedged, which is the whole point of pruning.
+        self.assertEqual(
+            self.git(self.root, "switch", "gone-work", check=False).returncode, 0)
+
+    def test_a_dry_run_plans_the_pins_and_prunes_nothing(self) -> None:
+        self.build()
+        _, plan, _ = self.plan()
+        row = self.row(plan)
+        self.assertEqual(row["action"], "prune")
+        self.assertFalse(row["pruned"])
+        self.assertFalse(row["backups_written"])
+        self.assertIn(self.orphan,
+                      {e["commit"] for e in row["backup_refs"]})
+        self.assertIn(str(self.worktree.resolve()),
+                      self.out(self.root, "worktree", "list", "--porcelain"))
+
+    def test_an_unreadable_reflog_keeps_the_registration_instead(self) -> None:
+        # A killed session leaves damaged administrative data behind. The
+        # commits prune is about to destroy cannot then be enumerated, and an
+        # unanswerable probe is a reason to keep — never to proceed.
+        self.build()
+        admin = self.root / ".git" / "worktrees" / self.worktree.name
+        F.write(admin / "commondir", "GARBAGE-NOT-A-DIRECTORY")
+
+        _, plan, _ = self.plan("--execute")
+        row = self.row(plan)
+        self.assertEqual(row["action"], "keep", row)
+        self.assertIn(cleanup.KEEP_NO_REFLOG, row["keep_reasons"])
+        self.assertFalse(row["pruned"])
+        self.assertIn(str(self.worktree.resolve()),
+                      self.out(self.root, "worktree", "list", "--porcelain"),
+                      "a registration whose reflog cannot be read was pruned")
+
+    def test_one_unsweepable_entry_holds_back_every_other_prune(self) -> None:
+        # `git worktree prune` HAS NO TARGET — it sweeps every prunable
+        # registration at once. So a per-item KEEP is not a decision prune can
+        # honour, and letting it run anyway would destroy the very commits the
+        # keep exists to protect. All or nothing, and the report names the
+        # entry that stopped it.
+        self.build()
+        healthy = self.scratch / "healthy"
+        self.git(self.root, "worktree", "add", "-q", "-b", "healthy-work",
+                 str(healthy), "main")
+        shutil.rmtree(healthy)
+        admin = self.root / ".git" / "worktrees" / self.worktree.name
+        F.write(admin / "commondir", "GARBAGE-NOT-A-DIRECTORY")
+
+        _, plan, report = self.plan("--execute")
+        rows = {Path(r["path"]).name: r for r in plan["worktrees"]}
+        self.assertEqual(rows["healthy"]["action"], "keep", rows["healthy"])
+        self.assertTrue(any(cleanup.KEEP_PRUNE_HELD_BACK in reason
+                            for reason in rows["healthy"]["keep_reasons"]),
+                        rows["healthy"]["keep_reasons"])
+        listed = self.out(self.root, "worktree", "list", "--porcelain")
+        self.assertIn(str(healthy.resolve()), listed,
+                      "prune ran while one gone entry was still unswept")
+
+
+class GoneWorktreeReflogUnitTests(GoneWorktreeReflogScenario):
+    def test_the_admin_directory_is_found_by_its_gitdir_file(self) -> None:
+        self.build()
+        admin = cleanup.worktree_admin_dir(self.root, self.worktree)
+        self.assertIsNotNone(admin)
+        self.assertEqual(admin.name, self.worktree.name)
+        self.assertTrue((admin / "logs" / "HEAD").is_file(),
+                        "the reflog must still be readable after the working "
+                        "directory is gone — that is the whole premise")
+
+    def test_a_path_that_was_never_a_worktree_answers_None(self) -> None:
+        self.build()
+        self.assertIsNone(
+            cleanup.worktree_admin_dir(self.root, self.scratch / "never"))
+        self.assertIsNone(
+            cleanup.gone_worktree_reflog_commits(self.root,
+                                                 self.scratch / "never"))
+
+    def test_the_gone_reflog_lists_the_commit_the_live_one_would(self) -> None:
+        self.build()
+        enumerated = cleanup.gone_worktree_reflog_commits(self.root, self.worktree)
+        self.assertIsNotNone(enumerated)
+        self.assertIn(self.orphan, enumerated[0])
+
+    def test_hold_back_is_all_or_nothing_and_idempotent(self) -> None:
+        blocked = cleanup.WorktreeItem(path="/a", branch=None, action="keep",
+                                       gone=True)
+        healthy = cleanup.WorktreeItem(path="/b", branch=None, action="prune",
+                                       gone=True)
+        items = [blocked, healthy]
+        self.assertTrue(cleanup.hold_back_prunes(items))
+        self.assertEqual(healthy.action, "keep")
+        reasons = list(healthy.keep_reasons)
+        cleanup.hold_back_prunes(items)
+        self.assertEqual(healthy.keep_reasons, reasons,
+                         "a second pass must not restate the reason")
+
+    def test_nothing_is_held_back_when_every_gone_entry_is_sweepable(self) -> None:
+        items = [cleanup.WorktreeItem(path="/b", branch=None, action="prune",
+                                      gone=True)]
+        self.assertFalse(cleanup.hold_back_prunes(items))
+        self.assertEqual(items[0].action, "prune")
+
+    def test_a_locked_gone_entry_never_holds_anything_back(self) -> None:
+        # git declines to prune a locked registration regardless, which is
+        # exactly why it wedges its branch. It is not evidence of anything.
+        locked = cleanup.WorktreeItem(path="/a", branch=None, action="keep",
+                                      gone=True, locked=True)
+        healthy = cleanup.WorktreeItem(path="/b", branch=None, action="prune",
+                                       gone=True)
+        self.assertFalse(cleanup.hold_back_prunes([locked, healthy]))
+        self.assertEqual(healthy.action, "prune")
+
+
+# ── two branch names, one backup ref ─────────────────────────────────────────
+#
+# `slug` maps `/` to `-` and lowercases, so `feat/a` and `feat-a` derived the
+# IDENTICAL `refs/agent-trash/<run>/feat-a`, and `git update-ref` with no
+# old-value guard let the second write silently replace the first. Both plan
+# rows still said `backup_written: true`; the emitted script wrote the same ref
+# twice with different oids and then printed "Nothing was lost". Measured end to
+# end through an ordinary fetch --prune / gc sequence: one tip unrecoverable.
+
+
+class BranchBackupCollisionScenario(F.GitTestCase):
+    def build(self, *names: str) -> None:
+        self.root = self.scratch / "toolkit"
+        self.root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.root)],
+                       check=True, env=dict(os.environ))
+        F.add_toolkit_markers(self.root)
+        F.write(self.root / ".gitignore", "local/\n")
+        F.write(self.root / "seed.txt", "seed\n")
+        self.commit(self.root, "base commit")
+        F.add_origin(self, self.root)
+        self.tips = {}
+        for index, name in enumerate(names):
+            self.git(self.root, "switch", "-q", "-c", name, "main")
+            F.write(self.root / f"work-{index}.txt", f"work on {name}\n")
+            self.tips[name] = self.commit(self.root, f"{name}: the work")
+            self.git(self.root, "push", "-q", "-u", "origin", name)
+            self.git(self.root, "switch", "-q", "main")
+        # Main moves on its own FIRST. Without this the cherry-picks below
+        # rebuild each commit onto its original parent, and with the fixture's
+        # pinned author and committer dates that reproduces a byte-identical
+        # commit object — the same sha, so nothing would be at risk.
+        F.write(self.root / "main-moved.txt", "main moved on\n")
+        self.commit(self.root, "main: unrelated work")
+        for name in names:
+            # CHERRY-PICKED, not merged. This is not a detail: `merge --no-ff`
+            # would make each branch's own commit an ancestor of main, and then
+            # main itself keeps both tips alive whatever the backup refs do —
+            # so a collision that destroyed one backup would be invisible. The
+            # rebase-merge shape (`merge_stack.py` produces it after a rebase)
+            # lands the CONTENT under a new sha and leaves the original commit
+            # reachable from nothing but its own branch and its remote head.
+            self.git(self.root, "cherry-pick", self.tips[name])
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+        for name in names:
+            self.assertNotEqual(
+                self.git(self.root, "merge-base", "--is-ancestor",
+                         self.tips[name], "refs/remotes/origin/main",
+                         check=False).returncode, 0,
+                f"{name}'s own commit is on origin/main, so nothing here is at "
+                f"risk and the collision would be invisible")
+
+    def plan(self, *argv: str) -> tuple[dict, Path]:
+        buffer = io.StringIO()
+        cleanup.main(["--repo-root", str(self.root), "--fetch", *argv],
+                     out=buffer)
+        produced = sorted((self.root / "local" / "workspace").glob("cleanup-*.json"))
+        return (json.loads(produced[-1].read_text(encoding="utf-8")),
+                produced[-1].with_suffix(".sh"))
+
+
+class BranchBackupRefsNeverCollideTests(BranchBackupCollisionScenario):
+    COLLIDING = ("feat/a", "feat-a")
+
+    def test_two_names_that_slug_alike_get_two_backup_refs(self) -> None:
+        self.build(*self.COLLIDING)
+        self.assertEqual(cleanup.slug("feat/a"), cleanup.slug("feat-a"),
+                         "the fixture no longer reproduces the slug collision")
+        plan, _ = self.plan("--execute")
+        rows = {r["name"]: r for r in plan["branches"] if r["name"] in self.COLLIDING}
+        self.assertEqual(len(rows), 2, plan["branches"])
+        refs = set()
+        for name, row in rows.items():
+            with self.subTest(branch=name):
+                self.assertTrue(row["proposed"], row["keep_reasons"])
+                self.assertTrue(row["backup_written"])
+                refs.add(row["backup_ref"])
+        self.assertEqual(len(refs), 2,
+                         f"two branches share one backup ref: {refs}")
+        for name, row in rows.items():
+            with self.subTest(branch=name):
+                self.assertEqual(
+                    self.out(self.root, "rev-parse", "--verify",
+                             row["backup_ref"] + "^{commit}"),
+                    self.tips[name])
+
+    def test_both_tips_survive_the_script_a_prune_and_a_gc(self) -> None:
+        # The end-to-end loss chain, run: delete the branches through the
+        # emitted script, drop the remote heads the way GitHub does, prune the
+        # tracking refs, expire every reflog, collect. Both tips must still
+        # resolve, from their own backup refs.
+        self.build(*self.COLLIDING)
+        plan, script_path = self.plan()
+        result = subprocess.run(["sh", str(script_path)], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, check=False,
+                                env=dict(os.environ))
+        self.assertEqual(result.returncode, 0,
+                         f"{result.stdout}\n{result.stderr}")
+        for name in self.COLLIDING:
+            self.git(self.root, "push", "-q", "origin", f":{name}")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+        self.git(self.root, "reflog", "expire", "--expire=now",
+                 "--expire-unreachable=now", "--all")
+        self.git(self.root, "gc", "--prune=now", "--quiet")
+        for name, tip in self.tips.items():
+            with self.subTest(branch=name):
+                self.assertEqual(
+                    self.git(self.root, "cat-file", "-e", tip,
+                             check=False).returncode, 0,
+                    f"the tip of {name} is unrecoverable")
+
+    def test_the_emitted_script_writes_two_distinct_refs(self) -> None:
+        self.build(*self.COLLIDING)
+        _, script_path = self.plan()
+        script = script_path.read_text(encoding="utf-8")
+        marker = "git update-ref -m 'pre-delete backup' "
+        written = [line.split(marker, 1)[1].split()[0]
+                   for line in script.splitlines() if marker in line]
+        self.assertEqual(len(written), 2, written)
+        self.assertEqual(len(written), len(set(written)),
+                         f"the script writes one ref twice: {written}")
+
+
+class PinIsCompareAndSwapTests(F.GitTestCase):
+    """``_pin`` may never write over a backup ref another item is holding."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.repo = self.scratch / "repo"
+        self.repo.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)],
+                       check=True, env=dict(os.environ))
+        F.write(self.repo / "a.txt", "a\n")
+        self.first = self.commit(self.repo, "first")
+        F.write(self.repo / "b.txt", "b\n")
+        self.second = self.commit(self.repo, "second")
+
+    def test_a_first_pin_is_written_and_verified(self) -> None:
+        self.assertTrue(cleanup._pin(self.repo, "refs/agent-trash/t/x",
+                                     self.first, "RUN"))
+        self.assertEqual(
+            self.out(self.repo, "rev-parse", "refs/agent-trash/t/x"), self.first)
+
+    def test_pinning_the_same_commit_again_is_idempotent(self) -> None:
+        # `--execute` writes the ref, and then the script the owner runs writes
+        # it again. Refusing on "already exists" would turn every second run
+        # into a wall of refusals.
+        cleanup._pin(self.repo, "refs/agent-trash/t/x", self.first, "RUN")
+        self.assertTrue(cleanup._pin(self.repo, "refs/agent-trash/t/x",
+                                     self.first, "RUN"))
+
+    def test_a_different_commit_is_REFUSED_not_written_over(self) -> None:
+        cleanup._pin(self.repo, "refs/agent-trash/t/x", self.first, "RUN")
+        self.assertFalse(cleanup._pin(self.repo, "refs/agent-trash/t/x",
+                                      self.second, "RUN"),
+                         "a colliding pin reported success")
+        self.assertEqual(
+            self.out(self.repo, "rev-parse", "refs/agent-trash/t/x"), self.first,
+            "the first item's backup was overwritten")
+
+
+# ── an unanswerable probe is not a clean tree ────────────────────────────────
+
+
+class UnreadableStatusScenario(MainWorktreeScenario):
+    def corrupt_index_of(self, worktree: Path) -> None:
+        """The state a killed agent session leaves behind."""
+        admin = Path(self.out(worktree, "rev-parse", "--absolute-git-dir"))
+        (admin / "index").write_bytes(b"GARBAGE")
+        self.assertNotEqual(
+            self.git(worktree, "status", "--porcelain", check=False).returncode, 0,
+            "the fixture must make `git status` actually fail")
+
+
+class WorktreeStatusFailsClosedTests(UnreadableStatusScenario):
+    def test_a_worktree_whose_status_fails_is_kept_not_retired(self) -> None:
+        self.build_scenario(root_on="main")
+        F.write(self.retirable / "uncommitted.txt", "work with no git recovery\n")
+        self.corrupt_index_of(self.retirable)
+
+        _, plan, script = self.plan_from(self.root)
+        row = self.worktree_row(plan, self.retirable)
+        self.assertEqual(row["action"], "keep", row)
+        self.assertTrue(any(cleanup.KEEP_STATUS_UNREADABLE in reason
+                            for reason in row["keep_reasons"]),
+                        row["keep_reasons"])
+        self.assertIsNotNone(row["status_error"],
+                             "the plan must carry what the dashboard carries")
+        self.assertNotIn(self.retirable,
+                         [source for source, _ in self.emitted_moves(script)])
+
+    def test_the_untracked_file_it_was_protecting_is_still_there(self) -> None:
+        self.build_scenario(root_on="main")
+        precious = self.retirable / "uncommitted.txt"
+        F.write(precious, "work with no git recovery\n")
+        self.corrupt_index_of(self.retirable)
+        self.plan_from(self.root)
+        self.assertTrue(precious.is_file())
+
+
+# ── a plan is not a promise about the world at run time ──────────────────────
+#
+# `git branch -d` re-checks its own preconditions when it RUNS — raced with new
+# unmerged commits it refused, exit 1, branch intact. `mv` has no opinion.
+# Measured: a worktree that was clean and unlocked at plan time, then locked by
+# a live agent and given an untracked file, was moved anyway; `git worktree
+# prune` then declined the LOCKED registration, leaving the branch permanently
+# wedged while the summary said "every item in this plan completed", exit 0.
+
+
+class PostPlanMutationTests(MainWorktreeScenario):
+    def run_script(self, path: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["sh", str(path)], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True, check=False,
+                              env=dict(os.environ))
+
+    def assert_planned_to_move(self, script: str) -> None:
+        self.assertIn(self.retirable.resolve(),
+                      [s.resolve() for s, _ in self.emitted_moves(script)],
+                      "the plan must have proposed this move, or the race is "
+                      "not being tested at all")
+
+    def test_a_worktree_locked_after_the_plan_is_not_moved(self) -> None:
+        self.build_scenario(root_on="main")
+        _, _, script = self.plan_from(self.root)
+        self.assert_planned_to_move(script)
+
+        F.write(self.retirable / "URGENT.txt", "LIVE UNCOMMITTED WORK\n")
+        self.git(self.root, "worktree", "lock", "--reason",
+                 "claude agent agent-99 (pid 1234)", str(self.retirable))
+
+        result = self.run_script(self.latest_script_path())
+        self.assertEqual(result.returncode, 1,
+                         "a refusal must never be reported as success")
+        self.assertIn("REFUSED", result.stdout + result.stderr)
+        self.assertTrue(self.retirable.is_dir(),
+                        "a locked, dirty worktree was moved out from under a "
+                        "live session")
+        self.assertTrue((self.retirable / "URGENT.txt").is_file())
+        # And the registration is not wedged: it still points at a directory
+        # that exists, which is the second half of the measured damage.
+        listed = self.out(self.root, "worktree", "list", "--porcelain")
+        self.assertIn(str(self.retirable), listed)
+        self.assertNotIn("prunable", listed)
+
+    def test_a_worktree_dirtied_after_the_plan_is_not_moved(self) -> None:
+        self.build_scenario(root_on="main")
+        _, _, script = self.plan_from(self.root)
+        self.assert_planned_to_move(script)
+        F.write(self.retirable / "late.txt", "arrived after the plan\n")
+
+        result = self.run_script(self.latest_script_path())
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue((self.retirable / "late.txt").is_file())
+
+    def test_a_worktree_whose_status_breaks_after_the_plan_is_not_moved(self) -> None:
+        # Unreadable is refused exactly like dirty, at run time as at plan time.
+        self.build_scenario(root_on="main")
+        _, _, script = self.plan_from(self.root)
+        self.assert_planned_to_move(script)
+        admin = Path(self.out(self.retirable, "rev-parse", "--absolute-git-dir"))
+        (admin / "index").write_bytes(b"GARBAGE")
+
+        result = self.run_script(self.latest_script_path())
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue(self.retirable.is_dir())
+
+    def test_an_untouched_worktree_in_the_same_run_still_moves(self) -> None:
+        # The re-check must not become a reason nothing ever happens: one item
+        # refusing is a finding about THAT item.
+        self.build_scenario(root_on="main")
+        other = self.scratch / "linked" / "second"
+        self.git(self.root, "worktree", "add", "-q", "-b", "second-landed",
+                 str(other), "main")
+        _, _, script = self.plan_from(self.root)
+        self.git(self.root, "worktree", "lock", "--reason", "held",
+                 str(self.retirable))
+
+        result = self.run_script(self.latest_script_path())
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue(self.retirable.is_dir(), "the locked one was moved")
+        self.assertFalse(other.is_dir(), "the untouched one was not moved")
+
+
+# ── "no branch" is not "no evidence" ─────────────────────────────────────────
+#
+# Every Claude Code harness worktree is detached BY CONSTRUCTION, so an
+# unconditional `detached HEAD — no branch to judge it by` keep fired on 100% of
+# them, forever: `--include-harness-worktrees` waived the harness rule and
+# landed on this one, which no flag could waive. The polarity was backwards —
+# git refuses to delete a branch a worktree has checked out, so a worktree
+# sitting detached at a commit the base already contains is the state that makes
+# cleanup POSSIBLE.
+#
+# THE COUNTER-EVIDENCE THAT SHAPES THE RULE (claude-code#74719, a real data-loss
+# report): a detached-HEAD worktree holding an UNPUSHED commit was reaped on age
+# alone. Age is not consulted here at all, and containment must be proven
+# positively against the FETCHED base before anything is proposed.
+
+
+class DetachedWorktreeScenario(MainWorktreeScenario):
+    def add_detached(self, name: str, at: str) -> Path:
+        path = self.scratch / "linked" / name
+        self.git(self.root, "worktree", "add", "-q", "--detach", str(path), at)
+        return path
+
+
+class DetachedWorktreeEvidenceTests(DetachedWorktreeScenario):
+    def test_detached_at_a_commit_the_base_contains_is_proposed(self) -> None:
+        self.build_scenario(root_on="main")
+        detached = self.add_detached("agent-detached", "refs/remotes/origin/main")
+
+        _, plan, script = self.plan_from(self.root)
+        row = self.worktree_row(plan, detached)
+        self.assertEqual(row["action"], "retire", row["keep_reasons"])
+        self.assertTrue(row["detached"])
+        self.assertTrue(any("already contains" in note for note in row["notes"]),
+                        row["notes"])
+        self.assertIn(detached.resolve(),
+                      [s.resolve() for s, _ in self.emitted_moves(script)])
+
+    def test_detached_holding_an_unpushed_commit_is_KEPT(self) -> None:
+        # THE DATA-LOSS CASE. This is the one that must never regress: the
+        # worktree is clean, unlocked and idle, and every signal except
+        # containment says "finished".
+        self.build_scenario(root_on="main")
+        detached = self.add_detached("agent-unpushed", "refs/remotes/origin/main")
+        F.write(detached / "unpushed.txt", "work that exists nowhere else\n")
+        self.git(detached, "add", "-A")
+        self.git(detached, "commit", "-q", "-m", "unpushed experiment")
+        head = self.out(detached, "rev-parse", "HEAD")
+        self.assertEqual(self.out(detached, "status", "--porcelain"), "",
+                         "the worktree must be CLEAN, or this tests the dirty "
+                         "rule instead of the containment rule")
+
+        _, plan, script = self.plan_from(self.root)
+        row = self.worktree_row(plan, detached)
+        self.assertEqual(row["action"], "keep", row)
+        self.assertIn(cleanup.KEEP_DETACHED_UNCONTAINED, row["keep_reasons"])
+        self.assertNotIn(detached.resolve(),
+                         [s.resolve() for s, _ in self.emitted_moves(script)])
+        # Nothing anywhere in this run may reach that commit's directory.
+        self.assertTrue((detached / "unpushed.txt").is_file())
+        self.assertEqual(self.out(detached, "rev-parse", "HEAD"), head)
+
+    def test_the_harness_flag_does_not_waive_the_containment_rule(self) -> None:
+        self.build_scenario(root_on="main")
+        harness = self.root / ".claude" / "worktrees" / "agent-1"
+        harness.parent.mkdir(parents=True, exist_ok=True)
+        self.git(self.root, "worktree", "add", "-q", "--detach", str(harness),
+                 "refs/remotes/origin/main")
+        F.write(harness / "unpushed.txt", "work that exists nowhere else\n")
+        self.git(harness, "add", "-A")
+        self.git(harness, "commit", "-q", "-m", "unpushed experiment")
+
+        _, plan, _ = self.plan_from(self.root, "--include-harness-worktrees")
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "keep", row)
+        self.assertIn(cleanup.KEEP_DETACHED_UNCONTAINED, row["keep_reasons"])
+
+    def test_a_detached_harness_worktree_is_proposed_with_the_flag(self) -> None:
+        # The owner's original complaint, in one assertion: with the flag, a
+        # finished harness worktree is finally proposed rather than kept
+        # forever by a rule no flag could reach.
+        self.build_scenario(root_on="main")
+        harness = self.root / ".claude" / "worktrees" / "agent-1"
+        harness.parent.mkdir(parents=True, exist_ok=True)
+        self.git(self.root, "worktree", "add", "-q", "--detach", str(harness),
+                 "refs/remotes/origin/main")
+
+        _, kept, _ = self.plan_from(self.root)
+        self.assertEqual(self.worktree_row(kept, harness)["action"], "keep",
+                         "the harness rule itself must still hold by default")
+        _, plan, _ = self.plan_from(self.root, "--include-harness-worktrees")
+        self.assertEqual(self.worktree_row(plan, harness)["action"], "retire",
+                         self.worktree_row(plan, harness)["keep_reasons"])
+
+    def test_a_dirty_detached_worktree_is_kept(self) -> None:
+        self.build_scenario(root_on="main")
+        detached = self.add_detached("agent-dirty", "refs/remotes/origin/main")
+        F.write(detached / "scratch.md", "untracked, no git recovery story\n")
+        _, plan, _ = self.plan_from(self.root)
+        row = self.worktree_row(plan, detached)
+        self.assertEqual(row["action"], "keep", row)
+        self.assertTrue(any(cleanup.KEEP_DIRTY in reason
+                            for reason in row["keep_reasons"]),
+                        row["keep_reasons"])
+
+    def test_a_locked_detached_worktree_is_kept(self) -> None:
+        self.build_scenario(root_on="main")
+        detached = self.add_detached("agent-locked", "refs/remotes/origin/main")
+        self.git(self.root, "worktree", "lock", "--reason", "a live session",
+                 str(detached))
+        _, plan, _ = self.plan_from(self.root)
+        row = self.worktree_row(plan, detached)
+        self.assertEqual(row["action"], "keep", row)
+        self.assertIn(cleanup.KEEP_LOCKED, row["keep_reasons"])
+
+    def test_a_stale_run_never_proposes_a_detached_worktree(self) -> None:
+        # Containment is evidence only when it was judged against a FETCHED
+        # base, so without --fetch the old refusal stands.
+        self.build_scenario(root_on="main")
+        detached = self.add_detached("agent-detached", "refs/remotes/origin/main")
+        buffer = io.StringIO()
+        cleanup.main(["--repo-root", str(self.root)], out=buffer)
+        produced = sorted((self.root / "local" / "workspace").glob("cleanup-*.json"))
+        plan = json.loads(produced[-1].read_text(encoding="utf-8"))
+        row = self.worktree_row(plan, detached)
+        self.assertEqual(row["action"], "keep", row)
+        self.assertTrue(any("--fetch" in reason for reason in row["keep_reasons"]),
+                        row["keep_reasons"])
+
+
+# ── a conflict is an answer, and the answer is "not contained" ───────────────
+#
+# `git merge-tree --write-tree` exits 1 for a CONFLICTING merge and still prints
+# a tree. For every conflict class git resolves by keeping OUR side verbatim —
+# a file git auto-detects as binary (any NUL byte), a path carrying `-merge` in
+# `.gitattributes`, a submodule pointer — that printed tree IS the base tree, so
+# "result == base tree" reads CONTAINED for a branch whose content exists
+# nowhere in the base. This repository tracks 22 files with NUL bytes.
+
+
+class ConflictIsNotContainmentScenario(F.GitTestCase):
+    def build(self) -> None:
+        self.root = self.scratch / "toolkit"
+        self.root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.root)],
+                       check=True, env=dict(os.environ))
+        F.add_toolkit_markers(self.root)
+        F.write(self.root / ".gitignore", "local/\n")
+        F.write(self.root / "seed.txt", "seed\n")
+        self.commit(self.root, "base commit")
+        F.add_origin(self, self.root)
+
+    def plan(self) -> dict:
+        buffer = io.StringIO()
+        cleanup.main(["--repo-root", str(self.root), "--fetch"], out=buffer)
+        produced = sorted((self.root / "local" / "workspace").glob("cleanup-*.json"))
+        return json.loads(produced[-1].read_text(encoding="utf-8"))
+
+    def row(self, plan: dict, name: str) -> dict:
+        rows = {r["name"]: r for r in plan["branches"]}
+        self.assertIn(name, rows)
+        return rows[name]
+
+
+class BinaryAndSubmoduleAreNotContainedTests(ConflictIsNotContainmentScenario):
+    def test_a_conflicting_binary_file_is_not_proposed(self) -> None:
+        self.build()
+        (self.root / "blob.bin").write_bytes(b"\x00base payload\x00")
+        self.commit(self.root, "base: add a binary file")
+        self.git(self.root, "push", "-q", "origin", "main")
+
+        self.git(self.root, "switch", "-q", "-c", "binwork", "main")
+        (self.root / "blob.bin").write_bytes(b"\x00WORK THAT EXISTS NOWHERE ELSE\x00")
+        self.commit(self.root, "binwork: regenerate the binary")
+        self.git(self.root, "push", "-q", "-u", "origin", "binwork")
+        self.git(self.root, "switch", "-q", "main")
+        (self.root / "blob.bin").write_bytes(b"\x00main moved on\x00")
+        self.commit(self.root, "main: regenerate it differently")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        contained = cleanup.Containment(self.root, "refs/remotes/origin/main")
+        try:
+            self.assertIs(contained.contains("refs/heads/binwork"), False,
+                          "a merge-tree CONFLICT read as containment")
+        finally:
+            contained.close()
+        row = self.row(self.plan(), "binwork")
+        self.assertFalse(row["proposed"],
+                         "proposed a branch whose content is nowhere in the base")
+
+    def test_a_submodule_pointer_the_base_lacks_is_not_proposed(self) -> None:
+        self.build()
+        inner = self.scratch / "inner.git"
+        subprocess.run(["git", "init", "-q", "-b", "main", str(inner)],
+                       check=True, env=dict(os.environ))
+        F.write(inner / "one.txt", "one\n")
+        self.commit(inner, "inner: one")
+        self.git(self.root, "-c", "protocol.file.allow=always", "submodule",
+                 "add", "-q", str(inner), "sub")
+        self.commit(self.root, "base: add the submodule")
+        self.git(self.root, "push", "-q", "origin", "main")
+
+        base = self.out(inner, "rev-parse", "HEAD")
+        self.git(inner, "switch", "-q", "-c", "side-a", base)
+        F.write(inner / "a.txt", "a\n")
+        side_a = self.commit(inner, "inner: side a")
+        self.git(inner, "switch", "-q", "-c", "side-b", base)
+        F.write(inner / "b.txt", "b\n")
+        side_b = self.commit(inner, "inner: side b")
+        self.assertNotEqual(
+            self.git(inner, "merge-base", "--is-ancestor", side_a, side_b,
+                     check=False).returncode, 0,
+            "the two submodule pointers must DIVERGE — git fast-forwards a "
+            "pointer that is an ancestor of the other side's, and a linear "
+            "advance is genuinely contained")
+
+        self.git(self.root, "switch", "-q", "-c", "subwork", "main")
+        self.git(self.root / "sub", "fetch", "-q", "origin")
+        self.git(self.root / "sub", "checkout", "-q", side_a)
+        self.commit(self.root, "subwork: advance the submodule")
+        self.git(self.root, "push", "-q", "-u", "origin", "subwork")
+        self.git(self.root, "switch", "-q", "main")
+        self.git(self.root / "sub", "fetch", "-q", "origin")
+        self.git(self.root / "sub", "checkout", "-q", side_b)
+        self.commit(self.root, "main: advance the submodule elsewhere")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        contained = cleanup.Containment(self.root, "refs/remotes/origin/main")
+        try:
+            self.assertIs(contained.contains("refs/heads/subwork"), False)
+        finally:
+            contained.close()
+        row = self.row(self.plan(), "subwork")
+        self.assertFalse(row["proposed"], row)
+
+
+class WhitespaceIsNotContainmentTests(F.SharedShapesTestCase):
+    def test_an_indentation_only_variant_never_reads_as_contained(self) -> None:
+        # `git patch-id` calls an 8-space and a 2-space Python body IDENTICAL.
+        # In a tree where indentation is semantic that is a data-loss answer, so
+        # no patch-id probe may sit anywhere near this decision.
+        contained = cleanup.Containment(self.root, "refs/heads/main")
+        try:
+            self.assertIs(contained.contains("refs/heads/ws-variant"), False)
+        finally:
+            contained.close()
+
+
+# ── the verbs this tool may never use, wherever they could appear ────────────
+
+
+class ForbiddenVerbAuditTests(MainWorktreeScenario):
+    """No prohibited verb in the SOURCE, the INTERFACE or any EMITTED script.
+
+    ``git worktree remove``, ``git branch -D`` and ``--force`` are prohibited by
+    ``docs/handbook/post-merge-cutover.md``, and the prohibition is worth
+    exactly as much as the test that reads every path they could appear on.
+    ``git update-ref -d <ref> <oldvalue>`` is NOT one of them and is deliberately
+    distinguished here: it is a compare-and-swap that git refuses unless the ref
+    still holds the exact value the plan proved, which is a CHECK rather than the
+    absence of one.
+    """
+
+    FORBIDDEN = ("git branch -D", "branch -D", "--force", "worktree remove",
+                 "git clean", "rm -rf", "rm -r ", "reset --hard", "-f -f",
+                 "update-ref -d refs/remotes")
+
+    def executable_lines(self, script: str) -> str:
+        return "\n".join(line for line in script.splitlines()
+                         if line.strip() and not line.strip().startswith("#"))
+
+    def test_no_emitted_script_carries_a_prohibited_verb(self) -> None:
+        # Every shape at once, so this is not a test about one lucky fixture.
+        self.build_scenario(root_on="main")
+        harness = self.root / ".claude" / "worktrees" / "agent-1"
+        harness.parent.mkdir(parents=True, exist_ok=True)
+        self.git(self.root, "worktree", "add", "-q", "--detach", str(harness),
+                 "refs/remotes/origin/main")
+        self.git(self.root, "branch", "--set-upstream-to=origin/codex/landed",
+                 "codex/landed")
+        self.git(self.root, "branch", "-f", "codex/landed", "main")   # forces a swap
+        gone = self.scratch / "linked" / "gone"
+        self.git(self.root, "worktree", "add", "-q", "-b", "gone-work",
+                 str(gone), "main")
+        shutil.rmtree(gone)
+
+        for argv in ((), ("--include-harness-worktrees",)):
+            with self.subTest(argv=argv):
+                _, _, script = self.plan_from(self.root, *argv)
+                runnable = self.executable_lines(script)
+                for verb in self.FORBIDDEN:
+                    self.assertNotIn(verb, runnable,
+                                     f"the emitted script runs `{verb}`")
+
+    def test_the_source_carries_no_prohibited_verb_either(self) -> None:
+        source = (_WORKSPACE_DIR / "cleanup.py").read_text(encoding="utf-8")
+        for verb in ("worktree\", \"remove", "branch\", \"-D", '"--force"',
+                     '"-D"', '"-f"'):
+            with self.subTest(verb=verb):
+                self.assertNotIn(verb, source)
+
+    def test_the_swap_is_a_check_and_names_its_expected_value(self) -> None:
+        # A compare-and-swap with no old value would be strictly more forcing
+        # than the flag that is banned. It is only admissible BECAUSE it carries
+        # one, so the emitter is held to that shape here.
+        self.build_scenario(root_on="main")
+        # `-d` judges against the branch's own upstream when one resolves, so a
+        # branch ahead of a LIVE `origin/<branch>` is the shape it refuses.
+        self.git(self.root, "branch", "--set-upstream-to=origin/codex/landed",
+                 "codex/landed")
+        self.git(self.root, "branch", "-f", "codex/landed", "main")
+        _, plan, script = self.plan_from(self.root)
+        row = {r["name"]: r for r in plan["branches"]}["codex/landed"]
+        self.assertEqual(row["delete_method"], cleanup.DELETE_CAS,
+                         row["keep_reasons"] + row["notes"])
+        for line in self.executable_lines(script).splitlines():
+            if "git update-ref -d" in line:
+                parts = shlex.split(line.strip().removesuffix("; then"))
+                while parts and parts[0] in ("if", "elif", "!"):
+                    parts.pop(0)
+                self.assertEqual(len(parts), 5,
+                                 f"a swap with no expected value: {line}")
+                self.assertEqual(parts[4], row["tip"])
+                break
+        else:
+            self.fail("no compare-and-swap deletion was emitted")
 
 
 if __name__ == "__main__":

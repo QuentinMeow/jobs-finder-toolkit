@@ -873,13 +873,15 @@ def deletion_method(root: Path, item: "BranchItem", *,
     if containment.contains(item.ref) is not True:
         return None, refusal
     return DELETE_CAS, (
-        f"`git branch -d` would refuse this branch, and that refusal is about a "
-        f"different ref: {refusal}. This planner's own probe says the fetched "
-        f"base contains its entire content, so the deletion is emitted as "
+        f"`git branch -d` would refuse this branch, and its refusal is about a "
+        f"ref this planner never tested. The fetched base contains the branch's "
+        f"entire content, so the deletion is emitted as "
         f"`git update-ref -d {item.ref} {item.tip[:12]}` — a compare-and-swap "
-        f"that git refuses if the branch has moved since this plan was written. "
-        f"No -D, no --force, no unset upstream, no deleted tracking ref; the "
-        f"tip stays pinned to its refs/agent-trash ref either way")
+        f"git refuses if the branch has moved since this plan was written, plus "
+        f"an explicit check that no worktree has it checked out. No -D, no "
+        f"--force, no unset upstream, no deleted tracking ref, and the tip stays "
+        f"pinned to its refs/agent-trash ref either way. "
+        f"What `-d` said, verbatim: {refusal}")
 
 
 # ── the main working tree, and what may never be moved ───────────────────────
@@ -2256,6 +2258,20 @@ def build_plan(*, run_id: str, root: Path, repo: status.Repository,
     }
 
 
+def _bullet(text: str, out, indent: str = "          ") -> None:
+    """One report bullet, WRAPPED.
+
+    These reasons are ARGUMENTS, not labels — a superseded `git branch -d`
+    verdict, quoted verbatim so the reader can weigh it, runs to several hundred
+    characters — and a report whose lines never end is a report nobody reads to
+    the end of.
+    """
+    wrapped = _wrap(text, width=76) or [""]
+    print(f"{indent}· {wrapped[0]}", file=out)
+    for line in wrapped[1:]:
+        print(f"{indent}  {line}", file=out)
+
+
 def print_report(plan: dict, branches: Sequence[BranchItem],
                  worktrees: Sequence[WorktreeItem], out) -> None:
     mode = ("non-destructive steps performed" if plan["executed_non_destructive"]
@@ -2283,9 +2299,9 @@ def print_report(plan: dict, branches: Sequence[BranchItem],
         print(f"  {verdict:<7} {item.name:<{width}}  {item.merged:<8} "
               f"{item.state}", file=out)
         for reason in item.keep_reasons:
-            print(f"          · {reason}", file=out)
+            _bullet(reason, out)
         for note in item.notes:
-            print(f"          · note: {note}", file=out)
+            _bullet(f"note: {note}", out)
         if item.proposed and item.backup_written:
             print(f"          · backup ref {item.backup_ref}", file=out)
         if item.proposed and item.delete_method != DELETE_BRANCH_D:
@@ -2319,9 +2335,9 @@ def print_report(plan: dict, branches: Sequence[BranchItem],
             for ref, oid in item.backups:
                 print(f"          ·   {oid[:8]}  {ref}", file=out)
         for reason in item.keep_reasons:
-            print(f"          · {reason}", file=out)
+            _bullet(reason, out)
         for note in item.notes:
-            print(f"          · note: {note}", file=out)
+            _bullet(f"note: {note}", out)
 
     if plan["private_overlay"]:
         counts = plan["private_overlay"]

@@ -4114,3 +4114,9 @@
   files: 2
   digest: sha256:8d3d081c2a26fa9a
   finding: 'Workspace cleanup planner and its test suite. Backup refs are now written before a gone worktree registration is pruned, carry the tip sha so two branch names cannot share one ref, and are written compare-and-swap; an unreadable `git status` and an uncontained detached HEAD now keep; a branch `git branch -d` structurally cannot accept is retired by a compare-and-swap deletion behind this tool own containment proof; the emitted script re-measures its preconditions at run time. Public tooling, git and shell semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: b217f119
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 6
+  digest: sha256:1fd11c39aee427d7
+  finding: 'Workspace cleanup tests plus two process files. New test coverage for backup-ref collisions, the prune-path reflog, post-plan mutation, an unreadable git status, conflicting binary and submodule content, and the detached-worktree matrix; the run-time-recheck backlog task moved to in-review with its verification; one new backlog task filed for a merge-tree conflict reading as merged in the dashboard. Public tooling, git semantics and synthetic fixture data only; no real identity, employer, application, or dated job-hunt content.'
