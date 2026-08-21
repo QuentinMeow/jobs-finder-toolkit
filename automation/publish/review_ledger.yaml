@@ -3833,3 +3833,14 @@
   files: 70
   digest: sha256:a981515e7f85eb6d
   finding: 'Merge of origin/main into the workspace-lifecycle branch. Covered files arrive byte-identical from origin/main where they are already published. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 1baf9bb5
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:fa7f3484c1af5cd9
+  finding: 'Reviewed the rewritten `term_matches` in the job-search common helpers:
+    separator-equivalent bounded phrase matching and a context guard for the
+    ambiguous `go` keyword. Code, comments and word lists only — the examples are
+    generic occupations and technology names taken from the public issue text, with
+    no company named. No real identity, employer, school, salary, private item name,
+    or dated personal job-hunt content.'
