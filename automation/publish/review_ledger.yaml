@@ -3836,6 +3836,29 @@
 - base: 1baf9bb5
   reviewed_by: agent
   date: 2026-08-20
+  files: 1
+  digest: sha256:d480f8cc83eedb20
+  finding: 'Reviewed the main-working-tree guard added to automation/workspace/cleanup.py.
+    Timeless tooling only: git plumbing (rev-parse --git-dir / --git-common-dir,
+    worktree list --porcelain), path-containment predicates, and prose about why a
+    mv into your own subdirectory is refused. The only concrete paths named are the
+    generic local/workspace/trash-<run id> destination and the .claude/worktrees
+    harness marker that was already public. No real identity, employer, school,
+    date, salary, private item name, or dated personal job-hunt content.'
+- base: bb2659e0
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:6579eea707a9deba
+  finding: 'Reviewed the main-working-tree regression tests plus the emitter''s
+    comment sanitising. Fixture-only content: a throwaway git repo built under a
+    temp directory, the fictional branch names codex/landed, vantage-work,
+    linked-landed, outer-work and inner-work, and a deliberately hostile path used
+    to prove a newline cannot escape a shell comment. No real identity, employer,
+    school, date, salary, private item name, or dated personal job-hunt content.'
+- base: 1baf9bb5
+  reviewed_by: agent
+  date: 2026-08-20
   files: 3
   digest: sha256:eb2632eb5f4f0df8
   finding: 'Reviewed the source-quality gate''s new non-job and title/body-conflict
@@ -3866,3 +3889,9 @@
     public GitHub issues, public file paths, and the fictional example corpus only.
     No real identity, employer, school, salary, private item name, or dated personal
     job-hunt content.'
+- base: 038af18b
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:26c49051c2445904
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'

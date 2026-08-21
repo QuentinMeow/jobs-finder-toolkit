@@ -32,6 +32,20 @@ reason is printed):
    ``refs/agent-trash/<ts>/<branch>`` makes the tip reachable, so it survives
    even ``git gc --prune=now``.
 
+WHAT MAKES A WORKTREE RETIRABLE — and the one thing that never is. The MAIN
+working tree (the directory that physically contains ``.git``) is not a
+worktree this tool may propose, under any condition, on any invocation. It was
+proposed once: the guard compared each worktree against the planner's OWN root,
+and run from a linked worktree that root IS the linked worktree, so the main
+working tree compared unequal and looked retirable. The emitted script's first
+destructive line was a ``mv`` of the repository root into a trash directory
+nested inside one of its own linked worktrees. The guard is now git's own
+definition — ``--git-dir`` equals ``--git-common-dir`` in the main working tree
+and in no other — asked of each worktree, so it holds from anywhere; it is
+unioned with two more signals; an unanswerable probe keeps; and the emitter
+re-checks it independently, because ``build_script`` is the only place a
+destructive line is ever written and that is where "impossible" has to be true.
+
 Exit codes:
     0  fresh remote knowledge and every proposal cleared every precondition
     1  readable, but stale (no --fetch) or something needs judgement
@@ -47,6 +61,7 @@ import argparse
 import dataclasses
 import datetime
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -108,9 +123,34 @@ KEEP_LOCKED_GONE = (
     "while the lock stands, so it wedges its branch indefinitely. Clearing it "
     "needs a doubled `-f -f` this tool will never pass: run "
     "`git worktree unlock <path>` yourself, then re-run this planner")
+KEEP_MAIN = (
+    "this is the MAIN working tree — the directory that physically contains "
+    "`.git` and every other worktree's administrative data. Nothing may ever "
+    "propose moving it")
+KEEP_MAIN_UNPROVEN = (
+    "git could not say whether this is the main working tree, and an "
+    "unprovable answer is treated as yes")
+KEEP_RUNNING_HERE = (
+    "the planner is running from here — its own script, plan and trash "
+    "directory all live inside it. Re-run from another worktree to retire it")
+KEEP_CONTAINS_WORKTREE = (
+    "another registered worktree lives inside it — moving this directory would "
+    "silently relocate live work git still believes is at the old path")
+KEEP_SELF_NESTING = (
+    "the only destination this run can offer is inside the directory being "
+    "moved, and `mv` into your own subdirectory is not a move")
+KEEP_UNSAFE_PATH = (
+    "the path holds a newline or control character, which cannot be written "
+    "into a shell comment without becoming a command")
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
+# A path this tool will not describe in an emitted script. `git worktree list
+# --porcelain -z` faithfully carries a newline inside a path, and
+# `# worktree <path>` would then end its comment early and leave the tail of
+# the path standing as a COMMAND. shlex.quote protects the `mv`; it does not
+# protect the comment above it.
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass(frozen=True)
@@ -276,6 +316,198 @@ def unpushed_commits(repo: Path, ref: str) -> int:
         return -1
 
 
+# ── the main working tree, and what may never be moved ───────────────────────
+#
+# WHY NOT `os.getcwd()`, AND WHY NOT LIST ORDER. The bug this section exists for
+# compared each worktree against the planner's own repository root. Run from a
+# linked worktree — which is how agents run everything here — that root IS the
+# linked worktree, so the MAIN working tree compared unequal to it and passed
+# every "safe to retire" precondition. The fix cannot be a better spelling of
+# "where am I": the question is not where the planner is, it is which directory
+# owns the repository. Git answers that directly, and the answer does not
+# depend on the asker.
+#
+# SHOULD THE WORKTREE THE PLANNER IS RUNNING INSIDE EVER BE PROPOSED?
+# No — and this is a separate decision from the main-worktree rule, so it gets
+# its own argument rather than inheriting one.
+#   FOR proposing it: it is just a linked worktree like any other; a merged,
+#   clean, unlocked worktree is exactly what this tool exists to retire, and
+#   refusing it means an agent worktree can never be cleaned up by a planner an
+#   agent runs — arguably the most common case there is.
+#   AGAINST: the planner writes its own outputs INTO this root
+#   (`local/workspace/cleanup-<id>.sh`, the matching `.json`, and the trash
+#   directory every move lands in). Retiring it means the emitted script moves
+#   the directory that contains the script — `sh local/workspace/cleanup-x.sh`
+#   loses its own file mid-run, and `set -eu` then leaves a HALF-APPLIED plan,
+#   which is the one outcome a tool whose whole justification is "safer than
+#   doing it by hand" may not produce. The trash directory is derived from this
+#   root too, so retiring it is precisely the self-nesting `mv` below. And the
+#   owner's shell is very likely sitting inside it.
+#   DECIDED: keep it. The asymmetry settles it — the cost of over-keeping is one
+#   directory surviving until a run started from somewhere else, fully
+#   recoverable and visible in the report; the cost of under-keeping is a
+#   truncated destructive script. Note this rule is WEAKER than the
+#   main-worktree rule on purpose: the main working tree is unretirable on every
+#   invocation, while this one only says "not by this invocation", so the tool
+#   does not become a no-op for agent worktrees — run it from the main working
+#   tree and they are proposable again.
+
+
+def _normalise(path: Path) -> Path:
+    """Absolute and symlink-free, or absolute at least. Never raises."""
+    try:
+        return path.resolve()
+    except OSError:
+        return Path(os.path.abspath(str(path)))
+
+
+def _rev_parse_paths(repo: Path, *flags: str) -> list[Path] | None:
+    """Absolute answers to ``git rev-parse`` path flags, or None if git balked.
+
+    ``None`` is NOT "no" — it is "unanswerable", and every caller here treats it
+    as a reason to keep. A predicate that quietly returns False when git fails
+    is how a directory nobody could classify becomes a directory something
+    proposes to move.
+    """
+    if not repo.is_dir():
+        return None
+    result = _git(repo, "rev-parse", "--path-format=absolute", *flags)
+    if result.returncode:
+        # Older wording. The answers may come back relative, which the loop
+        # below resolves against `repo` — `git -C repo` made it the cwd, and a
+        # bare `.git` is exactly what the MAIN working tree prints.
+        result = _git(repo, "rev-parse", *flags)
+    if result.returncode:
+        return None
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if len(lines) != len(flags):
+        return None
+    answers: list[Path] = []
+    for line in lines:
+        path = Path(line)
+        if not path.is_absolute():
+            path = repo / path
+        answers.append(_normalise(path))
+    return answers
+
+
+def is_main_worktree(path: Path) -> bool | None:
+    """Git's own definition: ``--git-dir`` and ``--git-common-dir`` are equal.
+
+    They are equal in the MAIN working tree and in no other, which makes this
+    the one test that still holds when the planner runs FROM a linked worktree —
+    the configuration that produced the incident. Returns ``None`` when git
+    could not answer; callers keep on ``None``.
+    """
+    answered = _rev_parse_paths(path, "--git-dir", "--git-common-dir")
+    if answered is None:
+        return None
+    git_dir, common_dir = answered
+    return git_dir == common_dir
+
+
+def main_worktree_verdicts(
+        worktrees: Sequence[status.Worktree]) -> dict[Path, bool | None]:
+    """``{path: True | False | None}`` — asked once, of each worktree."""
+    return {_normalise(worktree.path): is_main_worktree(worktree.path)
+            for worktree in worktrees}
+
+
+def main_worktree_paths(root: Path,
+                        verdicts: dict[Path, bool | None]) -> set[Path]:
+    """Every path that could be the main working tree — a UNION, on purpose.
+
+    The two errors do not cost the same. Keeping a linked worktree that was
+    retirable wastes a directory until the next run and prints why. Retiring the
+    main working tree moves the directory that physically contains ``.git``,
+    every linked worktree's administrative data, and — when the planner runs
+    from a linked worktree — the destination it is being moved into. So any one
+    signal is enough:
+
+    1. ``--git-dir`` == ``--git-common-dir``, per worktree (``verdicts``);
+    2. the PARENT of ``--git-common-dir`` — ``<main>/.git`` for an ordinary
+       checkout. This answers even for a worktree whose own directory cannot be
+       queried, so signal 1 having failed does not leave the set empty;
+    3. the FIRST record of ``git worktree list --porcelain``, which git
+       documents as the main worktree. Corroboration only — nothing here rests
+       on ordering, which is why it is third and not first.
+    """
+    found = {path for path, verdict in verdicts.items() if verdict}
+
+    answered = _rev_parse_paths(root, "--git-common-dir")
+    if answered:
+        found.add(_normalise(answered[0].parent))
+
+    listed = _git(root, "worktree", "list", "--porcelain")
+    if listed.returncode == 0:
+        for line in listed.stdout.splitlines():
+            if line.startswith("worktree "):
+                found.add(_normalise(Path(line[len("worktree "):].strip())))
+                break
+    return found
+
+
+def _is_inside(inner: Path, outer: Path) -> bool:
+    """True when *inner* IS *outer*, or lives beneath it."""
+    return inner == outer or outer in inner.parents
+
+
+def move_is_self_nesting(source: Path, destination: Path) -> bool:
+    """``mv source destination`` where the destination is inside the source.
+
+    Same filesystem, ``rename(2)`` returns EINVAL and ``mv`` refuses — which
+    with ``set -eu`` aborts the script part-way through. ACROSS filesystems
+    ``mv`` falls back to a recursive copy that walks into the destination it is
+    creating. Neither outcome may be reachable from a script this tool wrote, so
+    the line is never written. Tested in both the literal and the
+    symlink-resolved spelling: either one saying "nested" is enough.
+    """
+    literal = (Path(os.path.abspath(str(source))),
+               Path(os.path.abspath(str(destination))))
+    resolved = (_normalise(source), _normalise(destination))
+    return any(_is_inside(dst, src) for src, dst in (literal, resolved))
+
+
+def contains_another_worktree(path: Path,
+                              worktrees: Sequence[status.Worktree]) -> bool:
+    """Does another live worktree registration sit inside this directory?
+
+    Moving such a directory takes the nested worktree with it, leaving git
+    pointing at a path that no longer exists — and the next ``mv`` in the same
+    script fails on a source that vanished, aborting the run half-done. The
+    ``.claude/worktrees`` layout makes this the ordinary shape here, not an
+    exotic one.
+    """
+    here = _normalise(path)
+    for other in worktrees:
+        if other.gone:
+            continue        # no directory to carry along
+        there = _normalise(other.path)
+        if there != here and _is_inside(there, here):
+            return True
+    return False
+
+
+def _trash_root(root: Path, run_id: str) -> Path:
+    """ABSOLUTE, deliberately.
+
+    The destination used to be relative to a ``cd`` at the top of the script, so
+    what a line actually moved a directory INTO depended on a command several
+    lines earlier. The containment guard has to reason about the exact string
+    that gets emitted, so the string is made absolute and self-contained.
+    """
+    return _normalise(root / OUTPUT_DIR / f"trash-{run_id}")
+
+
+def _comment(text: str) -> str:
+    """Flatten anything interpolated into a ``#`` line to a single safe line."""
+    return _CONTROL_RE.sub("?", str(text))
+
+
+def path_is_describable(path: str) -> bool:
+    return _CONTROL_RE.search(path) is None
+
+
 # ── classification ───────────────────────────────────────────────────────────
 
 def classify(repo: status.Repository, root: Path, *, run_id: str,
@@ -319,6 +551,10 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
 
     worktrees: list[WorktreeItem] = []
     branch_state = {b.ref.full_name: b for b in repo.branches}
+    verdicts = main_worktree_verdicts(repo.worktrees)
+    main_paths = main_worktree_paths(root, verdicts)
+    trash = _trash_root(root, run_id)
+    here = _normalise(root)
     for worktree in repo.worktrees:
         path = str(worktree.path)
         item = WorktreeItem(
@@ -342,8 +578,22 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
                 item.action = "prune"
             worktrees.append(item)
             continue
-        if worktree.path.resolve() == root.resolve():
-            item.keep_reasons.append("this is the main worktree")
+        # ── the never-move guards, before anything that could say "retire" ───
+        where = _normalise(worktree.path)
+        verdict = (verdicts[where] if where in verdicts
+                   else is_main_worktree(worktree.path))
+        if verdict is None:
+            item.keep_reasons.append(KEEP_MAIN_UNPROVEN)
+        elif verdict or where in main_paths:
+            item.keep_reasons.append(KEEP_MAIN)
+        if where == here:
+            item.keep_reasons.append(KEEP_RUNNING_HERE)
+        if contains_another_worktree(worktree.path, repo.worktrees):
+            item.keep_reasons.append(KEEP_CONTAINS_WORKTREE)
+        if move_is_self_nesting(worktree.path, trash / (worktree.path.name or "x")):
+            item.keep_reasons.append(KEEP_SELF_NESTING)
+        if not path_is_describable(path):
+            item.keep_reasons.append(KEEP_UNSAFE_PATH)
         if HARNESS_WORKTREE_MARKER in path.replace("\\", "/"):
             item.keep_reasons.append(KEEP_HARNESS)
         if item.locked:
@@ -423,22 +673,102 @@ def prune_gone_worktrees(root: Path, items: Sequence[WorktreeItem]) -> bool:
 
 # ── the emitted script (the destructive half — for the owner to run) ─────────
 
+def _unique_destination(trash: Path, source: Path, taken: set[Path]) -> Path:
+    """A destination no other move in this run already claims.
+
+    ``mv a b`` where ``b`` is an EXISTING DIRECTORY moves ``a`` INSIDE ``b``.
+    Two worktrees sharing a basename — ``.../one/agent-1`` and
+    ``.../two/agent-1`` — would therefore nest the second inside the first
+    rather than landing beside it, and the plan's own trash directory would be
+    the thing that swallowed a worktree.
+    """
+    stem = source.name or "worktree"
+    candidate = trash / stem
+    suffix = 2
+    while _normalise(candidate) in taken:
+        candidate = trash / f"{stem}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def plan_moves(*, root: Path, run_id: str, worktrees: Sequence[WorktreeItem],
+               ) -> tuple[list[tuple[WorktreeItem, Path]],
+                          list[tuple[WorktreeItem, str]]]:
+    """Pair each retiring worktree with a destination that CANNOT be inside it.
+
+    This deliberately re-derives what ``classify`` already decided. ``build_script``
+    is the ONLY place a destructive line is ever written, so it is the only
+    place where "a ``mv`` whose destination is inside the thing being moved must
+    be impossible by construction" can actually be made true: a classifier
+    refactor that drops a check, or a future caller handing this function a
+    hand-made list, still cannot get such a line out of it.
+
+    Returns ``(moves, refused)``. A refusal is never silent — the script says so
+    in a comment, because the two halves of this tool disagreeing is itself a
+    finding.
+    """
+    trash = _trash_root(root, run_id)
+    moves: list[tuple[WorktreeItem, Path]] = []
+    refused: list[tuple[WorktreeItem, str]] = []
+    taken: set[Path] = set()
+    for item in worktrees:
+        if item.action != "retire":
+            continue
+        source = Path(item.path)
+        if not path_is_describable(item.path):
+            refused.append((item, "its path holds a control character"))
+            continue
+        # Asked again, of the directory itself, at emission time.
+        if is_main_worktree(source) is not False:
+            refused.append((item, "it is the main working tree, or git could "
+                                  "not prove that it is not"))
+            continue
+        if _normalise(source) == _normalise(root):
+            refused.append((item, "the planner is running from inside it"))
+            continue
+        destination = _unique_destination(trash, source, taken)
+        if move_is_self_nesting(source, destination):
+            refused.append((item, "every destination this run can offer is "
+                                  "inside it"))
+            continue
+        taken.add(_normalise(destination))
+        moves.append((item, destination))
+    return moves, refused
+
+
+def apply_emitter_refusals(root: Path, run_id: str,
+                           worktrees: Sequence[WorktreeItem]) -> None:
+    """Make the PLAN agree with what the emitter will actually write.
+
+    ``plan_moves`` is the last word on whether a move can be emitted, so it is
+    asked here too, before the plan object exists. A reader of
+    ``cleanup-<id>.json`` therefore never sees ``"action": "retire"`` for a
+    worktree the script declines to move: the plan and the script cannot
+    disagree, because only one of them decides.
+    """
+    _, refused = plan_moves(root=root, run_id=run_id, worktrees=worktrees)
+    for item, why in refused:
+        item.action = "keep"
+        item.keep_reasons.append(f"the emitter refused to write its move: {why}")
+
+
 def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
                  branches: Sequence[BranchItem],
                  worktrees: Sequence[WorktreeItem]) -> str:
-    trash = OUTPUT_DIR / f"trash-{run_id}"
+    trash = _trash_root(root, run_id)
     proposed = [item for item in branches if item.proposed]
-    retiring = [item for item in worktrees if item.action == "retire"]
+    moves, refused = plan_moves(root=root, run_id=run_id, worktrees=worktrees)
     lines = [
         "#!/bin/sh",
-        f"# workspace cleanup — run {run_id}",
+        f"# workspace cleanup — run {_comment(run_id)}",
         f"# generated by {TOOL} at {_now().strftime('%Y-%m-%dT%H:%M:%SZ')}",
         "#",
         "# THIS SCRIPT IS THE DESTRUCTIVE HALF. The planner ran none of it.",
         "# Read it before running it; then run it with:  sh " +
         shlex.quote(str(OUTPUT_DIR / f'cleanup-{run_id}.sh')),
         "#",
-        f"# base ref used for the containment test: {base_ref or '(none)'}",
+        f"# base ref used for the containment test: "
+        f"{_comment(base_ref) if base_ref else '(none)'}",
         "# Every branch below writes its backup ref FIRST and verifies it, so a",
         "# tip is reachable before anything can remove it. `git branch -d` is",
         "# used deliberately: it refuses an unmerged branch. IF IT REFUSES, THAT",
@@ -460,14 +790,25 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
     lines += ["set -eu", f"cd {shlex.quote(str(root))}", ""]
 
     body: list[str] = []
-    if retiring:
-        body += [f"mkdir -p {shlex.quote(str(trash))}", ""]
-    for item in retiring:
-        name = Path(item.path).name
+    for item, why in refused:
+        # Comment-only, so it survives the stale pass below without ever being
+        # a command. This should be unreachable: `classify` keeps everything
+        # this refuses. If it ever prints, the two halves have drifted.
         body += [
-            f"# worktree {item.path}",
-            f"#   clean, and its branch's content is already in {base_ref}",
-            f"mv {shlex.quote(item.path)} {shlex.quote(str(trash / name))}",
+            f"# REFUSED to emit a move for {_comment(item.path)}",
+            f"#   {_comment(why)}. The classifier called it retirable and the",
+            "#   emitter would not write the line. REPORT THIS — the two halves",
+            "#   of this tool are supposed to agree.",
+            "",
+        ]
+    if moves:
+        body += [f"mkdir -p {shlex.quote(str(trash))}", ""]
+    for item, destination in moves:
+        body += [
+            f"# worktree {_comment(item.path)}",
+            f"#   clean, and its branch's content is already in "
+            f"{_comment(base_ref)}",
+            f"mv {shlex.quote(item.path)} {shlex.quote(str(destination))}",
             "git worktree prune",
             "",
         ]
@@ -475,19 +816,28 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         ref = (item.backup_ref or
                f"{TRASH_REF_ROOT}/{run_id}/{slug(item.name)}")
         quoted_ref = shlex.quote(ref)
+        # `intent` is the first line of `git branch --edit-description`, and a
+        # description is MULTI-LINE by design. It is single-line by the time it
+        # arrives here, but that is a promise made in another module — one
+        # refactor from putting a raw newline inside a `#` comment, where the
+        # tail becomes a command. The echo is quoted whole for the same reason:
+        # it used to sit inside hand-written single quotes and depend on
+        # `_SAFE_NAME_RE` never admitting an apostrophe.
+        warning = shlex.quote(
+            f"backup ref missing — refusing to delete {_comment(item.name)}")
         body += [
-            f"# branch {item.name} — tip {item.tip[:8]}",
-            f"#   {item.intent}" if item.intent else "#   (no stated intent)",
+            f"# branch {_comment(item.name)} — tip {item.tip[:8]}",
+            f"#   {_comment(item.intent)}" if item.intent
+            else "#   (no stated intent)",
             f"git update-ref {quoted_ref} {item.tip} -m 'pre-delete backup'",
             f"git rev-parse --verify --quiet {shlex.quote(ref + '^{commit}')} "
             ">/dev/null || {",
-            f"    echo 'backup ref missing — refusing to delete "
-            f"{item.name}' >&2; exit 1; }}",
+            f"    echo {warning} >&2; exit 1; }}",
             f"git branch -d {shlex.quote(item.name)}",
             "",
         ]
-    if not body:
-        body = ["# nothing is proposed for removal in this run.", ""]
+    if not any(line and not line.startswith("#") for line in body):
+        body += ["# nothing is proposed for removal in this run.", ""]
     if stale:
         body = [line if not line or line.startswith("#") else f"# STALE: {line}"
                 for line in body]
@@ -496,9 +846,10 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         "# Recovery: every tip above is reachable from its refs/agent-trash ref.",
         f"#   git log --oneline {TRASH_REF_ROOT}/{run_id}/<branch>",
         f"#   git branch <name> {TRASH_REF_ROOT}/{run_id}/<branch>",
-        f"# Moved worktrees are under {trash}/ — nothing was deleted.",
-        "",
     ]
+    if moves:
+        lines.append(f"# Moved worktrees are under {trash}/ — nothing was deleted.")
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -685,6 +1036,7 @@ def _plan(argv: Sequence[str] | None, out) -> int:
 
     branches, worktrees = classify(repo, root, run_id=run_id,
                                    ledger=ledger_names(root))
+    apply_emitter_refusals(root, run_id, worktrees)
 
     executed = False
     if args.execute:
