@@ -3530,3 +3530,12 @@
     recovery, and the offline page/API fixtures. Every fixture is the fictional
     "Nimbus Robotics" employer with an invented job id; no real identity, employer,
     school, salary, private item name, or dated personal job-hunt content is present.'
+- base: 4cafcd54
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:2d2b847125f1ffa2
+  finding: 'Reviewed one backlog task file describing Workday rate-limit recovery.
+    It cites public repository paths and a public GitHub issue only; no real
+    identity, employer, school, salary, private item name, or dated personal
+    job-hunt content is present.'
