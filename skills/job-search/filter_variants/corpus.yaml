@@ -1526,7 +1526,11 @@ variants:
     expect:
       decision: no_match
       category: other_us
-      workplace: onsite
+      # The JD was read and never states a work mode, so the workplace is
+      # unstated rather than an inferred office (#237). What this case pins is
+      # unchanged: the third-party mention grants no remote work, and the city
+      # still decides the category and the decision.
+      workplace: unknown
 
   - id: location-remote-grant-bound-to-a-non-preferred-metro
     domain: location
@@ -1774,3 +1778,318 @@ variants:
       decision: no_match
       accepted: false
       rule_ids: [title.excluded.manager]
+
+  # --- Location structural groups the live-corpus audit left unlabeled (#247) ---
+  # Each of these is a shape a fresh public snapshot produced in bulk while the
+  # variant policy had no expected disposition for it. One fixture per group,
+  # with fictional wording carrying the same structure as the live text.
+
+  - id: location-vancouver-washington-is-not-canada
+    domain: location
+    # A foreign city name that a US STATE immediately qualifies is the US city
+    # of that name. This reached `mixed_us_foreign_scope` review in bulk.
+    input:
+      title: Software Engineer
+      location: Vancouver, WA, US
+      workplace_hint: unknown
+      description: Build and operate the ingestion platform with your team.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: other_us
+      evidence_contains: [specific_us_office]
+
+  - id: location-vancouver-canada-stays-foreign
+    domain: location
+    # The control for the case above: a code or a country naming Vancouver's OWN
+    # country keeps the foreign reading.
+    input:
+      title: Software Engineer
+      location: Vancouver, BC
+      workplace_hint: unknown
+      description: Build and operate the ingestion platform with your team.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: foreign
+
+  - id: location-usca-short-form-resolves-to-us-and-canada
+    domain: location
+    # `USCA` is an ATS short form for "US & Canada", not an unreadable region
+    # bucket. It was landing on `weird_location_format` review.
+    input:
+      title: Senior Site Reliability Engineer
+      location: USCA
+      workplace_hint: remote
+      description: >-
+        We are hiring remotely across the United States or Canada.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      evidence_contains: [us_canada_scope]
+
+  - id: location-us-or-canada-remote-is-us-eligible
+    domain: location
+    # One coordinated North-American scope whose US branch a US candidate
+    # satisfies — not mixed US/foreign scope.
+    input:
+      title: Senior Site Reliability Engineer
+      location: Remote in the United States or Canada
+      workplace_hint: remote
+      description: >-
+        This role is remote. We hire in the United States or Canada.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+      evidence_contains: [us_canada_scope]
+
+  - id: location-hybrid-role-with-a-capped-annual-remote-benefit
+    domain: location
+    # A benefits line offering a few fully remote weeks a year is a perk, not a
+    # work mode. Read as a workplace declaration it manufactured
+    # `remote_hybrid_conflict` on an unambiguous local hybrid role.
+    input:
+      title: Data Analyst II
+      location: Springfield, ST
+      workplace_hint: unknown
+      description: >-
+        This role is based in our Springfield office and is hybrid, with three
+        coordinated office days each week. Benefits: you may work fully remote
+        from anywhere for up to four weeks per year.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: metro
+      workplace: hybrid
+      evidence_contains: [jd_hybrid_role]
+
+  - id: location-us-remote-with-a-conditional-office-expectation
+    domain: location
+    # "Remote in the US, and if you live near an office we would like to see you
+    # a few days a week" is a US-remote grant with a conditional courtesy, not a
+    # competing office obligation.
+    input:
+      title: Software Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This role is remote within the United States. Employees who live near
+        an office are expected to come in a few days per week.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+
+  - id: location-explicit-remote-offer-corroborates-the-source-hint
+    domain: location
+    # An employer STATING it will hire remotely is a remote grant. Without a rule
+    # for it the posting carried only its board's untrusted flag and was
+    # relegated to `uncorroborated_ats_workplace_hint` review.
+    input:
+      title: Compiler Engineer
+      location: Riverton, ST, US
+      workplace_hint: remote
+      hint_trusted: false
+      description: >-
+        Hiring for our Riverton, Lakeside and Fairview locations. Open to hire
+        for Remote work as well.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+      evidence_contains: [jd_remote_eligible_offer]
+
+  - id: location-remote-us-excluding-every-preferred-residence
+    domain: location
+    # Remote does not mean hireable from every US location. When the JD names
+    # every configured metro in its exclusion list the verdict is settled.
+    input:
+      title: Technical Support Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a remote position open to candidates based in the United
+        States, excluding the Fairview Metro and the Springfield Metro.
+    policy:
+      metro: [springfield, fairview]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: us_remote
+      evidence_contains: [jd_excludes_all_preferred_residences]
+
+  - id: location-remote-us-excluding-a-place-the-candidate-did-not-ask-for
+    domain: location
+    # The control: one surviving preference keeps the match.
+    input:
+      title: Technical Support Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This role is remote in the United States, excluding California.
+    policy:
+      metro: [springfield, fairview]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+
+  - id: location-compensation-state-list-is-not-a-hiring-restriction
+    domain: location
+    # Pay-transparency copy names places in a COMPENSATION sentence. Reading it
+    # as an eligibility list would reject the postings that comply with the law.
+    input:
+      title: Software Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a fully remote US role. The base salary range applies to all
+        locations except Springfield and Fairview, where a premium band
+        applies.
+    policy:
+      metro: [springfield, fairview]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+
+  - id: location-remote-bounded-to-time-zones-the-candidate-is-outside
+    domain: location
+    # An explicit allowed-time-zone list is a candidate-eligibility fact, not a
+    # preference. A Pacific candidate cannot satisfy an EST/CST-only remote role.
+    input:
+      title: Platform Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a fully remote role. Applicants must be located in the EST or
+        CST time zones.
+    policy:
+      metro: [seattle]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: us_remote
+      evidence_contains: [jd_timezone_excludes_preferred_metros]
+
+  - id: location-remote-time-zone-bound-the-candidate-satisfies
+    domain: location
+    input:
+      title: Platform Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a fully remote role. Applicants must be located in the EST or
+        CST time zones.
+    policy:
+      metro: [boston]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: us_remote
+      workplace: remote
+
+  - id: location-remote-time-zone-bound-with-an-unmappable-metro-is-reviewed
+    domain: location
+    # A metro this module cannot place in a time zone may well sit inside the
+    # bound, so the answer is a human's, never a rejection.
+    input:
+      title: Platform Engineer
+      location: Remote - US
+      workplace_hint: remote
+      description: >-
+        This is a fully remote role. Applicants must be located in the EST or
+        CST time zones.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: review
+      review_contains: [remote_timezone_restriction_unresolved]
+
+  - id: location-negated-work-from-home-is-not-a-remote-grant
+    domain: location
+    # "There is no work from home for this position" is the OPPOSITE of a remote
+    # grant. Without a preceding-negation guard it classified badge-in onsite
+    # roles as confident US-remote matches.
+    input:
+      title: DevOps Engineer
+      location: Riverton, WY
+      workplace_hint: unknown
+      description: >-
+        Primarily onsite with little or no work from home. There is no work
+        from home for this position.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: no_match
+      category: other_us
+
+  - id: location-silent-jd-leaves-the-workplace-unstated
+    domain: location
+    # A city states geographic scope, not how the work is done. When the JD was
+    # read and never mentions a work mode, the honest label is `unknown` — and
+    # the location verdict is unchanged.
+    input:
+      title: Data Analyst
+      location: Springfield, ST, US
+      workplace_hint: unknown
+      hint_trusted: false
+      description: Build SQL dashboards and partner with stakeholders.
+    policy:
+      metro: [springfield]
+      allow_us_remote: true
+      us_only: true
+      require_match: true
+    expect:
+      decision: match
+      category: metro
+      workplace: unknown

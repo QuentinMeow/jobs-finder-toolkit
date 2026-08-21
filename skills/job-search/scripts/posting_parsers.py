@@ -40,6 +40,67 @@ import re
 import urllib.parse
 
 from common import ashby_salary_range, parse_dt, provided_salary_range, strip_html
+from posting_identity import url_identifies_a_posting
+
+
+# ── source-quality repair (shared with the live fetchers) ────
+# Mojibake: text that was UTF-8 when it was written and got decoded as Latin-1 /
+# CP1252 somewhere upstream, so "Φ" arrives as "Î¦" and "软" as "è½¯". RemoteOK
+# serves rows already in that state, and no amount of correct decoding on OUR
+# side recovers them — the damage is in the bytes we are handed. Re-encoding to
+# the byte sequence the mangling implies and decoding it as UTF-8 does.
+#
+# The signature is a UTF-8 lead byte followed by a continuation byte, both read
+# as single Latin-1 characters (U+00C2-U+00F4 then U+0080-U+00BF). Repair is
+# attempted ONLY when that signature is present, is accepted only when the strict
+# UTF-8 decode succeeds AND the signature count strictly drops, and is otherwise
+# abandoned — so text that merely looks unusual is returned untouched. Text that
+# mixes real non-Latin-1 characters with mojibake cannot be re-encoded at all and
+# is likewise returned as-is: never mangle what we cannot prove is mangled.
+_MOJIBAKE_RE = re.compile("[\u00c2-\u00f4][\u0080-\u00bf]")
+_MOJIBAKE_MAX_ROUNDS = 3        # double-encoded text needs more than one pass
+
+
+def repair_mojibake(text: str | None) -> str:
+    """Return ``text`` with UTF-8-read-as-Latin-1 damage undone (or unchanged)."""
+    out = text or ""
+    for _round in range(_MOJIBAKE_MAX_ROUNDS):
+        before = len(_MOJIBAKE_RE.findall(out))
+        if not before:
+            break
+        repaired = None
+        for codec in ("latin-1", "cp1252"):
+            try:
+                candidate = out.encode(codec).decode("utf-8")
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                continue
+            if len(_MOJIBAKE_RE.findall(candidate)) < before:
+                repaired = candidate
+                break
+        if repaired is None:
+            break
+        out = repaired
+    return out
+
+
+# RemoteOK builds a row's ``url`` from a slug of its title. A title with no
+# ASCII in it slugs to nothing, and the URL degenerates to the bare listing root
+# — the SAME string for every such row. Those rows cannot be opened as postings,
+# they collide with each other on any URL-keyed dedupe, and they reached the
+# human-review queue as garbled text behind a link that goes to a job board.
+# ``apply_url`` (the employer's own link) is checked as the fallback it was
+# always meant to be: the old ``url or apply_url`` never consulted it, because a
+# generic listing root is a perfectly truthy string.
+_REMOTEOK_LINK_FIELDS = ("url", "apply_url")
+
+
+def remoteok_posting_link(row: dict) -> str:
+    """The row's first link that names ONE posting; ``""`` when it has none."""
+    for field in _REMOTEOK_LINK_FIELDS:
+        candidate = str(row.get(field) or "").strip()
+        if candidate and url_identifies_a_posting(candidate):
+            return candidate
+    return ""
 
 
 def _flex_date(value) -> str | None:
@@ -385,15 +446,22 @@ def parse_remoteok(payload_bytes: bytes, env: dict | None = None) -> list[dict]:
     for j in data:
         if not isinstance(j, dict) or not j.get("position"):
             continue  # the first element is a legal notice, not a job
+        link = remoteok_posting_link(j)
+        if not link:
+            # No link that names one posting: nothing downstream can open it, and
+            # every such row carries the SAME generic listing root, so any
+            # URL-keyed dedupe folds unrelated jobs together. The raw payload
+            # still holds the row verbatim — only materialization is skipped.
+            continue
         out.append(_row(
             "remoteok", "scrape",
             native_id=j.get("id"),
-            title=j.get("position", ""),
-            url=j.get("url") or j.get("apply_url", ""),
-            location=j.get("location", "") or "remote",
+            title=repair_mojibake(j.get("position", "")),
+            url=link,
+            location=repair_mojibake(j.get("location", "")) or "remote",
             posted_at=(j.get("date") or j.get("epoch")),
-            company_name=j.get("company"),
-            description=strip_html(j.get("description")),
+            company_name=repair_mojibake(j.get("company")) or None,
+            description=repair_mojibake(strip_html(j.get("description"))),
             workplace_raw="remote",
         ))
     return out

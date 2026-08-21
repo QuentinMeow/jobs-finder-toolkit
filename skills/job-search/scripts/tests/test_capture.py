@@ -231,9 +231,9 @@ class WorkdaySearchGroupTests(_CaptureCase):
 
 
 class SmartRecruitersTruncationTests(_CaptureCase):
-    def test_truncation_observation_recorded(self):
-        # totalFound (5) > returned (2) => the listing is truncated; recorded in
-        # the search manifest params, group attested NOT complete.
+    def test_page_observation_recorded(self):
+        # The listing is PAGED now, so each request records the window it asked
+        # for alongside what came back; the group is still never attested complete.
         body = (b'{"content": [{"id": "1", "name": "SWE", "location": {}}, '
                 b'{"id": "2", "name": "Infra", "location": {}}], "totalFound": 5}')
         sources.http_get_full = lambda *a, **k: _result(body)
@@ -242,11 +242,13 @@ class SmartRecruitersTruncationTests(_CaptureCase):
 
         searches = [m for m in self.manifests() if m.get("operation") == "search"]
         groups = [m for m in self.manifests() if m.get("operation") == "group"]
-        self.assertEqual(len(searches), 1)
+        self.assertEqual(len(searches), 1)          # short page ends the board
         params = searches[0]["request"]["params"]
-        self.assertTrue(params["truncated"])
         self.assertEqual(params["total_found"], 5)
         self.assertEqual(params["returned"], 2)
+        self.assertEqual(params["offset"], 0)
+        self.assertEqual(params["limit"], sources._SR_PAGE_LIMIT)
+        self.assertEqual(searches[0]["pagination"]["offset"], 0)
         self.assertFalse(groups[0]["attested_complete"])
 
 
