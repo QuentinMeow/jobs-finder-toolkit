@@ -4050,3 +4050,31 @@
   files: 19
   digest: sha256:59bf3ec435d7d7d4
   finding: 'Merge of origin/main. Ledger and filter-variant corpus resolved by keeping BOTH sides whole; no case dropped or rewritten. filter_variants.py --check exits 0 on the result.'
+- base: a9e9b6e5
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:c04eda39b6d2b54d
+  finding: 'Reviewed the workspace cleanup planner change and its unittest suite.
+    Both are generic git tooling: reflog enumeration, ref names, temp-repo
+    fixtures and invented branch/worktree names. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content.'
+- base: aae164a3
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 3
+  digest: sha256:ebebf3ab5fb1280d
+  finding: 'Reviewed the harness-worktree opt-in flag, its unittest coverage and
+    the command-cookbook entry. All three name public repository files, the
+    handbook page and invented fixture worktree names only. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt
+    content.'
+- base: 84f7c604
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:3284d9195a49fc8f
+  finding: 'Reviewed one added tasks/0_backlog task.md describing a plan-to-run
+    window in the workspace cleanup script. It names public repository files, the
+    handbook page and a local worktree id only. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content.'

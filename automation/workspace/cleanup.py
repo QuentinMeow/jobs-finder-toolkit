@@ -32,6 +32,31 @@ reason is printed):
    ``refs/agent-trash/<ts>/<branch>`` makes the tip reachable, so it survives
    even ``git gc --prune=now``.
 
+A BRANCH TIP IS NOT THE ONLY THING A RETIREMENT CAN ORPHAN. Point 6 above was
+written for branches and, for a long time, only implemented for branches — while
+a worktree carries its OWN reflog at ``.git/worktrees/<id>/logs/HEAD``, and the
+emitted ``mv`` + ``git worktree prune`` deletes that whole administrative
+directory. Measured on git 2.55, in the suite's own fixture:
+
+* a commit made while the worktree's HEAD is DETACHED, after HEAD returns to a
+  branch, is recorded in ``worktrees/<id>/logs/HEAD`` and NOWHERE else. Running
+  the script this tool wrote, then ``git gc --prune=now``, erased it. No backup
+  ref had been written for it, because it was not any branch's tip;
+* a commit made on the worktree's branch and then ``reset --hard`` away is in
+  that same per-worktree reflog AND in the COMMON ``logs/refs/heads/<branch>``,
+  so retiring the worktree alone does not lose it — but only a reflog is holding
+  it, and a later ``git branch -d`` deletes that reflog too.
+
+So every worktree this tool proposes to retire gets its own reflog swept first:
+``git -C <wt> reflog --format=%H HEAD``, deduped against every commit already
+reachable from a ref, with one verified ``refs/agent-trash/<ts>-worktrees/…``
+ref per survivor — written FIRST, verified, and the worktree dropped from the
+plan if the ref cannot be written. The sweep is bounded by the reflog itself and
+by the exclusion walk; it never enumerates history. Stash entries are EXCLUDED
+rather than backed up: ``refs/stash`` and ``logs/refs/stash`` were measured to
+live in the COMMON ref store, so ``git worktree prune`` cannot destroy them and
+a backup here would be a ref this tool does not owe.
+
 WHAT MAKES A WORKTREE RETIRABLE — and the one thing that never is. The MAIN
 working tree (the directory that physically contains ``.git``) is not a
 worktree this tool may propose, under any condition, on any invocation. It was
@@ -91,8 +116,42 @@ PROTECTED = frozenset({"main", "master", "HEAD"})
 # releasing locks whose process exited, never releasing a lock a human set, and
 # skipping any worktree holding changed files or unpushed commits. A second
 # sweeper on the same directory is how two correct programs delete live work,
-# so this one reports them and proposes nothing.
+# so by DEFAULT this one reports them and proposes nothing.
+#
+# WHY THERE IS AN OPT-IN NOW. Keeping them unconditionally did not make anyone
+# safer; it made the tool silent about the one pile the owner actually cleans by
+# hand. An operator, reading a plan that proposed none of eleven agent
+# worktrees, ran eleven `git worktree remove` calls outside the plan — the exact
+# command `docs/handbook/post-merge-cutover.md` names as prohibited. A tool
+# whose output routes people to a prohibited command has not prevented the
+# risk, it has moved it somewhere with no backup refs and no report.
+#
+# `--include-harness-worktrees` is therefore the supported path, and the KEEP
+# reason names it so a reader of the plan finds it. It waives ONE thing — this
+# marker — and nothing else: clean tree, contained in the fetched base,
+# unlocked, not the main working tree, not the planner's own directory, and the
+# per-worktree reflog sweep above all still decide. And it changes nothing about
+# what this tool RUNS: the retirement is still emitted as `mv` into a trash
+# directory for the owner to read and run, so the handbook's prohibition on this
+# tool performing `git worktree remove` is untouched.
 HARNESS_WORKTREE_MARKER = ".claude/worktrees"
+
+# One line, printed in the report and in the emitted script's header, so the
+# tension is visible to whoever runs the script rather than buried here.
+HARNESS_HANDBOOK_NOTE = (
+    "harness worktrees are included by request (--include-harness-worktrees): "
+    "`docs/handbook/post-merge-cutover.md` forbids this TOOL from running "
+    "`git worktree remove`, and it still runs nothing — the retirement below is "
+    "an emitted `mv` into a trash directory, and the script is the owner's to "
+    "read and run.")
+
+# The most commits one worktree's reflog sweep will pin. A HEAD reflog is finite
+# but not small-by-definition, and a script with a thousand `update-ref` lines
+# is not a script anyone reads. Over this, the worktree is KEPT and says so:
+# over-keeping costs a directory until someone looks, and the alternative is
+# truncating a backup set, which is the failure this whole feature exists to
+# prevent.
+MAX_WORKTREE_BACKUP_REFS = 200
 
 # ── fail-closed refusals (each exits 3) ──────────────────────────────────────
 CODE_TOOLKIT_GUARD = "not-the-toolkit-repository"
@@ -115,7 +174,19 @@ KEEP_UNPUSHED = "commit(s) reachable from no remote-tracking ref"
 KEEP_LEDGER = "a review-ledger row names it"
 KEEP_UNSAFE_NAME = "the name would need shell quoting this tool will not guess"
 KEEP_NO_BACKUP = "the backup ref did not resolve"
-KEEP_HARNESS = "harness-owned worktree — Claude Code sweeps these itself"
+KEEP_HARNESS = (
+    "harness-owned worktree — Claude Code sweeps these itself, so this planner "
+    "keeps them by default. Pass --include-harness-worktrees to have them "
+    "judged like any other worktree (every other precondition still applies); "
+    "that is the supported path — do NOT reach for `git worktree remove`")
+KEEP_NO_REFLOG = (
+    "its own reflog could not be read, so the commits `git worktree prune` is "
+    "about to destroy cannot be enumerated")
+KEEP_TOO_MANY_ORPHANS = (
+    "commit(s) live only in its reflog — more than this run will pin to refs. "
+    "Recover or discard them yourself, then re-run")
+KEEP_NO_REFLOG_BACKUP = (
+    "a reflog backup ref did not resolve, so retiring it could orphan a commit")
 KEEP_DIRTY = "changed path(s) here — untracked files have no git recovery story"
 KEEP_LOCKED = "the worktree is locked — a deliberate finalizer"
 KEEP_LOCKED_GONE = (
@@ -210,13 +281,22 @@ class WorktreeItem:
     locked: bool = False
     dirty_paths: int = 0
     pruned: bool = False
+    harness: bool = False
+    # (backup ref, commit) for every commit this worktree's own reflog is the
+    # only thing holding. Empty is the ordinary answer — a worktree whose HEAD
+    # never left its branch has nothing here.
+    backups: list[tuple[str, str]] = field(default_factory=list)
+    backups_written: bool = False
 
     def to_json(self) -> dict:
         return {
             "action": self.action,
+            "backup_refs": [{"commit": oid, "ref": ref} for ref, oid in self.backups],
+            "backups_written": self.backups_written,
             "branch": self.branch,
             "dirty_paths": self.dirty_paths,
             "gone": self.gone,
+            "harness_owned": self.harness,
             "keep_reasons": list(self.keep_reasons),
             "locked": self.locked,
             "path": self.path,
@@ -504,14 +584,143 @@ def _comment(text: str) -> str:
     return _CONTROL_RE.sub("?", str(text))
 
 
+def _wrap(text: str, width: int = 72) -> list[str]:
+    """Break a fixed note into comment-width lines. Never splits a word."""
+    lines: list[str] = []
+    current = ""
+    for word in _comment(text).split():
+        candidate = f"{current} {word}".strip()
+        if current and len(candidate) > width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
 def path_is_describable(path: str) -> bool:
     return _CONTROL_RE.search(path) is None
 
 
+# ── the per-worktree reflog sweep ────────────────────────────────────────────
+#
+# `git worktree prune` removes `.git/worktrees/<id>/` — and `logs/HEAD` inside
+# it is that worktree's ENTIRE HEAD history. Anything reachable from no ref and
+# recorded only there becomes reachable from nothing the moment prune runs. The
+# branch path has protected against exactly this since day one; this is the
+# same discipline applied to the other half of what a retirement destroys.
+
+_REF_COMPONENT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
+def _ref_component(name: str) -> str:
+    """A slug that ``git update-ref`` will actually accept as one path part.
+
+    ``slug`` guarantees the character class, not ref legality: a directory named
+    ``..`` or ``.hidden`` slugs to something git refuses (a component may not
+    start with ``.`` or contain ``..``, and may not end ``.lock``). A rejected
+    ref would drop the worktree from the plan — safe, but for a reason that has
+    nothing to do with the owner's work — so an unusable component degrades to a
+    fixed stem instead. Collision is harmless: the commit id is the leaf, so two
+    worktrees sharing a stem share a ref only when they share a commit, and then
+    both writes set it to the same value.
+    """
+    candidate = slug(name)
+    if (_REF_COMPONENT_RE.match(candidate) and ".." not in candidate
+            and not candidate.endswith(".lock")):
+        return candidate
+    return "worktree"
+
+
+def worktree_backup_ref(run_id: str, path: Path, oid: str) -> str:
+    """``refs/agent-trash/<run>-worktrees/<dir>/<sha12>``.
+
+    The second segment is deliberately NOT ``<run_id>``: branch backups live at
+    ``refs/agent-trash/<run_id>/<branch-slug>``, and git cannot hold both a ref
+    ``a/b`` and a ref ``a/b/c``. ``slug`` strips a branch name down to a single
+    path part, so a branch backup is always exactly one level under the run id —
+    giving worktrees their own sibling namespace makes the collision impossible
+    by construction rather than unlikely.
+    """
+    return (f"{TRASH_REF_ROOT}/{run_id}-worktrees/"
+            f"{_ref_component(path.name or 'worktree')}/{oid[:12]}")
+
+
+def worktree_reflog_commits(worktree: Path) -> tuple[list[str], list[str]] | None:
+    """``(HEAD reflog commits, stash commits)`` for one worktree, or None.
+
+    ``None`` means UNANSWERABLE and every caller keeps on it — a worktree whose
+    reflog cannot be read is a worktree whose losses cannot be enumerated, and
+    proposing to move it would be guessing.
+
+    The stash list is returned separately because it is an EXCLUSION, not an
+    input. Measured: a ``git stash`` taken inside a linked worktree writes
+    ``refs/stash`` and ``logs/refs/stash`` in the COMMON ref store, both of which
+    outlive ``git worktree prune``. A stash entry is therefore not something this
+    step endangers, and pinning one would be this tool taking custody of a risk
+    it did not create. A failure to LIST stashes is tolerated rather than fatal:
+    the only effect of an empty exclusion set is more backup refs, which is the
+    safe direction.
+    """
+    reflog = _git(worktree, "reflog", "--format=%H", "HEAD")
+    if reflog.returncode:
+        return None
+    stash = _git(worktree, "stash", "list", "--format=%H")
+    stashed = stash.stdout.split() if stash.returncode == 0 else []
+    return list(dict.fromkeys(reflog.stdout.split())), list(dict.fromkeys(stashed))
+
+
+def unreachable_commits(repo: Path, oids: Sequence[str], *,
+                        protected: Sequence[str] = ()) -> list[str] | None:
+    """Which of *oids* no surviving ref can reach. ``None`` if git could not say.
+
+    BOUNDED BY CONSTRUCTION. ``--not --all`` makes the walk stop at every ref in
+    the repository, so what it enumerates is only the commits that are already
+    orphaned — never history. The answer is then INTERSECTED back with *oids*:
+    the walk also reports an orphan's orphaned ancestors, and a ref at the
+    descendant already makes those reachable, so pinning them too would be
+    ``N`` refs where one does the job.
+
+    ``--single-worktree`` is not optional. Without it ``--all`` also pretends
+    every OTHER worktree's HEAD is a ref — including the HEAD of the worktree
+    being retired, and of any other worktree the same script is about to move.
+    Counting a ref that this plan destroys as protection is precisely the bug.
+    """
+    if not oids:
+        return []
+    unique = list(dict.fromkeys(oids))
+    result = _git(repo, "rev-list", "--single-worktree", "--ignore-missing",
+                  *unique, "--not", "--all", *protected)
+    if result.returncode:
+        return None
+    walked = set(result.stdout.split())
+    return [oid for oid in unique if oid in walked]
+
+
+def plan_worktree_backups(repo: Path, item: WorktreeItem, worktree: Path, *,
+                          run_id: str) -> list[str]:
+    """Fill ``item.backups``; return the reasons to KEEP it instead, if any."""
+    enumerated = worktree_reflog_commits(worktree)
+    if enumerated is None:
+        return [KEEP_NO_REFLOG]
+    reflog, stashed = enumerated
+    orphans = unreachable_commits(repo, reflog, protected=stashed)
+    if orphans is None:
+        return [KEEP_NO_REFLOG]
+    if len(orphans) > MAX_WORKTREE_BACKUP_REFS:
+        return [f"{len(orphans)} {KEEP_TOO_MANY_ORPHANS}"]
+    item.backups = [(worktree_backup_ref(run_id, worktree, oid), oid)
+                    for oid in orphans]
+    return []
+
+
 # ── classification ───────────────────────────────────────────────────────────
 
-def classify(repo: status.Repository, root: Path, *, run_id: str,
-             ledger: str) -> tuple[list[BranchItem], list[WorktreeItem]]:
+def classify(repo: status.Repository, root: Path, *, run_id: str, ledger: str,
+             include_harness: bool = False,
+             ) -> tuple[list[BranchItem], list[WorktreeItem]]:
     base_ref = repo.base_ref
     worktree_refs = {
         branch.ref.full_name for branch in repo.branches if branch.worktree_path
@@ -594,7 +803,8 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
             item.keep_reasons.append(KEEP_SELF_NESTING)
         if not path_is_describable(path):
             item.keep_reasons.append(KEEP_UNSAFE_PATH)
-        if HARNESS_WORKTREE_MARKER in path.replace("\\", "/"):
+        item.harness = HARNESS_WORKTREE_MARKER in path.replace("\\", "/")
+        if item.harness and not include_harness:
             item.keep_reasons.append(KEEP_HARNESS)
         if item.locked:
             item.keep_reasons.append(KEEP_LOCKED)
@@ -609,6 +819,13 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
         if held is None and worktree.detached:
             item.keep_reasons.append("detached HEAD — no branch to judge it by")
         if not item.keep_reasons:
+            # LAST, and only for a worktree everything else already cleared.
+            # The sweep costs two git calls per candidate, and asking it of a
+            # worktree that is kept anyway would be spending them to learn
+            # nothing. Its own answer can still keep the worktree.
+            item.keep_reasons.extend(
+                plan_worktree_backups(root, item, worktree.path, run_id=run_id))
+        if not item.keep_reasons:
             item.action = "retire"
         worktrees.append(item)
     return branches, worktrees
@@ -616,22 +833,36 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
 
 # ── the non-destructive half of --execute ────────────────────────────────────
 
+def _pin(root: Path, ref: str, oid: str, run_id: str) -> bool:
+    """Write one backup ref and READ IT BACK. The only place either happens.
+
+    Branch tips and worktree reflog commits go through this same function on
+    purpose: two spellings of "write a backup ref" is two places for the verify
+    to be forgotten, and the verify is the entire value of the write.
+    """
+    written = _git(root, "update-ref", ref, oid, "-m",
+                   f"pre-delete backup ({TOOL} run {run_id})")
+    resolved = _git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    return not written.returncode and resolved.stdout.strip() == oid
+
+
 def write_backup_refs(root: Path, items: Sequence[BranchItem], run_id: str,
-                      *, archive_tag: bool) -> list[Blocking]:
+                      *, archive_tag: bool,
+                      worktrees: Sequence[WorktreeItem] = ()) -> list[Blocking]:
     """Make every proposed tip reachable BEFORE anything could remove it.
 
     Order is not negotiable: ref first, verify second, and an item that fails
     verification is dropped from the plan rather than carried into a script.
+    Worktrees are held to the identical rule — a retirement whose reflog backup
+    did not resolve becomes a KEEP, because the alternative is a ``mv`` followed
+    by a ``git worktree prune`` with nothing standing behind it.
     """
     blocking: list[Blocking] = []
     for item in items:
         if not item.proposed or item.backup_ref is None:
             continue
         ref = item.backup_ref
-        written = _git(root, "update-ref", ref, item.tip, "-m",
-                       f"pre-delete backup ({TOOL} run {run_id})")
-        resolved = _git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
-        if written.returncode or resolved.stdout.strip() != item.tip:
+        if not _pin(root, ref, item.tip, run_id):
             item.keep_reasons.append(KEEP_NO_BACKUP)
             blocking.append(Blocking(
                 CODE_BACKUP_REF_FAILED, item.name,
@@ -646,6 +877,22 @@ def write_backup_refs(root: Path, items: Sequence[BranchItem], run_id: str,
                           f"retired branch {item.name} ({TOOL} run {run_id})")
             if tagged.returncode == 0 or "already exists" in tagged.stderr:
                 item.archive_tag = tag
+
+    for worktree in worktrees:
+        if worktree.action != "retire" or not worktree.backups:
+            continue
+        failed = [(ref, oid) for ref, oid in worktree.backups
+                  if not _pin(root, ref, oid, run_id)]
+        if failed:
+            worktree.action = "keep"
+            worktree.keep_reasons.append(KEEP_NO_REFLOG_BACKUP)
+            ref, oid = failed[0]
+            blocking.append(Blocking(
+                CODE_BACKUP_REF_FAILED, worktree.path,
+                f"the reflog backup ref {ref} did not resolve to {oid[:8]}; "
+                f"{worktree.path} was dropped from the plan"))
+            continue
+        worktree.backups_written = True
     return blocking
 
 
@@ -752,9 +999,22 @@ def apply_emitter_refusals(root: Path, run_id: str,
         item.keep_reasons.append(f"the emitter refused to write its move: {why}")
 
 
+def _guarded_ref_write(ref: str, oid: str, warning: str, note: str) -> list[str]:
+    """``update-ref`` + read-back + ``exit 1``. The shape both halves emit."""
+    quoted = shlex.quote(ref)
+    return [
+        f"#   {_comment(note)}",
+        f"git update-ref {quoted} {oid} -m 'pre-delete backup'",
+        f"git rev-parse --verify --quiet {shlex.quote(ref + '^{commit}')} "
+        ">/dev/null || {",
+        f"    echo {shlex.quote(_comment(warning))} >&2; exit 1; }}",
+    ]
+
+
 def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
                  branches: Sequence[BranchItem],
-                 worktrees: Sequence[WorktreeItem]) -> str:
+                 worktrees: Sequence[WorktreeItem],
+                 include_harness: bool = False) -> str:
     trash = _trash_root(root, run_id)
     proposed = [item for item in branches if item.proposed]
     moves, refused = plan_moves(root=root, run_id=run_id, worktrees=worktrees)
@@ -775,9 +1035,15 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         "# IS A FINDING — report it. Do not reach for -D; there is no --force in",
         "# this tooling at all.",
         "# Worktree directories are MOVED, never removed: untracked and ignored",
-        "# files have no git recovery story whatsoever.",
+        "# files have no git recovery story whatsoever, and each one's own",
+        "# reflog — which `git worktree prune` deletes — is swept first, so any",
+        "# commit only it was holding is pinned to a ref before the move.",
         "#",
     ]
+    if include_harness:
+        wrapped = _wrap(HARNESS_HANDBOOK_NOTE)
+        lines += [f"# NOTE: {wrapped[0]}"]
+        lines += [f"#       {line}" for line in wrapped[1:]] + ["#"]
     if stale:
         lines += [
             "# ======================================================================",
@@ -808,6 +1074,22 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
             f"# worktree {_comment(item.path)}",
             f"#   clean, and its branch's content is already in "
             f"{_comment(base_ref)}",
+        ]
+        if item.harness:
+            body += [f"#   {_comment(line)}" for line in _wrap(HARNESS_HANDBOOK_NOTE)]
+        if item.backups:
+            # BEFORE the move, always. `git worktree prune` below deletes this
+            # worktree's `logs/HEAD`, and these commits are reachable from
+            # nothing else — so the pin has to already have happened, and the
+            # read-back has to be able to stop the script.
+            body.append(
+                f"#   {len(item.backups)} commit(s) live only in this "
+                f"worktree's reflog, which `git worktree prune` deletes:")
+        for ref, oid in item.backups:
+            body += _guarded_ref_write(
+                ref, oid, f"reflog backup ref missing — not moving "
+                          f"{_comment(item.path)}", f"pinning {oid[:8]}")
+        body += [
             f"mv {shlex.quote(item.path)} {shlex.quote(str(destination))}",
             "git worktree prune",
             "",
@@ -815,7 +1097,6 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
     for item in proposed:
         ref = (item.backup_ref or
                f"{TRASH_REF_ROOT}/{run_id}/{slug(item.name)}")
-        quoted_ref = shlex.quote(ref)
         # `intent` is the first line of `git branch --edit-description`, and a
         # description is MULTI-LINE by design. It is single-line by the time it
         # arrives here, but that is a promise made in another module — one
@@ -823,16 +1104,16 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         # tail becomes a command. The echo is quoted whole for the same reason:
         # it used to sit inside hand-written single quotes and depend on
         # `_SAFE_NAME_RE` never admitting an apostrophe.
-        warning = shlex.quote(
-            f"backup ref missing — refusing to delete {_comment(item.name)}")
         body += [
             f"# branch {_comment(item.name)} — tip {item.tip[:8]}",
             f"#   {_comment(item.intent)}" if item.intent
             else "#   (no stated intent)",
-            f"git update-ref {quoted_ref} {item.tip} -m 'pre-delete backup'",
-            f"git rev-parse --verify --quiet {shlex.quote(ref + '^{commit}')} "
-            ">/dev/null || {",
-            f"    echo {warning} >&2; exit 1; }}",
+        ]
+        body += _guarded_ref_write(
+            ref, item.tip,
+            f"backup ref missing — refusing to delete {_comment(item.name)}",
+            f"pinning the tip {item.tip[:8]}")
+        body += [
             f"git branch -d {shlex.quote(item.name)}",
             "",
         ]
@@ -847,6 +1128,12 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         f"#   git log --oneline {TRASH_REF_ROOT}/{run_id}/<branch>",
         f"#   git branch <name> {TRASH_REF_ROOT}/{run_id}/<branch>",
     ]
+    if any(item.backups for item, _ in moves):
+        lines += [
+            "# Commits that lived only in a retired worktree's reflog are under",
+            f"#   git for-each-ref {TRASH_REF_ROOT}/{run_id}-worktrees",
+            "# one ref per commit, named <worktree-dir>/<sha12>.",
+        ]
     if moves:
         lines.append(f"# Moved worktrees are under {trash}/ — nothing was deleted.")
     lines.append("")
@@ -858,11 +1145,15 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
 def build_plan(*, run_id: str, root: Path, repo: status.Repository,
                branches: Sequence[BranchItem], worktrees: Sequence[WorktreeItem],
                blocking: Sequence[Blocking], fetched: bool, executed: bool,
-               private_counts: dict | None) -> dict:
+               private_counts: dict | None, include_harness: bool = False) -> dict:
     stale = not fetched
     judgement = [item for item in branches
                  if KEEP_UNKNOWN_MERGE in item.keep_reasons
                  or KEEP_NO_BACKUP in item.keep_reasons]
+    # `--include-harness-worktrees` deliberately does NOT push the exit code to
+    # 1. It is the operator's judgement, already exercised at the command line;
+    # a proposal it unlocks cleared every precondition an ordinary worktree
+    # clears, so calling it "needs judgement" would train people to ignore a 1.
     # Nothing here exits 3: every fail-closed condition refuses BEFORE a plan
     # exists. A dropped item (its backup ref did not resolve) leaves the rest of
     # the plan readable and correct, which is exactly what exit 1 means.
@@ -876,6 +1167,7 @@ def build_plan(*, run_id: str, root: Path, repo: status.Repository,
         "exit_code": exit_code,
         "generated_at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "generator": {"tool": TOOL, "merge_probe": repo.merge_probe},
+        "include_harness_worktrees": include_harness,
         "private_overlay": private_counts,
         "remote_knowledge": {"fetched": fetched,
                              "state": "stale" if stale else "fresh"},
@@ -900,6 +1192,9 @@ def print_report(plan: dict, branches: Sequence[BranchItem],
               "commented out and nothing here is executable.", file=out)
     else:
         print("remote knowledge: FRESH (fetched origin)", file=out)
+    if plan.get("include_harness_worktrees"):
+        for line in _wrap(HARNESS_HANDBOOK_NOTE, width=76):
+            print(line, file=out)
     print("", file=out)
 
     proposed = [item for item in branches if item.proposed]
@@ -925,6 +1220,13 @@ def print_report(plan: dict, branches: Sequence[BranchItem],
             note = "pruned (metadata only)" if item.pruned else (
                 "its directory is gone; `git worktree prune` un-wedges the branch")
             print(f"          · {note}", file=out)
+        if item.action == "retire" and item.backups:
+            written = ("written and verified" if item.backups_written
+                       else "written by the script before its `mv`")
+            print(f"          · {len(item.backups)} commit(s) live only in this "
+                  f"worktree's reflog — backup ref(s) {written}", file=out)
+            for ref, oid in item.backups:
+                print(f"          ·   {oid[:8]}  {ref}", file=out)
         for reason in item.keep_reasons:
             print(f"          · {reason}", file=out)
 
@@ -966,6 +1268,14 @@ def build_parser() -> argparse.ArgumentParser:
              "and prune worktree metadata whose directory is already gone. "
              "Deleting anything remains the emitted script's job, and the "
              "owner's decision.")
+    parser.add_argument(
+        "--include-harness-worktrees", action="store_true",
+        help="judge worktrees under .claude/worktrees like any other worktree "
+             "instead of keeping them for the Claude Code harness. This waives "
+             "ONE rule and no others: a clean tree, containment in the fetched "
+             "base, an unlocked registration and the per-worktree reflog sweep "
+             "all still decide. Nothing is executed either way — the retirement "
+             "is emitted as `mv` into a trash directory for you to run.")
     parser.add_argument(
         "--archive-tag", action="store_true",
         help="with --execute, also write an annotated archive/<slug>-<sha> tag "
@@ -1034,26 +1344,31 @@ def _plan(argv: Sequence[str] | None, out) -> int:
     if base_ref != repo.base_ref:
         repo = _recompute_against(repo, root, base_ref)
 
+    include_harness = args.include_harness_worktrees
     branches, worktrees = classify(repo, root, run_id=run_id,
-                                   ledger=ledger_names(root))
+                                   ledger=ledger_names(root),
+                                   include_harness=include_harness)
     apply_emitter_refusals(root, run_id, worktrees)
 
     executed = False
     if args.execute:
         blocking.extend(write_backup_refs(root, branches, run_id,
-                                          archive_tag=args.archive_tag))
+                                          archive_tag=args.archive_tag,
+                                          worktrees=worktrees))
         prune_gone_worktrees(root, worktrees)
         executed = True
 
     private_counts = _private_counts(root)
     plan = build_plan(run_id=run_id, root=root, repo=repo, branches=branches,
                       worktrees=worktrees, blocking=blocking, fetched=fetched,
-                      executed=executed, private_counts=private_counts)
+                      executed=executed, private_counts=private_counts,
+                      include_harness=include_harness)
 
     print_report(plan, branches, worktrees, out)
 
     script = build_script(run_id=run_id, root=root, base_ref=base_ref,
-                          stale=not fetched, branches=branches, worktrees=worktrees)
+                          stale=not fetched, branches=branches,
+                          worktrees=worktrees, include_harness=include_harness)
     destination = root / OUTPUT_DIR
     try:
         destination.mkdir(parents=True, exist_ok=True)

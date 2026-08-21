@@ -378,7 +378,12 @@ class MainWorktreeScenario(F.GitTestCase):
         # real repository ignores it; a fixture that did not would report the
         # main working tree DIRTY from the second run onward and keep it for the
         # wrong reason, hiding the very bug these tests exist to pin.
-        F.write(root / ".gitignore", "local/\n")
+        # `/.claude/worktrees/` is ignored for the same reason and with the same
+        # spelling the real repository uses: a harness worktree living inside
+        # the main working tree must not make that tree dirty, or every
+        # harness scenario below would be kept by the dirty-tree rule and prove
+        # nothing about the harness rule.
+        F.write(root / ".gitignore", "local/\n/.claude/worktrees/\n")
         F.write(root / "seed.txt", "seed\n")
         self.commit(root, "base commit")
         F.add_origin(self, root)
@@ -461,9 +466,14 @@ class MainWorktreeScenario(F.GitTestCase):
             (vantage / "local" / "workspace").glob("cleanup-*.json"))
         self.assertTrue(produced, f"no plan was written under {vantage}")
         plan = json.loads(produced[-1].read_text(encoding="utf-8"))
-        script = produced[-1].with_suffix(".sh").read_text(encoding="utf-8")
+        self.script_path = produced[-1].with_suffix(".sh")
+        script = self.script_path.read_text(encoding="utf-8")
         self.assert_script_is_safe(script)
         return code, plan, script
+
+    def latest_script_path(self) -> Path:
+        """The file the owner would actually run, from the last ``plan_from``."""
+        return self.script_path
 
     def worktree_row(self, plan: dict, path: Path) -> dict:
         target = Path(path).resolve()
@@ -712,6 +722,365 @@ class MainWorktreePrimitiveTests(MainWorktreeScenario):
         found = cleanup.main_worktree_paths(self.vantage, verdicts)
         self.assertIn(self.root.resolve(), found,
                       "signals 2 and 3 must find it without signal 1")
+
+
+# ── the per-worktree reflog, and the commits only it holds ───────────────────
+#
+# THE AUDIT FINDING THESE PIN. Backup refs were written PER BRANCH only, and a
+# worktree carries its OWN reflog at `.git/worktrees/<id>/logs/HEAD`. The
+# emitted script does `mv` then `git worktree prune`, and prune deletes that
+# whole administrative directory — the reflog with it. A commit reachable from
+# no ref and recorded only there is then reachable from nothing at all, and no
+# backup ref was ever written for it.
+#
+# MEASURED, in this fixture, on git 2.55:
+#   * a commit made ON the worktree's branch and then `reset --hard` away is
+#     recorded in BOTH `worktrees/<id>/logs/HEAD` and the COMMON
+#     `logs/refs/heads/<branch>` — so retiring the worktree alone does not lose
+#     it, but nothing except a reflog is holding it either, and `git branch -d`
+#     on a later run deletes that branch reflog too;
+#   * a commit made while the worktree's HEAD is DETACHED, after HEAD moves back
+#     to the branch, is recorded in `worktrees/<id>/logs/HEAD` and NOWHERE else.
+#     `mv` + `git worktree prune` + `git gc --prune=now` erased it outright.
+# Both shapes are built below, and both must come out with a backup ref.
+
+
+class WorktreeReflogScenario(MainWorktreeScenario):
+    """``self.retirable`` with two commits that live only in its own reflog."""
+
+    def build_orphans(self) -> None:
+        self.build_scenario(root_on="codex/landed")
+        worktree = self.retirable
+
+        # Shape 1 — the auditor's literal steps: commit, then reset it away.
+        F.write(worktree / "reset-away.txt", "committed, then reset away\n")
+        self.git(worktree, "add", "-A")
+        self.git(worktree, "commit", "-q", "-m", "work that was reset away")
+        self.reset_away = self.out(worktree, "rev-parse", "HEAD")
+        self.git(worktree, "reset", "-q", "--hard", "HEAD~1")
+
+        # Shape 2 — the same loss with NO common reflog behind it at all.
+        self.git(worktree, "switch", "-q", "--detach", "HEAD")
+        F.write(worktree / "detached.txt", "committed on a detached HEAD\n")
+        self.git(worktree, "add", "-A")
+        self.git(worktree, "commit", "-q", "-m", "work made on a detached HEAD")
+        self.detached_only = self.out(worktree, "rev-parse", "HEAD")
+        self.git(worktree, "switch", "-q", "linked-landed")
+        self.git(worktree, "clean", "-qfd")
+
+        self.assertEqual(
+            self.out(worktree, "status", "--porcelain"), "",
+            "the worktree must be CLEAN here, or this scenario tests the "
+            "dirty-tree rule instead of the reflog sweep")
+        self.assert_lives_only_in_the_worktree_reflog(self.detached_only)
+
+    # ── the premise, asserted rather than assumed ────────────────────────────
+
+    def common_reflog_text(self) -> str:
+        logs = self.root / ".git" / "logs"
+        return "\n".join(path.read_text(encoding="utf-8", errors="replace")
+                         for path in sorted(logs.rglob("*")) if path.is_file())
+
+    def worktree_reflog_text(self) -> str:
+        holder = self.root / ".git" / "worktrees"
+        if not holder.is_dir():
+            return ""
+        return "\n".join(path.read_text(encoding="utf-8", errors="replace")
+                         for path in sorted(holder.rglob("logs/HEAD"))
+                         if path.is_file())
+
+    def assert_lives_only_in_the_worktree_reflog(self, oid: str) -> None:
+        self.assertNotIn(oid, self.common_reflog_text(),
+                         "this commit is in a COMMON reflog, so the fixture no "
+                         "longer reproduces the worktree-only case")
+        self.assertIn(oid, self.worktree_reflog_text())
+        unreachable = self.out(self.root, "rev-list", "--single-worktree",
+                               "--ignore-missing", oid, "--not", "--all")
+        self.assertIn(oid, unreachable.split(),
+                      "this commit is reachable from a ref, so nothing here is "
+                      "at risk and the test proves nothing")
+
+    def run_emitted_script(self, script_path: Path) -> None:
+        result = subprocess.run(
+            ["sh", str(script_path)], stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, check=False, env=dict(os.environ))
+        self.assertEqual(result.returncode, 0,
+                         f"the emitted script failed:\n{result.stdout}\n{result.stderr}")
+
+    def backups_for(self, row: dict) -> dict[str, str]:
+        """``{commit: backup ref}`` the plan claims for this worktree row."""
+        return {entry["commit"]: entry["ref"] for entry in row["backup_refs"]}
+
+
+class WorktreeReflogBackupTests(WorktreeReflogScenario):
+    def test_the_emitted_script_leaves_a_reflog_only_commit_reachable(self) -> None:
+        # THE AUDIT FINDING ITSELF, asserted on the outcome and on nothing else:
+        # run the tool's own script, then ask git whether the work still exists.
+        # Against the per-branch-only backup this fails on `detached-only`,
+        # which `git gc --prune=now` erases outright.
+        self.build_orphans()
+        _, plan, _ = self.plan_from(self.root)
+        self.assertEqual(self.worktree_row(plan, self.retirable)["action"],
+                         "retire", "the fixture must reach the retire path")
+
+        self.run_emitted_script(self.latest_script_path())
+        self.assertNotIn(self.detached_only, self.worktree_reflog_text(),
+                         "`git worktree prune` did not destroy the reflog, so "
+                         "this run no longer exercises the hazard")
+        self.git(self.root, "gc", "--prune=now", "--quiet")
+        for label, oid in (("detached-only", self.detached_only),
+                           ("reset-away", self.reset_away)):
+            with self.subTest(commit=label):
+                self.assertEqual(
+                    self.git(self.root, "cat-file", "-e", oid,
+                             check=False).returncode, 0,
+                    f"{label} {oid[:8]} was reachable only from this "
+                    f"worktree's reflog and the emitted script orphaned it")
+
+    def test_a_reflog_only_commit_gets_a_backup_ref_the_script_writes(self) -> None:
+        # The DEFAULT path: a dry run writes no ref itself, so the script it
+        # emits has to write and verify them before its own `mv`.
+        self.build_orphans()
+        _, plan, script = self.plan_from(self.root)
+        row = self.worktree_row(plan, self.retirable)
+        self.assertEqual(row["action"], "retire", row["keep_reasons"])
+
+        backups = self.backups_for(row)
+        for label, oid in (("detached-only", self.detached_only),
+                           ("reset-away", self.reset_away)):
+            with self.subTest(commit=label):
+                self.assertIn(oid, backups,
+                              "no backup ref was planned for a commit that "
+                              "lives only in this worktree's reflog")
+                self.assertIn(f"git update-ref {shlex.quote(backups[oid])} {oid}",
+                              script)
+
+        self.run_emitted_script(self.latest_script_path())
+        self.git(self.root, "gc", "--prune=now", "--quiet")
+        for oid, ref in backups.items():
+            with self.subTest(commit=oid[:8]):
+                self.assertEqual(
+                    self.out(self.root, "rev-parse", "--verify", ref + "^{commit}"),
+                    oid, "a backup ref the plan promised does not resolve")
+
+    def test_execute_writes_and_verifies_those_refs_up_front(self) -> None:
+        self.build_orphans()
+        _, plan, _ = self.plan_from(self.root, "--execute")
+        row = self.worktree_row(plan, self.retirable)
+        self.assertEqual(row["action"], "retire", row["keep_reasons"])
+        self.assertTrue(row["backups_written"])
+        for oid, ref in self.backups_for(row).items():
+            with self.subTest(commit=oid[:8]):
+                self.assertEqual(
+                    self.out(self.root, "rev-parse", "--verify", ref + "^{commit}"),
+                    oid, "--execute claimed a backup ref that does not resolve")
+
+    def test_a_worktree_with_nothing_at_risk_gets_no_backup_refs(self) -> None:
+        # The over-correction guard: a ref per reflog line, forever, would be a
+        # different bug. Only commits reachable from NO ref may be pinned.
+        self.build_scenario(root_on="codex/landed")
+        _, plan, script = self.plan_from(self.root)
+        row = self.worktree_row(plan, self.retirable)
+        self.assertEqual(row["action"], "retire", row["keep_reasons"])
+        self.assertEqual(row["backup_refs"], [])
+        self.assertNotIn("-worktrees/", script)
+
+    def test_the_sweep_never_regresses_the_no_mv_of_the_repo_root_rule(self) -> None:
+        # PR #347's invariant, re-asserted on the script this feature rewrites.
+        self.build_orphans()
+        _, _, script = self.plan_from(self.root)
+        self.assert_root_is_never_moved(script)
+        self.assert_script_is_safe(script)
+
+
+class WorktreeReflogUnitTests(WorktreeReflogScenario):
+    def test_reachable_reflog_commits_are_deduped_away(self) -> None:
+        self.build_orphans()
+        reflog, stash = cleanup.worktree_reflog_commits(self.retirable)
+        self.assertIn(self.detached_only, reflog)
+        self.assertEqual(stash, [])
+        orphans = cleanup.unreachable_commits(self.root, reflog, protected=stash)
+        self.assertIsNotNone(orphans)
+        self.assertLess(len(orphans), len(reflog),
+                        "every reflog line was treated as at-risk; the "
+                        "reachability dedupe is not running")
+        for oid in orphans:
+            with self.subTest(commit=oid[:8]):
+                self.assertIn(oid, reflog, "the sweep walked past its inputs")
+
+    def test_an_unreadable_worktree_reports_None_rather_than_nothing(self) -> None:
+        # None is "unanswerable" and keeps. An empty list would read as
+        # "nothing is at risk" and unlock a move.
+        self.build_scenario(root_on="codex/landed")
+        self.assertIsNone(cleanup.worktree_reflog_commits(self.scratch / "nowhere"))
+
+    def test_more_orphans_than_the_cap_keeps_the_worktree(self) -> None:
+        # The valve fails CLOSED: over the cap the worktree is kept and says
+        # why. Truncating a backup set is the one outcome this whole feature
+        # exists to prevent, so it may not be what running out of room does.
+        self.build_orphans()
+        item = cleanup.WorktreeItem(path=str(self.retirable), branch=None,
+                                    action="keep")
+        original = cleanup.MAX_WORKTREE_BACKUP_REFS
+        cleanup.MAX_WORKTREE_BACKUP_REFS = 0
+        self.addCleanup(setattr, cleanup, "MAX_WORKTREE_BACKUP_REFS", original)
+        reasons = cleanup.plan_worktree_backups(
+            self.root, item, self.retirable, run_id="TESTRUN")
+        self.assertTrue(reasons)
+        self.assertIn(cleanup.KEEP_TOO_MANY_ORPHANS, reasons[0])
+        self.assertEqual(item.backups, [],
+                         "a capped sweep must pin nothing, not pin some")
+
+    def test_a_directory_name_git_would_refuse_degrades_to_a_usable_ref(self) -> None:
+        # `slug` guarantees the character class, not ref legality: a component
+        # may not start with `.` or contain `..`. A ref git rejects would drop
+        # the worktree for a reason unrelated to the owner's work.
+        oid = "0" * 40
+        for name in ("..", ".hidden", "agent.lock", ""):
+            with self.subTest(directory=name):
+                ref = cleanup.worktree_backup_ref("RUN", Path("/x") / name, oid)
+                checked = subprocess.run(
+                    ["git", "check-ref-format", ref],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+                self.assertEqual(checked.returncode, 0,
+                                 f"git refuses the ref {ref}")
+
+    def test_a_worktree_ref_can_never_collide_with_a_branch_backup(self) -> None:
+        # git cannot hold both a ref `a/b` and a ref `a/b/c`. A branch named
+        # exactly like a worktree directory is the collision that would make one
+        # backup write fail — and a failed write is a dropped item.
+        branch_ref = f"{cleanup.TRASH_REF_ROOT}/RUN/{cleanup.slug('agent-1')}"
+        worktree_ref = cleanup.worktree_backup_ref("RUN", Path("/x/agent-1"),
+                                                   "0" * 40)
+        self.assertFalse(worktree_ref.startswith(branch_ref + "/"))
+        self.assertNotEqual(worktree_ref, branch_ref)
+
+
+# ── harness-owned worktrees: kept by default, retirable only on request ───────
+#
+# The owner's stated pain is that agent worktrees pile up and get cleaned by
+# hand — with `git worktree remove`, which
+# `docs/handbook/post-merge-cutover.md` names as prohibited. Keeping them
+# unconditionally is what pushed an operator to that command; proposing them
+# unconditionally would put a second sweeper on directories the Claude Code
+# harness already sweeps. The flag is the third answer: opt-in, auditable, and
+# subject to every precondition an ordinary worktree faces.
+
+
+class HarnessWorktreeScenario(MainWorktreeScenario):
+    def build_harness(self, *, name: str = "agent-1", branch: str = "harness-work",
+                      start: str = "main") -> Path:
+        self.build_scenario(root_on="codex/landed")
+        harness = self.root / ".claude" / "worktrees" / name
+        harness.parent.mkdir(parents=True, exist_ok=True)
+        self.git(self.root, "worktree", "add", "-q", "-b", branch,
+                 str(harness), start)
+        self.assertEqual(
+            self.out(self.root, "status", "--porcelain"), "",
+            "`.claude/worktrees` must be ignored, or the main working tree is "
+            "merely dirty and this scenario proves nothing")
+        return harness
+
+
+class HarnessWorktreeDefaultTests(HarnessWorktreeScenario):
+    def test_by_default_it_is_kept_and_the_reason_names_the_flag(self) -> None:
+        harness = self.build_harness()
+        _, plan, _ = self.plan_from(self.root)
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "keep", row["keep_reasons"])
+        self.assertIn(cleanup.KEEP_HARNESS, row["keep_reasons"])
+        self.assertIn("--include-harness-worktrees", cleanup.KEEP_HARNESS,
+                      "an operator reading the plan must learn the supported "
+                      "path, or they reach for `git worktree remove` instead")
+
+    def test_the_flag_proposes_it_and_says_the_tool_still_only_emits(self) -> None:
+        harness = self.build_harness()
+        code, plan, script = self.plan_from(self.root,
+                                            "--include-harness-worktrees")
+        self.assertIn(code, (0, 1))
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "retire", row["keep_reasons"])
+        self.assertTrue(plan["include_harness_worktrees"])
+        moved = [source.resolve() for source, _ in self.emitted_moves(script)]
+        self.assertIn(harness.resolve(), moved)
+        header = script.split("set -eu", 1)[0]
+        self.assertIn("post-merge-cutover.md", header)
+        self.assertIn("worktree remove", header,
+                      "the header must name the command this tool still does "
+                      "not run, or the tension is undocumented")
+
+    def test_the_report_carries_the_same_note(self) -> None:
+        self.build_harness()
+        buffer = io.StringIO()
+        cleanup.main(["--repo-root", str(self.root), "--fetch",
+                      "--include-harness-worktrees"], out=buffer)
+        report = buffer.getvalue()
+        self.assertIn("post-merge-cutover.md", report)
+        self.assertIn("--include-harness-worktrees", report)
+
+
+class HarnessWorktreePreconditionTests(HarnessWorktreeScenario):
+    def test_the_flag_does_not_waive_the_dirty_tree_rule(self) -> None:
+        harness = self.build_harness()
+        F.write(harness / "scratch.md", "untracked — no git recovery story\n")
+        _, plan, script = self.plan_from(self.root, "--include-harness-worktrees")
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "keep", row["keep_reasons"])
+        self.assertTrue(any(cleanup.KEEP_DIRTY in reason
+                            for reason in row["keep_reasons"]))
+        moved = [source.resolve() for source, _ in self.emitted_moves(script)]
+        self.assertNotIn(harness.resolve(), moved)
+
+    def test_the_flag_does_not_waive_the_unmerged_rule(self) -> None:
+        harness = self.build_harness()
+        F.write(harness / "unpushed.txt", "work that exists nowhere else\n")
+        self.git(harness, "add", "-A")
+        self.git(harness, "commit", "-q", "-m", "harness: unmerged, unpushed work")
+        _, plan, script = self.plan_from(self.root, "--include-harness-worktrees")
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "keep", row["keep_reasons"])
+        self.assertIn(cleanup.KEEP_UNMERGED, row["keep_reasons"])
+        moved = [source.resolve() for source, _ in self.emitted_moves(script)]
+        self.assertNotIn(harness.resolve(), moved)
+
+    def test_the_flag_does_not_waive_the_locked_rule(self) -> None:
+        harness = self.build_harness()
+        self.git(self.root, "worktree", "lock", "--reason",
+                 "a live agent session holds this", str(harness))
+        _, plan, _ = self.plan_from(self.root, "--include-harness-worktrees")
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "keep", row["keep_reasons"])
+        self.assertIn(cleanup.KEEP_LOCKED, row["keep_reasons"])
+
+    def test_the_flag_does_not_waive_the_reflog_sweep(self) -> None:
+        harness = self.build_harness(start="codex/landed")
+        self.git(harness, "switch", "-q", "--detach", "HEAD")
+        F.write(harness / "detached.txt", "only the worktree reflog holds this\n")
+        self.git(harness, "add", "-A")
+        self.git(harness, "commit", "-q", "-m", "harness: detached work")
+        orphan = self.out(harness, "rev-parse", "HEAD")
+        self.git(harness, "switch", "-q", "harness-work")
+        self.git(harness, "clean", "-qfd")
+        _, plan, script = self.plan_from(self.root, "--include-harness-worktrees")
+        row = self.worktree_row(plan, harness)
+        self.assertEqual(row["action"], "retire", row["keep_reasons"])
+        backups = {entry["commit"]: entry["ref"] for entry in row["backup_refs"]}
+        self.assertIn(orphan, backups)
+        self.assertIn(f"git update-ref {shlex.quote(backups[orphan])} {orphan}",
+                      script)
+
+    def test_the_emitted_script_still_moves_and_never_removes(self) -> None:
+        self.build_harness()
+        _, _, script = self.plan_from(self.root, "--include-harness-worktrees")
+        commands = [line for line in script.splitlines()
+                    if line.strip() and not line.strip().startswith("#")]
+        joined = "\n".join(commands)
+        for forbidden in ("rm -", "rm ", "git clean", "worktree remove",
+                          "branch -D", "--force", "reset --hard"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, joined)
+        self.assertIn("mv ", joined)
+        self.assert_root_is_never_moved(script)
 
 
 class MoveContainmentUnitTests(F.GitTestCase):
