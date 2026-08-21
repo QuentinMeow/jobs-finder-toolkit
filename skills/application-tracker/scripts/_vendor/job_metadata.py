@@ -1624,10 +1624,18 @@ _SPONSOR_HARD_BREAK_RE = re.compile(
 # relative clause is where a forward-only rule would otherwise invent denials out
 # of real offers, which is the one error this module treats as unaffordable in
 # the other direction and must not start making in this one.
+# The second addition is the expletive subject "there". The shared break set
+# recognizes a coordinated clause by its SUBJECT, and its subject list is a list
+# of referring expressions — an expletive is not one, so ", and there is no
+# relocation budget" reads as part of the sponsorship predicate and demotes a
+# plain offer to `review`. It is added HERE and not to the shared pattern on
+# purpose: ending a scope earlier is a recall gain forward and a lost denial
+# backward, and the backward direction is left byte-identical.
 _SPONSOR_FORWARD_BREAK_RE = re.compile(
     _SPONSOR_CLAUSE_BREAK_RE.pattern
     + r"|\b(?:who|whom|whose|which|because|since|so\s+that|in\s+order|"
-      r"as\s+long\s+as|provided\s+that|assuming)\b",
+      r"as\s+long\s+as|provided\s+that|assuming)\b"
+    + r"|(?:,|\band\b|\bor\b|\bplus\b)\s+there\b",
     re.I,
 )
 _SPONSOR_TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9'’./-]*", re.I)

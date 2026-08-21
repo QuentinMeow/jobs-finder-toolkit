@@ -1774,3 +1774,182 @@ variants:
       decision: no_match
       accepted: false
       rule_ids: [title.excluded.manager]
+
+  - id: sponsorship-refusal-in-the-heads-own-predicate
+    domain: sponsorship
+    # The worst reading this classifier has produced. Every negation rule in the
+    # module read BACKWARD from the sponsorship phrase, and this sentence puts
+    # the whole refusal in the head noun's own PREDICATE — so no cue was found,
+    # the OFFER substring "h-1b sponsorship" stood unopposed, and the posting
+    # graded match/likely/HIGH. Through the live gate with needs_sponsorship it
+    # came back kept, labelled `yes`, with an EMPTY review_reasons under BOTH
+    # policies: an employer refusing in writing, recommended without a warning
+    # to the one candidate who cannot take the job.
+    input:
+      text: H-1B sponsorship is unavailable.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-unavailable-is-a-negation-cue
+    domain: sponsorship
+    # Half of the same defect, and independent of direction: "unavailable"
+    # carries its negation as a PREFIX, so there is no separate "not" for a cue
+    # list to find, and it is the most common word a board refuses with.
+    input:
+      text: Green card sponsorship is unavailable for this position.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-forward-negation-stops-at-a-relative-clause
+    domain: sponsorship
+    # The guardrail without which a forward rule invents refusals out of the
+    # clearest offers. "not" here modifies the CANDIDATES, and the relative
+    # pronoun is the only thing that says so.
+    input:
+      text: >-
+        H-1B sponsorship is available for candidates who are not currently
+        authorized to work in the United States.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-forward-cue-out-of-reach-is-not-an-offer
+    domain: sponsorship
+    # The other side of the same bound. The refusal is real but the adjacency
+    # test refuses to assert it across a comma at a nine-token gap — and an
+    # unreadable sentence is not evidence of an offer either, so it is kept and
+    # flagged rather than asserted in either direction.
+    input:
+      text: >-
+        H-1B sponsorship for engineering roles based in our Austin, Texas
+        office is not offered.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-field-row-writes-its-predicate-after-a-separator
+    domain: sponsorship
+    # A compact field row, not a sentence. The separator is a clause break to
+    # every other rule in the module, which would leave the forward scope empty.
+    input:
+      text: 'Visa sponsorship: not available.'
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-us-person-requirement-is-a-denial
+    domain: sponsorship
+    # GH #238. The compact field rules reached "Visa: GC/Citizens" and the phrase
+    # list reached "must be a u.s. citizen" (singular, with the article); the
+    # same bar written as an ordinary sentence produced no evidence at all, and a
+    # live posting requiring exactly these statuses ranked near the top for a
+    # candidate in none of them.
+    input:
+      text: >-
+        The successful candidate must establish U.S. Citizen, National, Lawful
+        Permanent Resident, Refugee, or Asylee status.
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-eeo-citizenship-copy-is-not-a-requirement
+    domain: sponsorship
+    # The tripwire beside it: non-discrimination boilerplate names the same
+    # nouns and is the opposite of a bar. Reading it as one would delete every
+    # employer that publishes an EEO statement.
+    input:
+      text: >-
+        We are an equal opportunity employer and do not discriminate on the
+        basis of citizenship or national origin.
+    expect:
+      decision: review
+      verdict: unknown
+
+  - id: sponsorship-inclusive-status-list-is-not-a-bar
+    domain: sponsorship
+    # GH #265. The same status nouns, OFFERED rather than required — and the
+    # applicant's own pathway is named in them. A rule that fires on the nouns
+    # alone would drop a posting that explicitly invites this candidate.
+    input:
+      text: >-
+        U.S. Citizens, Green Card Holders, EAD Holders, and H-1B transfer
+        candidates are encouraged to apply.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-transfer-welcome-beside-a-new-petition-denial
+    domain: sponsorship
+    # GH #265's live shape. The posting says both things, so it is contradictory
+    # on its face: kept and flagged for a human read, never dropped and never
+    # promoted.
+    input:
+      text: >-
+        We are unable to sponsor new H-1B petitions for this position. H-1B
+        transfer candidates are encouraged to apply.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-conditional-offer-is-not-a-settled-offer
+    domain: sponsorship
+    # GH #304, the direction that costs the candidate. A condition FRONTED to the
+    # sentence sits outside the bounded clause scope the hedge rule reads, so a
+    # sentence saying the offer has not been decided yet graded likely/HIGH.
+    input:
+      text: If approved by counsel, the company will sponsor H-1B candidates.
+    expect:
+      decision: review
+      verdict: unknown
+      confidence: low
+
+  - id: sponsorship-ordinary-fronted-clause-leaves-the-offer-alone
+    domain: sponsorship
+    # The bound on the rule above: the subordinator alone is not a condition on
+    # the offer, or every sentence that opens with "if" would lose its offer.
+    input:
+      text: If you are interested in this role, we offer visa sponsorship.
+    expect:
+      decision: match
+      verdict: likely
+      confidence: high
+
+  - id: sponsorship-citizenship-bar-survives-export-control-copy
+    domain: sponsorship
+    # GH #286, sponsorship half. The export-control sense gate exists for ONE
+    # ambiguous word — "sponsorship" also means ITAR/EAR licensing — and a
+    # citizenship bar has no second sense. Gating it too suppressed the only
+    # evidence a firmware posting carried, and the row became the top match for
+    # a candidate the complete JD bars outright.
+    input:
+      text: >-
+        Applicants must be a U.S. citizen, lawful permanent resident, or
+        protected individual, and must be eligible for a security clearance
+        under the International Traffic in Arms Regulations (ITAR).
+    expect:
+      decision: no_match
+      verdict: unlikely
+      confidence: high
+
+  - id: sponsorship-bare-offer-without-immigration-context-stays-unknown
+    domain: sponsorship
+    # The deliberate limit on the #233 recall repair. "Sponsorship is available"
+    # with no immigration word anywhere is the wording a conference-booth or
+    # employee-programme sentence uses, so it earns a positive only with
+    # immigration context in the window — the rule its contiguous twin
+    # "sponsorship available" has always followed.
+    input:
+      text: Sponsorship is available.
+    expect:
+      decision: review
+      verdict: unknown
