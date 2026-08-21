@@ -3516,3 +3516,13 @@
     Every fixture uses the repository fictional place names or generic public US
     geography and generic job-description wording. No real identity, employer, school,
     date, salary, private item name, or dated personal job-hunt content is present.'
+- base: 94349481
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:18a9d562d274b9f4
+  finding: 'Reviewed two backlog task files describing residual public filter-variant
+    corpus work and a public workplace-inference inconsistency. Both reference only
+    tracked public paths, public issue numbers, and fictional example wording. No real
+    identity, employer, school, salary, private item name, or dated personal job-hunt
+    content is present.'
