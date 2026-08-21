@@ -3833,3 +3833,15 @@
   files: 70
   digest: sha256:a981515e7f85eb6d
   finding: 'Merge of origin/main into the workspace-lifecycle branch. Covered files arrive byte-identical from origin/main where they are already published. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 1baf9bb5
+  reviewed_by: agent
+  date: 2026-08-20
+  finding: 'Reviewed the JD-metadata parser change for #257/#264: nested-specialty YOE
+    selection, spelled-out year counts, unlabelled annual and doubly-labelled hourly
+    pay bands, and the two new review-reason readers, plus their unit tests and nine
+    appended filter-variant corpus cases. Every literal is invented JD wording
+    (Kubernetes/Terraform/Istio, "AI/ML powered products", fictional dollar bands).
+    The example-store fixture changes are module digest lines only. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content.'
+  files: 10
+  digest: sha256:b331f95abb9003d8
