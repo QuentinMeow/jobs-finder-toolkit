@@ -1,0 +1,185 @@
+# Session summary — agent work lifecycle, and 25 issues
+
+**Date:** 2026-08-20 · **Mode:** async, orchestrator + subagents
+**Outcome:** 10 PRs merged (#340–#349), 25 issues closed, one repo-destroying bug caught before it ran.
+
+---
+
+## 1. What the owner asked for
+
+An idiomatic way to tell branch and worktree status; automatic garbage collection of finished
+branches and worktrees; a way for an agent to know whether work on a branch is in progress,
+stalled, complete, or abandoned without reading every file; parallel agents that do not collide;
+resistance to agents dying (timeout, API outage, battery, crash); and testability.
+
+## 2. What was built
+
+| Component | Where | What it does |
+|---|---|---|
+| Branch intent | `git branch --edit-description` (convention only) | First line = intent, optional `next:` line. Ordinary git: shared across linked worktrees, survives `git clean -xfd` and `gc`, never pushed, hand-editable. No schema, no template, no new record type. |
+| Lifecycle columns | `automation/workspace/status.py` | Derived `state` (`active`/`idle`/`stale`/`merged`/`orphaned`/`wedged`), `intent`, wall-clock age, `--json`, `--stale <days>`, opt-in `--pr`. |
+| Cleanup planner | `automation/workspace/cleanup.py` | Dry-run default, **no `--force` flag at all**. `--execute` performs only non-destructive steps. The destructive half is emitted as a shell script for the owner to read and run. |
+| Staleness routine | `automation/gardener/workspace_hygiene.py` | Report-only, always exit 0, counts-only for the private overlay. |
+| Issue closing | `skills/github-workflow/reference.md` §9 | The `Closes #N` convention — the smallest change here and the one that fixed the largest observed problem. |
+
+**Guiding principle: derive, never declare.** Every field a lifecycle record would have asked an
+agent to write already exists somewhere git or GitHub enforces.
+
+## 3. What was deliberately NOT built, and why
+
+Two full designs were written and independently red-teamed, then **both rejected**:
+
+- **Design A** (state as git tree objects under `refs/agent-work/*`, CAS via `update-ref`): 2,095 lines.
+- **Design B** (JSON files in `.git/agent-work/`, journal, `os.link` mutex): 2,650 lines.
+
+Reasons both failed:
+
+1. **A live owner decision forbids it.** `message-queue/needs-human/decisions/process-weight-what-to-cut.md`
+   is open and its Default path reads *"no new gate is added while this is open."* A added three
+   gates, B added one. Under `AGENTS.md:243-245` a pending default path is what runs in `main`.
+2. **Voluntary records do not get written.** Measured over 96 non-backlog tasks: the *gated*
+   `Claimed-by` key is present 96/96 (100%); the *ungated* habit of naming a branch in it holds
+   45/96 (47%); branch-in-handover, which nothing asks for, 13/61 (21%). Compliance is a step
+   function of enforcement, and a half-stale dashboard is worse than none.
+3. **An ignored staleness reporter already exists.** `queue_hygiene.py` currently reports 12 of 14
+   in-flight tasks stalled past 14 days, one at 29 days, all unactioned.
+4. **Claude Code already ships the mechanism** — native worktree management with lock-as-lease and a
+   sweep that releases locks of exited processes, never releases a human-set lock, and skips
+   worktrees holding uncommitted or unpushed work.
+
+Cut as unjustified for a single-user local repo: fencing epochs, lock-delay windows, `F_FULLFSYNC`,
+an append-only journal, PID/boot-uuid liveness probes, heartbeats and leases, a new skill, new
+templates, any new gate.
+
+## 4. Findings that changed the design (each verified on this machine)
+
+| # | Finding | Consequence |
+|---|---|---|
+| F1 | `git branch --merged` **misses squash-merges**; `git cherry`/`patch-id` **ignores whitespace** (8-space and 2-space Python indents produced the identical patch-id `f29971ed…`) | Both standard recipes can call unique work merged. Detection is now a `git merge-tree --write-tree` content-containment test, which caught the squash-merge the other two missed and never once reported unique work as merged. |
+| F2 | `time.monotonic()` lost **229,413 s (63.7 h)** of laptop sleep | Any lease TTL built on it reads fresh forever after the lid closes. All ages use wall clock. |
+| F3 | After an agent's worktree is removed and its branch deleted, `git reflog --all` returns **zero hits** — all three reflogs are destroyed by the operation itself; `gc --prune=now` then erases the commit | One `git update-ref refs/agent-trash/<ts>/<branch>` before any deletion makes the tip reachable; verified to survive `gc --prune=now`. |
+| F4 | Untracked and ignored files have **no git recovery story at all** | The emitted script uses `mv` to a trash directory, never `rm`. |
+| F5 | `git worktree lock --reason` is a **native finalizer** — blocks `remove` and `prune`, needs `-f -f` | Free safety. But a *locked* worktree whose directory is gone never reports `prunable`, which is a real blind spot. |
+| F6 | A renewal-based lease is **structurally wrong here**: every system with one (Chubby 12 s, Kubernetes 15 s, Consul) has a daemon renewing it. An LLM agent between turns is not executing at all | Replaced with checkpoint-at-phase-boundary plus multi-signal evidence. |
+| F7 | Git hooks are **not cloned** — 0 tracked files under `.git/`, and a fresh clone gets 0 non-sample hooks | The local leak guard is opt-in-by-installation; CI is the real backstop. Filed as a task. |
+| F8 | `git branch -d` only checks merged-into-**HEAD**, not merged-into-upstream | It is the last line of defence, not the gate. A refusal is a finding to report, never a reason to reach for `-D`. |
+
+## 5. The bug that justified the whole design
+
+Run against this repository, the newly-merged planner emitted a script whose first destructive line
+was:
+
+```
+mv <repo root> local/workspace/trash-<id>/jobs-finder-toolkit
+```
+
+That is the **repository root** — the directory containing `.git` — moved into a trash directory
+nested inside one of its own linked worktrees.
+
+**Why every precondition passed:** a concurrent session had left the main checkout on a topic branch
+that was since merged, and the tree was clean. Nothing asked *"is this the main working tree?"* The
+one guard that existed compared each worktree against the planner's own repo root — which, when the
+planner runs from a linked worktree, **is** that linked worktree. It only appeared on the `--fetch`
+path; without fetching the branch read unmerged and the root was kept for an unrelated reason.
+
+**Nothing ran.** The design's own property caught it: dry-run by default, destructive half emitted as
+a script, read it before running it. A tool that simply performed the cleanup would have executed it.
+
+The fix (#347) found **five** instances of the class, including two that were not obvious:
+- **Shell injection through emitted comments** — `worktree list --porcelain -z` carries a newline
+  inside a path faithfully, so `# worktree <path>` ended early and left the tail standing as a
+  command. `shlex.quote` protected the `mv`, not the comment. Same hazard via a branch description,
+  which is multi-line *by design* — the very mechanism adopted for branch intent.
+- **macOS symlink aliasing** — the self-nesting check must run in both the literal and resolved
+  spelling, because the source arrives as `/var/folders/…` and the destination as `/private/var/…`,
+  and only the resolved form sees the containment.
+
+The new tests were verified to **fail against the buggy code** (18 failures), not merely to pass
+against the fixed one.
+
+## 6. Issues: 69 open at session start, 44 at the end
+
+**Root cause of the backlog, measured:** `Closes #N` appeared **nowhere** — not in the nine fix PRs
+merged on 2026-08-10, not in `skills/github-workflow/`, `CONTRIBUTING.md`, or `AGENTS.md`. Fixes
+shipped; nothing was ever marked done. Triage found 14 issues already fixed but never closed.
+
+**Closed this session (25):** 230, 233, 236, 237, 238, 242, 244, 245, 252, 260, 261, 271, 272, 279,
+284, 289, 290, 291, 297, 298, 299, 301, 304, 307.
+
+### Merged pull requests
+
+| PR | Change |
+|---|---|
+| #340 | Store identity and row provenance on a replayed search |
+| #341 | Leak guard stops blocking on surnames spelled out in its own fixtures |
+| #342 | Source pagination, dead-page detection, aggregator link identity |
+| #343 | Tailoring card stops mangling units in extracted numbers |
+| #344 | Negated remote statements, residence exclusions, time-zone bounds |
+| #345 | Sponsorship refusals stated after the head noun |
+| #346 | Branch intent and work state in the workspace dashboard |
+| #347 | Never propose the main working tree for retirement |
+| #348 | Reject non-job postings; stop scoring explicitly excluded technologies |
+| #349 | Hyphenated title spellings; stop scoring the English word "go" |
+
+### Three defects found during triage that nobody had filed
+
+1. **A sponsorship denial read as a high-confidence offer.** `H-1B sponsorship is unavailable.`
+   classified `match`/`likely`/**high**, kept under both policies with an empty review-reason list.
+   Two independent causes: every negation rule read *backward* from the sponsorship phrase while
+   these sentences put the refusal in the head noun's own predicate, and `unavailable` was not a
+   cue at all. For a candidate who cannot accept a role without sponsorship this was the worst
+   failure the pipeline could produce. Fixed in #345.
+2. **A negated work-from-home statement read as remote.** `There is no work from home for this
+   position.` → confident `us_remote`/`match`. The #276 fix added a preceding-negation guard to the
+   remote-role rule and never mirrored it onto the work-from-home rule. Fixed in #344.
+3. **An ambiguous include token disabled the whole occupation lexicon**, so `go` in a profile
+   rescued go-to-market finance roles. The originating commit measured "0 rows change" against a
+   fixture where `go` sat in a different field, so the measurement missed it. Fixed in #349.
+
+A tracked `memory/known-issues/` record marked CLOSED on 2026-08-02, asserting the sponsorship shape
+"no longer reproduces", was **falsified** and now carries a third dated correction recording why
+re-running a file's own reproductions cannot falsify a class-level claim.
+
+## 7. The merge tax, measured
+
+Every branch appends to `automation/publish/review_ledger.yaml`. It was the **only** conflict on
+every single branch, and merging any one PR immediately re-dirtied every other open PR — forcing
+strictly sequential merges with a hand resolution each round. A second hotspot,
+`skills/job-search/filter_variants/corpus.yaml`, conflicted whenever two agents appended cases.
+
+Both were resolved the way the repo's own remediation text mandates — *"recover the authored rows
+from git history and re-append them whole"* — by **byte-level append**, never a line union. A first
+attempt using a YAML round-trip was discarded: it reformatted all 351 historical rows (1,986
+insertions) instead of appending 3, destroying the reviewability of an append-only audit file.
+
+## 8. Live evidence: the problem reproducing itself
+
+Session start: 1 worktree, 1 local branch, 0 stray refs.
+Forty minutes and seven agents later: **8 worktrees, 15 local branches**, of which 7 were
+`worktree-agent-<hex>` scaffolding carrying no indication of purpose.
+
+At that moment `git branch --merged` reported **8 of 15 as merged — including a branch whose agent
+was still running with 7 modified files**, because it had no commits yet so its tip still equalled
+`main`. A naive "delete merged branches" GC would have deleted live work.
+
+## 9. Cleanup performed
+
+11 backup refs written under `refs/agent-trash/<run-id>/` before anything was removed. 8 orphan
+scaffold branches deleted; **4 refused by `git branch -d`** because their agents were still running,
+and the refusals were reported rather than overridden. Recoverability spot-checked: a deleted tip
+still resolves through its backup ref as a live commit object. Zero worktrees broken, zero prunable
+entries left.
+
+## 10. Open items for the owner
+
+1. **`delete_branch_on_merge=true`** on the GitHub repository — one setting, permanently ends the
+   remote half of the branch-litter problem. Repo-settings change; not made.
+2. **`config.yaml` is missing** while the private overlay is mounted, so the local leak guard cannot
+   arm and `pre-push` refuses. Pushes this session used the documented override with a local
+   token-independent scan first; CI's armed guard (secret confirmed set) was the enforcing gate
+   throughout. Restoring `config.yaml` removes the need for the override entirely.
+3. **The lifecycle branch overran its budget**: 3,222 insertions against a 600–900 target. About
+   1,170 are tests. Reported rather than trimmed, since removing documented edge cases is what the
+   harness rules forbid.
+4. Follow-up tasks filed in `tasks/0_backlog/` by individual agents are listed in their PR bodies
+   under "What was filed".
