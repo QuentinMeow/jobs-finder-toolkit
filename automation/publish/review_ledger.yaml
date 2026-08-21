@@ -3845,3 +3845,14 @@
     and a reconciliation block. Tooling code and issue references only; no real
     identity, employer, school, salary, private item name, or dated personal
     job-hunt content.'
+- base: da473d8e
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:019bda684f389442
+  finding: 'Reviewed the profile schema table and the unknown-key warnings in
+    search_jobs.py, plus the report block that prints them. The declared keys are the
+    ones the public pipeline already reads and match the shipped example profile and
+    template; the example strings are the invented typo max_required_years and the
+    generic key names. No real identity, employer, school, salary, private item name,
+    or dated personal job-hunt content.'

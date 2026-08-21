@@ -300,9 +300,139 @@ def apply_visa_policy(profile: dict, policy: str | None) -> None:
 # user their setting does nothing is not.
 UNIMPLEMENTED_PROFILE_KEYS = (("comp", "min_base"), ("comp", "min_total"))
 
+# Every key the pipeline actually READS, by position in the profile. A mapping
+# value lists that block's own keys; `None` is a leaf whose VALUE nothing here
+# inspects (a scalar or a list).
+#
+# This exists because a profile carries the run's hard constraints — sponsorship,
+# location, posting age, YOE, pay — and a misspelled key was accepted in silence:
+# `max_required_years: 7` parses as valid YAML, reaches nothing, filters nothing,
+# and the run looks completely normal. The user reads a shortlist believing a cap
+# they never applied. Anything absent from this table is reported by
+# :func:`unknown_profile_key_warnings`, with the nearest real key named.
+#
+# Keeping it accurate is part of adding a profile key: a key read by the pipeline
+# but missing here produces a false "nothing reads it" warning, which is why the
+# test suite asserts the shipped example profile and the template validate clean.
+PROFILE_SCHEMA: dict = {
+    "name": None,
+    "label": None,
+    "updated": None,
+    "max_age_days": None,
+    "max_years_experience": None,
+    "years_experience": None,
+    "top_k": None,
+    "titles": {
+        "include": None,
+        "exclude": None,
+        "exclude_neutralize": None,
+        "occupation_review_cap": None,
+        "word_filter": {"hard_exclude": None, "soft_exclude": None, "include": None},
+    },
+    "seniority": {"target": None, "fit_weight": None, "yoe_fit_weight": None},
+    "keywords": {"strong": None, "good": None, "negative": None},
+    "location": {"preferred": None, "allow_remote": None, "us_only": None,
+                 "require_match": None},
+    "visa": {"needs_sponsorship": None, "h1b_transfer": None, "perm_greencard": None,
+             "policy": None},
+    "company_search_log": {"skip_within_days": None, "widen_first_search": None,
+                           "first_search_max_age_days": None},
+    "comp": {"min_base": None, "min_total": None},
+    "ai_company": {"require": None, "company_tags": None, "signals": None,
+                   "boost_per_hit": None, "max_boost": None, "company_boost": None},
+    "diversity": {"max_per_company": None},
+    "sources": {
+        "company_tags": None, "aggregators": None, "extended_aggregators": None,
+        "query_terms": None, "query_location": None,
+        "jobspy": {"enabled": None, "reliable_sites": None, "sites": None,
+                   "extended_sites": None, "location": None, "locations": None,
+                   "distance": None, "is_remote": None, "results_wanted": None,
+                   "max_terms": None, "linkedin_fetch_description": None,
+                   "country_indeed": None},
+    },
+}
+
+
+def _schema_paths(schema: dict, prefix: str = "") -> list[str]:
+    """Every dotted key path in ``schema`` (``sources.jobspy.max_terms``, ...)."""
+    paths = []
+    for key, sub in schema.items():
+        path = f"{prefix}{key}"
+        paths.append(path)
+        if isinstance(sub, dict):
+            paths.extend(_schema_paths(sub, f"{path}."))
+    return paths
+
+
+def _nearest_key(unknown: str, siblings, schema: dict = PROFILE_SCHEMA) -> str | None:
+    """The real key an unknown one was most likely meant to be, or None.
+
+    Two passes, because neither alone is enough. Shared underscore-separated
+    WORDS go first: they answer the typo shape a hand-written profile actually
+    produces (``max_required_years`` for ``max_years_experience``, which edit
+    distance scores far below any usable cutoff) and they reach across blocks,
+    so a key invented at the wrong level (``per_company``) is pointed at its real
+    home (``diversity.max_per_company``) rather than at whichever sibling happens
+    to share letters. Edit distance then catches a slip INSIDE one word, where
+    there are no shared words to find — ``locations`` for ``location``.
+    """
+    import difflib
+
+    words = {w for w in unknown.split("_") if w}
+    best, best_score = None, 0
+    for path in _schema_paths(schema):
+        leaf = path.rsplit(".", 1)[-1]
+        shared = len(words & {w for w in leaf.split("_") if w})
+        # Two shared words is the floor: one ("max", "company") matches half the
+        # schema and would hand the user a confident, wrong suggestion.
+        if shared >= 2 and shared > best_score:
+            best, best_score = path, shared
+    if best:
+        return best
+    close = difflib.get_close_matches(unknown, list(siblings), n=1, cutoff=0.6)
+    return close[0] if close else None
+
+
+def unknown_profile_key_warnings(profile: dict, schema: dict = PROFILE_SCHEMA,
+                                 prefix: str = "") -> list[str]:
+    """One warning per profile key that no part of the pipeline reads.
+
+    WARNS rather than exits, deliberately. The failure this catches is silence,
+    not permissiveness: the user needs to be TOLD the key does nothing, and
+    they can be told while the run still returns its postings. Exiting would
+    also make this table a single point of failure for every profile in
+    existence — including the private overlay's, which this tree cannot see —
+    so one forgotten entry here would take down searches that are entirely
+    correct. A warning that is wrong costs a line of stderr; an exit that is
+    wrong costs the run.
+    """
+    warnings = []
+    for key, value in (profile or {}).items():
+        path = f"{prefix}{key}"
+        if key not in schema:
+            suggestion = _nearest_key(str(key), schema.keys())
+            hint = f" Did you mean `{suggestion}`?" if suggestion else ""
+            warnings.append(
+                f"UNKNOWN KEY `{path}` — no filter, score, gate, or report reads "
+                f"it, so it changed NOTHING about this run.{hint} Fix the spelling "
+                f"or delete the key; a constraint you believe is active but is not "
+                f"is worse than no constraint."
+            )
+            continue
+        sub = schema[key]
+        if isinstance(sub, dict) and isinstance(value, dict):
+            warnings.extend(unknown_profile_key_warnings(value, sub, f"{path}."))
+    return warnings
+
 
 def unimplemented_profile_warnings(profile: dict) -> list[str]:
-    """One warning per profile key that is SET but read by nothing."""
+    """One warning per profile key that is SET but read by nothing.
+
+    Two populations, one list, because from the user's seat they are the same
+    surprise — "I set this and it did nothing": keys the schema DECLARES but no
+    code implements (``comp.min_base``), and keys the schema does not declare at
+    all (a typo, or an invented name).
+    """
     warnings = []
     for section, key in UNIMPLEMENTED_PROFILE_KEYS:
         block = profile.get(section)
@@ -312,7 +442,7 @@ def unimplemented_profile_warnings(profile: dict) -> list[str]:
                 f"— no filter, score, or report reads it, and this run applied no "
                 f"pay floor. Remove it, or check pay by hand on each row."
             )
-    return warnings
+    return warnings + unknown_profile_key_warnings(profile)
 
 
 def resolve_query_terms(profile: dict) -> list[str]:
@@ -856,6 +986,8 @@ def render_markdown(kept, profile, meta, *, review_path=None,
     if meta["errors"]:
         lines += ["> Source errors / not inspected: "
                   + "; ".join(meta["errors"][:12]), ""]
+    for warning in (meta.get("profile_warnings") or []):
+        lines += [f"> **Profile warning:** {warning}", ""]
     lines += [
         "| # | Score | Company | Title | Level (Google eq.) | YOE | Salary | "
         "Loc/Remote | Age | Visa | Source | Why | Link |",
@@ -1217,6 +1349,10 @@ def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
         "first_search_widening": counts.get("widening_active", False),
         "first_search_max_age_days": counts.get("first_search_max_age_days"),
         "max_per_company": max_per_company,
+        # Profile keys that did nothing this run — unimplemented, or unknown.
+        # In the meta as well as on stderr because a scrolled-past warning about a
+        # constraint the user believes is active is barely a warning at all.
+        "profile_warnings": unimplemented_profile_warnings(profile),
         "errors": errors,
     }
 
