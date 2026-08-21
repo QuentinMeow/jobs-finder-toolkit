@@ -3696,3 +3696,48 @@
   files: 27
   digest: sha256:3315aaaf6483c2e0
   finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:e139c18bd860717c
+  finding: 'Reviewed the job-search store-identity fix and its tests. The change is
+    a read-only store-index lookup on the refilter path plus synthetic fixtures
+    (Northwind Robotics, greenhouse job 777, temp directories). No real identity,
+    employer, school, salary, private item name, absolute home path, or dated
+    personal job-hunt content is present.'
+- base: e012119c
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:27d34a41e2ec99ef
+  finding: 'Reviewed the search-JSON provenance fields, the filter-review payload
+    additions, the unique run id, and the new refilter tests. Everything is public
+    pipeline behavior plus synthetic fixtures (Northwind Robotics, Cobalt Systems,
+    temp directories); no real identity, employer, school, salary, private item
+    name, absolute home path, or dated personal job-hunt content is present.'
+- base: 9f65cc71
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:44b0a6ba222cc67e
+  finding: 'Reviewed the backlog task describing the job-search JSON provenance doc
+    need. It names only public scripts, fields, and issue numbers; no real identity,
+    employer, school, salary, private item name, absolute home path, or dated
+    personal job-hunt content is present.'
+- base: 61aecb84
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main into this branch. Verified the files this row covers
+    are byte-identical to origin/main, where they are already published; the merge
+    introduces no new public content. The review_ledger conflict was resolved by
+    appending this branch''s authored rows whole onto main''s file, not by a line
+    union.'
+- base: 6e4876c0
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 32
+  digest: sha256:deb299ac3861a526
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'

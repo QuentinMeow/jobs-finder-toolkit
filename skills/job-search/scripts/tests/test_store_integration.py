@@ -19,7 +19,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _SCRIPTS = Path(__file__).resolve().parents[1]
@@ -269,6 +269,119 @@ class JsonThreadingTests(unittest.TestCase):
         p = self._posting("https://other.test/x")
         rows = search_jobs._json_rows_with_store_key([p], {"https://x/1": "gh-1"})
         self.assertIsNone(rows[0]["store_key"])
+
+
+class RefilterStoreIdentityTests(unittest.TestCase):
+    """A no-change ``--refilter`` replay must not lose the identity a fetch had.
+
+    The snapshot is written BEFORE the run's store build, so replaying it emitted
+    ``store_key: null`` for every posting while a fresh run of the byte-identical
+    rows emitted real keys — the users are told to refilter before acting, so the
+    final artifact was the one with the weakest provenance.
+    """
+
+    URL = "https://boards.greenhouse.io/co/jobs/777"
+
+    def setUp(self):
+        self._prior = os.environ.get("JOBHUNT_DATA_ROOT")
+        self.root = Path(tempfile.mkdtemp(prefix="store-replay-"))
+        os.environ["JOBHUNT_DATA_ROOT"] = str(self.root)
+        self.tmp = Path(tempfile.mkdtemp(prefix="store-replay-cache-"))
+        self.fetched_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+    def tearDown(self):
+        if self._prior is None:
+            os.environ.pop("JOBHUNT_DATA_ROOT", None)
+        else:
+            os.environ["JOBHUNT_DATA_ROOT"] = self._prior
+        shutil.rmtree(self.root, ignore_errors=True)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _build_store(self):
+        """Capture one greenhouse board payload and build the index from it."""
+        sess = CaptureSession("jobs", self.root, tool_version="test")
+        job = {"id": "777", "title": "Senior Backend Engineer",
+               "location": {"name": "Remote, US"}, "absolute_url": self.URL,
+               "content": "Python, Kubernetes, AWS, distributed systems, api.",
+               "first_published": self.fetched_at.isoformat(),
+               "company_name": "Northwind Robotics", "metadata": []}
+        sess.capture_fetch(
+            source="greenhouse", operation="board",
+            request={"url": "https://boards-api.greenhouse.io/v1/boards/co/jobs"},
+            status=200, payload_bytes=json.dumps({"jobs": [job]}).encode(),
+            content_type="application/json", fetched_at=self.fetched_at,
+            context={"company": "co", "profile": "profile-01"})
+        with contextlib.redirect_stderr(io.StringIO()):
+            return search_jobs.run_post_fetch_store_build()
+
+    def _snapshot(self):
+        p = JobPosting(
+            source="board", company="Northwind Robotics",
+            title="Senior Backend Engineer", url=self.URL, location="Remote, US",
+            remote="remote", posted_at=self.fetched_at - timedelta(days=1),
+            description="Python, Kubernetes, AWS, distributed systems, api.")
+        snap_path, _ = snapshot.write_snapshot(
+            self.tmp, profile="example", stage=1, fetched_at=self.fetched_at,
+            source_selection={"n_companies": 1, "aggregators": [],
+                              "max_age_days_at_fetch": None},
+            postings=[p], errors=[])
+        return snap_path
+
+    def _tree(self):
+        return {str(p): (p.stat().st_mtime_ns, p.stat().st_size)
+                for p in self.root.rglob("*") if p.is_file()}
+
+    def test_refilter_emits_the_same_store_key_a_fetch_would(self):
+        _line, fetch_map = self._build_store()
+        from posting_identity import canonicalize_url
+        fetch_key = fetch_map.get(canonicalize_url(self.URL))
+        self.assertEqual(fetch_key, "gh-777")          # what a fresh run emits
+
+        snap_path = self._snapshot()
+        out_json = self.tmp / "matches.json"
+        argv = ["search_jobs.py", "--profile", "example", "--cache-dir",
+                str(self.tmp), "--refilter", str(snap_path),
+                "--out", str(self.tmp / "m.md"), "--json-out", str(out_json),
+                "--sponsor-index", str(self.tmp / "none.json")]
+        old = sys.argv
+        sys.argv = argv
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                code = search_jobs.main()
+        finally:
+            sys.argv = old
+        self.assertEqual(code, 0)
+        rows = json.loads(out_json.read_text())
+        self.assertEqual([r["store_key"] for r in rows], [fetch_key])
+
+    def test_the_replay_lookup_reads_the_index_and_writes_nothing(self):
+        self._build_store()
+        before = self._tree()
+        line, url_map = search_jobs.read_store_status_for_replay()
+        from posting_identity import canonicalize_url
+        self.assertEqual(url_map.get(canonicalize_url(self.URL)), "gh-777")
+        self.assertTrue(line.startswith("store: 1 tracked"))
+        # A replay is not a fetch: no build, no lock, not one byte rewritten.
+        self.assertEqual(self._tree(), before)
+
+    def test_a_store_that_was_never_built_is_not_an_error(self):
+        line, url_map = search_jobs.read_store_status_for_replay()
+        self.assertIsNone(line)
+        self.assertEqual(url_map, {})
+
+    def test_disabled_store_replay_is_a_silent_noop(self):
+        orig = search_jobs.config.data_root
+        buf = io.StringIO()
+        try:
+            search_jobs.config.data_root = lambda: None
+            with contextlib.redirect_stderr(buf):
+                line, url_map = search_jobs.read_store_status_for_replay()
+        finally:
+            search_jobs.config.data_root = orig
+        self.assertIsNone(line)
+        self.assertEqual(url_map, {})
+        self.assertEqual(buf.getvalue(), "")
 
 
 class SnapshotInvarianceTests(unittest.TestCase):

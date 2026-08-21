@@ -1421,17 +1421,86 @@ def _read_store_status(layout) -> tuple[str | None, dict]:
     return line, url_map
 
 
-def _json_rows_with_store_key(kept, url_map) -> list[dict]:
-    """--json-out rows = to_dict() + a store_key looked up by canonicalized URL.
+def read_store_status_for_replay() -> tuple[str | None, dict]:
+    """Store status for the ``--refilter`` path: READ the index, never build it.
 
-    Added to the JSON payload ONLY (never to snapshots or the plain to_dict); a
-    missing match is ``store_key: null``, never an error. The canonicalizer is the
-    builder's own (drift-free — no second identity matcher).
+    The fetch path writes its snapshot BEFORE the store build runs, so the rows a
+    snapshot preserves carry no store identity. Replaying one therefore used to emit
+    ``store_key: null`` on every row while a fresh run of the byte-identical postings
+    emitted real keys — the replay silently lost the identity linkage that meta.yaml,
+    the skip-log and every store-keyed consumer join on.
+
+    Reading the already-built index restores it deterministically: one file read, NO
+    lock, no write — a replay is not a fetch, so it must never build. Same total guard
+    as the fetch path: a disabled, absent, or broken store yields ``(None, {})`` and
+    the search is unaffected.
+    """
+    if config is None:
+        return None, {}
+    try:
+        data_root = config.data_root()
+    except Exception:  # noqa: BLE001
+        return None, {}
+    if data_root is None:
+        return None, {}
+    try:
+        from _vendor.store.paths import domain_layout
+        layout = domain_layout(data_root, "jobs")
+        if not (layout.index / "postings.jsonl").exists():
+            # A configured store that has never been built is not an error: the
+            # replay simply has no identity to restore, exactly as before.
+            return None, {}
+        return _read_store_status(layout)
+    except Exception as exc:  # noqa: BLE001 — a store bug must never break a refilter
+        print(f"store: identity lookup skipped ({exc}); search unaffected",
+              file=sys.stderr)
+        return None, {}
+
+
+def snapshot_row_map(postings) -> dict[int, int]:
+    """``{id(posting): row}`` — where each raw posting sits in the run's snapshot.
+
+    The snapshot's ``postings`` array is written from (and, on a refilter, read into)
+    exactly this list, so its index is the stable per-row locator that points an
+    auditor at one untruncated JD. Keyed by object identity rather than URL because
+    two aggregator rows legitimately share one generic URL (RemoteOK), and a locator
+    that resolves to two postings is not a locator.
+    """
+    return {id(p): i for i, p in enumerate(postings or [])}
+
+
+def full_description_command(snapshot_path, row) -> str:
+    """A copy-pasteable command that prints ONE snapshot row's untruncated JD."""
+    import shlex
+    program = ("import json,sys;print(json.load(open(sys.argv[1]))"
+               "['postings'][int(sys.argv[2])]['description'])")
+    return f'python3 -c "{program}" {shlex.quote(str(snapshot_path))} {row}'
+
+
+def _json_rows_with_store_key(kept, url_map, *, snapshot_path=None, run_id=None,
+                              snapshot_rows=None) -> list[dict]:
+    """--json-out rows = to_dict() + store identity + a locator for the FULL JD.
+
+    All of it is added to the JSON payload ONLY (never to snapshots or the plain
+    to_dict); a missing store match is ``store_key: null``, never an error. The
+    canonicalizer is the builder's own (drift-free — no second identity matcher).
+
+    ``to_dict`` clips ``description`` to 400 characters to keep the handoff light,
+    and a JD's deciding clause — excluded states, clearance/citizenship, "no
+    sponsorship", a 10+ YOE line — routinely sits past that cut. A row that shows a
+    preview without saying so reads as the whole posting, so every row now states
+    that its text is a preview (``description_is_preview``), how long the real one is
+    (``description_full_chars``), and exactly where that text lives:
+    ``source_snapshot`` + ``source_snapshot_row``, plus ``full_description_command``,
+    which prints it. ``run_id`` names the run that emitted the row, so two results
+    over one snapshot can be told apart and each joined to its own report.
     """
     try:
         from posting_identity import canonicalize_url
     except Exception:  # noqa: BLE001
         canonicalize_url = None
+    snapshot_rows = snapshot_rows or {}
+    snapshot_str = str(snapshot_path) if snapshot_path else None
     rows = []
     for p in kept:
         d = p.to_dict()
@@ -1439,15 +1508,38 @@ def _json_rows_with_store_key(kept, url_map) -> list[dict]:
         if url_map and canonicalize_url is not None:
             key = url_map.get(canonicalize_url(p.url or ""))
         d["store_key"] = key
+        d["run_id"] = run_id
+        full = p.description or ""
+        is_preview = len(full) > len(d.get("description") or "")
+        d["description_is_preview"] = is_preview
+        d["description_full_chars"] = len(full)
+        row = snapshot_rows.get(id(p))
+        d["source_snapshot"] = snapshot_str
+        d["source_snapshot_row"] = row
+        # Only a clipped row has anything to retrieve; on a full-text row the
+        # command would be noise repeated once per posting.
+        d["full_description_command"] = (
+            full_description_command(snapshot_str, row)
+            if is_preview and snapshot_str and row is not None else None)
         rows.append(d)
     return rows
 
 
-def write_json_output(path: str | Path, kept, url_map) -> Path:
-    """Write handoff JSON, creating a caller-supplied output directory if needed."""
+def write_json_output(path: str | Path, kept, url_map, *, snapshot_path=None,
+                      run_id=None, postings=None) -> Path:
+    """Write handoff JSON, creating a caller-supplied output directory if needed.
+
+    The payload stays a bare LIST of posting records — ``handoff.py`` consumes it
+    that way — so the run's provenance (source snapshot, run id, row locator) rides
+    on every row instead of in an envelope that would break that contract.
+    ``postings`` is the run's raw pre-filter list, i.e. the snapshot's row order.
+    """
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(_json_rows_with_store_key(kept, url_map), indent=2))
+    rows = _json_rows_with_store_key(
+        kept, url_map, snapshot_path=snapshot_path, run_id=run_id,
+        snapshot_rows=snapshot_row_map(postings))
+    out.write_text(json.dumps(rows, indent=2))
     return out
 
 
@@ -1493,23 +1585,48 @@ def format_families(families, limit: int = 6) -> str:
 
 def review_payload(postings, profile: str, *, generated: str,
                    kind: str = "filter-review",
-                   snapshot_path: Path | str | None = None) -> dict:
-    """The filter-review JSON body (also written when there is nothing to review)."""
+                   snapshot_path: Path | str | None = None,
+                   run_id: str | None = None,
+                   snapshot_rows: dict | None = None) -> dict:
+    """The filter-review JSON body (also written when there is nothing to review).
+
+    This is the surface the skill asks a human to adjudicate, so naming the snapshot
+    is not enough on its own: without a per-row locator the reviewer has to invent a
+    join (company/title/URL) back into a snapshot of thousands of rows, and generic
+    aggregator URLs make that join ambiguous. Each row therefore carries the exact
+    snapshot index of its untruncated JD, and ``instruction`` carries the command
+    that prints one.
+    """
+    snapshot_rows = snapshot_rows or {}
+    snapshot_str = str(snapshot_path) if snapshot_path else None
     rows = []
     for p in postings:
         row = p.to_dict()
         # `to_dict` clips the description to 400 chars for light JSON. A reviewer
         # judging a filter decision needs to know the text is a preview, and where
         # the untruncated JD lives — the snapshot round-trips it in full.
-        row["description_truncated"] = len(p.description or "") > len(
-            row.get("description") or "")
+        full = p.description or ""
+        row["description_truncated"] = len(full) > len(row.get("description") or "")
+        row["description_full_chars"] = len(full)
+        row["source_snapshot_row"] = snapshot_rows.get(id(p))
         rows.append(row)
+    retrieve = (
+        f"Print one row's untruncated JD with: "
+        f"{full_description_command(snapshot_str, '<source_snapshot_row>')}"
+        if snapshot_str else
+        "No snapshot was recorded for this run, so the full JD cannot be "
+        "retrieved from this file."
+    )
     return {
-        "schema": 2,
+        "schema": 3,
         "kind": kind,
         "profile": profile,
         "generated": generated,
-        "snapshot": str(snapshot_path) if snapshot_path else None,
+        # Which RUN wrote this body. The stable pointer copy is otherwise anonymous:
+        # its filename carries no stamp, so "which run produced the artifact I am
+        # reading" had no answer inside the file.
+        "run_id": run_id,
+        "snapshot": snapshot_str,
         "count": len(rows),
         # The rule ids that put each row here, rolled up. Every row also carries its
         # own `review_reasons` (and `filter_assessments`) untouched.
@@ -1517,7 +1634,8 @@ def review_payload(postings, profile: str, *, generated: str,
         "instruction": (
             "Run validate_filter_variants.py --snapshot <snapshot> and label "
             "new structural variants before changing a hard filter. Descriptions "
-            "here are 400-char previews; the snapshot named above holds the full JD."
+            "here are 400-char previews; the snapshot named above holds the full "
+            f"JD, and each row's source_snapshot_row indexes it. {retrieve}"
         ),
         "postings": rows,
     }
@@ -1531,7 +1649,8 @@ def write_review_report(postings, cache_dir: Path, profile: str, *,
                         kind: str = REVIEW_KIND,
                         stamp: str | None = None,
                         generated: str | None = None,
-                        snapshot_path: Path | str | None = None) -> tuple[Path, Path]:
+                        snapshot_path: Path | str | None = None,
+                        snapshot_rows: dict | None = None) -> tuple[Path, Path]:
     """Write uncertain filter rows to gitignored scratch, per run + a stable pointer.
 
     Mirrors :func:`snapshot.write_snapshot`: a per-run
@@ -1557,7 +1676,8 @@ def write_review_report(postings, cache_dir: Path, profile: str, *,
     body = json.dumps(
         review_payload(postings, profile, kind=kind,
                        generated=generated or now.isoformat(),
-                       snapshot_path=snapshot_path),
+                       snapshot_path=snapshot_path, run_id=stamp,
+                       snapshot_rows=snapshot_rows),
         indent=2)
     run_path = unique_run_path(cache_dir / f"{label}-{kind}-{stamp}.json")
     snapshot.atomic_write(run_path, body)
@@ -1696,10 +1816,20 @@ def main() -> int:
     # refilter path anchors to the snapshot's fetch time. Two refilters of one
     # snapshot are two runs with two different answers; naming their artifacts after
     # the snapshot would make the second silently replace the first.
-    run_id = snapshot.run_stamp(datetime.now(timezone.utc))
+    #
+    # The random tail is what makes it an IDENTITY rather than a timestamp: a
+    # refilter of a small snapshot finishes in well under a second, so two runs
+    # collide on a second-resolution stamp. `unique_run_path` de-collides the
+    # FILENAME, but the id recorded inside the artifacts (and now on every --json-out
+    # row) would still report one identity for two different answers — the exact
+    # confusion the id exists to prevent. Timestamp first, so run artifacts still
+    # sort chronologically; same shape the raw store uses for a fetch id.
+    run_id = f"{snapshot.run_stamp(datetime.now(timezone.utc))}-{os.urandom(2).hex()}"
 
-    # Store integration runs on the FETCH path only (refilter is snapshot-only and
-    # never builds); defaults keep the refilter output byte-identical to today.
+    # The store BUILD runs on the FETCH path only (a refilter is snapshot-only and
+    # must never build). Store identity is read on both paths — see
+    # read_store_status_for_replay: a replay that dropped store_key made the two
+    # paths disagree about who a posting is.
     store_line: str | None = None
     store_url_map: dict = {}
 
@@ -1756,6 +1886,11 @@ def main() -> int:
         snapshot_display = f"{snap_path} (refilter; age {age})"
         print(f"Refilter: loaded {n_raw} normalized postings from the snapshot.",
               file=sys.stderr)
+        # Restore store identity for the replay. The snapshot was written before its
+        # run's store build, so these rows have none of their own; without this a
+        # no-change refilter emitted store_key: null for postings the store knows,
+        # weakening exactly the provenance the user is told to refilter before using.
+        store_line, store_url_map = read_store_status_for_replay()
     else:
         # ---- FETCH: assemble tasks (two stages), fetch, then snapshot ----
         # Tell the capture shim which profile is running (its neutral profile-NN
@@ -1881,6 +2016,9 @@ def main() -> int:
         store_line, store_url_map = run_post_fetch_store_build()
 
     # ---- shared: filter -> score -> rank -> render -> output ----
+    # Taken BEFORE the pipeline runs: this is the snapshot's own row order, and it is
+    # what lets every emitted row name the exact snapshot index of its full JD.
+    snapshot_rows = snapshot_row_map(postings)
     kept, counts = filter_score_rank(
         postings, profile, ctx, max_age=max_age, top_k=top_k,
         max_per_company=max_per_company, sponsor_index=sponsor_index,
@@ -1891,12 +2029,12 @@ def main() -> int:
     # recording, and the previous run's artifact is never removed to say it.
     review_run_path, review_path = write_review_report(
         review_postings, cache_dir, args.profile, stamp=run_id,
-        snapshot_path=snap_path)
+        snapshot_path=snap_path, snapshot_rows=snapshot_rows)
     # The occupation cap bounds the review LANE; the rows it demotes are still real
     # postings, so they get their own durable artifact instead of an integer.
     overflow_run_path, overflow_path = write_review_report(
         overflow_postings, cache_dir, args.profile, kind=OVERFLOW_KIND,
-        stamp=run_id, snapshot_path=snap_path)
+        stamp=run_id, snapshot_path=snap_path, snapshot_rows=snapshot_rows)
     print(
         f"Preserved {counts['n_review']} uncertain posting(s) for manual "
         f"filter review -> {review_path} (this run: {review_run_path.name})",
@@ -1956,7 +2094,9 @@ def main() -> int:
     print(f"Wrote {len(kept)} matches -> {out_path}{run_note}", file=sys.stderr)
 
     if args.json_out:
-        json_path = write_json_output(args.json_out, kept, store_url_map)
+        json_path = write_json_output(args.json_out, kept, store_url_map,
+                                      snapshot_path=snap_path, run_id=run_id,
+                                      postings=postings)
         print(f"Wrote JSON -> {json_path}", file=sys.stderr)
 
     # Default stdout is the compact contract (5-line summary + top-K table); the full

@@ -14,9 +14,11 @@ from __future__ import annotations
 import copy
 import io
 import json
+import subprocess
 import sys
 import types
 import unittest
+from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -471,6 +473,256 @@ class RefilterFetchFlagRejectionTests(unittest.TestCase):
             self.assertIsInstance(code, str)
             self.assertIn("Fresh fetch required", code)
             self.assertIn("someone-else", code)
+
+
+class SearchJsonAuditabilityTests(unittest.TestCase):
+    """An emitted row must be auditable from the row, and joinable to its run.
+
+    ``to_dict`` clips ``description`` to 400 characters, and a JD's deciding clause
+    — excluded states, clearance, "no sponsorship", a 10+ YOE line — routinely sits
+    past that cut. A row that shows the clipped text without labelling it, and
+    without naming where the whole text lives, invites a novice to trust a
+    classification they cannot check.
+    """
+
+    LATE = "This role is not open to residents of Washington state."
+
+    def _long_jd(self):
+        jd = ("Northwind Robotics is hiring. Python, Kubernetes, AWS, distributed "
+              "systems, microservices, rest api, postgres. " + "filler. " * 45
+              + self.LATE)
+        assert jd.index(self.LATE) > 400          # decisive clause past the clip
+        return jd
+
+    def _run(self, tmp, snap_path, *extra, default_out=False):
+        """One refilter with --json-out; ``default_out`` exercises discoveries/."""
+        out_json = Path(tmp) / f"m{len(list(Path(tmp).glob('m*.json')))}.json"
+        out_flags = [] if default_out else ["--out", str(Path(tmp) / "m.md")]
+        code, out, _err = _run_main([
+            "--profile", "example", "--cache-dir", tmp,
+            "--refilter", str(snap_path), *out_flags,
+            "--json-out", str(out_json), "--allow-stale",
+            "--sponsor-index", str(Path(tmp) / "none.json"), *extra])
+        self.assertEqual(code, 0)
+        return json.loads(out_json.read_text()), out
+
+    def _snapshot(self, tmp, postings, fetched_at):
+        snap_path, _ = snapshot.write_snapshot(
+            Path(tmp), profile="example", stage=1, fetched_at=fetched_at,
+            source_selection={"n_companies": 0, "aggregators": [],
+                              "max_age_days_at_fetch": None},
+            postings=postings, errors=[])
+        return snap_path
+
+    def test_a_clipped_row_names_and_locates_its_untruncated_jd(self):
+        fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        jd = self._long_jd()
+        target = _posting("Northwind Robotics", "Senior Backend Engineer",
+                          "San Francisco, CA", "remote",
+                          fetched_at - timedelta(days=1), jd)
+        raw = [*_synthetic_postings(fetched_at), target]
+        with TemporaryDirectory() as tmp:
+            snap_path = self._snapshot(tmp, raw, fetched_at)
+            rows, _out = self._run(tmp, snap_path)
+            row = next(r for r in rows if r["url"] == target.url)
+
+            # The row says the text is a preview, and how much is missing.
+            self.assertTrue(row["description_is_preview"])
+            self.assertEqual(row["description_full_chars"], len(jd))
+            self.assertNotIn(self.LATE, row["description"])
+
+            # …and it resolves: the named snapshot row IS this posting, in full.
+            self.assertEqual(row["source_snapshot"], str(snap_path))
+            self.assertEqual(row["source_snapshot_row"], raw.index(target))
+            snap_row = json.loads(snap_path.read_text())["postings"][
+                row["source_snapshot_row"]]
+            self.assertEqual(snap_row["url"], target.url)
+            self.assertEqual(snap_row["description"], jd)
+            self.assertIn(self.LATE, snap_row["description"])
+
+    def test_the_emitted_command_prints_the_full_jd(self):
+        # The locator is only worth as much as the retrieval a novice can run.
+        fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        jd = self._long_jd()
+        target = _posting("Northwind Robotics", "Senior Backend Engineer",
+                          "San Francisco, CA", "remote",
+                          fetched_at - timedelta(days=1), jd)
+        with TemporaryDirectory() as tmp:
+            snap_path = self._snapshot(tmp, [target], fetched_at)
+            rows, _out = self._run(tmp, snap_path)
+            command = rows[0]["full_description_command"]
+            proc = subprocess.run(command, shell=True, capture_output=True,
+                                  text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), jd)
+            self.assertIn(self.LATE, proc.stdout)
+
+    def test_an_untruncated_row_is_not_labelled_a_preview(self):
+        fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        with TemporaryDirectory() as tmp:
+            snap_path = self._snapshot(tmp, _synthetic_postings(fetched_at),
+                                       fetched_at)
+            rows, _out = self._run(tmp, snap_path)
+            self.assertTrue(rows)
+            for row in rows:                       # every fixture JD is short
+                self.assertFalse(row["description_is_preview"])
+                self.assertIsNone(row["full_description_command"])
+                self.assertEqual(row["description_full_chars"],
+                                 len(row["description"]))
+
+    def test_the_locator_separates_rows_that_share_one_url(self):
+        # Generic aggregator URLs (RemoteOK) are shared by several postings, so a
+        # URL is not a locator; the snapshot row index is.
+        fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        jd = self._long_jd()
+        shared = "https://remoteok.com/remote-dev-jobs"
+        first = _posting("Northwind Robotics", "Senior Backend Engineer",
+                         "San Francisco, CA", "remote",
+                         fetched_at - timedelta(days=1), jd)
+        second = _posting("Cobalt Systems", "Platform Engineer", "New York, NY",
+                          "remote", fetched_at - timedelta(days=1), jd + " Second.")
+        first.url = second.url = shared
+        with TemporaryDirectory() as tmp:
+            snap_path = self._snapshot(tmp, [first, second], fetched_at)
+            rows, _out = self._run(tmp, snap_path)
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(sorted(r["source_snapshot_row"] for r in rows), [0, 1])
+            body = json.loads(snap_path.read_text())["postings"]
+            for row in rows:
+                self.assertEqual(body[row["source_snapshot_row"]]["company"],
+                                 row["company"])
+
+    def test_two_runs_over_one_snapshot_are_distinct_and_joinable(self):
+        # #244: refiltering with different arguments must leave two comparable
+        # results, each machine row naming the run that produced it.
+        fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        original_dir = search_jobs.discoveries_dir
+        with TemporaryDirectory() as tmp:
+            disc = Path(tmp) / "1_discoveries"
+            disc.mkdir(parents=True, exist_ok=True)
+            search_jobs.discoveries_dir = lambda: disc
+            try:
+                snap_path = self._snapshot(tmp, _synthetic_postings(fetched_at),
+                                           fetched_at)
+                first, _out = self._run(tmp, snap_path, "--top-k", "3",
+                                        default_out=True)
+                second, _out = self._run(tmp, snap_path, "--top-k", "1",
+                                         default_out=True)
+            finally:
+                search_jobs.discoveries_dir = original_dir
+
+            run_a = {r["run_id"] for r in first}
+            run_b = {r["run_id"] for r in second}
+            self.assertEqual(len(run_a), 1)
+            self.assertEqual(len(run_b), 1)
+            self.assertTrue(run_a.isdisjoint(run_b))   # two runs, two identities
+            # Both results are joinable back to the one snapshot they replayed…
+            self.assertEqual({r["source_snapshot"] for r in [*first, *second]},
+                             {str(snap_path)})
+            # …and each run id names that run's own surviving report + review file.
+            names = [p.name for p in disc.iterdir()]
+            for run_id in (*run_a, *run_b):
+                self.assertIn(f"{run_id}-example.md", names)
+                self.assertTrue(
+                    (Path(tmp) / f"example-filter-review-{run_id}.json").is_file())
+            self.assertEqual(len(first), 3)            # the differing arguments
+            self.assertEqual(len(second), 1)           # produced differing results
+
+    def test_review_rows_locate_their_full_jd_and_name_their_run(self):
+        fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        jd = self._long_jd()
+        # jobspy source + an uncertain location keeps the row in the review lane.
+        review_me = _posting("Review Systems", "Senior Backend Engineer",
+                             "Austin, TX", "remote",
+                             fetched_at - timedelta(days=1), jd)
+        review_me.source = "jobspy:indeed"
+        with TemporaryDirectory() as tmp:
+            snap_path = self._snapshot(tmp, [review_me], fetched_at)
+            _rows, _out = self._run(tmp, snap_path)
+            payload = json.loads(
+                (Path(tmp) / "example-filter-review.json").read_text())
+            self.assertEqual(payload["count"], 1)
+            self.assertIsNotNone(payload["run_id"])    # the pointer copy self-IDs
+            self.assertTrue(
+                (Path(tmp) /
+                 f"example-filter-review-{payload['run_id']}.json").is_file())
+            row = payload["postings"][0]
+            self.assertTrue(row["description_truncated"])
+            self.assertEqual(row["description_full_chars"], len(jd))
+            self.assertEqual(row["source_snapshot_row"], 0)
+            self.assertEqual(
+                json.loads(snap_path.read_text())["postings"][0]["description"], jd)
+            # The artifact carries the retrieval command, not just a snapshot name.
+            self.assertIn("source_snapshot_row", payload["instruction"])
+            self.assertIn(str(snap_path), payload["instruction"])
+
+    def test_fetch_and_replay_agree_on_every_rows_provenance(self):
+        """The replay contract: a no-change refilter reproduces the fetch's rows.
+
+        ``run_tasks`` is stubbed (no network) and the post-fetch store build is
+        forced off, so this compares exactly what the two code paths emit for the
+        same postings — the comparison #284 found broken, where the fetch carried
+        store identity and the replay of its own snapshot did not.
+        """
+        fetched_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        raw = [*_synthetic_postings(fetched_at),
+               _posting("Northwind Robotics", "Senior Backend Engineer",
+                        "San Francisco, CA", "remote",
+                        fetched_at - timedelta(days=1), self._long_jd())]
+        fake_map = {"https://x.test/1": "gh-1"}
+        orig_tasks = search_jobs.run_tasks
+        orig_build = search_jobs.run_post_fetch_store_build
+        orig_replay = search_jobs.read_store_status_for_replay
+        with TemporaryDirectory() as tmp:
+            try:
+                search_jobs.run_tasks = (
+                    lambda tasks, workers=12: (copy.deepcopy(raw), [], Counter()))
+                # Containment: a test never builds or reads a real store.
+                search_jobs.run_post_fetch_store_build = lambda: (None, dict(fake_map))
+                fetch_rows, _out = self._run_fetch(tmp)
+                snap_path = next(Path(tmp).glob("example-stage1-latest.json"))
+                search_jobs.run_post_fetch_store_build = lambda: (_ for _ in ()).throw(
+                    AssertionError("a refilter must never build the store"))
+                search_jobs.read_store_status_for_replay = lambda: (None, dict(fake_map))
+                replay_rows, _out = self._run(tmp, snap_path)
+            finally:
+                search_jobs.run_tasks = orig_tasks
+                search_jobs.run_post_fetch_store_build = orig_build
+                search_jobs.read_store_status_for_replay = orig_replay
+
+            compared = ("url", "store_key", "source_snapshot_row",
+                        "description_is_preview", "description_full_chars")
+            self.assertTrue(fetch_rows)
+            self.assertEqual([{k: r[k] for k in compared} for r in fetch_rows],
+                             [{k: r[k] for k in compared} for r in replay_rows])
+            # The run id is the one field that MUST differ: two runs, two answers.
+            self.assertNotEqual({r["run_id"] for r in fetch_rows},
+                                {r["run_id"] for r in replay_rows})
+
+    def _run_fetch(self, tmp):
+        out_json = Path(tmp) / "fetch.json"
+        code, out, _err = _run_main([
+            # Company tasks are built from the local registry and never run:
+            # run_tasks is stubbed, so nothing reaches the network.
+            "--profile", "example", "--cache-dir", tmp,
+            "--no-aggregators", "--no-jobspy", "--out", str(Path(tmp) / "f.md"),
+            "--json-out", str(out_json),
+            "--sponsor-index", str(Path(tmp) / "none.json")])
+        self.assertEqual(code, 0)
+        return json.loads(out_json.read_text()), out
+
+    def test_the_json_payload_is_still_a_bare_list_of_rows(self):
+        # handoff.py consumes --json-out as a list; provenance rides on the rows.
+        fetched_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        with TemporaryDirectory() as tmp:
+            snap_path = self._snapshot(tmp, _synthetic_postings(fetched_at),
+                                       fetched_at)
+            rows, _out = self._run(tmp, snap_path)
+            self.assertIsInstance(rows, list)
+            self.assertTrue(all(isinstance(r, dict) for r in rows))
+            import handoff
+            self.assertEqual(len(handoff.load_rows(
+                next(Path(tmp).glob("m0.json")))), len(rows))
 
 
 class SnapshotPointerRobustnessTests(unittest.TestCase):
