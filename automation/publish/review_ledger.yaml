@@ -3505,3 +3505,14 @@
     wording; the known-issue names only public GitHub issue numbers and repository paths.
     No real identity, employer, school, salary, private item name, or dated personal
     job-hunt content is present.'
+- base: 1dbc9d93
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 6
+  digest: sha256:44f37c5a39688b0a
+  finding: 'Reviewed the completed conditional-offer task moving to 3_in-review with its
+    worklog and verification transcript, and three new backlog items for the parts of GH
+    #265, #286 and #304 this branch does not close. All text describes public repository
+    behavior, public GitHub issue numbers, and fictional JD wording. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content is
+    present.'

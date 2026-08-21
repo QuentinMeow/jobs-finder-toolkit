@@ -5,7 +5,7 @@
 - **Source**: found and frozen while doing #231 / #238a / #265; recorded as the
   `conditional-offer` rows of
   `skills/job-search/filter_variants/sponsorship_verdict_matrix.yaml`
-- **Claimed-by**:
+- **Claimed-by**: agent (2026-08-20, `fix/sponsorship-negation-safety`)
 
 ## Goal
 
