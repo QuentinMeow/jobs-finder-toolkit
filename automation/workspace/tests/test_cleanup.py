@@ -1181,6 +1181,159 @@ class ReviewLedgerReachabilityTests(PlannerTestCase):
         self.assertTrue(row["proposed"], row["keep_reasons"])
 
 
+# ── `git branch -d` asks a different question than the containment probe ─────
+#
+# THE BUG THESE PIN. The planner's merged-test asks "does the BASE REF already
+# have this content". `git branch -d` asks "is this branch an ancestor of its
+# own UPSTREAM, or of HEAD when it has none" (builtin/branch.c, `branch_merged`).
+# Measured on the real repository: `fix/cleanup-worktree-gaps` held zero commits
+# `origin/main` did not, stood one commit ahead of
+# `origin/fix/cleanup-worktree-gaps`, was PROPOSED, and the emitted script died
+# on `error: the branch … is not fully merged`.
+#
+# There is no non-forcing repair, and that was checked rather than assumed:
+# `-D`, `update-ref -d`, deleting the tracking ref and `--unset-upstream` all
+# work only by removing the evidence git consults, and the tracking ref here is
+# not stale — the branch is still on the remote and the next fetch restores it.
+# So the outcome is an honest KEEP that names the upstream and the remedies that
+# belong to the owner.
+
+
+class DeletableBranchesScenario(F.GitTestCase):
+    """A toolkit repo whose topic branches all clear every precondition."""
+
+    def build_repo(self, *names: str) -> None:
+        self.root = self.scratch / "toolkit"
+        self.root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.root)],
+                       check=True, env=dict(os.environ))
+        F.add_toolkit_markers(self.root)
+        F.write(self.root / ".gitignore", "local/\n")
+        F.write(self.root / "seed.txt", "seed\n")
+        self.commit(self.root, "base commit")
+        F.add_origin(self, self.root)
+        for name in names:
+            self.land(name)
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+    def land(self, name: str) -> str:
+        """A branch that really landed: pushed with an upstream, then merged."""
+        self.git(self.root, "switch", "-q", "-c", name, "main")
+        F.write(self.root / f"{cleanup.slug(name)}.txt", f"work on {name}\n")
+        tip = self.commit(self.root, f"{name}: the work")
+        self.git(self.root, "push", "-q", "-u", "origin", name)
+        self.git(self.root, "switch", "-q", "main")
+        self.git(self.root, "merge", "-q", "--no-ff", name, "-m", f"Merge {name}")
+        return tip
+
+    def plan(self, *argv: str) -> tuple[int, dict, str, Path]:
+        buffer = io.StringIO()
+        code = cleanup.main(
+            ["--repo-root", str(self.root), "--fetch", *argv], out=buffer)
+        produced = sorted((self.root / "local" / "workspace").glob("cleanup-*.json"))
+        self.assertTrue(produced, "no plan was written")
+        plan = json.loads(produced[-1].read_text(encoding="utf-8"))
+        script_path = produced[-1].with_suffix(".sh")
+        return code, plan, script_path.read_text(encoding="utf-8"), script_path
+
+    def deletions_in(self, script: str) -> list[str]:
+        """Every branch a shell running this script would actually try to delete."""
+        names = []
+        for line in script.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if stripped.endswith("; then"):
+                stripped = stripped[: -len("; then")]
+            parts = shlex.split(stripped)
+            while parts and parts[0] in ("if", "elif", "else", "then", "!"):
+                parts.pop(0)
+            if parts[:3] == ["git", "branch", "-d"]:
+                names.append(parts[3])
+        return names
+
+    def branch_rows(self, plan: dict) -> dict:
+        return {row["name"]: row for row in plan["branches"]}
+
+    def run_script(self, path: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["sh", str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, check=False, env=dict(os.environ))
+
+    def local_branches(self) -> set[str]:
+        return set(self.out(self.root, "for-each-ref", "--format=%(refname:short)",
+                            "refs/heads").split())
+
+
+class DeleteRefusalIsPredictedTests(DeletableBranchesScenario):
+    def test_a_branch_ahead_of_its_own_upstream_is_kept_not_proposed(self) -> None:
+        # The live shape: the local branch is moved onto the merge commit, so it
+        # holds NO commit `origin/main` lacks and is still one ahead of
+        # `origin/<branch>`. Content-contained, fully pushed — and refused by -d.
+        self.build_repo("codex/landed")
+        self.git(self.root, "branch", "-f", "codex/landed", "main")
+        self.assertEqual(
+            self.out(self.root, "rev-list", "codex/landed",
+                     "--not", "refs/remotes/origin/main"), "",
+            "the fixture must hold no commit origin/main lacks")
+        self.assertEqual(
+            self.out(self.root, "rev-list", "--left-right", "--count",
+                     "codex/landed...refs/remotes/origin/codex/landed"), "1\t0")
+
+        _, plan, script, _ = self.plan()
+        row = self.branch_rows(plan)["codex/landed"]
+        self.assertFalse(row["proposed"],
+                         "proposed a branch whose `git branch -d` is refused")
+        reasons = " ".join(row["keep_reasons"])
+        self.assertIn("refs/remotes/origin/codex/landed", reasons,
+                      "the reason must name the upstream git judges -d against")
+        self.assertIn("upstream", reasons)
+        self.assertNotIn("codex/landed", self.deletions_in(script))
+
+    def test_a_branch_with_no_upstream_that_head_cannot_reach_is_kept(self) -> None:
+        # The other arm of git's rule. `git push origin <b>` without `-u` writes
+        # the remote-tracking ref (so every commit IS on a remote) and configures
+        # no upstream, so -d falls back to HEAD — which a squash-merged branch is
+        # not an ancestor of, however completely main holds its content.
+        self.build_repo("codex/landed")
+        self.git(self.root, "switch", "-q", "-c", "codex/squashed", "main")
+        F.write(self.root / "squashed.txt", "squashed work\n")
+        self.commit(self.root, "codex/squashed: the work")
+        self.git(self.root, "push", "-q", "origin", "codex/squashed")
+        self.git(self.root, "switch", "-q", "main")
+        self.git(self.root, "merge", "-q", "--squash", "codex/squashed")
+        self.commit(self.root, "codex/squashed landed as one commit")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        _, plan, script, _ = self.plan()
+        row = self.branch_rows(plan)["codex/squashed"]
+        self.assertEqual(row["merged"], "merged", "the content IS in the base")
+        self.assertEqual(row["unpushed_commits"], 0, "every commit is on a remote")
+        self.assertFalse(row["proposed"], row["keep_reasons"])
+        self.assertIn("HEAD", " ".join(row["keep_reasons"]))
+        self.assertNotIn("codex/squashed", self.deletions_in(script))
+
+    def test_every_deletion_the_script_emits_actually_succeeds(self) -> None:
+        # The property, asserted the only way that settles it: run the script
+        # the owner would run and read git's answer. Against the unpredicted
+        # code this exits non-zero on the very first refusal.
+        self.build_repo("codex/one", "codex/two")
+        self.git(self.root, "branch", "-f", "codex/two", "main")   # -d will refuse
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        _, plan, script, path = self.plan()
+        self.assertEqual(self.deletions_in(script), ["codex/one"],
+                         "the script must emit exactly the deletions git accepts")
+        result = self.run_script(path)
+        self.assertEqual(result.returncode, 0,
+                         f"the emitted script failed:\n{result.stdout}\n{result.stderr}")
+        self.assertNotIn("codex/one", self.local_branches())
+        self.assertIn("codex/two", self.local_branches())
+
+
 class MoveContainmentUnitTests(F.GitTestCase):
     """The predicate itself. No git, no filesystem — just the arithmetic."""
 

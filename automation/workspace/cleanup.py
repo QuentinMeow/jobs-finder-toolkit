@@ -30,12 +30,18 @@ reason is printed):
    commit its ``base:``/``commit:`` field names stops being reachable in a fresh
    clone, and a branch whose commits are all reachable from the base ref cannot
    cause that however often its name is written in someone's prose;
-6. a backup ref resolves. The reflog does NOT protect worktree-only commits
+6. ``git branch -d`` will actually accept it. That is a DIFFERENT question from
+   point 1: git judges ``-d`` against the branch's own upstream when one is
+   configured and its tracking ref resolves, and against ``HEAD`` otherwise —
+   never against the base ref this planner tests. A branch whose content is in
+   ``origin/main`` but which is ahead of a live ``origin/<branch>`` is refused by
+   ``-d``, so it is KEPT here rather than emitted as a command that fails;
+7. a backup ref resolves. The reflog does NOT protect worktree-only commits
    (measured: 0 hits after ``worktree remove --force`` + ``branch -D``);
    ``refs/agent-trash/<ts>/<branch>`` makes the tip reachable, so it survives
    even ``git gc --prune=now``.
 
-A BRANCH TIP IS NOT THE ONLY THING A RETIREMENT CAN ORPHAN. Point 6 above was
+A BRANCH TIP IS NOT THE ONLY THING A RETIREMENT CAN ORPHAN. Point 7 above was
 written for branches and, for a long time, only implemented for branches — while
 a worktree carries its OWN reflog at ``.git/worktrees/<id>/logs/HEAD``, and the
 emitted ``mv`` + ``git worktree prune`` deletes that whole administrative
@@ -180,6 +186,7 @@ KEEP_LEDGER = (
 KEEP_LEDGER_UNREADABLE = (
     "the review ledger names commit(s) git could not judge for reachability, "
     "and an unanswerable probe about losing a reviewed commit is treated as yes")
+KEEP_DELETE_REFUSED = "`git branch -d` would refuse it"
 KEEP_UNSAFE_NAME = "the name would need shell quoting this tool will not guess"
 KEEP_NO_BACKUP = "the backup ref did not resolve"
 KEEP_HARNESS = (
@@ -556,6 +563,92 @@ def unpushed_commits(repo: Path, ref: str) -> int:
         return -1
 
 
+# ── will `git branch -d` actually accept this branch? ────────────────────────
+#
+# THIS IS NOT THE SAME QUESTION AS "IS IT MERGED". The planner's containment
+# probe asks whether the BASE REF already has the branch's content. `git branch
+# -d` asks something else entirely (builtin/branch.c, `branch_merged`): is the
+# branch an ANCESTOR of its own upstream when one is configured and that
+# tracking ref resolves, and of HEAD otherwise. Two different refs, two
+# different relations — so a branch can pass every precondition here and still
+# be refused, and the tool used to emit that doomed command anyway.
+#
+# MEASURED, on this repository and reproduced in a scratch repo on git 2.55:
+# `fix/cleanup-worktree-gaps` held ZERO commits `origin/main` did not
+# (`git rev-list <b> --not origin/main` → 0) yet stood one commit ahead of
+# `origin/fix/cleanup-worktree-gaps`, and `git branch -d` said
+#
+#     warning: not deleting branch '<b>' that is not yet merged to
+#              'refs/remotes/origin/<b>', even though it is merged to HEAD
+#     error: the branch '<b>' is not fully merged
+#
+# IS THERE A NON-FORCING WAY TO DELETE IT? No, and this was checked rather than
+# assumed. Three things make `-d` accept such a branch, and each works only by
+# removing the evidence git consults:
+#   * `git branch -D` / `--force` — banned outright, and there is no --force in
+#     this tooling;
+#   * `git update-ref -d refs/heads/<b>` — plumbing, with no safety check at
+#     all. Strictly more forcing than the flag that is banned;
+#   * deleting the remote-tracking ref, or `git branch --unset-upstream` —
+#     measured to work (the probe run for this fix deleted
+#     `refs/remotes/origin/topic` and the identical `-d` then succeeded), and
+#     that is exactly why neither is emitted. The upstream is not stale: the
+#     branch is still on the remote, the next `git fetch` restores the tracking
+#     ref, and unsetting the upstream is an unbacked-up config mutation whose
+#     only purpose is to make git ask an easier question. A tool that quietly
+#     disarms a safety check has not made the deletion safe, it has made the
+#     check silent.
+# So the honest outcome is a KEEP that names the situation and the two remedies
+# that are the OWNER'S to choose: retire the branch on the remote (then
+# `--fetch` prunes the tracking ref and a re-run proposes it), or move the local
+# branch back onto its upstream.
+
+
+def deletion_reference(repo: Path, name: str) -> str:
+    """The ref ``git branch -d <name>`` will demand ancestry of.
+
+    ``<name>@{upstream}`` is git's own spelling of the same lookup: it exits 0
+    with the tracking ref's full name when the branch has an upstream AND that
+    ref resolves, and non-zero otherwise — which is precisely when
+    ``branch_merged`` falls back to HEAD. Verified against a fixture whose
+    tracking ref was deleted out from under a configured upstream, where
+    ``for-each-ref %(upstream)`` still prints the configured name and this does
+    not.
+    """
+    result = _git(repo, "rev-parse", "--symbolic-full-name", "--verify",
+                  "--quiet", f"{name}@{{upstream}}")
+    upstream = result.stdout.strip()
+    if result.returncode == 0 and upstream:
+        return upstream
+    return "HEAD"
+
+
+def delete_refusal(repo: Path, name: str, ref: str) -> str | None:
+    """``None`` when ``git branch -d`` would accept it; else why it would not."""
+    reference = deletion_reference(repo, name)
+    probe = _git(repo, "merge-base", "--is-ancestor", ref, reference)
+    if probe.returncode == 0:
+        return None
+    if probe.returncode != 1:
+        return (f"{KEEP_DELETE_REFUSED} or accept it — git could not say "
+                f"whether it is an ancestor of {reference}, and an unanswerable "
+                f"probe is treated as a refusal")
+    if reference == "HEAD":
+        return (f"{KEEP_DELETE_REFUSED}: git judges `-d` against HEAD when a "
+                f"branch has no resolvable upstream, and this branch is not an "
+                f"ancestor of HEAD even though the base ref contains its "
+                f"content. Check out the base branch here and re-run, or delete "
+                f"it yourself once you have read it — this tool has no -D")
+    return (f"{KEEP_DELETE_REFUSED}: git judges `-d` against the branch's own "
+            f"upstream, not against the base ref this planner tested, and it is "
+            f"ahead of {reference}. Nothing here can make `-d` accept it without "
+            f"disarming that check — deleting the tracking ref or unsetting the "
+            f"upstream both work only by hiding the evidence, and there is no -D "
+            f"in this tooling. Retire the branch on the remote (a later --fetch "
+            f"prunes the tracking ref and this branch is proposed again), or "
+            f"move it back onto {reference} yourself")
+
+
 # ── the main working tree, and what may never be moved ───────────────────────
 #
 # WHY NOT `os.getcwd()`, AND WHY NOT LIST ORDER. The bug this section exists for
@@ -916,6 +1009,13 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
             item.keep_reasons.append(f"{count} {KEEP_UNPUSHED}")
         item.keep_reasons.extend(
             ledger_keep_reasons(root, branch.ref.full_name, risk))
+        # LAST among the branch probes, and asked of the ref rather than of the
+        # plan: whatever the containment test decided, the emitted line is
+        # `git branch -d`, and a command that is going to be refused is not a
+        # proposal — it is a script that stops.
+        refusal = delete_refusal(root, branch.name, branch.ref.full_name)
+        if refusal is not None:
+            item.keep_reasons.append(refusal)
         if item.proposed:
             item.backup_ref = f"{TRASH_REF_ROOT}/{run_id}/{slug(branch.name)}"
         branches.append(item)
@@ -1145,20 +1245,51 @@ def plan_moves(*, root: Path, run_id: str, worktrees: Sequence[WorktreeItem],
     return moves, refused
 
 
+def plan_deletions(*, root: Path, branches: Sequence[BranchItem],
+                   ) -> tuple[list[BranchItem], list[tuple[BranchItem, str]]]:
+    """The branches whose ``git branch -d`` will be ACCEPTED, and the rest.
+
+    The same construction argument as ``plan_moves``, applied to the other
+    destructive verb this tool emits. ``classify`` already asked
+    ``delete_refusal``; asking again here is what makes "no emitted line is one
+    git will predictably refuse" true of the EMITTER rather than of a classifier
+    that a later refactor might change. A disagreement between the two is not
+    silently reconciled — it is written into the script as a finding.
+    """
+    emit: list[BranchItem] = []
+    refused: list[tuple[BranchItem, str]] = []
+    for item in branches:
+        if not item.proposed:
+            continue
+        why = delete_refusal(root, item.name, item.ref)
+        if why is None:
+            emit.append(item)
+        else:
+            refused.append((item, why))
+    return emit, refused
+
+
 def apply_emitter_refusals(root: Path, run_id: str,
-                           worktrees: Sequence[WorktreeItem]) -> None:
+                           worktrees: Sequence[WorktreeItem],
+                           branches: Sequence[BranchItem] = ()) -> None:
     """Make the PLAN agree with what the emitter will actually write.
 
-    ``plan_moves`` is the last word on whether a move can be emitted, so it is
-    asked here too, before the plan object exists. A reader of
-    ``cleanup-<id>.json`` therefore never sees ``"action": "retire"`` for a
-    worktree the script declines to move: the plan and the script cannot
-    disagree, because only one of them decides.
+    ``plan_moves`` and ``plan_deletions`` are the last word on whether a
+    destructive line can be emitted, so both are asked here too, before the plan
+    object exists. A reader of ``cleanup-<id>.json`` therefore never sees
+    ``"action": "retire"`` for a worktree the script declines to move, nor
+    ``"proposed": true`` for a branch the script declines to delete: the plan and
+    the script cannot disagree, because only one of them decides.
     """
     _, refused = plan_moves(root=root, run_id=run_id, worktrees=worktrees)
     for item, why in refused:
         item.action = "keep"
         item.keep_reasons.append(f"the emitter refused to write its move: {why}")
+    _, declined = plan_deletions(root=root, branches=branches)
+    for branch, why in declined:
+        branch.backup_ref = None
+        branch.keep_reasons.append(
+            f"the emitter refused to write its deletion: {why}")
 
 
 def _guarded_ref_write(ref: str, oid: str, warning: str, note: str) -> list[str]:
@@ -1178,7 +1309,7 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
                  worktrees: Sequence[WorktreeItem],
                  include_harness: bool = False) -> str:
     trash = _trash_root(root, run_id)
-    proposed = [item for item in branches if item.proposed]
+    proposed, declined = plan_deletions(root=root, branches=branches)
     moves, refused = plan_moves(root=root, run_id=run_id, worktrees=worktrees)
     lines = [
         "#!/bin/sh",
@@ -1227,6 +1358,17 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
             f"#   {_comment(why)}. The classifier called it retirable and the",
             "#   emitter would not write the line. REPORT THIS — the two halves",
             "#   of this tool are supposed to agree.",
+            "",
+        ]
+    for item, why in declined:
+        # The branch half of the same disagreement, and equally comment-only:
+        # a `git branch -d` git is going to refuse is not written at all.
+        body += [
+            f"# REFUSED to emit a deletion of {_comment(item.name)}",
+            f"#   {_comment(why)}",
+            "#   The classifier called it proposable and the emitter would not",
+            "#   write the line. REPORT THIS — the two halves are supposed to",
+            "#   agree.",
             "",
         ]
     if moves:
@@ -1510,7 +1652,7 @@ def _plan(argv: Sequence[str] | None, out) -> int:
     branches, worktrees = classify(repo, root, run_id=run_id,
                                    ledger=ledger_risk(root, base_ref),
                                    include_harness=include_harness)
-    apply_emitter_refusals(root, run_id, worktrees)
+    apply_emitter_refusals(root, run_id, worktrees, branches)
 
     executed = False
     if args.execute:

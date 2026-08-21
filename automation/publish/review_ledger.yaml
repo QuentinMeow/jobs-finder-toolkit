@@ -4096,3 +4096,9 @@
   files: 2
   digest: sha256:414435d6a3f1b076
   finding: 'Workspace cleanup planner and its test suite. The review-ledger keep rule now tests whether deleting a branch would orphan a commit the ledger NAMES, instead of matching the branch name against the ledger text. Public tooling, git semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: bc28e5ef
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 2
+  digest: sha256:9c8e4920607262ca
+  finding: 'Workspace cleanup planner and its test suite. The planner now predicts whether `git branch -d` will accept a branch (git judges it against the branch upstream, or HEAD) and keeps it rather than emitting a command git refuses. Public tooling, git semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
