@@ -3833,3 +3833,26 @@
   files: 70
   digest: sha256:a981515e7f85eb6d
   finding: 'Merge of origin/main into the workspace-lifecycle branch. Covered files arrive byte-identical from origin/main where they are already published. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 1baf9bb5
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:d480f8cc83eedb20
+  finding: 'Reviewed the main-working-tree guard added to automation/workspace/cleanup.py.
+    Timeless tooling only: git plumbing (rev-parse --git-dir / --git-common-dir,
+    worktree list --porcelain), path-containment predicates, and prose about why a
+    mv into your own subdirectory is refused. The only concrete paths named are the
+    generic local/workspace/trash-<run id> destination and the .claude/worktrees
+    harness marker that was already public. No real identity, employer, school,
+    date, salary, private item name, or dated personal job-hunt content.'
+- base: bb2659e0
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:6579eea707a9deba
+  finding: 'Reviewed the main-working-tree regression tests plus the emitter''s
+    comment sanitising. Fixture-only content: a throwaway git repo built under a
+    temp directory, the fictional branch names codex/landed, vantage-work,
+    linked-landed, outer-work and inner-work, and a deliberately hostile path used
+    to prove a newline cannot escape a shell comment. No real identity, employer,
+    school, date, salary, private item name, or dated personal job-hunt content.'
