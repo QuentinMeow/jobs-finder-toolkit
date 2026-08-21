@@ -3485,3 +3485,12 @@
     repository behavior and fictional aggregate Git state; no real identity,
     employer, school, salary, private item name, or dated personal job-hunt content
     is present.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 4
+  digest: sha256:fda664d70e669296
+  finding: 'Reviewed the sponsorship-classifier change and its three byte-identical
+    vendored copies. The diff is timeless matching logic plus explanatory comments;
+    every example sentence in it is fictional JD wording. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content is present.'

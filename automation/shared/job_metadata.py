@@ -1446,6 +1446,18 @@ _SPONSOR_POSITIVE = (
     "green card sponsorship", "green card process", "perm process",
     "immigration sponsorship", "immigration support", "relocation and immigration",
     "cap-exempt", "cap exempt",
+    # The copula form of "sponsorship available" (GH #233). Kept OUT of
+    # ``_SPONSOR_STRONG_POSITIVE`` for the same reason its contiguous twin is:
+    # bare "sponsorship" has a non-immigration sense, so it earns a positive
+    # only with immigration context in the window.
+    "sponsorship is available", "sponsorship is offered",
+    # An explicit transfer welcome IS an offer for the candidate who needs one
+    # (GH #233, GH #265). Both numbers, because the bounded scan matches whole
+    # word runs and "transfers" is not "transfer".
+    "h-1b transfer", "h-1b transfers", "h1b transfer", "h1b transfers",
+    # Offer nouns the list did not carry; every blind wave in GH #304 that
+    # expected an offer and got silence used one of them.
+    "immigration assistance", "visa support",
 )
 
 # The denial phrases whose "sponsor" is a bare transitive VERB with no object of
@@ -1488,8 +1500,16 @@ _SPONSOR_IMMIGRATION_RE = re.compile(
 # How far either context gate reads around a phrase.
 _SPONSOR_CONTEXT_WINDOW_CHARS = 120
 
+# The OFFER side's immigration gate. It was anchored on the SINGULAR "visa",
+# which is a typo-grade defect rather than a design choice: "The employer will
+# sponsor successful applicants for employment visas" carries the offer phrase
+# "will sponsor" and an immigration object in the same breath, and the gate
+# rejected it because the noun was plural (GH #304). Only the number of the
+# existing nouns is widened here — no new noun class is admitted, and in
+# particular "citizenship" stays out, because a citizenship word near a generic
+# "we sponsor" is as often a restriction as an offer.
 _SPONSOR_CONTEXT_RE = re.compile(
-    r"\b(?:visa|h-?1b|immigration|work authorization|green card|"
+    r"\b(?:visas?|h-?1bs?|immigration|work authoriz\w+|green cards?|"
     r"permanent residency|perm process|employment sponsorship)\b",
     re.I,
 )
@@ -1521,8 +1541,17 @@ _SPONSOR_STRONG_POSITIVE = {
 # offer sends a candidate who needs sponsorship to an employer that said no in
 # writing; a false denial hides a real job. ``unknown`` costs neither (it is kept
 # and flagged for a human read), so every ambiguous read resolves there.
+#
+# ``unavailable`` is a CUE, not merely a word the phrase list happens to miss.
+# It is the single most common way a board writes a sponsorship refusal, and it
+# is morphologically negative — "un-" is the negation, so there is no separate
+# "not" for a cue list to find. Its absence was half of the worst false-offer in
+# this module's history: "H-1B sponsorship is unavailable." graded
+# ``match``/``likely``/HIGH under both visa policies with an EMPTY
+# ``review_reasons``.
 _SPONSOR_NEGATION_CUE_RE = re.compile(
-    r"\b(?:not|no|never|none|cannot|unable|ineligible|without|nor|neither|"
+    r"\b(?:not|no|never|none|cannot|unable|unavailable|unavailability|"
+    r"ineligible|without|nor|neither|"
     r"lacks?|lacking|"
     r"(?:do|does|did|is|are|was|were|has|have|had|ca|wo|would|could|should|must)"
     r"n[’']t)\b",
@@ -1573,6 +1602,32 @@ _SPONSOR_HARD_BREAK_RE = re.compile(
     r"[.;:!?•|]|--|—|–"
     r"|\b(?:but|however|although|though|yet|whereas|while|nevertheless|"
     r"nonetheless|unless|otherwise|instead)\b",
+    re.I,
+)
+# --- the same scope, read FORWARD -------------------------------------------
+# Every negation rule in this module reads BACKWARD from the sponsorship phrase,
+# because that is where an English negation usually sits. But the head noun's own
+# PREDICATE comes after it, and "H-1B sponsorship is unavailable." puts the whole
+# refusal there. With no forward reading at all, that sentence matched the OFFER
+# phrase "h-1b sponsorship", found no cue behind it, and graded
+# ``match``/``likely``/HIGH — the exact posting a candidate who needs sponsorship
+# must never be shown, returned as an explicit offer under BOTH visa policies
+# with an empty ``review_reasons``. Same for "green card sponsorship is
+# unavailable" and "immigration sponsorship is not offered".
+#
+# Forward scope needs ONE break the backward scope does not: a relative pronoun
+# or a subordinator. Backward, those cannot separate a cue from the phrase it
+# governs, so the existing break set never needed them. Forward they are the
+# whole difference between a predicate and a modifier — "H-1B sponsorship is
+# available for candidates WHO ARE NOT yet authorized to work in the US" is an
+# OFFER, and the "not" belongs to the candidates, not to the sponsorship. The
+# relative clause is where a forward-only rule would otherwise invent denials out
+# of real offers, which is the one error this module treats as unaffordable in
+# the other direction and must not start making in this one.
+_SPONSOR_FORWARD_BREAK_RE = re.compile(
+    _SPONSOR_CLAUSE_BREAK_RE.pattern
+    + r"|\b(?:who|whom|whose|which|because|since|so\s+that|in\s+order|"
+      r"as\s+long\s+as|provided\s+that|assuming)\b",
     re.I,
 )
 _SPONSOR_TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9'’./-]*", re.I)
@@ -1718,9 +1773,25 @@ _SPONSOR_HEAD_RE = re.compile(
     r"sponsorship\b",
     re.I,
 )
+# The relation that has to sit between the negation and the head. Five verbs were
+# enough for "do not offer … sponsorship"; every blind wave in GH #304 reached
+# for a synonym instead ("unable to ARRANGE work-visa sponsorship", "does not
+# ARRANGE or FUND visa sponsorship"), and a synonym the list lacks turns a
+# written refusal back into silence. The nominal forms are here for the same
+# reason and no other: "this employer has no PROGRAM for visa sponsorship" is the
+# same proposition with the relation spelled as a noun.
+#
+# What is deliberately absent: "need" and "require". Those invert the relation —
+# "candidates who NEED visa sponsorship" is who the sentence is ABOUT, not what
+# the employer withholds — and admitting them turns the EEO sentence pinned by
+# ``sponsorship-eeo-copy-is-not-a-denial`` into a denial.
 _SPONSOR_OFFER_VERB_RE = re.compile(
     r"\b(?:offer(?:s|ed|ing)?|provid(?:e|es|ed|ing)|extend(?:s|ed|ing)?|"
-    r"grant(?:s|ed|ing)?|support(?:s|ed|ing)?)\b",
+    r"grant(?:s|ed|ing)?|support(?:s|ed|ing)?|"
+    r"arrang(?:e|es|ed|ing)|fund(?:s|ed|ing)?|"
+    r"coordinat(?:e|es|ed|ing)|furnish(?:es|ed|ing)?|"
+    r"facilitat(?:e|es|ed|ing)|sponsor(?:s|ed|ing)?|"
+    r"programs?|policies|policy|provisions?|budgets?|pathways?|mechanisms?)\b",
     re.I,
 )
 # How far the offer verb may sit from the head it offers ("offer relocation or
@@ -1739,14 +1810,47 @@ _SPONSOR_OFFER_VERB_DENIAL = "negated offer verb"
 # nothing.
 _SPONSOR_HEDGE_RE = re.compile(
     r"\b(?:may|might|could|possibl[ey]|potentially|limited|"
-    r"discretion(?:ary)?|consider(?:s|ed|ation)?)\b"
-    r"|\bcase[- ]by[- ]case\b",
+    r"discretion(?:ary)?|consider(?:s|ed|ation)?|"
+    # Frequency hedges: "we SOMETIMES sponsor H-1B transfers" is the same
+    # not-a-commitment as "may sponsor" (GH #304 blind wave 3).
+    r"sometimes|occasionally|selectively)\b"
+    r"|\bcase[- ]by[- ]case\b|\bin\s+some\s+cases\b|\bfrom\s+time\s+to\s+time\b",
     re.I,
 )
 # A hedge governs an offer only when it is adjacent to it inside the same clause;
 # beyond that it is a different statement ("we sponsor H-1B visas, and relocation
 # may be discussed").
 _SPONSOR_HEDGE_MAX_GAP_TOKENS = 3
+
+# --- conditional offers: a fronted condition outranges the clause scope -------
+# The hedge rule reads a bounded window around the offer phrase, so it cannot see
+# a condition FRONTED to the start of the sentence — and a fronted condition is
+# how the shape is actually written: "If approved by counsel, the company will
+# sponsor H-1B candidates." / "Once legal signs off, we provide immigration
+# support." Both graded ``match``/``likely``/HIGH (GH #304), which asserts as a
+# settled offer a sentence that says the offer has not been decided yet.
+#
+# So the condition is read over the SENTENCE HEAD instead — the text from the
+# start of the sentence up to the offer phrase. Two bounds keep that from eating
+# every sentence that happens to open with "if":
+#
+#   * only the head is scanned, never the tail. "We provide visa sponsorship if
+#     you accept the offer" is an offer with a trivial condition on it, and it
+#     must stay one;
+#   * the subordinator alone is not enough. It has to govern an APPROVAL or a
+#     gating resource — counsel, legal, approval, budget, headcount, discretion —
+#     which is what makes the offer undecided. "If you are interested in this
+#     role, we offer visa sponsorship" therefore stays an offer, and the two
+#     shapes differ by exactly that word.
+_SPONSOR_CONDITION_RE = re.compile(
+    r"\b(?:if|once|when|after|unless|upon|pending|assuming|provided|"
+    r"subject\s+to|contingent\s+(?:up)?on)\b"
+    r"[^.;:!?]{0,40}?"
+    r"\b(?:approv\w+|sign(?:s|ed)?\s+off|legal|counsel|attorney|"
+    r"immigration\s+team|budget|headcount|business\s+need|"
+    r"case[- ]by[- ]case|discretion(?:ary)?)\b",
+    re.I,
+)
 
 # --- denial shapes a substring list cannot hold ------------------------------
 # Four wordings below are real denials that match NEITHER phrase tuple, so they
@@ -1780,6 +1884,38 @@ _SPONSOR_STATUS_TERM = (
 # A requirement field whose ANSWER is negative is the opposite of a denial, and
 # "Citizenship required: No" is a wording a board really uses.
 _SPONSOR_REQUIRED_NOT_DENIED = r"(?!\s*[:?]?\s*(?:no\b|not\b|false\b|n/a\b))"
+
+# --- "who may hold this job" written as a sentence, not a field --------------
+# The status terms above only reach a compact FIELD ("Visa: GC/Citizens") or the
+# fixed phrases in ``_SPONSOR_NEGATIVE`` ("must be a u.s. citizen" — singular,
+# with the article). A JD that spells the same bar out as a sentence went
+# unclassified, and GH #238 measured what that costs: a live posting requiring
+# "U.S. Citizen, National, Lawful Permanent Resident, Refugee, or Asylee status"
+# ranked NEAR THE TOP for an H-1B candidate who is in none of those statuses.
+# This is not advisory workplace wording — it is who may be hired.
+#
+# The status list is written so that at least one UNAMBIGUOUS term is required.
+# Bare "national" is excluded on purpose: the word's other home is EEO copy
+# ("national origin"), and reading that as an eligibility bar would drop
+# employers for their non-discrimination boilerplate.
+_SPONSOR_US_PERSON_STATUS = (
+    r"(?:(?:u\.?\s?s\.?|us|american|united\s+states)\s+citizens?(?:hip)?"
+    r"|citizens?\s+of\s+the\s+united\s+states"
+    r"|(?:lawful\s+)?permanent\s+residents?"
+    r"|green\s+card\s+holders?)\b"
+)
+# The escape hatch, and the reason this rule cannot simply fire on the status
+# list. Boards routinely list the accepted statuses INCLUSIVELY — "U.S. Citizens,
+# Green Card Holders, EAD Holders, and H-1B transfer candidates" (GH #265) — and
+# there the same words are an OFFER. A visa/EAD/OPT term anywhere in the rest of
+# the clause means the list is not restricted to U.S. persons, so the rule
+# declines. Work-authorization wording is included for the same reason: an H-1B
+# holder IS authorized to work, so "citizens or otherwise authorized to work" is
+# not a bar.
+_SPONSOR_US_PERSON_ESCAPE = (
+    r"(?![^.;:!?]{0,60}?\b(?:h-?1bs?|ead|opt|cpt|tn\s+visas?|visa\s+holders?|"
+    r"work\s+visas?|sponsorship|authoriz\w+\s+to\s+work)\b)"
+)
 
 
 class _SponsorPatternRule:
@@ -1859,6 +1995,29 @@ _SPONSOR_PATTERN_RULES = (
         r"(?:\b(?:u\.?\s?s\.?|us)\s+)?",
         "citizen",
         r"[\s:?-]*(?:is\s+|are\s+)?required\b" + _SPONSOR_REQUIRED_NOT_DENIED,
+    ),
+    # "Applicants for this role must be U.S. citizens." / "The successful
+    # candidate must establish U.S. Citizen, ... Lawful Permanent Resident ...
+    # status." — the same bar as the citizenship FIELD rules below, written as a
+    # sentence (GH #238). Anchored on "must", which is the word that turns a
+    # status list into a requirement: without it the identical list is the
+    # INCLUSIVE welcome of GH #265.
+    #
+    # The person noun in front is required and is not decoration. It is what
+    # separates an APPLICANT requirement from every other "must" in a JD — "the
+    # data must be a U.S. citizen" is not a sentence, and "engineers must hold
+    # green cards for this customer" is exactly the bar this rule is for.
+    _SponsorPatternRule(
+        "us person status stated as an applicant requirement",
+        r"\b(?:candidates?|applicants?|employees?|engineers?|hires?|you|"
+        r"the\s+(?:successful|selected|chosen|ideal)\s+candidate|"
+        r"the\s+(?:candidate|applicant|employee))\b[^.;:!?]{0,40}?\s+",
+        "must",
+        r"\s+(?:also\s+|already\s+)?"
+        r"(?:be|have|hold|possess|maintain|establish|show|document|"
+        r"provide\s+proof\s+of|be\s+able\s+to\s+establish)\s+"
+        r"(?:an?\s+|the\s+)?[^.;:!?]{0,20}?"
+        + _SPONSOR_US_PERSON_STATUS + _SPONSOR_US_PERSON_ESCAPE,
     ),
     # "Visa: GC/Citizens" — a compact field naming the accepted statuses. The
     # trailing lookahead requires the value list to be EXHAUSTED by status
@@ -2012,7 +2171,18 @@ def _sponsor_is_export_control(source: str, start: int, end: int) -> bool:
     Requires BOTH an export-control cue and the complete absence of immigration
     context in the same sentence, so a JD that discusses export licences and visa
     sponsorship in one breath keeps its immigration evidence.
+
+    And it requires the phrase to actually CONTAIN the ambiguous word. The
+    ambiguity this gate exists for belongs to "sponsorship" alone — that noun has
+    a second legal sense under ITAR/EAR. "Applicants must be a U.S. citizen,
+    lawful permanent resident, or protected individual" has no second sense: it
+    is a hard eligibility bar in every context, and an export-control sentence is
+    the context where it is MOST likely to be meant literally. Gating it too
+    suppressed the only evidence a firmware posting carried, and the row became
+    final match #1 for a candidate who needs H-1B (GH #286).
     """
+    if not _SPONSOR_ACT_RE.search(source[start:end]):
+        return False
     sentence = _sponsor_sentence(source, start, end)
     return bool(
         _SPONSOR_EXPORT_CONTROL_RE.search(sentence)
@@ -2036,6 +2206,57 @@ def _sponsor_clause_tail(source: str, end: int) -> str:
     probe = source[end:end + _SPONSOR_LOOKBACK_CHARS]
     stop = _SPONSOR_CLAUSE_BREAK_RE.search(probe)
     return probe[:stop.start()] if stop else probe
+
+
+# A field row writes the predicate after a separator rather than a verb
+# ("Visa sponsorship: not available", "Sponsorship - none"). The separator is a
+# clause break to every other rule here, which is right for them and would make
+# the forward scope of a field row EMPTY. Only a separator sitting immediately
+# after the head is skipped, so a colon anywhere else still ends the scope.
+_SPONSOR_FIELD_SEPARATOR_RE = re.compile(r"\A\s{0,3}[:\-–—]\s*")
+
+
+def _sponsor_forward_scope(source: str, end: int) -> str:
+    """The predicate that runs FORWARD from ``end``, for reading negation in it.
+
+    Distinct from ``_sponsor_clause_tail`` — which answers "what qualifies this
+    phrase" — in exactly one way: a relative pronoun or subordinator ENDS it.
+    That is the boundary between "H-1B sponsorship is not offered" (the head's own
+    predicate, a denial) and "H-1B sponsorship is available for candidates who are
+    not authorized to work here" (a modifier on someone else, an offer).
+    """
+    probe = source[end:end + _SPONSOR_LOOKBACK_CHARS]
+    separator = _SPONSOR_FIELD_SEPARATOR_RE.match(probe)
+    if separator is not None:
+        probe = probe[separator.end():]
+    stop = _SPONSOR_FORWARD_BREAK_RE.search(probe)
+    return probe[:stop.start()] if stop else probe
+
+
+def _sponsor_forward_negation(source: str, end: int) -> str | None:
+    """How a negation AFTER a sponsorship phrase relates to it.
+
+    ``"reachable"`` — the cue is inside the head's own predicate and close enough
+    to govern it, so the phrase is a DENIAL of that offer. ``"unreachable"`` — the
+    predicate contains a cue that the adjacency test refuses (too far, or behind a
+    coordinator), which is not evidence of an offer either: it is recorded as
+    unsettled and the posting is kept and flagged, exactly as
+    ``_sponsor_cue_out_of_reach`` does for the backward direction. ``None`` — no
+    negation in the predicate at all.
+
+    The two-step is the whole safety argument. A single strict test would leave
+    "H-1B sponsorship for engineering roles in our Austin, Texas office is not
+    offered" scored as an explicit OFFER, and a single loose one would turn
+    "we offer visa sponsorship and do not require prior US experience" into a
+    refusal. Neither error is acceptable, and ``review`` costs neither.
+    """
+    scope = _sponsor_forward_scope(source, end)
+    if not _SPONSOR_NEGATION_CUE_RE.search(scope):
+        return None
+    if _sponsor_cue_within(scope, _SPONSOR_NEGATION_CUE_RE,
+                           _SPONSOR_NEGATION_MAX_GAP_TOKENS, backward=False):
+        return "reachable"
+    return "unreachable"
 
 
 def _sponsor_cue_within(text: str, pattern, budget: int, *, backward: bool) -> bool:
@@ -2208,6 +2429,18 @@ def _sponsor_offer_is_hedged(source: str, start: int, end: int) -> bool:
     )
 
 
+def _sponsor_offer_is_conditional(source: str, start: int) -> bool:
+    """True when a condition FRONTED to this sentence governs the offer.
+
+    Read over the sentence head rather than the bounded clause scope, because a
+    fronted condition is separated from the offer by exactly the clause break the
+    scope stops at ("If approved by counsel, the company will sponsor …"). Same
+    verdict as a hedge: the offer is not yet a statement, so it lands ``unknown``.
+    """
+    return bool(_SPONSOR_CONDITION_RE.search(
+        _sponsor_sentence_head(source, start)))
+
+
 class _SponsorSpan:
     """A structurally detected denial, duck-typing the ``re.Match`` API used here.
 
@@ -2257,6 +2490,33 @@ def _sponsor_offer_verb_denials(source: str, covered: list[tuple[int, int]]):
         # ``scope`` ends exactly at the head, so the cue's absolute offset is
         # measured back from there.
         yield _SponsorSpan(head.start() - len(scope) + cue.start(), head.end())
+
+
+_SPONSOR_FORWARD_HEAD_DENIAL = "negated sponsorship predicate"
+
+
+def _sponsor_forward_head_denials(source: str, covered: list[tuple[int, int]]):
+    """The mirror of the rule above: a bare head whose OWN PREDICATE is negative.
+
+    "Initial sponsorship is unavailable." / "Visa sponsorship: not available." —
+    the negation sits AFTER the head, where no rule in this module was reading,
+    so the sentence produced no evidence at all and the posting reported silence
+    on a refusal the JD states outright.
+
+    Same integration constraint as every other structural rule here: a head
+    already inside a listed-phrase span is left to the existing paths byte for
+    byte, so this only ever adds detection for wordings that matched nothing.
+    The span runs from the head, not from the cue, because the cue is downstream
+    of it — which keeps ``_sponsor_denial_is_negated`` looking where it should,
+    at whatever precedes the head.
+    """
+    for head in _SPONSOR_HEAD_RE.finditer(source):
+        if any(head.start() < end and start < head.end()
+               for start, end in covered):
+            continue
+        if _sponsor_forward_negation(source, head.end()) != "reachable":
+            continue
+        yield _SponsorSpan(head.start(), head.end())
 
 
 # --- the bounded-phrase scan, and the gate in front of it --------------------
@@ -2422,6 +2682,10 @@ def assess_sponsorship(text: str | None) -> dict:
         for match in _sponsor_offer_verb_denials(source, covered)
         if _immigration_sense(match)
     ] + [
+        (_SPONSOR_FORWARD_HEAD_DENIAL, match)
+        for match in _sponsor_forward_head_denials(source, covered)
+        if _immigration_sense(match)
+    ] + [
         (label, match)
         for label, match in _sponsor_pattern_denials(source, covered, words)
         if _immigration_sense(match)
@@ -2511,8 +2775,30 @@ def assess_sponsorship(text: str | None) -> dict:
             if phrase not in unreachable_cue:
                 unreachable_cue.append(phrase)
             continue
+        forward = _sponsor_forward_negation(source, positive_match.end())
+        if forward is not None:
+            # The head noun's own predicate is where "H-1B sponsorship is
+            # unavailable" puts its refusal, and reading only backward reported
+            # that sentence as an explicit OFFER. Graded through the same three
+            # readings the backward branch uses, so a quantifier means here what
+            # it means there.
+            if forward == "unreachable":
+                if phrase not in unreachable_cue:
+                    unreachable_cue.append(phrase)
+            elif _sponsor_scope_limited(
+                    source, positive_match.start(), positive_match.end()):
+                if phrase not in scope_limited:
+                    scope_limited.append(phrase)
+            elif _sponsor_scope_unsettled(
+                    source, positive_match.start(), positive_match.end()):
+                if phrase not in unsettled:
+                    unsettled.append(phrase)
+            elif phrase not in negated_offer:
+                negated_offer.append(phrase)
+            continue
         if _sponsor_offer_is_hedged(
-                source, positive_match.start(), positive_match.end()):
+                source, positive_match.start(), positive_match.end()) or \
+                _sponsor_offer_is_conditional(source, positive_match.start()):
             if phrase not in hedged_offer:
                 hedged_offer.append(phrase)
             continue
@@ -2532,9 +2818,25 @@ def assess_sponsorship(text: str | None) -> dict:
     # It is deliberately NOT part of ``denial``: a settled refusal must keep
     # winning outright, and letting an unsettled reading weaken one would be the
     # promotion this module refuses to make.
+    # The reason line for the two branches that both land on an unsettled
+    # transfer-scoped denial. Written once so the conflict branch cannot drift
+    # into a vaguer explanation than the branch beside it.
+    transfer_reason = (
+        "The posting's only denial covers NEW petitions while the posting "
+        "also welcomes transfers, so it is not read as a settled refusal.")
+    only_transfer_denial = (
+        bool(unsettled_transfer) and not settled
+        and len(unsettled_transfer) == len(unsettled))
     if (denial or unreachable_cue) and (positive or hedged_offer):
         decision, verdict, confidence = "review", "unknown", "low"
-        reason = "Conflicting sponsorship offer and denial language."
+        # A transfer welcome IS an offer phrase now, so the canonical GH #265
+        # posting reaches the CONFLICT branch rather than the unsettled one.
+        # Same verdict either way; without this the user-facing explanation
+        # would silently degrade from naming the petition scope to "the posting
+        # contradicts itself", which is true of far more postings and tells the
+        # reader nothing about which half applies to them.
+        reason = (transfer_reason if only_transfer_denial
+                  else "Conflicting sponsorship offer and denial language.")
     elif settled:
         decision, verdict, confidence = "no_match", "unlikely", "high"
         reason = (
@@ -2544,9 +2846,7 @@ def assess_sponsorship(text: str | None) -> dict:
     elif unsettled:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = (
-            "The posting's only denial covers NEW petitions while the posting "
-            "also welcomes transfers, so it is not read as a settled refusal."
-            if unsettled_transfer and len(unsettled_transfer) == len(unsettled)
+            transfer_reason if only_transfer_denial
             else "The posting's only denial is bounded by a quantifier that reads "
                  "either way, so it is not read as a settled refusal.")
     elif ambiguous:
@@ -2558,8 +2858,8 @@ def assess_sponsorship(text: str | None) -> dict:
         reason = "The posting explicitly offers immigration sponsorship."
     elif hedged_offer:
         decision, verdict, confidence = "review", "unknown", "low"
-        reason = ("The posting's only sponsorship offer is hedged (discretionary "
-                  "or limited), so it is not read as an offer.")
+        reason = ("The posting's only sponsorship offer is hedged (conditional, "
+                  "discretionary or limited), so it is not read as an offer.")
     elif unreachable_cue:
         decision, verdict, confidence = "review", "unknown", "low"
         reason = ("The posting's only sponsorship offer sits behind a negation "
@@ -2611,7 +2911,15 @@ def assess_sponsorship(text: str | None) -> dict:
             *(f"hedged: {phrase}" for phrase in hedged_offer),
             *positive,
         ],
-        "signal_present": bool(_SPONSOR_SIGNAL_RE.search(source)),
+        # Whether the posting says anything about sponsorship at all. The word
+        # scan alone under-reports it, because five settled denials in
+        # ``_SPONSOR_NEGATIVE`` and the citizenship pattern rules contain no
+        # sponsorship/visa word by design ("us citizens only"). ``visa_ok``
+        # attaches ``sponsorship_requires_review`` only when this is true under
+        # the default policy, so a `review` carrying real eligibility evidence
+        # was entering the main match list with an EMPTY reason list (GH #286).
+        # Any rule that fired IS a signal, whatever words carried it.
+        "signal_present": bool(rule_ids) or bool(_SPONSOR_SIGNAL_RE.search(source)),
         "reason": reason,
         "structural_signature": hashlib.sha256(
             material.encode("utf-8")).hexdigest()[:16],
