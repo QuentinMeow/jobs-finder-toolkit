@@ -359,6 +359,86 @@ class BranchItem:
         }
 
 
+# ── remote branches: counted and explained, never touched ────────────────────
+#
+# WHY THEY WERE INVISIBLE, AND WHY THEY STILL ARE NOT DELETED. `classify` used
+# to `continue` past every ref whose scope is "R", so the pile the owner
+# actually looks at on GitHub — 17 merged branches on this repository at the
+# time of writing — did not appear in the plan at all. That is a REPORTING gap
+# and it is closed below.
+#
+# It is not closed by emitting deletions, and the reason is written in this
+# repository's own handbook. `skills/github-workflow/reference.md` records
+# incident #136: deleting a base branch CLOSED the pull request stacked above it
+# one second later (`base_ref_deleted` 21:05:08, `closed` 21:05:09), and made
+# the rewritten commits unreachable, degrading review-ledger rows from
+# "EXISTS but is NOT an ancestor" to "UNKNOWN OBJECT" in a fresh clone. Its rule
+# is "never `--delete-branch`", and `merge_stack.py` rejects the flag at
+# argument parsing.
+#
+# So the precondition that would make a remote deletion safe is "no OPEN pull
+# request names this branch as its head OR as its base", and answering it
+# requires a GitHub API call. This planner makes exactly ONE network call —
+# `git fetch --prune origin` — and that is a property worth more than the
+# convenience of a second one. Every row below therefore carries its unmet
+# preconditions explicitly, and NOTHING is emitted.
+#
+# Whether the emitter should ever start writing that block is an owner
+# decision, not an agent's: see
+# `message-queue/needs-human/decisions/plan-remote-branch-retirement.md`. This
+# report-only behaviour is that item's default path, and it satisfies the rule a
+# default path has to satisfy — reversible, writes no owner data, reaches
+# nothing outward, loses nothing silently.
+
+REMOTE_DECISION = ("message-queue/needs-human/decisions/"
+                   "plan-remote-branch-retirement.md")
+REMOTE_KEEP_PROTECTED = "protected branch name"
+REMOTE_KEEP_BASE = "this is the base ref every other branch is judged against"
+REMOTE_KEEP_UNCONTAINED = (
+    "the fetched base does not contain its content — a merge-tree CONFLICT is "
+    "an answer, and the answer is no")
+REMOTE_KEEP_STALE = "no --fetch, so there is no fresh remote knowledge to judge it by"
+REMOTE_UNMET_PR = (
+    "UNMET: no open pull request may name it as head OR as base. Deleting a "
+    "base branch CLOSES the PR stacked above it (incident #136, one second "
+    "apart), and answering this needs a GitHub API call this planner does not "
+    "make — its only network call is `git fetch --prune origin`")
+REMOTE_UNMET_DECISION = (
+    f"UNMET: whether this tool may plan remote deletions at all is an OPEN "
+    f"owner decision ({REMOTE_DECISION}). Its default path, which is what runs "
+    f"until it is answered, is this listing and nothing else")
+
+
+@dataclass
+class RemoteBranchItem:
+    """One cached remote branch, with the reasons it is not a candidate.
+
+    ``candidate`` never means "will be deleted" and never means "may be
+    deleted". It means "the two things this planner CAN check both passed", and
+    ``unmet`` names everything it cannot check that would still have to hold.
+    """
+    name: str
+    ref: str
+    tip: str
+    keep_reasons: list[str] = field(default_factory=list)
+    unmet: list[str] = field(default_factory=list)
+
+    @property
+    def candidate(self) -> bool:
+        return not self.keep_reasons
+
+    def to_json(self) -> dict:
+        return {
+            "candidate": self.candidate,
+            "emitted": False,
+            "keep_reasons": list(self.keep_reasons),
+            "name": self.name,
+            "ref": self.ref,
+            "tip": self.tip,
+            "unmet_preconditions": list(self.unmet),
+        }
+
+
 @dataclass
 class WorktreeItem:
     path: str
@@ -1291,7 +1371,8 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
              include_harness: bool = False,
              containment: Containment | None = None,
              fresh: bool = False,
-             ) -> tuple[list[BranchItem], list[WorktreeItem]]:
+             ) -> tuple[list[BranchItem], list[WorktreeItem],
+                        list[RemoteBranchItem]]:
     base_ref = repo.base_ref
     risk = ledger if ledger is not None else LedgerRisk()
     owned = containment is None
@@ -1309,14 +1390,18 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
 def _classify(repo: status.Repository, root: Path, *, run_id: str,
               risk: LedgerRisk, include_harness: bool,
               containment: Containment, fresh: bool,
-              ) -> tuple[list[BranchItem], list[WorktreeItem]]:
+              ) -> tuple[list[BranchItem], list[WorktreeItem],
+                         list[RemoteBranchItem]]:
     base_ref = repo.base_ref
     worktree_refs = {
         branch.ref.full_name for branch in repo.branches if branch.worktree_path
     }
     branches: list[BranchItem] = []
+    remotes: list[RemoteBranchItem] = []
     for branch in repo.branches:
         if branch.scope == "R":
+            remotes.append(classify_remote(branch, base_ref=base_ref,
+                                           containment=containment, fresh=fresh))
             continue
         item = BranchItem(
             name=branch.name, ref=branch.ref.full_name, tip=branch.ref.oid,
@@ -1512,7 +1597,32 @@ def _classify(repo: status.Repository, root: Path, *, run_id: str,
             item.action = "retire"
         worktrees.append(item)
     hold_back_prunes(worktrees)
-    return branches, worktrees
+    return branches, worktrees, remotes
+
+
+def classify_remote(branch: status.Branch, *, base_ref: str | None,
+                    containment: Containment, fresh: bool) -> RemoteBranchItem:
+    """One cached remote branch — listed, explained, and never acted on."""
+    item = RemoteBranchItem(name=branch.name, ref=branch.ref.full_name,
+                            tip=branch.ref.oid)
+    # `refs/remotes/<remote>/HEAD` is the remote's default-branch pointer, not a
+    # branch anybody works on — and its `refname:short` is the bare REMOTE NAME
+    # (`origin`), which no leaf-name test would ever catch. The ref path is the
+    # reliable question; the symbolic target only answers when git happens to
+    # have stored it as a symref rather than as a copied oid.
+    leaf = branch.name.split("/", 1)[-1] if "/" in branch.name else branch.name
+    if (branch.ref.symbolic_target or branch.ref.full_name.endswith("/HEAD")
+            or leaf in PROTECTED or branch.name in PROTECTED):
+        item.keep_reasons.append(REMOTE_KEEP_PROTECTED)
+    if base_ref is not None and branch.ref.full_name == base_ref:
+        item.keep_reasons.append(REMOTE_KEEP_BASE)
+    if not fresh:
+        item.keep_reasons.append(REMOTE_KEEP_STALE)
+    elif containment.contains(branch.ref.full_name) is not True:
+        item.keep_reasons.append(REMOTE_KEEP_UNCONTAINED)
+    if item.candidate:
+        item.unmet = [REMOTE_UNMET_PR, REMOTE_UNMET_DECISION]
+    return item
 
 
 def hold_back_prunes(worktrees: Sequence[WorktreeItem]) -> bool:
@@ -2225,7 +2335,8 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
 def build_plan(*, run_id: str, root: Path, repo: status.Repository,
                branches: Sequence[BranchItem], worktrees: Sequence[WorktreeItem],
                blocking: Sequence[Blocking], fetched: bool, executed: bool,
-               private_counts: dict | None, include_harness: bool = False) -> dict:
+               private_counts: dict | None, include_harness: bool = False,
+               remotes: Sequence[RemoteBranchItem] = ()) -> dict:
     stale = not fetched
     judgement = [item for item in branches
                  if KEEP_UNKNOWN_MERGE in item.keep_reasons
@@ -2249,6 +2360,15 @@ def build_plan(*, run_id: str, root: Path, repo: status.Repository,
         "generator": {"tool": TOOL, "merge_probe": repo.merge_probe},
         "include_harness_worktrees": include_harness,
         "private_overlay": private_counts,
+        "remote_branches": {
+            "cached": [item.to_json() for item in remotes],
+            "decision": REMOTE_DECISION,
+            "emitted": False,
+            "policy": ("listed and explained only. This planner never deletes a "
+                       "remote branch, never emits a command that would, and "
+                       "makes exactly one network call: `git fetch --prune "
+                       "origin`."),
+        },
         "remote_knowledge": {"fetched": fetched,
                              "state": "stale" if stale else "fresh"},
         "root": str(root),
@@ -2272,8 +2392,50 @@ def _bullet(text: str, out, indent: str = "          ") -> None:
         print(f"{indent}  {line}", file=out)
 
 
+def print_remote_section(remotes: Sequence[RemoteBranchItem], out, *,
+                         list_remotes: bool) -> None:
+    """One line always; the whole pile on request. Never a proposal.
+
+    The summary is unconditional because the pile being INVISIBLE is the
+    finding: `classify` used to skip every remote ref outright, so a repository
+    with seventeen merged branches sitting on its remote produced a plan that
+    mentioned none of them. The listing is behind a flag because seventeen rows
+    of "not deletable, here is why" would bury the branches and worktrees this
+    tool actually acts on.
+    """
+    if not remotes:
+        return
+    candidates = [item for item in remotes if item.candidate]
+    print("", file=out)
+    print(f"REMOTE BRANCHES ({len(remotes)} cached · {len(candidates)} contained "
+          f"by the base and not protected)", file=out)
+    _bullet("NOTHING here is proposed and NOTHING is emitted: this planner does "
+            "not delete remote branches and writes no command that would. Two "
+            f"preconditions are unmet for every row — see {REMOTE_DECISION}.",
+            out, indent="  ")
+    if not list_remotes:
+        if candidates:
+            _bullet("Pass --remote-branches to list them.", out, indent="  ")
+        return
+    # The unmet preconditions are IDENTICAL for every candidate, so they are
+    # stated once. Repeating two paragraphs seventeen times is how a report
+    # stops being read — and the per-row copies are still in the plan JSON,
+    # where a machine reader needs them attached to the row.
+    if candidates:
+        for reason in candidates[0].unmet:
+            _bullet(reason, out, indent="  ")
+    width = max((len(item.name) for item in remotes), default=1)
+    for item in remotes:
+        verdict = "candidate" if item.candidate else "keep"
+        print(f"  {verdict:<9} {item.name:<{width}}  {item.tip[:8]}", file=out)
+        for reason in item.keep_reasons:
+            _bullet(reason, out)
+
+
 def print_report(plan: dict, branches: Sequence[BranchItem],
-                 worktrees: Sequence[WorktreeItem], out) -> None:
+                 worktrees: Sequence[WorktreeItem], out,
+                 remotes: Sequence[RemoteBranchItem] = (),
+                 list_remotes: bool = False) -> None:
     mode = ("non-destructive steps performed" if plan["executed_non_destructive"]
             else "dry-run")
     print(f"workspace cleanup plan  run {plan['run_id']}   ({mode}; the destructive "
@@ -2339,6 +2501,8 @@ def print_report(plan: dict, branches: Sequence[BranchItem],
         for note in item.notes:
             _bullet(f"note: {note}", out)
 
+    print_remote_section(remotes, out, list_remotes=list_remotes)
+
     if plan["private_overlay"]:
         counts = plan["private_overlay"]
         print("", file=out)
@@ -2385,6 +2549,13 @@ def build_parser() -> argparse.ArgumentParser:
              "base, an unlocked registration and the per-worktree reflog sweep "
              "all still decide. Nothing is executed either way — the retirement "
              "is emitted as `mv` into a trash directory for you to run.")
+    parser.add_argument(
+        "--remote-branches", action="store_true",
+        help="list every cached remote branch with the reasons it is not a "
+             "deletion candidate. LISTING ONLY: this planner never deletes a "
+             "remote branch and never writes a command that would — whether it "
+             "may ever plan one is an open owner decision, and the two "
+             "preconditions it cannot check are printed on every row.")
     parser.add_argument(
         "--archive-tag", action="store_true",
         help="with --execute, also write an annotated archive/<slug>-<sha> tag "
@@ -2459,10 +2630,10 @@ def _plan(argv: Sequence[str] | None, out) -> int:
     # asking twice costs one git call rather than two.
     containment = Containment(root, base_ref)
     try:
-        branches, worktrees = classify(repo, root, run_id=run_id,
-                                       ledger=ledger_risk(root, base_ref),
-                                       include_harness=include_harness,
-                                       containment=containment, fresh=fetched)
+        branches, worktrees, remotes = classify(
+            repo, root, run_id=run_id, ledger=ledger_risk(root, base_ref),
+            include_harness=include_harness, containment=containment,
+            fresh=fetched)
         apply_emitter_refusals(root, run_id, worktrees, branches,
                                containment=containment, fresh=fetched)
 
@@ -2478,9 +2649,10 @@ def _plan(argv: Sequence[str] | None, out) -> int:
         plan = build_plan(run_id=run_id, root=root, repo=repo, branches=branches,
                           worktrees=worktrees, blocking=blocking, fetched=fetched,
                           executed=executed, private_counts=private_counts,
-                          include_harness=include_harness)
+                          include_harness=include_harness, remotes=remotes)
 
-        print_report(plan, branches, worktrees, out)
+        print_report(plan, branches, worktrees, out, remotes=remotes,
+                     list_remotes=args.remote_branches)
 
         script = build_script(run_id=run_id, root=root, base_ref=base_ref,
                               stale=not fetched, branches=branches,

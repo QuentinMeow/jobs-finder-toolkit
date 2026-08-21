@@ -2469,6 +2469,196 @@ class ForbiddenVerbAuditTests(MainWorktreeScenario):
             self.fail("no compare-and-swap deletion was emitted")
 
 
+# ── remote branches: visible at last, and still untouched ────────────────────
+#
+# `classify` used to `continue` past every ref whose scope is "R", so a
+# repository with seventeen merged branches sitting on its remote produced a
+# plan mentioning none of them — a tool whose whole purpose is "stop things
+# accumulating", silent about the accumulation. They are listed now.
+#
+# They are still not deleted, and the reason is this repository's own record:
+# `skills/github-workflow/reference.md` documents incident #136, where deleting
+# a base branch CLOSED the pull request stacked above it one second later. The
+# precondition that would make a deletion safe — no open PR names it as head or
+# as base — needs a GitHub API call, and this planner's single network call
+# (`git fetch --prune origin`) is a property worth keeping. So: listed,
+# explained, and emitted nowhere.
+
+
+class RemoteBranchScenario(F.GitTestCase):
+    def build(self, *names: str) -> None:
+        self.root = self.scratch / "toolkit"
+        self.root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.root)],
+                       check=True, env=dict(os.environ))
+        F.add_toolkit_markers(self.root)
+        F.write(self.root / ".gitignore", "local/\n")
+        F.write(self.root / "seed.txt", "seed\n")
+        self.commit(self.root, "base commit")
+        F.add_origin(self, self.root)
+        for index, name in enumerate(names):
+            self.git(self.root, "switch", "-q", "-c", name, "main")
+            F.write(self.root / f"work-{index}.txt", f"work on {name}\n")
+            self.commit(self.root, f"{name}: the work")
+            self.git(self.root, "push", "-q", "origin", name)
+            self.git(self.root, "switch", "-q", "main")
+            self.git(self.root, "merge", "-q", "--no-ff", name,
+                     "-m", f"Merge {name}")
+            # LOCAL branch deleted, remote head kept — a merged branch nobody
+            # cleaned up on GitHub. That is the pile this section is about.
+            self.git(self.root, "branch", "-d", name)
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+    def plan(self, *argv: str) -> tuple[dict, str, Path]:
+        buffer = io.StringIO()
+        cleanup.main(["--repo-root", str(self.root), *argv], out=buffer)
+        produced = sorted((self.root / "local" / "workspace").glob("cleanup-*.json"))
+        return (json.loads(produced[-1].read_text(encoding="utf-8")),
+                buffer.getvalue(), produced[-1].with_suffix(".sh"))
+
+    def rows(self, plan: dict) -> dict:
+        return {r["name"]: r for r in plan["remote_branches"]["cached"]}
+
+
+class RemoteBranchesAreListedNeverTouchedTests(RemoteBranchScenario):
+    def test_a_merged_remote_branch_appears_in_the_plan_at_all(self) -> None:
+        self.build("codex/one", "codex/two")
+        plan, report, _ = self.plan("--fetch")
+        rows = self.rows(plan)
+        for name in ("origin/codex/one", "origin/codex/two"):
+            with self.subTest(branch=name):
+                self.assertIn(name, rows, "a merged remote branch is invisible")
+                self.assertTrue(rows[name]["candidate"],
+                                rows[name]["keep_reasons"])
+        self.assertIn("REMOTE BRANCHES", report,
+                      "the pile must be visible without any flag")
+
+    def test_every_candidate_carries_its_unmet_preconditions(self) -> None:
+        self.build("codex/one")
+        plan, _, _ = self.plan("--fetch")
+        row = self.rows(plan)["origin/codex/one"]
+        self.assertFalse(row["emitted"])
+        joined = " ".join(row["unmet_preconditions"])
+        self.assertIn("#136", joined,
+                      "the incident that decides this must be named on the row")
+        self.assertIn("head OR as base", joined)
+        self.assertIn(cleanup.REMOTE_DECISION, joined,
+                      "the open owner decision must be reachable from the row")
+
+    def test_nothing_about_a_remote_branch_reaches_the_emitted_script(self) -> None:
+        self.build("codex/one", "codex/two")
+        _, _, script_path = self.plan("--fetch")
+        script = script_path.read_text(encoding="utf-8")
+        runnable = "\n".join(line for line in script.splitlines()
+                             if line.strip() and not line.strip().startswith("#"))
+        for forbidden in ("git push", "--force-with-lease", "--delete",
+                          ":refs/heads/", "refs/remotes/origin/codex"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, runnable)
+        for name in ("codex/one", "codex/two"):
+            self.assertNotIn(f"origin/{name}", runnable)
+
+    def test_the_planner_still_makes_exactly_one_network_call(self) -> None:
+        # The property the whole section rests on. `git` is shadowed by a
+        # recorder on PATH, so every invocation the planner makes is captured —
+        # no mocking of git's behaviour, just a record of what was asked.
+        self.build("codex/one")
+        bindir = self.scratch / "bin"
+        bindir.mkdir()
+        log = self.scratch / "git-calls.log"
+        real = subprocess.run(["command", "-v", "git"], capture_output=True,
+                              text=True, shell=False, check=False)
+        shim = bindir / "git"
+        shim.write_text(
+            "#!/bin/sh\n"
+            f'printf "%s\\n" "$*" >> {shlex.quote(str(log))}\n'
+            f'exec /usr/bin/env -u PATH_SHIM {shlex.quote(real.stdout.strip() or "git")} "$@"\n',
+            encoding="utf-8")
+        shim.chmod(0o755)
+        previous = os.environ["PATH"]
+        os.environ["PATH"] = f"{bindir}:{previous}"
+        self.addCleanup(os.environ.__setitem__, "PATH", previous)
+
+        self.plan("--fetch", "--remote-branches")
+        calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        self.assertTrue(calls, "the shim recorded nothing; the test proves nothing")
+        reaching = [c for c in calls
+                    if any(verb in c.split()
+                           for verb in ("fetch", "push", "ls-remote", "clone",
+                                        "pull"))]
+        self.assertEqual(len(reaching), 1, f"expected one network call: {reaching}")
+        self.assertIn("fetch", reaching[0])
+        self.assertNotIn("push", " ".join(calls))
+
+    def test_the_remote_default_pointer_is_never_a_candidate(self) -> None:
+        # `refs/remotes/origin/HEAD` short-names to the bare REMOTE NAME
+        # (`origin`), which no leaf-name test would ever catch — and it points
+        # at the default branch rather than being a branch anybody works on.
+        # Measured while writing this: `git fetch --prune` DELETES a plain ref
+        # at that path and replaces it with a symref, so the stale run is the
+        # one that can carry the plain shape end to end.
+        self.build("codex/one")
+        self.git(self.root, "update-ref", "--no-deref", "-d",
+                 "refs/remotes/origin/HEAD", check=False)
+        self.git(self.root, "update-ref", "--no-deref",
+                 "refs/remotes/origin/HEAD",
+                 self.out(self.root, "rev-parse", "refs/remotes/origin/main"))
+        self.assertEqual(
+            self.out(self.root, "for-each-ref", "--format=%(symref)",
+                     "refs/remotes/origin/HEAD"), "",
+            "the fixture must build the PLAIN shape, not the symref")
+
+        plan, _, _ = self.plan()
+        rows = self.rows(plan)
+        self.assertIn("origin", rows, "the fixture no longer has origin/HEAD")
+        self.assertFalse(rows["origin"]["candidate"], rows["origin"])
+        self.assertIn(cleanup.REMOTE_KEEP_PROTECTED, rows["origin"]["keep_reasons"],
+                      "the remote's default-branch pointer read as an ordinary "
+                      "branch")
+
+    def test_the_symbolic_default_pointer_is_never_a_candidate_either(self) -> None:
+        self.build("codex/one")
+        self.git(self.root, "remote", "set-head", "origin", "main")
+        plan, _, _ = self.plan("--fetch")
+        row = self.rows(plan).get("origin")
+        if row is not None:      # the dashboard may drop symrefs before this
+            self.assertFalse(row["candidate"], row)
+
+    def test_an_unmerged_remote_branch_is_not_a_candidate(self) -> None:
+        self.build("codex/one")
+        self.git(self.root, "switch", "-q", "-c", "codex/open", "main")
+        F.write(self.root / "open.txt", "work that never landed\n")
+        self.commit(self.root, "codex/open: unique work")
+        self.git(self.root, "push", "-q", "origin", "codex/open")
+        self.git(self.root, "switch", "-q", "main")
+        self.git(self.root, "branch", "-D", "codex/open")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        plan, _, _ = self.plan("--fetch")
+        row = self.rows(plan)["origin/codex/open"]
+        self.assertFalse(row["candidate"], row)
+        self.assertIn(cleanup.REMOTE_KEEP_UNCONTAINED, row["keep_reasons"])
+
+    def test_a_stale_run_calls_no_remote_branch_a_candidate(self) -> None:
+        self.build("codex/one")
+        plan, _, _ = self.plan()
+        row = self.rows(plan)["origin/codex/one"]
+        self.assertFalse(row["candidate"], row)
+        self.assertIn(cleanup.REMOTE_KEEP_STALE, row["keep_reasons"])
+
+    def test_the_listing_flag_only_changes_what_is_printed(self) -> None:
+        self.build("codex/one", "codex/two")
+        quiet_plan, quiet, _ = self.plan("--fetch")
+        loud_plan, loud, _ = self.plan("--fetch", "--remote-branches")
+        self.assertEqual(self.rows(quiet_plan).keys(), self.rows(loud_plan).keys(),
+                         "the flag must not change the classification")
+        self.assertNotIn("origin/codex/one", quiet)
+        self.assertIn("origin/codex/one", loud)
+        self.assertIn("--remote-branches", quiet,
+                      "the summary must say how to see the list")
+
+
 if __name__ == "__main__":
     import unittest
 

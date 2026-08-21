@@ -4120,3 +4120,9 @@
   files: 6
   digest: sha256:1fd11c39aee427d7
   finding: 'Workspace cleanup tests plus two process files. New test coverage for backup-ref collisions, the prune-path reflog, post-plan mutation, an unreadable git status, conflicting binary and submodule content, and the detached-worktree matrix; the run-time-recheck backlog task moved to in-review with its verification; one new backlog task filed for a merge-tree conflict reading as merged in the dashboard. Public tooling, git semantics and synthetic fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: a5ebbc78
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 3
+  digest: sha256:d959828aaa848609
+  finding: 'Workspace cleanup planner, its tests, and one queue decision item. Cached remote branches are now listed with the reasons each is not a deletion candidate; nothing about them reaches the emitted script and the tool still makes exactly one network call. The open owner decision about ever planning remote deletions is filed with this listing as its default path. Public tooling, git semantics and synthetic fixture data only; no real identity, employer, application, or dated job-hunt content.'
