@@ -9,6 +9,7 @@ Run with:
 from __future__ import annotations
 
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -143,12 +144,227 @@ EMPTY_PAGE = """<!doctype html>
 """
 
 
+# A LONG page carrying no posting: consumer-product marketing and navigation,
+# then the shell's own "No job found." It clears the tiny-extraction floor by a
+# wide margin, which is exactly why it used to be saved as a JD.
+_SHELL_FILLER = (
+    "<p>Nimbus Robotics helps people automate the warehouse floor with fleets of "
+    "autonomous movers, planning software, and a support team that answers in "
+    "minutes. Explore products, pricing, customer stories and the help centre.</p>"
+)
+DEAD_PAGE_SHELL = ("<!doctype html>\n<html>\n"
+                   "<head><title>Nimbus Robotics — Careers</title></head>\n"
+                   "<body>\n  <nav><a href=\"/\">Home</a></nav>\n"
+                   + _SHELL_FILLER * 12 +
+                   "\n  <h2>No job found.</h2>\n"
+                   "  <footer>© Nimbus Robotics</footer>\n</body></html>\n")
+
+# The same shell, but embedded from a Greenhouse board whose token the page names
+# while rendering the widget — which is what makes recovery possible at all.
+DEAD_PAGE_SHELL_GH = DEAD_PAGE_SHELL.replace(
+    "<footer>",
+    '<script src="https://boards.greenhouse.io/embed/job_board/js?for=nimbus">'
+    "</script>\n  <footer>")
+
+# The board API's record for that same job: still live, full content, and the
+# content arrives entity-escaped exactly as Greenhouse serves it.
+GH_API_RECORD = {
+    "id": 7800568003,
+    "title": "Senior Regulatory Reporting Analyst",
+    "absolute_url": "https://boards.greenhouse.io/nimbus/jobs/7800568003",
+    "location": {"name": "Seattle, WA"},
+    "content": ("&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;You will own "
+                "regulatory reporting for the lending book.&lt;/p&gt;"
+                "&lt;ul&gt;&lt;li&gt;8+ years of accounting experience."
+                "&lt;/li&gt;&lt;li&gt;This role is hybrid in Seattle."
+                "&lt;/li&gt;&lt;/ul&gt;"),
+}
+
+
 def _run_cli(argv):
     """Run fetch_jd.main(argv); return (exit_code, stdout, stderr)."""
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
         code = fetch_jd.main(argv)
     return code, out.getvalue(), err.getvalue()
+
+
+class DeadPageMarkerTests(unittest.TestCase):
+    """What counts as "this page carries no posting" — and what must not."""
+
+    def test_the_shell_line_is_detected_on_a_long_page(self):
+        text = fetch_jd.extract_readable_text(DEAD_PAGE_SHELL)
+        self.assertGreater(len(text), fetch_jd._TINY_EXTRACTION_BYTES)
+        self.assertEqual(fetch_jd.detect_dead_page(text), "No job found.")
+
+    def test_explicitly_dead_postings_are_detected(self):
+        for line in ("This job is no longer available",
+                     "This position has been filled.",
+                     "The job you are looking for is not here",
+                     "- Job not found"):
+            self.assertIsNotNone(fetch_jd.detect_dead_page(f"# Careers\n\n{line}\n"),
+                                 line)
+
+    def test_a_real_jd_is_never_called_dead(self):
+        for jd in (JD_REMOTE_DENIAL, JD_HYBRID_METRO):
+            self.assertIsNone(fetch_jd.detect_dead_page(jd))
+
+    def test_prose_that_merely_uses_the_words_is_not_a_marker(self):
+        prose = ("If no job found on this page matches your background, we still "
+                 "want to hear from you — send us a note and we will keep your "
+                 "profile on file for future openings on the platform team.")
+        self.assertIsNone(fetch_jd.detect_dead_page(f"# Engineer\n\n{prose}\n"))
+
+    def test_an_empty_similar_jobs_widget_is_not_a_marker(self):
+        """Plural "No jobs found" is what an empty widget on a GOOD page says."""
+        self.assertIsNone(fetch_jd.detect_dead_page(
+            "# Backend Engineer\n\n## Similar jobs\n\nNo jobs found\n"))
+
+
+class GreenhouseReferenceTests(unittest.TestCase):
+    def test_a_board_hosted_url_carries_both_halves(self):
+        self.assertEqual(
+            fetch_jd.greenhouse_reference(
+                "https://boards.greenhouse.io/nimbus/jobs/7800568003"),
+            ("nimbus", "7800568003"))
+        self.assertEqual(
+            fetch_jd.greenhouse_reference(
+                "https://job-boards.greenhouse.io/nimbus/jobs/7800568003"),
+            ("nimbus", "7800568003"))
+
+    def test_an_employer_url_takes_its_token_from_the_embed_widget(self):
+        self.assertEqual(
+            fetch_jd.greenhouse_reference(
+                "https://nimbus.example/careers/job/7800568003?gh_jid=7800568003",
+                DEAD_PAGE_SHELL_GH),
+            ("nimbus", "7800568003"))
+
+    def test_an_explicit_board_token_wins_when_the_page_names_none(self):
+        self.assertEqual(
+            fetch_jd.greenhouse_reference(
+                "https://nimbus.example/careers/job/42?gh_jid=42",
+                DEAD_PAGE_SHELL, board="nimbus"),
+            ("nimbus", "42"))
+
+    def test_an_unresolvable_url_is_none_not_a_guess(self):
+        self.assertIsNone(fetch_jd.greenhouse_reference(
+            "https://nimbus.example/careers/job/42?gh_jid=42", DEAD_PAGE_SHELL))
+        self.assertIsNone(fetch_jd.greenhouse_reference(
+            "https://nimbus.example/careers/senior-engineer", DEAD_PAGE_SHELL_GH))
+
+
+class DeadPageRecoveryTests(unittest.TestCase):
+    """A dead page has three meanings and the caller's next move differs for each."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self.addCleanup(setattr, fetch_jd, "fetch_page", fetch_jd.fetch_page)
+        self.api_calls = []
+
+    def _serve(self, page, api):
+        """Serve `page` for the posting URL and `api` for the board-API URL.
+
+        `api` is a dict (the live record), an int status (HTTP failure) or an
+        exception instance.
+        """
+        def _fetch(url, timeout):
+            if "boards-api.greenhouse.io" in url:
+                self.api_calls.append(url)
+                if isinstance(api, int):
+                    raise fetch_jd.FetchError(f"HTTP {api} for {url}", status=api)
+                if isinstance(api, Exception):
+                    raise api
+                return json.dumps(api)
+            return page
+
+        fetch_jd.fetch_page = _fetch
+
+    URL = "https://nimbus.example/careers/job/7800568003?gh_jid=7800568003"
+
+    def test_a_live_api_posting_is_recovered_verbatim_and_saved(self):
+        self._serve(DEAD_PAGE_SHELL_GH, GH_API_RECORD)
+        out = self.tmp / "JD.md"
+        code, stdout, stderr = _run_cli([self.URL, "--out", str(out)])
+        self.assertEqual(code, 0, stderr)
+        body = out.read_text(encoding="utf-8")
+        self.assertIn("Senior Regulatory Reporting Analyst", body)
+        self.assertIn("8+ years of accounting experience", body)
+        self.assertIn("Seattle, WA", body)
+        # ...and none of the consumer shell it replaced.
+        self.assertNotIn("No job found", body)
+        self.assertNotIn("autonomous movers", body)
+        self.assertIn("recovered VERBATIM from the Greenhouse board API", stderr)
+        self.assertIn(str(out), stdout)
+
+    def test_the_recovered_text_says_where_it_came_from(self):
+        self._serve(DEAD_PAGE_SHELL_GH, GH_API_RECORD)
+        out = self.tmp / "JD.md"
+        _run_cli([self.URL, "--out", str(out)])
+        self.assertIn("recovered verbatim from the Greenhouse board API",
+                      out.read_text(encoding="utf-8"))
+
+    def test_a_404_says_the_posting_is_gone_not_that_we_failed(self):
+        self._serve(DEAD_PAGE_SHELL_GH, 404)
+        out = self.tmp / "JD.md"
+        code, _stdout, stderr = _run_cli([self.URL, "--out", str(out)])
+        self.assertEqual(code, 1)
+        self.assertFalse(out.exists())
+        self.assertIn("GONE", stderr)
+        self.assertIn("404", stderr)
+
+    def test_an_unreachable_api_says_it_could_not_check(self):
+        self._serve(DEAD_PAGE_SHELL_GH, 503)
+        out = self.tmp / "JD.md"
+        code, _stdout, stderr = _run_cli([self.URL, "--out", str(out)])
+        self.assertEqual(code, 1)
+        self.assertFalse(out.exists())
+        self.assertIn("Could not check", stderr)
+        self.assertNotIn("GONE", stderr)
+
+    def test_an_unresolvable_dead_page_names_the_recovery_command(self):
+        self._serve(DEAD_PAGE_SHELL, None)          # no embed token on the page
+        out = self.tmp / "JD.md"
+        code, _stdout, stderr = _run_cli([self.URL, "--out", str(out)])
+        self.assertEqual(code, 1)
+        self.assertFalse(out.exists())
+        self.assertEqual(self.api_calls, [])        # nothing to ask
+        self.assertIn("company_roles.py", stderr)
+        self.assertIn("--gh-board", stderr)
+
+    def test_the_board_token_flag_makes_it_recoverable(self):
+        self._serve(DEAD_PAGE_SHELL, GH_API_RECORD)
+        out = self.tmp / "JD.md"
+        code, _stdout, stderr = _run_cli(
+            [self.URL, "--out", str(out), "--gh-board", "nimbus"])
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Senior Regulatory Reporting Analyst",
+                      out.read_text(encoding="utf-8"))
+
+    def test_a_live_record_with_no_content_is_refused_not_saved_empty(self):
+        self._serve(DEAD_PAGE_SHELL_GH, {**GH_API_RECORD, "content": "",
+                                         "title": "", "location": {}})
+        out = self.tmp / "JD.md"
+        code, _stdout, stderr = _run_cli([self.URL, "--out", str(out)])
+        self.assertEqual(code, 1)
+        self.assertFalse(out.exists())
+        self.assertIn("no content", stderr)
+
+    def test_a_healthy_page_never_touches_the_board_api(self):
+        self._serve(ATS_PAGE, GH_API_RECORD)
+        out = self.tmp / "JD.md"
+        code, _stdout, stderr = _run_cli([self.URL, "--out", str(out)])
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(self.api_calls, [])
+
+    def test_the_recovered_jd_still_supports_the_digest(self):
+        self._serve(DEAD_PAGE_SHELL_GH, GH_API_RECORD)
+        out = self.tmp / "JD.md"
+        code, stdout, stderr = _run_cli([self.URL, "--out", str(out), "--digest"])
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("JD DIGEST", stdout)
+        self.assertIn("Senior Regulatory Reporting Analyst", stdout)
 
 
 class ExtractorTests(unittest.TestCase):
@@ -266,6 +482,35 @@ class CliTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertFalse(out.exists())
         self.assertIn("could not fetch", stderr.lower())
+
+    def test_a_long_dead_page_shell_is_not_saved_as_a_jd(self):
+        """The reported failure: a long consumer shell ending in "No job found."
+        cleared the tiny-extraction floor, so the fetch reported success and the
+        saved file became application evidence for an unrelated page."""
+        url = self._fixture_url("shell.html", DEAD_PAGE_SHELL)
+        out = self.tmp / "JD.md"
+        code, stdout, stderr = _run_cli([url, "--out", str(out)])
+        self.assertNotEqual(code, 0)
+        self.assertFalse(out.exists())
+        self.assertEqual(stdout, "")
+        self.assertIn("No job found", stderr)
+        self.assertIn("dead-page shell", stderr)
+
+    def test_a_dead_page_never_overwrites_a_jd_an_earlier_run_recovered(self):
+        out = self.tmp / "JD.md"
+        out.write_text("GOOD JD FROM AN EARLIER RUN\n", encoding="utf-8")
+        url = self._fixture_url("shell.html", DEAD_PAGE_SHELL)
+        code, _stdout, _stderr = _run_cli([url, "--out", str(out), "--force"])
+        self.assertNotEqual(code, 0)
+        self.assertEqual(out.read_text(encoding="utf-8"),
+                         "GOOD JD FROM AN EARLIER RUN\n")
+
+    def test_a_real_jd_that_merely_discusses_the_words_is_untouched(self):
+        url = self._fixture_url("ats.html", ATS_PAGE)
+        out = self.tmp / "JD.md"
+        code, _stdout, stderr = _run_cli([url, "--out", str(out)])
+        self.assertEqual(code, 0, stderr)
+        self.assertTrue(out.exists())
 
     def test_jobicy_uses_api_description_not_noisy_html_page(self):
         import aggregators
