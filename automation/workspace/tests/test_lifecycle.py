@@ -33,13 +33,11 @@ import _fixtures as F  # noqa: E402
 import status  # noqa: E402
 
 
-class MergeShapeMatrixTests(F.GitTestCase):
+class MergeShapeMatrixTests(F.SharedShapesTestCase):
     """Every merge shape, against one repository, in one inspection."""
 
     def setUp(self) -> None:
         super().setUp()
-        self.root = self.scratch / "toolkit"
-        self.facts = F.build_merge_shapes(self, self.root)
         self.now = F.FIXED_EPOCH
         self.repo = status.inspect_repository("PUBLIC", self.root, now=self.now)
         self.by_name = {branch.name: branch for branch in self.repo.branches}
@@ -127,20 +125,6 @@ class MergeShapeMatrixTests(F.GitTestCase):
         self.assertEqual(branch.state, status.STATE_WEDGED)
         self.assertIsNotNone(branch.wedged_at)
 
-    def test_worktree_prune_unwedges_a_branch_git_switch_refused(self) -> None:
-        refused = self.git(self.root, "switch", "prunable-work", check=False)
-        self.assertNotEqual(refused.returncode, 0)
-        self.assertIn("already used by worktree", refused.stderr)
-
-        self.git(self.root, "worktree", "prune")
-
-        switched = self.git(self.root, "switch", "prunable-work", check=False)
-        self.assertEqual(switched.returncode, 0, switched.stderr)
-        self.git(self.root, "switch", "main")
-        after = status.inspect_repository("PUBLIC", self.root, now=self.now)
-        state = {b.name: b.state for b in after.branches}["prunable-work"]
-        self.assertNotEqual(state, status.STATE_WEDGED)
-
     def test_detached_worktree_has_no_branch_and_renders_as_detached(self) -> None:
         detached = [w for w in self.repo.worktrees
                     if w.path.name == self.facts["worktrees"]["detached"].name]
@@ -182,13 +166,31 @@ class MergeShapeMatrixTests(F.GitTestCase):
         self.assertEqual(verdict, "unknown")
 
 
-class DegradedProbeTests(F.GitTestCase):
-    """An old Git must degrade LOUDLY, and only ever under-report `merged`."""
+class WedgeRecoveryTests(F.GitTestCase):
+    """The one test here that MUTATES, so it gets its own repository."""
 
     def setUp(self) -> None:
         super().setUp()
         self.root = self.scratch / "toolkit"
         F.build_merge_shapes(self, self.root)
+
+    def test_worktree_prune_unwedges_a_branch_git_switch_refused(self) -> None:
+        refused = self.git(self.root, "switch", "prunable-work", check=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("already used by worktree", refused.stderr)
+
+        self.git(self.root, "worktree", "prune")
+
+        switched = self.git(self.root, "switch", "prunable-work", check=False)
+        self.assertEqual(switched.returncode, 0, switched.stderr)
+        self.git(self.root, "switch", "main")
+        after = status.inspect_repository("PUBLIC", self.root, now=F.FIXED_EPOCH)
+        state = {b.name: b.state for b in after.branches}["prunable-work"]
+        self.assertNotEqual(state, status.STATE_WEDGED)
+
+
+class DegradedProbeTests(F.SharedShapesTestCase):
+    """An old Git must degrade LOUDLY, and only ever under-report `merged`."""
 
     def test_ancestor_only_probe_under_reports_but_never_over_reports(self) -> None:
         degraded = status.MergeProbe(mode=status.PROBE_ANCESTOR_ONLY,
@@ -273,13 +275,8 @@ class IntentTests(F.GitTestCase):
         self.assertEqual(status.branch_descriptions(self.root), {})
 
 
-class AgeTests(F.GitTestCase):
+class AgeTests(F.SharedShapesTestCase):
     """Wall clock, and the laptop-sleep case a monotonic clock gets backwards."""
-
-    def setUp(self) -> None:
-        super().setUp()
-        self.root = self.scratch / "toolkit"
-        F.build_merge_shapes(self, self.root)
 
     def test_a_multi_day_sleep_moves_a_branch_out_of_active(self) -> None:
         # 63.7 h is the interval `time.monotonic()` was MEASURED to lose across
@@ -293,8 +290,13 @@ class AgeTests(F.GitTestCase):
         after_state = {b.name: b for b in after.branches}["dirty-work"]
         self.assertEqual(before_state.state, status.STATE_ACTIVE)
         self.assertEqual(after_state.state, status.STATE_STALE)
+        # The age has to have grown by roughly the whole sleep. The tolerance is
+        # the fixture's own build time: its files are stamped by the real clock
+        # while `now` is the epoch captured when the module loaded, and the
+        # clamp at zero absorbs that gap on the near side.
+        self.assertGreater(after_state.age_seconds, status.IDLE_MAX_SECONDS)
         self.assertGreaterEqual(after_state.age_seconds - before_state.age_seconds,
-                                slept - 5)
+                                slept - 600)
 
     def test_the_age_bands_are_wall_clock_arithmetic(self) -> None:
         base = F.FIXED_EPOCH
@@ -333,13 +335,11 @@ class AgeTests(F.GitTestCase):
             status.STATE_WEDGED)
 
 
-class JsonOutputTests(F.GitTestCase):
+class JsonOutputTests(F.SharedShapesTestCase):
     """``--json`` is the machine contract; its shape is pinned here."""
 
     def setUp(self) -> None:
         super().setUp()
-        self.root = self.scratch / "toolkit"
-        F.build_merge_shapes(self, self.root)
         self.repo = status.inspect_repository("PUBLIC", self.root, now=F.FIXED_EPOCH)
         self.payload = json.loads(json.dumps(
             status.workspace_json([self.repo], now=F.FIXED_EPOCH)))
@@ -388,11 +388,9 @@ class JsonOutputTests(F.GitTestCase):
         self.assertEqual(payload["schema"], "workspace-status/v1")
 
 
-class RenderTests(F.GitTestCase):
+class RenderTests(F.SharedShapesTestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.root = self.scratch / "toolkit"
-        F.build_merge_shapes(self, self.root)
         self.repo = status.inspect_repository("PUBLIC", self.root, now=F.FIXED_EPOCH)
 
     def test_the_table_shows_state_age_and_intent(self) -> None:

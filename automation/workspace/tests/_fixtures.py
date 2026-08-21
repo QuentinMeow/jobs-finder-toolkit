@@ -18,6 +18,7 @@ in the process environment, not only in the arguments this module passes.
 
 from __future__ import annotations
 
+import atexit
 import os
 import shutil
 import subprocess
@@ -152,6 +153,71 @@ CONTAINED = (
     "empty-commit",         # no content at all
     "untracked-work",       # merged branch, untracked files in its worktree
 )
+
+
+_SHARED: dict = {}
+
+
+def fixture_fingerprint(case: GitTestCase, root: Path) -> str:
+    """Every ref, every worktree registration, every branch description."""
+    return "\n".join((
+        case.out(root, "for-each-ref", "--format=%(refname) %(objectname)"),
+        case.out(root, "worktree", "list", "--porcelain"),
+        case.out(root, "config", "-z", "--get-regexp",
+                 r"^branch\..*\.description$", check=False),
+    ))
+
+
+def shared_shapes(case: GitTestCase) -> tuple[Path, dict]:
+    """The merge-shape repository, built ONCE per process, for READ-ONLY tests."""
+    if "root" not in _SHARED:
+        holder = tempfile.TemporaryDirectory()
+        atexit.register(holder.cleanup)
+        root = Path(holder.name) / "toolkit"
+        _SHARED.update(holder=holder, root=root,
+                       facts=build_merge_shapes(case, root))
+    return _SHARED["root"], _SHARED["facts"]
+
+
+class SharedShapesTestCase(GitTestCase):
+    """Read-only tests over one shared fixture.
+
+    Building the matrix costs about a second of git subprocesses, and twenty-odd
+    read-only tests rebuilding an identical repository is half a minute of CI
+    spent proving nothing. The risk of sharing is a test that mutates and
+    silently poisons its neighbours, so the fixture's fingerprint is compared
+    after every test: a mutation fails loudly, here, instead of somewhere else.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.root, self.facts = shared_shapes(self)
+        before = fixture_fingerprint(self, self.root)
+        self.addCleanup(self._assert_shared_fixture_unchanged, before)
+
+    def _assert_shared_fixture_unchanged(self, before: str) -> None:
+        self.assertEqual(
+            fixture_fingerprint(self, self.root), before,
+            "this test mutated the SHARED fixture; give it its own repository "
+            "by subclassing GitTestCase and calling build_merge_shapes()")
+
+
+def add_origin(case: GitTestCase, root: Path) -> Path:
+    """A local bare repository standing in for ``origin``.
+
+    A real remote, not a stub: ``git fetch --prune origin`` has to actually run
+    for the planner's one network-authorising flag to be tested at all, and
+    "every commit exists on a remote" has to be answerable by
+    ``git rev-list --not --remotes`` rather than by a fixture's promise. It is a
+    directory on disk, so the suite still never touches the network.
+    """
+    origin = root.parent / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)],
+                   check=True, env=dict(os.environ))
+    case.git(root, "remote", "add", "origin", str(origin))
+    case.git(root, "push", "-q", "-u", "origin", "main")
+    case.git(root, "fetch", "-q", "origin")
+    return origin
 
 
 def build_merge_shapes(case: GitTestCase, root: Path) -> dict:
@@ -294,6 +360,7 @@ def build_merge_shapes(case: GitTestCase, root: Path) -> dict:
     shutil.rmtree(locked_gone)
     facts["worktrees"]["locked-gone"] = locked_gone
 
+    facts["origin"] = add_origin(case, root)
     facts["tips"] = {
         line.split(" ", 1)[1]: line.split(" ", 1)[0]
         for line in case.out(

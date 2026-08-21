@@ -3496,3 +3496,14 @@
     invented "Workspace Test <workspace@example.invalid>"; every path is a temporary
     directory. No real identity, employer, school, salary, private item name, or
     dated personal job-hunt content is present.'
+- base: cc02e4ad
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 4
+  digest: sha256:341c5d24cbf67484
+  finding: 'Reviewed the read-only cleanup planner, its test suite, and the shared
+    git fixture. Every path in them is a temporary directory or a repo-relative
+    toolkit path; the one company-looking string is the invented
+    "acme-corp-onsite-loop-scheduling" branch used to prove the private overlay is
+    counted and never named. No real identity, employer, school, salary, private
+    item name, or dated personal job-hunt content is present.'
