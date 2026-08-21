@@ -3495,3 +3495,13 @@
     (Northwind Robotics, greenhouse job 777, temp directories). No real identity,
     employer, school, salary, private item name, absolute home path, or dated
     personal job-hunt content is present.'
+- base: e012119c
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:27d34a41e2ec99ef
+  finding: 'Reviewed the search-JSON provenance fields, the filter-review payload
+    additions, the unique run id, and the new refilter tests. Everything is public
+    pipeline behavior plus synthetic fixtures (Northwind Robotics, Cobalt Systems,
+    temp directories); no real identity, employer, school, salary, private item
+    name, absolute home path, or dated personal job-hunt content is present.'
