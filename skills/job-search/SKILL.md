@@ -60,7 +60,6 @@ This is the complete routine path — an ordinary search needs nothing below it.
 4. **Scratch stays in `local/`** — probe scripts in `local/ats_scripts/`, fetched HTML/JSON in
    `local/web_artifacts/`; never the repo root or `scripts/`. See `AGENTS.md` → "Scratch & Temporary
    Files".
-5. **Subagent cap: at most 8 subagents total** per request — see `AGENTS.md` → "Subagent Budget".
 
 ### Step 1 — Confirm the profile and filters
 The candidate's own profiles live in `config.search_profiles_dir()` (the overlay), NOT in this

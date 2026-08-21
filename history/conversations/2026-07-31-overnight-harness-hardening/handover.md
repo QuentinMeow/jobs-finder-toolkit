@@ -67,8 +67,6 @@ about the pipeline's job-search or drafting behaviour changed.
   leave it diff-only.
 - [`phase-7c-descope-to-the-one-live-defect.md`](../../../message-queue/needs-human/decisions/phase-7c-descope-to-the-one-live-defect.md)
   — build the durable-marker machinery, or fix only the live defect? Default: descope.
-- [`subagent-budget-cap-conflicts-with-long-sessions.md`](../../../message-queue/needs-human/decisions/subagent-budget-cap-conflicts-with-long-sessions.md)
-  — the repo-wide 8-subagent cap and an owner-directed long session cannot both hold.
 - [`process-weight-what-to-cut.md`](../../../message-queue/needs-human/decisions/process-weight-what-to-cut.md)
   — which process machinery earns its keep. One argument inside it is now stale and says so.
 - Eight further items were already open before this session
