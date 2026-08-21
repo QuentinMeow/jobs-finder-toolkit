@@ -25,6 +25,9 @@ Covers:
   - GH #293: an aggregator title/body chimera — a structured title whose body
     heading names a disjoint occupation family — is quarantined for review with
     the conflict named, instead of being scored as if the title were the job.
+  - GH #291: a keyword whose only mentions sit inside an explicit negative-scope
+    statement ("Not interested in ... database management") is treated as
+    unmentioned, for the positive lists and the negative one alike.
 """
 from __future__ import annotations
 
@@ -521,6 +524,95 @@ class TitleBodyChimeraTests(unittest.TestCase):
                 self.assertEqual(
                     "match",
                     assess_posting_quality("Technical Writer", body)["decision"])
+
+
+class NegatedKeywordScoringTests(unittest.TestCase):
+    """GH #291: a JD that explicitly rules a domain OUT used to hand that domain
+    its full positive keyword score, so the strongest reason printed for a
+    posting could be the reverse of what the JD says. A term whose only mentions
+    sit inside an explicit negative-scope statement is treated as unmentioned."""
+
+    PROFILE = {
+        "keywords": {"strong": ["database"], "good": ["java", "go"],
+                     "negative": []},
+        "seniority": {"target": ["senior"]},
+    }
+
+    def _scored(self, title, description, profile=None):
+        posting = JobPosting(
+            source="jobspy:indeed", company="Example Defense Labs",
+            title=title, url="https://example.test/jobs/negated",
+            description=description)
+        score_posting(posting, profile or self.PROFILE)
+        return posting
+
+    NEGATED_BODY = (
+        "Develop autonomy algorithms in Java and Go for defense platforms. "
+        "Not interested in front end UI/UX or database management/interaction. "
+        "Must be able to obtain a security clearance."
+    )
+
+    def test_an_explicitly_negated_domain_earns_no_positive_score(self):
+        posting = self._scored(
+            "Autonomy Algorithms Senior Software Engineer", self.NEGATED_BODY)
+        self.assertNotIn("strong: database", posting.reasons)
+        # Java + Go (3.0) and the senior title (3.0) are the whole score; the
+        # negated `database` keyword contributes nothing either way.
+        self.assertEqual(posting.score, 6.0)
+
+    def test_the_negation_is_named_instead_of_the_reverse_claim(self):
+        posting = self._scored(
+            "Autonomy Algorithms Senior Software Engineer", self.NEGATED_BODY)
+        self.assertIn("jd explicitly excludes: database", posting.reasons)
+
+    def test_a_negated_core_domain_routes_the_row_to_review(self):
+        posting = self._scored(
+            "Autonomy Algorithms Senior Software Engineer", self.NEGATED_BODY)
+        self.assertIn("keyword_domain_negated", posting.review_reasons)
+
+    def test_a_real_domain_mention_still_scores_and_stays_off_review(self):
+        posting = self._scored(
+            "Senior Software Engineer",
+            "Build our distributed database storage engine in Java and Go. "
+            "You will own query planning and replication.")
+        self.assertIn("strong: database", posting.reasons)
+        self.assertEqual(posting.score, 10.0)
+        self.assertEqual([], posting.review_reasons)
+
+    def test_a_title_mention_still_earns_the_full_title_bump(self):
+        posting = self._scored(
+            "Senior Database Engineer",
+            "Not interested in front end UI/UX or database administration.")
+        self.assertIn("strong: database", posting.reasons)
+        self.assertEqual([], posting.review_reasons)
+
+    def test_a_friendly_does_not_require_line_is_not_a_domain_negation(self):
+        # "Does not require X" speaks to the BAR, not to what the role is about,
+        # so it must not silence the keyword.
+        posting = self._scored(
+            "Senior Software Engineer",
+            "Own our database platform in Java. This role does not require a "
+            "graduate degree.")
+        self.assertIn("strong: database", posting.reasons)
+
+    def test_a_negated_negative_keyword_is_not_penalized_either(self):
+        profile = {"keywords": {"strong": [], "good": [],
+                                "negative": ["blockchain"]},
+                   "seniority": {"target": ["senior"]}}
+        posting = self._scored(
+            "Senior Software Engineer",
+            "This role does not involve blockchain or smart contracts.",
+            profile=profile)
+        self.assertNotIn("mismatch: blockchain", posting.reasons)
+        self.assertIn("jd explicitly excludes: blockchain", posting.reasons)
+        self.assertEqual([], posting.review_reasons)
+
+    def test_a_polarity_flip_ends_the_negated_scope(self):
+        posting = self._scored(
+            "Senior Software Engineer",
+            "We are not looking for front end specialists, but you will own our "
+            "database platform end to end.")
+        self.assertIn("strong: database", posting.reasons)
 
 
 class OccupationAmbiguousBoundedRolloutTests(unittest.TestCase):

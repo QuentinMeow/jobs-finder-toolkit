@@ -783,6 +783,75 @@ _LEVEL_BANDS = {
 }
 
 
+# --------------------------------------------------------------------------- #
+# Explicitly NEGATED scope. A JD that says "Not interested in ... database
+# management" names the domain it does NOT want, and a keyword match anywhere in
+# the body used to earn that domain's full positive score from exactly that
+# sentence — so the strongest reason printed for a posting could be the reverse
+# of what the JD says. A term whose ONLY mentions sit inside an explicit
+# negative-scope statement is treated as NOT MENTIONED: no bonus, no penalty.
+#
+# Leads are narrow and declarative on purpose. "Does not REQUIRE X" is
+# deliberately absent — that is a friendly statement about the bar, not a
+# statement that the role has nothing to do with X. Scope runs from the lead to
+# the sentence end, a polarity flip ("but", "however", "instead"), or a bounded
+# window, whichever comes first, because `common.normalize` has already dropped
+# the newlines and semicolons that would otherwise close a bullet.
+# --------------------------------------------------------------------------- #
+_NEGATED_SCOPE_LEAD_RE = re.compile(
+    r"\b(?:"
+    r"not\s+interested\s+in|no\s+interest\s+in|"
+    r"(?:this|the)\s+(?:role|position|job|team)\s+"
+    r"(?:is\s+not|does\s+not|doesn\s+t|will\s+not|won\s+t)\s+"
+    r"(?:an?\s+|involve\w*\s*|include\w*\s*|entail\w*\s*|focus\w*\s+on\s*|"
+    r"touch\w*\s*|work\s+on\s*|deal\s+with\s*|cover\w*\s*)|"
+    r"(?:we|you|candidates?)\s+(?:are|will)\s+not\s+(?:be\s+)?"
+    r"(?:looking\s+for|seeking|hiring|building|doing|writing|working\s+on)|"
+    r"(?:we|you)\s+(?:won\s+t|will\s+not)\s+(?:be\s+)?"
+    r"(?:looking\s+for|seeking|hiring|building|doing|writing|working\s+on)|"
+    r"this\s+(?:role\s+)?is\s+not\s+an?"
+    r")\s*"
+)
+_NEGATED_SCOPE_END_RE = re.compile(
+    r"\.|\bbut\b|\bhowever\b|\binstead\b|\balthough\b")
+_NEGATED_SCOPE_MAX_CHARS = 160
+
+
+def _negated_spans(normalized_text: str) -> list[tuple[int, int]]:
+    """Character spans of NORMALIZED text an explicit negation puts out of scope."""
+    spans: list[tuple[int, int]] = []
+    for lead in _NEGATED_SCOPE_LEAD_RE.finditer(normalized_text):
+        start = lead.end()
+        limit = min(len(normalized_text), start + _NEGATED_SCOPE_MAX_CHARS)
+        stop = _NEGATED_SCOPE_END_RE.search(normalized_text, start, limit)
+        spans.append((start, stop.start() if stop else limit))
+    return spans
+
+
+def _term_spans(term: str, normalized_text: str) -> list[tuple[int, int]]:
+    """Every occurrence of `term`, with `common.term_matches` semantics."""
+    term = term.lower().strip()
+    if not term or not normalized_text:
+        return []
+    pattern = (rf"\b{re.escape(term)}\b" if re.fullmatch(r"[a-z0-9]+", term)
+               else re.escape(term))
+    return [(m.start(), m.end()) for m in re.finditer(pattern, normalized_text)]
+
+
+def _live_term_hit(term: str, normalized_text: str,
+                   negated_spans: list[tuple[int, int]],
+                   window: tuple[int, int]) -> bool:
+    """True when `term` occurs inside `window` and outside every negated span."""
+    lo, hi = window
+    for start, end in _term_spans(term, normalized_text):
+        if start < lo or end > hi:
+            continue
+        if any(ns <= start < ne for ns, ne in negated_spans):
+            continue
+        return True
+    return False
+
+
 def target_level_band(profile: dict) -> tuple[float, float] | None:
     """Desired Google-equivalent level range spanning every `seniority.target` word.
 
@@ -838,23 +907,60 @@ def score_posting(posting: JobPosting, profile: dict,
     score = 0.0
     reasons: list[str] = []
 
-    strong = [k for k in (kw.get("strong") or []) if term_matches(k, ntitle + " " + ndesc)]
-    good = [k for k in (kw.get("good") or []) if term_matches(k, ndesc)]
-    neg = [k for k in (kw.get("negative") or []) if term_matches(k, ntitle + " " + ndesc)]
+    # Keyword scoring reads only LIVE mentions: a term whose every occurrence
+    # sits inside an explicit negative-scope statement ("Not interested in ...
+    # database management") is treated as not mentioned at all, for the positive
+    # lists AND the negative one, so a JD's own exclusion can neither promote nor
+    # demote a posting. A fully negated STRONG term is also the profile's core
+    # domain being ruled out in words, which is an occupation finding, so it
+    # names itself in the reasons and routes the row to the review lane instead
+    # of the main shortlist.
+    blob = f"{ntitle} {ndesc}"
+    title_window = (0, len(ntitle))
+    desc_window = (len(ntitle) + 1, len(blob))
+    whole_window = (0, len(blob))
+    negated_spans = _negated_spans(blob)
 
-    for k in strong:
-        bump = 8 if term_matches(k, ntitle) else 4
-        score += bump
-    for k in good:
-        score += 1.5
-    for k in neg:
-        score -= 4
+    strong: list[str] = []
+    good: list[str] = []
+    neg: list[str] = []
+    negated_terms: list[str] = []
+    strong_negated = False
+    for k in kw.get("strong") or []:
+        if not term_matches(k, blob):
+            continue
+        if _live_term_hit(k, blob, negated_spans, title_window):
+            strong.append(k); score += 8
+        elif _live_term_hit(k, blob, negated_spans, desc_window):
+            strong.append(k); score += 4
+        else:
+            negated_terms.append(k); strong_negated = True
+    for k in kw.get("good") or []:
+        if not term_matches(k, ndesc):
+            continue
+        if _live_term_hit(k, blob, negated_spans, desc_window):
+            good.append(k); score += 1.5
+        else:
+            negated_terms.append(k)
+    for k in kw.get("negative") or []:
+        if not term_matches(k, blob):
+            continue
+        if _live_term_hit(k, blob, negated_spans, whole_window):
+            neg.append(k); score -= 4
+        else:
+            negated_terms.append(k)
     if strong:
         reasons.append("strong: " + ", ".join(strong[:6]))
     if good:
         reasons.append("skills: " + ", ".join(good[:6]))
     if neg:
         reasons.append("mismatch: " + ", ".join(neg[:6]))
+    if negated_terms:
+        shown = list(dict.fromkeys(negated_terms))[:6]
+        reasons.append("jd explicitly excludes: " + ", ".join(shown))
+    if strong_negated:
+        posting.review_reasons = list(dict.fromkeys(
+            [*posting.review_reasons, "keyword_domain_negated"]))
 
     # Seniority hint
     sen_cfg = profile.get("seniority", {}) or {}
