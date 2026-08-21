@@ -3868,3 +3868,12 @@
     job-hunt content.'
   files: 3
   digest: sha256:8b88afc0ffd2ea69
+- base: 4738dd37
+  reviewed_by: agent
+  date: 2026-08-20
+  finding: 'Reviewed one added history/conversations handover.md summarising the
+    GH #257/#264/#288 work. It names public repository files, public issue numbers,
+    invented JD wording and the branch name only. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content.'
+  files: 1
+  digest: sha256:1bcc91516fd00a40
