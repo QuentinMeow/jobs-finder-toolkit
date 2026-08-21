@@ -363,6 +363,112 @@ class VisaPolicyBindingTests(unittest.TestCase):
                 self.assertFalse(visa_ok(posting, profile))
                 self.assertEqual(posting.visa_label, "no")
 
+    def test_a_refusal_in_the_heads_own_predicate_is_dropped(self):
+        # The worst reproduction this classifier has had, end to end. Every
+        # negation rule read BACKWARD from the sponsorship phrase, so a refusal
+        # written as the head noun's own predicate found no cue at all and the
+        # OFFER phrase inside it stood unopposed: `kept=True label=yes
+        # review_reasons=[]` under BOTH policies. An employer that says in
+        # writing it does not sponsor, handed to the one candidate who cannot
+        # take the job, with nothing on the row to warn them. Fictional wording.
+        for policy in ("exclude_negative", "require_positive"):
+            for text in (
+                "H-1B sponsorship is unavailable.",
+                "H-1B sponsorship is not offered.",
+                "Green card sponsorship is unavailable.",
+                "Immigration sponsorship is not offered for this role.",
+            ):
+                with self.subTest(policy=policy, text=text):
+                    profile = {"visa": {"needs_sponsorship": True,
+                                        "policy": policy}}
+                    posting = self._posting(text)
+                    self.assertFalse(visa_ok(posting, profile))
+                    self.assertEqual(posting.visa_label, "no")
+
+    def test_an_offer_with_a_later_negation_in_its_sentence_survives(self):
+        # The guardrail on the rule above, in the direction that costs a real
+        # job: reading forward must not invent a refusal out of a relative
+        # clause that negates something else entirely.
+        profile = {"visa": {"needs_sponsorship": True,
+                            "policy": "require_positive"}}
+        posting = self._posting(
+            "H-1B sponsorship is available for candidates who are not "
+            "currently authorized to work in the United States.")
+        self.assertTrue(visa_ok(posting, profile))
+        self.assertEqual(posting.visa_label, "yes")
+
+    def test_a_us_person_requirement_is_dropped_under_both_policies(self):
+        # GH #238. These are hard applicant-eligibility facts, not advisory
+        # workplace wording, and they used to reach the shortlist as `unclear`
+        # — one of them ranked near the top for a candidate in none of the
+        # listed statuses. Fictional wording.
+        for policy in ("exclude_negative", "require_positive"):
+            for text in (
+                "Applicants for this role must be U.S. citizens.",
+                "The successful candidate must establish U.S. Citizen, "
+                "National, Lawful Permanent Resident, Refugee, or Asylee "
+                "status.",
+            ):
+                with self.subTest(policy=policy, text=text):
+                    profile = {"visa": {"needs_sponsorship": True,
+                                        "policy": policy}}
+                    posting = self._posting(text)
+                    self.assertFalse(visa_ok(posting, profile))
+                    self.assertEqual(posting.visa_label, "no")
+
+    def test_eeo_citizenship_copy_is_never_dropped_as_a_requirement(self):
+        # The tripwire beside it: non-discrimination boilerplate names the same
+        # nouns and is the opposite of a bar.
+        for policy in ("exclude_negative", "require_positive"):
+            with self.subTest(policy=policy):
+                profile = {"visa": {"needs_sponsorship": True, "policy": policy}}
+                posting = self._posting(
+                    "We are an equal opportunity employer and do not "
+                    "discriminate on the basis of citizenship or national "
+                    "origin.")
+                self.assertTrue(visa_ok(posting, profile))
+                self.assertEqual(posting.visa_label, "unclear")
+
+    def test_an_export_controlled_citizenship_bar_is_not_promoted_to_a_match(self):
+        # GH #286, the sponsorship half. The export-control sense gate suppressed
+        # the ONLY evidence this posting carried, `signal_present` then came back
+        # false, and the default policy attached no review reason — so a row
+        # whose complete JD bars the candidate outright entered the main match
+        # list looking like any other. Fictional wording.
+        profile = {"visa": {"needs_sponsorship": True}}
+        posting = self._posting(
+            "Applicants must be a U.S. citizen, lawful permanent resident, or "
+            "protected individual, and must be eligible for a security "
+            "clearance under the International Traffic in Arms Regulations "
+            "(ITAR).")
+        self.assertFalse(visa_ok(posting, profile))
+        self.assertEqual(posting.visa_label, "no")
+
+    def test_a_review_carrying_evidence_is_always_flagged(self):
+        # `visa_ok` attaches the review reason only when the assessment reports
+        # a signal, and the signal was a word scan that several settled
+        # eligibility rules contain no word for. A review with evidence and no
+        # reason is a row the user is told is safe.
+        profile = {"visa": {"needs_sponsorship": True}}
+        posting = self._posting(
+            "US citizens only for the classified programme; H-1B transfer "
+            "candidates are encouraged to apply to our other openings.")
+        self.assertTrue(visa_ok(posting, profile))
+        self.assertEqual(posting.visa_label, "unclear")
+        self.assertIn("sponsorship_requires_review", posting.review_reasons)
+
+    def test_a_conditional_offer_is_not_surfaced_by_require_positive(self):
+        # GH #304, the unsafe direction: a sentence that says the offer has not
+        # been decided yet graded as a settled offer, so the strictest policy
+        # presented it as a confirmed sponsor.
+        profile = {"visa": {"needs_sponsorship": True,
+                            "policy": "require_positive"}}
+        posting = self._posting(
+            "If approved by counsel, the company will sponsor H-1B candidates.")
+        self.assertTrue(visa_ok(posting, profile))
+        self.assertNotEqual(posting.visa_label, "yes")
+        self.assertIn("sponsorship_requires_review", posting.review_reasons)
+
 
 if __name__ == "__main__":
     unittest.main()

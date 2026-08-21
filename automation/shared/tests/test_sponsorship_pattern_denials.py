@@ -117,6 +117,7 @@ class SponsorPatternRuleShapeTests(unittest.TestCase):
             "we are not currently sponsoring employment-based visas.",
             "citizenship required: yes",
             "u.s. citizen: required",
+            "applicants for this role must be u.s. citizens.",
             "visa: gc/citizens",
         )):
             with self.subTest(rule.label):

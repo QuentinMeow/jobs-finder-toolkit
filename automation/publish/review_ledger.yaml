@@ -3741,3 +3741,46 @@
   files: 32
   digest: sha256:deb299ac3861a526
   finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 4
+  digest: sha256:fda664d70e669296
+  finding: 'Reviewed the sponsorship-classifier change and its three byte-identical
+    vendored copies. The diff is timeless matching logic plus explanatory comments;
+    every example sentence in it is fictional JD wording. No real identity, employer,
+    school, salary, private item name, or dated personal job-hunt content is present.'
+- base: a0b63a5f
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 15
+  digest: sha256:41d62eb7caf0f300
+  finding: 'Reviewed the sponsorship regression tests, the appended public corpus and
+    verdict-matrix rows, the regenerated example-store fixture stamps, and the dated
+    correction to the sponsorship known-issue. Every example sentence is fictional JD
+    wording; the known-issue names only public GitHub issue numbers and repository paths.
+    No real identity, employer, school, salary, private item name, or dated personal
+    job-hunt content is present.'
+- base: 1dbc9d93
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 6
+  digest: sha256:44f37c5a39688b0a
+  finding: 'Reviewed the completed conditional-offer task moving to 3_in-review with its
+    worklog and verification transcript, and three new backlog items for the parts of GH
+    #265, #286 and #304 this branch does not close. All text describes public repository
+    behavior, public GitHub issue numbers, and fictional JD wording. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content is
+    present.'
+- base: 8f419dce
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
+- base: 6c62ce28
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 36
+  digest: sha256:bbad0d01b2dea466
+  finding: 'Merge of origin/main. Two conflicts, both resolved by keeping BOTH sides whole: the review ledger (append-only rows) and the filter-variant corpus (two branches each appended new cases at the end). No case was dropped or rewritten; filter_variants.py --check exits 0 on the result.'
