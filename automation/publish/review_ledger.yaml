@@ -3858,3 +3858,13 @@
     employer, school, salary, private item name, or dated personal job-hunt content.'
   files: 9
   digest: sha256:f078797463879212
+- base: 2de89715
+  reviewed_by: agent
+  date: 2026-08-20
+  finding: 'Reviewed three new tasks/0_backlog task.md files recording the residuals
+    of GH #257/#264/#288 that a job_metadata change cannot own. They name public
+    repository files, public issue numbers and invented example titles only. No real
+    identity, employer, school, salary, private item name, or dated personal
+    job-hunt content.'
+  files: 3
+  digest: sha256:8b88afc0ffd2ea69
