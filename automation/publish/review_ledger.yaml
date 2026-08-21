@@ -4108,3 +4108,9 @@
   files: 2
   digest: sha256:f58a91d06ceca814
   finding: 'Workspace cleanup planner and its test suite. The emitted shell script now isolates each item, so one refusal no longer cancels the safe items after it, and prints a summary plus a non-zero exit when anything refused. Public tooling, shell semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 2
+  digest: sha256:6c37a3125135a8a1
+  finding: 'The two-track PR merge driver and its test suite. After each independently confirmed merge the driver now fetches, fast-forwards the MAIN working tree''s base branch with --ff-only, retires each merged head branch locally with `git branch -d` when it is provably contained and unheld, and prints a two-SHA receipt on every path including a refusal. No remote branch and no worktree is ever removed. Public tooling, git semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
