@@ -158,8 +158,12 @@ _META_FIELD_RE = re.compile(
     r"job id|req(?:uisition)? id|salary|compensation|pay(?: range)?)"
     r"[*_\s]*:[^|•·]*",
     re.I)
+# "Seattle, WA/Remote" tokenizes as "WA/Remote" and queues the state as a skill.
+# The trailing lookahead keeps an uppercase conjunction out of the match, so
+# "Docker, OR Podman" is left alone — dropping it would lose a real skill.
 _CITY_STATE_RE = re.compile(
-    r"\b[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3},\s*(?:%s)\b" % "|".join(_US_STATES))
+    r"\b[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3},\s*(?:%s)\b(?!\s+[A-Z])"
+    % "|".join(_US_STATES))
 
 # Inherently-lowercase technical concepts recognized without a capital.
 LOWERCASE_CONCEPTS = frozenset({

@@ -179,6 +179,12 @@ class MetadataIsNotASkillTests(unittest.TestCase):
         jd = "Our engineers sit in Seattle, WA/Remote and use Docker daily."
         self.assertEqual(_queue(jd), [])
 
+    def test_uppercase_conjunction_is_not_read_as_a_state(self):
+        # "OR" is Oregon and also a shouted conjunction — stripping the second
+        # would silently drop the skill in front of it.
+        jd = "Experience with ClickHouse, OR OpenTelemetry, is required."
+        self.assertEqual(_queue(jd), ["ClickHouse", "OpenTelemetry"])
+
     def test_real_skills_next_to_the_metadata_still_surface(self):
         jd = ("Source: https://jobs.example.com/acme/01b3?includeCompensation=true\n"
               "Location: Remote (US) — San Francisco, CA. Core hours 9am-5pm ET/PT.\n"
