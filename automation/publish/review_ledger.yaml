@@ -3855,3 +3855,14 @@
     Example Data Co, example.test URLs); the only real-world string is the existing
     public aggregator source label `jobspy:indeed`. No real identity, employer,
     school, salary, private item name, or dated personal job-hunt content.'
+- base: 708e1859
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:f9655513816cf3de
+  finding: 'Reviewed one new backlog task file recording what the #271/#293 cluster
+    deliberately did not build (cross-domain posting coherence, missing employer
+    identity, boilerplate-only bodies, structured/body date contradiction). It names
+    public GitHub issues, public file paths, and the fictional example corpus only.
+    No real identity, employer, school, salary, private item name, or dated personal
+    job-hunt content.'
