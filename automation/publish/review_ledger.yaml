@@ -3485,3 +3485,12 @@
     repository behavior and fictional aggregate Git state; no real identity,
     employer, school, salary, private item name, or dated personal job-hunt content
     is present.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:d30d702ff441aa93
+  finding: 'Reviewed the company-registry tag-selection diagnostic and its offline
+    tests. The diff carries only timeless registry logic and fictional company rows
+    (Northwind/Larkspur Robotics); no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content is present.'

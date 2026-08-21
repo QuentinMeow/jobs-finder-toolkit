@@ -406,16 +406,100 @@ class Registry:
         tagset = {str(t).strip().lower() for t in tags if str(t).strip()}
         if ALL_TAGS in tagset:
             return pollable
+        out = stream if stream is not None else sys.stderr
         if not tagset:
             print(f"registry: company_tags is an explicitly EMPTY list, so NO "
                   f"company boards were selected. Remove the key to poll every "
                   f"unbatched board, or set `company_tags: [\"{ALL_TAGS}\"]` to ask "
-                  f"for all of them.", file=stream if stream is not None else sys.stderr)
+                  f"for all of them.", file=out)
             return []
-        return [
+        selected = [
             c for c in pollable
             if tagset & {str(t).lower() for t in (c.get("tags") or [])}
         ]
+        if not selected:
+            # A KNOWN tag whose every board sits behind an opt-in batch selects
+            # nothing. The caller only reaches `explain_empty_selection` when the
+            # WHOLE run has no tasks, so a run that still has aggregators used to
+            # poll zero boards in complete silence — the tag looked like it simply
+            # had no employers. Say it here, where the selection is actually made.
+            line = self.batched_only_line(tags, batches)
+            if line:
+                print(f"registry: {line}", file=out)
+        return selected
+
+    def batched_only_selection(
+        self,
+        tags: list[str] | None = None,
+        batches: list[str] | None = None,
+    ) -> dict | None:
+        """The facts behind "this tag matched boards but polled none of them".
+
+        Returns ``None`` whenever the tag selection is not the cause — unset tags,
+        the ``*`` sentinel, an empty list, an unknown tag, or a tag that really did
+        select boards. Otherwise a dict::
+
+            {"tags": ["robotics"], "matched": [entry, ...],
+             "held": ["ai-expansion-02", ...],   # batches holding matched rows
+             "unbatched": [entry, ...]}          # matched rows with no poll_batch
+
+        ONE place computes this, so the one-line warning ``poll_companies`` prints
+        during selection and the long recovery text ``explain_empty_selection``
+        prints on an empty run can never disagree about which batches to name.
+        """
+        if tags is None:
+            return None
+        tagset = {str(t).strip().lower() for t in tags if str(t).strip()}
+        if not tagset or ALL_TAGS in tagset:
+            return None
+        matched = [e for e in self.entries
+                   if e.get("ats")
+                   and tagset & {str(t).lower() for t in (e.get("tags") or [])}]
+        if not matched:
+            return None                      # unknown tag: a different diagnosis
+        # Apply the SAME batch filter `poll_companies` does. If anything survives
+        # it, the tag really did select boards and any empty run has another cause.
+        if batches:
+            batchset = {str(b).strip().lower() for b in batches if str(b).strip()}
+            survived = [e for e in matched
+                        if str(e.get("poll_batch") or "").strip().lower() in batchset]
+        else:
+            survived = [e for e in matched
+                        if not str(e.get("poll_batch") or "").strip()]
+        if survived:
+            return None
+        return {
+            "tags": sorted(tagset),
+            "matched": matched,
+            "held": sorted({str(e.get("poll_batch")).strip() for e in matched
+                            if str(e.get("poll_batch") or "").strip()}),
+            "unbatched": [e for e in matched
+                          if not str(e.get("poll_batch") or "").strip()],
+        }
+
+    def batched_only_line(
+        self,
+        tags: list[str] | None = None,
+        batches: list[str] | None = None,
+    ) -> str:
+        """One line naming the excluded batches and the flag that includes them.
+
+        ``""`` when the tag selection is not the reason zero boards were polled.
+        """
+        facts = self.batched_only_selection(tags, batches)
+        if not facts:
+            return ""
+        wanted = ",".join(facts["tags"])
+        n = len(facts["matched"])
+        if facts["held"]:
+            return (f"company_tags {wanted} matched {n} pollable board(s), but every "
+                    f"one sits in an opt-in poll batch "
+                    f"({', '.join(facts['held'])}), so NO company board was polled. "
+                    f"Re-run with --company-tags {wanted} --company-batches "
+                    f"{','.join(facts['held'])} to include them.")
+        return (f"company_tags {wanted} matched {n} pollable board(s), but all of "
+                f"them are unbatched and --company-batches excluded them, so NO "
+                f"company board was polled. Drop --company-batches to poll them.")
 
     def explain_empty_selection(
         self,
@@ -443,11 +527,10 @@ class Registry:
                     f"company boards. Remove the key to poll every unbatched board, "
                     f"or set `company_tags: [\"{ALL_TAGS}\"]` for all of them.")
 
-        matched = [e for e in self.entries
-                   if e.get("ats")
-                   and tagset & {str(t).lower() for t in (e.get("tags") or [])}]
         wanted = ",".join(sorted(tagset))
-        if not matched:
+        if not any(e.get("ats")
+                   and tagset & {str(t).lower() for t in (e.get("tags") or [])}
+                   for e in self.entries):
             known = sorted({str(t).strip().lower()
                             for e in self.entries if e.get("ats")
                             for t in (e.get("tags") or []) if str(t).strip()})
@@ -458,24 +541,17 @@ class Registry:
                 msg += f" Did you mean: {', '.join(near[:5])}?"
             return msg
 
-        # Apply the SAME batch filter `poll_companies` does. If anything survives it,
-        # the tag really did select boards and the empty run has another cause —
-        # explaining the batches here would send the reader down a false trail.
-        if batches:
-            batchset = {str(b).strip().lower() for b in batches if str(b).strip()}
-            survived = [e for e in matched
-                        if str(e.get("poll_batch") or "").strip().lower() in batchset]
-        else:
-            survived = [e for e in matched
-                        if not str(e.get("poll_batch") or "").strip()]
-        if survived:
+        facts = self.batched_only_selection(tags, batches)
+        if not facts:
+            # The tag really did select boards; the empty run has another cause and
+            # explaining batches here would send the reader down a false trail.
             return ""
-
-        held = sorted({str(e.get("poll_batch")).strip() for e in matched
-                       if str(e.get("poll_batch") or "").strip()})
-        unbatched = [e for e in matched if not str(e.get("poll_batch") or "").strip()]
+        matched, held = facts["matched"], facts["held"]
+        unbatched = facts["unbatched"]
         if not held:
-            return ""
+            return (f"{len(matched)} company board(s) carry {wanted} but all of them "
+                    f"are unbatched, and --company-batches excluded them. Drop that "
+                    f"flag to poll them.")
         names = ", ".join(str(e.get("name") or "?") for e in matched[:4])
         more = f", +{len(matched) - 4} more" if len(matched) > 4 else ""
         msg = (f"{len(matched)} company board(s) carry {wanted} ({names}{more}), but "
