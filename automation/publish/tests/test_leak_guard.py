@@ -742,6 +742,61 @@ class EnglishWordAllowanceTests(unittest.TestCase):
         result = self._scan("ordinary text", ["Rivers"])
         self.assertIsNone(result["word_allowances"])
 
+    # ── discoverable: named where the operator is actually standing ─────────
+    def test_the_failure_output_names_the_escape_hatch(self):
+        # The mechanism was reachable only from a config docstring, so the
+        # blocked owner's realistic move was deleting their identity out of
+        # config.yaml — which disarms check 6 for good. The wall has to carry
+        # the exit.
+        result = self._scan("offices in " + PLACE_PREFIX + PLACE_SURNAME,
+                            [PLACE_SURNAME])
+        self.assertTrue(self._hits(result))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        printed = buf.getvalue()
+        self.assertIn("english_word_tokens", printed)
+        self.assertIn(check_public.WORD_ALLOWANCE_ENV_VAR, printed)
+        self.assertIn("config.yaml", printed)
+        # It must name the token that actually blocked this run, not a generic
+        # placeholder the operator has to translate.
+        self.assertIn(repr(PLACE_SURNAME), printed)
+        # And it must say what the trade costs, in the same breath.
+        self.assertIn("UNARMED", printed)
+
+    def test_the_hint_is_silent_on_a_clean_run(self):
+        # Guidance for a wall nobody hit is noise, and noise is how the real
+        # lines stop being read.
+        result = self._scan("nothing to see", [PLACE_SURNAME])
+        self.assertTrue(result["ok"], result["violations"])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            check_public.print_report(result)
+        self.assertNotIn("english_word_tokens", buf.getvalue())
+
+    def test_the_hint_is_never_offered_for_a_token_it_cannot_help(self):
+        # Advertising the allowance against an email, a handle or a home
+        # basename would send the owner to a switch that does nothing for them —
+        # and, worse, teach them the guard has an off switch for real leaks.
+        address = "jordan.rivers" + "@" + "example.com"
+        result = self._scan("the address is " + address, [address],
+                            forced={address})
+        self.assertTrue(self._hits(result))
+        self.assertEqual(result["boundary_tokens"], [])
+        self.assertEqual(check_public.word_allowance_hint(result), [])
+
+    def test_the_hint_is_silent_once_the_word_is_already_declared(self):
+        # Nothing left to suggest: the declaration is in force and the run's
+        # remaining hit is a different token entirely.
+        result = self._scan(
+            f"{PLACE_PREFIX}{PLACE_SURNAME} and Contact: Jordan Rivers",
+            [PLACE_SURNAME, "Rivers"],
+            allowances={PLACE_SURNAME.lower()})
+        self.assertTrue(self._hits(result))
+        self.assertNotIn(PLACE_SURNAME, result["boundary_tokens"])
+        hint = "\n".join(check_public.word_allowance_hint(result))
+        self.assertNotIn(repr(PLACE_SURNAME), hint)
+
 
 class ExporterMatchesTheGuardTests(unittest.TestCase):
     """The exporter's exclusion screen and the guard must agree, always.

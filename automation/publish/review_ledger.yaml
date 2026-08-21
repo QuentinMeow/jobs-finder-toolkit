@@ -3495,3 +3495,13 @@
     surrounding comments. Every value is a synthetic fixture or an ordinary
     English word; no real identity, employer, school, salary, private item name,
     or dated personal job-hunt content is present.'
+- base: a9dd89f4
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:b535224822941b2b
+  finding: 'Reviewed the leak-guard fix-hint change and its tests. The added text
+    is operator guidance about the guard''s own opt-in word allowance, plus one
+    fictional-persona address assembled from split literals. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt
+    content is present.'
