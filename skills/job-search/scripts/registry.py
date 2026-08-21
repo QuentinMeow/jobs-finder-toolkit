@@ -178,6 +178,12 @@ def lint_entries(entries: list[dict]) -> list[str]:
                 not isinstance(batch, str) or not _BATCH_RE.fullmatch(batch.strip())):
             errors.append(
                 f"{name}: poll_batch must match {_BATCH_RE.pattern!r}")
+        # Optional per-board listing ceiling for the paging ATSes. A typo'd value
+        # would otherwise be coerced at fetch time and silently shrink a board.
+        cap = entry.get("max_postings")
+        if cap is not None and (isinstance(cap, bool) or not isinstance(cap, int)
+                                or cap < 1):
+            errors.append(f"{name}: max_postings must be a positive integer")
 
         raw_keys = [name, *aliases]
         if token:

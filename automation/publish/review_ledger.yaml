@@ -3503,3 +3503,12 @@
     offline tests. Everything is timeless CLI logic over the fictional ExampleCorp
     board with invented requisition ids; no real identity, employer, school, salary,
     private item name, or dated personal job-hunt content is present.'
+- base: 933f0f56
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 4
+  digest: sha256:a3a9f5ed2e66062c
+  finding: 'Reviewed SmartRecruiters listing pagination, its per-board cap and the
+    registry lint rule, plus the offline page fixtures. All fixtures are synthetic
+    ("Testco", numbered engineers); no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content is present.'
