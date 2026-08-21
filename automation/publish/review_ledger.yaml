@@ -4108,3 +4108,9 @@
   files: 2
   digest: sha256:f58a91d06ceca814
   finding: 'Workspace cleanup planner and its test suite. The emitted shell script now isolates each item, so one refusal no longer cancels the safe items after it, and prints a summary plus a non-zero exit when anything refused. Public tooling, shell semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 2
+  digest: sha256:8d3d081c2a26fa9a
+  finding: 'Workspace cleanup planner and its test suite. Backup refs are now written before a gone worktree registration is pruned, carry the tip sha so two branch names cannot share one ref, and are written compare-and-swap; an unreadable `git status` and an uncontained detached HEAD now keep; a branch `git branch -d` structurally cannot accept is retired by a compare-and-swap deletion behind this tool own containment proof; the emitted script re-measures its preconditions at run time. Public tooling, git and shell semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'

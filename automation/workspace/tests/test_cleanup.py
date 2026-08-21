@@ -131,15 +131,30 @@ class ProposalTests(PlannerTestCase):
         self.assertTrue(rows["true-merge"]["proposed"], rows["true-merge"])
         self.assertEqual(rows["true-merge"]["unpushed_commits"], 0)
 
-    def test_a_squash_merged_branch_is_merged_but_kept_for_its_commits(self) -> None:
-        # Its CONTENT is in main — that is what the containment probe says — but
-        # its commits exist on no remote, so deleting the branch would lose the
-        # commits themselves. Kept, with the count printed.
+    def test_a_squash_merged_branch_is_proposed_and_says_what_it_waived(self) -> None:
+        # Its CONTENT is in main — that is what the containment probe says — and
+        # its own commits are on no remote-tracking ref, which after a
+        # squash-merge is a state no future push can change. The rule "every
+        # commit exists on a remote" is a PROXY for "deleting this loses
+        # nothing"; here the proxy is permanently unsatisfiable while the thing
+        # it stands for is provably true, so the proxy yields — loudly, in a
+        # note, and only behind a fresh fetch and a pinned tip.
         self.run_planner("--fetch")
         row = {r["name"]: r for r in self.plan_json()["branches"]}["squash-merge"]
         self.assertEqual(row["merged"], "merged")
-        self.assertFalse(row["proposed"])
+        self.assertTrue(row["proposed"], row["keep_reasons"])
         self.assertGreater(row["unpushed_commits"], 0)
+        self.assertTrue(any("no remote-tracking ref" in note
+                            for note in row["notes"]),
+                        f"the waiver must be stated: {row['notes']}")
+        self.assertTrue(any("pinned" in note for note in row["notes"]))
+
+    def test_the_unpushed_waiver_needs_a_fetch_and_says_so(self) -> None:
+        # Without --fetch there is no fetched base to have proved containment
+        # against, so the rule is NOT waived and the branch is kept.
+        self.run_planner()
+        row = {r["name"]: r for r in self.plan_json()["branches"]}["squash-merge"]
+        self.assertFalse(row["proposed"])
         self.assertTrue(any("no remote-tracking ref" in reason
                             for reason in row["keep_reasons"]))
 
@@ -850,8 +865,12 @@ class WorktreeReflogBackupTests(WorktreeReflogScenario):
                 self.assertIn(oid, backups,
                               "no backup ref was planned for a commit that "
                               "lives only in this worktree's reflog")
-                self.assertIn(f"git update-ref {shlex.quote(backups[oid])} {oid}",
-                              script)
+                # The exact emitted spelling, compare-and-swap included: the
+                # trailing '' is git's "this ref must not already exist", which
+                # is what stops one backup being written over another.
+                self.assertIn(
+                    f"git update-ref -m 'pre-delete backup' "
+                    f"{shlex.quote(backups[oid])} {oid} ''", script)
 
         self.run_emitted_script(self.latest_script_path())
         self.git(self.root, "gc", "--prune=now", "--quiet")
@@ -1064,8 +1083,9 @@ class HarnessWorktreePreconditionTests(HarnessWorktreeScenario):
         self.assertEqual(row["action"], "retire", row["keep_reasons"])
         backups = {entry["commit"]: entry["ref"] for entry in row["backup_refs"]}
         self.assertIn(orphan, backups)
-        self.assertIn(f"git update-ref {shlex.quote(backups[orphan])} {orphan}",
-                      script)
+        self.assertIn(
+            f"git update-ref -m 'pre-delete backup' "
+            f"{shlex.quote(backups[orphan])} {orphan} ''", script)
 
     def test_the_emitted_script_still_moves_and_never_removes(self) -> None:
         self.build_harness()
@@ -1247,7 +1267,13 @@ class DeletableBranchesScenario(F.GitTestCase):
         return code, plan, script_path.read_text(encoding="utf-8"), script_path
 
     def deletions_in(self, script: str) -> list[str]:
-        """Every branch a shell running this script would actually try to delete."""
+        """Every branch a shell running this script would actually try to delete.
+
+        BOTH spellings. `git branch -d` is the ordinary one; a branch `-d`
+        structurally cannot accept is deleted by `git update-ref -d <ref> <tip>`
+        instead — a compare-and-swap — and a helper that only knew about the
+        first would report "no deletion" for a script that deletes.
+        """
         names = []
         for line in script.splitlines():
             stripped = line.strip()
@@ -1260,7 +1286,27 @@ class DeletableBranchesScenario(F.GitTestCase):
                 parts.pop(0)
             if parts[:3] == ["git", "branch", "-d"]:
                 names.append(parts[3])
+            elif (parts[:3] == ["git", "update-ref", "-d"]
+                    and len(parts) > 3 and parts[3].startswith("refs/heads/")):
+                names.append(parts[3].removeprefix("refs/heads/"))
         return names
+
+    def cas_deletions_in(self, script: str) -> list[str]:
+        """Only the compare-and-swap deletions, with the tip each one demands."""
+        found = []
+        for line in script.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if stripped.endswith("; then"):
+                stripped = stripped[: -len("; then")]
+            parts = shlex.split(stripped)
+            while parts and parts[0] in ("if", "elif", "else", "then", "!"):
+                parts.pop(0)
+            if (parts[:3] == ["git", "update-ref", "-d"] and len(parts) == 5
+                    and parts[3].startswith("refs/heads/")):
+                found.append((parts[3].removeprefix("refs/heads/"), parts[4]))
+        return found
 
     def branch_rows(self, plan: dict) -> dict:
         return {row["name"]: row for row in plan["branches"]}
@@ -1276,10 +1322,12 @@ class DeletableBranchesScenario(F.GitTestCase):
 
 
 class DeleteRefusalIsPredictedTests(DeletableBranchesScenario):
-    def test_a_branch_ahead_of_its_own_upstream_is_kept_not_proposed(self) -> None:
+    def test_a_branch_ahead_of_its_own_upstream_is_retired_by_swap(self) -> None:
         # The live shape: the local branch is moved onto the merge commit, so it
         # holds NO commit `origin/main` lacks and is still one ahead of
-        # `origin/<branch>`. Content-contained, fully pushed — and refused by -d.
+        # `origin/<branch>`. Content-contained, fully pushed — and refused by -d,
+        # which judges against the UPSTREAM rather than against the base ref this
+        # planner tested. It used to be kept forever on that verdict.
         self.build_repo("codex/landed")
         self.git(self.root, "branch", "-f", "codex/landed", "main")
         self.assertEqual(
@@ -1289,58 +1337,174 @@ class DeleteRefusalIsPredictedTests(DeletableBranchesScenario):
         self.assertEqual(
             self.out(self.root, "rev-list", "--left-right", "--count",
                      "codex/landed...refs/remotes/origin/codex/landed"), "1\t0")
+        tip = self.out(self.root, "rev-parse", "codex/landed")
 
-        _, plan, script, _ = self.plan()
+        _, plan, script, path = self.plan()
         row = self.branch_rows(plan)["codex/landed"]
-        self.assertFalse(row["proposed"],
-                         "proposed a branch whose `git branch -d` is refused")
-        reasons = " ".join(row["keep_reasons"])
-        self.assertIn("refs/remotes/origin/codex/landed", reasons,
-                      "the reason must name the upstream git judges -d against")
-        self.assertIn("upstream", reasons)
-        self.assertNotIn("codex/landed", self.deletions_in(script))
+        self.assertTrue(row["proposed"], row["keep_reasons"])
+        self.assertEqual(row["delete_method"], cleanup.DELETE_CAS)
+        # The verdict it supersedes is QUOTED, not hidden: a reader of the plan
+        # still learns exactly what `git branch -d` said and about which ref.
+        notes = " ".join(row["notes"])
+        self.assertIn("refs/remotes/origin/codex/landed", notes,
+                      "the note must name the upstream git judges -d against")
+        self.assertIn("upstream", notes)
+        self.assertNotIn("git branch -d codex/landed", script)
+        self.assertEqual(self.cas_deletions_in(script), [("codex/landed", tip)],
+                         "the swap must demand the exact tip the plan proved")
 
-    def test_a_branch_with_no_upstream_that_head_cannot_reach_is_kept(self) -> None:
-        # The other arm of git's rule. `git push origin <b>` without `-u` writes
-        # the remote-tracking ref (so every commit IS on a remote) and configures
-        # no upstream, so -d falls back to HEAD — which a squash-merged branch is
-        # not an ancestor of, however completely main holds its content.
+        result = self.run_script(path)
+        self.assertEqual(result.returncode, 0,
+                         f"{result.stdout}\n{result.stderr}")
+        self.assertNotIn("codex/landed", self.local_branches())
+        self.assertEqual(
+            self.out(self.root, "rev-parse", "--verify",
+                     row["backup_ref"] + "^{commit}"), tip,
+            "the tip must still be pinned after the swap deleted the branch")
+
+    def test_a_branch_the_remote_head_deleted_is_retired_by_swap(self) -> None:
+        # THE SHAPE THIS REPOSITORY ACTUALLY PRODUCES, and the one that was
+        # unretirable by TWO independent gates at once. Squash-merged, then the
+        # remote head branch deleted, then `--fetch --prune`:
+        #   * every commit is now on no remote-tracking ref, and none ever can be
+        #     again — the branch they were pushed to is gone;
+        #   * `-d` falls back to HEAD, which a squash-merge is not an ancestor of.
+        # Neither gate could ever clear, while `origin/main` demonstrably held
+        # every byte. `--fetch --prune` was itself the step that destroyed the
+        # evidence permitting retirement.
         self.build_repo("codex/landed")
         self.git(self.root, "switch", "-q", "-c", "codex/squashed", "main")
         F.write(self.root / "squashed.txt", "squashed work\n")
         self.commit(self.root, "codex/squashed: the work")
-        self.git(self.root, "push", "-q", "origin", "codex/squashed")
+        self.git(self.root, "push", "-q", "-u", "origin", "codex/squashed")
         self.git(self.root, "switch", "-q", "main")
         self.git(self.root, "merge", "-q", "--squash", "codex/squashed")
         self.commit(self.root, "codex/squashed landed as one commit")
         self.git(self.root, "push", "-q", "origin", "main")
+        # GitHub's "delete head branch after merge", then our own prune.
+        self.git(self.root, "push", "-q", "origin", ":codex/squashed")
         self.git(self.root, "fetch", "-q", "--prune", "origin")
+        tip = self.out(self.root, "rev-parse", "codex/squashed")
 
-        _, plan, script, _ = self.plan()
+        _, plan, script, path = self.plan()
         row = self.branch_rows(plan)["codex/squashed"]
         self.assertEqual(row["merged"], "merged", "the content IS in the base")
-        self.assertEqual(row["unpushed_commits"], 0, "every commit is on a remote")
-        self.assertFalse(row["proposed"], row["keep_reasons"])
-        self.assertIn("HEAD", " ".join(row["keep_reasons"]))
-        self.assertNotIn("codex/squashed", self.deletions_in(script))
+        self.assertGreater(row["unpushed_commits"], 0,
+                           "the fixture must reproduce the permanent-unpushed shape")
+        self.assertTrue(row["proposed"], row["keep_reasons"])
+        self.assertEqual(row["delete_method"], cleanup.DELETE_CAS)
+        notes = " ".join(row["notes"])
+        self.assertIn("HEAD", notes, "the superseded -d verdict must be quoted")
+        self.assertIn("no remote-tracking ref", notes,
+                      "the waived unpushed rule must be stated, not silent")
+        self.assertEqual(self.cas_deletions_in(script), [("codex/squashed", tip)])
+
+        result = self.run_script(path)
+        self.assertEqual(result.returncode, 0,
+                         f"{result.stdout}\n{result.stderr}")
+        self.assertNotIn("codex/squashed", self.local_branches())
+        self.assertEqual(
+            self.out(self.root, "rev-parse", "--verify",
+                     row["backup_ref"] + "^{commit}"), tip)
+        # And the commits are still there afterwards, not merely the ref.
+        self.git(self.root, "gc", "--prune=now", "--quiet")
+        self.assertEqual(
+            self.git(self.root, "cat-file", "-e", tip, check=False).returncode, 0)
+
+    def test_a_branch_the_base_does_not_contain_is_never_swapped(self) -> None:
+        # The supersession is not "ignore -d". It rests ENTIRELY on this tool's
+        # own containment proof, so with that proof absent the refusal stands.
+        self.build_repo("codex/landed")
+        self.git(self.root, "switch", "-q", "-c", "codex/open", "main")
+        F.write(self.root / "open.txt", "work that never landed\n")
+        self.commit(self.root, "codex/open: unique work")
+        self.git(self.root, "switch", "-q", "main")
+
+        _, plan, script, _ = self.plan()
+        row = self.branch_rows(plan)["codex/open"]
+        self.assertFalse(row["proposed"], row["notes"])
+        self.assertEqual(row["delete_method"], cleanup.DELETE_BRANCH_D)
+        self.assertNotIn("codex/open", self.deletions_in(script))
+
+    def test_a_swap_is_never_emitted_on_a_stale_plan(self) -> None:
+        # Containment is only evidence when it was judged against a FETCHED
+        # base. Without --fetch there is no such judgement, so `-d`'s refusal is
+        # all there is and the branch is kept.
+        self.build_repo("codex/landed")
+        self.git(self.root, "branch", "-f", "codex/landed", "main")
+        buffer = io.StringIO()
+        cleanup.main(["--repo-root", str(self.root)], out=buffer)
+        produced = sorted((self.root / "local" / "workspace").glob("cleanup-*.json"))
+        plan = json.loads(produced[-1].read_text(encoding="utf-8"))
+        row = self.branch_rows(plan)["codex/landed"]
+        self.assertFalse(row["proposed"], row["notes"])
+        self.assertIn("STALE", " ".join(row["keep_reasons"]))
 
     def test_every_deletion_the_script_emits_actually_succeeds(self) -> None:
         # The property, asserted the only way that settles it: run the script
-        # the owner would run and read git's answer. Against the unpredicted
-        # code this exits non-zero on the very first refusal.
+        # the owner would run and read git's answer. Both spellings are covered:
+        # `codex/one` by `git branch -d`, `codex/two` — which -d refuses — by the
+        # compare-and-swap.
         self.build_repo("codex/one", "codex/two")
         self.git(self.root, "branch", "-f", "codex/two", "main")   # -d will refuse
         self.git(self.root, "push", "-q", "origin", "main")
         self.git(self.root, "fetch", "-q", "--prune", "origin")
 
         _, plan, script, path = self.plan()
-        self.assertEqual(self.deletions_in(script), ["codex/one"],
-                         "the script must emit exactly the deletions git accepts")
+        self.assertEqual(sorted(self.deletions_in(script)),
+                         ["codex/one", "codex/two"])
+        self.assertEqual([name for name, _ in self.cas_deletions_in(script)],
+                         ["codex/two"],
+                         "only the branch -d refuses may use the swap")
         result = self.run_script(path)
         self.assertEqual(result.returncode, 0,
                          f"the emitted script failed:\n{result.stdout}\n{result.stderr}")
-        self.assertNotIn("codex/one", self.local_branches())
-        self.assertIn("codex/two", self.local_branches())
+        self.assertEqual(self.local_branches(), {"main"})
+
+    def test_a_swap_refuses_a_branch_that_moved_after_the_plan(self) -> None:
+        # What the compare-and-swap gives back that a plain deletion would not.
+        # `git branch -d` re-checks itself at RUN time, which is the only reason
+        # the branch path ever survived a plan going stale between being written
+        # and being run; `git update-ref -d <ref> <tip>` re-checks the tip.
+        self.build_repo("codex/two")
+        self.git(self.root, "branch", "-f", "codex/two", "main")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+        _, plan, script, path = self.plan()
+        self.assertEqual([name for name, _ in self.cas_deletions_in(script)],
+                         ["codex/two"])
+
+        # A new, unmerged commit lands on the branch AFTER the plan is written.
+        self.git(self.root, "switch", "-q", "codex/two")
+        F.write(self.root / "raced.txt", "work that arrived after the plan\n")
+        raced = self.commit(self.root, "codex/two: raced work")
+        self.git(self.root, "switch", "-q", "main")
+
+        result = self.run_script(path)
+        self.assertEqual(result.returncode, 1, "a refusal must fail the run")
+        self.assertIn("REFUSED", result.stdout + result.stderr)
+        self.assertIn("codex/two", self.local_branches(),
+                      "the swap must refuse a branch that moved")
+        self.assertEqual(self.out(self.root, "rev-parse", "codex/two"), raced)
+
+    def test_a_swap_refuses_a_branch_a_worktree_checked_out(self) -> None:
+        # The other run-time check `git branch -d` performs and a bare
+        # compare-and-swap does not, so it is written out explicitly.
+        self.build_repo("codex/two")
+        self.git(self.root, "branch", "-f", "codex/two", "main")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+        _, _, script, path = self.plan()
+        self.assertEqual([name for name, _ in self.cas_deletions_in(script)],
+                         ["codex/two"])
+
+        held = self.scratch / "held"
+        self.git(self.root, "worktree", "add", "-q", str(held), "codex/two")
+
+        result = self.run_script(path)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("codex/two", self.local_branches(),
+                      "a branch a worktree holds must never be swapped away")
 
 
 # ── one refusal must not cancel the items after it ───────────────────────────
