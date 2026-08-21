@@ -3485,3 +3485,14 @@
     repository behavior and fictional aggregate Git state; no real identity,
     employer, school, salary, private item name, or dated personal job-hunt content
     is present.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 7
+  digest: sha256:1c3b69a5454ca279
+  finding: 'Reviewed the location-classifier change, its regression tests, the three
+    byte-identical vendored copies, and one shared filter-variant corpus expectation.
+    The diff is generic US geography tables (state names, hub cities, metro-to-state
+    and metro-to-time-zone maps), regular expressions over job-description prose, and
+    fictional test fixtures. No real identity, employer, school, date, salary,
+    private item name, or dated personal job-hunt content is present.'

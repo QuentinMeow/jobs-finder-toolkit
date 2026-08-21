@@ -1526,7 +1526,11 @@ variants:
     expect:
       decision: no_match
       category: other_us
-      workplace: onsite
+      # The JD was read and never states a work mode, so the workplace is
+      # unstated rather than an inferred office (#237). What this case pins is
+      # unchanged: the third-party mention grants no remote work, and the city
+      # still decides the category and the decision.
+      workplace: unknown
 
   - id: location-remote-grant-bound-to-a-non-preferred-metro
     domain: location
