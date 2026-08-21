@@ -3939,3 +3939,64 @@
   files: 2
   digest: sha256:cd235970f34141b6
   finding: 'Session record for the agent-work-lifecycle work. Public repository behaviour, PR numbers, branch names and measured counts only. One home path was caught by the leak guard during review and replaced with a placeholder before this commit.'
+- base: 1baf9bb5
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:9b99ac6917634bbe
+  finding: 'Reviewed the first-reject census reconciliation in filter_variants.py:
+    the profile title word filter now runs in the same position production runs it,
+    word-filter rescues are reported as their own preserved_for_review bucket rather
+    than as hard rejects, and the returned dict gains total_postings, total_survived
+    and a reconciliation block. Tooling code and issue references only; no real
+    identity, employer, school, salary, private item name, or dated personal
+    job-hunt content.'
+- base: da473d8e
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:019bda684f389442
+  finding: 'Reviewed the profile schema table and the unknown-key warnings in
+    search_jobs.py, plus the report block that prints them. The declared keys are the
+    ones the public pipeline already reads and match the shipped example profile and
+    template; the example strings are the invented typo max_required_years and the
+    generic key names. No real identity, employer, school, salary, private item name,
+    or dated personal job-hunt content.'
+- base: c26d4a3a
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:84152de7673f672b
+  finding: 'Reviewed the filter-pipeline changes in search_jobs.py (explicit age
+    bound beats first-search widening, the per-employer cap stops backfilling,
+    duplicate JD bodies collapse with their links kept, a funnel whose dispositions
+    sum to the input, and filter-stage progress lines) and the 32 regression tests.
+    Every fixture name is invented (Acme Payments, Binary Labs, Staffing One/Two Inc.,
+    Company N) and every URL is on example/jobs.example; real company names quoted
+    from the public issue reports were replaced before commit. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content.'
+- base: 973a68ba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 4
+  digest: sha256:8d0dfee31052beab
+  finding: 'Reviewed four backlog task files recording the residuals of GH #243, #253,
+    #281 and the job-search skill docs. They name public repository files, public issue
+    numbers and the invented fixture shapes only. No real identity, employer, school,
+    salary, private item name, or dated personal job-hunt content.'
+- base: 7b5ac26a
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 10
+  digest: sha256:2e8b4c8e1a1566e0
+  finding: 'Merge of origin/main into fix/filter-pipeline-reports. Every covered file
+    arrives byte-identical from origin/main, where it is already published. The one
+    conflict was this ledger; resolved by keeping BOTH sides whole — origin/main''s
+    file plus this branch''s four rows appended — never a line union, so no row lost
+    its digest or its finding. The job-search suite is green on the merged tree.'
+- base: 0b9c3f7c
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:cd235970f34141b6
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
