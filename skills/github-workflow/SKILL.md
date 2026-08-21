@@ -589,7 +589,7 @@ anything is missing.
 | Path | Purpose |
 |------|---------|
 | `skills/github-workflow/SKILL.md` | This router — format, stacking, gates, `gh` recipes |
-| `skills/github-workflow/reference.md` | The long two-track merge runbook: classification, Track A, Track B, the failure catalogue, and the verified evidence |
+| `skills/github-workflow/reference.md` | The long two-track merge runbook: classification, Track A, Track B, the failure catalogue, the verified evidence, and §9 — the `Closes #N` line every fix PR's body needs |
 | `skills/github-workflow/scripts/merge_stack.py` | Classifies a PR (stack member vs ordinary) and merges it the way that world requires; dry run by default, refuses rather than guessing |
 | `skills/github-workflow/scripts/check_pr_body.py` | Validates a PR body against the human-facing format (file or stdin; exit 1 with findings) |
 | `skills/github-workflow/scripts/tests/` | `unittest` suite for the checker |

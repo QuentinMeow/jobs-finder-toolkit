@@ -3784,3 +3784,52 @@
   files: 36
   digest: sha256:bbad0d01b2dea466
   finding: 'Merge of origin/main. Two conflicts, both resolved by keeping BOTH sides whole: the review ledger (append-only rows) and the filter-variant corpus (two branches each appended new cases at the end). No case was dropped or rewritten; filter_variants.py --check exits 0 on the result.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 3
+  digest: sha256:fed09256aa0a097a
+  finding: 'Reviewed the workspace dashboard''s new lifecycle derivation (branch
+    descriptions, derived state, wall-clock ages, the merge-tree containment probe,
+    --json/--stale/--pr) and its two new test modules. Fixture identities are the
+    invented "Workspace Test <workspace@example.invalid>"; every path is a temporary
+    directory. No real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content is present.'
+- base: cc02e4ad
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 4
+  digest: sha256:341c5d24cbf67484
+  finding: 'Reviewed the read-only cleanup planner, its test suite, and the shared
+    git fixture. Every path in them is a temporary directory or a repo-relative
+    toolkit path; the one company-looking string is the invented
+    "acme-corp-onsite-loop-scheduling" branch used to prove the private overlay is
+    counted and never named. No real identity, employer, school, salary, private
+    item name, or dated personal job-hunt content is present.'
+- base: 81ce44ef
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 8
+  digest: sha256:06494228de479556
+  finding: 'Reviewed the report-only workspace-hygiene gardener routine, its tests,
+    the two handbook rows, the gardener skill row, and the new Closes #N section in
+    the github-workflow reference. The only PR numbers named are this public
+    repository''s own (#329-#337), and the one company-looking string is the invented
+    "acme-corp-onsite-loop" branch proving the overlay is counted and never named. No
+    real identity, employer, school, salary, private item name, or dated personal
+    job-hunt content is present.'
+- base: c8881c3d
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:61da4a15af43951f
+  finding: 'Reviewed three added tests pinning the --pr fallback (an unanswerable
+    question must return a reason, never an empty answer) and the removal of one
+    unused refusal constant. Fixture data only; no real identity, employer, school,
+    salary, private item name, or dated personal job-hunt content.'
+- base: ffa6a4d9
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 70
+  digest: sha256:a981515e7f85eb6d
+  finding: 'Merge of origin/main into the workspace-lifecycle branch. Covered files arrive byte-identical from origin/main where they are already published. Ledger conflict resolved by whole-row append, not a line union.'

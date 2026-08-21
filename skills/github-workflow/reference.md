@@ -449,6 +449,41 @@ Rules that keep those from compounding:
   switch — and `git fetch` before `git pull --ff-only`, or a stale remote-tracking
   ref makes the pull a no-op that looks like a failure.
 
+## 9. `Closes #N` — the line that closes the loop
+
+**A PR that fixes an issue says so in its body, in a line GitHub parses:**
+
+```
+Closes #312
+```
+
+One line per issue it fixes, anywhere in the body; `Fixes #N` and `Resolves #N`
+are equivalent. GitHub closes the issue when the PR merges into the default
+branch, and it does it whether or not anybody remembers.
+
+Why this is written down. Issues here are closed by hand or not at all, and "not
+at all" wins: **nine consecutive fix PRs (#329–#337) carried zero closing
+keywords**, so every issue they fixed stayed open. An open issue that is already
+fixed costs more than a missing one — the next agent researches it, an audit
+counts it as outstanding work, and the backlog stops describing the repository.
+Merging is the only moment when "this is done" is known for certain and cheap to
+record, so that is where the recording belongs.
+
+Rules:
+
+- **The line goes in the PR body, not in a commit message.** A commit trailer
+  works only on the default branch's own commits, and this repo merges through
+  merge commits and stacks; the body is the surface that always works.
+- **A stack member closes only what IT fixes.** Merging a stack lands entries
+  1…*k* in one merge commit, so a `Closes` line on the wrong entry closes an
+  issue before its fix is on `main`.
+- **Do not use it for an issue the PR only partially addresses.** Write
+  `Part of #N` instead — GitHub ignores it, and the issue stays open honestly.
+- **Nothing gates this.** It is a convention, deliberately: the eval gate and the
+  review gate already fail commits, and one more blocking check would be process
+  weight against an open owner decision. Adding the line takes five seconds; the
+  cost of forgetting is paid by whoever reads the backlog next.
+
 ## Files
 
 | Path | Purpose |

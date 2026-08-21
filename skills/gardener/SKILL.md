@@ -29,7 +29,7 @@ and staleness/duplicate flagging.
 - **Human confirms `--apply`.** Never run `--apply` on the user's behalf without explicit
   approval. If a run would touch **more than ~10 items**, surface the plan and get a fresh OK first.
 - **Report-only routines don't act.** `lessons-report`, `card-staleness`,
-  `roadmap-staleness`, `skill-drift`, `store-report`, `queue-hygiene` and `verify-links` never mutate anything, and `--apply` on one only prints
+  `roadmap-staleness`, `skill-drift`, `store-report`, `queue-hygiene`, `workspace-hygiene` and `verify-links` never mutate anything, and `--apply` on one only prints
   `note: '<routine>' is report-only` — promotion/demotion of a lesson is a **separate
   human-reviewed commit** (self-evolution contract), and store pruning is `gc_store.py`.
 - Always use the repo venv: `.venv/bin/python`.
@@ -46,6 +46,7 @@ and staleness/duplicate flagging.
 | `skill-drift` | Flag skill tokens in the baseline resume (`config.baseline_path()`) whose spelling is not in the profile's canonical Approved/Weak/Never lists, so a mis-spelled skill is caught in upkeep instead of mid-render by `check.py` | **report-only** | fixing a spelling (in the baseline, or by adding the skill to the profile lists) is a human edit; always exits 0, and reports "nothing to check" when the baseline or profile is absent |
 | `store-report` | Raw-data-layer store health per domain under `config.data_root()`: zone sizes, manifest/blob counts, the four blob availability states, orphaned blobs, manifest-less fetch dirs, torn JSONL tails, stale locks, cursor ages, triage + annotation-conflict backlogs, and the `validate_store` result | **report-only** | NEVER prunes — pruning is `automation/store/gc_store.py`, run deliberately. Exits non-zero only on a `validate_store` failure (corrupt blob / schema violation) |
 | `queue-hygiene` | Aging items in the coordination queues: `message-queue/needs-human/reviews/` past 30 days, `decisions/` pending past 21 days, tasks dwelling past 14 days in `1_in-progress`/`3_in-review`, and parked decisions whose `Revisit when` names a stage its design's `execution-plan.md` marks SHIPPED | **report-only** | always exits 0 — age is a prompt for judgement, never a gate (the reconciler keeps the correctness half: `queue-schema` + `task-structure`). No-ops when `message-queue/` and `tasks/` are absent (the public export ships neither). For `private/` mirrors it prints **counts only, never an item name** — see below |
+| `workspace-hygiene` | Local branches and worktrees nobody came back to: branches whose content is already in main with no worktree, branches WEDGED by a worktree registration that outlived its directory (`git switch` refuses them and `git gc` will not clear the metadata for three months), and unmerged branches idle past 14 days | **report-only** | always exits 0 — age is a prompt for judgement, never a gate. Merge state is LOCAL and unfetched, and the report says so beside every number; retiring anything is the separate `automation/workspace/cleanup.py` (dry-run, writes a script, deletes nothing). For `private/` it prints **counts only, never a branch name** |
 | `verify-links` | Backticked toolkit paths AND `[text](path)` markdown links resolve — in the overlay's tracked `.md` too when it is mounted; heading anchors match a real heading; skill symlinks resolve; `sync_vendored.py --check` | report-only; **exit 1 on break** | runs in CI and pre-commit; fails on a broken link / vendor drift |
 | `self-measure` | Recompute the funnel (discovered/drafted/applied/in_progress/rejected/ignored) + LESSONS staleness + instruction-budget summary | dry-run; `--apply` writes `metrics.yaml` | writes only into the overlay (`config.candidate_dir()/metrics.yaml`), never the toolkit |
 
@@ -55,9 +56,10 @@ Retention windows come from the optional `retention:` block in `config.yaml`
 ## Commands
 
 ```bash
-# Run ALL TEN routines in dry-run (safe weekly sweep). Fixed order:
+# Run ALL ELEVEN routines in dry-run (safe weekly sweep). Fixed order:
 # self-measure, expire-discoveries, compact-logs, lessons-report, card-staleness,
-# roadmap-staleness, skill-drift, store-report, queue-hygiene, verify-links —
+# roadmap-staleness, skill-drift, store-report, queue-hygiene, workspace-hygiene,
+# verify-links —
 # verify-links LAST so its exit code is the overall gate. --apply is ignored under
 # --all; every routine runs dry.
 .venv/bin/python automation/gardener/gardener.py --all
@@ -71,6 +73,7 @@ Retention windows come from the optional `retention:` block in `config.yaml`
 .venv/bin/python automation/gardener/gardener.py skill-drift
 .venv/bin/python automation/gardener/gardener.py store-report
 .venv/bin/python automation/gardener/gardener.py queue-hygiene
+.venv/bin/python automation/gardener/gardener.py workspace-hygiene
 .venv/bin/python automation/gardener/gardener.py verify-links
 .venv/bin/python automation/gardener/gardener.py self-measure
 
@@ -91,7 +94,7 @@ Retention windows come from the optional `retention:` block in `config.yaml`
 Workflow: run dry-run → show the user the plan → get explicit approval → run the matching
 `--apply`. `verify-links` and `lessons-report` are safe to run anytime (they never mutate).
 
-**`queue-hygiene` output is safe to paste; `verify-links` output is not.** The two routines take
+**`queue-hygiene` and `workspace-hygiene` output is safe to paste; `verify-links` output is not.** The two routines take
 opposite stances on the overlay on purpose. `queue-hygiene` reports the private mirrors as **counts
 only** — never a filename — because a private queue item's slug names the owner's real pipeline, so
 the filename is the content (rationale + the reason there is no opt-in detail flag:
