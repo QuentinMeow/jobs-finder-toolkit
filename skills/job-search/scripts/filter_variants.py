@@ -397,7 +397,22 @@ def first_reject_census(
     "snapshot audit clean" from `audit_postings` alone cannot speak to what the
     hard gates silently dropped. Production gate order is untouched; a posting
     that never reaches a later gate is never counted under that gate.
+
+    RECONCILIATION (issue #253). The census used to report only
+    ``total_rejected``, and a reader comparing it with the search's own
+    ``kept + review`` got a total SEVEN ABOVE the input on a 7,662-posting
+    snapshot, with no way to tell whether seven rows were double-counted or
+    lost. The overlap was the profile's `titles.word_filter`: production does not
+    drop a soft-excluded/included title the ordinary title gate rejects — it
+    PRESERVES the row for review — while the census counted the same row as a
+    hard reject. That population is now its own bucket, so
+    ``total_rejected + preserved_for_review + total_survived == total_postings``
+    holds exactly, and ``preserved_for_review`` is the number the two surfaces
+    differ by.
     """
+    import title_filter
+
+    word_filter = title_filter.load_word_lists(profile)
     titles_cfg = profile.get("titles") or {}
     loc_cfg = profile.get("location", {}) or {}
     location_policy = {
@@ -411,9 +426,13 @@ def first_reject_census(
     cap = profile.get("max_years_experience")
 
     families: dict[str, dict] = {}
+    preserved: dict[str, dict] = {}
+    n_survived = 0
 
-    def _record(family: str, posting: dict, excerpt: str) -> None:
-        entry = families.setdefault(family, {"count": 0, "candidates": []})
+    def _record(family: str, posting: dict, excerpt: str,
+                into: dict | None = None) -> None:
+        entry = (families if into is None else into).setdefault(
+            family, {"count": 0, "candidates": []})
         entry["count"] += 1
         signature = hashlib.sha256(
             f"{posting.get('source')}|{posting.get('url')}|{posting.get('title')}"
@@ -439,9 +458,23 @@ def first_reject_census(
                     _excerpt(description, _LOCATION_MARKER_RE))
             continue
 
+        # Gate 0b, exactly as production runs it: the profile's own title word
+        # classes. `hard_exclude` drops; `soft_exclude`/`include` RESCUE a title
+        # the ordinary gate below would reject. Missing that rescue is what made
+        # the census and the search disagree by seven rows.
+        verdict = word_filter.classify(title)
+        if verdict.action == title_filter.ACTION_DROP:
+            _record("title:word_filter_hard_exclude", posting, title)
+            continue
+
         title_actual = run_case(
             {"domain": "title", "input": {"title": title, "profile": profile}})
         if title_actual["decision"] == "no_match":
+            if verdict.action == title_filter.ACTION_REVIEW:
+                # NOT a reject: production preserves this row for manual review.
+                _record(_reject_family("title", title_actual), posting, title,
+                        into=preserved)
+                continue
             _record(_reject_family("title", title_actual), posting, title)
             continue
 
@@ -473,14 +506,38 @@ def first_reject_census(
         if yoe["decision"] == "no_match":
             _record(_reject_family("yoe", yoe), posting,
                     _excerpt(blob, _YOE_MARKER_RE))
+            continue
 
-    report = []
-    for family in sorted(families):
-        entry = families[family]
-        sample = [example for _sig, example in
-                  sorted(entry["candidates"], key=lambda item: item[0])[:sample_size]]
-        report.append({"family": family, "count": entry["count"], "sample": sample})
+        n_survived += 1
+
+    def _report(source: dict) -> list[dict]:
+        out = []
+        for family in sorted(source):
+            entry = source[family]
+            sample = [example for _sig, example in
+                      sorted(entry["candidates"], key=lambda item: item[0])[:sample_size]]
+            out.append({"family": family, "count": entry["count"], "sample": sample})
+        return out
+
+    total_rejected = sum(entry["count"] for entry in families.values())
+    total_preserved = sum(entry["count"] for entry in preserved.values())
+    accounted = total_rejected + total_preserved + n_survived
     return {
-        "total_rejected": sum(entry["count"] for entry in families.values()),
-        "families": report,
+        "total_postings": len(postings),
+        "total_rejected": total_rejected,
+        # Rows the ordinary title gate rejects but `titles.word_filter` preserves.
+        # Production sends them to the review lane, so the search's `review` count
+        # includes them; counting them as rejects here is what made the two
+        # surfaces overlap without saying so.
+        "preserved_for_review": total_preserved,
+        "total_survived": n_survived,
+        "reconciliation": {
+            "formula": ("total_rejected + preserved_for_review + total_survived "
+                        "== total_postings"),
+            "accounted": accounted,
+            "unaccounted": len(postings) - accounted,
+            "balanced": accounted == len(postings),
+        },
+        "families": _report(families),
+        "preserved_families": _report(preserved),
     }
