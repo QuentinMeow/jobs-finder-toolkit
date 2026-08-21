@@ -4108,3 +4108,9 @@
   files: 2
   digest: sha256:f58a91d06ceca814
   finding: 'Workspace cleanup planner and its test suite. The emitted shell script now isolates each item, so one refusal no longer cancels the safe items after it, and prints a summary plus a non-zero exit when anything refused. Public tooling, shell semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 5
+  digest: sha256:18613f52d595772a
+  finding: 'Gate-runner reporting honesty: run_gates.py gains a NO EVIDENCE verdict and exit 3 for a run in which no gate executed a check, a coverage denominator on every verdict, named dropped lanes, and working-tree classification unioned into --impact-from. Plus its tests, the cutover tests that assert the green line, and two handbook/reference pages describing the new output. Public tooling, tests and documentation only; no real identity, employer, application, recruiter, or dated job-hunt content. Overlay is not mounted here, so the identity detector had no company index to read - the diff was read by hand and contains no personal data.'

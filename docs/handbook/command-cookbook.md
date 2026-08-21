@@ -176,8 +176,10 @@ example config) — substitute the resolved path, never a literal folder at the 
 # cannot run here because no LibreOffice is installed or no private/ overlay is mounted
 # reports SKIP, never PASS, and is named in the final line. A known macOS LaunchServices
 # sandbox denial is FAIL (not SKIP), stops before any LibreOffice process starts, and
-# makes the summary RED. Exit 0 only when every runnable selected gate exited 0 and no
-# precondition failed.
+# makes the summary RED. Exit 0 only when at least one gate actually ran, every runnable
+# selected gate exited 0, and no precondition failed. A run where NOTHING executed — empty
+# selection, or every selected gate skipped — prints NO EVIDENCE and exits 3, never
+# ALL GREEN and never 0. The green line always carries `n of N gates ran`.
 # Note: example-render rewrites the tracked example DOCX/PDFs (CI does that in a
 # throwaway checkout) — `git checkout -- examples/` after, unless those bytes are yours.
 .venv/bin/python automation/gates/run_gates.py                  # everything
