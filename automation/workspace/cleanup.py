@@ -24,9 +24,12 @@ reason is printed):
    gone, which a lock can hide from ``prunable``;
 4. ``git rev-list <branch> --not --remotes`` is empty: every commit exists on a
    remote. A squash-merged branch fails this and is kept, deliberately;
-5. no row of ``automation/publish/review_ledger.yaml`` names it — deleting such
-   a branch degrades that row from NOT_ANCESTOR to UNKNOWN OBJECT in a fresh
-   clone;
+5. deleting it would not orphan a COMMIT that ``automation/publish/review_ledger.yaml``
+   names. The question is REACHABILITY, never whether the branch's name appears
+   in that file: a row degrades from NOT_ANCESTOR to UNKNOWN OBJECT when the
+   commit its ``base:``/``commit:`` field names stops being reachable in a fresh
+   clone, and a branch whose commits are all reachable from the base ref cannot
+   cause that however often its name is written in someone's prose;
 6. a backup ref resolves. The reflog does NOT protect worktree-only commits
    (measured: 0 hits after ``worktree remove --force`` + ``branch -D``);
    ``refs/agent-trash/<ts>/<branch>`` makes the tip reachable, so it survives
@@ -171,7 +174,12 @@ KEEP_WEDGED = ("a worktree registration still owns it — `git worktree prune` "
 KEEP_UNMERGED = "main does not contain its content"
 KEEP_UNKNOWN_MERGE = "the merge probe could not answer for this ref"
 KEEP_UNPUSHED = "commit(s) reachable from no remote-tracking ref"
-KEEP_LEDGER = "a review-ledger row names it"
+KEEP_LEDGER = (
+    "deleting it would orphan a commit the review ledger names — that row "
+    "degrades to UNKNOWN OBJECT in a fresh clone. Ledger commit")
+KEEP_LEDGER_UNREADABLE = (
+    "the review ledger names commit(s) git could not judge for reachability, "
+    "and an unanswerable probe about losing a reviewed commit is treated as yes")
 KEEP_UNSAFE_NAME = "the name would need shell quoting this tool will not guess"
 KEEP_NO_BACKUP = "the backup ref did not resolve"
 KEEP_HARNESS = (
@@ -372,18 +380,170 @@ def resolve_base(repo: Path, fetched: bool) -> str | None:
     return None
 
 
-def ledger_names(repo: Path) -> str:
-    """The review ledger's raw text, or "" — matched as a substring, on purpose.
+# ── the review ledger, and what deleting a branch can actually cost it ───────
+#
+# WHAT THE RULE IS FOR. A ledger row is keyed to a COMMIT (`base:`, `commit:`).
+# `automation/publish/review_gate.py` reports a row whose commit it cannot find
+# as `UNKNOWN OBJECT — not in this checkout at all`, and a fresh clone carries
+# only REACHABLE objects, so a branch that is the last thing holding a
+# ledger-named commit takes that row's inspectability with it when it is
+# deleted. That, and only that, is the hazard.
+#
+# WHAT THE RULE WAS. `branch.name in <the ledger's raw text>` — a substring
+# search over the whole file. It answered a question nobody had:
+#
+#   * IT WAS THE WRONG QUESTION. A name appearing in a `finding:` string carries
+#     no object. Measured on this repository: `fix/filter-pipeline-reports` was
+#     kept forever because one row's prose reads "Merge of origin/main into
+#     fix/filter-pipeline-reports…", while its tip is an ANCESTOR of
+#     `origin/main` and it holds zero commits `origin/main` does not. No row
+#     could degrade, and the keep was pure cost.
+#   * THE FEEDBACK LOOP THAT MADE IT. Every branch that lands here writes a
+#     ledger row, and an agent writing that row naturally names the branch it is
+#     on. Under a name match, WRITING A BRANCH'S NAME INTO A `finding:` PINS
+#     THAT BRANCH FOREVER — the tool that exists to stop branch accumulation was
+#     being fed by the one ritual every branch performs on its way in.
+#   * THE MATCH SET WAS POLLUTED. Raw-text substring matching does not even
+#     restrict itself to branch names: `docs/handbook`, `docs/designs`,
+#     `docs/roadmap`, `tasks/0`, `tasks/3`, `tasks/4` all occur in that file as
+#     DIRECTORY PATHS, and `main` occurs inside every `origin/main`. A branch
+#     named for a directory the ledger happens to mention was unretirable for a
+#     reason that had nothing to do with any commit.
+#
+# So the ledger is read for COMMITS and matched against nothing else. Over-keep
+# on ambiguity — an unresolvable probe keeps — but never on a name coincidence.
 
-    A row names a branch inside free prose (``finding:``), so parsing YAML
-    would not narrow it. Substring matching over-keeps and never under-keeps,
-    which is the only safe direction here.
+# 7 is git's own minimum abbreviation. Deliberately greedy: a token that is not
+# a commit simply fails to resolve, and collecting a few extra candidates is the
+# safe direction, while missing a real one is not.
+_LEDGER_SHA_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
+
+
+@dataclass(frozen=True)
+class LedgerRisk:
+    """Which ledger commits a branch deletion could actually orphan.
+
+    ``at_risk`` holds the ledger commits that the BASE REF does not already make
+    reachable — the only ones any branch here could be the last holder of. It is
+    normally EMPTY, because a healthy ledger names commits that landed on main,
+    and then no branch is kept on ledger grounds at all.
+
+    ``unreadable`` is the fail-closed flag: the ledger named commits and git
+    could not answer the reachability question, so every branch is kept and says
+    so. It is never set merely because the ledger file is absent.
     """
+    at_risk: tuple[str, ...] = ()
+    unreadable: bool = False
+
+
+def ledger_text(repo: Path) -> str:
+    """The review ledger's raw text, or ``""`` when there is no ledger."""
     path = repo / REVIEW_LEDGER
     try:
         return path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
+
+
+def ledger_commits(repo: Path, text: str) -> list[str]:
+    """Every commit the ledger NAMES, resolved to a full oid, in one git call.
+
+    ``git cat-file --batch-check`` takes the whole candidate set on stdin, so
+    this costs one subprocess rather than one per token — the ledger carries
+    hundreds. Tokens git reports as ``missing`` are prose that merely looked like
+    a sha; tokens it reports as ``ambiguous`` are RESOLVED rather than dropped
+    (``--disambiguate`` lists every object sharing the prefix, and every
+    candidate that is a commit is then treated as named), because dropping an
+    ambiguous row would silently narrow the protection.
+    """
+    tokens = list(dict.fromkeys(_LEDGER_SHA_RE.findall(text)))
+    if not tokens:
+        return []
+    commits, ambiguous = _batch_check_commits(repo, tokens)
+    extra: list[str] = []
+    for prefix in ambiguous:
+        listed = _git(repo, "rev-parse", f"--disambiguate={prefix}")
+        if listed.returncode == 0:
+            extra.extend(listed.stdout.split())
+    if extra:
+        resolved, _ = _batch_check_commits(repo, list(dict.fromkeys(extra)))
+        commits.extend(resolved)
+    return list(dict.fromkeys(commits))
+
+
+def _batch_check_commits(repo: Path,
+                         tokens: Sequence[str]) -> tuple[list[str], list[str]]:
+    """``(full oids that are commits, prefixes git called ambiguous)``.
+
+    Spelled out rather than routed through ``status._git`` for one reason: this
+    is the only query here that feeds git on STDIN, which that helper does not
+    take. ``--no-optional-locks`` is carried over from it deliberately — a
+    read-only probe must not touch the index.
+    """
+    result = subprocess.run(
+        ["git", "--no-optional-locks", "-C", str(repo), "cat-file",
+         "--batch-check"],
+        input="\n".join(tokens) + "\n", stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+        errors="replace", check=False)
+    if result.returncode and not result.stdout:
+        return [], []
+    commits: list[str] = []
+    ambiguous: list[str] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        if fields[1] == "ambiguous":
+            ambiguous.append(fields[0])
+        elif fields[1] == "commit":
+            commits.append(fields[0])
+    return commits, ambiguous
+
+
+def ledger_risk(repo: Path, base_ref: str | None) -> LedgerRisk:
+    """The ledger commits the base ref does NOT already keep reachable.
+
+    Reachability from the base ref is the whole test. A ledger commit that
+    ``origin/main`` reaches survives every deletion this planner could propose,
+    so it can keep nothing; one it does not reach is a commit some branch may be
+    the last holder of, and that is the case worth a keep.
+    """
+    named = ledger_commits(repo, ledger_text(repo))
+    if not named or base_ref is None:
+        return LedgerRisk()
+    # `--not <base>` stops the walk at the base ref, so this enumerates only
+    # what the base does not already have; intersecting back with `named` drops
+    # the at-risk commits' ancestors, which no ledger row claims.
+    walk = _git(repo, "rev-list", "--ignore-missing", *named, "--not", base_ref)
+    if walk.returncode:
+        return LedgerRisk(at_risk=tuple(named), unreadable=True)
+    outside = set(walk.stdout.split())
+    return LedgerRisk(at_risk=tuple(oid for oid in named if oid in outside))
+
+
+def ledger_keep_reasons(repo: Path, ref: str, risk: LedgerRisk) -> list[str]:
+    """Why this branch must stay for the ledger's sake — usually nothing.
+
+    A branch is kept only when it REACHES a ledger commit the base ref does not,
+    which is the one shape whose deletion can turn a row into UNKNOWN OBJECT.
+    This deliberately over-keeps when a second surviving branch also reaches that
+    commit: proving otherwise means reasoning about which other branches this
+    same plan deletes, and over-keeping costs a branch until the next run while
+    under-keeping costs a review nobody can inspect again.
+    """
+    if not risk.at_risk:
+        return []
+    if risk.unreadable:
+        return [KEEP_LEDGER_UNREADABLE]
+    reasons: list[str] = []
+    for oid in risk.at_risk:
+        probe = _git(repo, "merge-base", "--is-ancestor", oid, ref)
+        if probe.returncode == 0:
+            reasons.append(f"{KEEP_LEDGER} {oid[:8]}")
+        elif probe.returncode != 1:
+            return [KEEP_LEDGER_UNREADABLE]
+    return reasons
 
 
 def unpushed_commits(repo: Path, ref: str) -> int:
@@ -718,10 +878,12 @@ def plan_worktree_backups(repo: Path, item: WorktreeItem, worktree: Path, *,
 
 # ── classification ───────────────────────────────────────────────────────────
 
-def classify(repo: status.Repository, root: Path, *, run_id: str, ledger: str,
+def classify(repo: status.Repository, root: Path, *, run_id: str,
+             ledger: LedgerRisk | None = None,
              include_harness: bool = False,
              ) -> tuple[list[BranchItem], list[WorktreeItem]]:
     base_ref = repo.base_ref
+    risk = ledger if ledger is not None else LedgerRisk()
     worktree_refs = {
         branch.ref.full_name for branch in repo.branches if branch.worktree_path
     }
@@ -752,8 +914,8 @@ def classify(repo: status.Repository, root: Path, *, run_id: str, ledger: str,
         if item.unpushed != 0:
             count = "an unknown number of" if item.unpushed < 0 else str(item.unpushed)
             item.keep_reasons.append(f"{count} {KEEP_UNPUSHED}")
-        if branch.name in ledger:
-            item.keep_reasons.append(KEEP_LEDGER)
+        item.keep_reasons.extend(
+            ledger_keep_reasons(root, branch.ref.full_name, risk))
         if item.proposed:
             item.backup_ref = f"{TRASH_REF_ROOT}/{run_id}/{slug(branch.name)}"
         branches.append(item)
@@ -1346,7 +1508,7 @@ def _plan(argv: Sequence[str] | None, out) -> int:
 
     include_harness = args.include_harness_worktrees
     branches, worktrees = classify(repo, root, run_id=run_id,
-                                   ledger=ledger_names(root),
+                                   ledger=ledger_risk(root, base_ref),
                                    include_harness=include_harness)
     apply_emitter_refusals(root, run_id, worktrees)
 

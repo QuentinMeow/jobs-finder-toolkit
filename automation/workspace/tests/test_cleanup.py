@@ -143,17 +143,6 @@ class ProposalTests(PlannerTestCase):
         self.assertTrue(any("no remote-tracking ref" in reason
                             for reason in row["keep_reasons"]))
 
-    def test_a_branch_named_by_a_review_ledger_row_is_kept(self) -> None:
-        ledger = self.root / cleanup.REVIEW_LEDGER
-        ledger.parent.mkdir(parents=True, exist_ok=True)
-        ledger.write_text(
-            "- commit: abcdef12\n"
-            "  finding: 'reviewed on the true-merge branch'\n", encoding="utf-8")
-        self.run_planner("--fetch")
-        row = {r["name"]: r for r in self.plan_json()["branches"]}["true-merge"]
-        self.assertFalse(row["proposed"])
-        self.assertIn(cleanup.KEEP_LEDGER, row["keep_reasons"])
-
     def test_a_wedged_branch_is_kept_until_its_registration_is_pruned(self) -> None:
         self.run_planner("--fetch")
         rows = {r["name"]: r for r in self.plan_json()["branches"]}
@@ -1081,6 +1070,115 @@ class HarnessWorktreePreconditionTests(HarnessWorktreeScenario):
                 self.assertNotIn(forbidden, joined)
         self.assertIn("mv ", joined)
         self.assert_root_is_never_moved(script)
+
+
+# ── the review ledger: reachability, never a name ────────────────────────────
+#
+# THE BUG THESE PIN. The keep rule was `branch.name in <the ledger's raw text>`.
+# Measured on the real repository, that kept `fix/filter-pipeline-reports`
+# forever because one row's `finding:` prose says "Merge of origin/main into
+# fix/filter-pipeline-reports…" — while its tip is an ANCESTOR of `origin/main`
+# and it holds zero commits `origin/main` does not, so no row could degrade.
+# Two defects in one: the wrong question (a name carries no object; only
+# reachability decides whether a row becomes UNKNOWN OBJECT), and a match set
+# polluted with DIRECTORY PATHS — `docs/handbook`, `tasks/0` and friends all
+# occur in that file and would pin a branch named after any of them.
+#
+# The feedback loop is what makes it compound: every branch that lands writes a
+# ledger row, and an agent writing that row names the branch it is on. Under a
+# name match, the ritual every branch performs on its way in is what makes it
+# unretirable on its way out.
+
+
+class ReviewLedgerReachabilityTests(PlannerTestCase):
+    def write_ledger(self, text: str) -> None:
+        ledger = self.root / cleanup.REVIEW_LEDGER
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text(text, encoding="utf-8")
+
+    def branch_rows(self) -> dict:
+        return {row["name"]: row for row in self.plan_json()["branches"]}
+
+    def ledger_reasons(self, row: dict) -> list[str]:
+        return [reason for reason in row["keep_reasons"]
+                if "review ledger" in reason or "review-ledger" in reason]
+
+    def test_a_branch_named_only_in_a_finding_string_is_proposed(self) -> None:
+        # The live instance, reduced: the ledger's prose names the branch, and
+        # the commit that row is KEYED to is one `origin/main` already reaches.
+        # Nothing about deleting the branch can turn that row into UNKNOWN
+        # OBJECT, so the name must buy it nothing.
+        base = self.out(self.root, "rev-parse", "refs/remotes/origin/main")
+        self.write_ledger(
+            f"- base: {base[:8]}\n"
+            f"  reviewed_by: agent\n"
+            f"  finding: 'Merge of origin/main into true-merge. Every covered\n"
+            f"    file arrives byte-identical from origin/main.'\n")
+        self.run_planner("--fetch")
+        row = self.branch_rows()["true-merge"]
+        self.assertTrue(row["proposed"],
+                        f"kept on a bare name match: {row['keep_reasons']}")
+        self.assertEqual(self.ledger_reasons(row), [])
+
+    def test_a_branch_holding_a_ledger_commit_the_base_cannot_reach_is_kept(
+            self) -> None:
+        # The hazard the rule actually exists for. `squash-merge`'s CONTENT is
+        # in main under a different commit, so the containment probe passes and
+        # its own commit is reachable from main by nothing. Push it so every
+        # other precondition clears, and it is proposable — until the ledger
+        # names that commit, at which point deleting the branch is what would
+        # make the row uninspectable in a fresh clone.
+        self.git(self.root, "push", "-q", "-u", "origin", "squash-merge")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+        tip = self.out(self.root, "rev-parse", "refs/heads/squash-merge")
+
+        self.run_planner("--fetch")
+        control = self.branch_rows()["squash-merge"]
+        self.assertTrue(control["proposed"],
+                        f"the fixture never reaches the ledger rule: "
+                        f"{control['keep_reasons']}")
+
+        self.write_ledger(f"- base: {tip[:8]}\n"
+                          f"  reviewed_by: agent\n"
+                          f"  finding: 'nothing here names any branch'\n")
+        self.run_planner("--fetch")
+        row = self.branch_rows()["squash-merge"]
+        self.assertFalse(row["proposed"])
+        self.assertTrue(self.ledger_reasons(row), row["keep_reasons"])
+        self.assertIn(tip[:8], " ".join(row["keep_reasons"]),
+                      "the reason must name the commit that is at risk")
+
+    def test_directory_paths_in_the_ledger_pin_nothing(self) -> None:
+        # `grep -oE '(fix|feat|docs|tasks|codex)/[a-z0-9-]+'` over the real
+        # ledger returns `docs/handbook`, `docs/designs`, `docs/roadmap`,
+        # `tasks/0`, `tasks/3` and `tasks/4` alongside actual branch names. A
+        # substring rule cannot tell those apart; a reachability rule never asks.
+        paths = ("docs/handbook", "docs/roadmap", "tasks/0", "codex/landed")
+        for name in paths:
+            self.git(self.root, "branch", name, "main")
+        self.write_ledger(
+            "- base: 0000000\n"
+            "  finding: 'Read docs/handbook/public-private-split.md and\n"
+            "    docs/roadmap/current-state.md; filed under tasks/0_backlog/ and\n"
+            "    reviewed on codex/landed.'\n")
+        self.run_planner("--fetch")
+        rows = self.branch_rows()
+        for name in paths:
+            with self.subTest(branch=name):
+                self.assertIn(name, rows)
+                self.assertTrue(
+                    rows[name]["proposed"],
+                    f"a directory path in the ledger pinned {name}: "
+                    f"{rows[name]['keep_reasons']}")
+
+    def test_an_absent_ledger_is_not_an_unanswerable_probe(self) -> None:
+        # Fail-closed must fire on "git could not say", never on "there is no
+        # ledger" — a public export omits that file, and a planner that kept
+        # every branch there would be a no-op wearing a safety argument.
+        self.assertFalse((self.root / cleanup.REVIEW_LEDGER).exists())
+        self.run_planner("--fetch")
+        row = self.branch_rows()["true-merge"]
+        self.assertTrue(row["proposed"], row["keep_reasons"])
 
 
 class MoveContainmentUnitTests(F.GitTestCase):
