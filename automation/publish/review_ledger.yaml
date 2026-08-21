@@ -3494,3 +3494,12 @@
     tests. The diff carries only timeless registry logic and fictional company rows
     (Northwind/Larkspur Robotics); no real identity, employer, school, salary,
     private item name, or dated personal job-hunt content is present.'
+- base: 787783bf
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:b532eb3d82b89f28
+  finding: 'Reviewed the new unambiguous JD selectors in company_roles.py and their
+    offline tests. Everything is timeless CLI logic over the fictional ExampleCorp
+    board with invented requisition ids; no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content is present.'
