@@ -4084,3 +4084,9 @@
   files: 1
   digest: sha256:f993fe478563ca02
   finding: 'Audit addendum to the session record. Public repository behaviour, measured counts and ref names only; the rescued private object is named by ref, and its contents were never read or reproduced.'
+- base: a0ec267b
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 2
+  digest: sha256:57a4bcd342bcca8e
+  finding: 'Two backlog task files recording multi-agent coordination findings. Public repository behaviour, measured counts, file paths and PR numbers only; no personal content.'

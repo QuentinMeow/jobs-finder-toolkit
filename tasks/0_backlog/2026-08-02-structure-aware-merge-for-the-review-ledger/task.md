@@ -83,3 +83,29 @@ Either way, also do this — it is the part that actually prevents recurrence:
   different order, merged, asserting the result has no duplicate keys. **Done 2026-08-02** — the
   test performs the `union` merge itself rather than asserting on hand-written interleaved text,
   so it cannot drift from what the driver actually produces.
+
+## Measured evidence, 2026-08-21 (appended; nothing above was changed)
+
+A ten-agent session (15 merged PRs, #340-#354) gave this its largest real convergence test to date.
+
+- The ledger conflicted on **6 of 6** first-wave branches, and on every branch afterwards. It was the
+  **only** conflicting file on all of them.
+- Merging any one PR re-dirtied **every** other open PR within ~20 seconds. Measured directly: after
+  #341 merged, #340/#342/#343/#344 all moved `MERGEABLE` to `CONFLICTING`. Ten parallel agents
+  therefore landed strictly sequentially, each round costing a hand resolution, a re-push, a CI run
+  (~2 min) and a merge.
+- Resolving by **YAML round-trip** was tried and discarded: `yaml.safe_dump` of the parsed rows
+  reformatted all 351 historical rows — **1,986 insertions and 1,412 deletions to append 3 rows**.
+  The gate accepted the result, so this failure is silent to tooling and only visible to a human
+  reading the diff. Worth naming in this task as a third rejected resolution alongside the `union`
+  driver.
+- The resolution that worked, applied 12 times without incident: **byte-level append** — take the
+  incoming side's bytes whole, then re-append this branch's authored bytes whole. This matches the
+  remediation text `review_gate.py` already prints ("recover the authored rows from git history and
+  re-append them whole").
+- `skills/job-search/filter_variants/corpus.yaml` has the identical shape and conflicted three times
+  in the same session, for the same reason: independent agents each append entries at the end of one
+  list. Whatever this task decides should name that file too.
+
+Follow-on: `tasks/0_backlog/2026-08-21-parallel-agent-work-is-serialized-and-its-green-results-are-unverified`
+treats the ledger itself as THIS task's scope and does not duplicate it.
