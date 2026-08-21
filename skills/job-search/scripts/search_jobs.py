@@ -469,7 +469,98 @@ def run_tasks(tasks, workers: int = 12):
     return postings, errors, per_source
 
 
-def dedupe(postings):
+# A JD body is identity once it is long enough to BE one. Below this many
+# characters (after normalization) a "description" is a stub — a one-line teaser,
+# an equal-opportunity boilerplate, an empty ATS field — and thousands of unrelated
+# postings share it, so grouping on it would fuse real openings.
+MIN_BODY_FINGERPRINT_CHARS = 400
+_BODY_NOISE_RE = re.compile(r"[^a-z0-9]+")
+
+
+def body_fingerprint(posting) -> str | None:
+    """Content identity for a posting's JD body, or None when it is too thin.
+
+    Normalizes away everything a re-post can change without changing the job:
+    case, whitespace, dash typography, punctuation and heading markup. Two
+    staffing agencies syndicating one client requisition differ in exactly those
+    (issue #281), so after this they hash the same.
+
+    Cached on the posting because ``dedupe`` runs on each lane and again for the
+    report's unique-row count.
+    """
+    import hashlib
+
+    cached = getattr(posting, "_body_fingerprint", False)
+    if cached is not False:
+        return cached
+    text = _BODY_NOISE_RE.sub(" ", (posting.description or "").casefold()).strip()
+    fingerprint = (hashlib.sha256(text.encode("utf-8")).hexdigest()
+                   if len(text) >= MIN_BODY_FINGERPRINT_CHARS else None)
+    posting._body_fingerprint = fingerprint
+    return fingerprint
+
+
+def _group_duplicate_bodies(rows, collapsed_out=None):
+    """Collapse rows whose JD bodies are the same text, keeping the best-scoring.
+
+    Returns the survivors. When ``collapsed_out`` is given, each collapsed group
+    is appended to it as ``(survivor, [others])`` so the CALLER can attach the
+    provenance — nothing is deleted silently, and the report prints both
+    employers and both links, which is what an audit needs to see that two
+    "different" openings are one requisition.
+
+    The annotation is deliberately not done here: ``dedupe`` also runs over the
+    RAW posting list to count unique rows, and marking postings from that pass
+    would credit a shortlist row with siblings that a gate had already dropped.
+    """
+    groups: dict[str, list] = {}
+    order: list = []
+    for p in rows:
+        fingerprint = body_fingerprint(p)
+        if fingerprint is None:
+            order.append(p)
+            continue
+        if fingerprint not in groups:
+            groups[fingerprint] = [p]
+            order.append(p)
+        else:
+            groups[fingerprint].append(p)
+    if not any(len(g) > 1 for g in groups.values()):
+        return rows
+    out = []
+    for p in order:
+        fingerprint = getattr(p, "_body_fingerprint", None)
+        group = groups.get(fingerprint) if fingerprint else None
+        if not group or len(group) == 1:
+            out.append(p)
+            continue
+        best = max(group, key=lambda row: row.score)
+        if collapsed_out is not None:
+            collapsed_out.append((best, [row for row in group if row is not best]))
+        out.append(best)
+    return out
+
+
+def annotate_duplicate_bodies(collapsed) -> None:
+    """Record on each survivor the postings that shared its JD body.
+
+    ``duplicate_sources`` keeps the collapsed rows' employer, title and URL as
+    provenance; the ``reasons`` note makes the collapse visible in the shortlist
+    row itself rather than only in a footnote nobody scrolls to.
+    """
+    for best, others in collapsed:
+        if not others:
+            continue
+        best.duplicate_sources = [
+            {"company": row.company, "title": row.title, "url": row.url,
+             "location": row.location, "source": row.source} for row in others]
+        note = (f"same JD body as {len(others)} other posting(s) "
+                "— collapsed; see Duplicate JD bodies")
+        if note not in best.reasons:
+            best.reasons = [*best.reasons, note]
+
+
+def dedupe(postings, *, group_bodies: bool = True, collapsed_out=None):
     """Keep the highest-scoring row per (company, title, LOCATION).
 
     What this collapses is the same opening reached from two sources — which is
@@ -485,6 +576,16 @@ def dedupe(postings):
     two rows. A visible duplicate is the better failure — the per-employer cap in
     ``select_diverse`` already bounds it, and the alternative silently deletes a
     real requisition.
+
+    That key cannot see the OTHER duplicate shape (issue #281): one client
+    requisition syndicated by two staffing firms, or one JD posted under two
+    titles, differs in company/title/URL and is identical in the only field that
+    describes the JOB — the body. A second pass groups rows whose normalized JD
+    body is the same text (:func:`body_fingerprint`), which is why two Snowflake
+    "Data Engineer" copies stopped taking two of eight shortlist slots. Pass
+    ``group_bodies=False`` for a key-only dedupe; ``collapsed_out`` receives
+    ``(survivor, [others])`` per collapsed group so the caller can keep the
+    provenance.
     """
     best: dict[tuple[str, str, str], object] = {}
     order: list[tuple[str, str, str]] = []
@@ -499,41 +600,56 @@ def dedupe(postings):
             order.append(key)
         elif p.score > best[key].score:
             best[key] = p
-    return [best[key] for key in order]
+    rows = [best[key] for key in order]
+    if not group_bodies:
+        return rows
+    return _group_duplicate_bodies(rows, collapsed_out)
 
 
 def select_diverse(
     postings,
     top_k: int | None,
     max_per_company: int | None,
+    *,
+    capped_out=None,
 ):
-    """Pick the top_k highest-scoring postings with a per-employer cap.
+    """Pick the top_k highest-scoring postings, capped at max_per_company each.
 
-    `postings` must already be sorted best-first. Greedily takes up to
-    `max_per_company` rows per company (in score order) so one employer can't
-    dominate the shortlist; if that leaves fewer than top_k, the best capped-out
-    overflow rows backfill the remaining slots so a thin search still returns
-    top_k. `max_per_company` <= 0 (or None) disables the cap.
+    `postings` must already be sorted best-first. The cap is a CAP: no employer
+    ever occupies more than `max_per_company` rows of the returned shortlist.
+    `max_per_company` <= 0 (or None) disables it, and `top_k` None returns
+    everything. `capped_out`, when given, receives the rows the cap removed from
+    the shortlist the run would otherwise have returned, so the report can say
+    how many and from whom.
+
+    It used to BACKFILL: rows the cap had excluded were added back whenever the
+    distinct-employer pool could not fill top_k. A report headed
+    `per-employer cap: 3/company` then listed seven rows from one employer and
+    four from another (issue #278), and because backfill runs in score order from
+    the bottom of the pool it also promoted negative-score known mis-fits purely
+    to reach the requested row count. A shortlist that is honestly short is worth
+    more than a full one that contradicts its own header; raise
+    `--max-per-company`, or set it to 0, to get the rows back deliberately.
     """
     if top_k is None:
         return postings
     if not max_per_company or max_per_company <= 0:
         return postings[:top_k]
     counts: Counter = Counter()
-    primary, overflow = [], []
+    primary = []
     for p in postings:
         key = (p.company or "").strip().lower()
         if counts[key] < max_per_company:
             primary.append(p)
             counts[key] += 1
             if len(primary) >= top_k:
-                return primary
-        else:
-            overflow.append(p)
-    if len(primary) < top_k:            # not enough distinct employers — backfill
-        primary.extend(overflow[: top_k - len(primary)])
-        primary.sort(key=lambda p: p.score, reverse=True)
-    return primary[:top_k]
+                break
+    if capped_out is not None:
+        # What the CAP cost, measured against the same shortlist size: the rows
+        # that would have made an uncapped top-K and did not survive the cap.
+        chosen = {id(p) for p in primary}
+        capped_out.extend(p for p in postings[:top_k] if id(p) not in chosen)
+    return primary
 
 
 def _norm_url(url: str) -> str:
@@ -946,8 +1062,25 @@ def render_markdown(kept, profile, meta, *, review_path=None,
                      + (f"\u2264 {first} days" if first is not None
                         else "any \u2014 never-searched employers are not age-filtered")
                      + ")")
+    elif meta.get("first_search_widening_suppressed"):
+        # The other direction of the same rule. The profile widens the window on
+        # a company's first-ever search; an age bound typed for THIS run does not
+        # get quietly widened past. Naming the cost is the point — silence in
+        # either direction is what made a 30-day request return 557-day rows.
+        held = meta.get("n_first_search_widening_suppressed", 0)
+        age_desc += (" (explicit bound: the profile's first-search widening is NOT "
+                     f"applied; it would have reached up to {held} older "
+                     "posting(s) at never-searched employers)")
     cap = meta.get("max_per_company")
     cap_desc = (f"{cap}/company" if cap and cap > 0 else "off")
+    n_capped = meta.get("n_employer_capped", 0) or 0
+    if cap and cap > 0 and n_capped:
+        # The cap is enforced, so the shortlist can be shorter than top_k. Say by
+        # how much and for whom, or a short list reads as a thin market.
+        who = ", ".join(meta.get("employer_capped_companies") or [])
+        cap_desc += (f" — held back {n_capped} row(s)"
+                     + (f" ({who})" if who else "")
+                     + "; raise --max-per-company or set 0 to include them")
     # `Scanned` counts RAW fetched rows; `matches` and `review` are counted after
     # dedupe, so the two sides of the arrow are not the same population — say so,
     # or the funnel reads as arithmetic that does not add up.
@@ -1015,7 +1148,69 @@ def render_markdown(kept, profile, meta, *, review_path=None,
               "with the employer before relying on it._"]
     lines += render_review_section(meta, review_path, review_postings,
                                    overflow_path=overflow_path)
+    lines += render_duplicate_body_section(meta)
+    lines += render_funnel_section(meta)
     return "\n".join(lines)
+
+
+def render_duplicate_body_section(meta) -> list[str]:
+    """The ``## Duplicate JD bodies`` block: what was collapsed, and its links.
+
+    Collapsing a duplicate is only safe if the evidence survives (issue #281):
+    the reader has to be able to see that two differently-named staffing firms
+    posted ONE client requisition, and to reach either posting. So the shortlist
+    keeps one row and this section keeps every URL.
+    """
+    groups = [g for g in (meta.get("duplicate_body_groups") or []) if g.get("collapsed")]
+    if not groups:
+        return []
+    total = sum(len(g["collapsed"]) for g in groups)
+    lines = ["", f"## Duplicate JD bodies ({total} row(s) collapsed into "
+                 f"{len(groups)} posting(s))", "",
+             "Postings whose job-description text is the same after normalization — "
+             "one requisition syndicated under different employers, titles or URLs. "
+             "The shortlist keeps the highest-scoring copy; every other copy's link "
+             "is here, not deleted.", ""]
+    for group in groups:
+        kept_row = group["kept"]
+        lines.append(f"- **{kept_row['company']} — {kept_row['title']}** "
+                     f"([kept]({kept_row['url']}))")
+        for other in group["collapsed"]:
+            lines.append(f"  - also posted as {other['company']} — {other['title']}"
+                         + (f" ({other['location']})" if other.get("location") else "")
+                         + f" ([link]({other['url']}))")
+    return lines
+
+
+def render_funnel_section(meta) -> list[str]:
+    """The ``## Funnel`` block: one disposition per scanned posting, summing to input.
+
+    This is the answer to "kept 17 + review 361 + 7,291 hard-rejected = 7,669 out
+    of 7,662" (issue #253). Every scanned posting appears in exactly one row of
+    this table; anything that describes a row's JOURNEY rather than its END is
+    listed underneath as a diagnostic, where it cannot be added into the total.
+    """
+    funnel = meta.get("funnel")
+    if not funnel:
+        return []
+    rows = [(label, n) for label, n in funnel.get("dispositions", []) if n]
+    lines = ["", "## Funnel", "",
+             f"Every one of the {funnel['input']} scanned postings has exactly one "
+             "disposition below, and they sum to that total.", "",
+             "| Disposition | Postings |", "|-------------|----------|"]
+    lines += [f"| {label} | {n} |" for label, n in rows]
+    lines.append(f"| **Total** | **{funnel['accounted']}** |")
+    if not funnel.get("balanced", True):
+        lines += ["",
+                  f"> **The funnel does not balance**: {funnel['unaccounted']} "
+                  "posting(s) reached no counted disposition. This is a bug in the "
+                  "pipeline's accounting, not in the search — report it."]
+    diagnostics = {k: v for k, v in (funnel.get("diagnostics") or {}).items() if v}
+    if diagnostics:
+        lines += ["", "Diagnostics — these describe rows that ALSO appear in exactly "
+                      "one row above, so they are never added to the total:", ""]
+        lines += [f"- `{name}`: {n}" for name, n in sorted(diagnostics.items())]
+    return lines
 
 
 def _jobspy_missing_banner(skipped_sites: list[str]) -> str:
@@ -1102,12 +1297,79 @@ def build_filter_context(profile: dict, registry: Registry, args) -> dict:
         "ai_native_keys": ai_native_keys,
         "widen_first_search": bool(log_cfg.get("widen_first_search", True)),
         "first_search_max_age_days": log_cfg.get("first_search_max_age_days"),
+        # Whether an age bound was typed for THIS run, as opposed to inherited
+        # from the profile. Not the same question as `max_age`, which `main`
+        # resolves to the profile's value when no flag is given: the widening
+        # above is a profile behaviour and must not silently outrank a flag
+        # (issue #243). None means "no flag" and leaves the widening in place.
+        "cli_max_age_days": getattr(args, "max_age_days", None),
         "title_word_filter": title_filter.load_word_lists(profile),
     }
 
 
+# --------------------------------------------------------------------------- #
+# Filter-stage progress
+#
+# Issue #292: a legitimate 14,508-row public-board cohort spent 159 seconds inside
+# the filter loop printing NOTHING between "loaded 14508 normalized postings" and
+# the result. A novice cannot tell a slow run from a hung one, and the documented
+# reaction — interrupt and retry — throws away a completed fetch.
+#
+# Only a corpus big enough to be slow says anything, so an ordinary search, the
+# test suite, and every scripted caller keep their exact current output.
+# --------------------------------------------------------------------------- #
+PROGRESS_MIN_ROWS = 2000
+PROGRESS_SECONDS = 5.0
+
+
+def _format_duration(seconds: float) -> str:
+    seconds = max(0, int(round(seconds)))
+    if seconds < 60:
+        return f"{seconds}s"
+    return f"{seconds // 60}m{seconds % 60:02d}s"
+
+
+class _FilterProgress:
+    """Periodic `filtering N/M` lines on stderr, with an ETA, for a big corpus."""
+
+    def __init__(self, total: int, *, stream=None, min_rows: int = PROGRESS_MIN_ROWS,
+                 interval: float = PROGRESS_SECONDS):
+        import time
+
+        self._clock = time.monotonic
+        self.total = int(total or 0)
+        self.stream = stream if stream is not None else sys.stderr
+        self.interval = float(interval)
+        self.enabled = self.total >= int(min_rows) and self.interval >= 0
+        self.started = self._clock()
+        self.last = self.started
+
+    def tick(self, seen: int, n_kept: int, n_review: int) -> None:
+        if not self.enabled:
+            return
+        elapsed = self._clock() - self.started
+        if self._clock() - self.last < self.interval:
+            return
+        self.last = self._clock()
+        pct = (seen * 100) // self.total if self.total else 100
+        rate = seen / elapsed if elapsed > 0 else 0
+        eta = ((self.total - seen) / rate) if rate > 0 else 0
+        print(f"Filtering {seen}/{self.total} ({pct}%) — {n_kept} matches, "
+              f"{n_review} for review — {_format_duration(elapsed)} elapsed, "
+              f"~{_format_duration(eta)} left", file=self.stream, flush=True)
+
+    def done(self, n_kept: int, n_review: int) -> None:
+        if not self.enabled:
+            return
+        print(f"Filtered {self.total} postings in "
+              f"{_format_duration(self._clock() - self.started)} — {n_kept} matches, "
+              f"{n_review} for review.", file=self.stream, flush=True)
+
+
 def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company,
-                      sponsor_index, company_levels, registry, now):
+                      sponsor_index, company_levels, registry, now,
+                      progress_stream=None, progress_min_rows=PROGRESS_MIN_ROWS,
+                      progress_seconds=PROGRESS_SECONDS):
     """Run filter -> score -> dedupe -> rank on already-fetched postings.
 
     ``now`` anchors all posting-age math and the recently-searched window: on a fresh
@@ -1115,12 +1377,25 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
     ages never drift with elapsed real time. Returns ``(kept, counts)`` where the
     pipeline is a pure function of its inputs (identical inputs -> identical output),
     which is what makes refilter byte-identical to the fetch run that wrote the cache.
+
+    ``counts["funnel"]`` is the run's RECONCILIATION: one terminal disposition per
+    input posting, summing exactly to ``len(postings)``. Progress lines go to
+    ``progress_stream`` (default stderr) only for a corpus of at least
+    ``progress_min_rows`` rows, so nothing changes for an ordinary search or a test.
     """
     as_of = now.date()
+    progress = _FilterProgress(len(postings), stream=progress_stream,
+                               min_rows=progress_min_rows, interval=progress_seconds)
     kept, review_postings = [], []
     n_blacklisted = n_considered = n_recently_searched = n_non_ai = n_low_quality = 0
     n_occupation_ambiguous_overflow = 0
     n_title_hard_excluded = n_title_word_filter_review = n_first_search_widened = 0
+    # Gates that dropped postings without ever being counted. `kept + review +
+    # every counted drop` used to come out BELOW the input (a location or YOE
+    # rejection left no number anywhere), and the validator's census counted the
+    # same rows a second time, so the two surfaces could not be reconciled at all.
+    n_date = n_location = n_visa = n_experience = n_title_no_match_other = 0
+    n_first_search_widening_suppressed = 0
     # The ordinary title gate's two HARD drops. Both were entirely uncounted: on
     # the shipped example profile they are together the largest drop in the whole
     # pipeline (thousands of postings per run) and neither appeared in `counts`,
@@ -1136,8 +1411,23 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
     # force: with `max_age` None nothing is filtered by age anyway.
     widen_first_search = bool(ctx.get("widen_first_search", True))
     first_search_max_age = ctx.get("first_search_max_age_days")
+    # An age bound typed on the COMMAND LINE for this run beats the profile's
+    # standing first-search widening. The owner decision (2026-08-02,
+    # memory/decisions/first-search-finds-every-open-role.md) widens the PROFILE's
+    # recency gate on a company's first-ever search, and that still holds — the
+    # widening is a property of the profile's window, not a licence to ignore an
+    # instruction given for this run. Honouring the profile over `--max-age-days
+    # 30` returned postings 557 days old under a header that said 30 (issue #243).
+    # Read from ctx rather than compared against the profile's own value: the two
+    # are equal whenever the flag merely restates the profile, and a guess there
+    # would silence widening for callers that never passed a flag at all.
+    explicit_age_bound = ctx.get("cli_max_age_days") is not None
     widening_active = (widen_first_search and max_age is not None
-                       and first_search_max_age != max_age)
+                       and first_search_max_age != max_age
+                       and not explicit_age_bound)
+    widening_suppressed = (widen_first_search and max_age is not None
+                           and first_search_max_age != max_age
+                           and explicit_age_bound)
     # Decision 3a bounded-rollout guard: the residual `title.occupation_ambiguous`
     # review family (Member of Technical Staff, generalist titles, ...) preserves
     # JD semantics instead of a silent hard drop, but a lexicon miss must never
@@ -1148,7 +1438,8 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
     occupation_review_cap = (profile.get("titles") or {}).get(
         "occupation_review_cap", 300)
     ai_native_keys = ctx["ai_native_keys"]
-    for p in postings:
+    for n_seen, p in enumerate(postings, 1):
+        progress.tick(n_seen, len(kept), len(review_postings))
         p.filter_assessments = {}
         p.review_reasons = []
         canonical_company = registry.canonical(p.company)
@@ -1190,6 +1481,11 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
                 elif any(r.startswith("title.nontechnical_occupation.")
                          for r in rule_ids):
                     n_title_nontechnical += 1
+                else:
+                    # A no_match the two named families do not explain (no include
+                    # term hit, no rule id). Uncounted, this was the single biggest
+                    # hole in the funnel on a broad profile.
+                    n_title_no_match_other += 1
                 continue
             # Rescued. `title_word_filter_override` says the ordinary title gate
             # would have dropped this row and which class kept it alive, so the
@@ -1204,12 +1500,22 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
             if not date_ok(p, max_age) and date_ok(p, effective_max_age):
                 n_first_search_widened += 1
         if not date_ok(p, effective_max_age):
+            # Say how much the explicit bound cost. Widening that is silently ON
+            # produced 557-day-old rows under a 30-day header; widening silently
+            # OFF would be the same defect pointing the other way.
+            if (widening_suppressed and date_ok(p, first_search_max_age)
+                    and is_first_search(p, ctx["search_tokens"], registry)):
+                n_first_search_widening_suppressed += 1
+            n_date += 1
             continue
         if not location_ok(p, profile):
+            n_location += 1
             continue
         if not visa_ok(p, profile):
+            n_visa += 1
             continue
         if not experience_ok(p, profile):
+            n_experience += 1
             continue
         is_ai_native = bool(ai_native_keys
                             and registry.match_keys(p.company) & ai_native_keys)
@@ -1241,8 +1547,13 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
         else:
             kept.append(p)
 
-    kept = dedupe(kept)
-    review_postings = dedupe(review_postings)
+    n_survived = len(kept) + len(review_postings)
+    collapsed_bodies: list = []
+    kept = dedupe(kept, collapsed_out=collapsed_bodies)
+    review_postings = dedupe(review_postings, collapsed_out=collapsed_bodies)
+    annotate_duplicate_bodies(collapsed_bodies)
+    n_duplicate = n_survived - len(kept) - len(review_postings)
+    n_duplicate_body = sum(len(others) for _best, others in collapsed_bodies)
     kept.sort(key=lambda p: p.score, reverse=True)
     review_postings.sort(key=lambda p: p.score, reverse=True)
     # Rows the cap demotes. The cap bounds what is RENDERED and carried in the
@@ -1266,7 +1577,14 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
                 ambiguous_kept += 1
             bounded_review.append(posting)
         review_postings = bounded_review
-    kept = select_diverse(kept, top_k, max_per_company)
+    n_ranked = len(kept)
+    employer_capped: list = []
+    kept = select_diverse(kept, top_k, max_per_company, capped_out=employer_capped)
+    # Whatever the cap and top-K did not take. Split so the report can say which
+    # of the two removed a row: "the cap held it back" is a configuration the user
+    # can change, "it ranked below the cut" is not.
+    n_employer_capped = len(employer_capped)
+    n_below_top_k = n_ranked - len(kept) - n_employer_capped
     counts = {
         "n_blacklisted": n_blacklisted,
         "n_considered": n_considered,
@@ -1282,14 +1600,102 @@ def filter_score_rank(postings, profile, ctx, *, max_age, top_k, max_per_company
         "title_excluded_terms": dict(
             sorted(title_excluded_terms.items(), key=lambda kv: (-kv[1], kv[0]))),
         "n_title_nontechnical_occupation": n_title_nontechnical,
+        "n_title_no_match_other": n_title_no_match_other,
+        "n_date": n_date,
+        "n_location": n_location,
+        "n_visa": n_visa,
+        "n_experience": n_experience,
+        "n_duplicate": n_duplicate,
+        "n_duplicate_body": n_duplicate_body,
+        "n_employer_capped": n_employer_capped,
+        "n_below_top_k": n_below_top_k,
         "n_first_search_widened": n_first_search_widened,
+        "n_first_search_widening_suppressed": n_first_search_widening_suppressed,
         "first_search_max_age_days": first_search_max_age if widening_active else None,
         "widening_active": widening_active,
+        "widening_suppressed_by_explicit_bound": widening_suppressed,
         "n_review": len(review_postings),
         "review_postings": review_postings,
         "overflow_postings": overflow_postings,
+        "employer_capped_postings": employer_capped,
+        "duplicate_body_groups": collapsed_bodies,
     }
+    counts["funnel"] = build_funnel(len(postings), counts, len(kept))
+    progress.done(len(kept), len(review_postings))
     return kept, counts
+
+
+# --------------------------------------------------------------------------- #
+# Funnel reconciliation
+#
+# Issue #253: a search summary said `Fetched 7662 -> kept 17 + review 361` while
+# the validator's census said `7291 of 7662 postings hard-rejected`. Read as
+# disjoint buckets those total 7,669 — seven MORE than the input — and neither
+# surface said whether seven rows were double-counted, rescued, or lost. Nobody
+# could tell, because most gates were counted nowhere at all.
+#
+# The rule this table enforces: **every scanned posting has exactly one terminal
+# disposition, and they sum to the input.** Anything that is a DIAGNOSTIC — a row
+# that was rescued, widened, or flagged on its way through — is reported beside
+# the funnel and never inside it, because a row can carry several diagnostics but
+# only ever ends in one place.
+# --------------------------------------------------------------------------- #
+# (disposition label, counts key). Order is the pipeline's own order, so the
+# rendered table reads as the journey a posting takes.
+FUNNEL_DROPS = (
+    ("unfilled-template", "n_low_quality"),
+    ("title hard-excluded (titles.word_filter)", "n_title_hard_excluded"),
+    ("title excluded (titles.exclude)", "n_title_excluded"),
+    ("title non-technical occupation", "n_title_nontechnical_occupation"),
+    ("title no match", "n_title_no_match_other"),
+    ("older than the age window", "n_date"),
+    ("location out of policy", "n_location"),
+    ("sponsorship excluded", "n_visa"),
+    ("required experience out of range", "n_experience"),
+    ("not AI-native", "n_non_ai"),
+    ("blacklisted employer", "n_blacklisted"),
+    ("already considered", "n_considered"),
+    ("employer searched recently", "n_recently_searched"),
+)
+
+
+def build_funnel(n_input: int, counts: dict, n_shortlist: int) -> dict:
+    """One terminal disposition per input posting, summing exactly to ``n_input``.
+
+    ``balanced`` is False and ``unaccounted`` non-zero only if a gate is added
+    without a row in :data:`FUNNEL_DROPS` — which is the whole point: the funnel
+    reports its own drift instead of quietly mis-stating the total.
+    """
+    dispositions = [(label, int(counts.get(key, 0) or 0))
+                    for label, key in FUNNEL_DROPS]
+    dispositions += [
+        ("duplicate of another row", int(counts.get("n_duplicate", 0) or 0)),
+        ("held back by the per-employer cap",
+         int(counts.get("n_employer_capped", 0) or 0)),
+        ("ranked below the top-K cut", int(counts.get("n_below_top_k", 0) or 0)),
+        ("preserved for manual review", int(counts.get("n_review", 0) or 0)),
+        ("over the occupation review cap",
+         int(counts.get("n_occupation_ambiguous_overflow", 0) or 0)),
+        ("in the shortlist", int(n_shortlist)),
+    ]
+    accounted = sum(n for _label, n in dispositions)
+    return {
+        "input": int(n_input),
+        "dispositions": dispositions,
+        "accounted": accounted,
+        "unaccounted": int(n_input) - accounted,
+        "balanced": accounted == int(n_input),
+        # Diagnostics: overlapping views of rows that ALSO have a disposition
+        # above. Named separately so they can never be added into the total.
+        "diagnostics": {
+            "title_word_filter_rescued": int(
+                counts.get("n_title_word_filter_review", 0) or 0),
+            "first_search_widened": int(counts.get("n_first_search_widened", 0) or 0),
+            "first_search_widening_suppressed": int(
+                counts.get("n_first_search_widening_suppressed", 0) or 0),
+            "duplicate_jd_body_grouped": int(counts.get("n_duplicate_body", 0) or 0),
+        },
+    }
 
 
 def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
@@ -1348,7 +1754,33 @@ def build_meta(profile, args, *, stage, n_companies, aggregators, n_raw, counts,
         "n_first_search_widened": counts.get("n_first_search_widened", 0),
         "first_search_widening": counts.get("widening_active", False),
         "first_search_max_age_days": counts.get("first_search_max_age_days"),
+        # The explicit-bound half of the same rule: an age bound typed on the
+        # command line suppresses the profile's widening, and the number it cost
+        # is stated rather than left for the reader to wonder about.
+        "first_search_widening_suppressed": counts.get(
+            "widening_suppressed_by_explicit_bound", False),
+        "n_first_search_widening_suppressed": counts.get(
+            "n_first_search_widening_suppressed", 0),
         "max_per_company": max_per_company,
+        # How many shortlist rows the per-employer cap held back, and from whom.
+        # The header claims a cap; without this the reader cannot tell whether the
+        # cap bound at all, and a shortlist shorter than top_k looks like a thin
+        # market rather than a setting.
+        "n_employer_capped": counts.get("n_employer_capped", 0),
+        "employer_capped_companies": [
+            f"{name} {n}" for name, n in Counter(
+                p.company for p in (counts.get("employer_capped_postings") or [])
+            ).most_common(5)],
+        # Groups of postings whose JD bodies were the same text (issue #281).
+        # Carried as data, not a count, because the whole point is that the
+        # collapsed rows' employers and URLs stay readable.
+        "duplicate_body_groups": [
+            {"kept": {"company": best.company, "title": best.title, "url": best.url},
+             "collapsed": list(getattr(best, "duplicate_sources", []) or [])}
+            for best, others in (counts.get("duplicate_body_groups") or []) if others],
+        "n_duplicate_body": counts.get("n_duplicate_body", 0),
+        # One terminal disposition per scanned posting; sums to n_raw.
+        "funnel": counts.get("funnel"),
         # Profile keys that did nothing this run — unimplemented, or unknown.
         # In the meta as well as on stderr because a scrolled-past warning about a
         # constraint the user believes is active is barely a warning at all.

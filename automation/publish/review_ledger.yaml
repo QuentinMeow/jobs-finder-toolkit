@@ -3856,3 +3856,16 @@
     template; the example strings are the invented typo max_required_years and the
     generic key names. No real identity, employer, school, salary, private item name,
     or dated personal job-hunt content.'
+- base: c26d4a3a
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:84152de7673f672b
+  finding: 'Reviewed the filter-pipeline changes in search_jobs.py (explicit age
+    bound beats first-search widening, the per-employer cap stops backfilling,
+    duplicate JD bodies collapse with their links kept, a funnel whose dispositions
+    sum to the input, and filter-stage progress lines) and the 32 regression tests.
+    Every fixture name is invented (Acme Payments, Binary Labs, Staffing One/Two Inc.,
+    Company N) and every URL is on example/jobs.example; real company names quoted
+    from the public issue reports were replaced before commit. No real identity,
+    employer, school, salary, private item name, or dated personal job-hunt content.'
