@@ -163,37 +163,133 @@ def _parse_skills(profile_md: str) -> dict[str, list[str]]:
     return subsection_bullets(profile_md)
 
 
-_NUM_PATTERNS = [
-    re.compile(r"\d[\d,]*(?:\.\d+)?\s?[MKB]\+?", re.I),      # 50M+, 1.5K
-    re.compile(r"\d+(?:\.\d+)?%"),                            # 40%
-    re.compile(r"\d+(?:st|nd|rd|th)\s+percentile", re.I),    # 99th percentile
-    re.compile(r"\d+\+?\s+years?", re.I),                     # 8+ years
-    re.compile(r"under\s+\w+\s+seconds?", re.I),             # under two seconds
-    re.compile(r"\d+\+"),                                     # 30+, 8+
+# ── key numbers ──────────────────────────────────────────────
+# A metric is a NUMERIC CORE plus, where the core carries no unit of its own, a
+# TAIL of one to three unit/noun words ("18 Kubernetes clusters", "54 minutes").
+#
+# The cores are precision-first because the card is the DEFAULT context for every
+# resume draft and check.py cannot catch a wrong unit — the digits are real, so a
+# corrupted unit ships as a silent overclaim. The pattern this replaced matched
+# ``\d[\d,]*(?:\.\d+)?\s?[MKB]\+?`` case-INSENSITIVELY, so the magnitude suffix
+# bound to the first letter of the FOLLOWING WORD: "18 Kubernetes clusters" became
+# "18 K" (read back as 18,000 — a 1000x overclaim) and "54 minutes" became "54 m",
+# while the metrics that actually mattered ("120 services", "14 APIs", "1,200 to
+# 430 pages") were dropped entirely (issue #260). A magnitude suffix therefore now
+# binds only when it is really a magnitude: it must be uppercase or attached to the
+# digits, and it must not be followed by another letter or digit.
+MAX_KEY_NUMBERS = 12
+
+_SP = r"[ \t]"        # never \s — a tail must not cross a line break and glue the
+                      # next bullet's opening words onto this bullet's number.
+_NUM = r"\$?\d+(?:,\d{3})*(?:\.\d+)?"
+_START = r"(?<![A-Za-z0-9.])"   # not mid-token ("p99") and not mid-version ("v1.2.3")
+
+# Words that can never be a metric's unit or noun; they terminate a tail. "per" is
+# deliberately absent — it is allowed only BETWEEN tail words ("120 requests per
+# second"), never as the last one.
+_TAIL_STOPWORDS = (
+    "a an and or the of to in into on at by for from with within without across "
+    "after before between during over under up via than that which while when "
+    "where as but so if then plus about around near until since is are was were "
+    "be been being has have had will would can could may might do does did "
+    "it its we our us they their them he she his her i you your my this these "
+    "those each every all both more most less fewer other others another such same"
+).split()
+# A tail word is at least two characters: a lone letter is a list marker ("tier 3
+# B, C"), never a unit — that is the very confusion this module must not make.
+_TAIL_WORD = (r"(?!(?i:%s)\b)[A-Za-z][A-Za-z0-9]+(?:[./+#'-][A-Za-z0-9]+)*"
+              % "|".join(sorted(_TAIL_STOPWORDS, key=len, reverse=True)))
+_TAIL = rf"(?:{_SP}+(?:(?i:per){_SP}+)?{_TAIL_WORD}){{1,3}}"
+_TAIL_OPT = rf"(?:{_TAIL})?"
+
+# Rank = job-search value. Selection and display order follow it, so when a source
+# offers more than MAX_KEY_NUMBERS metrics the headline ones survive the cut.
+_HEADLINE, _SCOPE, _QUANTITY, _BARE = 0, 1, 2, 3
+
+# (rank, pattern, year_guard) — year_guard drops a core that is a bare 4-digit year
+# ("2019 to 2022" is a date range, not a metric).
+_NUM_PATTERNS: list[tuple[int, re.Pattern[str], bool]] = [
+    # 40%, 99.95%
+    (_HEADLINE, re.compile(_START + r"\d+(?:,\d{3})*(?:\.\d+)?%"), False),
+    # $1.2M, 3.5K users, 50M+ daily events — suffix attached to the digits.
+    (_HEADLINE, re.compile(_START + _NUM + r"[KMBkmb]\+?(?![A-Za-z0-9])" + _TAIL_OPT),
+     False),
+    # "50 M requests" — a SPACED magnitude must be uppercase and carry a unit noun,
+    # so "tier 3 B, C" is not read as 3 billion.
+    (_HEADLINE, re.compile(_START + _NUM + _SP + r"[KMB]\+?(?![A-Za-z0-9])" + _TAIL),
+     False),
+    # 1,200 to 430 pages / 120 – 45 seconds
+    (_HEADLINE, re.compile(_START + _NUM + rf"(?:{_SP}+(?i:to){_SP}+|{_SP}*[–—→]{_SP}*)"
+                           + _NUM + _TAIL_OPT), True),
+    # 8+ years
+    (_SCOPE, re.compile(_START + r"\d+(?:,\d{3})*\+?" + _SP + r"+(?i:years?)"), False),
+    # 99th percentile
+    (_SCOPE, re.compile(_START + r"\d+(?i:st|nd|rd|th)" + _SP + r"+(?i:percentile)"),
+     False),
+    # under two seconds
+    (_SCOPE, re.compile(r"\b(?i:under)" + _SP + r"+\w+" + _SP + r"+(?i:seconds?)"), False),
+    # 18 Kubernetes clusters / 54 minutes / 120 services / 14 APIs — a plain count
+    # is kept only WITH its unit, so a bare, meaningless "18" is never emitted.
+    (_QUANTITY, re.compile(_START + _NUM + r"\+?" + _TAIL), True),
+    # 30+ — last resort when the number carries no unit at all.
+    (_BARE, re.compile(_START + r"\d+(?:,\d{3})*\+"), False),
 ]
+
+_BARE_YEAR_RE = re.compile(r"(?:19|20)\d{2}(?![\d,.])")
+
+# A trailing adverb describes the verb, not the unit ("50M+ daily events reliably").
+# Frequency words are exempt — "daily"/"monthly" ARE part of what is counted.
+_ADVERB_TAIL_RE = re.compile(
+    r"(?:[ \t]+(?!(?:daily|weekly|biweekly|monthly|quarterly|yearly|annually|hourly"
+    r"|nightly)\b)[A-Za-z]+ly)+$", re.I)
+
+
+def _is_bare_year(text: str) -> bool:
+    """True when the metric's leading number is a plain 4-digit calendar year."""
+    if text.startswith("$"):
+        return False
+    return bool(_BARE_YEAR_RE.match(text))
+
+
+def _trim_adverb_tail(text: str) -> str:
+    """Drop a trailing adverb, but never trim a metric down to a bare number."""
+    trimmed = _ADVERB_TAIL_RE.sub("", text)
+    return trimmed if re.search(r"[A-Za-z%]", trimmed) else text
 
 
 def _key_numbers(text: str) -> list[str]:
-    """Distinct headline metrics found in the summary + experience bullets, in order."""
-    spans: list[tuple[int, int, str]] = []
-    for pat in _NUM_PATTERNS:
+    """Distinct metrics, highest job-search value first.
+
+    Every emitted metric keeps the unit or noun that gives it meaning — a number
+    is never separated from what it counts, and a unit is never inferred from a
+    neighbouring word (see the pattern notes above).
+    """
+    text = text.replace("**", "")   # bold markup must not split a number from its unit
+    spans: list[tuple[int, int, int, str]] = []
+    for rank, pat, year_guard in _NUM_PATTERNS:
         for m in pat.finditer(text):
-            spans.append((m.start(), m.end(), m.group().strip()))
-    # Longest-at-a-position first so "8+ years" wins over the nested "8+".
-    spans.sort(key=lambda s: (s[0], -(s[1] - s[0])))
-    kept: list[tuple[int, int, str]] = []
-    for start, end, txt in spans:
-        if any(ks <= start and end <= ke for ks, ke, _ in kept):
+            txt = _trim_adverb_tail(m.group().strip())
+            if year_guard and _is_bare_year(txt):
+                continue
+            spans.append((m.start(), m.end(), rank, txt))
+    # Highest-ranked reading of a position first ("8+ years" beats the plain-count
+    # reading "8+ years building scalable"), then the longest.
+    spans.sort(key=lambda s: (s[0], s[2], -(s[1] - s[0])))
+    kept: list[tuple[int, int, int, str]] = []
+    for start, end, rank, txt in spans:
+        # Overlapping spans are competing readings of the same number; the first
+        # (highest-ranked, longest) wins and the rest are dropped.
+        if any(start < ke and ks < end for ks, ke, _, _ in kept):
             continue
-        kept.append((start, end, txt))
+        kept.append((start, end, rank, txt))
     seen: set[str] = set()
     out: list[str] = []
-    for _, _, txt in sorted(kept, key=lambda s: s[0]):
+    for _, _, _, txt in sorted(kept, key=lambda s: (s[2], s[0])):
         key = txt.lower()
         if key not in seen:
             seen.add(key)
             out.append(txt)
-    return out[:12]
+    return out[:MAX_KEY_NUMBERS]
 
 
 def _numbers_text(baseline: dict, profile_md: str) -> str:

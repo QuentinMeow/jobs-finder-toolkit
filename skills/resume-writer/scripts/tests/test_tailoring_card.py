@@ -26,7 +26,13 @@ import yaml
 # tests/ -> scripts/ -> resume-writer/ -> skills/ -> .agents/ -> repo root
 _HERE = Path(__file__).resolve()
 REPO_ROOT = _HERE.parents[4]
-BUILD_SCRIPT = _HERE.parents[1] / "build_tailoring_card.py"
+SCRIPTS = _HERE.parents[1]
+BUILD_SCRIPT = SCRIPTS / "build_tailoring_card.py"
+for _p in (SCRIPTS, SCRIPTS / "_vendor"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+import build_tailoring_card  # noqa: E402  (import after the sys.path bootstrap)
 PROFILE_FIXTURE = REPO_ROOT / "examples" / "me" / "career" / "profile.example.md"
 BASELINE_FIXTURE = (REPO_ROOT / "examples" / "me" / "career" / "resume"
                     / "baseline.example.yaml")
@@ -138,6 +144,29 @@ class TailoringCardTests(unittest.TestCase):
         self.assertIn("Software Engineer", text)          # target title
         self.assertIn("Payments platform microservices migration", text)  # locked title
         self.assertIn("40%", text)                        # a key number
+
+    def test_card_key_numbers_keep_their_units(self):
+        # #260 end to end: the corrupted units must not reach a rendered card.
+        tmp, cfg = self._setup()
+        baseline = yaml.safe_load((tmp / "baseline.yaml").read_text())
+        baseline["summary_bullets"] = [
+            "Operated 18 Kubernetes clusters at 99.95% availability",
+            "Cut incident recovery from 54 minutes to 31 minutes",
+            "Supported 120 services and 14 APIs, trimming pages from "
+            "1,200 to 430 pages a quarter",
+        ]
+        (tmp / "baseline.yaml").write_text(
+            yaml.safe_dump(baseline, sort_keys=False, allow_unicode=True),
+            encoding="utf-8")
+        self.assertEqual(self._run(cfg)[0], 0)
+        lines = self._card(tmp).read_text(encoding="utf-8").splitlines()
+        head = lines.index("## Key numbers")
+        key_line = next(l for l in lines[head + 1:] if l.strip())
+        self.assertIn("18 Kubernetes clusters", key_line)
+        self.assertIn("54 minutes", key_line)
+        self.assertIn("1,200 to 430 pages", key_line)
+        for fragment in ("18 K,", "54 m,", "18 K ", " 54 m,"):
+            self.assertNotIn(fragment, key_line)
 
     def test_multi_employer_baseline_lists_every_locked_job_and_metric(self):
         tmp, cfg = self._setup()
@@ -287,6 +316,140 @@ class TailoringCardTests(unittest.TestCase):
         # Changed sources: default build rebuilds without --force.
         rc, out, _ = self._run(cfg)
         self.assertEqual(rc, 0, out)
+
+
+class KeyNumberUnitTests(unittest.TestCase):
+    """Issue #260 — a metric must never lose (or invent) its unit.
+
+    The old magnitude pattern was compiled case-insensitively, so the ``K``/``M``
+    of the FOLLOWING WORD was read as a magnitude suffix: ``18 Kubernetes
+    clusters`` became ``18 K`` and ``54 minutes`` became ``54 m``. The card is the
+    default context for every resume draft and ``check.py`` cannot catch it (the
+    digits are real), so a wrong unit ships as a silent 1000x overclaim.
+    """
+
+    # A single trailing letter after the digits is the corruption signature
+    # ("18 K", "54 m") — no correct metric ever looks like that.
+    FRAGMENT_RE = re.compile(r"^\$?\d[\d,]*(?:\.\d+)?\s?[A-Za-z]$")
+
+    def nums(self, text: str) -> list[str]:
+        return build_tailoring_card._key_numbers(text)
+
+    def assertNoBareUnitFragment(self, values: list[str]):
+        for value in values:
+            self.assertNotRegex(
+                value, self.FRAGMENT_RE,
+                f"{value!r} is a number glued to a bare unit letter (#260)")
+
+    # ── bare units that are really the next word ─────────────
+    def test_word_initial_is_never_read_as_a_magnitude(self):
+        got = self.nums("Operated 18 Kubernetes clusters across three regions.")
+        self.assertEqual(got, ["18 Kubernetes clusters"])
+        self.assertNoBareUnitFragment(got)
+
+    def test_minutes_are_not_read_as_millions(self):
+        got = self.nums("Cut incident recovery from 54 minutes to 31 minutes.")
+        self.assertEqual(got, ["54 minutes", "31 minutes"])
+        self.assertNoBareUnitFragment(got)
+
+    def test_qa_word_initials_keep_their_nouns(self):
+        got = self.nums("Wrote 24 manual test cases, filed 18 defect reports, "
+                        "and automated 12 local smoke tests.")
+        self.assertEqual(got, ["24 manual test cases", "18 defect reports",
+                               "12 local smoke tests"])
+        self.assertNoBareUnitFragment(got)
+
+    def test_lowercase_unit_is_not_a_magnitude(self):
+        got = self.nums("Held p99 latency under 250 ms during peak and rode "
+                        "an 18 km commute.")
+        self.assertNoBareUnitFragment(got)
+        self.assertIn("250 ms", got)
+        self.assertNotIn("18 k", [v.lower() for v in got])
+        self.assertTrue(any(v.startswith("18 km") for v in got), got)
+
+    # ── real magnitudes must survive ─────────────────────────
+    def test_attached_magnitudes_are_kept(self):
+        self.assertEqual(self.nums("Owned a $1.2M cloud budget."),
+                         ["$1.2M cloud budget"])
+        self.assertEqual(self.nums("Raised $1.2M in seed funding."), ["$1.2M"])
+        self.assertEqual(self.nums("Grew to 3.5K users."), ["3.5K users"])
+        self.assertEqual(self.nums("Processed 50M+ daily events reliably."),
+                         ["50M+ daily events"])
+        self.assertEqual(self.nums("Negotiated an $18K annual discount."),
+                         ["$18K annual discount"])
+
+    def test_spaced_magnitude_needs_a_unit_noun(self):
+        # "50 M requests" is a real magnitude; "Tier 3 B, C" is not.
+        self.assertEqual(self.nums("Served 50 M requests a day."), ["50 M requests"])
+        self.assertNoBareUnitFragment(self.nums("Audited tier 3 B, C, and D controls."))
+
+    def test_trailing_adverb_dropped_but_frequency_kept(self):
+        self.assertEqual(self.nums("Processed 50M+ daily events reliably."),
+                         ["50M+ daily events"])
+        self.assertEqual(self.nums("Filed 12 monthly reports."), ["12 monthly reports"])
+        # Trimming must never leave a bare, unit-less number behind.
+        self.assertEqual(self.nums("Shipped 12 quarterly."), ["12 quarterly"])
+
+    # ── percentages / percentiles / durations ────────────────
+    def test_percentages_are_intact(self):
+        got = self.nums("Reduced failed payments by 40% while holding 99.95% "
+                        "availability at the 99th percentile.")
+        self.assertIn("40%", got)
+        self.assertIn("99.95%", got)
+        self.assertIn("99th percentile", got)
+        self.assertNoBareUnitFragment(got)
+
+    def test_years_and_under_seconds_keep_their_unit(self):
+        got = self.nums("Senior engineer with 8+ years shipping services "
+                        "under two seconds end to end.")
+        self.assertIn("8+ years", got)
+        self.assertIn("under two seconds", got)
+
+    # ── ranges ───────────────────────────────────────────────
+    def test_range_keeps_both_endpoints_and_the_unit(self):
+        got = self.nums("Cut the on-call load from 1,200 to 430 pages a quarter.")
+        self.assertIn("1,200 to 430 pages", got)
+        # The endpoint alone must not also be queued as a separate metric.
+        self.assertNotIn("430 pages", got)
+
+    def test_dash_range_and_year_range_guard(self):
+        self.assertIn("120 – 45 seconds",
+                      self.nums("Trimmed the job from 120 – 45 seconds."))
+        # A bare year range is a date, not a metric.
+        self.assertEqual(self.nums("Owned the platform from 2019 to 2022."), [])
+
+    # ── omitted-metric regression + ranking ──────────────────
+    def test_plain_counts_are_no_longer_dropped(self):
+        got = self.nums("Supported 120 services and 14 APIs for the platform.")
+        self.assertEqual(got, ["120 services", "14 APIs"])
+
+    def test_headline_metrics_rank_above_plain_counts(self):
+        got = self.nums("Supported 120 services and 14 APIs, cutting error "
+                        "rates by 40%.")
+        self.assertEqual(got[0], "40%")
+
+    def test_selection_is_deterministic_across_repeat_builds(self):
+        text = ("Operated 18 Kubernetes clusters at 99.95% availability, cut "
+                "MTTR from 54 minutes to 31 minutes, and reduced pages from "
+                "1,200 to 430 pages across 120 services and 14 APIs.")
+        first = self.nums(text)
+        self.assertEqual(first, self.nums(text))
+        self.assertNoBareUnitFragment(first)
+        self.assertIn("18 Kubernetes clusters", first)
+        self.assertIn("1,200 to 430 pages", first)
+
+    def test_a_tail_never_crosses_a_line_break(self):
+        got = self.nums("Reviewed 12\nKubernetes hardened every service.")
+        self.assertNotIn("12 Kubernetes hardened every", got)
+
+    def test_example_fixture_card_has_no_bare_unit_fragments(self):
+        baseline = yaml.safe_load(BASELINE_FIXTURE.read_text(encoding="utf-8"))
+        profile = PROFILE_FIXTURE.read_text(encoding="utf-8")
+        got = build_tailoring_card._key_numbers(
+            build_tailoring_card._numbers_text(baseline, profile))
+        self.assertNoBareUnitFragment(got)
+        self.assertIn("40%", got)
+        self.assertIn("under two seconds", got)
 
 
 if __name__ == "__main__":

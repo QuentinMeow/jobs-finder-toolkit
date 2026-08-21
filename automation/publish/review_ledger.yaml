@@ -3647,3 +3647,52 @@
   files: 14
   digest: sha256:198d9c781b90335a
   finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:91bc32a2b2ad0644
+  finding: 'Reviewed the tailoring-card key-number extractor rewrite and its tests.
+    Every string is either generic tooling vocabulary or the public fictional
+    example fixture; no real identity, employer, school, salary, private item name,
+    or dated personal job-hunt content is present.'
+- base: 48a55cdb
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:d5896ecb3ba51f4c
+  finding: 'Reviewed the skills_diff metadata filter, compound/concept matching and
+    their tests. Company names, URLs and addresses in the fixtures are invented
+    example.com placeholders; no real identity, employer, school, salary, private
+    item name, or dated personal job-hunt content is present. The one "salary" match
+    is a metadata label in a regex, not a value.'
+- base: fb49ee7a
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 1
+  digest: sha256:0121febb3263e2ee
+  finding: 'Reviewed the backlog task filing the documentation follow-up for the
+    skills_diff precision rules. It names only public script paths and public skill
+    documentation; no real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content is present.'
+- base: 11f2e340
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 2
+  digest: sha256:778b4160c4418870
+  finding: 'Reviewed the city/state guard that keeps an uppercase conjunction ("OR")
+    from being read as a postal abbreviation, plus its test. Public tooling text and
+    invented example strings only; no real identity, employer, school, salary,
+    private item name, or dated personal job-hunt content is present.'
+- base: a0d2749d
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
+- base: c4ad11ff
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 27
+  digest: sha256:3315aaaf6483c2e0
+  finding: 'Merge of origin/main. Covered files are byte-identical to origin/main where they are already published; no new public content. Ledger conflict resolved by whole-row append, not a line union.'
