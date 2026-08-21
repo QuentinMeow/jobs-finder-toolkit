@@ -3485,3 +3485,14 @@
     repository behavior and fictional aggregate Git state; no real identity,
     employer, school, salary, private item name, or dated personal job-hunt content
     is present.'
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 3
+  digest: sha256:fed09256aa0a097a
+  finding: 'Reviewed the workspace dashboard''s new lifecycle derivation (branch
+    descriptions, derived state, wall-clock ages, the merge-tree containment probe,
+    --json/--stale/--pr) and its two new test modules. Fixture identities are the
+    invented "Workspace Test <workspace@example.invalid>"; every path is a temporary
+    directory. No real identity, employer, school, salary, private item name, or
+    dated personal job-hunt content is present.'
