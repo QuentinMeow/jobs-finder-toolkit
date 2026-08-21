@@ -143,17 +143,6 @@ class ProposalTests(PlannerTestCase):
         self.assertTrue(any("no remote-tracking ref" in reason
                             for reason in row["keep_reasons"]))
 
-    def test_a_branch_named_by_a_review_ledger_row_is_kept(self) -> None:
-        ledger = self.root / cleanup.REVIEW_LEDGER
-        ledger.parent.mkdir(parents=True, exist_ok=True)
-        ledger.write_text(
-            "- commit: abcdef12\n"
-            "  finding: 'reviewed on the true-merge branch'\n", encoding="utf-8")
-        self.run_planner("--fetch")
-        row = {r["name"]: r for r in self.plan_json()["branches"]}["true-merge"]
-        self.assertFalse(row["proposed"])
-        self.assertIn(cleanup.KEEP_LEDGER, row["keep_reasons"])
-
     def test_a_wedged_branch_is_kept_until_its_registration_is_pruned(self) -> None:
         self.run_planner("--fetch")
         rows = {r["name"]: r for r in self.plan_json()["branches"]}
@@ -435,7 +424,16 @@ class MainWorktreeScenario(F.GitTestCase):
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
+            # Each item is now its own guarded block, so the `mv` a shell runs
+            # sits inside an `if`/`elif` CONDITION rather than on a line of its
+            # own. Peel the keywords instead of matching only bare lines — a
+            # helper that quietly stopped finding the moves would let every
+            # containment assertion below pass by finding nothing.
+            if stripped.endswith("; then"):
+                stripped = stripped[: -len("; then")]
             parts = shlex.split(stripped)
+            while parts and parts[0] in ("if", "elif", "else", "then", "!"):
+                parts.pop(0)
             if parts and parts[0] == "mv":
                 self.assertEqual(len(parts), 3, f"unexpected mv shape: {line}")
                 moves.append((Path(parts[1]), Path(parts[2])))
@@ -1081,6 +1079,371 @@ class HarnessWorktreePreconditionTests(HarnessWorktreeScenario):
                 self.assertNotIn(forbidden, joined)
         self.assertIn("mv ", joined)
         self.assert_root_is_never_moved(script)
+
+
+# ── the review ledger: reachability, never a name ────────────────────────────
+#
+# THE BUG THESE PIN. The keep rule was `branch.name in <the ledger's raw text>`.
+# Measured on the real repository, that kept `fix/filter-pipeline-reports`
+# forever because one row's `finding:` prose says "Merge of origin/main into
+# fix/filter-pipeline-reports…" — while its tip is an ANCESTOR of `origin/main`
+# and it holds zero commits `origin/main` does not, so no row could degrade.
+# Two defects in one: the wrong question (a name carries no object; only
+# reachability decides whether a row becomes UNKNOWN OBJECT), and a match set
+# polluted with DIRECTORY PATHS — `docs/handbook`, `tasks/0` and friends all
+# occur in that file and would pin a branch named after any of them.
+#
+# The feedback loop is what makes it compound: every branch that lands writes a
+# ledger row, and an agent writing that row names the branch it is on. Under a
+# name match, the ritual every branch performs on its way in is what makes it
+# unretirable on its way out.
+
+
+class ReviewLedgerReachabilityTests(PlannerTestCase):
+    def write_ledger(self, text: str) -> None:
+        ledger = self.root / cleanup.REVIEW_LEDGER
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text(text, encoding="utf-8")
+
+    def branch_rows(self) -> dict:
+        return {row["name"]: row for row in self.plan_json()["branches"]}
+
+    def ledger_reasons(self, row: dict) -> list[str]:
+        return [reason for reason in row["keep_reasons"]
+                if "review ledger" in reason or "review-ledger" in reason]
+
+    def test_a_branch_named_only_in_a_finding_string_is_proposed(self) -> None:
+        # The live instance, reduced: the ledger's prose names the branch, and
+        # the commit that row is KEYED to is one `origin/main` already reaches.
+        # Nothing about deleting the branch can turn that row into UNKNOWN
+        # OBJECT, so the name must buy it nothing.
+        base = self.out(self.root, "rev-parse", "refs/remotes/origin/main")
+        self.write_ledger(
+            f"- base: {base[:8]}\n"
+            f"  reviewed_by: agent\n"
+            f"  finding: 'Merge of origin/main into true-merge. Every covered\n"
+            f"    file arrives byte-identical from origin/main.'\n")
+        self.run_planner("--fetch")
+        row = self.branch_rows()["true-merge"]
+        self.assertTrue(row["proposed"],
+                        f"kept on a bare name match: {row['keep_reasons']}")
+        self.assertEqual(self.ledger_reasons(row), [])
+
+    def test_a_branch_holding_a_ledger_commit_the_base_cannot_reach_is_kept(
+            self) -> None:
+        # The hazard the rule actually exists for. `squash-merge`'s CONTENT is
+        # in main under a different commit, so the containment probe passes and
+        # its own commit is reachable from main by nothing. Push it so every
+        # other precondition clears, and it is proposable — until the ledger
+        # names that commit, at which point deleting the branch is what would
+        # make the row uninspectable in a fresh clone.
+        self.git(self.root, "push", "-q", "-u", "origin", "squash-merge")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+        tip = self.out(self.root, "rev-parse", "refs/heads/squash-merge")
+
+        self.run_planner("--fetch")
+        control = self.branch_rows()["squash-merge"]
+        self.assertTrue(control["proposed"],
+                        f"the fixture never reaches the ledger rule: "
+                        f"{control['keep_reasons']}")
+
+        self.write_ledger(f"- base: {tip[:8]}\n"
+                          f"  reviewed_by: agent\n"
+                          f"  finding: 'nothing here names any branch'\n")
+        self.run_planner("--fetch")
+        row = self.branch_rows()["squash-merge"]
+        self.assertFalse(row["proposed"])
+        self.assertTrue(self.ledger_reasons(row), row["keep_reasons"])
+        self.assertIn(tip[:8], " ".join(row["keep_reasons"]),
+                      "the reason must name the commit that is at risk")
+
+    def test_directory_paths_in_the_ledger_pin_nothing(self) -> None:
+        # `grep -oE '(fix|feat|docs|tasks|codex)/[a-z0-9-]+'` over the real
+        # ledger returns `docs/handbook`, `docs/designs`, `docs/roadmap`,
+        # `tasks/0`, `tasks/3` and `tasks/4` alongside actual branch names. A
+        # substring rule cannot tell those apart; a reachability rule never asks.
+        paths = ("docs/handbook", "docs/roadmap", "tasks/0", "codex/landed")
+        for name in paths:
+            self.git(self.root, "branch", name, "main")
+        self.write_ledger(
+            "- base: 0000000\n"
+            "  finding: 'Read docs/handbook/public-private-split.md and\n"
+            "    docs/roadmap/current-state.md; filed under tasks/0_backlog/ and\n"
+            "    reviewed on codex/landed.'\n")
+        self.run_planner("--fetch")
+        rows = self.branch_rows()
+        for name in paths:
+            with self.subTest(branch=name):
+                self.assertIn(name, rows)
+                self.assertTrue(
+                    rows[name]["proposed"],
+                    f"a directory path in the ledger pinned {name}: "
+                    f"{rows[name]['keep_reasons']}")
+
+    def test_an_absent_ledger_is_not_an_unanswerable_probe(self) -> None:
+        # Fail-closed must fire on "git could not say", never on "there is no
+        # ledger" — a public export omits that file, and a planner that kept
+        # every branch there would be a no-op wearing a safety argument.
+        self.assertFalse((self.root / cleanup.REVIEW_LEDGER).exists())
+        self.run_planner("--fetch")
+        row = self.branch_rows()["true-merge"]
+        self.assertTrue(row["proposed"], row["keep_reasons"])
+
+
+# ── `git branch -d` asks a different question than the containment probe ─────
+#
+# THE BUG THESE PIN. The planner's merged-test asks "does the BASE REF already
+# have this content". `git branch -d` asks "is this branch an ancestor of its
+# own UPSTREAM, or of HEAD when it has none" (builtin/branch.c, `branch_merged`).
+# Measured on the real repository: `fix/cleanup-worktree-gaps` held zero commits
+# `origin/main` did not, stood one commit ahead of
+# `origin/fix/cleanup-worktree-gaps`, was PROPOSED, and the emitted script died
+# on `error: the branch … is not fully merged`.
+#
+# There is no non-forcing repair, and that was checked rather than assumed:
+# `-D`, `update-ref -d`, deleting the tracking ref and `--unset-upstream` all
+# work only by removing the evidence git consults, and the tracking ref here is
+# not stale — the branch is still on the remote and the next fetch restores it.
+# So the outcome is an honest KEEP that names the upstream and the remedies that
+# belong to the owner.
+
+
+class DeletableBranchesScenario(F.GitTestCase):
+    """A toolkit repo whose topic branches all clear every precondition."""
+
+    def build_repo(self, *names: str) -> None:
+        self.root = self.scratch / "toolkit"
+        self.root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.root)],
+                       check=True, env=dict(os.environ))
+        F.add_toolkit_markers(self.root)
+        F.write(self.root / ".gitignore", "local/\n")
+        F.write(self.root / "seed.txt", "seed\n")
+        self.commit(self.root, "base commit")
+        F.add_origin(self, self.root)
+        for name in names:
+            self.land(name)
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+    def land(self, name: str) -> str:
+        """A branch that really landed: pushed with an upstream, then merged."""
+        self.git(self.root, "switch", "-q", "-c", name, "main")
+        F.write(self.root / f"{cleanup.slug(name)}.txt", f"work on {name}\n")
+        tip = self.commit(self.root, f"{name}: the work")
+        self.git(self.root, "push", "-q", "-u", "origin", name)
+        self.git(self.root, "switch", "-q", "main")
+        self.git(self.root, "merge", "-q", "--no-ff", name, "-m", f"Merge {name}")
+        return tip
+
+    def plan(self, *argv: str) -> tuple[int, dict, str, Path]:
+        buffer = io.StringIO()
+        code = cleanup.main(
+            ["--repo-root", str(self.root), "--fetch", *argv], out=buffer)
+        produced = sorted((self.root / "local" / "workspace").glob("cleanup-*.json"))
+        self.assertTrue(produced, "no plan was written")
+        plan = json.loads(produced[-1].read_text(encoding="utf-8"))
+        script_path = produced[-1].with_suffix(".sh")
+        return code, plan, script_path.read_text(encoding="utf-8"), script_path
+
+    def deletions_in(self, script: str) -> list[str]:
+        """Every branch a shell running this script would actually try to delete."""
+        names = []
+        for line in script.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if stripped.endswith("; then"):
+                stripped = stripped[: -len("; then")]
+            parts = shlex.split(stripped)
+            while parts and parts[0] in ("if", "elif", "else", "then", "!"):
+                parts.pop(0)
+            if parts[:3] == ["git", "branch", "-d"]:
+                names.append(parts[3])
+        return names
+
+    def branch_rows(self, plan: dict) -> dict:
+        return {row["name"]: row for row in plan["branches"]}
+
+    def run_script(self, path: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["sh", str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, check=False, env=dict(os.environ))
+
+    def local_branches(self) -> set[str]:
+        return set(self.out(self.root, "for-each-ref", "--format=%(refname:short)",
+                            "refs/heads").split())
+
+
+class DeleteRefusalIsPredictedTests(DeletableBranchesScenario):
+    def test_a_branch_ahead_of_its_own_upstream_is_kept_not_proposed(self) -> None:
+        # The live shape: the local branch is moved onto the merge commit, so it
+        # holds NO commit `origin/main` lacks and is still one ahead of
+        # `origin/<branch>`. Content-contained, fully pushed — and refused by -d.
+        self.build_repo("codex/landed")
+        self.git(self.root, "branch", "-f", "codex/landed", "main")
+        self.assertEqual(
+            self.out(self.root, "rev-list", "codex/landed",
+                     "--not", "refs/remotes/origin/main"), "",
+            "the fixture must hold no commit origin/main lacks")
+        self.assertEqual(
+            self.out(self.root, "rev-list", "--left-right", "--count",
+                     "codex/landed...refs/remotes/origin/codex/landed"), "1\t0")
+
+        _, plan, script, _ = self.plan()
+        row = self.branch_rows(plan)["codex/landed"]
+        self.assertFalse(row["proposed"],
+                         "proposed a branch whose `git branch -d` is refused")
+        reasons = " ".join(row["keep_reasons"])
+        self.assertIn("refs/remotes/origin/codex/landed", reasons,
+                      "the reason must name the upstream git judges -d against")
+        self.assertIn("upstream", reasons)
+        self.assertNotIn("codex/landed", self.deletions_in(script))
+
+    def test_a_branch_with_no_upstream_that_head_cannot_reach_is_kept(self) -> None:
+        # The other arm of git's rule. `git push origin <b>` without `-u` writes
+        # the remote-tracking ref (so every commit IS on a remote) and configures
+        # no upstream, so -d falls back to HEAD — which a squash-merged branch is
+        # not an ancestor of, however completely main holds its content.
+        self.build_repo("codex/landed")
+        self.git(self.root, "switch", "-q", "-c", "codex/squashed", "main")
+        F.write(self.root / "squashed.txt", "squashed work\n")
+        self.commit(self.root, "codex/squashed: the work")
+        self.git(self.root, "push", "-q", "origin", "codex/squashed")
+        self.git(self.root, "switch", "-q", "main")
+        self.git(self.root, "merge", "-q", "--squash", "codex/squashed")
+        self.commit(self.root, "codex/squashed landed as one commit")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        _, plan, script, _ = self.plan()
+        row = self.branch_rows(plan)["codex/squashed"]
+        self.assertEqual(row["merged"], "merged", "the content IS in the base")
+        self.assertEqual(row["unpushed_commits"], 0, "every commit is on a remote")
+        self.assertFalse(row["proposed"], row["keep_reasons"])
+        self.assertIn("HEAD", " ".join(row["keep_reasons"]))
+        self.assertNotIn("codex/squashed", self.deletions_in(script))
+
+    def test_every_deletion_the_script_emits_actually_succeeds(self) -> None:
+        # The property, asserted the only way that settles it: run the script
+        # the owner would run and read git's answer. Against the unpredicted
+        # code this exits non-zero on the very first refusal.
+        self.build_repo("codex/one", "codex/two")
+        self.git(self.root, "branch", "-f", "codex/two", "main")   # -d will refuse
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        _, plan, script, path = self.plan()
+        self.assertEqual(self.deletions_in(script), ["codex/one"],
+                         "the script must emit exactly the deletions git accepts")
+        result = self.run_script(path)
+        self.assertEqual(result.returncode, 0,
+                         f"the emitted script failed:\n{result.stdout}\n{result.stderr}")
+        self.assertNotIn("codex/one", self.local_branches())
+        self.assertIn("codex/two", self.local_branches())
+
+
+# ── one refusal must not cancel the items after it ───────────────────────────
+#
+# THE BUG THESE PIN. The emitted script was a bare `set -eu` list. When the
+# unpredicted `git branch -d` above was refused, the shell exited on that line
+# and the two remaining, perfectly safe deletions never ran — leaving the
+# operator a failure that named neither what had worked nor what had not. What
+# must stay fatal is a backup ref that does not read back: that still stops ITS
+# OWN item's deletion, because a deletion standing behind nothing is the hazard
+# the backup exists for.
+
+
+class OneRefusalDoesNotCancelTheRestTests(DeletableBranchesScenario):
+    def sabotage_middle(self, script: str) -> str:
+        """Make the MIDDLE emitted deletion refuse at RUN time, not plan time.
+
+        Prediction now stops a doomed `-d` being written at all, so a refusal
+        can only be produced the way the real gap produces one: the plan is
+        written, and the branch moves before the owner runs the script.
+        """
+        names = self.deletions_in(script)
+        self.assertEqual(len(names), 3, f"expected three deletions, got {names}")
+        target = names[1]
+        self.git(self.root, "branch", "-f", target, "refs/heads/codex/spare")
+        return target
+
+    def test_the_two_safe_items_still_run_and_the_run_still_fails(self) -> None:
+        self.build_repo("codex/one", "codex/two", "codex/three")
+        self.git(self.root, "switch", "-q", "-c", "codex/spare", "main")
+        F.write(self.root / "spare.txt", "never merged\n")
+        self.commit(self.root, "codex/spare: unmerged work")
+        self.git(self.root, "switch", "-q", "main")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        _, _, script, path = self.plan()
+        refused = self.sabotage_middle(script)
+        safe = [name for name in self.deletions_in(script) if name != refused]
+
+        result = self.run_script(path)
+        self.assertNotEqual(result.returncode, 0,
+                            "a refusal must never be reported as success")
+        survivors = self.local_branches()
+        for name in safe:
+            with self.subTest(branch=name):
+                self.assertNotIn(
+                    name, survivors,
+                    f"{name} was independent of {refused} and never ran")
+        self.assertIn(refused, survivors, "the refused branch must survive")
+
+        combined = result.stdout + result.stderr
+        self.assertIn("workspace cleanup summary", combined)
+        self.assertIn(f"REFUSED  branch {refused}", combined,
+                      f"the summary must name the refusal:\n{combined}")
+        for name in safe:
+            with self.subTest(branch=name):
+                self.assertIn(f"done     branch {name}", combined,
+                              f"the summary must name what succeeded:\n{combined}")
+
+    def test_a_backup_ref_that_cannot_be_written_still_stops_its_own_delete(
+            self) -> None:
+        # The line that may NOT become advisory. A ref cannot be created where a
+        # directory of refs already stands, so pre-creating a child of one
+        # item's backup ref makes its `update-ref` fail — and that item's
+        # `git branch -d` must not run, while the others still do.
+        self.build_repo("codex/one", "codex/two", "codex/three")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+
+        _, _, script, path = self.plan()
+        names = self.deletions_in(script)
+        self.assertEqual(len(names), 3, names)
+        blocked = names[0]
+        ref = [row["backup_ref"] for row in json.loads(
+            path.with_suffix(".json").read_text(encoding="utf-8"))["branches"]
+            if row["name"] == blocked][0]
+        self.git(self.root, "update-ref", f"{ref}/occupied",
+                 self.out(self.root, "rev-parse", "main"))
+
+        result = self.run_script(path)
+        self.assertNotEqual(result.returncode, 0)
+        survivors = self.local_branches()
+        self.assertIn(blocked, survivors,
+                      "a branch whose backup ref failed was deleted anyway")
+        for name in names[1:]:
+            with self.subTest(branch=name):
+                self.assertNotIn(name, survivors)
+        self.assertIn("backup ref did not read back",
+                      result.stdout + result.stderr)
+
+    def test_a_plan_with_nothing_refused_still_exits_zero(self) -> None:
+        # The other half of "exit non-zero if anything refused": a clean run
+        # must not start failing because the script grew a summary.
+        self.build_repo("codex/one", "codex/two")
+        self.git(self.root, "push", "-q", "origin", "main")
+        self.git(self.root, "fetch", "-q", "--prune", "origin")
+        _, _, script, path = self.plan()
+        result = self.run_script(path)
+        self.assertEqual(result.returncode, 0,
+                         f"{result.stdout}\n{result.stderr}")
+        self.assertIn("every item in this plan completed.", result.stdout)
+        self.assertFalse({"codex/one", "codex/two"} & self.local_branches())
 
 
 class MoveContainmentUnitTests(F.GitTestCase):

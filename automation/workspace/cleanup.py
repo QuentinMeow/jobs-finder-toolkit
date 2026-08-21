@@ -24,15 +24,24 @@ reason is printed):
    gone, which a lock can hide from ``prunable``;
 4. ``git rev-list <branch> --not --remotes`` is empty: every commit exists on a
    remote. A squash-merged branch fails this and is kept, deliberately;
-5. no row of ``automation/publish/review_ledger.yaml`` names it — deleting such
-   a branch degrades that row from NOT_ANCESTOR to UNKNOWN OBJECT in a fresh
-   clone;
-6. a backup ref resolves. The reflog does NOT protect worktree-only commits
+5. deleting it would not orphan a COMMIT that ``automation/publish/review_ledger.yaml``
+   names. The question is REACHABILITY, never whether the branch's name appears
+   in that file: a row degrades from NOT_ANCESTOR to UNKNOWN OBJECT when the
+   commit its ``base:``/``commit:`` field names stops being reachable in a fresh
+   clone, and a branch whose commits are all reachable from the base ref cannot
+   cause that however often its name is written in someone's prose;
+6. ``git branch -d`` will actually accept it. That is a DIFFERENT question from
+   point 1: git judges ``-d`` against the branch's own upstream when one is
+   configured and its tracking ref resolves, and against ``HEAD`` otherwise —
+   never against the base ref this planner tests. A branch whose content is in
+   ``origin/main`` but which is ahead of a live ``origin/<branch>`` is refused by
+   ``-d``, so it is KEPT here rather than emitted as a command that fails;
+7. a backup ref resolves. The reflog does NOT protect worktree-only commits
    (measured: 0 hits after ``worktree remove --force`` + ``branch -D``);
    ``refs/agent-trash/<ts>/<branch>`` makes the tip reachable, so it survives
    even ``git gc --prune=now``.
 
-A BRANCH TIP IS NOT THE ONLY THING A RETIREMENT CAN ORPHAN. Point 6 above was
+A BRANCH TIP IS NOT THE ONLY THING A RETIREMENT CAN ORPHAN. Point 7 above was
 written for branches and, for a long time, only implemented for branches — while
 a worktree carries its OWN reflog at ``.git/worktrees/<id>/logs/HEAD``, and the
 emitted ``mv`` + ``git worktree prune`` deletes that whole administrative
@@ -70,6 +79,20 @@ and in no other — asked of each worktree, so it holds from anywhere; it is
 unioned with two more signals; an unanswerable probe keeps; and the emitter
 re-checks it independently, because ``build_script`` is the only place a
 destructive line is ever written and that is where "impossible" has to be true.
+
+ONE ITEM REFUSING MUST NOT CANCEL THE INDEPENDENT ITEMS AFTER IT. The emitted
+script used to be a bare ``set -eu`` list, so the first ``git branch -d`` that
+declined ended the run: measured on this repository, one refusal left two
+perfectly safe deletions unperformed and handed the operator a failure with no
+statement of which items had been fine. Each item is now its own guarded block —
+a refusal is RECORDED and the next item still runs — while everything that is
+not an item stays fatal (``cd`` into the root, ``mkdir -p`` of the trash
+directory, an unset variable). What may never become per-item is the backup ref:
+a pin that does not read back still stops THAT item's ``git branch -d`` or
+``mv``, because a deletion standing behind nothing is the failure this whole
+design exists to prevent. The script prints a summary naming every item that
+completed and every item that refused, and exits 1 if anything refused, so a
+refusal can never be read as success.
 
 Exit codes:
     0  fresh remote knowledge and every proposal cleared every precondition
@@ -171,7 +194,13 @@ KEEP_WEDGED = ("a worktree registration still owns it — `git worktree prune` "
 KEEP_UNMERGED = "main does not contain its content"
 KEEP_UNKNOWN_MERGE = "the merge probe could not answer for this ref"
 KEEP_UNPUSHED = "commit(s) reachable from no remote-tracking ref"
-KEEP_LEDGER = "a review-ledger row names it"
+KEEP_LEDGER = (
+    "deleting it would orphan a commit the review ledger names — that row "
+    "degrades to UNKNOWN OBJECT in a fresh clone. Ledger commit")
+KEEP_LEDGER_UNREADABLE = (
+    "the review ledger names commit(s) git could not judge for reachability, "
+    "and an unanswerable probe about losing a reviewed commit is treated as yes")
+KEEP_DELETE_REFUSED = "`git branch -d` would refuse it"
 KEEP_UNSAFE_NAME = "the name would need shell quoting this tool will not guess"
 KEEP_NO_BACKUP = "the backup ref did not resolve"
 KEEP_HARNESS = (
@@ -372,18 +401,170 @@ def resolve_base(repo: Path, fetched: bool) -> str | None:
     return None
 
 
-def ledger_names(repo: Path) -> str:
-    """The review ledger's raw text, or "" — matched as a substring, on purpose.
+# ── the review ledger, and what deleting a branch can actually cost it ───────
+#
+# WHAT THE RULE IS FOR. A ledger row is keyed to a COMMIT (`base:`, `commit:`).
+# `automation/publish/review_gate.py` reports a row whose commit it cannot find
+# as `UNKNOWN OBJECT — not in this checkout at all`, and a fresh clone carries
+# only REACHABLE objects, so a branch that is the last thing holding a
+# ledger-named commit takes that row's inspectability with it when it is
+# deleted. That, and only that, is the hazard.
+#
+# WHAT THE RULE WAS. `branch.name in <the ledger's raw text>` — a substring
+# search over the whole file. It answered a question nobody had:
+#
+#   * IT WAS THE WRONG QUESTION. A name appearing in a `finding:` string carries
+#     no object. Measured on this repository: `fix/filter-pipeline-reports` was
+#     kept forever because one row's prose reads "Merge of origin/main into
+#     fix/filter-pipeline-reports…", while its tip is an ANCESTOR of
+#     `origin/main` and it holds zero commits `origin/main` does not. No row
+#     could degrade, and the keep was pure cost.
+#   * THE FEEDBACK LOOP THAT MADE IT. Every branch that lands here writes a
+#     ledger row, and an agent writing that row naturally names the branch it is
+#     on. Under a name match, WRITING A BRANCH'S NAME INTO A `finding:` PINS
+#     THAT BRANCH FOREVER — the tool that exists to stop branch accumulation was
+#     being fed by the one ritual every branch performs on its way in.
+#   * THE MATCH SET WAS POLLUTED. Raw-text substring matching does not even
+#     restrict itself to branch names: `docs/handbook`, `docs/designs`,
+#     `docs/roadmap`, `tasks/0`, `tasks/3`, `tasks/4` all occur in that file as
+#     DIRECTORY PATHS, and `main` occurs inside every `origin/main`. A branch
+#     named for a directory the ledger happens to mention was unretirable for a
+#     reason that had nothing to do with any commit.
+#
+# So the ledger is read for COMMITS and matched against nothing else. Over-keep
+# on ambiguity — an unresolvable probe keeps — but never on a name coincidence.
 
-    A row names a branch inside free prose (``finding:``), so parsing YAML
-    would not narrow it. Substring matching over-keeps and never under-keeps,
-    which is the only safe direction here.
+# 7 is git's own minimum abbreviation. Deliberately greedy: a token that is not
+# a commit simply fails to resolve, and collecting a few extra candidates is the
+# safe direction, while missing a real one is not.
+_LEDGER_SHA_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
+
+
+@dataclass(frozen=True)
+class LedgerRisk:
+    """Which ledger commits a branch deletion could actually orphan.
+
+    ``at_risk`` holds the ledger commits that the BASE REF does not already make
+    reachable — the only ones any branch here could be the last holder of. It is
+    normally EMPTY, because a healthy ledger names commits that landed on main,
+    and then no branch is kept on ledger grounds at all.
+
+    ``unreadable`` is the fail-closed flag: the ledger named commits and git
+    could not answer the reachability question, so every branch is kept and says
+    so. It is never set merely because the ledger file is absent.
     """
+    at_risk: tuple[str, ...] = ()
+    unreadable: bool = False
+
+
+def ledger_text(repo: Path) -> str:
+    """The review ledger's raw text, or ``""`` when there is no ledger."""
     path = repo / REVIEW_LEDGER
     try:
         return path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
+
+
+def ledger_commits(repo: Path, text: str) -> list[str]:
+    """Every commit the ledger NAMES, resolved to a full oid, in one git call.
+
+    ``git cat-file --batch-check`` takes the whole candidate set on stdin, so
+    this costs one subprocess rather than one per token — the ledger carries
+    hundreds. Tokens git reports as ``missing`` are prose that merely looked like
+    a sha; tokens it reports as ``ambiguous`` are RESOLVED rather than dropped
+    (``--disambiguate`` lists every object sharing the prefix, and every
+    candidate that is a commit is then treated as named), because dropping an
+    ambiguous row would silently narrow the protection.
+    """
+    tokens = list(dict.fromkeys(_LEDGER_SHA_RE.findall(text)))
+    if not tokens:
+        return []
+    commits, ambiguous = _batch_check_commits(repo, tokens)
+    extra: list[str] = []
+    for prefix in ambiguous:
+        listed = _git(repo, "rev-parse", f"--disambiguate={prefix}")
+        if listed.returncode == 0:
+            extra.extend(listed.stdout.split())
+    if extra:
+        resolved, _ = _batch_check_commits(repo, list(dict.fromkeys(extra)))
+        commits.extend(resolved)
+    return list(dict.fromkeys(commits))
+
+
+def _batch_check_commits(repo: Path,
+                         tokens: Sequence[str]) -> tuple[list[str], list[str]]:
+    """``(full oids that are commits, prefixes git called ambiguous)``.
+
+    Spelled out rather than routed through ``status._git`` for one reason: this
+    is the only query here that feeds git on STDIN, which that helper does not
+    take. ``--no-optional-locks`` is carried over from it deliberately — a
+    read-only probe must not touch the index.
+    """
+    result = subprocess.run(
+        ["git", "--no-optional-locks", "-C", str(repo), "cat-file",
+         "--batch-check"],
+        input="\n".join(tokens) + "\n", stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+        errors="replace", check=False)
+    if result.returncode and not result.stdout:
+        return [], []
+    commits: list[str] = []
+    ambiguous: list[str] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        if fields[1] == "ambiguous":
+            ambiguous.append(fields[0])
+        elif fields[1] == "commit":
+            commits.append(fields[0])
+    return commits, ambiguous
+
+
+def ledger_risk(repo: Path, base_ref: str | None) -> LedgerRisk:
+    """The ledger commits the base ref does NOT already keep reachable.
+
+    Reachability from the base ref is the whole test. A ledger commit that
+    ``origin/main`` reaches survives every deletion this planner could propose,
+    so it can keep nothing; one it does not reach is a commit some branch may be
+    the last holder of, and that is the case worth a keep.
+    """
+    named = ledger_commits(repo, ledger_text(repo))
+    if not named or base_ref is None:
+        return LedgerRisk()
+    # `--not <base>` stops the walk at the base ref, so this enumerates only
+    # what the base does not already have; intersecting back with `named` drops
+    # the at-risk commits' ancestors, which no ledger row claims.
+    walk = _git(repo, "rev-list", "--ignore-missing", *named, "--not", base_ref)
+    if walk.returncode:
+        return LedgerRisk(at_risk=tuple(named), unreadable=True)
+    outside = set(walk.stdout.split())
+    return LedgerRisk(at_risk=tuple(oid for oid in named if oid in outside))
+
+
+def ledger_keep_reasons(repo: Path, ref: str, risk: LedgerRisk) -> list[str]:
+    """Why this branch must stay for the ledger's sake — usually nothing.
+
+    A branch is kept only when it REACHES a ledger commit the base ref does not,
+    which is the one shape whose deletion can turn a row into UNKNOWN OBJECT.
+    This deliberately over-keeps when a second surviving branch also reaches that
+    commit: proving otherwise means reasoning about which other branches this
+    same plan deletes, and over-keeping costs a branch until the next run while
+    under-keeping costs a review nobody can inspect again.
+    """
+    if not risk.at_risk:
+        return []
+    if risk.unreadable:
+        return [KEEP_LEDGER_UNREADABLE]
+    reasons: list[str] = []
+    for oid in risk.at_risk:
+        probe = _git(repo, "merge-base", "--is-ancestor", oid, ref)
+        if probe.returncode == 0:
+            reasons.append(f"{KEEP_LEDGER} {oid[:8]}")
+        elif probe.returncode != 1:
+            return [KEEP_LEDGER_UNREADABLE]
+    return reasons
 
 
 def unpushed_commits(repo: Path, ref: str) -> int:
@@ -394,6 +575,92 @@ def unpushed_commits(repo: Path, ref: str) -> int:
         return int(result.stdout.strip())
     except ValueError:
         return -1
+
+
+# ── will `git branch -d` actually accept this branch? ────────────────────────
+#
+# THIS IS NOT THE SAME QUESTION AS "IS IT MERGED". The planner's containment
+# probe asks whether the BASE REF already has the branch's content. `git branch
+# -d` asks something else entirely (builtin/branch.c, `branch_merged`): is the
+# branch an ANCESTOR of its own upstream when one is configured and that
+# tracking ref resolves, and of HEAD otherwise. Two different refs, two
+# different relations — so a branch can pass every precondition here and still
+# be refused, and the tool used to emit that doomed command anyway.
+#
+# MEASURED, on this repository and reproduced in a scratch repo on git 2.55:
+# `fix/cleanup-worktree-gaps` held ZERO commits `origin/main` did not
+# (`git rev-list <b> --not origin/main` → 0) yet stood one commit ahead of
+# `origin/fix/cleanup-worktree-gaps`, and `git branch -d` said
+#
+#     warning: not deleting branch '<b>' that is not yet merged to
+#              'refs/remotes/origin/<b>', even though it is merged to HEAD
+#     error: the branch '<b>' is not fully merged
+#
+# IS THERE A NON-FORCING WAY TO DELETE IT? No, and this was checked rather than
+# assumed. Three things make `-d` accept such a branch, and each works only by
+# removing the evidence git consults:
+#   * `git branch -D` / `--force` — banned outright, and there is no --force in
+#     this tooling;
+#   * `git update-ref -d refs/heads/<b>` — plumbing, with no safety check at
+#     all. Strictly more forcing than the flag that is banned;
+#   * deleting the remote-tracking ref, or `git branch --unset-upstream` —
+#     measured to work (the probe run for this fix deleted
+#     `refs/remotes/origin/topic` and the identical `-d` then succeeded), and
+#     that is exactly why neither is emitted. The upstream is not stale: the
+#     branch is still on the remote, the next `git fetch` restores the tracking
+#     ref, and unsetting the upstream is an unbacked-up config mutation whose
+#     only purpose is to make git ask an easier question. A tool that quietly
+#     disarms a safety check has not made the deletion safe, it has made the
+#     check silent.
+# So the honest outcome is a KEEP that names the situation and the two remedies
+# that are the OWNER'S to choose: retire the branch on the remote (then
+# `--fetch` prunes the tracking ref and a re-run proposes it), or move the local
+# branch back onto its upstream.
+
+
+def deletion_reference(repo: Path, name: str) -> str:
+    """The ref ``git branch -d <name>`` will demand ancestry of.
+
+    ``<name>@{upstream}`` is git's own spelling of the same lookup: it exits 0
+    with the tracking ref's full name when the branch has an upstream AND that
+    ref resolves, and non-zero otherwise — which is precisely when
+    ``branch_merged`` falls back to HEAD. Verified against a fixture whose
+    tracking ref was deleted out from under a configured upstream, where
+    ``for-each-ref %(upstream)`` still prints the configured name and this does
+    not.
+    """
+    result = _git(repo, "rev-parse", "--symbolic-full-name", "--verify",
+                  "--quiet", f"{name}@{{upstream}}")
+    upstream = result.stdout.strip()
+    if result.returncode == 0 and upstream:
+        return upstream
+    return "HEAD"
+
+
+def delete_refusal(repo: Path, name: str, ref: str) -> str | None:
+    """``None`` when ``git branch -d`` would accept it; else why it would not."""
+    reference = deletion_reference(repo, name)
+    probe = _git(repo, "merge-base", "--is-ancestor", ref, reference)
+    if probe.returncode == 0:
+        return None
+    if probe.returncode != 1:
+        return (f"{KEEP_DELETE_REFUSED} or accept it — git could not say "
+                f"whether it is an ancestor of {reference}, and an unanswerable "
+                f"probe is treated as a refusal")
+    if reference == "HEAD":
+        return (f"{KEEP_DELETE_REFUSED}: git judges `-d` against HEAD when a "
+                f"branch has no resolvable upstream, and this branch is not an "
+                f"ancestor of HEAD even though the base ref contains its "
+                f"content. Check out the base branch here and re-run, or delete "
+                f"it yourself once you have read it — this tool has no -D")
+    return (f"{KEEP_DELETE_REFUSED}: git judges `-d` against the branch's own "
+            f"upstream, not against the base ref this planner tested, and it is "
+            f"ahead of {reference}. Nothing here can make `-d` accept it without "
+            f"disarming that check — deleting the tracking ref or unsetting the "
+            f"upstream both work only by hiding the evidence, and there is no -D "
+            f"in this tooling. Retire the branch on the remote (a later --fetch "
+            f"prunes the tracking ref and this branch is proposed again), or "
+            f"move it back onto {reference} yourself")
 
 
 # ── the main working tree, and what may never be moved ───────────────────────
@@ -718,10 +985,12 @@ def plan_worktree_backups(repo: Path, item: WorktreeItem, worktree: Path, *,
 
 # ── classification ───────────────────────────────────────────────────────────
 
-def classify(repo: status.Repository, root: Path, *, run_id: str, ledger: str,
+def classify(repo: status.Repository, root: Path, *, run_id: str,
+             ledger: LedgerRisk | None = None,
              include_harness: bool = False,
              ) -> tuple[list[BranchItem], list[WorktreeItem]]:
     base_ref = repo.base_ref
+    risk = ledger if ledger is not None else LedgerRisk()
     worktree_refs = {
         branch.ref.full_name for branch in repo.branches if branch.worktree_path
     }
@@ -752,8 +1021,15 @@ def classify(repo: status.Repository, root: Path, *, run_id: str, ledger: str,
         if item.unpushed != 0:
             count = "an unknown number of" if item.unpushed < 0 else str(item.unpushed)
             item.keep_reasons.append(f"{count} {KEEP_UNPUSHED}")
-        if branch.name in ledger:
-            item.keep_reasons.append(KEEP_LEDGER)
+        item.keep_reasons.extend(
+            ledger_keep_reasons(root, branch.ref.full_name, risk))
+        # LAST among the branch probes, and asked of the ref rather than of the
+        # plan: whatever the containment test decided, the emitted line is
+        # `git branch -d`, and a command that is going to be refused is not a
+        # proposal — it is a script that stops.
+        refusal = delete_refusal(root, branch.name, branch.ref.full_name)
+        if refusal is not None:
+            item.keep_reasons.append(refusal)
         if item.proposed:
             item.backup_ref = f"{TRASH_REF_ROOT}/{run_id}/{slug(branch.name)}"
         branches.append(item)
@@ -983,31 +1259,163 @@ def plan_moves(*, root: Path, run_id: str, worktrees: Sequence[WorktreeItem],
     return moves, refused
 
 
+def plan_deletions(*, root: Path, branches: Sequence[BranchItem],
+                   ) -> tuple[list[BranchItem], list[tuple[BranchItem, str]]]:
+    """The branches whose ``git branch -d`` will be ACCEPTED, and the rest.
+
+    The same construction argument as ``plan_moves``, applied to the other
+    destructive verb this tool emits. ``classify`` already asked
+    ``delete_refusal``; asking again here is what makes "no emitted line is one
+    git will predictably refuse" true of the EMITTER rather than of a classifier
+    that a later refactor might change. A disagreement between the two is not
+    silently reconciled — it is written into the script as a finding.
+    """
+    emit: list[BranchItem] = []
+    refused: list[tuple[BranchItem, str]] = []
+    for item in branches:
+        if not item.proposed:
+            continue
+        why = delete_refusal(root, item.name, item.ref)
+        if why is None:
+            emit.append(item)
+        else:
+            refused.append((item, why))
+    return emit, refused
+
+
 def apply_emitter_refusals(root: Path, run_id: str,
-                           worktrees: Sequence[WorktreeItem]) -> None:
+                           worktrees: Sequence[WorktreeItem],
+                           branches: Sequence[BranchItem] = ()) -> None:
     """Make the PLAN agree with what the emitter will actually write.
 
-    ``plan_moves`` is the last word on whether a move can be emitted, so it is
-    asked here too, before the plan object exists. A reader of
-    ``cleanup-<id>.json`` therefore never sees ``"action": "retire"`` for a
-    worktree the script declines to move: the plan and the script cannot
-    disagree, because only one of them decides.
+    ``plan_moves`` and ``plan_deletions`` are the last word on whether a
+    destructive line can be emitted, so both are asked here too, before the plan
+    object exists. A reader of ``cleanup-<id>.json`` therefore never sees
+    ``"action": "retire"`` for a worktree the script declines to move, nor
+    ``"proposed": true`` for a branch the script declines to delete: the plan and
+    the script cannot disagree, because only one of them decides.
     """
     _, refused = plan_moves(root=root, run_id=run_id, worktrees=worktrees)
     for item, why in refused:
         item.action = "keep"
         item.keep_reasons.append(f"the emitter refused to write its move: {why}")
+    _, declined = plan_deletions(root=root, branches=branches)
+    for branch, why in declined:
+        branch.backup_ref = None
+        branch.keep_reasons.append(
+            f"the emitter refused to write its deletion: {why}")
 
 
-def _guarded_ref_write(ref: str, oid: str, warning: str, note: str) -> list[str]:
-    """``update-ref`` + read-back + ``exit 1``. The shape both halves emit."""
-    quoted = shlex.quote(ref)
+# ── per-item isolation in the emitted script ─────────────────────────────────
+#
+# `set -eu` stays at the top: `cd` into the wrong directory, a trash directory
+# that could not be created, or an unset variable must all still stop everything
+# before a destructive line runs. What must NOT be fatal to the whole run is one
+# ITEM declining. Measured on this repository: the plan proposed three branches,
+# the first `git branch -d` was refused, and `set -e` ended the script there —
+# two safe deletions never ran and the operator was left with a failure that
+# named neither what had worked nor what had not.
+#
+# The shape below puts every item's guards in an `if` CONDITION, where POSIX
+# suspends `set -e` (verified on sh, bash --posix, zsh and dash for a failing
+# command, a failing function, and a braced `&&` chain). The backup ref keeps
+# its veto — it just vetoes THAT item now instead of the file — and the run
+# still fails overall through the summary's `exit 1`.
+#
+# The `git update-ref <ref> <oid>` line is written out literally rather than
+# hidden behind a shell helper. This script's whole justification is that a
+# human reads it before running it, and "which object is being pinned where" is
+# the one thing that reader must be able to check without resolving an
+# indirection.
+
+_SUMMARY_DONE = "cleanup_done"
+_SUMMARY_REFUSED = "cleanup_refused"
+_SUMMARY_COUNT = "cleanup_refusals"
+
+
+def _pin_condition(backups: Sequence[tuple[str, str]]) -> list[str]:
+    """The guard clause: pin every ref and read every one of them back.
+
+    Emitted as a single ``if ! { … && … ; }`` condition so that one unresolved
+    backup ref stops this item's destructive line and nothing else's.
+    """
+    if not backups:
+        return []
+    lines: list[str] = []
+    for index, (ref, oid) in enumerate(backups):
+        lead = "if ! { " if index == 0 else "       "
+        verify = shlex.quote(ref + "^{commit}")
+        lines.append(f"{lead}git update-ref {shlex.quote(ref)} {oid} "
+                     f"-m 'pre-delete backup' &&")
+        lines.append(f"       git rev-parse --verify --quiet {verify} "
+                     f">/dev/null &&")
+    # Drop the trailing `&&` of the last verify and close the group.
+    lines[-1] = lines[-1][:-len(" &&")] + "; }; then"
+    return lines
+
+
+def _record(kind: str, subject: str, detail: str = "") -> str:
+    """One call to the summary bookkeeping the script defines for itself."""
+    if kind == "done":
+        return f"    record_done {shlex.quote(_comment(subject))}"
+    return (f"    record_refused {shlex.quote(_comment(subject))} "
+            f"{shlex.quote(_comment(detail))}")
+
+
+def _summary_helpers() -> list[str]:
+    """The bookkeeping every item reports into, and nothing else.
+
+    Entries carry their own trailing newline, so the summary prints with
+    ``printf %s`` and needs no separator handling — and no temporary file, which
+    this script may not create. The newline is built with the ``printf '\\nx'``
+    idiom rather than written literally between two quotes: a raw newline inside
+    a shell string leaves a line of this file holding one unbalanced quote, and
+    an emitted script has to stay parseable line by line — the suite's own
+    ``mv``-auditing helper reads it that way, and so does a human.
+    """
     return [
-        f"#   {_comment(note)}",
-        f"git update-ref {quoted} {oid} -m 'pre-delete backup'",
-        f"git rev-parse --verify --quiet {shlex.quote(ref + '^{commit}')} "
-        ">/dev/null || {",
-        f"    echo {shlex.quote(_comment(warning))} >&2; exit 1; }}",
+        "# Per-item bookkeeping. One item refusing is a FINDING to report, not a",
+        "# reason to abandon the independent items after it — but the run still",
+        "# fails at the end, so a refusal can never be read as success.",
+        f"{_SUMMARY_DONE}=''",
+        f"{_SUMMARY_REFUSED}=''",
+        f"{_SUMMARY_COUNT}=0",
+        "cleanup_nl=$(printf '\\nx')",
+        "cleanup_nl=${cleanup_nl%x}",
+        "record_done() {",
+        f'    {_SUMMARY_DONE}="${{{_SUMMARY_DONE}}}  done     $1${{cleanup_nl}}"',
+        "}",
+        "record_refused() {",
+        f'    {_SUMMARY_REFUSED}="${{{_SUMMARY_REFUSED}}}  REFUSED  '
+        f'$1${{cleanup_nl}}           $2${{cleanup_nl}}"',
+        f"    {_SUMMARY_COUNT}=$(({_SUMMARY_COUNT} + 1))",
+        "}",
+        "",
+    ]
+
+
+def _summary_footer() -> list[str]:
+    """Name what completed, name what refused, and exit non-zero if any did."""
+    note = ("A refusal is a finding: report it, and read the header of this "
+            "file before reaching for a stronger flag.")
+    return [
+        "# The summary. An operator who scrolled past the middle of this run has",
+        "# to be able to read the outcome of every item off the last few lines,",
+        "# and an exit code that is 0 only when every item completed.",
+        "echo ''",
+        "echo 'workspace cleanup summary'",
+        f'printf %s "${{{_SUMMARY_DONE}}}"',
+        f'printf %s "${{{_SUMMARY_REFUSED}}}"',
+        f'if [ "${{{_SUMMARY_COUNT}}}" -ne 0 ]; then',
+        f'    echo "${{{_SUMMARY_COUNT}}} item(s) refused; the items above them '
+        f'still ran." >&2',
+        "    echo 'Nothing was lost: every tip is pinned to its "
+        "refs/agent-trash ref.' >&2",
+        f"    echo {shlex.quote(note)} >&2",
+        "    exit 1",
+        "fi",
+        "echo 'every item in this plan completed.'",
+        "",
     ]
 
 
@@ -1016,7 +1424,7 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
                  worktrees: Sequence[WorktreeItem],
                  include_harness: bool = False) -> str:
     trash = _trash_root(root, run_id)
-    proposed = [item for item in branches if item.proposed]
+    proposed, declined = plan_deletions(root=root, branches=branches)
     moves, refused = plan_moves(root=root, run_id=run_id, worktrees=worktrees)
     lines = [
         "#!/bin/sh",
@@ -1034,6 +1442,12 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         "# used deliberately: it refuses an unmerged branch. IF IT REFUSES, THAT",
         "# IS A FINDING — report it. Do not reach for -D; there is no --force in",
         "# this tooling at all.",
+        "# Each item stands alone: one refusal is recorded and the remaining",
+        "# items still run, because half a cleanup with no statement of which",
+        "# half is worse than either outcome. A backup ref that does not read",
+        "# back still stops ITS OWN item — never the deletion behind nothing.",
+        "# The summary at the end names every item, and this script exits 1 if",
+        "# any item refused.",
         "# Worktree directories are MOVED, never removed: untracked and ignored",
         "# files have no git recovery story whatsoever, and each one's own",
         "# reflog — which `git worktree prune` deletes — is swept first, so any",
@@ -1067,9 +1481,26 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
             "#   of this tool are supposed to agree.",
             "",
         ]
+    for item, why in declined:
+        # The branch half of the same disagreement, and equally comment-only:
+        # a `git branch -d` git is going to refuse is not written at all.
+        body += [
+            f"# REFUSED to emit a deletion of {_comment(item.name)}",
+            f"#   {_comment(why)}",
+            "#   The classifier called it proposable and the emitter would not",
+            "#   write the line. REPORT THIS — the two halves are supposed to",
+            "#   agree.",
+            "",
+        ]
+    if moves or proposed:
+        body += _summary_helpers()
     if moves:
+        # Fatal on purpose, and outside every item: with no trash directory
+        # there is nowhere for ANY move to land, so this is a precondition of
+        # the run rather than a step of one item.
         body += [f"mkdir -p {shlex.quote(str(trash))}", ""]
     for item, destination in moves:
+        subject = f"worktree {item.path}"
         body += [
             f"# worktree {_comment(item.path)}",
             f"#   clean, and its branch's content is already in "
@@ -1081,42 +1512,70 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
             # BEFORE the move, always. `git worktree prune` below deletes this
             # worktree's `logs/HEAD`, and these commits are reachable from
             # nothing else — so the pin has to already have happened, and the
-            # read-back has to be able to stop the script.
+            # read-back has to be able to stop this move.
             body.append(
                 f"#   {len(item.backups)} commit(s) live only in this "
                 f"worktree's reflog, which `git worktree prune` deletes:")
-        for ref, oid in item.backups:
-            body += _guarded_ref_write(
-                ref, oid, f"reflog backup ref missing — not moving "
-                          f"{_comment(item.path)}", f"pinning {oid[:8]}")
+            body += [f"#     pinning {oid[:8]} to {_comment(ref)}"
+                     for ref, oid in item.backups]
+            body += _pin_condition(item.backups)
+            body += [
+                _record("refused", subject,
+                        "a reflog backup ref did not read back — NOT moved, so "
+                        "nothing that reflog holds can be orphaned"),
+                f"elif mv {shlex.quote(item.path)} "
+                f"{shlex.quote(str(destination))}; then",
+            ]
+        else:
+            body.append(f"if mv {shlex.quote(item.path)} "
+                        f"{shlex.quote(str(destination))}; then")
         body += [
-            f"mv {shlex.quote(item.path)} {shlex.quote(str(destination))}",
-            "git worktree prune",
+            "    if git worktree prune; then",
+            f"    {_record('done', subject)}",
+            "    else",
+            f"    {_record('refused', subject, 'moved, but git worktree prune failed — run it yourself')}",
+            "    fi",
+            "else",
+            _record("refused", subject,
+                    "the move itself failed — the directory is untouched and "
+                    "its registration was left alone"),
+            "fi",
             "",
         ]
     for item in proposed:
         ref = (item.backup_ref or
                f"{TRASH_REF_ROOT}/{run_id}/{slug(item.name)}")
+        subject = f"branch {item.name}"
         # `intent` is the first line of `git branch --edit-description`, and a
         # description is MULTI-LINE by design. It is single-line by the time it
         # arrives here, but that is a promise made in another module — one
         # refactor from putting a raw newline inside a `#` comment, where the
-        # tail becomes a command. The echo is quoted whole for the same reason:
-        # it used to sit inside hand-written single quotes and depend on
-        # `_SAFE_NAME_RE` never admitting an apostrophe.
+        # tail becomes a command. Every interpolation below is `shlex.quote`d
+        # for the same reason: it used to sit inside hand-written single quotes
+        # and depend on `_SAFE_NAME_RE` never admitting an apostrophe.
         body += [
             f"# branch {_comment(item.name)} — tip {item.tip[:8]}",
             f"#   {_comment(item.intent)}" if item.intent
             else "#   (no stated intent)",
+            f"#   pinning the tip {item.tip[:8]}; the delete runs only if that "
+            f"ref reads back",
         ]
-        body += _guarded_ref_write(
-            ref, item.tip,
-            f"backup ref missing — refusing to delete {_comment(item.name)}",
-            f"pinning the tip {item.tip[:8]}")
+        body += _pin_condition([(ref, item.tip)])
         body += [
-            f"git branch -d {shlex.quote(item.name)}",
+            _record("refused", subject,
+                    "its backup ref did not read back — NOT deleted, because a "
+                    "deletion standing behind nothing is the whole hazard"),
+            f"elif git branch -d {shlex.quote(item.name)}; then",
+            _record("done", subject),
+            "else",
+            _record("refused", subject,
+                    "git branch -d declined it — report this; the tip is still "
+                    "pinned and this tool has no stronger flag"),
+            "fi",
             "",
         ]
+    if moves or proposed:
+        body += _summary_footer()
     if not any(line and not line.startswith("#") for line in body):
         body += ["# nothing is proposed for removal in this run.", ""]
     if stale:
@@ -1346,9 +1805,9 @@ def _plan(argv: Sequence[str] | None, out) -> int:
 
     include_harness = args.include_harness_worktrees
     branches, worktrees = classify(repo, root, run_id=run_id,
-                                   ledger=ledger_names(root),
+                                   ledger=ledger_risk(root, base_ref),
                                    include_harness=include_harness)
-    apply_emitter_refusals(root, run_id, worktrees)
+    apply_emitter_refusals(root, run_id, worktrees, branches)
 
     executed = False
     if args.execute:
