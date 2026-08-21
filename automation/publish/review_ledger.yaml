@@ -3488,6 +3488,12 @@
 - base: 9355efba
   reviewed_by: agent
   date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: none
+- base: 9355efba
+  reviewed_by: agent
+  date: 2026-08-20
   files: 4
   digest: sha256:fda664d70e669296
   finding: 'Reviewed the sponsorship-classifier change and its three byte-identical
@@ -3516,3 +3522,9 @@
     behavior, public GitHub issue numbers, and fictional JD wording. No real identity,
     employer, school, salary, private item name, or dated personal job-hunt content is
     present.'
+- base: 8f419dce
+  reviewed_by: agent
+  date: 2026-08-20
+  files: 14
+  digest: sha256:c2c8eb0c69aa6381
+  finding: 'Merge of origin/main. The covered files are byte-identical to origin/main where they are already published; this merge adds no new public content. Ledger conflict resolved by appending this branch''s authored rows whole, not by a line union.'
