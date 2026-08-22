@@ -4111,6 +4111,48 @@
 - base: 3d6da1b8
   reviewed_by: agent
   date: 2026-08-21
+  files: 2
+  digest: sha256:8d3d081c2a26fa9a
+  finding: 'Workspace cleanup planner and its test suite. Backup refs are now written before a gone worktree registration is pruned, carry the tip sha so two branch names cannot share one ref, and are written compare-and-swap; an unreadable `git status` and an uncontained detached HEAD now keep; a branch `git branch -d` structurally cannot accept is retired by a compare-and-swap deletion behind this tool own containment proof; the emitted script re-measures its preconditions at run time. Public tooling, git and shell semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: b217f119
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 6
+  digest: sha256:1fd11c39aee427d7
+  finding: 'Workspace cleanup tests plus two process files. New test coverage for backup-ref collisions, the prune-path reflog, post-plan mutation, an unreadable git status, conflicting binary and submodule content, and the detached-worktree matrix; the run-time-recheck backlog task moved to in-review with its verification; one new backlog task filed for a merge-tree conflict reading as merged in the dashboard. Public tooling, git semantics and synthetic fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: a5ebbc78
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 3
+  digest: sha256:d959828aaa848609
+  finding: 'Workspace cleanup planner, its tests, and one queue decision item. Cached remote branches are now listed with the reasons each is not a deletion candidate; nothing about them reaches the emitted script and the tool still makes exactly one network call. The open owner decision about ever planning remote deletions is filed with this listing as its default path. Public tooling, git semantics and synthetic fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: f61f3c8b
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 1
+  digest: sha256:35d2d91efa3527e4
+  finding: 'One session handover under history/conversations/. Describes workspace tooling defects, the decisions taken, and two open items; names only branches, files and git behaviour. No real identity, employer, application, or dated job-hunt content.'
+- base: d1436cab
+  reviewed_by: agent
+  date: 2026-08-21
+  files: 1
+  digest: sha256:bd855b818b83c60b
+  finding: 'Appends measured evidence to an existing owner decision file in message-queue. Cites branch names, SHAs, gh/git command results and counts only; no identity, employer, application, or dated job-hunt content.'
+- base: 4817a91a
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 2
+  digest: sha256:5d77e730e8ad392f
+  finding: 'Corrects one public session handover to reflect the pushed five-commit branch and removes a branch-created backlog item already resolved by fix/i2-status-truth. No real identity, employer, application, or dated job-hunt content.'
+- base: d31a6de0
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 1
+  digest: sha256:4b3717fb374c1c2e
+  finding: 'Makes one synthetic cleanup test locate Git with the cross-platform Python standard library instead of trying to execute the shell builtin `command`. Test infrastructure only; no real identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-21
   files: 7
   digest: sha256:c2ada91be0ab0aaf
   finding: 'Workspace status dashboard and its test suites. The private overlay is now rendered as structure, counts, ages and lifecycle states only (branch names degrade to an ordinal behind a conventional prefix); `merged` is judged against the remote-tracking base and the base is printed; the checked-out branch gets a freshness verdict carrying its behind-count and the age of the last fetch; and a non-zero `git merge-tree` exit is treated as no answer rather than as containment. Public tooling, git semantics and fabricated fixture data only (the overlay fixture uses the invented token "zzyzxrobotics"); no real identity, employer, application, or dated job-hunt content.'
@@ -4126,3 +4168,9 @@
   files: 2
   digest: sha256:6c37a3125135a8a1
   finding: 'Conflict-resolution merge imports the already-reviewed two-track PR merge driver cutover and its tests from main. Public tooling, git semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: 3360f0cb
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 9
+  digest: sha256:11a564b327423d72
+  finding: 'Conflict-resolution merge imports the already-reviewed workspace status safety changes and two-track merge cutover from main while retaining the cleanup evidence work. Public tooling, git semantics and fabricated fixtures only; no real identity, employer, application, or dated job-hunt content.'
