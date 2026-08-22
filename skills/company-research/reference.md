@@ -1,6 +1,9 @@
 # Company Research Operational Reference
 
-**This file is read by section, on demand.** Before live research read §§ "Handy Fetches", "Maturity fetches" and "Output Location and Structure"; every other section is a per-file template fetched only when `SKILL.md` names it for the file you are about to write. A full-folder run fires every pointer and so reads most of this file; a single-file run should read a fraction of it. The sourcing rules in `SKILL.md` remain controlling.
+**This file is read by section, on demand.** `SKILL.md`'s On-Demand Map names the
+sections to read for each focused output; a full-folder run reads this file
+completely. The hard gates in `SKILL.md` and the sourcing rules in
+`dossier-guide.md` remain controlling.
 
 ## Handy Fetches
 
@@ -33,7 +36,8 @@ compensation.
 
 ## Maturity fetches
 
-The two fetches that settle whether a product is GA, beta, or only announced (`SKILL.md` § "Maturity gate" holds the ladder these feed). A product-directory listing or a docs landing
+The two fetches that settle whether a product is GA, beta, or only announced
+(`dossier-guide.md` § "AI Strategy Template" holds the maturity ladder these feed). A product-directory listing or a docs landing
 page sometimes carries a stage badge and often does not, and its silence proves nothing; the statement that settles it lives in the launch post and in the **body** of the docs
 overview and pricing pages. Strip each to text and grep it rather than reading the rendered nav:
 
@@ -99,7 +103,10 @@ reusable interview preparation and outlives any one application (see `AGENTS.md`
 
 ## Per-File Rubrics and Templates
 
-The blocks below are the per-file rubrics and skeletons `SKILL.md` points at — read the one named for the file you are about to write. The depth bar, sourcing rules, and the `03` deep-dive and `05` moat skeletons stay in `SKILL.md`.
+The blocks below are the per-file rubrics and skeletons `SKILL.md` points at. Read
+only the one named for the file you are about to write. The depth bar, sourcing
+rules, and the `03`, `05`, `06`, and `09` requirements live in
+`dossier-guide.md`.
 
 ### Competitor Scorecard Template (in `04-business-customers-competitors.md`)
 
@@ -145,7 +152,8 @@ Do this, don't just assert "network effects":
 
 ### Question Bank examples (`09-question-bank.md`)
 
-Model questions for the three required groups in `09` (`SKILL.md` § "Question Bank Guidance" holds the rules these illustrate):
+Model questions for the three required groups in `09` (`dossier-guide.md` §
+"Question Bank Guidance" holds the rules these illustrate):
 
 ```markdown
 ### Hard Problems & Challenges
@@ -160,9 +168,10 @@ Model questions for the three required groups in `09` (`SKILL.md` § "Question B
   the whole stack — where does that vertical integration pay off most, and what does
   it cost you in speed?
 - (Defensibility) If a well-funded rival copied <feature> tomorrow, what's the part
-  they *still* couldn't replicate — and how do you know it's holding?
-- (Growth) Where does the next 10x of revenue come from — new segments, new products,
-  or deeper penetration — and what's the biggest risk to that path?
+  they *still* couldn't replicate from <product/repo> — and how do you know it's holding?
+- (Growth) After <named customer> adopted <product>, where does its next 10x of
+  revenue come from — new segments, new products, or deeper penetration — and what's
+  the biggest risk to that path?
 
 ### AI Strategy & Adoption
 
@@ -170,9 +179,8 @@ Model questions for the three required groups in `09` (`SKILL.md` § "Question B
   production and what's still a prototype, and what's the next thing you'd ship?
 - (Moat under AI) As models commoditize <layer>, what's the part a well-funded rival
   *still* can't copy — your first-party data, distribution, or workflow lock-in?
-- (Internal adoption) How AI-native is engineering day-to-day — what's mandated vs.
-  encouraged (Cursor / Claude Code / agents), and where has an eval/agent workflow
-  actually replaced manual work?
+- (Internal adoption) In <engineering post/repo>, you described <specific agent/eval
+  workflow> — where has it actually replaced manual work, and where has it not?
 ```
 
 ### Why-This-Company Template (`10-why-this-company.md`)
@@ -187,8 +195,8 @@ company research serves each interview.
 **Personalization (read this):** ground every angle in the candidate's actual
 background and **career-direction preferences** — from the profile
 (`config.profile_md_path()`) and, when present, this skill's private notes at
-`config.skill_references_dir()`, which **OVERRIDE** the generic guidance here (see "Before You
-Start"). In public / example mode (no such folder), derive the threads from the profile and JD
+`config.skill_references_dir()`, which **OVERRIDE** the generic guidance here (see
+`dossier-guide.md` § "Before You Start"). In public / example mode (no such folder), derive the threads from the profile and JD
 only, and keep the candidate's specifics out of the tracked skill.
 
 ```markdown

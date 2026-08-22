@@ -22,6 +22,7 @@ skill <skill>
 pin sha256=<16 hex> bytes=<n> path=skills/<skill>/SKILL.md
 pin sha256=<16 hex> bytes=<n> path=skills/<skill>/LESSONS.md
 pin sha256=<16 hex> bytes=<n> path=skills/<skill>/reference.md
+# Additional top-level Markdown guides in the skill package are inserted here.
 pin sha256=<16 hex> bytes=<n> path=evals/canaries/<skill>.yaml
 ```
 

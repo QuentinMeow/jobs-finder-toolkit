@@ -110,6 +110,27 @@ class EmitTests(TreeTestCase):
         self.assertIn("evals/canaries/demo-skill.yaml",
                       [pin.path for pin in block.pins])
 
+    def test_additional_top_level_markdown_guides_are_pinned(self) -> None:
+        """A progressive-disclosure retier must not disappear from provenance."""
+        _write(
+            self.root / "skills" / "demo-skill" / "dossier-guide.md",
+            "# Routed detail\n",
+        )
+
+        block, missing = RP.build_block(self.root, "demo-skill")
+
+        self.assertEqual(missing, [])
+        self.assertEqual(
+            [pin.path for pin in block.pins],
+            [
+                "skills/demo-skill/SKILL.md",
+                "skills/demo-skill/LESSONS.md",
+                "skills/demo-skill/reference.md",
+                "skills/demo-skill/dossier-guide.md",
+                "evals/canaries/demo-skill.yaml",
+            ],
+        )
+
     def test_digest_and_size_match_the_bytes(self) -> None:
         block, _ = RP.build_block(self.root, "demo-skill")
         pin = next(p for p in block.pins if p.path.endswith("SKILL.md"))

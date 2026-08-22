@@ -40,7 +40,7 @@
     {
       "name": "company-research",
       "source": "./skills/company-research",
-      "description": "Deeply research a company and the specific role for an interview — product, company size, the hard technical challenges and why they're hard, competitive moat/defensibility/growth (evidence-based, 5-Whys — not company claims), a 1–100 competitor scorecard rating the company against each rival, how the company embraces AI publicly (customer-facing) and privately (internal adoption), eng culture, the role deep-dive, a prepared \"why this company / why not competitors\" pitch, plus offer-decision facts (funding/stage, comp, WLB, ratings, visa/H-1B) and a 1–100 \"how good is this place to work\" company rating and a hiring-manager/engineer question bank. Use when the user asks to research a company, prep for an interview, understand a company's product/challenges/moat/defensibility/growth/strategy, rate a company or its competitors, or build company-info for an application."
+      "description": "Research a company and role for interview preparation: product and size, engineering challenges, competitors, moat and growth, AI strategy and adoption, culture, role fit, a why-this-company pitch, interview questions, offer-decision facts, and 1–100 product and workplace ratings. Use for quick company questions, interview prep, company or competitor ratings, or saved company-research dossiers."
     },
     {
       "name": "email-assistant",

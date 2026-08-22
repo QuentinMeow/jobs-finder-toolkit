@@ -21,6 +21,24 @@ default_setup: >
   research subagents (the 2026-07-30 run did, and two canaries cost ~1M tokens apiece).
 
 canaries:
+  - id: cr-quick-chat
+    requires_overlay: false
+    prompt: >
+      Give me a quick, non-comprehensive interview brief on Cloudflare for a senior software
+      engineer conversation. Keep it in chat and do not save anything.
+    setup: "Default setup. Chat-only quick path; live public sources are allowed."
+    expected_behavior:
+      - "Answers in chat and creates no company-research folder, task, queue, history, or other durable artifact."
+      - "Loads only the quick router and task-relevant sources; does not preload the full dossier guide, candidate profile, private overrides, or every application file."
+      - "Provides a concise, current interview brief with concrete product, technical, business, and question material rather than a generic company summary."
+      - "Uses specific public sources for unstable claims and distinguishes evidence from the agent's judgment."
+    failure_modes:
+      - "Builds the 16-file dossier or writes a focused research file despite the explicit chat-only request."
+      - "Loads the entire durable-artifact workflow before answering."
+      - "Returns an uncited memory-only company summary."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
   - id: cr-full-research-structure
     requires_overlay: false
     prompt: >
@@ -32,8 +50,8 @@ canaries:
       - "Actually produces 03 (technical-challenges-deep-dive, 3-6 dives), 05 (moat and differentiation), 06 (AI strategy — survival + shipped-vs-planned + non-obvious edge + internal adoption), and 09 (question bank) — these are the point of the skill."
       - "Clears the Depth Bar — every major fact answers 'so what?' / 'why is this hard?', names concrete subsystems/repos/blog-posts/competitors (not 'scalable, reliable infra'), and each deep-dive section ends with a 'My read' POV."
       - "Writes 02 for a cold reader: a jargon-free product answer before component names, prerequisite concepts defined in order, at least one concrete end-to-end use case, and explicit company-hosted versus customer-owned boundaries."
-      - "Does live research (fetches primary sources, cites the specific artifact) rather than writing from memory; marks non-first-party claims [confirmed]/[likely]/[unverified] and inferences [inference]."
-      - "Keeps comp/WLB/visa OUT of the question bank — those live in for-myself/."
+      - "Does live research (fetches primary sources, cites the specific artifact) rather than writing from memory; every secondary/non-first-party claim in README and for-myself carries a literal bracketed [confirmed], [likely], or [unverified] tag (High/Medium/Low prose and [inference] do not substitute)."
+      - "Keeps compensation, WLB, visa, work-model, on-call-frequency, and office-cadence probes OUT of the question bank — those live in for-myself/."
       - "No application record exists for Cloudflare under the example config, so the run must take the company-scope path from SKILL.md 'Before You Start' step 3 rather than improvising: still produces the whole folder, subjects 08/10/09's level questions to the role family from the ATS board with the stated scope line, and tags posting-dependent lines [JD-dependent]."
     failure_modes:
       - "Homepage-depth summary that could have been written without reading anything specific."
@@ -73,7 +91,8 @@ canaries:
       - "Treats every moat/defensibility/growth claim as a hypothesis to TEST, not a finding, and never restates the company's marketing as fact."
       - "For each candidate moat, names its TYPE (a 7-Powers / economic-moat lens) and runs a 5-Whys chain that bottoms out in EVIDENCE (adoption/retention, pricing power, switching costs, competitor attempts, unit economics), not another claim."
       - "Explicitly separates Claim (what they say) -> Evidence (what's observable, tagged [confirmed]/[likely]/[unverified]) -> Verdict/Judgment (REAL and durable / eroding / weak / just a feature)."
-      - "Includes a defensibility scorecard per competitor/threat (Strong/Moderate/Weak + one-line evidence) and an evidence-based growth read (expansion vectors + ceiling + what must be true), ending with a 'My read'."
+      - "Includes a defensibility scorecard per competitor/threat; every row chooses exactly one categorical Strong, Moderate, or Weak rating, puts nuance in its evidence text, and never uses a hybrid/range or conditional combined category."
+      - "Includes an evidence-based growth read (expansion vectors + ceiling + what must be true), ending with a 'My read'."
     failure_modes:
       - "Asserts 'network effects' / 'switching costs' with no 5-Whys and no evidence."
       - "Parrots the company's own moat framing as the finding."
@@ -110,11 +129,11 @@ canaries:
     setup: "Default setup. Focuses on 09-question-bank.md. Network helpful (grounds specifics)."
     expected_behavior:
       - "Includes the three required deep groups — 'Hard Problems and Challenges' (drawn from 03), 'Differentiation, Moat and Growth' (drawn from 05), and 'AI Strategy and Adoption' (drawn from 06) — plus HM / Engineers / Skip-level / Recruiter groups."
-      - "Each question names a SPECIFIC product, repo, blog post, competitor, or customer and carries a short parenthesized intent tag — not generic curiosity."
-      - "Questions make the candidate sound like they already understand the hard problems and strategy; comp/WLB/visa probes are kept out (those belong in for-myself/)."
+      - "Every question in every group — explicitly including hiring-manager, leadership, engineer, level/scope, and recruiter questions — names a SPECIFIC company product, repo, post, competitor, incident, or customer and carries a short parenthesized intent tag."
+      - "Questions make the candidate sound like they already understand the hard problems and strategy; generic priority/coaching/disagreement/culture/process prompts and compensation/WLB/visa/work-model/on-call-frequency/office-cadence probes are kept out."
     failure_modes:
-      - "Generic questions ('What's the culture like?') with no product-specific grounding."
-      - "Missing the Hard-Problems or Moat/Growth group; comp/visa questions mixed in."
+      - "Any generic question ('What's the culture like?', priorities, coaching, disagreement, or process) without one of the required company-specific anchors, even under hiring-manager or leadership headings."
+      - "Missing the Hard-Problems or Moat/Growth group; or any compensation, WLB, visa, work-model, on-call-frequency, or office-cadence probe mixed in."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 
@@ -128,11 +147,12 @@ canaries:
       (examples/me/applications/6_drafted/example-corp-senior-software-engineer/) — no real public
       facts exist to find. Tests the never-fabricate rule.
     expected_behavior:
-      - "Recognizes it cannot source real funding/ratings/valuation for a fictional company and SCAFFOLDS the for-myself/ files with '[unverified] — confirm' plus where-to-look (Crunchbase / Glassdoor / Levels / h1bdata.info / recruiter) instead of inventing numbers."
+      - "Recognizes it cannot source real funding/ratings/valuation for a fictional company and SCAFFOLDS the for-myself/ files with '[unverified] — confirm' plus all five explicitly named verification sources: Crunchbase, Glassdoor, Levels.fyi, h1bdata.info, and recruiter."
       - "Never fabricates headcount, funding, ratings, or a Glassdoor score; visa is flagged '[unverified] — confirm with recruiter'."
       - "Still builds the correct folder structure and draws honestly on the saved JD/meta for the role deep-dive (08) and whatever CAN be grounded."
     failure_modes:
       - "Invents funding rounds, a valuation, or a Glassdoor/Levels rating to fill the files."
+      - "Omits any one of Crunchbase, Glassdoor, Levels.fyi, h1bdata.info, or recruiter from the where-to-verify scaffolding, or assigns visa any status other than '[unverified] — confirm with recruiter'."
       - "Presents inferred facts as [confirmed], or silently skips the for-myself/ scaffolding."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]

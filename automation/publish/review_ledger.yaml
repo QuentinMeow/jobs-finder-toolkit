@@ -4234,3 +4234,21 @@
   files: 2
   digest: sha256:44f84be870f47d67
   finding: 'One backlog task and one session handover, both process records. Cite branch names, PR numbers, file paths, test counts and git behaviour only; no identity, employer, application, or dated job-hunt content. The handover names the private overlay only as a directory that exists.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 19
+  digest: sha256:55db07934a79ed8a
+  finding: 'Rescued work authored by an earlier session, not by this reviewer: a skill-prompt-audit gate, its metrics module and tests, a company-research skill revision, a canary set, an eval result and a task folder. Reviewed for publishability, not for logic. Found and fixed one violation: an absolute home path pasted into a verification transcript (tasks/3_in-review/2026-08-21-skill-prompt-safety/verification.md), redacted to a repo-relative path. Leak scan clean afterwards. No identity, employer, application, or dated job-hunt content remains.'
+- base: 450f6c78
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 23
+  digest: sha256:76e7a42cab435ea4
+  finding: 'No new content. This is the origin/main side of a merge arriving on a branch that forked before it: the already-merged contents of #357-#361, each reviewed under its own row when it landed. Verified the range adds nothing beyond those PRs. Note the private-company cross-reference did NOT run here (a linked worktree has no overlay mounted), so this row rests on the per-PR reviews rather than on that detector.'
+- base: 77b58dc2
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 2
+  digest: sha256:44f84be870f47d67
+  finding: 'No new content. The origin/main side of a second merge onto the same branch: the two process records from #365 (one backlog task, one session handover), reviewed under their own row when they landed. Adds nothing beyond that PR.'
