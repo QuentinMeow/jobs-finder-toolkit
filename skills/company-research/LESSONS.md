@@ -1,8 +1,9 @@
 # Company Research — Lessons
 
 Operational sourcing gotchas + evidence pointers for this skill (not company-specific facts —
-those go in the per-company research folders). The depth bar, moat/5-Whys method, and file structure
-live in SKILL.md; this file only carries what's additive to it.
+those go in the per-company research folders). The long-form depth bar, moat/5-Whys
+method, and file requirements live in `dossier-guide.md`; `SKILL.md` routes the
+requested mode. This file only carries what's additive to them.
 
 Last reviewed: 2026-07-19
 
@@ -54,6 +55,6 @@ Lifecycle tags: each `##` section carries `<!-- added: <first-seen> · last_conf
 - Overview/role files are **scanned** (keep tight); `03` technical-challenges and `05`
   differentiation are **studied** (let them run long, always end with a **My read** POV).
 - The question bank lands best when a question names a **specific** product, repo, blog post,
-  competitor, or customer. SKILL.md mandates **three** deep groups — "Hard Problems &
+  competitor, or customer. `dossier-guide.md` mandates **three** deep groups — "Hard Problems &
   Challenges", "Differentiation, Moat & Growth" and "AI Strategy & Adoption" — and that list,
   not this one, is authoritative.

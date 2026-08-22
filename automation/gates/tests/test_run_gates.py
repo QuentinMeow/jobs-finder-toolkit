@@ -805,7 +805,7 @@ class SelectionTests(unittest.TestCase):
         expected = {
             "policy": [
                 "vendor-drift", "mail-send-less", "compileall",
-                "instruction-budget", "reconciler", "verify-links",
+                "instruction-budget", "skill-prompt-audit", "reconciler", "verify-links",
                 "review-gate-verify-all", "leak-guard-tree",
             ],
             "maintenance": [
@@ -892,7 +892,7 @@ class SelectionTests(unittest.TestCase):
             run_gates.CI_LANES["policy"],
             (
                 "vendor-drift", "mail-send-less", "compileall",
-                "instruction-budget", "reconciler", "verify-links",
+                "instruction-budget", "skill-prompt-audit", "reconciler", "verify-links",
                 "review-gate-verify-all", "leak-guard-tree",
             ),
         )
@@ -1067,7 +1067,7 @@ class ImpactSelectionTests(unittest.TestCase):
         text = out.getvalue()
         self.assertTrue(text.startswith("impact from 'origin/main'"), text[:100])
         self.assertIn("lanes: policy, shared", text.splitlines()[0])
-        self.assertIn("gate table — 9 gates", text)
+        self.assertIn("gate table — 10 gates", text)
         self.assertNotRegex(text, r"(?m)^verify-links  \[")
         self.assertRegex(text, r"(?m)^tests-shared  \[")
 

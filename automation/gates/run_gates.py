@@ -89,6 +89,7 @@ CI_LANES: dict[str, tuple[str, ...]] = {
         "mail-send-less",
         "compileall",
         "instruction-budget",
+        "skill-prompt-audit",
         "reconciler",
         "verify-links",
         "review-gate-verify-all",
@@ -318,6 +319,14 @@ def build_gates(root: Path = REPO_ROOT) -> list[Gate]:
             argv=(py, "automation/metrics/instruction_budget.py", "--strict"),
             what_it_proves="No SKILL.md over 600 lines, LESSONS.md over 160, AGENTS.md "
                            "over its tier. Same flags in hook and CI.",
+            group="both",
+        ),
+        Gate(
+            name="skill-prompt-audit",
+            argv=(py, "automation/metrics/skill_prompt_audit.py", "--strict"),
+            what_it_proves="Every public, mounted-private, and adapter SKILL.md stays "
+                           "within conservative direct-prompt, description, and section "
+                           "limits; advisory prompt-shape signals remain content-safe.",
             group="both",
         ),
         Gate(

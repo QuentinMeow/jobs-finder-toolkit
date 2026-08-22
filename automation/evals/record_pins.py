@@ -86,9 +86,10 @@ BLOCK_VERSION = "v1"
 FENCE_INFO = f"eval-pin {BLOCK_VERSION}"
 DIGEST_HEX = 16          # first 64 bits of the sha256; see module docstring
 
-# The instruction files a canary run is a test OF, in the order they are pinned.
-# Fixed rather than sorted so two emits of the same tree are byte-identical AND
-# the block reads top-down the way the skill does.
+# The core instruction files a canary run is a test OF, in the order they are
+# pinned. Additional top-level Markdown guides are appended deterministically;
+# progressive disclosure may move behavior into files such as dossier-guide.md,
+# and omitting those bytes would make a retiered skill's eval provenance false.
 SKILL_FILES = ("SKILL.md", "LESSONS.md", "reference.md")
 
 # Every path that could legitimately hold a pinned file's bytes under a different
@@ -96,7 +97,7 @@ SKILL_FILES = ("SKILL.md", "LESSONS.md", "reference.md")
 # tree: a "moved" verdict only makes sense for another instruction file, and
 # hashing every blob at a revision to answer it would be a different tool.
 CANDIDATE_RE = re.compile(
-    r"^(?:skills/[^/]+/(?:SKILL|LESSONS|reference)\.md"
+    r"^(?:skills/[^/]+/[^/]+\.md"
     r"|evals/canaries/[^/]+\.yaml)$"
 )
 
@@ -154,14 +155,22 @@ def pin_for(root: Path, rel: str) -> Pin:
 
 # ── emit ─────────────────────────────────────────────────────────────────────
 
-def expected_paths(skill: str) -> list[str]:
+def expected_paths(root: Path, skill: str) -> list[str]:
     """The files a run of ``skill``'s canaries is a test of, in pin order.
 
     The canary set is in here on purpose. A record that pins the instructions but
     not the prompts they were judged against pins half the experiment: editing a
     canary changes the verdict just as surely as editing the SKILL.md does.
     """
+    skill_dir = root / "skills" / skill
     paths = [f"skills/{skill}/{name}" for name in SKILL_FILES]
+    core_names = set(SKILL_FILES)
+    if skill_dir.is_dir():
+        paths.extend(
+            f"skills/{skill}/{path.name}"
+            for path in sorted(skill_dir.glob("*.md"), key=lambda item: item.name)
+            if path.name not in core_names
+        )
     paths.append(f"evals/canaries/{skill}.yaml")
     return paths
 
@@ -175,7 +184,8 @@ def build_block(root: Path, skill: str) -> tuple[PinBlock, list[str]]:
     the caller is the one that can say so.
     """
     pins, missing = [], []
-    for rel in expected_paths(skill):
+    expected = expected_paths(root, skill)
+    for rel in expected:
         if (root / rel).is_file():
             pins.append(pin_for(root, rel))
         else:
@@ -183,7 +193,7 @@ def build_block(root: Path, skill: str) -> tuple[PinBlock, list[str]]:
     if not pins:
         raise PinError(
             f"no instruction files found for skill {skill!r} under {root} "
-            f"(looked for: {', '.join(expected_paths(skill))})"
+            f"(looked for: {', '.join(expected)})"
         )
     return PinBlock(skill=skill, pins=tuple(pins)), missing
 
