@@ -6,8 +6,8 @@
 
 ## What happened
 
-- Nothing is on fire, nothing is half-done, and nothing was pushed. Three
-  commits sit on `fix/i3-cleanup-evidence`; the branch has no PR yet.
+- Nothing is on fire and nothing is half-done. Five commits sit on
+  `fix/i3-cleanup-evidence`; the branch is pushed but has no PR yet.
 - `automation/workspace/cleanup.py` was destroying work in two ways and
   refusing to clean up the exact things the owner cleans by hand. Both are
   fixed, with the reproductions re-run against the fix.
@@ -30,7 +30,7 @@
 
 ## Where things stand
 
-- `fix/i3-cleanup-evidence`, three commits, not pushed, no PR. All 23 gates in
+- `fix/i3-cleanup-evidence`, five commits, pushed, no PR. All 23 gates in
   the `policy,maintenance,shared,publish` lanes are green.
 - The backlog task this closes is in `3_in-review` with real verification
   output.
@@ -66,8 +66,9 @@
   the emitter is absent, deliberately.
 - If `tests-workspace` gets slow, it is the fixture count, not any one test:
   164 real git repositories at ~133s total.
-- If the `merge-tree` conflict bug bites the DASHBOARD, that is the filed
-  backlog task, not a regression here — the planner is already immune.
+- If the `merge-tree` conflict bug bites the DASHBOARD, `fix/i2-status-truth`
+  carries the dashboard fix and its regression coverage; the planner here is
+  independently immune.
 - `fix/i2-status-truth` was editing `status.py` and `resolve_base` in the same
   file at the same time. `resolve_base` was deliberately left untouched here; a
   conflict there is expected and is that branch's shape, not damage.
@@ -94,9 +95,3 @@
   further and write a script that deletes them. **If you do nothing**: it keeps
   listing them and deleting nothing, which is the default path and is safe
   indefinitely — you delete them on GitHub yourself, or they stay.
-- [A `merge-tree` CONFLICT reads as `merged` in the dashboard](../../../tasks/0_backlog/2026-08-21-merge-tree-conflict-reads-as-merged-in-the-dashboard/task.md)
-  — **Why this matters**: `status.py` prints `merged` for a branch whose content
-  is nowhere in main, whenever the conflict is in a binary file or a submodule,
-  and this repo tracks 22 files with NUL bytes. **If you do nothing**: the
-  cleanup planner is already immune (it re-checks itself), but the dashboard
-  keeps telling you a branch is finished when it is not.
