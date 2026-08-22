@@ -122,6 +122,18 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def write_binary(path: Path, marker: bytes) -> None:
+    """A file git will auto-detect as BINARY — the NUL byte is the whole trick.
+
+    Git looks for a NUL in the first 8000 bytes and, finding one, refuses to
+    merge the file at all. The real repository has 22 tracked files of this
+    shape (DOCX and PDF resumes, JPGs, ``.json.zst`` blobs) and the suite had
+    none, which is how the keep-ours merge trap survived 114 passing tests.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89FIXTURE\x00\x01\x02" + marker + b"\x00\n")
+
+
 def add_toolkit_markers(root: Path) -> None:
     """The four files ``status.validate_toolkit_root`` insists on."""
     write(root / "AGENTS.md", "fixture\n")
@@ -142,6 +154,7 @@ UNIQUE_WORK = (
     "open-work",            # ordinary unmerged branch
     "partially-merged",     # one of two commits cherry-picked
     "ws-variant",           # the whitespace trap: patch-id says merged, it is not
+    "binary-conflict",      # the KEEP-OURS trap: merge-tree hands back the base tree
     "dirty-work",           # committed work plus uncommitted edits
     "locked-work",          # a live, locked worktree
 )
@@ -310,6 +323,22 @@ def build_merge_shapes(case: GitTestCase, root: Path) -> dict:
              epoch=FIXED_EPOCH - 7 * DAY)
     case.git(root, "switch", "-q", "main")
 
+    # 9. the KEEP-OURS trap. Both sides edit a file git treats as BINARY. Git
+    #    cannot merge it, so it resolves the conflict by keeping OURS — and the
+    #    tree `merge-tree --write-tree` hands back is then BYTE-IDENTICAL to
+    #    main's own tree, on exit 1. A probe that accepts exit 1 and compares
+    #    trees therefore reports `merged` for a branch whose content exists
+    #    nowhere in main: the one false-merged direction that loses work.
+    write_binary(root / "asset.bin", b"main-baseline")
+    case.commit(root, "main: track a binary asset", epoch=FIXED_EPOCH - 6 * DAY)
+    branch_from_main("binary-conflict")
+    write_binary(root / "asset.bin", b"branch-only-work")
+    case.commit(root, "binary-conflict: the branch re-cuts the asset",
+                epoch=FIXED_EPOCH - 6 * DAY)
+    case.git(root, "switch", "-q", "main")
+    write_binary(root / "asset.bin", b"main-went-elsewhere")
+    case.commit(root, "main: the asset moved on too", epoch=FIXED_EPOCH - 6 * DAY)
+
     # ── worktree shapes ──────────────────────────────────────────────────────
     holder = root.parent / "worktrees"
     holder.mkdir(exist_ok=True)
@@ -369,3 +398,68 @@ def build_merge_shapes(case: GitTestCase, root: Path) -> dict:
         if line
     }
     return facts
+
+
+# ── the private overlay ──────────────────────────────────────────────────────
+#
+# ONE FABRICATED TOKEN, EVERYWHERE THE REAL OVERLAY WOULD CARRY AN EMPLOYER
+# NAME. The real overlay is a separate repository holding the owner's identity,
+# so no test may read it; instead this builds a repository shaped exactly like
+# it and stamps a nonsense word into every field the auditor caught leaking —
+# branch name, commit subject, branch description, tracked path, changed path,
+# worktree path and remote URL. A privacy test then asserts one thing: that
+# word appears nowhere in any of the dashboard's outputs.
+OVERLAY_SECRET = "zzyzxrobotics"
+
+
+def build_private_overlay(case: GitTestCase, root: Path,
+                          secret: str = OVERLAY_SECRET) -> dict:
+    """A stand-in for ``private/``: same shapes, fabricated contents."""
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True,
+                   env=dict(os.environ))
+    stage = f"applications/2_interviewing/{secret}"
+    write(root / stage / "meta.yaml", f"company: {secret}\nstatus: interviewing\n")
+    case.commit(root, "seed the overlay", epoch=FIXED_EPOCH - 30 * DAY)
+    # A remote-tracking ref without a remote to fetch from: the base ref has to
+    # exist for `merged` to mean anything, and the suite never touches a network.
+    case.git(root, "remote", "add", "origin",
+             f"git@github.com:{secret}-team/overlay.git")
+    case.git(root, "update-ref", "refs/remotes/origin/main", "refs/heads/main")
+    case.git(root, "config", "branch.main.remote", "origin")
+    case.git(root, "config", "branch.main.merge", "refs/heads/main")
+
+    # A CONVENTIONAL prefix (`codex/`) with an employer name behind it, and a
+    # branch with no conventional prefix at all — the two halves of the naming
+    # rule the redaction has to get right.
+    conventional = f"codex/{secret}-onsite-loop"
+    case.git(root, "switch", "-q", "-c", conventional, "main")
+    write(root / stage / "prep.md", f"loop plan for {secret}\n")
+    case.commit(root, f"prep the {secret} onsite loop", epoch=FIXED_EPOCH - 3 * DAY)
+    case.git(root, "config", f"branch.{conventional}.description",
+             f"drive the {secret} loop to an offer\nnext: send the thank-you note")
+
+    bare_named = f"{secret}-negotiation"
+    case.git(root, "switch", "-q", "-c", bare_named, "main")
+    write(root / stage / "offer.md", f"numbers from {secret}\n")
+    case.commit(root, f"log the {secret} numbers", epoch=FIXED_EPOCH - 2 * DAY)
+    case.git(root, "switch", "-q", "main")
+
+    # A linked worktree whose PATH carries the name, and an uncommitted change
+    # whose PATH carries it too — `-v` prints both for the public repo.
+    linked = root.parent / f"{secret}-worktree"
+    case.git(root, "worktree", "add", "-q", "--detach", str(linked), "main")
+    write(root / stage / "notes.md", f"call notes for {secret}\n")
+
+    # A LOCK REASON and a PRUNABLE reason: free-text git repeats back verbatim,
+    # and `-v` prints both for the public repo.
+    locked = root.parent / f"{secret}-locked"
+    case.git(root, "worktree", "add", "-q", "--detach", str(locked), "main")
+    case.git(root, "worktree", "lock", "--reason",
+             f"holding the {secret} loop open", str(locked))
+    gone = root.parent / f"{secret}-gone"
+    case.git(root, "worktree", "add", "-q", "--detach", str(gone), "main")
+    shutil.rmtree(gone)
+    return {"secret": secret, "conventional": conventional,
+            "bare_named": bare_named, "linked": linked, "locked": locked,
+            "gone": gone, "stage": stage}
