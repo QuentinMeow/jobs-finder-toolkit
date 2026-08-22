@@ -4228,3 +4228,9 @@
   files: 1
   digest: sha256:01b542cfa5002446
   finding: 'Final merge-and-cleanup handover only; contains public repository operations, PR numbers, branch names, and verification outcomes, with no real identity, employer, application, or dated job-hunt content.'
+- base: c16588f2
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 2
+  digest: sha256:44f84be870f47d67
+  finding: 'One backlog task and one session handover, both process records. Cite branch names, PR numbers, file paths, test counts and git behaviour only; no identity, employer, application, or dated job-hunt content. The handover names the private overlay only as a directory that exists.'
