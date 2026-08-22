@@ -357,19 +357,26 @@ piped, to `local/gates/<name>.log`. The exit code you read is the gate's own.
 | Flag | Effect |
 |---|---|
 | `--list` | print the table and exit without running anything |
-| `--impact-from <ref>` | run policy plus the long lanes affected since the ref's merge-base; uncertainty expands to every lane |
+| `--impact-from <ref>` | run policy plus the long lanes affected since the ref's merge-base **and by the working tree**; uncertainty expands to every lane |
 | `--group hook` \| `--group ci` | run only that group; default is both |
 | `--only <a>,<b>` · `--skip <a>,<b>` | narrow the selection by name |
 | `--fail-fast` | stop at the first red gate |
 | `--tail N` | how much of a failing log prints inline (default 15) |
 | `--jobs N` | parallelism; some gates are forced serial because they share the index |
 
-Three behaviours worth knowing before you trust a green run:
+Four behaviours worth knowing before you trust a green run:
 
 - **SKIP is not PASS.** A gate that cannot run here — no LibreOffice for the example
   render, no `private/` mount for the two `--require-roots` forms — reports SKIP, is
   named on its own line in the summary, and is excluded from the green count. The
-  final line reads `ALL GREEN (n gates, k skipped: …)` so the skips are never silent.
+  final line reads `ALL GREEN (n of N gates ran; k skipped: …)` so the skips are
+  never silent.
+- **Read the denominator, and know the three exit codes.** `n of N` is how many gates
+  actually executed against how many the table holds; a `coverage:` line and, when the
+  run narrowed, a `lanes NOT run (…)` line sit directly above the verdict. `ALL GREEN`
+  + exit 0 needs at least one gate to have run. A run where **nothing** executed —
+  empty selection, or everything skipped — says `NO EVIDENCE` and exits **3**, which is
+  neither green nor red: nothing was proven either way. A failure is still `RED` + 1.
 - **`example-render` dirties the worktree.** It regenerates four tracked example
   DOCX/PDFs whose bytes are not reproducible. CI does this in a throwaway checkout;
   you are not in one. `git checkout -- examples/` afterwards unless those bytes are
@@ -394,8 +401,8 @@ branch can commit clean and still be red in an affected CI-only suite.
 **`--lane` is repeatable and comma-separated, and neither form drops a lane.** It
 used to be a plain store, so `--lane a --lane b` silently ran only `b` — a run that
 asked for two lanes checked one and printed `ALL GREEN`. If you name lanes by hand,
-read the `running N gates (lane: …)` header back: it echoes what was actually
-selected.
+read the `running N of M gates (lane: …)` header back: it echoes what was actually
+selected, and the summary's `lanes NOT run (…)` line names what you left out.
 
 ### 8.1 Do not substitute your own lane list for the impact-scoped run
 
@@ -406,19 +413,24 @@ recovering cost **42% of the whole 10m32s cycle** — one wasted CI run, the loc
 diagnosis, and a second CI run. The local command that would have prevented it
 takes well under a minute.
 
-**Run it AFTER committing, not before.** `--impact-from` compares a committed Git
-range, so on uncommitted work it reports `focused; lanes: policy; reason: the Git
-range contains no changes`, runs 8 gates in ~28s, and prints `ALL GREEN`. That looks
-exactly like a clean full run and proves nothing about your edits. The same branch
-after committing selected `policy, maintenance`, ran 17 gates, and took ~76s. If the
-header says *no changes* while you have work in progress, you have measured nothing.
+**Uncommitted work is no longer invisible.** `--impact-from` compares a committed Git
+range, so it once reported `focused; lanes: policy; reason: the Git range contains no
+changes`, ran 8 gates in ~28s, and printed `ALL GREEN` over a tree full of unstaged
+edits — indistinguishable from a clean full run, and proof of nothing. The runner now
+classifies the working tree (tracked edits plus untracked, `.gitignore` honoured) and
+**unions** its lanes into the selection, so a dirty tree can only ever widen the run.
+Still read the header back: it prints the lanes selected, the lanes **dropped**, and
+the uncommitted-change count. A dirty tree therefore costs more gates than a clean
+one, and a single unowned untracked file expands to the full suite.
 
-Two guards now exist, and neither replaces running the real thing:
+Three guards now exist, and none replaces running the real thing:
 
 - the reconciler's `shipped-docs-name-shipped-tooling` check fails at **commit**
   time when a shipped `docs/handbook/` page names an `automation/` tree that
   `export_public.py` does not export — the specific drift behind that failure;
-- `--impact-from` expands to the full suite on any input it cannot classify.
+- `--impact-from` expands to the full suite on any input it cannot classify;
+- a run in which no gate executed can no longer read green: it says `NO EVIDENCE`
+  and exits 3, and every green line carries `n of N`.
 
 ### 8.2 Budgeting the slow steps
 
