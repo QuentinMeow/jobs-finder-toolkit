@@ -16,6 +16,7 @@
 - `memory/decisions/interview-screenshot-inbox-moves-to-personal-practice.md` — Move the coding interview screenshot inbox into personal practice
 - `memory/decisions/job-filter-triage-and-lineage.md` — Preserve ambiguous job roles and source metadata for review
 - `memory/decisions/job-index-durable-floor.md` — Preserve index-only job history during builds
+- `memory/decisions/merged-branches-are-swept-after-their-prs-close.md` — Merged branches are swept after their PRs close, but `delete_branch_on_merge` stays off
 - `memory/decisions/owner-directed-behavioral-fabrication-disclosures.md` — Allow owner-directed behavioral fabrication with private disclosures
 - `memory/decisions/private-overlay-person-first-layout.md` — Group the private overlay's personal artifacts below `me/`
 - `memory/decisions/process-folders-layout.md` — Process folders: tasks/, memory/known-issues/, memory/decisions/, unresolved-decisions/

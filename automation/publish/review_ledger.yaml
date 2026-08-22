@@ -4252,3 +4252,15 @@
   files: 2
   digest: sha256:44f84be870f47d67
   finding: 'No new content. The origin/main side of a second merge onto the same branch: the two process records from #365 (one backlog task, one session handover), reviewed under their own row when they landed. Adds nothing beyond that PR.'
+- base: e3c4631c
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 3
+  digest: sha256:35be4e67f031e852
+  finding: 'Folds an owner decision given in chat into memory/decisions/, removes the answered queue item, and regenerates the memory index. Cites branch names, PR numbers, git commands and an incident timeline only; no identity, employer, application, or dated job-hunt content.'
+- base: c0b29a26
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 1
+  digest: sha256:d8f9d1ee742c8f27
+  finding: 'Removes a GitHub URL containing the owner handle from a memory decision record; replaced with a generic reference to the repository branches page. CI armed leak guard caught it; the local unarmed scan could not. Re-verified with the guard armed: clean.'
