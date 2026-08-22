@@ -4110,6 +4110,12 @@
   finding: 'Workspace cleanup planner and its test suite. The emitted shell script now isolates each item, so one refusal no longer cancels the safe items after it, and prints a summary plus a non-zero exit when anything refused. Public tooling, shell semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
 - base: 3d6da1b8
   reviewed_by: agent
+  date: 2026-08-22
+  files: 1
+  digest: sha256:08030f580d89fecc
+  finding: 'Adds a repository-selection preflight to the public agent contract for checkouts containing both public and private Git repositories. Repository paths and Git procedures only; no real identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
   date: 2026-08-21
   files: 1
   digest: sha256:7cdd90fa4114f4dd
@@ -4198,3 +4204,9 @@
   files: 19
   digest: sha256:0f7b4a03d5ce079e
   finding: 'Conflict-resolution merge imports the already-reviewed workspace cleanup, status, merge-driver, gate-honesty, documentation, process record, and remote-retirement decision changes from main while retaining the handover correction. Public tooling, tests, documentation, git semantics and fabricated fixtures only; no real identity, employer, application, or dated job-hunt content.'
+- base: 402a4283
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 20
+  digest: sha256:eeca905dae2d819f
+  finding: 'Conflict-resolution merge imports the already-reviewed workspace cleanup, status, merge-driver, gate-honesty, documentation, history correction, process record, and remote-retirement decision changes from main while retaining the repository-selection preflight. Public tooling, tests, documentation, git semantics and fabricated fixtures only; no real identity, employer, application, or dated job-hunt content.'

@@ -34,6 +34,22 @@ text, DOCX, and PDF content; it does not make unpublishable prose safe. Read
 `docs/handbook/public-private-split.md` for the complete boundary, export omissions, skill-visibility
 rules, and adapter layout; read `docs/handbook/private-overlay.md` before overlay setup or migration.
 
+## Git repository selection (required preflight)
+
+This checkout can contain two independent Git repositories: the public repository at the checkout
+root and the mounted private overlay at `private/`. Before any branch, ref, commit, PR, worktree,
+status, or cleanup operation, resolve which repository owns the target instead of assuming the
+current working directory does:
+
+1. Run `git rev-parse --show-toplevel` in the public root. When the overlay is mounted, also run
+   `git -C private rev-parse --show-toplevel`.
+2. For a named branch or ref, query it in both repositories. Operate on the repository where it
+   exists; if it exists in both or neither, use the remotes and task context to disambiguate before
+   mutating anything.
+3. Use explicit `git -C <repo>` commands for every operation after selection, and name the selected
+   repository in the result. Never infer repository ownership from the shell's current directory,
+   a branch-name prefix, or the work's subject matter.
+
 ## Runtime Environment (required preflight)
 
 The top-level agent confirms the runtime before the first repository command (`uname -s` plus
