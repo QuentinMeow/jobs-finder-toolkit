@@ -4228,6 +4228,12 @@
   files: 1
   digest: sha256:01b542cfa5002446
   finding: 'Final merge-and-cleanup handover only; contains public repository operations, PR numbers, branch names, and verification outcomes, with no real identity, employer, application, or dated job-hunt content.'
+- base: c16588f2
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 2
+  digest: sha256:44f84be870f47d67
+  finding: 'One backlog task and one session handover, both process records. Cite branch names, PR numbers, file paths, test counts and git behaviour only; no identity, employer, application, or dated job-hunt content. The handover names the private overlay only as a directory that exists.'
 - base: 3d6da1b8
   reviewed_by: agent
   date: 2026-08-22
@@ -4240,3 +4246,9 @@
   files: 23
   digest: sha256:76e7a42cab435ea4
   finding: 'No new content. This is the origin/main side of a merge arriving on a branch that forked before it: the already-merged contents of #357-#361, each reviewed under its own row when it landed. Verified the range adds nothing beyond those PRs. Note the private-company cross-reference did NOT run here (a linked worktree has no overlay mounted), so this row rests on the per-PR reviews rather than on that detector.'
+- base: 77b58dc2
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 2
+  digest: sha256:44f84be870f47d67
+  finding: 'No new content. The origin/main side of a second merge onto the same branch: the two process records from #365 (one backlog task, one session handover), reviewed under their own row when they landed. Adds nothing beyond that PR.'
