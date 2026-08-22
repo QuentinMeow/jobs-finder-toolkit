@@ -543,13 +543,12 @@ def resolve_base(repo: Path, fetched: bool) -> str | None:
     criterion is containment by the FETCHED remote base, not by whatever the
     local main happens to be. Without a fetch the local ref is all there is,
     and the plan says so.
+
+    The implementation now lives in ``status.resolve_base``, which the dashboard
+    shares: two copies of "what does merged mean" is how the dashboard came to
+    grade already-landed work ``unmerged`` while this planner did not.
     """
-    order = (("refs/remotes/origin/main", "refs/heads/main") if fetched
-             else ("refs/heads/main", "refs/remotes/origin/main"))
-    for ref in order:
-        if status._ref_exists(repo, ref):
-            return ref
-    return None
+    return status.resolve_base(repo, prefer_remote=fetched)
 
 
 # ── the review ledger, and what deleting a branch can actually cost it ───────
@@ -2619,8 +2618,9 @@ def _plan(argv: Sequence[str] | None, out) -> int:
         return 3
 
     repo = status.inspect_repository("PUBLIC", root)
-    # The dashboard prefers the LOCAL main; after a fetch the remote base is the
-    # authority, so the containment verdicts are recomputed against it.
+    # The dashboard resolves its own base (remote-tracking first, no fetch); this
+    # planner may have just fetched, or may be running without one, so whenever
+    # the two disagree the containment verdicts are recomputed against ours.
     if base_ref != repo.base_ref:
         repo = _recompute_against(repo, root, base_ref)
 

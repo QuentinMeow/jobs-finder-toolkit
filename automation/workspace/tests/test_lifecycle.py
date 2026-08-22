@@ -10,7 +10,12 @@ produce one, including the two that defeat the obvious implementations:
 * a SQUASH-MERGE, which ``git branch --merged`` and ``git cherry`` both miss;
 * a WHITESPACE VARIANT, which ``git patch-id`` declares identical to the commit
   already in main although the two files differ in Python-significant
-  indentation.
+  indentation;
+* an UNMERGEABLE PATH — a binary file, a path marked ``-merge`` in
+  ``.gitattributes``, a diverged submodule pointer. Git resolves those by
+  keeping "ours", so ``merge-tree`` returns the BASE TREE on exit 1 and a probe
+  that trusts a conflicted exit reads ``merged``. The suite had no binary file
+  and no submodule, which is how that one survived 114 passing tests.
 
 Run with (from the repo root):
     .venv/bin/python -m unittest discover automation/workspace/tests
@@ -19,6 +24,7 @@ Run with (from the repo root):
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +82,27 @@ class MergeShapeMatrixTests(F.SharedShapesTestCase):
         branch_file = self.out(self.root, "show", "ws-variant:indent.py")
         main_file = self.out(self.root, "show", "main:indent.py")
         self.assertNotEqual(branch_file, main_file)
+
+    def test_binary_conflict_hands_back_the_base_tree_and_is_still_not_merged(self) -> None:
+        # THE TRAP, MEASURED. Git cannot merge a binary file, so it keeps OURS —
+        # and the tree `merge-tree --write-tree` returns on exit 1 is then
+        # byte-identical to main's own tree. The old rule accepted exit 1 and
+        # compared trees, so this branch read `merged` and the cleanup planner
+        # would have offered to delete it.
+        probe = status.open_merge_probe(self.root)
+        self.addCleanup(probe.close)
+        base_tree = status._base_tree(self.root, "refs/heads/main")
+        result = status._git(self.root, "merge-tree", "--write-tree", "refs/heads/main",
+                             "refs/heads/binary-conflict", check=False, env=probe.env)
+        self.assertEqual(result.returncode, 1,
+                         "fixture no longer produces a binary CONFLICT")
+        self.assertEqual(result.stdout.split("\n", 1)[0].strip(), base_tree,
+                         "fixture no longer reproduces the keep-ours trap: the "
+                         "conflicted tree must equal the base tree")
+        self.assertNotEqual(self.by_name["binary-conflict"].merged, "merged")
+        # And the work really is unique: main's asset differs from the branch's.
+        self.assertNotEqual(self.out(self.root, "rev-parse", "main:asset.bin"),
+                            self.out(self.root, "rev-parse", "binary-conflict:asset.bin"))
 
     def test_merged_then_reverted_and_empty_commit_read_merged_by_design(self) -> None:
         # Both are documented, deliberate answers rather than accidents: the
@@ -164,6 +191,123 @@ class MergeShapeMatrixTests(F.SharedShapesTestCase):
         verdict = status._merged_state(
             self.root, "refs/heads/no-such-branch", "refs/heads/main", probe, base_tree)
         self.assertEqual(verdict, "unknown")
+
+
+class MergeTreeExitCodeTests(F.GitTestCase):
+    """A NON-ZERO ``merge-tree`` EXIT IS NOT AN ANSWER.
+
+    Both shapes here end the same way: git resolves an unmergeable path by
+    keeping "ours", the resulting tree equals the BASE tree, and a probe that
+    trusts exit 1 concludes ``merged`` for a branch holding work main has never
+    seen. Neither shape needs a NUL byte to be spotted by eye:
+
+    * a TEXT file marked ``-merge`` (or ``binary``) in ``.gitattributes``;
+    * a SUBMODULE pointer that diverged instead of fast-forwarding.
+
+    Each gets its own repository — a submodule in the shared matrix would
+    change every other test's ``git status``.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.root = self.scratch / "toolkit"
+        self.root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.root)],
+                       check=True, env=dict(os.environ))
+        F.add_toolkit_markers(self.root)
+        F.write(self.root / "seed.txt", "seed\n")
+        self.commit(self.root, "base commit", epoch=F.FIXED_EPOCH - 30 * F.DAY)
+
+    def verdict(self, branch: str) -> tuple[str, int, str]:
+        """``(verdict, merge-tree exit code, its first stdout line)``."""
+        probe = status.open_merge_probe(self.root)
+        self.addCleanup(probe.close)
+        base_tree = status._base_tree(self.root, "refs/heads/main")
+        probed = status._git(self.root, "merge-tree", "--write-tree",
+                             "refs/heads/main", f"refs/heads/{branch}",
+                             check=False, env=probe.env)
+        verdict = status._merged_state(self.root, f"refs/heads/{branch}",
+                                       "refs/heads/main", probe, base_tree)
+        return verdict, probed.returncode, probed.stdout.split("\n", 1)[0].strip()
+
+    def test_a_gitattributes_unmergeable_text_file_is_not_merged(self) -> None:
+        F.write(self.root / ".gitattributes", "*.lock -merge\n")
+        F.write(self.root / "deps.lock", "resolved = 1\n")
+        self.commit(self.root, "track an unmergeable lockfile",
+                    epoch=F.FIXED_EPOCH - 5 * F.DAY)
+        self.git(self.root, "switch", "-q", "-c", "lock-work", "main")
+        F.write(self.root / "deps.lock", "resolved = 2  # branch-only work\n")
+        self.commit(self.root, "lock-work: re-resolve", epoch=F.FIXED_EPOCH - 5 * F.DAY)
+        self.git(self.root, "switch", "-q", "main")
+        F.write(self.root / "deps.lock", "resolved = 3  # main went elsewhere\n")
+        self.commit(self.root, "main: re-resolve too", epoch=F.FIXED_EPOCH - 5 * F.DAY)
+
+        base_tree = self.out(self.root, "rev-parse", "main^{tree}")
+        verdict, code, head = self.verdict("lock-work")
+        self.assertEqual(code, 1, "fixture no longer conflicts")
+        self.assertEqual(head, base_tree,
+                         "fixture no longer reproduces the keep-ours trap")
+        self.assertNotEqual(verdict, "merged")
+        self.assertEqual(verdict, status._MERGED_UNKNOWN)
+
+    def test_a_diverged_submodule_pointer_is_not_merged(self) -> None:
+        inner = self.scratch / "inner"
+        subprocess.run(["git", "init", "-q", "-b", "main", str(inner)],
+                       check=True, env=dict(os.environ))
+        F.write(inner / "f.txt", "v1\n")
+        first = self.commit(inner, "v1", epoch=F.FIXED_EPOCH - 20 * F.DAY)
+        self.git(inner, "switch", "-q", "-c", "side-a")
+        F.write(inner / "a.txt", "A\n")
+        side_a = self.commit(inner, "A", epoch=F.FIXED_EPOCH - 19 * F.DAY)
+        self.git(inner, "switch", "-q", "-c", "side-b", first)
+        F.write(inner / "b.txt", "B\n")
+        side_b = self.commit(inner, "B", epoch=F.FIXED_EPOCH - 19 * F.DAY)
+
+        self.git(self.root, "-c", "protocol.file.allow=always", "submodule", "add",
+                 "-q", str(inner), "sub")
+        self.git(self.root / "sub", "checkout", "-q", first)
+        self.commit(self.root, "pin the submodule", epoch=F.FIXED_EPOCH - 18 * F.DAY)
+        self.git(self.root, "switch", "-q", "-c", "sub-work", "main")
+        self.git(self.root / "sub", "checkout", "-q", side_a)
+        self.commit(self.root, "sub-work: move the pointer",
+                    epoch=F.FIXED_EPOCH - 17 * F.DAY)
+        self.git(self.root, "switch", "-q", "main")
+        self.git(self.root / "sub", "checkout", "-q", side_b)
+        self.commit(self.root, "main: move the pointer elsewhere",
+                    epoch=F.FIXED_EPOCH - 17 * F.DAY)
+
+        base_tree = self.out(self.root, "rev-parse", "main^{tree}")
+        verdict, code, head = self.verdict("sub-work")
+        self.assertEqual(code, 1, "fixture no longer conflicts")
+        self.assertEqual(head, base_tree,
+                         "fixture no longer reproduces the keep-ours trap")
+        self.assertNotEqual(verdict, "merged")
+        self.assertEqual(verdict, status._MERGED_UNKNOWN)
+        # The pointer really did diverge: neither side is the other's ancestor.
+        ancestor = self.git(inner, "merge-base", "--is-ancestor", side_a, side_b,
+                            check=False)
+        self.assertNotEqual(ancestor.returncode, 0)
+
+    def test_a_conflict_that_still_changes_main_keeps_the_useful_unmerged(self) -> None:
+        """The one refinement, and it can only ever over-keep.
+
+        An ordinary add/add conflict also exits 1, but its tree DIFFERS from the
+        base — which proves merging would change main, this module's definition
+        of not-contained. Degrading that to ``unknown`` too would cost real
+        information for no safety.
+        """
+        self.git(self.root, "switch", "-q", "-c", "text-work", "main")
+        F.write(self.root / "notes.md", "branch text\n")
+        self.commit(self.root, "text-work: add notes", epoch=F.FIXED_EPOCH - 4 * F.DAY)
+        self.git(self.root, "switch", "-q", "main")
+        F.write(self.root / "notes.md", "main text\n")
+        self.commit(self.root, "main: add notes too", epoch=F.FIXED_EPOCH - 4 * F.DAY)
+
+        base_tree = self.out(self.root, "rev-parse", "main^{tree}")
+        verdict, code, head = self.verdict("text-work")
+        self.assertEqual(code, 1)
+        self.assertNotEqual(head, base_tree)
+        self.assertEqual(verdict, "unmerged")
 
 
 class WedgeRecoveryTests(F.GitTestCase):
