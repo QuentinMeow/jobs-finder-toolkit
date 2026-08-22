@@ -4111,6 +4111,12 @@
 - base: 3d6da1b8
   reviewed_by: agent
   date: 2026-08-22
+  files: 2
+  digest: sha256:cdcd126ce97fce8b
+  finding: 'Recovers the net corrections from two detached public handover commits and records the branch/PR inventory session. Names only repository roles, branch names, generic practice artifacts, Git behavior, and public process items; no real identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-22
   files: 1
   digest: sha256:08030f580d89fecc
   finding: 'Adds a repository-selection preflight to the public agent contract for checkouts containing both public and private Git repositories. Repository paths and Git procedures only; no real identity, employer, application, or dated job-hunt content.'
@@ -4210,3 +4216,9 @@
   files: 20
   digest: sha256:eeca905dae2d819f
   finding: 'Conflict-resolution merge imports the already-reviewed workspace cleanup, status, merge-driver, gate-honesty, documentation, history correction, process record, and remote-retirement decision changes from main while retaining the repository-selection preflight. Public tooling, tests, documentation, git semantics and fabricated fixtures only; no real identity, employer, application, or dated job-hunt content.'
+- base: eaf58177
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 21
+  digest: sha256:34fa91ede6e601ad
+  finding: 'Conflict-resolution merge imports the already-reviewed repository-selection, workspace cleanup, status, merge-driver, gate-honesty, documentation, history correction, process record, and remote-retirement decision changes from main while retaining the recovered handover records. Public tooling, tests, documentation, git semantics and fabricated fixtures only; no real identity, employer, application, or dated job-hunt content.'
