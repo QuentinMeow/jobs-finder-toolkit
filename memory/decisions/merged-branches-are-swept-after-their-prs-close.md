@@ -8,7 +8,7 @@
 
 ## Context
 
-`https://github.com/QuentinMeow/jobs-finder-toolkit/branches` had accumulated 18 branches,
+The public repository's branches page had accumulated 18 branches,
 17 of them belonging to PRs that were merged and closed. Nothing was responsible for
 removing them, and that was not an oversight: retention is documented in
 `skills/github-workflow/SKILL.md` and `CONTRIBUTING.md`, and ENFORCED in code —
