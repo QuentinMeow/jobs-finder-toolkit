@@ -5,32 +5,30 @@
 
 ## What happened
 
-- Nothing discovered was discarded or left without a review path: seven public workstreams and two private-overlay workstreams have focused PRs; none was merged.
-- Five unmerged public remote branches were recovered into PRs, the public root's repository-selection edit was committed on its own branch, two detached historical handover commits were recovered by their net content, and both private dirty-file groups were separated and committed.
-- The original public root still has the same `AGENTS.md` working-copy edit now carried by `codex/git-repository-selection-preflight`; it was deliberately left untouched until that PR is merged.
+- All seven PRs that were open at the start of the merge pass were merged: public `#358`–`#363` and private `#116`. Public `#357` was already merged; private `#117` was closed without merging and its local source branch was preserved.
+- Each conflicting public PR was merged against the latest `main`. Every conflict was confined to the append-only publish review ledger, whose entries were unioned before the branch gates and GitHub checks passed.
+- After refreshed-main ancestry and open-PR checks, exact leased atomic pushes removed 24 merged public remote branches and 3 merged private remote branches.
 
 ## Where things stand
 
-- Public PR branches: `fix/i1-merge-cutover`, `fix/i2-status-truth`, `fix/i3-cleanup-evidence`, `fix/i4-gate-honesty`, `fix/workspace-lifecycle-r2`, `codex/git-repository-selection-preflight`, and this recovery branch.
-- Two private-overlay PRs carry the coding-interview style repair and the separate longest-palindrome practice artifact. The private repository has no configured CI checks; both passed their local hooks and targeted verification.
-- Merged historical branches were not republished. The detached commits remain reachable through their existing snapshot ref; no branch, worktree, remote ref, or owner artifact was deleted.
+- No feature PR remains open in either repository. Public `main` is clean and synchronized; private `main` is clean and synchronized.
+- Both remotes contain only `main`. The public repository has only local `main`; the private repository also retains `codex/longest-palindromic-substring-practice` because its PR `#117` was closed without merging.
+- This handover is the final follow-up. Once it reaches `main`, its temporary branch can be deleted with the same ancestry and lease checks.
 
 ## Decisions made for you
 
-- Each independent diff received its own PR because all nine workstreams can be reviewed and reverted separately; combining them would make unrelated history, tooling, and private artifacts move together.
-- The stale cleanup-dashboard task was removed from `fix/i3-cleanup-evidence` because `fix/i2-status-truth` already contains the fix and regression coverage; restoring it would create duplicate work.
-- Public gates ran with system Git 2.50.1 because the shell-selected Git 2.23 cannot execute the repository's `git init -b` fixtures; changing the shell's global Git configuration was outside this task.
+- Public PRs were merged in dependency order `#358` through `#363`, so each conflict resolution and verification used the newest `main` instead of rewriting published history.
+- The pre-existing public `AGENTS.md` edit was kept in a temporary stash until its merged copy was proven identical, then that exact redundant stash was dropped.
+- The owner's request authorized this one-time manual remote cleanup. It does not change the cleanup planner's safe default while its permanent remote-retirement decision remains open.
 
 ## If X then Y
 
-- If `fix/i2-status-truth` merges before `fix/i3-cleanup-evidence`, rebase the latter and resolve their expected overlap in workspace cleanup code before merging it.
-- If the repository-selection PR merges, the original root's identical working-copy edit can be cleared by the owner after confirming it matches `main`; until then, leave it as the recovery source.
-- If a public PR turns red after this handover, use its GitHub job log; every public branch was green locally before PR creation.
+- If private `#117` should ship, reopen it or create a new PR from the retained local branch. If it should be discarded, the owner must explicitly authorize deletion because it is unmerged owner work.
+- If permanent merged-remote deletion belongs in the cleanup planner, answer the existing decision item; otherwise the planner continues to report candidates without deleting them.
 
 ## Dead ends
 
-- The first public gate runs selected Git 2.23 and failed only where fixtures use `git init -b`; rerunning with system Git 2.50.1 removed those environment failures.
-- Two full gate runs in parallel pushed a time-sensitive lifecycle fixture beyond its ten-minute tolerance; the affected branch passed when rerun serially, so the remaining suites were serialized.
+- The merge helper's local content probe was inconclusive after each merge, so it safely retained the branches. The repository-wide cleanup helper later deleted only branches proven merged into refreshed `origin/main`.
 
 ## Needs your attention
 
