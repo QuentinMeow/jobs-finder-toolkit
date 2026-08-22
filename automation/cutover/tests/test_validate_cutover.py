@@ -214,7 +214,7 @@ class ExecutionTests(unittest.TestCase):
     def test_all_green_exits_zero(self):
         _, code, text, _ = self.run_gates_in_temp([exiting_gate("a", 0)])
         self.assertEqual(code, 0, text)
-        self.assertIn("ALL GREEN (1 gates)", text)
+        self.assertIn("ALL GREEN (1 of 1 gates ran)", text)
 
     def test_a_failing_gate_in_a_parallel_run_is_reported_as_exit_one(self):
         gates = [exiting_gate(f"pass-{i}", 0) for i in range(4)]
@@ -259,7 +259,7 @@ class ExecutionTests(unittest.TestCase):
             {"real": RUN_GATES.PASS, "skipped": RUN_GATES.SKIP})
         self.assertIn("skipped (NOT passes): skipped", text)
         # One gate passed, so the count says one — the SKIP is not folded in.
-        self.assertIn("ALL GREEN (1 gates, 1 skipped: skipped)", text)
+        self.assertIn("ALL GREEN (1 of 2 gates ran; 1 skipped: skipped)", text)
 
     def test_a_skip_never_rescues_a_failing_run(self):
         skipped = exiting_gate(

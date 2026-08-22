@@ -24,7 +24,17 @@ easy thing:
   * a gate missing an optional prerequisite (LibreOffice absent, ``private/`` not
     mounted) reports **SKIP**, never PASS. A known-unsafe execution environment
     reports **FAIL** before a subprocess starts. Skips and failures are counted
-    and named separately, always.
+    and named separately, always;
+  * **"nothing ran" never renders as "everything passed".** A run in which no gate
+    actually executed a check produces no evidence, so it gets its own verdict word
+    (``NO EVIDENCE``) and its own exit code (3) — never ``ALL GREEN``, never 0. The
+    green line always carries the denominator (``n of N gates ran``), and a run that
+    narrowed the lane set names the lanes it dropped and why. Silent narrowing is how
+    a run of 8 gates out of 36 was once read as a full suite.
+
+Uncommitted work is visible to ``--impact-from``: a Git range is commit-to-commit and
+cannot see a dirty tree, so the working tree is classified too and its lanes are
+UNIONED into the selection (see ``impact_decision``).
 
 Usage::
 
@@ -36,8 +46,11 @@ Usage::
     .venv/bin/python automation/gates/run_gates.py --only reconciler,verify-links
     .venv/bin/python automation/gates/run_gates.py --lane publish --jobs 3
 
-Exit code: 0 when every SELECTED gate exited 0 (skips are reported, not failures),
-1 otherwise.
+Exit codes: **0** when at least one gate executed and every SELECTED gate exited 0
+(skips are reported, not failures) · **1** when a gate failed or was cut short ·
+**3** when NO gate executed a check at all — nothing was selected, or everything
+skipped. 3 is deliberately not 1: "no evidence" is not "red", and neither is green.
+``automation/cutover/verify_copy.py`` already spends exit 3 on exactly this meaning.
 
 The gate table below is derived from ``automation/hooks/pre-commit`` and
 ``.github/workflows/ci.yml`` — the invocations are copied, not invented. Drift is a
@@ -141,6 +154,11 @@ import libreoffice_env  # noqa: E402
 # ── gate table ───────────────────────────────────────────────────────────────
 
 PASS, FAIL, SKIP, NOTRUN = "PASS", "FAIL", "SKIP", "NOTRUN"
+
+# "No gate executed a check." Not 0 (nothing was proven) and not 1 (nothing was
+# disproven either). Mirrors automation/cutover/verify_copy.py, which already spends
+# 3 on "nothing was verified" so an unrun check could never be read as a passed one.
+EXIT_NO_EVIDENCE = 3
 
 
 @dataclass(frozen=True)
@@ -642,6 +660,7 @@ class ImpactDecision:
     long_lanes: tuple[str, ...]
     full: bool
     reason: str
+    uncommitted: int = 0  # working-tree changes folded into the classification
 
     @property
     def lanes(self) -> tuple[str, ...]:
@@ -649,9 +668,16 @@ class ImpactDecision:
             return _FULL_IMPACT_LANES
         return ("policy", *self.long_lanes)
 
+    @property
+    def dropped_lanes(self) -> tuple[str, ...]:
+        """Lanes the full matrix has that this decision does NOT run."""
+        selected = set(self.lanes)
+        return tuple(name for name in _FULL_IMPACT_LANES if name not in selected)
 
-def _full_impact(ref: str, reason: str, merge_base: str | None = None) -> ImpactDecision:
-    return ImpactDecision(ref, merge_base, LONG_CI_LANES, True, reason)
+
+def _full_impact(ref: str, reason: str, merge_base: str | None = None,
+                 uncommitted: int = 0) -> ImpactDecision:
+    return ImpactDecision(ref, merge_base, LONG_CI_LANES, True, reason, uncommitted)
 
 
 def _load_change_classifier(root: Path):
@@ -673,8 +699,60 @@ def _load_change_classifier(root: Path):
     return module
 
 
+def _git_bytes(args: Sequence[str], root: Path) -> bytes:
+    """Run one read-only git command, returning stdout. No shell, no pipe."""
+    result = subprocess.run(list(args), cwd=root, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, check=False)
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", "replace").strip().replace("\n", " ")
+        raise RuntimeError(f"`{' '.join(args)}` exited {result.returncode}"
+                           + (f": {detail}" if detail else ""))
+    return result.stdout
+
+
+def worktree_changes(classifier, root: Path = REPO_ROOT) -> tuple:
+    """Every uncommitted change, in the CI classifier's own ``Change`` shape.
+
+    ``--impact-from`` compares COMMITS, so a tree full of unstaged edits classifies
+    as "the Git range contains no changes" and narrows to the policy lane — the run
+    then reports success having measured nothing about the work in progress. That is
+    the defect this function closes.
+
+    Two reads, because Git splits the answer:
+
+      * ``git diff --name-status HEAD`` — staged AND unstaged edits to tracked files;
+      * ``git ls-files --others --exclude-standard`` — untracked files, recorded as
+        additions. ``--exclude-standard`` honours ``.gitignore``, so the scratch tree
+        (``local/``) and the private overlay never expand the selection.
+
+    Raises on any input the classifier's own parser refuses; the caller turns that
+    into the full lane matrix rather than a guess.
+    """
+    changes = list(classifier.parse_name_status(
+        _git_bytes(["git", "diff", "--name-status", "-z", "-M", "HEAD", "--"], root)))
+    untracked = _git_bytes(
+        ["git", "ls-files", "--others", "--exclude-standard", "-z"], root)
+    for raw in untracked.split(b"\0"):
+        if not raw:
+            continue
+        if b"\n" in raw or b"\r" in raw:
+            raise RuntimeError("an untracked path contained a line break")
+        changes.append(classifier.Change("A", (raw,)))
+    return tuple(changes)
+
+
 def impact_decision(ref: str, root: Path = REPO_ROOT) -> ImpactDecision:
-    """Classify merge-base(ref, HEAD)..HEAD, expanding every uncertainty to full."""
+    """Classify merge-base(ref, HEAD)..HEAD PLUS the working tree, fail-closed.
+
+    The committed range and the working tree are classified separately and their
+    lanes are UNIONED, so uncommitted work can only ever WIDEN the selection. Two
+    alternatives were rejected: refusing to narrow at all while the tree is dirty
+    (correct, but it makes the flag useless during normal work, and an unusable
+    honest tool gets replaced by a dishonest hand-picked ``--lane`` list); and merely
+    warning (the warning scrolls past, the exit code still says green). The accepted
+    cost is that a dirty tree runs more gates — and that one unowned untracked file
+    expands to the full matrix, which is the safe direction to be wrong in.
+    """
     if not ref.strip() or ref.startswith("-"):
         return _full_impact(ref, "invalid or empty comparison ref")
     try:
@@ -715,14 +793,41 @@ def impact_decision(ref: str, root: Path = REPO_ROOT) -> ImpactDecision:
             ref, f"classifier unavailable or invalid: {error}", merge_base
         )
 
+    # The working tree, which the committed range above cannot see.
+    try:
+        pending = worktree_changes(classifier, root)
+        dirty = len(pending)
+        if pending:
+            tree = classifier.classify(pending)
+            tree_lanes = tuple(tree.lanes)
+            tree_full = tree.full
+            tree_reason = str(tree.reason).replace("\n", " ")
+        else:
+            tree_lanes, tree_full, tree_reason = (), False, ""
+    except Exception as error:
+        return _full_impact(
+            ref, f"uncommitted changes could not be classified: {error}", merge_base
+        )
+
+    if dirty:
+        reason = (f"{reason}; plus {dirty} uncommitted change(s) folded in"
+                  + (f" — {tree_reason}" if tree_reason else ""))
     if not isinstance(full, bool) or any(lane not in LONG_CI_LANES for lane in lanes):
-        return _full_impact(ref, "classifier returned an ambiguous result", merge_base)
-    if full:
-        return _full_impact(ref, reason or "classifier requested full coverage", merge_base)
-    ordered = tuple(lane for lane in LONG_CI_LANES if lane in set(lanes))
-    if len(ordered) != len(lanes):
-        return _full_impact(ref, "classifier returned duplicate lanes", merge_base)
-    return ImpactDecision(ref, merge_base, ordered, False, reason)
+        return _full_impact(ref, "classifier returned an ambiguous result", merge_base,
+                            dirty)
+    if not isinstance(tree_full, bool) or any(
+            lane not in LONG_CI_LANES for lane in tree_lanes):
+        return _full_impact(ref, "classifier returned an ambiguous result for the "
+                                 "working tree", merge_base, dirty)
+    if full or tree_full:
+        return _full_impact(ref, reason or "classifier requested full coverage",
+                            merge_base, dirty)
+    if len(set(lanes)) != len(lanes) or len(set(tree_lanes)) != len(tree_lanes):
+        return _full_impact(ref, "classifier returned duplicate lanes", merge_base,
+                            dirty)
+    union = set(lanes) | set(tree_lanes)
+    ordered = tuple(lane for lane in LONG_CI_LANES if lane in union)
+    return ImpactDecision(ref, merge_base, ordered, False, reason, dirty)
 
 
 def print_impact_decision(decision: ImpactDecision, out) -> None:
@@ -734,6 +839,18 @@ def print_impact_decision(decision: ImpactDecision, out) -> None:
         f"lanes: {', '.join(decision.lanes)}; reason: {reason}",
         file=out,
     )
+    dropped = decision.dropped_lanes
+    if dropped:
+        # Named, not merely absent: a reader who cannot see what was dropped cannot
+        # judge whether the narrowing was appropriate for their change.
+        print(f"  lanes DROPPED ({len(dropped)} of {len(_FULL_IMPACT_LANES)}): "
+              f"{', '.join(dropped)}", file=out)
+    if decision.uncommitted:
+        print(f"  working tree: {decision.uncommitted} uncommitted change(s) folded "
+              f"into this selection", file=out)
+    else:
+        print("  working tree: clean — this selection covers committed work only",
+              file=out)
 
 
 def _split(value: str | None) -> list[str]:
@@ -984,17 +1101,41 @@ def print_listing(gates: Sequence[Gate], root: Path, out) -> None:
             print(f"  - {key}: {why}", file=out)
 
 
+@dataclass(frozen=True)
+class Coverage:
+    """What the whole gate table holds, against what this invocation selected.
+
+    Handed to ``summarise`` so the final line can carry a DENOMINATOR. ``ALL GREEN
+    (8 gates)`` is true of a run that skipped 28 of the 36 gates in the table and
+    reads exactly like a full suite; ``ALL GREEN (8 of 36 gates ran)`` cannot.
+    """
+
+    total: int
+    selector: str = ""
+    dropped_lanes: tuple[str, ...] = ()
+    dropped_reason: str = ""
+
+
 def summarise(results: Sequence[Result], out, *, tail: int, root: Path,
-              require_pass: bool = False) -> int:
+              require_pass: bool = False, coverage: Coverage | None = None) -> int:
     """Print the table + the one final line, and return the process exit code.
 
-    ``require_pass`` (default False, so the repo lanes are unchanged): a
-    selection in which NOTHING passed is not green. The lanes legitimately skip
-    gates that do not apply to a checkout, so all-skip is fine there. A caller
-    whose profile exists to PROVE something — ``validate_cutover.py``, where the
-    skipped gate may be the one attesting the owner's payloads survived a move —
-    passes True, and an all-skip run reports NOT GREEN and exits 1 instead of
-    printing ``ALL GREEN (0 gates, ...)``.
+    Three verdicts, three exit codes, and no two of them render alike:
+
+      * ``RED`` / 1 — a gate failed, or --fail-fast cut the run short;
+      * ``NO EVIDENCE`` / ``EXIT_NO_EVIDENCE`` (3) — NO gate executed a check.
+        Nothing was selected, or every selected gate skipped. This used to print
+        ``ALL GREEN (0 gates)`` and exit 0, which is the whole reason this runner's
+        output was ever trusted for a run that measured nothing;
+      * ``ALL GREEN`` / 0 — at least one gate ran and nothing failed. Always carries
+        ``n of N gates ran``, so a narrowed run cannot be mistaken for a full one.
+
+    ``require_pass`` (default False) keeps ``validate_cutover.py``'s louder contract:
+    there an unrun check is a FAILURE of the profile, not merely missing evidence, so
+    it reports ``NOT GREEN`` and exits 1. Both branches refuse to say ALL GREEN.
+
+    ``coverage`` supplies the denominator and the dropped-lane names. Omitted, the
+    denominator falls back to the size of this selection — honest, just less useful.
     """
     failed = [r for r in results if r.status == FAIL]
     skipped = [r for r in results if r.status == SKIP]
@@ -1003,8 +1144,9 @@ def summarise(results: Sequence[Result], out, *, tail: int, root: Path,
 
     width = max((len(r.name) for r in results), default=4)
     print("", file=out)
-    print(f"{'NAME'.ljust(width)}  EXIT  RESULT   TIME  LOG", file=out)
-    print(f"{'-' * width}  ----  ------  -----  ---", file=out)
+    if results:  # an empty table is noise between the reader and the verdict
+        print(f"{'NAME'.ljust(width)}  EXIT  RESULT   TIME  LOG", file=out)
+        print(f"{'-' * width}  ----  ------  -----  ---", file=out)
     for result in results:
         code = "-" if result.exit_code is None else str(result.exit_code)
         secs = "-" if result.status in (SKIP, NOTRUN) else f"{result.seconds:.1f}s"
@@ -1038,20 +1180,48 @@ def summarise(results: Sequence[Result], out, *, tail: int, root: Path,
     if notrun:
         print("not run (--fail-fast): " + ", ".join(r.name for r in notrun), file=out)
 
+    # ── coverage, printed in EVERY mode including the all-pass one ───────────
+    total = coverage.total if coverage is not None else len(results)
+    total = max(total, len(results))  # a caller cannot under-report the denominator
+    unselected = total - len(results)
+    executed = len(passed) + len(failed)
+    if coverage is not None and coverage.dropped_lanes:
+        print(f"lanes NOT run ({len(coverage.dropped_lanes)}): "
+              + ", ".join(coverage.dropped_lanes)
+              + (f" — {coverage.dropped_reason}" if coverage.dropped_reason else ""),
+              file=out)
+    detail = f"{len(skipped)} skipped, {unselected} not selected"
+    if notrun:
+        # --fail-fast abandons gates that were selected but never started. They are
+        # neither skipped nor unselected, so leaving them out would make the four
+        # numbers stop adding up to the denominator.
+        detail += f", {len(notrun)} abandoned by --fail-fast"
+    if coverage is not None and coverage.selector:
+        detail += f", selector: {coverage.selector}"
+    print(f"coverage: {executed} of {total} gates in the table executed "
+          f"({detail})", file=out)
+
+    skipped_names = ", ".join(r.name for r in skipped)
     if failed or notrun:
         names = ", ".join(r.name for r in failed) or "none"
         print(f"RED: {names} ({len(failed)} of {len(results)} failed)", file=out)
         return 1
-    if require_pass and not passed:
-        print(f"NOT GREEN: no gate ran a check — nothing was verified "
-              f"({len(skipped)} skipped: "
-              f"{', '.join(r.name for r in skipped) or 'none selected'})", file=out)
-        return 1
+    if not passed:
+        # Nothing executed a check, so nothing was proven. Never ALL GREEN, never 0.
+        census = (f"{len(skipped)} skipped: {skipped_names}" if skipped
+                  else "0 skipped")
+        nothing = (f"0 of {total} gates executed — nothing was verified "
+                   f"({census}; {unselected} not selected)")
+        if require_pass:
+            print(f"NOT GREEN: {nothing}", file=out)
+            return 1
+        print(f"NO EVIDENCE: {nothing}", file=out)
+        return EXIT_NO_EVIDENCE
     if skipped:
-        print(f"ALL GREEN ({len(passed)} gates, {len(skipped)} skipped: "
-              f"{', '.join(r.name for r in skipped)})", file=out)
+        print(f"ALL GREEN ({len(passed)} of {total} gates ran; "
+              f"{len(skipped)} skipped: {skipped_names})", file=out)
     else:
-        print(f"ALL GREEN ({len(passed)} gates)", file=out)
+        print(f"ALL GREEN ({len(passed)} of {total} gates ran)", file=out)
     return 0
 
 
@@ -1113,26 +1283,45 @@ def main(argv: Iterable[str] | None = None, out=None) -> int:
     else:
         impact = None
         lane = ",".join(args.lane) if args.lane else None
-    gates = select_gates(build_gates(REPO_ROOT), group=args.group, lane=lane,
+    all_gates = build_gates(REPO_ROOT)
+    gates = select_gates(all_gates, group=args.group, lane=lane,
                          only=args.only, skip=args.skip)
-    if not gates:
-        print("run_gates: selection matched no gates.", file=out)
-        return 1
+
+    if impact is not None:
+        selection = f"impact from: {args.impact_from}"
+        dropped_lanes = impact.dropped_lanes
+        dropped_reason = impact.reason or "no classifier reason"
+    elif args.lane:
+        selection = f"lane: {','.join(args.lane)}"
+        asked = {name for value in args.lane for name in _split(value)}
+        dropped_lanes = tuple(name for name in CI_LANES if name not in asked)
+        dropped_reason = "not named on the command line"
+    else:
+        selection = f"group: {args.group or 'both'}"
+        dropped_lanes, dropped_reason = (), ""
+    # --only/--skip narrow *inside* whatever the branch above chose. Naming them
+    # keeps the selector from reading `group: both` on a run that checked one gate.
+    for flag, value in (("--only", args.only), ("--skip", args.skip)):
+        if value:
+            selection += f", {flag} {value}"
+    coverage = Coverage(total=len(all_gates), selector=selection,
+                        dropped_lanes=dropped_lanes, dropped_reason=dropped_reason)
+
     if impact is not None:
         print_impact_decision(impact, out)
+    if not gates:
+        # Zero gates is zero evidence. It shares neither the words nor the exit code
+        # of a green run — summarise owns both, so there is one place to get it right.
+        print("run_gates: selection matched no gates.", file=out)
+        return summarise([], out, tail=args.tail, root=REPO_ROOT, coverage=coverage)
     if args.list:
         print_listing(gates, REPO_ROOT, out)
         return 0
 
     log_dir = REPO_ROOT / LOG_DIR_REL
     log_dir.mkdir(parents=True, exist_ok=True)
-    if impact is not None:
-        selection = f"impact from: {args.impact_from}"
-    else:
-        selection = (f"lane: {','.join(args.lane)}" if args.lane
-                     else f"group: {args.group or 'both'}")
-    print(f"running {len(gates)} gates ({selection}, jobs: {args.jobs}) — "
-          f"full output in {LOG_DIR_REL}/", file=out)
+    print(f"running {len(gates)} of {len(all_gates)} gates ({selection}, "
+          f"jobs: {args.jobs}) — full output in {LOG_DIR_REL}/", file=out)
 
     def announce(result: Result) -> None:
         secs = "" if result.status in (SKIP, NOTRUN) else f"  {result.seconds:6.1f}s"
@@ -1142,7 +1331,8 @@ def main(argv: Iterable[str] | None = None, out=None) -> int:
 
     results = run_many(gates, log_dir, jobs=max(1, args.jobs),
                        fail_fast=args.fail_fast, root=REPO_ROOT, on_done=announce)
-    return summarise(results, out, tail=args.tail, root=REPO_ROOT)
+    return summarise(results, out, tail=args.tail, root=REPO_ROOT,
+                     coverage=coverage)
 
 
 if __name__ == "__main__":

@@ -487,7 +487,7 @@ class ExecutionTests(unittest.TestCase):
         results, code, text, _ = self._run([PASSING])
         self.assertEqual(code, 0, text)
         self.assertEqual(results[0].status, run_gates.PASS)
-        self.assertIn("ALL GREEN (1 gates)", text)
+        self.assertIn("ALL GREEN (1 of 1 gates ran)", text)
 
     def test_one_failing_gate_makes_the_runner_exit_one(self):
         results, code, text, _ = self._run([PASSING, FAILING])
@@ -513,14 +513,20 @@ class ExecutionTests(unittest.TestCase):
                          [run_gates.PASS, run_gates.SKIP])
         self.assertEqual(code, 0, text)
         # The green line counts ONE gate, not two, and names what was skipped.
-        self.assertIn("ALL GREEN (1 gates, 1 skipped: synthetic-skip)", text)
+        self.assertIn("ALL GREEN (1 of 2 gates ran; 1 skipped: synthetic-skip)", text)
         self.assertIn("skipped (NOT passes): synthetic-skip", text)
         self.assertIn("synthetic precondition", text)
 
     def test_a_skip_alone_never_reports_a_passing_gate(self):
+        """All-skip executed no check, so it is NO EVIDENCE — not a green run.
+
+        This used to print ``ALL GREEN (0 gates, 1 skipped: …)`` and exit 0.
+        """
         _, code, text, _ = self._run([SKIPPED])
-        self.assertEqual(code, 0, text)
-        self.assertIn("ALL GREEN (0 gates, 1 skipped: synthetic-skip)", text)
+        self.assertEqual(code, run_gates.EXIT_NO_EVIDENCE, text)
+        self.assertNotIn("ALL GREEN", text)
+        self.assertIn("NO EVIDENCE: 0 of 1 gates executed", text)
+        self.assertIn("synthetic-skip", text)
 
     def test_a_precondition_failure_is_red_without_a_process_or_log(self):
         with mock.patch.object(run_gates.subprocess, "run") as process:
@@ -538,7 +544,8 @@ class ExecutionTests(unittest.TestCase):
         results, code, text, _ = self._run([MISSING_BINARY])
         self.assertEqual(results[0].status, run_gates.SKIP)
         self.assertIn("executable not found: jobhunt-no-such-binary-xyz", text)
-        self.assertEqual(code, 0, text)
+        # It was the only gate, so this run executed nothing: NO EVIDENCE, exit 3.
+        self.assertEqual(code, run_gates.EXIT_NO_EVIDENCE, text)
         self.assertNotIn("PASS", text.split("RESULT")[-1])
 
     def test_every_gate_that_ran_left_a_full_log(self):
@@ -594,6 +601,171 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual([r.status for r in results],
                          [run_gates.FAIL, run_gates.NOTRUN])
         self.assertIn("not run (--fail-fast): synthetic-pass", text)
+
+
+class SummaryHonestyTests(unittest.TestCase):
+    """"Nothing ran" must never render, or exit, like "everything passed".
+
+    The failure these pin actually happened: a run selected 8 of the 36 gates in
+    the table, printed ``ALL GREEN (8 gates)``, exited 0, and was reported as a
+    clean full suite. The green line had no denominator, the dropped lanes were
+    never named, and a zero-gate run produced the same words and the same 0.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+
+    def execute(self, gates):
+        return run_gates.run_many(
+            gates, self.root / run_gates.LOG_DIR_REL, jobs=1, fail_fast=False,
+            root=self.root, on_done=lambda result: None)
+
+    def summarise(self, results, **kwargs):
+        out = io.StringIO()
+        code = run_gates.summarise(results, out, tail=15, root=self.root, **kwargs)
+        return code, out.getvalue()
+
+    # ── the regression guard ────────────────────────────────────────────────
+    def test_a_zero_gate_run_is_never_all_green_and_never_exits_zero(self):
+        for coverage in (None, run_gates.Coverage(total=36, selector="group: both")):
+            with self.subTest(coverage=coverage):
+                code, text = self.summarise([], coverage=coverage)
+                self.assertNotIn("ALL GREEN", text)
+                self.assertNotEqual(code, 0, text)
+                self.assertEqual(code, run_gates.EXIT_NO_EVIDENCE, text)
+                self.assertIn("NO EVIDENCE", text)
+
+    def test_the_zero_gate_verdict_is_its_own_word_not_a_shade_of_green(self):
+        _, nothing = self.summarise([], coverage=run_gates.Coverage(total=36))
+        _, green = self.summarise(self.execute([PASSING]),
+                                  coverage=run_gates.Coverage(total=36))
+        verdict = lambda text: [line for line in text.splitlines()  # noqa: E731
+                                if line.startswith(("ALL GREEN", "RED:",
+                                                    "NO EVIDENCE", "NOT GREEN"))]
+        self.assertEqual(len(verdict(nothing)), 1, nothing)
+        self.assertEqual(len(verdict(green)), 1, green)
+        # The two runs must not share a verdict word, nor an exit code.
+        self.assertNotEqual(verdict(nothing)[0].split()[0],
+                            verdict(green)[0].split()[0])
+
+    def test_require_pass_keeps_its_louder_refusal_and_still_is_not_green(self):
+        code, text = self.summarise([], require_pass=True)
+        self.assertEqual(code, 1, text)
+        self.assertIn("NOT GREEN", text)
+        self.assertNotIn("ALL GREEN", text)
+
+    # ── the denominator ─────────────────────────────────────────────────────
+    def test_the_green_line_always_carries_the_denominator(self):
+        results = self.execute([PASSING])
+        code, text = self.summarise(
+            results, coverage=run_gates.Coverage(
+                total=36, selector="impact from: origin/main"))
+        self.assertEqual(code, 0, text)
+        self.assertIn("ALL GREEN (1 of 36 gates ran)", text)
+        self.assertIn("coverage: 1 of 36 gates in the table executed", text)
+        self.assertIn("35 not selected", text)
+        self.assertIn("selector: impact from: origin/main", text)
+
+    def test_coverage_is_printed_for_a_red_run_too(self):
+        results = self.execute([PASSING, FAILING])
+        code, text = self.summarise(results,
+                                    coverage=run_gates.Coverage(total=36))
+        self.assertEqual(code, 1, text)
+        self.assertIn("coverage: 2 of 36 gates in the table executed", text)
+
+    def test_gates_abandoned_by_fail_fast_are_counted_in_the_coverage_line(self):
+        """They were selected, they did not run, and they are not skips.
+
+        Left out of the detail, the four numbers stop summing to the denominator
+        and a reader cannot tell how much of the selection actually executed.
+        """
+        results = run_gates.run_many(
+            [FAILING, PASSING], self.root / run_gates.LOG_DIR_REL, jobs=1,
+            fail_fast=True, root=self.root, on_done=lambda result: None)
+        self.assertEqual([r.status for r in results],
+                         [run_gates.FAIL, run_gates.NOTRUN])
+        code, text = self.summarise(results,
+                                    coverage=run_gates.Coverage(total=36))
+        self.assertEqual(code, 1, text)
+        self.assertIn("coverage: 1 of 36 gates in the table executed "
+                      "(0 skipped, 34 not selected, 1 abandoned by --fail-fast",
+                      text)
+
+    def test_a_caller_cannot_report_a_denominator_below_what_it_ran(self):
+        results = self.execute([PASSING])
+        _, text = self.summarise(results, coverage=run_gates.Coverage(total=0))
+        self.assertIn("ALL GREEN (1 of 1 gates ran)", text)
+
+    # ── skips ───────────────────────────────────────────────────────────────
+    def test_a_skip_is_excluded_from_the_ran_count_and_named(self):
+        results = self.execute([PASSING, SKIPPED])
+        code, text = self.summarise(results,
+                                    coverage=run_gates.Coverage(total=36))
+        self.assertEqual(code, 0, text)
+        self.assertIn("ALL GREEN (1 of 36 gates ran; 1 skipped: synthetic-skip)",
+                      text)
+        self.assertIn("skipped (NOT passes): synthetic-skip", text)
+        self.assertIn("coverage: 1 of 36 gates in the table executed "
+                      "(1 skipped, 34 not selected", text)
+
+    # ── narrowing ───────────────────────────────────────────────────────────
+    def test_a_narrowed_run_names_the_dropped_lanes_and_why(self):
+        results = self.execute([PASSING])
+        _, text = self.summarise(results, coverage=run_gates.Coverage(
+            total=36, selector="impact from: origin/main",
+            dropped_lanes=("maintenance", "publish"),
+            dropped_reason="the Git range contains no changes"))
+        self.assertIn("lanes NOT run (2): maintenance, publish "
+                      "— the Git range contains no changes", text)
+
+    def test_an_unnarrowed_run_prints_no_dropped_lane_line(self):
+        results = self.execute([PASSING])
+        _, text = self.summarise(results, coverage=run_gates.Coverage(total=36))
+        self.assertNotIn("lanes NOT run", text)
+
+
+class CoverageWiringTests(unittest.TestCase):
+    """``main`` must hand summarise the real denominator and the real drops."""
+
+    def test_an_empty_selection_exits_no_evidence_through_the_real_cli(self):
+        completed = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "automation/gates/run_gates.py"),
+             "--only", "compileall", "--skip", "compileall"],
+            cwd=tempfile.gettempdir(), stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, check=False)
+        self.assertEqual(completed.returncode, run_gates.EXIT_NO_EVIDENCE,
+                         completed.stdout)
+        self.assertIn("NO EVIDENCE", completed.stdout)
+        self.assertNotIn("ALL GREEN", completed.stdout)
+
+    def test_a_real_passing_run_carries_the_whole_table_as_its_denominator(self):
+        total = len(run_gates.build_gates(REPO_ROOT))
+        completed = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "automation/gates/run_gates.py"),
+             "--only", "mail-send-less"],
+            cwd=tempfile.gettempdir(), stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        self.assertIn(f"ALL GREEN (1 of {total} gates ran)", completed.stdout)
+        self.assertIn(f"running 1 of {total} gates", completed.stdout)
+        # The selector names the flag that narrowed the run. Without this it read
+        # `group: both` on a run that checked one gate out of the whole table.
+        self.assertIn("selector: group: both, --only mail-send-less",
+                      completed.stdout)
+
+    def test_a_hand_picked_lane_names_every_lane_it_did_not_run(self):
+        out = io.StringIO()
+        code = run_gates.main(["--list", "--lane", "publish"], out=out)
+        self.assertEqual(code, 0)
+        # --list stops before summarise, so assert the wiring the summary uses.
+        asked = {"publish"}
+        self.assertEqual(
+            tuple(name for name in run_gates.CI_LANES if name not in asked),
+            ("policy", "maintenance", "render", "resume", "shared", "job-search",
+             "applications"),
+        )
 
 
 class WSLTempTests(unittest.TestCase):
@@ -948,32 +1120,69 @@ class SelectionTests(unittest.TestCase):
         )
 
 
+class _FakeChange:
+    """Stand-in for the CI classifier's Change record."""
+
+    def __init__(self, status, paths):
+        self.status = status
+        self.paths = paths
+
+
 class ImpactSelectionTests(unittest.TestCase):
     SHA = "a" * 40
 
-    def classify(self, *, lanes=(), full=False, reason="focused paths"):
-        completed = subprocess.CompletedProcess(
+    def classify(self, *, lanes=(), full=False, reason="focused paths",
+                 untracked=(), tree_lanes=(), tree_full=False,
+                 tree_reason="every changed path has a focused CI owner",
+                 tree_error=None):
+        """Drive impact_decision against a fake git and a fake classifier.
+
+        Three git reads now happen: the merge-base (text), the working-tree diff,
+        and the untracked listing (both bytes). ``untracked`` stands in for a dirty
+        working tree; ``tree_error`` makes the working-tree read itself fail.
+        """
+        merge_base = subprocess.CompletedProcess(
             ["git", "merge-base"], 0, self.SHA + "\n", ""
         )
+
+        def git(args, **_kwargs):
+            head = tuple(args[:2])
+            if head == ("git", "merge-base"):
+                return merge_base
+            if head == ("git", "diff"):
+                return subprocess.CompletedProcess(args, 0, b"", b"")
+            if head == ("git", "ls-files"):
+                if tree_error is not None:
+                    return subprocess.CompletedProcess(args, 128, b"", tree_error)
+                return subprocess.CompletedProcess(
+                    args, 0, b"".join(name + b"\0" for name in untracked), b"")
+            raise AssertionError(f"unexpected git invocation: {args}")
+
         classification = mock.Mock(lanes=lanes, full=full, reason=reason)
+        tree_classification = mock.Mock(
+            lanes=tree_lanes, full=tree_full, reason=tree_reason)
         classifier = mock.Mock(
             LANES=run_gates.LONG_CI_LANES,
+            Change=_FakeChange,
+            parse_name_status=mock.Mock(return_value=()),
             classify_range=mock.Mock(return_value=classification),
+            classify=mock.Mock(return_value=tree_classification),
         )
         with mock.patch.object(
-            run_gates.subprocess, "run", return_value=completed
-        ) as merge_base, mock.patch.object(
+            run_gates.subprocess, "run", side_effect=git
+        ) as git_run, mock.patch.object(
             run_gates, "_load_change_classifier", return_value=classifier
         ):
             decision = run_gates.impact_decision("origin/main", REPO_ROOT)
-        return decision, merge_base, classifier
+        return decision, git_run, classifier
 
     def test_narrow_impact_unions_policy_with_affected_long_lanes(self):
-        decision, merge_base, classifier = self.classify(lanes=("shared",))
+        decision, git_run, classifier = self.classify(lanes=("shared",))
         self.assertFalse(decision.full)
         self.assertEqual(decision.lanes, ("policy", "shared"))
         self.assertEqual(decision.merge_base, self.SHA)
-        merge_base.assert_called_once_with(
+        self.assertEqual(decision.uncommitted, 0)
+        git_run.assert_any_call(
             ["git", "merge-base", "--", "origin/main", "HEAD"],
             cwd=REPO_ROOT,
             stdout=subprocess.PIPE,
@@ -982,6 +1191,69 @@ class ImpactSelectionTests(unittest.TestCase):
             check=False,
         )
         classifier.classify_range.assert_called_once_with(REPO_ROOT, self.SHA, "HEAD")
+
+    def test_uncommitted_work_widens_a_range_that_would_select_nothing(self):
+        """The defect: a Git range is commit-to-commit, so a dirty tree read empty.
+
+        An agent with unstaged edits ran ``--impact-from origin/main``, the range
+        classified as "no changes", the runner narrowed to the policy lane, and the
+        green line said nothing about the 28 gates it had dropped. The working tree
+        is now classified too, and its lanes are unioned in.
+        """
+        decision, _, classifier = self.classify(
+            lanes=(), reason="the Git range contains no changes",
+            untracked=(b"automation/gates/run_gates.py",),
+            tree_lanes=("maintenance",),
+        )
+        self.assertFalse(decision.full)
+        self.assertEqual(decision.lanes, ("policy", "maintenance"))
+        self.assertEqual(decision.uncommitted, 1)
+        self.assertIn("1 uncommitted change(s) folded in", decision.reason)
+        # The working tree went through the SAME fail-closed classifier as the range.
+        self.assertEqual(len(classifier.classify.call_args.args[0]), 1)
+
+    def test_uncommitted_work_can_only_widen_never_narrow(self):
+        decision, _, _ = self.classify(
+            lanes=("shared",), untracked=(b"skills/job-search/scripts/x.py",),
+            tree_lanes=("job-search",),
+        )
+        # Unioned, then re-ordered into the canonical LONG_CI_LANES order.
+        self.assertEqual(decision.lanes, ("policy", "shared", "job-search"))
+
+    def test_an_unclassifiable_working_tree_expands_to_every_lane(self):
+        decision, _, _ = self.classify(
+            lanes=("shared",), untracked=(b"unowned.bin",), tree_full=True,
+            tree_reason="unowned or foundational path: unowned.bin",
+        )
+        self.assertTrue(decision.full)
+        self.assertEqual(decision.lanes, ("policy", *run_gates.LONG_CI_LANES))
+
+    def test_an_unreadable_working_tree_expands_to_every_lane(self):
+        decision, _, _ = self.classify(
+            lanes=("shared",), tree_error=b"fatal: not a git repository\n")
+        self.assertTrue(decision.full)
+        self.assertIn("uncommitted changes could not be classified", decision.reason)
+        self.assertEqual(decision.lanes, ("policy", *run_gates.LONG_CI_LANES))
+
+    def test_a_narrowed_decision_names_the_lanes_it_dropped(self):
+        decision, _, _ = self.classify(lanes=("shared",))
+        self.assertEqual(
+            decision.dropped_lanes,
+            ("maintenance", "render", "resume", "job-search", "applications",
+             "publish"),
+        )
+        out = io.StringIO()
+        run_gates.print_impact_decision(decision, out)
+        text = out.getvalue()
+        self.assertIn("lanes DROPPED (6 of 8):", text)
+        self.assertIn("publish", text)
+
+    def test_a_full_decision_drops_nothing(self):
+        decision, _, _ = self.classify(lanes=("shared",), full=True)
+        self.assertEqual(decision.dropped_lanes, ())
+        out = io.StringIO()
+        run_gates.print_impact_decision(decision, out)
+        self.assertNotIn("lanes DROPPED", out.getvalue())
 
     def test_inert_impact_selects_policy_only(self):
         decision, _, _ = self.classify(
@@ -1070,6 +1342,112 @@ class ImpactSelectionTests(unittest.TestCase):
         self.assertIn("gate table — 10 gates", text)
         self.assertNotRegex(text, r"(?m)^verify-links  \[")
         self.assertRegex(text, r"(?m)^tests-shared  \[")
+
+
+class WorkingTreeImpactTests(unittest.TestCase):
+    """The dirty-tree fix, against a REAL Git repository and the REAL classifier.
+
+    ``ImpactSelectionTests`` mocks both Git and the classifier, so none of it would
+    notice if ``git diff --name-status HEAD`` stopped reporting unstaged edits —
+    which is precisely the read the defect turns on. This class builds a throwaway
+    repository, copies the shipped classifier into it, and drives ``impact_decision``
+    end to end with no ``mock`` anywhere.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name).resolve()
+        self.write("automation/ci/classify_changes.py",
+                   (REPO_ROOT / "automation/ci/classify_changes.py")
+                   .read_text(encoding="utf-8"))
+        # Tracked so a later edit is a MODIFICATION, and owned by `maintenance`.
+        self.write("automation/gates/run_gates.py", "# placeholder\n")
+        # `local/` mirrors the real repo's scratch rule; `__pycache__/` is written
+        # by importing the classifier copied in above, exactly as it is upstream.
+        self.write(".gitignore", "local/\n__pycache__/\n")
+        self.git("init", "-q")
+        self.git("config", "user.email", "gates@example.invalid")
+        self.git("config", "user.name", "Gate Tests")
+        self.git("config", "commit.gpgsign", "false")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+
+    def write(self, relative: str, text: str) -> None:
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def git(self, *args: str) -> None:
+        subprocess.run(["git", *args], cwd=self.root, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def decide(self):
+        # merge-base(HEAD, HEAD) is HEAD, so the COMMITTED range is always empty —
+        # the exact state ("the Git range contains no changes") that used to narrow
+        # the run to the policy lane and report success over untested work.
+        return run_gates.impact_decision("HEAD", self.root)
+
+    def test_a_clean_tree_over_an_empty_range_still_narrows_to_policy(self):
+        decision = self.decide()
+        self.assertEqual(decision.uncommitted, 0)
+        self.assertFalse(decision.full)
+        self.assertEqual(decision.lanes, ("policy",))
+        self.assertEqual(decision.dropped_lanes, run_gates.LONG_CI_LANES)
+        out = io.StringIO()
+        run_gates.print_impact_decision(decision, out)
+        self.assertIn("working tree: clean", out.getvalue())
+
+    def test_an_unstaged_edit_git_never_committed_still_selects_its_lane(self):
+        self.write("automation/gates/run_gates.py", "# edited, never committed\n")
+        decision = self.decide()
+        self.assertEqual(decision.uncommitted, 1)
+        self.assertEqual(decision.lanes, ("policy", "maintenance"))
+        self.assertIn("1 uncommitted change(s) folded in", decision.reason)
+
+    def test_a_staged_but_uncommitted_addition_selects_its_lane(self):
+        self.write("skills/job-search/scripts/search.py", "print('hi')\n")
+        self.git("add", "skills/job-search/scripts/search.py")
+        decision = self.decide()
+        self.assertEqual(decision.uncommitted, 1)
+        self.assertEqual(decision.lanes, ("policy", "job-search"))
+
+    def test_an_untracked_file_selects_its_lane_and_lanes_union(self):
+        self.write("automation/gates/run_gates.py", "# edited\n")
+        self.write("automation/publish/export_public.py", "print('new')\n")
+        decision = self.decide()
+        self.assertEqual(decision.uncommitted, 2)
+        # Union of both classifications, in canonical lane order.
+        self.assertEqual(decision.lanes, ("policy", "maintenance", "publish"))
+        self.assertEqual(decision.dropped_lanes,
+                         ("render", "resume", "shared", "job-search", "applications"))
+
+    def test_a_gitignored_file_never_widens_the_selection(self):
+        self.write("local/scratch/notes.py", "# disposable\n")
+        decision = self.decide()
+        self.assertEqual(decision.uncommitted, 0)
+        self.assertEqual(decision.lanes, ("policy",))
+
+    def test_an_unowned_untracked_path_expands_to_the_full_matrix(self):
+        self.write("mystery.bin", "?\n")
+        decision = self.decide()
+        self.assertTrue(decision.full)
+        self.assertEqual(decision.lanes, ("policy", *run_gates.LONG_CI_LANES))
+        self.assertEqual(decision.dropped_lanes, ())
+
+    def test_an_inert_uncommitted_edit_is_counted_but_widens_nothing(self):
+        self.write("docs/handbook/command-cookbook.md", "prose\n")
+        decision = self.decide()
+        self.assertEqual(decision.uncommitted, 1)
+        self.assertEqual(decision.lanes, ("policy",))
+        self.assertIn("documentation or process records", decision.reason)
+
+    def test_a_deletion_of_a_tracked_gate_file_selects_its_lane(self):
+        (self.root / "automation/gates/run_gates.py").unlink()
+        decision = self.decide()
+        self.assertEqual(decision.uncommitted, 1)
+        # A non-inert deletion is unsafe to narrow, so the classifier goes full.
+        self.assertTrue(decision.full)
 
 
 class CliTests(unittest.TestCase):
