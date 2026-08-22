@@ -12,7 +12,7 @@
 
 ## Where things stand
 
-- The private skill and its post-chat routing follow-up are merged on the private repository's remote `main`; this handover records the matching public-toolkit session.
+- The private skill and its post-chat routing follow-up are committed on the overlay's local `main`; this handover records the matching public-toolkit session.
 - The new private skill has no canary set, so the eval gate was skipped with this recorded rationale; static frontmatter, metadata, discovery, and repository checks are the verification path.
 
 ## Decisions made for you
@@ -37,4 +37,4 @@
 ## Needs your attention
 
 - Nothing from this task. Existing queues remain unchanged.
-- 29 pending · top: [job-search-us-only-default-asymmetry](../../../message-queue/needs-human/decisions/job-search-us-only-default-asymmetry.md) — inconsistent search and draft defaults can repeatedly admit roles that later cannot be drafted.
+- 42 pending · top: [job-search-us-only-default-asymmetry](../../../message-queue/needs-human/decisions/job-search-us-only-default-asymmetry.md) — inconsistent search and draft defaults can repeatedly admit roles that later cannot be drafted.

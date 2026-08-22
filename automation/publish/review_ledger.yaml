@@ -4108,3 +4108,9 @@
   files: 2
   digest: sha256:f58a91d06ceca814
   finding: 'Workspace cleanup planner and its test suite. The emitted shell script now isolates each item, so one refusal no longer cancels the safe items after it, and prints a summary plus a non-zero exit when anything refused. Public tooling, shell semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 2
+  digest: sha256:cdcd126ce97fce8b
+  finding: 'Recovers the net corrections from two detached public handover commits and records the branch/PR inventory session. Names only repository roles, branch names, generic practice artifacts, Git behavior, and public process items; no real identity, employer, application, or dated job-hunt content.'
