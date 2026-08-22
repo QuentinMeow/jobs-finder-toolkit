@@ -4144,3 +4144,9 @@
   files: 2
   digest: sha256:5d77e730e8ad392f
   finding: 'Corrects one public session handover to reflect the pushed five-commit branch and removes a branch-created backlog item already resolved by fix/i2-status-truth. No real identity, employer, application, or dated job-hunt content.'
+- base: d31a6de0
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 1
+  digest: sha256:4b3717fb374c1c2e
+  finding: 'Makes one synthetic cleanup test locate Git with the cross-platform Python standard library instead of trying to execute the shell builtin `command`. Test infrastructure only; no real identity, employer, application, or dated job-hunt content.'

@@ -2567,13 +2567,13 @@ class RemoteBranchesAreListedNeverTouchedTests(RemoteBranchScenario):
         bindir = self.scratch / "bin"
         bindir.mkdir()
         log = self.scratch / "git-calls.log"
-        real = subprocess.run(["command", "-v", "git"], capture_output=True,
-                              text=True, shell=False, check=False)
+        real_git = shutil.which("git")
+        self.assertIsNotNone(real_git, "git must be available to exercise the planner")
         shim = bindir / "git"
         shim.write_text(
             "#!/bin/sh\n"
             f'printf "%s\\n" "$*" >> {shlex.quote(str(log))}\n'
-            f'exec /usr/bin/env -u PATH_SHIM {shlex.quote(real.stdout.strip() or "git")} "$@"\n',
+            f'exec /usr/bin/env -u PATH_SHIM {shlex.quote(str(real_git))} "$@"\n',
             encoding="utf-8")
         shim.chmod(0o755)
         previous = os.environ["PATH"]
