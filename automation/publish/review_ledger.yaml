@@ -4111,6 +4111,12 @@
 - base: 3d6da1b8
   reviewed_by: agent
   date: 2026-08-21
+  files: 1
+  digest: sha256:7cdd90fa4114f4dd
+  finding: 'Corrects a false line in a session handover under history/conversations/. Names only branches, commands and git behaviour; no identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-21
   files: 5
   digest: sha256:18613f52d595772a
   finding: 'Gate-runner reporting honesty: run_gates.py gains a NO EVIDENCE verdict and exit 3 for a run in which no gate executed a check, a coverage denominator on every verdict, named dropped lanes, and working-tree classification unioned into --impact-from. Plus its tests, the cutover tests that assert the green line, and two handbook/reference pages describing the new output. Public tooling, tests and documentation only; no real identity, employer, application, recruiter, or dated job-hunt content. Overlay is not mounted here, so the identity detector had no company index to read - the diff was read by hand and contains no personal data.'
@@ -4186,3 +4192,9 @@
   files: 14
   digest: sha256:dbd70c8aa2bd0e19
   finding: 'Conflict-resolution merge imports the already-reviewed workspace cleanup, status, merge-driver, process record, and remote-retirement decision changes from main while retaining the gate-honesty work. Public tooling, git semantics, process metadata and fabricated fixtures only; no real identity, employer, application, or dated job-hunt content.'
+- base: 83ee3e4e
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 19
+  digest: sha256:0f7b4a03d5ce079e
+  finding: 'Conflict-resolution merge imports the already-reviewed workspace cleanup, status, merge-driver, gate-honesty, documentation, process record, and remote-retirement decision changes from main while retaining the handover correction. Public tooling, tests, documentation, git semantics and fabricated fixtures only; no real identity, employer, application, or dated job-hunt content.'

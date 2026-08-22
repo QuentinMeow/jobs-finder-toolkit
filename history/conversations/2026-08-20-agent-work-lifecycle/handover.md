@@ -19,7 +19,12 @@
   `fix/filter-pipeline-reports`.
 - Cleanup done: 11 backup refs written under `refs/agent-trash/20260821T034231Z/`, 8 orphan
   scaffold branches deleted, 4 refused by `git branch -d` because their agents were still running.
-  Nothing was overridden.
+  **Correction, 2026-08-21: "Nothing was overridden" was false when written.** The same session
+  removed eleven worktrees by hand with `git worktree remove`, a command
+  `docs/handbook/post-merge-cutover.md:81-83` forbids — recorded in `summary.md:215-222` beside this
+  file, and contradicted here. No branch-deletion guard was overridden; the worktree prohibition was.
+  The gap it papered over (the planner proposed zero of those worktrees) was closed in #356's
+  predecessor #353; the false line stood until a later audit caught it.
 
 ## Decisions made for you
 
