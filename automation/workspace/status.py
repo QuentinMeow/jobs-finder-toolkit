@@ -19,7 +19,22 @@ without asking anybody to maintain a record:
   ``wedged``. Nothing is stored, so nothing can go stale or lie.
 
 ``--json`` emits the same model for tools; ``--stale <days>`` narrows the branch
-table to what nobody has touched.
+table to what nobody has touched (never the row you are standing on).
+
+Three invariants this module is responsible for, all learned the hard way:
+
+* THE PRIVATE OVERLAY IS NOT A PEER REPOSITORY. ``private/`` is a separate repo
+  holding the owner's real identity. Everything it contributes to this output
+  passes through ``redact_repository`` first — see the long note above it.
+* THE CACHE HAS AN AGE, AND THE READER MUST SEE IT. Every ``merged`` and
+  ``behind`` figure below is only as good as the last fetch, so each repository
+  prints a CHECKOUT verdict carrying how far behind the checked-out branch is
+  and how old the remote knowledge that says so actually is — measured against
+  the base ref ``resolve_base`` picked, which is printed too.
+* A FALSE ``merged`` IS THE ONLY ANSWER HERE THAT LOSES WORK. Every other
+  wrong answer over-keeps a branch; this one authorises deleting it. So the
+  containment probe treats any non-zero ``merge-tree`` exit as NO ANSWER — see
+  ``_merged_state``.
 
 Tests: ``.venv/bin/python -m unittest discover automation/workspace/tests``
 """
@@ -27,6 +42,7 @@ Tests: ``.venv/bin/python -m unittest discover automation/workspace/tests``
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime
 import json
 import os
@@ -48,6 +64,28 @@ RENAME_CODES = {"R", "C"}
 
 JSON_SCHEMA = "workspace-status/v1"
 
+PUBLIC_LABEL = "PUBLIC"
+PRIVATE_LABEL = "PRIVATE"
+# The overlay's mount point. It is documented in the tracked AGENTS.md, so the
+# word itself is public; nothing BELOW it is.
+PRIVATE_MOUNT = "private"
+
+# ── the base a branch is judged "merged" against ─────────────────────────────
+#
+# REMOTE-TRACKING FIRST. Measured on this workspace: the overlay's local `main`
+# sat 4 commits behind its cached `origin/main`, and BOTH of its branches were
+# ancestors of `origin/main` and of neither local `main` — so every one of them
+# graded `unmerged`, permanently, because nothing ever fetches the overlay. The
+# public checkout showed the same shape 88 commits deep. The error direction is
+# conservative (it over-KEEPS finished work, it never proposes deleting live
+# work), which is exactly why it hid for so long.
+#
+# `origin/main` is what local `main` is going to become; a local `main` that is
+# behind is a strictly worse answer to "is this work already landed". The local
+# ref is the fallback for a repository that has no remote-tracking ref at all.
+# Whichever is used is PRINTED, because a base that silently rots is the defect.
+BASE_REFS_REMOTE_FIRST = ("refs/remotes/origin/main", "refs/heads/main")
+
 # ── lifecycle derivation ─────────────────────────────────────────────────────
 #
 # DERIVE, NEVER DECLARE. Every lifecycle field below is read back out of
@@ -62,6 +100,47 @@ JSON_SCHEMA = "workspace-status/v1"
 # backwards on an NTP correction, so every age is clamped at zero.
 ACTIVE_MAX_SECONDS = 30 * 60          # a 20-minute turn can write nothing
 IDLE_MAX_SECONDS = 24 * 60 * 60       # close the laptop at 6pm, reopen at 9am
+
+# ── how much this dashboard can be trusted (the CHECKOUT verdict) ───────────
+#
+# WHAT THE VERDICT MEASURES, AND WHY IT IS NOT "behind n". This repository
+# merged 88 commits in 18 hours. A banner keyed on the commit count would be
+# loud every single day, and a banner that is always loud is one nobody reads —
+# so `behind n` is REPORTED as a calm fact and is not what colours the line.
+#
+# What actually degrades is the AGE OF THE REMOTE KNOWLEDGE. `behind n` and the
+# whole `merged` column are computed against a CACHED remote ref, so a stale
+# cache does not make the numbers alarming, it makes them WRONG — and wrong in
+# the flattering direction: unfetched, an 88-commit gap renders `synced`. The
+# age of the last fetch is therefore the one number that says how much of this
+# table is fiction, and it is the number the verdict is keyed on.
+#
+# THE THRESHOLDS.
+#   < 24h  `fresh`  — calm. 24h is this module's own definition of "a working
+#                     day has passed" (IDLE_MAX_SECONDS below, "close the laptop
+#                     at 6pm, reopen at 9am"); one notion of a day, not two.
+#                     Being behind by any number of commits inside a working day
+#                     is the normal state here, not an incident.
+#   < 7d   `dated`  — a nudge, not an alarm. The numbers are still directionally
+#                     right and a fetch is cheap.
+#   >= 7d  `BLIND`  — loud, and rarely. At this repository's measured cadence a
+#                     week is on the order of eight hundred commits: not "a bit
+#                     out of date" but a different repository, in which `merged`
+#                     and `behind` carry no information at all. This is the only
+#                     state the tool is actively misleading in, so it is the only
+#                     one that shouts.
+#   never  `unknown` — a checkout that has never fetched (a fresh clone writes no
+#                     FETCH_HEAD). Freshness cannot be established, which is a
+#                     caveat, not a danger — so it warns, it does not shout.
+# No exit code changes on any of these: the verdict informs, it does not gate.
+CHECKOUT_DATED_SECONDS = 24 * 60 * 60
+CHECKOUT_BLIND_SECONDS = 7 * 24 * 60 * 60
+
+FRESHNESS_FRESH = "fresh"
+FRESHNESS_DATED = "dated"
+FRESHNESS_BLIND = "BLIND"
+FRESHNESS_UNKNOWN = "unknown"
+FRESHNESS_NO_REMOTE = "local-only"
 
 STATE_ACTIVE = "active"
 STATE_IDLE = "idle"
@@ -140,7 +219,10 @@ class Worktree:
             return self.branch_ref.removeprefix("refs/heads/")
         if self.bare:
             return "(bare)"
-        return f"(detached @{self.head[:8]})"
+        # The overlay's redaction blanks ``head``; an object id is not owner
+        # prose, but neither is it worth printing for a repository whose
+        # contents this tool refuses to describe.
+        return f"(detached @{self.head[:8]})" if self.head else "(detached)"
 
     @property
     def dirty(self) -> bool:
@@ -237,6 +319,25 @@ class Remote:
     url: str
 
 
+@dataclass(frozen=True)
+class Checkout:
+    """The verdict for the branch the reader is standing on. See the note above.
+
+    ``branch_ref`` is the join key back to that branch's row — redaction
+    RELABELS it rather than blanking it, and ``_checkout_json`` never emits it,
+    so it stays usable without ever carrying an overlay name out of the model.
+    """
+
+    branch: str
+    branch_ref: str | None
+    sync: str
+    ahead: int | None
+    behind: int | None
+    freshness: str
+    fetched_epoch: int | None
+    knowledge_age_seconds: int | None
+
+
 @dataclass
 class Repository:
     label: str
@@ -251,6 +352,14 @@ class Repository:
     merge_probe_note: str | None = None
     pr_requested: bool = False
     pr_error: str | None = None
+    checkout: Checkout | None = None
+    # Set for the private overlay. Everything below it is already redacted; the
+    # flag exists so the renderer can SKIP sections outright rather than trust
+    # that every value inside them was scrubbed.
+    private: bool = False
+    # Real path -> what may be printed for it. Consulted only when ``private``,
+    # and it FAILS CLOSED: an unmapped path renders as PATH_WITHHELD.
+    path_display: dict[str, str] = field(default_factory=dict)
 
 
 class Palette:
@@ -465,11 +574,71 @@ def _ref_exists(repo: Path, ref: str) -> bool:
     return result.returncode == 0
 
 
-def _base_ref(repo: Path) -> str | None:
-    for ref in ("refs/heads/main", "refs/remotes/origin/main"):
+def resolve_base(repo: Path, *, prefer_remote: bool = True) -> str | None:
+    """The ref a branch must be contained by, and the ONE implementation of it.
+
+    Back-ported from ``cleanup.py``, which solved this for itself and never
+    shared it — ``cleanup.resolve_base`` now delegates here, so the dashboard
+    and the retirement planner can no longer drift apart on what "merged" means.
+
+    ``prefer_remote`` is the only difference between the two callers, and it is
+    a difference in what each has EARNED. The dashboard never fetches, so it
+    reads the cached ``origin/main`` and says how old that cache is (see
+    BASE_REFS_REMOTE_FIRST). The planner deletes things, so it prefers the
+    remote base only once it has actually fetched one, and falls back to the
+    local ref otherwise.
+    """
+    order = (BASE_REFS_REMOTE_FIRST if prefer_remote
+             else tuple(reversed(BASE_REFS_REMOTE_FIRST)))
+    for ref in order:
         if _ref_exists(repo, ref):
             return ref
     return None
+
+
+def _fetch_head_epoch(repo: Path) -> int | None:
+    """When anything in this repository last learned from a remote, or ``None``.
+
+    ``FETCH_HEAD`` is a PER-WORKTREE file, and in this workspace agents fetch
+    from linked worktrees constantly, so reading only the main worktree's copy
+    reports the remote knowledge as older than it is. The newest across all of
+    them is the honest answer to "when did this checkout last hear from origin".
+
+    ``None`` means no ``FETCH_HEAD`` exists anywhere — a checkout that has never
+    fetched. ``git clone`` writes none, so this is a real, benign state and is
+    reported as ``unknown`` rather than as danger.
+    """
+    result = _git(repo, "rev-parse", "--git-common-dir", check=False)
+    if result.returncode:
+        return None
+    common = Path(result.stdout.strip())
+    if not common.is_absolute():
+        common = repo / common
+    candidates = [common / "FETCH_HEAD"]
+    try:
+        candidates.extend(sorted((common / "worktrees").glob("*/FETCH_HEAD")))
+    except OSError:
+        pass
+    stamps: list[int] = []
+    for candidate in candidates:
+        try:
+            stamps.append(int(candidate.stat().st_mtime))
+        except OSError:
+            continue
+    return max(stamps) if stamps else None
+
+
+def checkout_freshness(*, has_remote: bool, age_seconds: int | None) -> str:
+    """How much of this table is still true. Thresholds argued at the top."""
+    if not has_remote:
+        return FRESHNESS_NO_REMOTE
+    if age_seconds is None:
+        return FRESHNESS_UNKNOWN
+    if age_seconds >= CHECKOUT_BLIND_SECONDS:
+        return FRESHNESS_BLIND
+    if age_seconds >= CHECKOUT_DATED_SECONDS:
+        return FRESHNESS_DATED
+    return FRESHNESS_FRESH
 
 
 @dataclass
@@ -598,12 +767,44 @@ def _merged_state(
             env=probe.env,
         )
         head = result.stdout.split("\n", 1)[0].strip()
-        # Exit 1 with a tree on stdout is a CONFLICTING merge — a real answer
-        # ("merging would change main"). Exit 1 with nothing on stdout is a ref
-        # that does not resolve, and 128 is an unrelated history. Neither is
-        # evidence of anything, so neither is allowed to read as merged.
-        if result.returncode in (0, 1) and _OID_RE.match(head):
+        # ── A NON-ZERO EXIT IS NEVER EVIDENCE OF CONTAINMENT ─────────────────
+        #
+        # This module's ONE data-loss risk is a false `merged`, because the
+        # cleanup planner reads it as permission to propose a deletion. The
+        # earlier rule accepted exit 1 (CONFLICT) and then compared trees, on
+        # the reasoning that a conflict is still "a real answer". It is not,
+        # and the counter-example is not exotic — MEASURED here, git 2.55:
+        #
+        #   * a branch whose only change edits a file git auto-detects as
+        #     BINARY (a NUL byte anywhere in it) that main also edited:
+        #     `merge-tree` exits 1 and its first stdout line IS THE BASE TREE,
+        #     because a binary conflict is resolved by keeping "ours". The old
+        #     rule read that as `merged` for a branch holding work that exists
+        #     nowhere in main. This repository tracks 22 such files — DOCX and
+        #     PDF resumes, JPGs, `.json.zst` blobs.
+        #   * the same shape for a TEXT file marked `-merge` (or `binary`) in
+        #     `.gitattributes` — no NUL byte, so nothing about the content
+        #     warns you — and for a SUBMODULE pointer that diverged rather
+        #     than fast-forwarded.
+        #
+        # So: exit 0 is the only exit whose tree answers the question. On any
+        # non-zero exit the probe DID NOT ANSWER, and the verdict fails closed.
+        #
+        # One refinement, and it can only ever over-keep: a conflicted merge
+        # whose tree DIFFERS from the base still proves that merging would
+        # change main, which is this module's definition of not-contained — so
+        # that case keeps the informative `unmerged` (it is what the `ws-variant`
+        # add/add fixture is). A conflicted merge whose tree EQUALS the base is
+        # exactly the masked case above and degrades to `unknown`, which every
+        # consumer treats as "keep it" (cleanup.py: KEEP_UNKNOWN_MERGE).
+        if not _OID_RE.match(head):
+            # No tree at all: a ref that does not resolve (1), or an unrelated
+            # history / usage error (128).
+            return _MERGED_UNKNOWN
+        if result.returncode == 0:
             return "merged" if head == base_tree else "unmerged"
+        if head != base_tree:
+            return "unmerged"
         return _MERGED_UNKNOWN
     result = _git(
         repo,
@@ -796,7 +997,7 @@ def _branches(
         for worktree in worktrees
         if worktree.branch_ref and worktree.mtime_epoch is not None
     }
-    base_ref = _base_ref(repo)
+    base_ref = resolve_base(repo)
     base_tree = _base_tree(repo, base_ref) if probe is not None else None
     descriptions = branch_descriptions(repo)
     consumed: set[str] = set()
@@ -900,6 +1101,221 @@ def _remotes(repo: Path) -> list[Remote]:
     return remotes
 
 
+# ── the private overlay: structure and counts, never content ─────────────────
+#
+# WHY THIS EXISTS. ``private/`` is a git-ignored SEPARATE repository holding the
+# owner's real identity — employers, applications, interview material, private
+# skills. This dashboard is the MANDATED first command of every session
+# (AGENTS.md, "Runtime Environment"), so whatever it prints lands in every
+# agent's context every session, and in anything an agent then pastes into a
+# public PR description, commit message or issue. Reproduced in a fabricated
+# sandbox, one `-v` run printed an employer name inside a branch name, the same
+# name in a commit subject, the owner's own `git branch --edit-description`
+# prose, an `applications/<stage>/<employer>/` path and an absolute home path.
+#
+# ``cleanup.py`` (_private_counts) and ``gardener/workspace_hygiene.py``
+# (_print_private) already answer this correctly — counts only, and they say so.
+# This module was the one outlier, and this section makes it consistent.
+#
+# THE RULE. For the private repository this tool prints STRUCTURE, COUNTS, AGES
+# and LIFECYCLE STATES, and nothing whose characters came out of the overlay.
+# Concretely withheld: commit subjects, branch descriptions and their `next:`
+# lines, changed-file paths, worktree paths, the overlay's absolute location,
+# remote names and URLs, worktree lock/prunable reasons, and `gh` error text.
+# Kept, because they are the useful part and none of them can carry a name:
+# how many worktrees and branches there are, how dirty each is, how old
+# everything is, and each branch's lifecycle and merge state.
+#
+# BRANCH NAMES — the hard case, and the rule. `codex/remove-resume-review-pdf`
+# is mechanical and harmless; `codex/<employer>-onsite-loop` is not, and NOTHING
+# MECHANICAL TELLS THEM APART. Three candidate rules; only one survives:
+#
+#   * A BLOCKLIST would have to enumerate every employer the owner might ever
+#     apply to. That list IS the private data — a public tool cannot hold it,
+#     and it fails OPEN on the first name nobody thought of.
+#   * A HASH is not redaction of a low-entropy secret. A company name is drawn
+#     from a small guessable set, so anyone holding the digest confirms a guess
+#     by hashing candidates. It reads as safe and is not.
+#   * AN ALLOWLIST is safe by CONSTRUCTION: a character can reach stdout only if
+#     it is already a literal in this public source file. It fails CLOSED — an
+#     unrecognised name degrades to an ordinal instead of leaking.
+#
+# So a private branch prints as an ORDINAL — `#3`, its position in this run's
+# sorted branch list — optionally prefixed by its leading path segment WHEN AND
+# ONLY WHEN that segment is one of the conventional, tool-generated prefixes in
+# SAFE_BRANCH_PREFIXES. An ordinal has no preimage, and it still does the one
+# job the name did here: it ties a worktree row to its branch row within a
+# single run. `main`/`master` print verbatim because they are the base ref and
+# are already literals in this file. To see the real names the owner runs
+# `git -C private branch`, which prints to a terminal rather than into an
+# agent's context.
+SAFE_BRANCH_PREFIXES = frozenset({
+    "build", "chore", "ci", "codex", "dev", "docs", "feat", "feature", "fix",
+    "hotfix", "perf", "refactor", "release", "revert", "style", "test", "wip",
+})
+SAFE_BRANCH_NAMES = frozenset({"main", "master"})
+SAFE_REMOTE_NAMES = frozenset({"origin", "upstream"})
+
+PATH_WITHHELD = "(withheld — private overlay)"
+REMOTE_WITHHELD = "(withheld — private overlay)"
+PRIVATE_POLICY_NOTE = (
+    "private overlay: structure, counts, ages and states only — branch names, "
+    "commit subjects, descriptions, paths and remotes are withheld because this "
+    "output is read into every agent session and pasted into public PRs. "
+    "`git -C private branch` shows the real names, in your terminal."
+)
+PRIVATE_STATUS_ERROR = "status unavailable"
+PRIVATE_PR_ERROR = "pull-request state unavailable"
+PRIVATE_INSPECT_ERROR = (
+    "the private overlay could not be inspected; git's own message is withheld "
+    "because it names refs and files — rerun the failing command yourself with "
+    "`git -C private ...` to see it"
+)
+
+
+def is_private_overlay(label: str, root: Path) -> bool:
+    """Is this repository the overlay? TWO independent triggers, both cheap.
+
+    The label is the ordinary one, and the LOCATION is the backstop: a caller
+    that inspects ``<toolkit>/private`` under some other label — the gardener
+    passes ``"REPO"`` — still gets a redacted model. A public repository whose
+    own directory happens to be named ``private`` is redacted too; that error
+    direction costs a little detail, and the other direction costs the owner's
+    identity, so this one fails closed on purpose.
+    """
+    if label == PRIVATE_LABEL:
+        return True
+    try:
+        return root.resolve().name == PRIVATE_MOUNT
+    except OSError:
+        return True
+
+
+def redact_branch_label(name: str, ordinal: int, scope: str) -> str:
+    """``main`` · ``codex/#3`` · ``origin/#3`` · ``#3``. Rule argued above."""
+    prefix = ""
+    rest = name
+    if scope == "R":
+        remote, _, rest = name.partition("/")
+        if remote not in SAFE_REMOTE_NAMES or not rest:
+            return f"#{ordinal}"
+        prefix = remote + "/"
+    if rest in SAFE_BRANCH_NAMES:
+        return prefix + rest
+    head, separator, _ = rest.partition("/")
+    if separator and head in SAFE_BRANCH_PREFIXES:
+        return f"{prefix}{head}/#{ordinal}"
+    return f"{prefix}#{ordinal}"
+
+
+def _redact_ref(ref: Ref, label: str, upstream_label: str) -> Ref:
+    """A ``Ref`` stripped to what is mechanical: its dates and its shape."""
+    kind = "refs/remotes/" if ref.full_name.startswith("refs/remotes/") else "refs/heads/"
+    return Ref(
+        full_name=kind + label,
+        short_name=label,
+        oid="",
+        short_oid="",
+        upstream_ref="" if not ref.upstream_ref else "refs/remotes/" + upstream_label,
+        upstream_short="" if not ref.upstream_short else upstream_label,
+        relative_date=ref.relative_date,
+        subject="",
+        symbolic_target="",
+        committer_epoch=ref.committer_epoch,
+    )
+
+
+def redact_repository(repo: Repository) -> Repository:
+    """Rebuild ``repo`` so every string left in it is safe to print.
+
+    Redaction happens HERE, at the model boundary, rather than in the renderer:
+    the table, ``-v`` and ``--json`` are three consumers and a fourth will be
+    written some day, so the value a consumer receives has to be the safe one
+    already. ``Repository.private`` then lets the renderer additionally skip
+    whole sections instead of trusting this function to have been exhaustive.
+    """
+    labels = {
+        branch.ref.full_name: redact_branch_label(branch.name, index + 1, branch.scope)
+        for index, branch in enumerate(repo.branches)
+    }
+    # A checked-out branch is always a local head, so its label is already known;
+    # the fallback exists only so an unexpected shape cannot leak a real name.
+    def label_for(full_name: str | None) -> str:
+        return labels.get(full_name or "", "#?")
+
+    path_display: dict[str, str] = {}
+    worktrees: list[Worktree] = []
+    for index, worktree in enumerate(repo.worktrees):
+        # `git worktree list` reports the MAIN worktree first, and for the
+        # overlay that is the mount point itself — a path AGENTS.md already
+        # names. Every other registration lives somewhere only the owner knows.
+        display = PRIVATE_MOUNT if index == 0 else f"overlay worktree #{index + 1}"
+        path_display[str(worktree.path)] = display
+        worktrees.append(
+            Worktree(
+                path=worktree.path,
+                head="",
+                branch_ref=(None if worktree.branch_ref is None
+                            else "refs/heads/" + label_for(worktree.branch_ref)),
+                detached=worktree.detached,
+                bare=worktree.bare,
+                locked=None if worktree.locked is None else "",
+                prunable=None if worktree.prunable is None else "",
+                changes=[Change(code=change.code, path="", old_path=None)
+                         for change in worktree.changes],
+                status_error=(None if worktree.status_error is None
+                              else PRIVATE_STATUS_ERROR),
+                mtime_epoch=worktree.mtime_epoch,
+                directory_missing=worktree.directory_missing,
+            )
+        )
+
+    branches = []
+    for index, branch in enumerate(repo.branches):
+        label = labels[branch.ref.full_name]
+        # The upstream carries the SAME ordinal as the row it belongs to, so
+        # `#3 · upstream origin/#3` reads as one thing rather than two.
+        upstream_label = redact_branch_label(
+            branch.upstream.short_name if branch.upstream is not None
+            else (branch.ref.upstream_short or "origin/?"),
+            index + 1, "R")
+        branches.append(
+            dataclasses.replace(
+                branch,
+                name=label,
+                ref=_redact_ref(branch.ref, label, upstream_label),
+                upstream=(None if branch.upstream is None
+                          else _redact_ref(branch.upstream, upstream_label, upstream_label)),
+                intent="",
+                intent_source=INTENT_NONE,
+                next_action=None,
+            )
+        )
+
+    return dataclasses.replace(
+        repo,
+        # Nothing downstream of inspection resolves this; it exists to be shown,
+        # and what may be shown is the publicly documented mount point.
+        root=Path(PRIVATE_MOUNT),
+        worktrees=worktrees,
+        branches=branches,
+        remotes=[Remote(name=f"remote #{index + 1}", url=REMOTE_WITHHELD)
+                 for index, _ in enumerate(repo.remotes)],
+        pr_error=None if repo.pr_error is None else PRIVATE_PR_ERROR,
+        checkout=(None if repo.checkout is None else dataclasses.replace(
+            repo.checkout,
+            branch=label_for(repo.checkout.branch_ref),
+            # Relabelled, not blanked: the renderer joins this against the
+            # branch rows to keep the checked-out row out of `--stale`, and the
+            # label it now carries is already the public one.
+            branch_ref=(None if repo.checkout.branch_ref is None
+                        else "refs/heads/" + label_for(repo.checkout.branch_ref)),
+        )),
+        private=True,
+        path_display=path_display,
+    )
+
+
 def pull_request_index(root: Path, timeout: float = 20.0) -> tuple[dict[str, str], str | None]:
     """``({branch: "#12 OPEN"}, error)`` from ``gh`` — the ONE network call here.
 
@@ -943,13 +1359,81 @@ def pull_request_index(root: Path, timeout: float = 20.0) -> tuple[dict[str, str
     return index, None
 
 
+def _checkout(
+    repo_root: Path,
+    worktrees: Sequence[Worktree],
+    branches: Sequence[Branch],
+    remotes: Sequence[Remote],
+    now: float,
+) -> Checkout | None:
+    """The verdict for the branch the reader is standing on.
+
+    "Standing on" is the MAIN worktree's branch: ``git worktree list`` reports
+    the main worktree first, and it is the one whose files a plain ``cd`` lands
+    in. Linked worktrees each get their own row in the table below; the verdict
+    is about the checkout the reader almost certainly means.
+    """
+    main_worktree = next((worktree for worktree in worktrees if not worktree.bare), None)
+    if main_worktree is None:
+        return None
+    branch = next((item for item in branches
+                   if item.ref.full_name == main_worktree.branch_ref), None)
+    fetched_epoch = _fetch_head_epoch(repo_root)
+    age = _age_seconds(fetched_epoch, now)
+    return Checkout(
+        branch=main_worktree.branch,
+        branch_ref=main_worktree.branch_ref,
+        sync=branch.sync if branch is not None else "no branch",
+        ahead=branch.ahead if branch is not None else None,
+        behind=branch.behind if branch is not None else None,
+        freshness=checkout_freshness(has_remote=bool(remotes), age_seconds=age),
+        fetched_epoch=fetched_epoch,
+        knowledge_age_seconds=age,
+    )
+
+
 def inspect_repository(
     label: str,
     root: Path,
     *,
     want_pr: bool = False,
     now: float | None = None,
+    private: bool | None = None,
 ) -> Repository:
+    """Inspect one repository, redacting it when it is the private overlay.
+
+    ``private`` defaults to ``is_private_overlay(label, root)``, which arms on
+    the LABEL *or* on the location. Arming on the label alone would have made
+    the guarantee depend on every caller picking the right string —
+    ``gardener/workspace_hygiene.py`` already inspects the overlay under the
+    label ``"REPO"`` — so location is the second, independent trigger. A caller
+    may force redaction on; forcing it off is deliberate and explicit.
+
+    A ``GitError`` raised while inspecting the overlay is REWRITTEN rather than
+    propagated: ``_git`` builds its message out of the repository path and git's
+    own stderr, and git's stderr names refs and files. That message is printed
+    by ``main`` and would carry exactly what the rest of this function exists to
+    withhold.
+    """
+    redact = is_private_overlay(label, root) if private is None else private
+    try:
+        repository = _inspect_repository(label, root, want_pr=want_pr, now=now)
+    except GitError:
+        if redact:
+            raise GitError(PRIVATE_INSPECT_ERROR) from None
+        raise
+    return redact_repository(repository) if redact else repository
+
+
+def _inspect_repository(
+    label: str,
+    root: Path,
+    *,
+    want_pr: bool = False,
+    now: float | None = None,
+) -> Repository:
+    """The unredacted inspection. Only ``inspect_repository`` should call this."""
+    moment = time.time() if now is None else now
     worktrees = _worktrees(root)
     pr_index: dict[str, str] = {}
     pr_error: str | None = None
@@ -958,15 +1442,16 @@ def inspect_repository(
     probe = open_merge_probe(root)
     try:
         branches, local_count, remote_count, base_ref = _branches(
-            root, worktrees, probe, pr_index, now)
+            root, worktrees, probe, pr_index, moment)
     finally:
         probe.close()
+    remotes = _remotes(root)
     return Repository(
         label=label,
         root=root.resolve(),
         worktrees=worktrees,
         branches=branches,
-        remotes=_remotes(root),
+        remotes=remotes,
         local_ref_count=local_count,
         remote_ref_count=remote_count,
         base_ref=base_ref,
@@ -974,14 +1459,15 @@ def inspect_repository(
         merge_probe_note=probe.note,
         pr_requested=want_pr,
         pr_error=pr_error,
+        checkout=_checkout(root, worktrees, branches, remotes, moment),
     )
 
 
 def discover_repositories(root: Path) -> list[tuple[str, Path]]:
-    repos = [("PUBLIC", root.resolve())]
-    private = root / "private"
+    repos = [(PUBLIC_LABEL, root.resolve())]
+    private = root / PRIVATE_MOUNT
     if _git_toplevel(private) == private.resolve():
-        repos.append(("PRIVATE", private.resolve()))
+        repos.append((PRIVATE_LABEL, private.resolve()))
     return repos
 
 
@@ -1004,6 +1490,21 @@ def _short_path(path: Path, workspace_root: Path) -> str:
             return "~" + os.sep + str(path.resolve().relative_to(Path.home().resolve()))
         except (OSError, ValueError):
             return str(path)
+
+
+def _display_path(repo: Repository, path: Path | None, workspace_root: Path) -> str:
+    """The only way a path reaches the output. FAILS CLOSED for the overlay.
+
+    For the private repository a path is printed only if ``redact_repository``
+    put an explicit stand-in in ``path_display``; anything else — including a
+    path a future edit starts passing through here — is withheld rather than
+    guessed at.
+    """
+    if path is None:
+        return ""
+    if repo.private:
+        return repo.path_display.get(str(path), PATH_WITHHELD)
+    return _short_path(path, workspace_root)
 
 
 def _safe_path(path: str) -> str:
@@ -1033,6 +1534,43 @@ def _merged_style(state: str, palette: Palette) -> str:
     if state == "unmerged":
         return palette.YELLOW
     return palette.RED
+
+
+def _sync_style(sync: str, palette: Palette) -> str:
+    """``sync`` was the ONE column with no style path — the incident's hiding place.
+
+    Reproduced with ``--color=always``: ``active`` and ``main`` carried
+    ``\\033[32m`` while ``behind 88`` carried no escape at all, so the single
+    token that said the checkout was 88 commits stale rendered exactly like
+    surrounding punctuation.
+    """
+    if sync.startswith("diverged") or sync == "upstream missing":
+        return palette.RED
+    if sync.startswith("behind"):
+        return palette.YELLOW
+    if sync.startswith("ahead"):
+        return palette.CYAN
+    if sync == "synced":
+        return palette.GREEN
+    return palette.DIM
+
+
+def _freshness_style(freshness: str, palette: Palette) -> str:
+    if freshness == FRESHNESS_BLIND:
+        return palette.RED
+    if freshness in (FRESHNESS_DATED, FRESHNESS_UNKNOWN):
+        return palette.YELLOW
+    if freshness == FRESHNESS_FRESH:
+        return palette.GREEN
+    return palette.DIM
+
+
+def _knowledge_text(checkout: Checkout) -> str:
+    if checkout.freshness == FRESHNESS_NO_REMOTE:
+        return "no remote configured"
+    if checkout.knowledge_age_seconds is None:
+        return "never fetched in this checkout"
+    return f"remote knowledge {_age_text(checkout.knowledge_age_seconds)} old"
 
 
 def _state_style(state: str, palette: Palette) -> str:
@@ -1085,16 +1623,22 @@ def render(
     )
     lines = [
         f"{palette.paint('GIT WORKSPACE', palette.BOLD, palette.CYAN)}  {summary}",
-        palette.paint("Remote state is cached; no fetch was performed.", palette.DIM),
+        palette.paint(
+            "Remote state is cached; no fetch was performed — each CHECKOUT line "
+            "below says how old that cache is.",
+            palette.DIM,
+        ),
     ]
 
     for repo in repositories:
         lines.append("")
-        repo_color = palette.BLUE if repo.label == "PUBLIC" else palette.MAGENTA
+        repo_color = palette.BLUE if repo.label == PUBLIC_LABEL else palette.MAGENTA
         heading = f"{repo.label} · {repo.root.name}"
         lines.append(palette.paint(heading, palette.BOLD, repo_color))
         if verbose:
             lines.append(f"  {repo.root}")
+        if repo.private:
+            lines.append(palette.paint(f"  {PRIVATE_POLICY_NOTE}", palette.DIM))
         dirty_repo = sum(1 for worktree in repo.worktrees if worktree.dirty)
         lines.append(
             palette.paint(
@@ -1103,6 +1647,28 @@ def render(
                 palette.DIM,
             )
         )
+        if repo.checkout is not None:
+            checkout = repo.checkout
+            row = (
+                f"  {palette.paint('CHECKOUT', palette.BOLD)}  "
+                f"{palette.paint(checkout.freshness, _freshness_style(checkout.freshness, palette))}  "
+                f"{checkout.branch} · "
+                f"{palette.paint(checkout.sync, _sync_style(checkout.sync, palette))} · "
+                f"{_knowledge_text(checkout)}"
+            )
+            if checkout.freshness in (FRESHNESS_BLIND, FRESHNESS_UNKNOWN):
+                row += palette.paint(
+                    " — `git fetch --prune origin` before trusting `merged` or "
+                    "`behind` below", palette.DIM)
+            lines.append(row)
+        # WHICH BASE, ALWAYS. `merged` means "contained by this ref"; a reader
+        # who cannot see which ref that was cannot tell a finished branch from a
+        # branch that only looks finished against a local main nobody updated.
+        lines.append(palette.paint(
+            f"  merged is judged against {repo.base_ref}" if repo.base_ref
+            else "  no base ref resolves; merge state is unavailable",
+            palette.DIM if repo.base_ref else palette.RED,
+        ))
         if repo.merge_probe_note:
             lines.append(palette.paint(f"  {repo.merge_probe_note}", palette.RED))
         if repo.pr_error:
@@ -1126,7 +1692,7 @@ def render(
             else:
                 symbol = palette.paint("●", palette.GREEN)
                 state_text = palette.paint(state, palette.GREEN)
-            path = _short_path(worktree.path, workspace_root)
+            path = _display_path(repo, worktree.path, workspace_root)
             lines.append(
                 f"    {symbol} {worktree.branch:<{branch_width}}  "
                 f"{state_text}{' ' * (state_width - len(state))}  {path}"
@@ -1140,7 +1706,10 @@ def render(
                 lines.append(palette.paint("      " + " · ".join(admin), palette.RED))
             if verbose and worktree.status_error:
                 lines.append(palette.paint(f"      {worktree.status_error}", palette.RED))
-            if verbose:
+            # The overlay's change paths are already blanked by redaction; the
+            # section is skipped as well, so a future edit that stops blanking
+            # them still cannot print them from here.
+            if verbose and not repo.private:
                 for change in worktree.changes:
                     path_text = _safe_path(change.path)
                     if change.old_path:
@@ -1151,14 +1720,28 @@ def render(
         hidden = 0
         if stale_days is not None:
             threshold = stale_days * 86400
+            # THE ROW YOU ARE STANDING ON IS NEVER FILTERED OUT. `--stale 1`
+            # used to delete the `main` row outright, which is how a checkout 88
+            # commits behind could be read past: the one row describing the
+            # reader's own position vanished and the table that remained looked
+            # healthy. A filter may narrow what you are being shown; it may not
+            # remove your own position from the map.
+            #
+            # Only THAT row is exempt — the branch the CHECKOUT verdict above
+            # describes. Other checked-out branches (linked worktrees) stay
+            # subject to the filter, because "show me what nobody has touched"
+            # legitimately means hiding a worktree somebody edited a minute ago.
+            standing_on = repo.checkout.branch_ref if repo.checkout else None
             kept = [b for b in shown
-                    if b.age_seconds is not None and b.age_seconds >= threshold]
+                    if (standing_on is not None and b.ref.full_name == standing_on)
+                    or (b.age_seconds is not None and b.age_seconds >= threshold)]
             hidden = len(shown) - len(kept)
             shown = kept
         branch_count = _count("row", len(shown))
         heading = f"  BRANCHES ({branch_count})"
         if stale_days is not None:
-            heading += f" — untouched for {stale_days}+ days; {hidden} newer row(s) hidden"
+            heading += (f" — untouched for {stale_days}+ days; {hidden} newer row(s) "
+                        f"hidden; the checked-out row is always shown")
         lines.append(palette.paint(heading, palette.BOLD))
         name_width = min(28, max((len(branch.name) for branch in shown), default=1))
         sync_width = max((len(branch.sync) for branch in shown), default=1)
@@ -1179,23 +1762,28 @@ def render(
                 f"{branch.state:<{state_width}}",
                 _state_style(branch.state, palette),
             )
+            sync = palette.paint(
+                f"{branch.sync:<{sync_width}}",
+                _sync_style(branch.sync, palette),
+            )
             row = (
                 f"    {marker} {scope}  {_truncate(branch.name, name_width):<{name_width}}  "
                 f"{state}  {_age_text(branch.age_seconds):>4}  "
-                f"{branch.sync:<{sync_width}}  {merged}"
+                f"{sync}  {merged}"
             )
             if repo.pr_requested:
                 row += f"  {(branch.pr or '—'):<{pr_width}}"
             row += f"  {_truncate(branch.intent, INTENT_WIDTH)}"
             lines.append(row.rstrip())
             if verbose:
-                lines.append(
-                    palette.paint(
-                        f"        {branch.ref.short_oid} · {branch.ref.relative_date} · "
-                        f"{branch.ref.subject}",
-                        palette.DIM,
-                    )
-                )
+                # Joined by what SURVIVES rather than by position: the overlay's
+                # object id and commit subject are blank, and an empty field
+                # must not leave a dangling separator behind.
+                provenance = " · ".join(part for part in (
+                    branch.ref.short_oid, branch.ref.relative_date,
+                    branch.ref.subject) if part)
+                if provenance:
+                    lines.append(palette.paint(f"        {provenance}", palette.DIM))
                 details = []
                 if branch.upstream is not None:
                     details.append(f"upstream {branch.upstream.short_name}")
@@ -1203,7 +1791,7 @@ def render(
                     expected = branch.ref.upstream_short or branch.ref.upstream_ref
                     details.append(f"expected {expected}")
                 if branch.worktree_path:
-                    location = _short_path(branch.worktree_path, workspace_root)
+                    location = _display_path(repo, branch.worktree_path, workspace_root)
                     details.append(f"checked out at {location}")
                 details.append(f"intent from {branch.intent_source}")
                 details.append(f"age from {branch.evidence_source}")
@@ -1217,8 +1805,8 @@ def render(
                 if branch.wedged_at is not None:
                     lines.append(palette.paint(
                         "        WEDGED: a worktree registration at "
-                        f"{_short_path(branch.wedged_at, workspace_root)} still owns "
-                        "this branch but its directory is gone — `git switch` will "
+                        f"{_display_path(repo, branch.wedged_at, workspace_root)} still "
+                        "owns this branch but its directory is gone — `git switch` will "
                         "refuse until `git worktree prune` runs",
                         palette.RED,
                     ))
@@ -1227,26 +1815,20 @@ def render(
             lines.append(palette.paint("  REMOTES", palette.BOLD))
             for remote in repo.remotes:
                 lines.append(f"    {remote.name:<10}  {remote.url}")
-        if verbose and repo.base_ref is None:
-            lines.append(
-                palette.paint(
-                    "  No local or origin/main ref; merge state is unavailable.",
-                    palette.RED,
-                )
-            )
 
     lines.extend(
         [
             "",
             palette.paint(
                 "Legend: * checked out · L local · R cached remote · "
-                "merged = merging it into local main would change nothing "
-                "(catches squash-merges)",
+                "merged = merging it into the base ref named above would change "
+                "nothing (catches squash-merges) · unknown = the probe could not "
+                "answer, so the branch is kept",
                 palette.DIM,
             ),
             palette.paint(
                 "State (derived, never stored): active <30m · idle <24h · stale "
-                "older · merged contained by main · orphaned upstream gone · "
+                "older · merged contained by the base ref · orphaned upstream gone · "
                 "wedged worktree registration outlived its directory. Age is the "
                 "newest of the tip commit date and the worktree's own files.",
                 palette.DIM,
@@ -1256,6 +1838,12 @@ def render(
                 "never pushed); otherwise the branch's first commit subject.",
                 palette.DIM,
             ),
+            palette.paint(
+                f"CHECKOUT: how much of this is still true — fresh <24h · dated "
+                f"<{CHECKOUT_BLIND_SECONDS // 86400}d · BLIND older (`merged` and "
+                "`behind` are computed against a cached ref, so they age with it).",
+                palette.DIM,
+            ),
         ]
     )
     return "\n".join(lines)
@@ -1263,7 +1851,16 @@ def render(
 
 # ── machine-readable output ──────────────────────────────────────────────────
 
-def _worktree_json(worktree: Worktree) -> dict:
+def _json_path(repo: Repository, path: Path | None) -> str | None:
+    """The JSON counterpart of ``_display_path`` — same fail-closed rule."""
+    if path is None:
+        return None
+    if repo.private:
+        return repo.path_display.get(str(path), PATH_WITHHELD)
+    return str(path)
+
+
+def _worktree_json(worktree: Worktree, repo: Repository) -> dict:
     return {
         "bare": worktree.bare,
         "branch": worktree.branch,
@@ -1280,7 +1877,9 @@ def _worktree_json(worktree: Worktree) -> dict:
         "head": worktree.head,
         "locked": worktree.locked,
         "mtime_epoch": worktree.mtime_epoch,
-        "path": str(worktree.path),
+        # Through the same fail-closed gate the table uses; ``--json`` is pasted
+        # into issues at least as often as the table is.
+        "path": _json_path(repo, worktree.path),
         "prunable": worktree.prunable,
         "staged": worktree.staged,
         "status_error": worktree.status_error,
@@ -1289,7 +1888,7 @@ def _worktree_json(worktree: Worktree) -> dict:
     }
 
 
-def _branch_json(branch: Branch) -> dict:
+def _branch_json(branch: Branch, repo: Repository) -> dict:
     return {
         "ahead": branch.ahead,
         "age_seconds": branch.age_seconds,
@@ -1311,25 +1910,42 @@ def _branch_json(branch: Branch) -> dict:
         "sync": branch.sync,
         "upstream": branch.upstream.short_name if branch.upstream else None,
         "upstream_missing": branch.upstream_missing,
-        "wedged_at": str(branch.wedged_at) if branch.wedged_at else None,
-        "worktree_path": str(branch.worktree_path) if branch.worktree_path else None,
+        "wedged_at": _json_path(repo, branch.wedged_at),
+        "worktree_path": _json_path(repo, branch.worktree_path),
+    }
+
+
+def _checkout_json(checkout: Checkout | None) -> dict | None:
+    if checkout is None:
+        return None
+    return {
+        "ahead": checkout.ahead,
+        "behind": checkout.behind,
+        "branch": checkout.branch,
+        "fetched_epoch": checkout.fetched_epoch,
+        "freshness": checkout.freshness,
+        "knowledge_age_seconds": checkout.knowledge_age_seconds,
+        "sync": checkout.sync,
     }
 
 
 def repository_json(repo: Repository) -> dict:
     return {
         "base_ref": repo.base_ref,
-        "branches": [_branch_json(branch) for branch in repo.branches],
+        "branches": [_branch_json(branch, repo) for branch in repo.branches],
+        "checkout": _checkout_json(repo.checkout),
         "label": repo.label,
         "local_ref_count": repo.local_ref_count,
         "merge_probe": repo.merge_probe,
         "merge_probe_note": repo.merge_probe_note,
+        "private": repo.private,
+        "redaction": PRIVATE_POLICY_NOTE if repo.private else None,
         "pull_request_error": repo.pr_error,
         "pull_requests_requested": repo.pr_requested,
         "remote_ref_count": repo.remote_ref_count,
         "remotes": [{"name": r.name, "url": r.url} for r in repo.remotes],
         "root": str(repo.root),
-        "worktrees": [_worktree_json(worktree) for worktree in repo.worktrees],
+        "worktrees": [_worktree_json(worktree, repo) for worktree in repo.worktrees],
     }
 
 
@@ -1351,6 +1967,8 @@ def workspace_json(repositories: Sequence[Repository], now: float | None = None)
         "thresholds": {
             "active_max_seconds": ACTIVE_MAX_SECONDS,
             "idle_max_seconds": IDLE_MAX_SECONDS,
+            "checkout_dated_seconds": CHECKOUT_DATED_SECONDS,
+            "checkout_blind_seconds": CHECKOUT_BLIND_SECONDS,
         },
     }
 

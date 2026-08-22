@@ -22,24 +22,38 @@ reason is printed):
    plan is stamped stale and its script is emitted COMMENTED OUT;
 3. no worktree references it — including a registration whose directory is
    gone, which a lock can hide from ``prunable``;
-4. ``git rev-list <branch> --not --remotes`` is empty: every commit exists on a
-   remote. A squash-merged branch fails this and is kept, deliberately;
+4. ``git rev-list <branch> --not --remotes`` is empty — every commit exists on a
+   remote — OR the FETCHED base ref demonstrably contains the branch's entire
+   content. That second clause is not a loophole, it is the repair of a rule
+   that had become unsatisfiable: after a squash-merge whose head branch GitHub
+   deleted, the branch's own commits are on no remote-tracking ref and no future
+   ref can ever carry them, so the proxy ("every commit is on a remote") can
+   never again be true while the thing it stands for ("deleting this loses
+   nothing") is plainly true. The waiver is printed as a note, needs a fresh
+   fetch, and the tip is pinned before anything deletes it;
 5. deleting it would not orphan a COMMIT that ``automation/publish/review_ledger.yaml``
    names. The question is REACHABILITY, never whether the branch's name appears
    in that file: a row degrades from NOT_ANCESTOR to UNKNOWN OBJECT when the
    commit its ``base:``/``commit:`` field names stops being reachable in a fresh
    clone, and a branch whose commits are all reachable from the base ref cannot
    cause that however often its name is written in someone's prose;
-6. ``git branch -d`` will actually accept it. That is a DIFFERENT question from
+6. ``git branch -d`` will actually accept it — or, where it structurally cannot,
+   this planner's own containment proof supersedes its verdict and the deletion
+   is emitted as a COMPARE-AND-SWAP instead. That is a DIFFERENT question from
    point 1: git judges ``-d`` against the branch's own upstream when one is
    configured and its tracking ref resolves, and against ``HEAD`` otherwise —
-   never against the base ref this planner tests. A branch whose content is in
-   ``origin/main`` but which is ahead of a live ``origin/<branch>`` is refused by
-   ``-d``, so it is KEPT here rather than emitted as a command that fails;
-7. a backup ref resolves. The reflog does NOT protect worktree-only commits
-   (measured: 0 hits after ``worktree remove --force`` + ``branch -D``);
-   ``refs/agent-trash/<ts>/<branch>`` makes the tip reachable, so it survives
-   even ``git gc --prune=now``.
+   never against the base ref this planner tests. Two refs, two relations, and
+   after a squash-merge the ``-d`` relation can never hold again. The full
+   argument, and the four things that are still refused outright, are at
+   ``deletion_method``;
+7. a backup ref resolves TO THE RIGHT COMMIT, and no other item's backup can be
+   written over it. The reflog does NOT protect worktree-only commits (measured:
+   0 hits after ``worktree remove --force`` + ``branch -D``);
+   ``refs/agent-trash/<ts>/<branch>-<sha12>`` makes the tip reachable, so it
+   survives even ``git gc --prune=now``. The tip is IN THE NAME because it had
+   to be: ``slug`` maps ``/`` to ``-``, so ``feat/a`` and ``feat-a`` derived one
+   ref, the second write clobbered the first, and both rows still reported
+   ``backup_written: true``.
 
 A BRANCH TIP IS NOT THE ONLY THING A RETIREMENT CAN ORPHAN. Point 7 above was
 written for branches and, for a long time, only implemented for branches — while
@@ -60,7 +74,20 @@ So every worktree this tool proposes to retire gets its own reflog swept first:
 ``git -C <wt> reflog --format=%H HEAD``, deduped against every commit already
 reachable from a ref, with one verified ``refs/agent-trash/<ts>-worktrees/…``
 ref per survivor — written FIRST, verified, and the worktree dropped from the
-plan if the ref cannot be written. The sweep is bounded by the reflog itself and
+plan if the ref cannot be written.
+
+AND SO DOES EVERY WORKTREE IT PROPOSES TO **PRUNE**. That path had no sweep at
+all: a gone registration went straight to ``action="prune"`` before the sweep
+was reachable, and ``--execute``'s own ``git worktree prune`` then deleted the
+administrative directory the reflog lives in. Measured, with a control arm: the
+owner deleting the directory and running ``git gc --prune=now`` does NOT lose a
+detached-HEAD commit — the per-worktree reflog still protects it — while
+``cleanup.py --execute`` followed by the same ``gc`` DID, with zero backup refs
+written, reporting the step as "pruned (metadata only)". The directory being
+gone does not make the reflog unreadable; ``git --git-dir=<admin> reflog HEAD``
+answers until prune runs. And because ``git worktree prune`` cannot be aimed at
+one entry, a fail-closed KEEP on any gone registration now holds back the whole
+run's pruning rather than being overruled by a neighbour. The sweep is bounded by the reflog itself and
 by the exclusion walk; it never enumerates history. Stash entries are EXCLUDED
 rather than backed up: ``refs/stash`` and ``logs/refs/stash`` were measured to
 live in the COMMON ref store, so ``git worktree prune`` cannot destroy them and
@@ -217,6 +244,24 @@ KEEP_TOO_MANY_ORPHANS = (
 KEEP_NO_REFLOG_BACKUP = (
     "a reflog backup ref did not resolve, so retiring it could orphan a commit")
 KEEP_DIRTY = "changed path(s) here — untracked files have no git recovery story"
+KEEP_STATUS_UNREADABLE = (
+    "its `git status` could not be answered, so whether it holds uncommitted "
+    "work is UNKNOWN — and an unanswerable dirty probe is treated as dirty. "
+    "git said")
+KEEP_PRUNE_HELD_BACK = (
+    "another gone registration in this run could not be swept for the commits "
+    "`git worktree prune` would destroy, and prune cannot be aimed at ONE "
+    "entry — so this run prunes nothing. Fix or remove that one and re-run")
+KEEP_NOT_CONTAINED = (
+    "this planner's own containment re-check does not put its content in the "
+    "base ref. A `merge-tree` CONFLICT is an answer — 'merging would change "
+    "the base' — and conflicts git resolves by keeping the base's side "
+    "verbatim (binary files, `-merge` attributes, submodule pointers) print a "
+    "tree identical to the base's while the branch's content is nowhere in it")
+KEEP_DETACHED_UNCONTAINED = (
+    "detached HEAD at a commit the base ref does NOT contain. There is no "
+    "branch to judge it by AND no proof its work landed anywhere, which is "
+    "exactly the shape of an unpushed experiment — so it stays")
 KEEP_LOCKED = "the worktree is locked — a deliberate finalizer"
 KEEP_LOCKED_GONE = (
     "locked AND its directory is gone — `git worktree prune` cannot clear it "
@@ -263,6 +308,13 @@ class Blocking:
         return {"code": self.code, "message": self.message, "subject": self.subject}
 
 
+# How the emitted script spells one branch's deletion. `git branch -d` is the
+# default and stays the default; the compare-and-swap exists only for the shape
+# `-d` structurally cannot accept — see `deletion_method` below.
+DELETE_BRANCH_D = "git branch -d"
+DELETE_CAS = "git update-ref -d (compare-and-swap on the tip)"
+
+
 @dataclass
 class BranchItem:
     name: str
@@ -277,6 +329,11 @@ class BranchItem:
     backup_written: bool = False
     archive_tag: str | None = None
     unpushed: int = 0
+    # Rules this item cleared by EVIDENCE rather than by passing. Printed in the
+    # report and written into the script: a relaxed rule nobody is told about is
+    # a relaxed rule nobody can object to.
+    notes: list[str] = field(default_factory=list)
+    delete_method: str = DELETE_BRANCH_D
 
     @property
     def proposed(self) -> bool:
@@ -288,15 +345,97 @@ class BranchItem:
             "archive_tag": self.archive_tag,
             "backup_ref": self.backup_ref,
             "backup_written": self.backup_written,
+            "delete_method": self.delete_method,
             "intent": self.intent,
             "keep_reasons": list(self.keep_reasons),
             "merged": self.merged,
             "name": self.name,
+            "notes": list(self.notes),
             "proposed": self.proposed,
             "ref": self.ref,
             "state": self.state,
             "tip": self.tip,
             "unpushed_commits": self.unpushed,
+        }
+
+
+# ── remote branches: counted and explained, never touched ────────────────────
+#
+# WHY THEY WERE INVISIBLE, AND WHY THEY STILL ARE NOT DELETED. `classify` used
+# to `continue` past every ref whose scope is "R", so the pile the owner
+# actually looks at on GitHub — 17 merged branches on this repository at the
+# time of writing — did not appear in the plan at all. That is a REPORTING gap
+# and it is closed below.
+#
+# It is not closed by emitting deletions, and the reason is written in this
+# repository's own handbook. `skills/github-workflow/reference.md` records
+# incident #136: deleting a base branch CLOSED the pull request stacked above it
+# one second later (`base_ref_deleted` 21:05:08, `closed` 21:05:09), and made
+# the rewritten commits unreachable, degrading review-ledger rows from
+# "EXISTS but is NOT an ancestor" to "UNKNOWN OBJECT" in a fresh clone. Its rule
+# is "never `--delete-branch`", and `merge_stack.py` rejects the flag at
+# argument parsing.
+#
+# So the precondition that would make a remote deletion safe is "no OPEN pull
+# request names this branch as its head OR as its base", and answering it
+# requires a GitHub API call. This planner makes exactly ONE network call —
+# `git fetch --prune origin` — and that is a property worth more than the
+# convenience of a second one. Every row below therefore carries its unmet
+# preconditions explicitly, and NOTHING is emitted.
+#
+# Whether the emitter should ever start writing that block is an owner
+# decision, not an agent's: see
+# `message-queue/needs-human/decisions/plan-remote-branch-retirement.md`. This
+# report-only behaviour is that item's default path, and it satisfies the rule a
+# default path has to satisfy — reversible, writes no owner data, reaches
+# nothing outward, loses nothing silently.
+
+REMOTE_DECISION = ("message-queue/needs-human/decisions/"
+                   "plan-remote-branch-retirement.md")
+REMOTE_KEEP_PROTECTED = "protected branch name"
+REMOTE_KEEP_BASE = "this is the base ref every other branch is judged against"
+REMOTE_KEEP_UNCONTAINED = (
+    "the fetched base does not contain its content — a merge-tree CONFLICT is "
+    "an answer, and the answer is no")
+REMOTE_KEEP_STALE = "no --fetch, so there is no fresh remote knowledge to judge it by"
+REMOTE_UNMET_PR = (
+    "UNMET: no open pull request may name it as head OR as base. Deleting a "
+    "base branch CLOSES the PR stacked above it (incident #136, one second "
+    "apart), and answering this needs a GitHub API call this planner does not "
+    "make — its only network call is `git fetch --prune origin`")
+REMOTE_UNMET_DECISION = (
+    f"UNMET: whether this tool may plan remote deletions at all is an OPEN "
+    f"owner decision ({REMOTE_DECISION}). Its default path, which is what runs "
+    f"until it is answered, is this listing and nothing else")
+
+
+@dataclass
+class RemoteBranchItem:
+    """One cached remote branch, with the reasons it is not a candidate.
+
+    ``candidate`` never means "will be deleted" and never means "may be
+    deleted". It means "the two things this planner CAN check both passed", and
+    ``unmet`` names everything it cannot check that would still have to hold.
+    """
+    name: str
+    ref: str
+    tip: str
+    keep_reasons: list[str] = field(default_factory=list)
+    unmet: list[str] = field(default_factory=list)
+
+    @property
+    def candidate(self) -> bool:
+        return not self.keep_reasons
+
+    def to_json(self) -> dict:
+        return {
+            "candidate": self.candidate,
+            "emitted": False,
+            "keep_reasons": list(self.keep_reasons),
+            "name": self.name,
+            "ref": self.ref,
+            "tip": self.tip,
+            "unmet_preconditions": list(self.unmet),
         }
 
 
@@ -311,11 +450,18 @@ class WorktreeItem:
     dirty_paths: int = 0
     pruned: bool = False
     harness: bool = False
+    detached: bool = False
+    # `git status` failing is NOT "clean" — it is "unanswerable". Carried on the
+    # item so the plan JSON shows the same thing the dashboard shows.
+    status_error: str | None = None
     # (backup ref, commit) for every commit this worktree's own reflog is the
     # only thing holding. Empty is the ordinary answer — a worktree whose HEAD
     # never left its branch has nothing here.
     backups: list[tuple[str, str]] = field(default_factory=list)
     backups_written: bool = False
+    # Same contract as BranchItem.notes: the positive evidence a proposal rests
+    # on, printed rather than assumed.
+    notes: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict:
         return {
@@ -323,13 +469,16 @@ class WorktreeItem:
             "backup_refs": [{"commit": oid, "ref": ref} for ref, oid in self.backups],
             "backups_written": self.backups_written,
             "branch": self.branch,
+            "detached": self.detached,
             "dirty_paths": self.dirty_paths,
             "gone": self.gone,
             "harness_owned": self.harness,
             "keep_reasons": list(self.keep_reasons),
             "locked": self.locked,
+            "notes": list(self.notes),
             "path": self.path,
             "pruned": self.pruned,
+            "status_error": self.status_error,
         }
 
 
@@ -354,8 +503,10 @@ def slug(name: str) -> str:
     return _SLUG_RE.sub("-", name.lower()).strip("-") or "branch"
 
 
-def _git(repo: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
-    return status._git(repo, *args, check=check)
+def _git(repo: Path, *args: str, check: bool = False,
+         env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """``env`` overlays the caller's environment — only the merge probe uses it."""
+    return status._git(repo, *args, check=check, env=env)
 
 
 def _in_progress_operation(repo: Path) -> str | None:
@@ -392,13 +543,12 @@ def resolve_base(repo: Path, fetched: bool) -> str | None:
     criterion is containment by the FETCHED remote base, not by whatever the
     local main happens to be. Without a fetch the local ref is all there is,
     and the plan says so.
+
+    The implementation now lives in ``status.resolve_base``, which the dashboard
+    shares: two copies of "what does merged mean" is how the dashboard came to
+    grade already-landed work ``unmerged`` while this planner did not.
     """
-    order = (("refs/remotes/origin/main", "refs/heads/main") if fetched
-             else ("refs/heads/main", "refs/remotes/origin/main"))
-    for ref in order:
-        if status._ref_exists(repo, ref):
-            return ref
-    return None
+    return status.resolve_base(repo, prefer_remote=fetched)
 
 
 # ── the review ledger, and what deleting a branch can actually cost it ───────
@@ -567,6 +717,73 @@ def ledger_keep_reasons(repo: Path, ref: str, risk: LedgerRisk) -> list[str]:
     return reasons
 
 
+# ── containment, asked by THIS tool, of any commit-ish ───────────────────────
+#
+# WHY A SECOND PROBE WHEN `status` ALREADY COMPUTES `merged`. Three reasons,
+# and the third is the one that matters.
+#
+# 1. `status.Branch.merged` answers for BRANCHES. A worktree with a DETACHED
+#    HEAD has no branch, so the dashboard has no verdict to lend — and the only
+#    honest question about such a worktree is whether the base already contains
+#    the commit it is sitting on. That question needs a probe that takes a raw
+#    commit-ish.
+# 2. Every rule below that is RELAXED is relaxed on containment. A rule relaxed
+#    on a verdict computed in another module, for another purpose, is a rule
+#    relaxed on a promise.
+# 3. MEASURED, and the reason exit 1 is not accepted here: `git merge-tree
+#    --write-tree` exits 1 for a CONFLICTING merge and still prints a tree. For
+#    every conflict class git resolves by keeping OUR side verbatim — a file git
+#    auto-detects as binary (any NUL byte), a path carrying `binary`/`-merge` in
+#    `.gitattributes`, a submodule pointer — that printed tree IS the base tree,
+#    so "result == base tree" reads CONTAINED for a branch whose content exists
+#    nowhere in the base. This repository tracks 22 files with NUL bytes. A
+#    conflict is by definition "merging would change the base", so it is
+#    answered NOT contained, full stop, and the destructive line is never
+#    written on its say-so.
+
+
+class Containment:
+    """``does <base_ref> already contain everything <rev> has?`` — cached.
+
+    ``True`` / ``False`` / ``None``, and ``None`` is UNANSWERABLE: every caller
+    here keeps on it. One merge probe is opened for the whole run (each one
+    costs a temporary object directory), and every answer is cached, because
+    the classifier and the emitter deliberately ask the same question twice.
+    """
+
+    def __init__(self, root: Path, base_ref: str | None) -> None:
+        self.root = root
+        self.base_ref = base_ref
+        self._probe = status.open_merge_probe(root)
+        self._base_tree = status._base_tree(root, base_ref)
+        self._answers: dict[str, bool | None] = {}
+
+    def contains(self, rev: str | None) -> bool | None:
+        if not rev:
+            return None
+        if rev not in self._answers:
+            self._answers[rev] = self._ask(rev)
+        return self._answers[rev]
+
+    def _ask(self, rev: str) -> bool | None:
+        if self.base_ref is None or self._probe.degraded or not self._base_tree:
+            return None
+        if rev == self.base_ref:
+            return True
+        result = _git(self.root, "merge-tree", "--write-tree", self.base_ref,
+                      rev, env=self._probe.env)
+        head = result.stdout.split("\n", 1)[0].strip()
+        if result.returncode == 0 and status._OID_RE.match(head):
+            return head == self._base_tree
+        if result.returncode == 1:
+            # CONFLICT — see the note above. A real answer, and the answer is no.
+            return False
+        return None      # 128: unrelated histories, a ref that will not resolve
+
+    def close(self) -> None:
+        self._probe.close()
+
+
 def unpushed_commits(repo: Path, ref: str) -> int:
     result = _git(repo, "rev-list", "--count", ref, "--not", "--remotes")
     if result.returncode:
@@ -661,6 +878,89 @@ def delete_refusal(repo: Path, name: str, ref: str) -> str | None:
             f"in this tooling. Retire the branch on the remote (a later --fetch "
             f"prunes the tracking ref and this branch is proposed again), or "
             f"move it back onto {reference} yourself")
+
+
+# ── when `-d`'s verdict and this planner's proof disagree ────────────────────
+#
+# THE TWO RULES WERE JOINTLY UNSATISFIABLE, AND THIS REPOSITORY'S OWN MERGE
+# SHAPE TRIPPED BOTH. Measured on this checkout, and reproduced in scratch
+# repositories on git 2.55: an agent branch is pushed, its PR is SQUASH-merged,
+# GitHub deletes the head branch, and the next `--fetch` (which is
+# `git fetch --prune`) drops the remote-tracking ref. From that moment:
+#
+#   * `git rev-list <b> --not --remotes` is non-empty FOREVER — the branch's own
+#     commits are on no remote-tracking ref and no ref could ever carry them
+#     again, because the branch they were pushed to no longer exists;
+#   * `git branch -d` falls back to HEAD (there is no resolvable upstream any
+#     more) and a squash-merged branch is not an ancestor of HEAD. Also forever,
+#     and that is genuinely git's behaviour rather than a bug in the probe.
+#
+# So the branch was unretirable permanently, while `origin/main` demonstrably
+# contained every byte of its content — and the tool exited 0 saying so at
+# length. `--fetch --prune` was itself the step that destroyed the evidence that
+# would have permitted retirement. Two live branches sat in exactly this state.
+#
+# WHAT CHANGED, AND WHY IT IS NOT "DISARMING THE CHECK". `git branch -d`'s
+# verdict is EVIDENCE, not scripture: it answers "is this branch an ancestor of
+# <its upstream, or else HEAD>", which is a question about a ref this planner
+# never tested and, after a squash-merge, one that cannot be satisfied. When
+# this tool's OWN containment proof says the fetched base already holds the
+# branch's whole content, that proof is about the right ref and is strictly more
+# informative, so it supersedes — and the emitted line becomes
+#
+#     git update-ref -d refs/heads/<b> <tip>
+#
+# which is a COMPARE-AND-SWAP: git refuses it unless the branch still points at
+# the exact tip this plan proved contained and pinned. The three prohibited
+# shortcuts are still prohibited and none of them is used: no `-D`, no
+# `--force`, no `git branch --unset-upstream` and no deletion of a
+# remote-tracking ref. Nothing that git consults is hidden — the upstream, the
+# tracking ref and `-d`'s own verdict are all still there, still true, and the
+# verdict is PRINTED in the plan and in the script next to the line it did not
+# get to write.
+#
+# WHAT THE COMPARE-AND-SWAP GIVES BACK. `-d` is a run-time check: it re-asks its
+# question at the moment the script runs, which is the only reason the branch
+# path survived a plan going stale between writing and running. `update-ref -d`
+# with an explicit old value re-checks something narrower but sharper at exactly
+# the same moment — "has this branch moved since the plan was written?" — and
+# the emitted block additionally refuses if any worktree has checked the branch
+# out in the meantime, which is the other thing `-d` would have caught.
+#
+# THE GUARD RAILS, ALL OF WHICH STILL HOLD. A compare-and-swap deletion is
+# emitted only when: the plan is FRESH (a stale plan's script is commented out
+# in full); this tool's own probe answered CONTAINED (a merge-tree conflict is
+# not containment); the tip is pinned to a verified `refs/agent-trash` ref that
+# survives `gc --prune=now`; and the script — which the owner reads before
+# running — says in a comment exactly what `-d` said and why the line differs.
+
+
+def deletion_method(root: Path, item: "BranchItem", *,
+                    containment: "Containment", fresh: bool,
+                    ) -> tuple[str | None, str | None]:
+    """``(method, refusal)`` — how this branch's deletion may be spelled.
+
+    ``(DELETE_BRANCH_D, None)`` is the ordinary answer. ``(DELETE_CAS, note)``
+    is the shape above. ``(None, why)`` means keep it, and ``why`` is printed.
+    """
+    refusal = delete_refusal(root, item.name, item.ref)
+    if refusal is None:
+        return DELETE_BRANCH_D, None
+    if not fresh:
+        return None, (f"{refusal}. (Remote knowledge is STALE, so this run will "
+                      f"not weigh its own containment proof against that.)")
+    if containment.contains(item.ref) is not True:
+        return None, refusal
+    return DELETE_CAS, (
+        f"`git branch -d` would refuse this branch, and its refusal is about a "
+        f"ref this planner never tested. The fetched base contains the branch's "
+        f"entire content, so the deletion is emitted as "
+        f"`git update-ref -d {item.ref} {item.tip[:12]}` — a compare-and-swap "
+        f"git refuses if the branch has moved since this plan was written, plus "
+        f"an explicit check that no worktree has it checked out. No -D, no "
+        f"--force, no unset upstream, no deleted tracking ref, and the tip stays "
+        f"pinned to its refs/agent-trash ref either way. "
+        f"What `-d` said, verbatim: {refusal}")
 
 
 # ── the main working tree, and what may never be moved ───────────────────────
@@ -939,6 +1239,79 @@ def worktree_reflog_commits(worktree: Path) -> tuple[list[str], list[str]] | Non
     return list(dict.fromkeys(reflog.stdout.split())), list(dict.fromkeys(stashed))
 
 
+# ── the same sweep, for a worktree whose DIRECTORY is already gone ───────────
+#
+# THIS WAS THE HOLE, AND IT WAS THE DESTRUCTIVE ONE. `classify` used to send
+# every worktree whose directory is missing straight to `action="prune"` and
+# `continue` — BEFORE the reflog sweep this module was built around. `--execute`
+# then ran `git worktree prune`, which deletes `.git/worktrees/<id>/` entire,
+# `logs/HEAD` included, and the report called that step "pruned (metadata
+# only)". Measured, with a control arm:
+#
+#   * a commit made while the worktree's HEAD was detached, after HEAD returned
+#     to a branch, lives ONLY in that per-worktree reflog;
+#   * the owner deleting the directory and running `git gc --prune=now` does NOT
+#     lose it — the reflog is still there, still protecting it;
+#   * `cleanup.py --execute` followed by the same `gc` DID lose it, with zero
+#     backup refs written. The tool was the thing that destroyed it.
+#
+# The directory being gone does not make the reflog unreadable: the
+# ADMINISTRATIVE directory is what holds it, and that outlives the working
+# directory until prune runs. `git --git-dir=<admin> reflog HEAD` reads it
+# (verified on git 2.55 against a directory removed with `rm -rf`), so the sweep
+# the retire path gets is now run here too, and it can KEEP: a gone worktree
+# whose reflog cannot be enumerated is not pruned at all.
+
+
+def worktree_admin_dir(root: Path, worktree: Path) -> Path | None:
+    """``<common>/worktrees/<id>`` for *worktree* — the reflog's last home.
+
+    Found by reading each candidate's own ``gitdir`` file, which git maintains
+    as ``<worktree>/.git``, rather than by guessing the id from the directory
+    name: git derives that id from the basename but disambiguates collisions
+    with a numeric suffix, so the name is a hint and the ``gitdir`` file is the
+    fact. ``None`` means "could not be identified" and every caller keeps on it.
+    """
+    answered = _rev_parse_paths(root, "--git-common-dir")
+    if not answered:
+        return None
+    target = _normalise(worktree)
+    try:
+        candidates = sorted((answered[0] / "worktrees").iterdir())
+    except OSError:
+        return None
+    for candidate in candidates:
+        try:
+            recorded = (candidate / "gitdir").read_text(
+                encoding="utf-8", errors="replace").strip()
+        except OSError:
+            continue
+        if recorded and _normalise(Path(recorded).parent) == target:
+            return candidate
+    return None
+
+
+def gone_worktree_reflog_commits(root: Path, worktree: Path,
+                                 ) -> tuple[list[str], list[str]] | None:
+    """``worktree_reflog_commits`` for a worktree with no working directory.
+
+    Same contract, same ``None``-is-unanswerable rule. ``git -C <root>`` supplies
+    a working directory that exists while ``--git-dir=<admin>`` names the store
+    the reflog is in, which is the only spelling that answers once the
+    worktree's own directory has been removed.
+    """
+    admin = worktree_admin_dir(root, worktree)
+    if admin is None:
+        return None
+    where = f"--git-dir={admin}"
+    reflog = _git(root, where, "reflog", "--format=%H", "HEAD")
+    if reflog.returncode:
+        return None
+    stash = _git(root, where, "stash", "list", "--format=%H")
+    stashed = stash.stdout.split() if stash.returncode == 0 else []
+    return list(dict.fromkeys(reflog.stdout.split())), list(dict.fromkeys(stashed))
+
+
 def unreachable_commits(repo: Path, oids: Sequence[str], *,
                         protected: Sequence[str] = ()) -> list[str] | None:
     """Which of *oids* no surviving ref can reach. ``None`` if git could not say.
@@ -967,9 +1340,16 @@ def unreachable_commits(repo: Path, oids: Sequence[str], *,
 
 
 def plan_worktree_backups(repo: Path, item: WorktreeItem, worktree: Path, *,
-                          run_id: str) -> list[str]:
-    """Fill ``item.backups``; return the reasons to KEEP it instead, if any."""
-    enumerated = worktree_reflog_commits(worktree)
+                          run_id: str, gone: bool = False) -> list[str]:
+    """Fill ``item.backups``; return the reasons to KEEP it instead, if any.
+
+    ``gone`` selects where the reflog is read from — the worktree itself, or the
+    administrative directory that outlives it. Everything after that is
+    identical on purpose: one cap, one exclusion set, one ref-naming scheme, one
+    place for the fail-closed answers to be forgotten.
+    """
+    enumerated = (gone_worktree_reflog_commits(repo, worktree) if gone
+                  else worktree_reflog_commits(worktree))
     if enumerated is None:
         return [KEEP_NO_REFLOG]
     reflog, stashed = enumerated
@@ -988,15 +1368,39 @@ def plan_worktree_backups(repo: Path, item: WorktreeItem, worktree: Path, *,
 def classify(repo: status.Repository, root: Path, *, run_id: str,
              ledger: LedgerRisk | None = None,
              include_harness: bool = False,
-             ) -> tuple[list[BranchItem], list[WorktreeItem]]:
+             containment: Containment | None = None,
+             fresh: bool = False,
+             ) -> tuple[list[BranchItem], list[WorktreeItem],
+                        list[RemoteBranchItem]]:
     base_ref = repo.base_ref
     risk = ledger if ledger is not None else LedgerRisk()
+    owned = containment is None
+    if containment is None:
+        containment = Containment(root, base_ref)
+    try:
+        return _classify(repo, root, run_id=run_id, risk=risk,
+                         include_harness=include_harness,
+                         containment=containment, fresh=fresh)
+    finally:
+        if owned:
+            containment.close()
+
+
+def _classify(repo: status.Repository, root: Path, *, run_id: str,
+              risk: LedgerRisk, include_harness: bool,
+              containment: Containment, fresh: bool,
+              ) -> tuple[list[BranchItem], list[WorktreeItem],
+                         list[RemoteBranchItem]]:
+    base_ref = repo.base_ref
     worktree_refs = {
         branch.ref.full_name for branch in repo.branches if branch.worktree_path
     }
     branches: list[BranchItem] = []
+    remotes: list[RemoteBranchItem] = []
     for branch in repo.branches:
         if branch.scope == "R":
+            remotes.append(classify_remote(branch, base_ref=base_ref,
+                                           containment=containment, fresh=fresh))
             continue
         item = BranchItem(
             name=branch.name, ref=branch.ref.full_name, tip=branch.ref.oid,
@@ -1011,27 +1415,61 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
             item.keep_reasons.append(KEEP_WEDGED)
         elif branch.ref.full_name in worktree_refs:
             item.keep_reasons.append(KEEP_WORKTREE)
+        contained = containment.contains(branch.ref.full_name)
         if branch.merged == "unmerged":
             item.keep_reasons.append(KEEP_UNMERGED)
         elif branch.merged not in ("merged", "main"):
             item.keep_reasons.append(KEEP_UNKNOWN_MERGE)
+        elif contained is not True and branch.ref.full_name != base_ref:
+            # The dashboard said contained and this tool's own probe did not.
+            # A disagreement about whether deleting this loses content is
+            # settled by the more conservative answer, every time.
+            item.keep_reasons.append(KEEP_NOT_CONTAINED)
         if not _SAFE_NAME_RE.match(branch.name):
             item.keep_reasons.append(KEEP_UNSAFE_NAME)
         item.unpushed = unpushed_commits(root, branch.ref.full_name)
         if item.unpushed != 0:
             count = "an unknown number of" if item.unpushed < 0 else str(item.unpushed)
-            item.keep_reasons.append(f"{count} {KEEP_UNPUSHED}")
+            # THE RULE THAT WAS UNSATISFIABLE. "Every commit exists on a remote"
+            # is a proxy for "deleting this loses nothing", and after a
+            # squash-merge whose head branch GitHub deleted it is a proxy that
+            # can never be satisfied again while the thing it stands for is
+            # plainly true: the base ref holds every byte the branch had. So the
+            # proxy yields to the fact — but only to a FRESH, positively proven
+            # fact, and never to an unanswerable one.
+            if item.unpushed > 0 and fresh and contained is True:
+                item.notes.append(
+                    f"{count} commit(s) here are on no remote-tracking ref "
+                    f"(the shape a squash-merge plus a deleted head branch "
+                    f"leaves behind, permanently). Waived because the FETCHED "
+                    f"base ref contains this branch's entire content and the "
+                    f"tip is pinned to a backup ref before anything deletes it")
+            else:
+                item.keep_reasons.append(f"{count} {KEEP_UNPUSHED}")
         item.keep_reasons.extend(
             ledger_keep_reasons(root, branch.ref.full_name, risk))
         # LAST among the branch probes, and asked of the ref rather than of the
-        # plan: whatever the containment test decided, the emitted line is
-        # `git branch -d`, and a command that is going to be refused is not a
-        # proposal — it is a script that stops.
-        refusal = delete_refusal(root, branch.name, branch.ref.full_name)
-        if refusal is not None:
-            item.keep_reasons.append(refusal)
+        # plan: whatever the containment test decided, the emitted line has to
+        # be one git will accept, and a command that is going to be refused is
+        # not a proposal — it is a script that stops.
+        method, detail = deletion_method(root, item, containment=containment,
+                                         fresh=fresh)
+        if method is None:
+            item.keep_reasons.append(detail or KEEP_DELETE_REFUSED)
+        else:
+            item.delete_method = method
+            if detail:
+                item.notes.append(detail)
         if item.proposed:
-            item.backup_ref = f"{TRASH_REF_ROOT}/{run_id}/{slug(branch.name)}"
+            # The tip sha is part of the ref name, not decoration. `slug` maps
+            # `/` to `-`, so `feat/a` and `feat-a` produced ONE ref name; the
+            # second `update-ref` silently clobbered the first and both rows
+            # still said `backup_written: true`, while the script printed
+            # "Nothing was lost". Measured end to end: one tip became
+            # unrecoverable. Two names can still share a ref only when they
+            # share a TIP, and then both writes set the same value.
+            item.backup_ref = (f"{TRASH_REF_ROOT}/{run_id}/"
+                               f"{slug(branch.name)}-{branch.ref.oid[:12]}")
         branches.append(item)
 
     worktrees: list[WorktreeItem] = []
@@ -1045,7 +1483,8 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
         item = WorktreeItem(
             path=path, branch=worktree.branch_ref, action="keep",
             gone=worktree.gone, locked=worktree.locked is not None,
-            dirty_paths=len(worktree.changes),
+            dirty_paths=len(worktree.changes), detached=worktree.detached,
+            status_error=worktree.status_error,
         )
         if worktree.gone:
             if item.locked:
@@ -1056,11 +1495,20 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
                 # tool will never pass. Unlocking is the owner's decision.
                 item.keep_reasons.append(KEEP_LOCKED_GONE)
             else:
-                # The one deletion automation may perform without ceremony: the
-                # directory is already gone, so pruning its metadata destroys
-                # nothing — and it UN-WEDGES the branch, which git otherwise
-                # leaves unusable for three months (gc.worktreePruneExpire).
-                item.action = "prune"
+                # NOT "metadata only". Pruning deletes this registration's
+                # `logs/HEAD`, which is the ONLY record of every commit the
+                # worktree made while its HEAD was detached — so the sweep runs
+                # here, FIRST, exactly as it does on the retire path, and its
+                # answer can keep the entry instead of pruning it.
+                item.keep_reasons.extend(plan_worktree_backups(
+                    root, item, worktree.path, run_id=run_id, gone=True))
+                if not item.keep_reasons:
+                    # Now, and only now, is this the un-ceremonious deletion the
+                    # module always claimed it was: the directory is gone and
+                    # everything its reflog held is pinned. It UN-WEDGES the
+                    # branch, which git otherwise leaves unusable for three
+                    # months (gc.worktreePruneExpire).
+                    item.action = "prune"
             worktrees.append(item)
             continue
         # ── the never-move guards, before anything that could say "retire" ───
@@ -1084,6 +1532,16 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
             item.keep_reasons.append(KEEP_HARNESS)
         if item.locked:
             item.keep_reasons.append(KEEP_LOCKED)
+        if worktree.status_error:
+            # FAIL CLOSED. `status.py` records the failure and leaves `changes`
+            # EMPTY, so a worktree whose `git status` cannot run — a corrupt
+            # index is what a killed agent session leaves behind — used to read
+            # as CLEAN here and be retired with its untracked files inside it.
+            # The module's own rule already said so: "None is NOT 'no' — it is
+            # 'unanswerable', and every caller here treats it as a reason to
+            # keep." This caller did not, and now does.
+            item.keep_reasons.append(
+                f"{KEEP_STATUS_UNREADABLE}: {_comment(worktree.status_error)}")
         if worktree.changes:
             # Untracked and ignored files have NO git recovery story — measured:
             # zero blobs recoverable after `worktree remove --force`.
@@ -1093,7 +1551,40 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
         if held is not None and held.merged not in ("merged", "main"):
             item.keep_reasons.append(KEEP_UNMERGED)
         if held is None and worktree.detached:
-            item.keep_reasons.append("detached HEAD — no branch to judge it by")
+            # "NO BRANCH" IS NOT "NO EVIDENCE", AND THIS WAS THE UNWAIVABLE KEEP.
+            # Every Claude Code harness worktree is detached by construction, so
+            # an unconditional keep here fired on 100% of them, forever:
+            # `--include-harness-worktrees` waived the harness rule and landed
+            # on this one, which no flag could waive. That is the owner's actual
+            # complaint — "every time an agent finishes it leaves a branch or
+            # worktree and I have to clean it up by hand" — implemented.
+            #
+            # The polarity was being read backwards. Git REFUSES to delete a
+            # branch that a worktree has checked out; a worktree sitting
+            # detached at a commit the base already contains is the state that
+            # makes cleanup POSSIBLE, not the state that blocks it. The harness's
+            # completion signal was being treated as a blocker.
+            #
+            # So the question is answered with evidence instead of refused for
+            # lack of a name: does the FETCHED base contain the commit this
+            # worktree is sitting on? If yes, retiring it loses no content. If
+            # no — which is precisely the shape of an unpushed experiment, the
+            # documented data-loss report (claude-code#74719) where a detached
+            # worktree holding an unpushed commit was reaped on AGE alone — it
+            # is kept. Age is never sufficient and is not consulted here at all.
+            # Whatever else the reflog holds is swept and pinned below, and an
+            # unreadable reflog still keeps the worktree.
+            if not fresh:
+                item.keep_reasons.append(
+                    f"{KEEP_DETACHED_UNCONTAINED} — and this run has no "
+                    f"--fetch, so there is no fetched base to test it against")
+            elif containment.contains(worktree.head) is not True:
+                item.keep_reasons.append(KEEP_DETACHED_UNCONTAINED)
+            else:
+                item.notes.append(
+                    f"detached HEAD at {worktree.head[:12]}, which the fetched "
+                    f"base ref already contains — no branch to judge it by, but "
+                    f"nothing here is the last holder of any content either")
         if not item.keep_reasons:
             # LAST, and only for a worktree everything else already cleared.
             # The sweep costs two git calls per candidate, and asking it of a
@@ -1104,7 +1595,59 @@ def classify(repo: status.Repository, root: Path, *, run_id: str,
         if not item.keep_reasons:
             item.action = "retire"
         worktrees.append(item)
-    return branches, worktrees
+    hold_back_prunes(worktrees)
+    return branches, worktrees, remotes
+
+
+def classify_remote(branch: status.Branch, *, base_ref: str | None,
+                    containment: Containment, fresh: bool) -> RemoteBranchItem:
+    """One cached remote branch — listed, explained, and never acted on."""
+    item = RemoteBranchItem(name=branch.name, ref=branch.ref.full_name,
+                            tip=branch.ref.oid)
+    # `refs/remotes/<remote>/HEAD` is the remote's default-branch pointer, not a
+    # branch anybody works on — and its `refname:short` is the bare REMOTE NAME
+    # (`origin`), which no leaf-name test would ever catch. The ref path is the
+    # reliable question; the symbolic target only answers when git happens to
+    # have stored it as a symref rather than as a copied oid.
+    leaf = branch.name.split("/", 1)[-1] if "/" in branch.name else branch.name
+    if (branch.ref.symbolic_target or branch.ref.full_name.endswith("/HEAD")
+            or leaf in PROTECTED or branch.name in PROTECTED):
+        item.keep_reasons.append(REMOTE_KEEP_PROTECTED)
+    if base_ref is not None and branch.ref.full_name == base_ref:
+        item.keep_reasons.append(REMOTE_KEEP_BASE)
+    if not fresh:
+        item.keep_reasons.append(REMOTE_KEEP_STALE)
+    elif containment.contains(branch.ref.full_name) is not True:
+        item.keep_reasons.append(REMOTE_KEEP_UNCONTAINED)
+    if item.candidate:
+        item.unmet = [REMOTE_UNMET_PR, REMOTE_UNMET_DECISION]
+    return item
+
+
+def hold_back_prunes(worktrees: Sequence[WorktreeItem]) -> bool:
+    """All gone registrations get pruned this run, or none of them do.
+
+    ``git worktree prune`` HAS NO TARGET. It sweeps every prunable registration
+    in the repository, so a per-item KEEP on one gone worktree — its reflog
+    could not be read, its orphans exceeded the cap, its backup refs did not
+    resolve — is not a decision `prune` can honour. Left alone, one item's
+    fail-closed answer would be overruled by another item's fail-open one, and
+    the commits the KEEP existed to protect would be destroyed anyway.
+
+    So the run refuses as a whole and says which entry stopped it. A locked
+    gone registration is not counted: git declines to prune those regardless,
+    which is precisely why they wedge their branch.
+    """
+    blocked = [item for item in worktrees
+               if item.gone and not item.locked and item.action != "prune"]
+    if not blocked:
+        return False
+    for item in worktrees:
+        if item.action == "prune":
+            item.action = "keep"
+            item.keep_reasons.append(
+                f"{KEEP_PRUNE_HELD_BACK}: {_comment(blocked[0].path)}")
+    return True
 
 
 # ── the non-destructive half of --execute ────────────────────────────────────
@@ -1115,11 +1658,27 @@ def _pin(root: Path, ref: str, oid: str, run_id: str) -> bool:
     Branch tips and worktree reflog commits go through this same function on
     purpose: two spellings of "write a backup ref" is two places for the verify
     to be forgotten, and the verify is the entire value of the write.
+
+    THE WRITE IS A COMPARE-AND-SWAP, and the read-back checks the VALUE. The
+    trailing ``""`` is git's own spelling of "this ref must not already exist",
+    so a second write can never land ON a backup ref a first write is holding.
+    That was a measured loss, not a hypothetical: ``slug`` maps ``/`` to ``-``,
+    so ``feat/a`` and ``feat-a`` derived the same ref name and the plain
+    ``update-ref`` used here silently overwrote the first tip with the second —
+    both rows reporting ``backup_written: true``, the script printing "Nothing
+    was lost", one tip unrecoverable after the ordinary
+    fetch --prune / gc sequence.
+
+    A failed write is deliberately not fatal by itself: writing the SAME oid
+    again is how a re-run of the same plan behaves, and that is idempotent
+    rather than wrong. What decides is the read-back, and it now compares the
+    oid rather than merely resolving the ref — so a ref standing at somebody
+    else's commit fails here instead of being reported as a backup.
     """
-    written = _git(root, "update-ref", ref, oid, "-m",
-                   f"pre-delete backup ({TOOL} run {run_id})")
+    _git(root, "update-ref", "-m", f"pre-delete backup ({TOOL} run {run_id})",
+         ref, oid, "")
     resolved = _git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
-    return not written.returncode and resolved.stdout.strip() == oid
+    return resolved.stdout.strip() == oid
 
 
 def write_backup_refs(root: Path, items: Sequence[BranchItem], run_id: str,
@@ -1154,8 +1713,12 @@ def write_backup_refs(root: Path, items: Sequence[BranchItem], run_id: str,
             if tagged.returncode == 0 or "already exists" in tagged.stderr:
                 item.archive_tag = tag
 
+    # "retire" AND "prune". The prune path was the one with no backups at all:
+    # `git worktree prune` deletes the registration's `logs/HEAD`, which is
+    # every bit as destructive as the `mv` the retire path performs, and this
+    # tool runs the prune ITSELF under --execute rather than emitting it.
     for worktree in worktrees:
-        if worktree.action != "retire" or not worktree.backups:
+        if worktree.action not in ("retire", "prune") or not worktree.backups:
             continue
         failed = [(ref, oid) for ref, oid in worktree.backups
                   if not _pin(root, ref, oid, run_id)]
@@ -1169,6 +1732,9 @@ def write_backup_refs(root: Path, items: Sequence[BranchItem], run_id: str,
                 f"{worktree.path} was dropped from the plan"))
             continue
         worktree.backups_written = True
+    # A worktree just dropped from the plan may have been the only thing
+    # standing between `git worktree prune` and another entry's reflog.
+    hold_back_prunes(worktrees)
     return blocking
 
 
@@ -1178,9 +1744,15 @@ def prune_gone_worktrees(root: Path, items: Sequence[WorktreeItem]) -> bool:
     The result is READ BACK rather than assumed: prune silently declines a
     locked registration, and a tool that reported "pruned" for one would be
     telling the owner their branch is usable when it is still wedged.
+
+    ASKED AGAIN HERE, on purpose. ``hold_back_prunes`` is the classifier's
+    answer; this is the last word before the one destructive thing this process
+    performs itself, and `prune` sweeping EVERY prunable registration is exactly
+    the shape where "the classifier surely decided that" is how a fail-closed
+    keep gets overruled by an unrelated item.
     """
     targets = [item for item in items if item.action == "prune"]
-    if not targets:
+    if not targets or hold_back_prunes(items):
         return False
     result = _git(root, "worktree", "prune")
     if result.returncode:
@@ -1260,32 +1832,43 @@ def plan_moves(*, root: Path, run_id: str, worktrees: Sequence[WorktreeItem],
 
 
 def plan_deletions(*, root: Path, branches: Sequence[BranchItem],
+                   containment: Containment, fresh: bool,
                    ) -> tuple[list[BranchItem], list[tuple[BranchItem, str]]]:
-    """The branches whose ``git branch -d`` will be ACCEPTED, and the rest.
+    """The branches whose deletion may be WRITTEN, and how each one is spelled.
 
     The same construction argument as ``plan_moves``, applied to the other
     destructive verb this tool emits. ``classify`` already asked
-    ``delete_refusal``; asking again here is what makes "no emitted line is one
+    ``deletion_method``; asking again here is what makes "no emitted line is one
     git will predictably refuse" true of the EMITTER rather than of a classifier
     that a later refactor might change. A disagreement between the two is not
     silently reconciled — it is written into the script as a finding.
+
+    The containment probe is asked again here for the same reason, and it is the
+    reason it is asked at all: a compare-and-swap deletion may be written ONLY
+    behind a fresh, positive containment proof, and this is the only place a
+    destructive line is ever written.
     """
     emit: list[BranchItem] = []
     refused: list[tuple[BranchItem, str]] = []
     for item in branches:
         if not item.proposed:
             continue
-        why = delete_refusal(root, item.name, item.ref)
-        if why is None:
-            emit.append(item)
-        else:
-            refused.append((item, why))
+        method, why = deletion_method(root, item, containment=containment,
+                                      fresh=fresh)
+        if method is None:
+            refused.append((item, why or KEEP_DELETE_REFUSED))
+            continue
+        item.delete_method = method
+        emit.append(item)
     return emit, refused
 
 
 def apply_emitter_refusals(root: Path, run_id: str,
                            worktrees: Sequence[WorktreeItem],
-                           branches: Sequence[BranchItem] = ()) -> None:
+                           branches: Sequence[BranchItem] = (),
+                           *, containment: Containment | None = None,
+                           base_ref: str | None = None,
+                           fresh: bool = False) -> None:
     """Make the PLAN agree with what the emitter will actually write.
 
     ``plan_moves`` and ``plan_deletions`` are the last word on whether a
@@ -1299,7 +1882,15 @@ def apply_emitter_refusals(root: Path, run_id: str,
     for item, why in refused:
         item.action = "keep"
         item.keep_reasons.append(f"the emitter refused to write its move: {why}")
-    _, declined = plan_deletions(root=root, branches=branches)
+    owned = containment is None
+    if containment is None:
+        containment = Containment(root, base_ref)
+    try:
+        _, declined = plan_deletions(root=root, branches=branches,
+                                     containment=containment, fresh=fresh)
+    finally:
+        if owned:
+            containment.close()
     for branch, why in declined:
         branch.backup_ref = None
         branch.keep_reasons.append(
@@ -1333,25 +1924,95 @@ _SUMMARY_REFUSED = "cleanup_refused"
 _SUMMARY_COUNT = "cleanup_refusals"
 
 
-def _pin_condition(backups: Sequence[tuple[str, str]]) -> list[str]:
+def _pin_condition(backups: Sequence[tuple[str, str]], *,
+                   lead: str = "if ! { ") -> list[str]:
     """The guard clause: pin every ref and read every one of them back.
 
     Emitted as a single ``if ! { … && … ; }`` condition so that one unresolved
     backup ref stops this item's destructive line and nothing else's.
+
+    TWO THINGS CHANGED HERE, both of them the same measured bug. The write is a
+    compare-and-swap — the trailing ``''`` is git's "this ref must not already
+    exist" — and the read-back compares the OID rather than merely resolving the
+    ref. Without the first, two branches whose slugs collided wrote the same ref
+    in sequence and the second silently replaced the first. Without the second,
+    a ref standing at somebody else's commit reads back fine and the deletion
+    proceeds behind a backup of the wrong object.
+
+    The write is allowed to fail (``|| :``) and the VERIFY decides. Writing the
+    same oid to the same ref again is what a re-run of this plan does — and what
+    ``--execute`` already did before this script was ever read — so refusing on
+    "already exists" would turn every second run into a wall of refusals. What
+    can never pass is the verify seeing a different oid.
     """
     if not backups:
         return []
     lines: list[str] = []
     for index, (ref, oid) in enumerate(backups):
-        lead = "if ! { " if index == 0 else "       "
+        prefix = lead if index == 0 else " " * len(lead)
+        pad = " " * len(lead)
         verify = shlex.quote(ref + "^{commit}")
-        lines.append(f"{lead}git update-ref {shlex.quote(ref)} {oid} "
-                     f"-m 'pre-delete backup' &&")
-        lines.append(f"       git rev-parse --verify --quiet {verify} "
-                     f">/dev/null &&")
+        lines.append(f"{prefix}{{ git update-ref -m 'pre-delete backup' "
+                     f"{shlex.quote(ref)} {oid} '' 2>/dev/null || :; }} &&")
+        lines.append(f"{pad}[ \"$(git rev-parse --verify --quiet {verify})\" "
+                     f"= {oid} ] &&")
     # Drop the trailing `&&` of the last verify and close the group.
     lines[-1] = lines[-1][:-len(" &&")] + "; }; then"
     return lines
+
+
+def _runtime_guards() -> list[str]:
+    """Re-measure, at RUN time, what the plan measured at PLAN time.
+
+    THE ASYMMETRY THIS CLOSES. ``git branch -d`` performs its own check when it
+    runs, so the branch path was always safe against the world changing between
+    a plan being written and being run: raced with new unmerged commits, it
+    refused, exit 1, branch intact. Nothing did that for a worktree, because
+    ``mv`` has no opinion. Measured: a worktree that was clean and unlocked at
+    plan time gained an untracked file and a lock reading
+    ``claude agent … (pid …)``; the script moved it anyway, out from under a
+    live process's working directory, and then ``git worktree prune`` declined
+    the LOCKED registration — leaving the branch permanently wedged, while the
+    summary said "every item in this plan completed" and exited 0.
+
+    So every precondition is asked again, of the world as it is now:
+
+    * ``cleanup_worktree_ready`` — the directory still exists and is still a
+      worktree; it is NOT the main working tree (``--git-dir`` == the common
+      dir); no ``locked`` file sits in its administrative directory; and
+      ``git status`` runs AND is empty. An unanswerable probe returns non-zero,
+      so unreadable is refused exactly like dirty is.
+    * ``cleanup_branch_free`` — no worktree has this branch checked out. That is
+      the other thing ``git branch -d`` checks and a compare-and-swap deletion
+      does not, so it is asked explicitly wherever the compare-and-swap is used.
+
+    Both are called from ``if`` CONDITIONS, where POSIX suspends ``set -e``
+    (verified on sh, bash, zsh and dash, for a failing command inside a function
+    body), so a refusal records itself and the next item still runs.
+    """
+    return [
+        "# ── run-time re-checks ─────────────────────────────────────────────",
+        "# The plan measured all of this when it was WRITTEN. `git branch -d`",
+        "# re-measures its own preconditions when it RUNS; `mv` and",
+        "# `git update-ref -d` do not, so these do it for them. A worktree that",
+        "# has since been locked by a live agent, or has gained uncommitted",
+        "# files, or whose `git status` no longer answers, is NOT moved.",
+        "cleanup_worktree_ready() {",
+        "    cleanup_gd=$(git -C \"$1\" rev-parse --absolute-git-dir 2>/dev/null) "
+        "|| return 1",
+        "    cleanup_cd=$(git -C \"$1\" rev-parse --path-format=absolute "
+        "--git-common-dir 2>/dev/null) || return 1",
+        "    [ \"$cleanup_gd\" != \"$cleanup_cd\" ] || return 1",
+        "    [ ! -e \"$cleanup_gd/locked\" ] || return 1",
+        "    cleanup_dirt=$(git -C \"$1\" status --porcelain "
+        "--untracked-files=all 2>/dev/null) || return 1",
+        "    [ -z \"$cleanup_dirt\" ] || return 1",
+        "}",
+        "cleanup_branch_free() {",
+        "    ! git worktree list --porcelain | grep -Fqx \"branch $1\"",
+        "}",
+        "",
+    ]
 
 
 def _record(kind: str, subject: str, detail: str = "") -> str:
@@ -1409,8 +2070,8 @@ def _summary_footer() -> list[str]:
         f'if [ "${{{_SUMMARY_COUNT}}}" -ne 0 ]; then',
         f'    echo "${{{_SUMMARY_COUNT}}} item(s) refused; the items above them '
         f'still ran." >&2',
-        "    echo 'Nothing was lost: every tip is pinned to its "
-        "refs/agent-trash ref.' >&2",
+        "    echo 'A refused item was NOT performed, and every tip this run "
+        "did delete is pinned to its own refs/agent-trash ref.' >&2",
         f"    echo {shlex.quote(note)} >&2",
         "    exit 1",
         "fi",
@@ -1422,9 +2083,19 @@ def _summary_footer() -> list[str]:
 def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
                  branches: Sequence[BranchItem],
                  worktrees: Sequence[WorktreeItem],
+                 containment: Containment | None = None,
                  include_harness: bool = False) -> str:
     trash = _trash_root(root, run_id)
-    proposed, declined = plan_deletions(root=root, branches=branches)
+    owned = containment is None
+    if containment is None:
+        containment = Containment(root, base_ref)
+    try:
+        proposed, declined = plan_deletions(root=root, branches=branches,
+                                            containment=containment,
+                                            fresh=not stale)
+    finally:
+        if owned:
+            containment.close()
     moves, refused = plan_moves(root=root, run_id=run_id, worktrees=worktrees)
     lines = [
         "#!/bin/sh",
@@ -1437,11 +2108,22 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         "#",
         f"# base ref used for the containment test: "
         f"{_comment(base_ref) if base_ref else '(none)'}",
-        "# Every branch below writes its backup ref FIRST and verifies it, so a",
-        "# tip is reachable before anything can remove it. `git branch -d` is",
-        "# used deliberately: it refuses an unmerged branch. IF IT REFUSES, THAT",
-        "# IS A FINDING — report it. Do not reach for -D; there is no --force in",
-        "# this tooling at all.",
+        "# Every branch below writes its backup ref FIRST and verifies its VALUE,",
+        "# so a tip is reachable before anything can remove it, and no backup ref",
+        "# can be written over another one (it is a compare-and-swap).",
+        "# `git branch -d` is used deliberately: it refuses an unmerged branch.",
+        "# IF IT REFUSES, THAT IS A FINDING — report it. Do not reach for -D;",
+        "# there is no --force in this tooling at all.",
+        "# A branch `-d` structurally cannot accept — a squash-merge whose head",
+        "# branch the remote deleted — is deleted by `git update-ref -d <ref>",
+        "# <tip>` instead: a COMPARE-AND-SWAP git refuses unless the branch still",
+        "# points exactly where this plan proved its content was already in the",
+        "# base ref. The `-d` verdict it supersedes is quoted above each such",
+        "# line. Nothing is forced and no evidence is hidden.",
+        "# EVERY precondition is re-measured HERE, when you run this, not only",
+        "# when the plan was written: a worktree that has since been locked,",
+        "# dirtied or made unreadable is not moved, and a branch that has since",
+        "# moved or been checked out is not deleted.",
         "# Each item stands alone: one refusal is recorded and the remaining",
         "# items still run, because half a cleanup with no statement of which",
         "# half is worse than either outcome. A backup ref that does not read",
@@ -1494,6 +2176,7 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         ]
     if moves or proposed:
         body += _summary_helpers()
+        body += _runtime_guards()
     if moves:
         # Fatal on purpose, and outside every item: with no trash directory
         # there is nowhere for ANY move to land, so this is a precondition of
@@ -1508,6 +2191,8 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         ]
         if item.harness:
             body += [f"#   {_comment(line)}" for line in _wrap(HARNESS_HANDBOOK_NOTE)]
+        for note in item.notes:
+            body += [f"#   {_comment(line)}" for line in _wrap(note, width=68)]
         if item.backups:
             # BEFORE the move, always. `git worktree prune` below deletes this
             # worktree's `logs/HEAD`, and these commits are reachable from
@@ -1518,7 +2203,16 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
                 f"worktree's reflog, which `git worktree prune` deletes:")
             body += [f"#     pinning {oid[:8]} to {_comment(ref)}"
                      for ref, oid in item.backups]
-            body += _pin_condition(item.backups)
+        # FIRST, before the pins and long before the `mv`: is this still the
+        # worktree the plan described? See `_runtime_guards`.
+        body += [
+            f"if ! cleanup_worktree_ready {shlex.quote(item.path)}; then",
+            _record("refused", subject,
+                    "it is no longer the worktree this plan measured — it is "
+                    "dirty, locked, unreadable or gone. NOT moved"),
+        ]
+        if item.backups:
+            body += _pin_condition(item.backups, lead="elif ! { ")
             body += [
                 _record("refused", subject,
                         "a reflog backup ref did not read back — NOT moved, so "
@@ -1527,7 +2221,7 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
                 f"{shlex.quote(str(destination))}; then",
             ]
         else:
-            body.append(f"if mv {shlex.quote(item.path)} "
+            body.append(f"elif mv {shlex.quote(item.path)} "
                         f"{shlex.quote(str(destination))}; then")
         body += [
             "    if git worktree prune; then",
@@ -1544,7 +2238,7 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
         ]
     for item in proposed:
         ref = (item.backup_ref or
-               f"{TRASH_REF_ROOT}/{run_id}/{slug(item.name)}")
+               f"{TRASH_REF_ROOT}/{run_id}/{slug(item.name)}-{item.tip[:12]}")
         subject = f"branch {item.name}"
         # `intent` is the first line of `git branch --edit-description`, and a
         # description is MULTI-LINE by design. It is single-line by the time it
@@ -1560,20 +2254,53 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
             f"#   pinning the tip {item.tip[:8]}; the delete runs only if that "
             f"ref reads back",
         ]
-        body += _pin_condition([(ref, item.tip)])
-        body += [
-            _record("refused", subject,
-                    "its backup ref did not read back — NOT deleted, because a "
-                    "deletion standing behind nothing is the whole hazard"),
-            f"elif git branch -d {shlex.quote(item.name)}; then",
-            _record("done", subject),
-            "else",
-            _record("refused", subject,
-                    "git branch -d declined it — report this; the tip is still "
-                    "pinned and this tool has no stronger flag"),
-            "fi",
-            "",
-        ]
+        for note in item.notes:
+            body += [f"#   {_comment(line)}" for line in _wrap(note, width=68)]
+        if item.delete_method == DELETE_CAS:
+            # `git branch -d` structurally cannot accept this branch (its
+            # verdict is quoted in the comments above), and the planner's own
+            # containment proof says the fetched base holds its whole content.
+            # The two run-time checks `-d` would have performed are written out
+            # instead of inherited: nothing has it checked out, and it still
+            # points where the plan said.
+            body += [
+                f"if ! cleanup_branch_free {shlex.quote(item.ref)}; then",
+                _record("refused", subject,
+                        "a worktree checked this branch out after the plan was "
+                        "written — left alone"),
+            ]
+            body += _pin_condition([(ref, item.tip)], lead="elif ! { ")
+            body += [
+                _record("refused", subject,
+                        "its backup ref did not read back — NOT deleted, "
+                        "because a deletion standing behind nothing is the "
+                        "whole hazard"),
+                f"elif git update-ref -d {shlex.quote(item.ref)} {item.tip}; then",
+                _record("done", subject),
+                "else",
+                _record("refused", subject,
+                        f"it no longer points at {item.tip[:8]} — the branch "
+                        f"moved after this plan was written, so the "
+                        f"compare-and-swap refused and it was left alone"),
+                "fi",
+                "",
+            ]
+        else:
+            body += _pin_condition([(ref, item.tip)])
+            body += [
+                _record("refused", subject,
+                        "its backup ref did not read back — NOT deleted, "
+                        "because a deletion standing behind nothing is the "
+                        "whole hazard"),
+                f"elif git branch -d {shlex.quote(item.name)}; then",
+                _record("done", subject),
+                "else",
+                _record("refused", subject,
+                        "git branch -d declined it — report this; the tip is "
+                        "still pinned and this tool has no stronger flag"),
+                "fi",
+                "",
+            ]
     if moves or proposed:
         body += _summary_footer()
     if not any(line and not line.startswith("#") for line in body):
@@ -1584,8 +2311,11 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
     lines += body
     lines += [
         "# Recovery: every tip above is reachable from its refs/agent-trash ref.",
-        f"#   git log --oneline {TRASH_REF_ROOT}/{run_id}/<branch>",
-        f"#   git branch <name> {TRASH_REF_ROOT}/{run_id}/<branch>",
+        f"#   git for-each-ref {TRASH_REF_ROOT}/{run_id}",
+        f"#   git log --oneline {TRASH_REF_ROOT}/{run_id}/<branch>-<sha12>",
+        f"#   git branch <name> {TRASH_REF_ROOT}/{run_id}/<branch>-<sha12>",
+        "# The tip sha is part of the ref name so that two branch names which",
+        "# slug to the same string cannot share — and overwrite — one backup.",
     ]
     if any(item.backups for item, _ in moves):
         lines += [
@@ -1604,7 +2334,8 @@ def build_script(*, run_id: str, root: Path, base_ref: str | None, stale: bool,
 def build_plan(*, run_id: str, root: Path, repo: status.Repository,
                branches: Sequence[BranchItem], worktrees: Sequence[WorktreeItem],
                blocking: Sequence[Blocking], fetched: bool, executed: bool,
-               private_counts: dict | None, include_harness: bool = False) -> dict:
+               private_counts: dict | None, include_harness: bool = False,
+               remotes: Sequence[RemoteBranchItem] = ()) -> dict:
     stale = not fetched
     judgement = [item for item in branches
                  if KEEP_UNKNOWN_MERGE in item.keep_reasons
@@ -1628,6 +2359,15 @@ def build_plan(*, run_id: str, root: Path, repo: status.Repository,
         "generator": {"tool": TOOL, "merge_probe": repo.merge_probe},
         "include_harness_worktrees": include_harness,
         "private_overlay": private_counts,
+        "remote_branches": {
+            "cached": [item.to_json() for item in remotes],
+            "decision": REMOTE_DECISION,
+            "emitted": False,
+            "policy": ("listed and explained only. This planner never deletes a "
+                       "remote branch, never emits a command that would, and "
+                       "makes exactly one network call: `git fetch --prune "
+                       "origin`."),
+        },
         "remote_knowledge": {"fetched": fetched,
                              "state": "stale" if stale else "fresh"},
         "root": str(root),
@@ -1637,8 +2377,64 @@ def build_plan(*, run_id: str, root: Path, repo: status.Repository,
     }
 
 
+def _bullet(text: str, out, indent: str = "          ") -> None:
+    """One report bullet, WRAPPED.
+
+    These reasons are ARGUMENTS, not labels — a superseded `git branch -d`
+    verdict, quoted verbatim so the reader can weigh it, runs to several hundred
+    characters — and a report whose lines never end is a report nobody reads to
+    the end of.
+    """
+    wrapped = _wrap(text, width=76) or [""]
+    print(f"{indent}· {wrapped[0]}", file=out)
+    for line in wrapped[1:]:
+        print(f"{indent}  {line}", file=out)
+
+
+def print_remote_section(remotes: Sequence[RemoteBranchItem], out, *,
+                         list_remotes: bool) -> None:
+    """One line always; the whole pile on request. Never a proposal.
+
+    The summary is unconditional because the pile being INVISIBLE is the
+    finding: `classify` used to skip every remote ref outright, so a repository
+    with seventeen merged branches sitting on its remote produced a plan that
+    mentioned none of them. The listing is behind a flag because seventeen rows
+    of "not deletable, here is why" would bury the branches and worktrees this
+    tool actually acts on.
+    """
+    if not remotes:
+        return
+    candidates = [item for item in remotes if item.candidate]
+    print("", file=out)
+    print(f"REMOTE BRANCHES ({len(remotes)} cached · {len(candidates)} contained "
+          f"by the base and not protected)", file=out)
+    _bullet("NOTHING here is proposed and NOTHING is emitted: this planner does "
+            "not delete remote branches and writes no command that would. Two "
+            f"preconditions are unmet for every row — see {REMOTE_DECISION}.",
+            out, indent="  ")
+    if not list_remotes:
+        if candidates:
+            _bullet("Pass --remote-branches to list them.", out, indent="  ")
+        return
+    # The unmet preconditions are IDENTICAL for every candidate, so they are
+    # stated once. Repeating two paragraphs seventeen times is how a report
+    # stops being read — and the per-row copies are still in the plan JSON,
+    # where a machine reader needs them attached to the row.
+    if candidates:
+        for reason in candidates[0].unmet:
+            _bullet(reason, out, indent="  ")
+    width = max((len(item.name) for item in remotes), default=1)
+    for item in remotes:
+        verdict = "candidate" if item.candidate else "keep"
+        print(f"  {verdict:<9} {item.name:<{width}}  {item.tip[:8]}", file=out)
+        for reason in item.keep_reasons:
+            _bullet(reason, out)
+
+
 def print_report(plan: dict, branches: Sequence[BranchItem],
-                 worktrees: Sequence[WorktreeItem], out) -> None:
+                 worktrees: Sequence[WorktreeItem], out,
+                 remotes: Sequence[RemoteBranchItem] = (),
+                 list_remotes: bool = False) -> None:
     mode = ("non-destructive steps performed" if plan["executed_non_destructive"]
             else "dry-run")
     print(f"workspace cleanup plan  run {plan['run_id']}   ({mode}; the destructive "
@@ -1664,9 +2460,13 @@ def print_report(plan: dict, branches: Sequence[BranchItem],
         print(f"  {verdict:<7} {item.name:<{width}}  {item.merged:<8} "
               f"{item.state}", file=out)
         for reason in item.keep_reasons:
-            print(f"          · {reason}", file=out)
+            _bullet(reason, out)
+        for note in item.notes:
+            _bullet(f"note: {note}", out)
         if item.proposed and item.backup_written:
             print(f"          · backup ref {item.backup_ref}", file=out)
+        if item.proposed and item.delete_method != DELETE_BRANCH_D:
+            print(f"          · deleted by: {item.delete_method}", file=out)
         if item.archive_tag:
             print(f"          · archive tag {item.archive_tag}", file=out)
 
@@ -1676,18 +2476,31 @@ def print_report(plan: dict, branches: Sequence[BranchItem],
         label = {"prune": "PRUNE", "retire": "RETIRE", "keep": "keep"}[item.action]
         print(f"  {label:<7} {item.path}", file=out)
         if item.action == "prune":
-            note = "pruned (metadata only)" if item.pruned else (
-                "its directory is gone; `git worktree prune` un-wedges the branch")
+            note = ("pruned — its reflog was swept first, so this really was "
+                    "metadata only" if item.pruned else
+                    "its directory is gone; `git worktree prune` un-wedges the "
+                    "branch, and its reflog is swept BEFORE that runs")
             print(f"          · {note}", file=out)
-        if item.action == "retire" and item.backups:
-            written = ("written and verified" if item.backups_written
-                       else "written by the script before its `mv`")
+        if item.action in ("retire", "prune") and item.backups:
+            if item.backups_written:
+                written = "written and verified"
+            elif item.action == "prune":
+                written = "written by --execute before it prunes"
+            else:
+                written = "written by the script before its `mv`"
+            destroys = ("`git worktree prune`" if item.action == "prune"
+                        else "retiring it")
             print(f"          · {len(item.backups)} commit(s) live only in this "
-                  f"worktree's reflog — backup ref(s) {written}", file=out)
+                  f"worktree's reflog, which {destroys} destroys — backup "
+                  f"ref(s) {written}", file=out)
             for ref, oid in item.backups:
                 print(f"          ·   {oid[:8]}  {ref}", file=out)
         for reason in item.keep_reasons:
-            print(f"          · {reason}", file=out)
+            _bullet(reason, out)
+        for note in item.notes:
+            _bullet(f"note: {note}", out)
+
+    print_remote_section(remotes, out, list_remotes=list_remotes)
 
     if plan["private_overlay"]:
         counts = plan["private_overlay"]
@@ -1735,6 +2548,13 @@ def build_parser() -> argparse.ArgumentParser:
              "base, an unlocked registration and the per-worktree reflog sweep "
              "all still decide. Nothing is executed either way — the retirement "
              "is emitted as `mv` into a trash directory for you to run.")
+    parser.add_argument(
+        "--remote-branches", action="store_true",
+        help="list every cached remote branch with the reasons it is not a "
+             "deletion candidate. LISTING ONLY: this planner never deletes a "
+             "remote branch and never writes a command that would — whether it "
+             "may ever plan one is an open owner decision, and the two "
+             "preconditions it cannot check are printed on every row.")
     parser.add_argument(
         "--archive-tag", action="store_true",
         help="with --execute, also write an annotated archive/<slug>-<sha> tag "
@@ -1798,36 +2618,48 @@ def _plan(argv: Sequence[str] | None, out) -> int:
         return 3
 
     repo = status.inspect_repository("PUBLIC", root)
-    # The dashboard prefers the LOCAL main; after a fetch the remote base is the
-    # authority, so the containment verdicts are recomputed against it.
+    # The dashboard resolves its own base (remote-tracking first, no fetch); this
+    # planner may have just fetched, or may be running without one, so whenever
+    # the two disagree the containment verdicts are recomputed against ours.
     if base_ref != repo.base_ref:
         repo = _recompute_against(repo, root, base_ref)
 
     include_harness = args.include_harness_worktrees
-    branches, worktrees = classify(repo, root, run_id=run_id,
-                                   ledger=ledger_risk(root, base_ref),
-                                   include_harness=include_harness)
-    apply_emitter_refusals(root, run_id, worktrees, branches)
+    # ONE probe for the whole run. The classifier and the emitter deliberately
+    # ask the same containment question twice, and every answer is cached, so
+    # asking twice costs one git call rather than two.
+    containment = Containment(root, base_ref)
+    try:
+        branches, worktrees, remotes = classify(
+            repo, root, run_id=run_id, ledger=ledger_risk(root, base_ref),
+            include_harness=include_harness, containment=containment,
+            fresh=fetched)
+        apply_emitter_refusals(root, run_id, worktrees, branches,
+                               containment=containment, fresh=fetched)
 
-    executed = False
-    if args.execute:
-        blocking.extend(write_backup_refs(root, branches, run_id,
-                                          archive_tag=args.archive_tag,
-                                          worktrees=worktrees))
-        prune_gone_worktrees(root, worktrees)
-        executed = True
+        executed = False
+        if args.execute:
+            blocking.extend(write_backup_refs(root, branches, run_id,
+                                              archive_tag=args.archive_tag,
+                                              worktrees=worktrees))
+            prune_gone_worktrees(root, worktrees)
+            executed = True
 
-    private_counts = _private_counts(root)
-    plan = build_plan(run_id=run_id, root=root, repo=repo, branches=branches,
-                      worktrees=worktrees, blocking=blocking, fetched=fetched,
-                      executed=executed, private_counts=private_counts,
-                      include_harness=include_harness)
+        private_counts = _private_counts(root)
+        plan = build_plan(run_id=run_id, root=root, repo=repo, branches=branches,
+                          worktrees=worktrees, blocking=blocking, fetched=fetched,
+                          executed=executed, private_counts=private_counts,
+                          include_harness=include_harness, remotes=remotes)
 
-    print_report(plan, branches, worktrees, out)
+        print_report(plan, branches, worktrees, out, remotes=remotes,
+                     list_remotes=args.remote_branches)
 
-    script = build_script(run_id=run_id, root=root, base_ref=base_ref,
-                          stale=not fetched, branches=branches,
-                          worktrees=worktrees, include_harness=include_harness)
+        script = build_script(run_id=run_id, root=root, base_ref=base_ref,
+                              stale=not fetched, branches=branches,
+                              worktrees=worktrees, containment=containment,
+                              include_harness=include_harness)
+    finally:
+        containment.close()
     destination = root / OUTPUT_DIR
     try:
         destination.mkdir(parents=True, exist_ok=True)

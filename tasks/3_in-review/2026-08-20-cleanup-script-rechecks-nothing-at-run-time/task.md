@@ -4,6 +4,7 @@
 - **Area**: repo
 - **Source**: session 2026-08-20, closing the two `automation/workspace/cleanup.py`
   audit findings (branch `fix/cleanup-worktree-gaps`)
+- **Claimed-by**: agent (session 2026-08-21, branch `fix/i3-cleanup-evidence`)
 
 ## Goal
 
@@ -70,3 +71,34 @@ Whatever is chosen must not turn the script into something that runs
   that dirties or locks a worktree AFTER the plan is written and asserts the
   emitted script does not move it;
 - `.venv/bin/python -m unittest discover automation/workspace/tests` exits 0.
+
+## Resolution (2026-08-21)
+
+**Option 2**, and the empirical outcome was worse than this task predicted. An
+adversarial run measured it end to end: a worktree that was clean and unlocked
+at plan time gained an untracked file and a lock reading
+`claude agent agent-99 (pid 1234)`; the emitted script moved it anyway, and
+`git worktree prune` then declined the LOCKED registration — so the branch was
+left permanently WEDGED, in the `KEEP_LOCKED_GONE` state this repo documents as
+needing a manual `git worktree unlock`, while the summary printed
+`every item in this plan completed` and exited 0. Not only "a process loses its
+cwd".
+
+The asymmetry that settled the design: `git branch -d` re-checks its own
+preconditions when it RUNS, which is the only reason the branch path ever
+survived this race. `mv` has no opinion, so the script now carries the
+equivalent explicitly (`cleanup_worktree_ready` in `build_script`): the
+directory still exists and is a worktree, it is not the main working tree, no
+`locked` file sits in its administrative directory, and `git status` both RUNS
+and is empty. A refusal is recorded per item, the independent items after it
+still run, and the run still exits 1 — so option 1's half-applied-plan objection
+does not apply.
+
+Option 3 (an expiry stamp) was not taken: staleness is a proxy, and a re-check
+that measures the actual preconditions is strictly better than one that guesses
+from a clock. Option 4 was not taken because the measured outcome is a wedged
+branch, not a documentation gap.
+
+Nothing in the script runs `git worktree remove`, `rm`, or `git branch -D`;
+`ForbiddenVerbAuditTests` now reads every emitted script and the module source
+for those verbs.
