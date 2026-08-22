@@ -4111,6 +4111,18 @@
 - base: 3d6da1b8
   reviewed_by: agent
   date: 2026-08-21
+  files: 7
+  digest: sha256:c2ada91be0ab0aaf
+  finding: 'Workspace status dashboard and its test suites. The private overlay is now rendered as structure, counts, ages and lifecycle states only (branch names degrade to an ordinal behind a conventional prefix); `merged` is judged against the remote-tracking base and the base is printed; the checked-out branch gets a freshness verdict carrying its behind-count and the age of the last fetch; and a non-zero `git merge-tree` exit is treated as no answer rather than as containment. Public tooling, git semantics and fabricated fixture data only (the overlay fixture uses the invented token "zzyzxrobotics"); no real identity, employer, application, or dated job-hunt content.'
+- base: 3d6da1b8
+  reviewed_by: agent
+  date: 2026-08-21
   files: 2
   digest: sha256:6c37a3125135a8a1
   finding: 'The two-track PR merge driver and its test suite. After each independently confirmed merge the driver now fetches, fast-forwards the MAIN working tree''s base branch with --ff-only, retires each merged head branch locally with `git branch -d` when it is provably contained and unheld, and prints a two-SHA receipt on every path including a refusal. No remote branch and no worktree is ever removed. Public tooling, git semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
+- base: 83e8f626
+  reviewed_by: agent
+  date: 2026-08-22
+  files: 2
+  digest: sha256:6c37a3125135a8a1
+  finding: 'Conflict-resolution merge imports the already-reviewed two-track PR merge driver cutover and its tests from main. Public tooling, git semantics and fixture data only; no real identity, employer, application, or dated job-hunt content.'
