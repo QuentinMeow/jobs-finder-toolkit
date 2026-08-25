@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wire a fresh checkout after cloning: overlay-skill runtime links + git hooks.
+"""Wire a fresh checkout after cloning: local Git setup + overlay skill links.
 
 Stdlib-only and idempotent — safe to re-run. Correct links are left untouched, a
 foreign file or a foreign git hook is NEVER clobbered (it is warned about
@@ -27,18 +27,19 @@ What it does:
       active hook directory receives durable managed copies of
       ``overlay-pre-commit`` / ``overlay-pre-push``; those do not point back into a
       disposable public worktree. Runnable foreign hooks are always left untouched.
-  (c) If ``config.yaml`` is missing while the overlay is mounted: print a reminder
+  (c) Always: install the repository-local ``git ws`` alias for the tracked
+      workspace dashboard. A conflicting user-owned alias is left untouched.
+  (d) If ``config.yaml`` is missing while the overlay is mounted: print a reminder
       to create it (never auto-written).
 
 Usage:
     python automation/bootstrap_overlay.py            # apply
     python automation/bootstrap_overlay.py --check     # report only; make no changes
 
-Exit codes: an apply run exits 0 — it repairs what it owns, and a foreign hook it
-must not clobber is a warning, not a failure it can act on. ``--check`` is a health
-report and exits 1 when any of those hooks is not wired to its tracked source
-(missing, dangling, mis-wired, or shadowed by a foreign hook), so a checkout whose
-leak guard does not run fails a check instead of staying quiet.
+Exit codes: an apply run exits 0 — it repairs what it owns, and foreign Git setup
+it must not clobber is a warning, not a failure it can act on. ``--check`` is a
+health report and exits 1 when a managed hook or alias is missing, mis-wired, or
+shadowed by foreign setup, so an incomplete checkout does not look ready.
 """
 from __future__ import annotations
 
@@ -59,6 +60,9 @@ REMOVE = "remove"  # obsolete generated adapter removed
 SKIP = "skip"
 WARN = "warn"    # foreign file / hook left untouched, or missing prerequisite
 NOTE = "note"    # informational reminder
+
+WORKSPACE_ALIAS_KEY = "alias.ws"
+WORKSPACE_ALIAS_VALUE = "!./automation/workspace/status.py"
 
 
 def _disp(p: Path) -> str:
@@ -138,6 +142,47 @@ def _git_common_dir(repo: Path | None = None) -> Path | None:
     if not common.is_absolute():
         common = repo / common
     return common.resolve()
+
+
+def _install_workspace_alias(
+        check: bool, results: list[tuple[str, str]]) -> list[str]:
+    """Install ``git ws`` in this repository's local Git configuration.
+
+    Local aliases are not cloned. Bootstrap owns only the missing value and
+    never replaces a value the user already configured.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "config", "--local", "--get-all",
+         WORKSPACE_ALIAS_KEY],
+        capture_output=True, text=True)
+    if proc.returncode not in (0, 1):
+        message = "cannot inspect repository-local git ws alias"
+        results.append((WARN, message))
+        return [message]
+
+    values = proc.stdout.splitlines() if proc.returncode == 0 else []
+    if values == [WORKSPACE_ALIAS_VALUE]:
+        results.append((OK, "repository-local git ws alias already correct"))
+        return []
+    if values:
+        rendered = ", ".join(repr(value) for value in values)
+        message = ("repository-local git ws alias is user-owned "
+                   f"({rendered}); leaving it untouched")
+        results.append((WARN, message))
+        return [message]
+
+    results.append((CREATE, "repository-local git ws alias"))
+    if check:
+        return ["repository-local git ws alias is not installed"]
+    write = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "config", "--local", "--add",
+         WORKSPACE_ALIAS_KEY, WORKSPACE_ALIAS_VALUE],
+        capture_output=True, text=True)
+    if write.returncode != 0:
+        message = "cannot install repository-local git ws alias"
+        results.append((WARN, message))
+        return [message]
+    return []
 
 
 LOCAL_EXCLUDE_BEGIN = "# BEGIN jobhunt overlay skill adapters (managed)"
@@ -617,7 +662,11 @@ def bootstrap(check: bool) -> int:
             unwired_hooks += _install_overlay_hooks(
                 overlay_hooks_dir, OVERLAY_HOOKS, check, results)
 
-    # (c) config.yaml reminder (never auto-written).
+    # (c) Repository-local command aliases — Git never clones these, so the
+    # tracked bootstrap must install them on every device.
+    incomplete_git_setup = _install_workspace_alias(check, results)
+
+    # (d) config.yaml reminder (never auto-written).
     if private.is_dir() and not (REPO_ROOT / "config.yaml").exists():
         results.append((NOTE, "config.yaml is missing while private/ is mounted — copy "
                               "config.example.yaml to config.yaml and point paths.* at your "
@@ -641,11 +690,17 @@ def bootstrap(check: bool) -> int:
             print(f"  - {line}")
         print("Repair: run this script without --check. A FOREIGN hook is never "
               "clobbered — chain the tracked hook into it, or remove it, by hand.")
+    if incomplete_git_setup:
+        print("\nRepository-local Git command(s) NOT ready:")
+        for line in incomplete_git_setup:
+            print(f"  - {line}")
+        print("Repair: run this script without --check. A conflicting user-owned "
+              "alias is never overwritten; rename or remove it by hand first.")
     print("done." if not check else "check complete.")
     # An apply run repairs every hook it owns, so what is left is a foreign hook it
     # must not touch — a warning, not a failure it can act on. --check is a health
     # report: it fails whenever a hook that should be guarding this checkout is not.
-    return 1 if (check and unwired_hooks) else 0
+    return 1 if (check and (unwired_hooks or incomplete_git_setup)) else 0
 
 
 def main(argv=None) -> int:
@@ -653,7 +708,7 @@ def main(argv=None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true",
                         help="report what would change and make no changes; exits 1 "
-                             "when a tracked git hook is not wired to its source")
+                             "when tracked local Git setup is incomplete")
     args = parser.parse_args(argv)
     return bootstrap(args.check)
 
