@@ -4264,3 +4264,15 @@
   files: 1
   digest: sha256:d8f9d1ee742c8f27
   finding: 'Removes a GitHub URL containing the owner handle from a memory decision record; replaced with a generic reference to the repository branches page. CI armed leak guard caught it; the local unarmed scan could not. Re-verified with the guard armed: clean.'
+- base: 2f23cebb
+  reviewed_by: agent
+  date: 2026-08-25
+  files: 9
+  digest: sha256:aa77dc1bcd7d85e7
+  finding: 'Installs a repository-local Git alias through the tracked bootstrap, adds synthetic tests and public setup documentation, and records the task and handover. No real identity, employer, application, or dated job-hunt content.'
+- base: 28b8e6fc
+  reviewed_by: agent
+  date: 2026-08-25
+  files: 4
+  digest: sha256:902d64a5eabd0fc3
+  finding: 'Moves the public task to review and records synthetic verification, the public branch, and PR number. No real identity, employer, application, or dated job-hunt content.'

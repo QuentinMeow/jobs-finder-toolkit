@@ -846,6 +846,63 @@ class TestBootstrapRepairsBrokenHookInstalls(unittest.TestCase):
                 self.assertIn(bootstrap_overlay.TOOLKIT_HOOK_MARKER,
                               installed.read_text(encoding="utf-8"))
 
+    def test_apply_installs_workspace_alias_and_check_accepts_it(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            dashboard = root / "automation/workspace/status.py"
+            dashboard.parent.mkdir(parents=True, exist_ok=True)
+            dashboard.write_text("#!/bin/sh\necho dashboard-ran\n", encoding="utf-8")
+            dashboard.chmod(0o755)
+
+            code, report = self._run(bootstrap_overlay, check=False)
+
+            self.assertEqual(code, 0, report)
+            value = subprocess.run(
+                ["git", "config", "--local", "--get", "alias.ws"],
+                cwd=root, capture_output=True, text=True, check=True)
+            self.assertEqual(value.stdout.strip(),
+                             bootstrap_overlay.WORKSPACE_ALIAS_VALUE)
+            invoked = subprocess.run(
+                ["git", "ws"], cwd=root, capture_output=True, text=True)
+            self.assertEqual(invoked.returncode, 0, invoked.stderr)
+            self.assertEqual(invoked.stdout.strip(), "dashboard-ran")
+            code, report = self._run(bootstrap_overlay, check=True)
+            self.assertEqual(code, 0, report)
+            self.assertIn("git ws alias already correct", report)
+
+    def test_check_reports_missing_workspace_alias_without_writing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            hooks_dir = root / ".git/hooks"
+            bootstrap_overlay._install_toolkit_hooks(
+                hooks_dir, bootstrap_overlay.TOOLKIT_HOOKS, False, [])
+
+            code, report = self._run(bootstrap_overlay, check=True)
+
+            self.assertEqual(code, 1, report)
+            missing = subprocess.run(
+                ["git", "config", "--local", "--get", "alias.ws"],
+                cwd=root, capture_output=True, text=True)
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("git ws alias is not installed", report)
+
+    def test_conflicting_workspace_alias_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root, bootstrap_overlay = self._tree(td)
+            subprocess.run(
+                ["git", "config", "--local", "alias.ws", "status --short"],
+                cwd=root, check=True)
+
+            code, report = self._run(bootstrap_overlay, check=False)
+
+            self.assertEqual(code, 0, report)
+            value = subprocess.run(
+                ["git", "config", "--local", "--get", "alias.ws"],
+                cwd=root, capture_output=True, text=True, check=True)
+            self.assertEqual(value.stdout.strip(), "status --short")
+            self.assertIn("user-owned", report)
+            self.assertEqual(self._run(bootstrap_overlay, check=True)[0], 1)
+
     def test_a_link_mis_wired_inside_the_tracked_dir_is_repaired(self) -> None:
         """Ours, pointing at the wrong tracked hook — repair, do not warn."""
         with tempfile.TemporaryDirectory() as td:

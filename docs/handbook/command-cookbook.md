@@ -169,6 +169,11 @@ example config) — substitute the resolved path, never a literal folder at the 
 .venv/bin/python automation/bootstrap_overlay.py
 .venv/bin/python automation/bootstrap_overlay.py --check
 
+# The same bootstrap installs the repository-local dashboard shorthand. Git
+# aliases live in .git/config and do not travel with a clone, so run bootstrap
+# once on each device before using this form.
+git ws
+
 # Every blocking gate in one command — the whole pre-commit chain AND every CI `run:`
 # step. Each gate is a subprocess with no shell and NO PIPE: its stdout+stderr are
 # redirected to local/gates/<name>.log, so the exit code reported is the gate's own
