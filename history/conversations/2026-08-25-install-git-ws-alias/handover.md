@@ -7,11 +7,11 @@
 
 - The dashboard was already on public `main`, but its `git ws` shorthand existed only in one laptop's untracked `.git/config`; the fix now teaches the tracked bootstrap to install that repository-local alias on every device.
 - The bootstrap leaves a conflicting user-owned alias untouched and its health check reports the conflict instead of claiming the checkout is ready.
-- Focused tests pass. Final CI-style verification, commit, push, PR creation, and CI confirmation remain in flight.
+- Focused tests and the full clean-checkout gate selection pass. The branch is published and public PR #368 is open against `main`.
 
 ## Where things stand
 
-- Implementation is on `codex/install-git-ws-alias`; the task remains in progress until the published commit passes the clean-checkout gate run and the PR is open.
+- Implementation commit `28b8e6f` is on `codex/install-git-ws-alias`; task `2026-08-25-install-git-ws-alias` is in review under PR #368.
 
 ## Decisions made for you
 
