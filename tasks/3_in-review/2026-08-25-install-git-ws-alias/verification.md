@@ -46,3 +46,33 @@ pre-push: OK
 $ gh pr create --base main --head codex/install-git-ws-alias ...
 PR #368 created against main.
 ```
+
+## Fresh GitHub clone follow-up
+
+Cloned public `main` after PR #368 merged. Before bootstrap:
+
+```text
+$ git ws --no-color
+git: 'ws' is not a git command. See 'git --help'.
+EXIT=1
+```
+
+The tracked, stdlib-only bootstrap installed the missing checkout-local Git
+metadata without a virtual environment:
+
+```text
+$ python3 automation/bootstrap_overlay.py
+[create] [toolkit] .git/hooks/pre-commit
+[create] [toolkit] .git/hooks/pre-push
+[create] repository-local git ws alias
+done.
+EXIT=0
+```
+
+Immediately afterwards, the same clone ran the dashboard:
+
+```text
+$ git ws --no-color
+GIT WORKSPACE  1 repository · 1 worktree · 0 dirty · 1 local + 1 cached remote branches
+EXIT=0
+```

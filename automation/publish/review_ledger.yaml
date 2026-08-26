@@ -4276,3 +4276,9 @@
   files: 4
   digest: sha256:902d64a5eabd0fc3
   finding: 'Moves the public task to review and records synthetic verification, the public branch, and PR number. No real identity, employer, application, or dated job-hunt content.'
+- base: 4a77db1a
+  reviewed_by: agent
+  date: 2026-08-25
+  files: 6
+  digest: sha256:ce6887669bb78c4d
+  finding: 'Makes the tracked checkout bootstrap explicit in fresh-clone and contributor setup, and records synthetic fresh-clone verification. Public Git behavior and fictional example content only; no real identity, employer, application, or dated job-hunt content.'
