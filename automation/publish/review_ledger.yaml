@@ -4306,3 +4306,9 @@
   files: 6
   digest: sha256:ce6887669bb78c4d
   finding: 'Merges the already-reviewed fresh-clone setup documentation, synthetic verification, and public task records into the cleanup-workflow branch. No real identity, employer, application, or dated job-hunt content.'
+- base: 0eb0235f
+  reviewed_by: agent
+  date: 2026-08-26
+  files: 9
+  digest: sha256:dea2b533bad951a4
+  finding: 'Replaces the noisy default Git workspace table with a one-line local-work verdict, adds synthetic and redaction coverage, and updates public documentation and process records. No real identity, employer, application, or dated job-hunt content.'

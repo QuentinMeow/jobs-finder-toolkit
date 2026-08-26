@@ -50,6 +50,7 @@ class OverlayRedactionTests(F.GitTestCase):
     # ── the outputs ─────────────────────────────────────────────────────────
     def outputs(self) -> dict[str, str]:
         return {
+            "summary": status.render_summary([self.repo], status.Palette(False)),
             "table": status.render([self.repo], self.workspace, False,
                                    status.Palette(False)),
             "verbose": status.render([self.repo], self.workspace, True,

@@ -129,7 +129,7 @@ class WorkspaceStatusTests(unittest.TestCase):
         write(self.root / "untracked file.txt", "untracked\n")
         return linked
 
-    def test_compact_view_shows_every_worktree_and_branch_with_truthful_state(self) -> None:
+    def test_full_inventory_shows_every_worktree_and_branch_with_truthful_state(self) -> None:
         linked = self._make_branch_fixture()
         repo = status.inspect_repository("PUBLIC", self.root)
         output = status.render([repo], self.root, verbose=False, palette=status.Palette(False))
@@ -156,6 +156,35 @@ class WorkspaceStatusTests(unittest.TestCase):
         self.assertIn("dirty 2 · S1 · M1 · ?1", output)
         self.assertNotIn("untracked file.txt", output)
         self.assertNotIn("token@", output)
+
+    def test_default_summary_is_one_action_line_without_cached_remote_noise(self) -> None:
+        self._make_branch_fixture()
+        repo = status.inspect_repository("PUBLIC", self.root)
+        output = status.render_summary([repo], status.Palette(False))
+
+        self.assertEqual(len(output.splitlines()), 1)
+        self.assertTrue(output.startswith("ACTION: public main synced"), output)
+        self.assertIn("1 of 2 worktrees dirty", output)
+        self.assertIn("6 local work branches", output)
+        self.assertNotIn("cached remote", output)
+        self.assertNotIn("origin/remote-only", output)
+        self.assertNotIn("Legend", output)
+
+    def test_default_summary_is_ok_when_only_synced_main_is_clean(self) -> None:
+        main_oid = git(self.root, "rev-parse", "main")
+        git(self.root, "update-ref", "refs/remotes/origin/main", main_oid)
+        git(self.root, "config", "branch.main.remote", "origin")
+        git(self.root, "config", "branch.main.merge", "refs/heads/main")
+        git(self.root, "remote", "add", "origin", "https://example.invalid/repo.git")
+        write(self.root / ".git" / "FETCH_HEAD", "")
+
+        repo = status.inspect_repository("PUBLIC", self.root)
+        output = status.render_summary([repo], status.Palette(False))
+
+        self.assertEqual(
+            output,
+            "OK: public main synced · 1 worktree clean · 0 local work branches",
+        )
 
     def test_verbose_view_adds_files_commits_remotes_and_redacts_credentials(self) -> None:
         self._make_branch_fixture()

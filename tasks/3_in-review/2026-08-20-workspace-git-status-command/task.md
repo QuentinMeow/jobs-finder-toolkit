@@ -8,8 +8,9 @@
 ## Goal
 
 Add one short, read-only repository command that summarizes the public toolkit
-repository and its optional private overlay. Its compact default must show all
-worktrees and known local/cached-remote branches; a verbose mode must expose the
+repository and its optional private overlay. Its normal output must be one
+decision-oriented line covering checkout sync, dirty worktrees, and local work
+branches; verbose mode must expose the full local/cached-remote inventory and
 underlying file and commit detail without contacting a remote.
 
 ## Context
@@ -23,9 +24,11 @@ omit a missing private overlay, and refuse an unrelated copied script.
 ## Definition of done
 
 - [x] A short executable entry point renders both repositories, omitting an
-      absent private overlay, and offers compact and verbose modes.
-- [x] Every registered worktree and every local/cached-remote branch is shown,
-      with dirty/upstream/merged state represented accurately.
+      absent private overlay, and offers one-line and verbose modes.
+- [x] The default is exactly one actionable line and does not mix cached
+      remote-only refs into the local-work count.
+- [x] Verbose mode shows every registered worktree and local/cached-remote
+      branch, with dirty/upstream/merged state represented accurately.
 - [x] Automated tests cover clean, dirty, untracked, local-only, remote-only,
       merged, unmerged, detached-worktree, no-overlay, and outside-CWD behavior.
 - [x] Focused tests and the applicable repository gates pass.
