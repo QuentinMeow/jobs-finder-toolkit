@@ -42,7 +42,7 @@ repository's own manifest and instruction checks below passed.
 
 ## Committed-tree gates
 
-Commit `0ac356d` was checked in a detached, config-less worktree with no private overlay. The gate
+Branch tip `6affa9a` was checked in a detached, config-less worktree with no private overlay. The gate
 runner selected every lane because the generated skill manifest is foundational:
 
 ```
