@@ -7,3 +7,5 @@
   exact tree was already in `origin/main`; no agent worktree existed to retire.
 - Added the standing refresh, conflict-handling, and local agent cleanup routine to the GitHub
   workflow; validation and canary evaluation are next.
+- The GitHub workflow canaries passed 5/5. The committed tree passed all 32 impact-selected gates
+  in a clean config-less worktree; the task moved to review.
