@@ -47,10 +47,10 @@ For contributors and integrators, the
 fully synthetic multi-employer, promotion, internship, contractor, hybrid-project,
 malformed, and unsupported-layout inputs with expected outputs.
 
-## Try it in three commands
+## Fresh-clone setup
 
-Works out of the box on a fresh clone — no config needed; every tool falls back to
-the fictional "Jordan Rivers" example candidate. Requires Python 3.11+ and, for PDF
+After the one-time setup below, a fresh clone needs no config; every tool falls
+back to the fictional "Jordan Rivers" example candidate. Requires Python 3.11+ and, for PDF
 output, LibreOffice (`brew install --cask
 libreoffice` on macOS; `sudo apt install libreoffice` inside Ubuntu/WSL). Windows users
 must run the toolkit through WSL2 and should start with the
@@ -60,8 +60,22 @@ one-page check could not run; add `--no-pdf` if you deliberately want a DOCX-onl
 ```bash
 # Paste this repo's own URL — the green "Code" button above, or your fork's.
 git clone "https://github.com/<owner>/jobs-finder-toolkit.git" && cd jobs-finder-toolkit
-python3 automation/check_python.py && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+python3 automation/check_python.py
+python3 automation/bootstrap_overlay.py
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 .venv/bin/python skills/resume-writer/scripts/render.py examples/me/applications/6_drafted/example-corp-senior-software-engineer/
+```
+
+The bootstrap command is a required one-time step in every clone. It installs
+the repository-local `git ws` workspace dashboard shorthand and the tracked Git
+hooks. Git deliberately does not copy `.git/config` or run repository setup code
+during `git clone` or `git pull`, so an existing checkout that already pulled
+this feature must still run the bootstrap once. Afterwards, `git ws` works from
+any directory inside that clone; confirm the setup at any time with:
+
+```bash
+python3 automation/bootstrap_overlay.py --check
 ```
 
 **Keep the quotes around the clone URL.** Unquoted, `zsh` (the macOS default
@@ -80,7 +94,7 @@ recovery is to create the venv with that one —
 `python3.13 -m venv .venv` (or `uv venv --python 3.13`) — and re-run the pip
 install.
 
-That renders and validates the example resume + cover letter you see above. Then
+Those commands render and validate the example resume + cover letter you see above. Then
 open the repo in your AI agent and just talk to it — the skills route themselves.
 
 ### Your first search

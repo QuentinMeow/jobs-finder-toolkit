@@ -4279,6 +4279,12 @@
 - base: 4a77db1a
   reviewed_by: agent
   date: 2026-08-25
+  files: 6
+  digest: sha256:ce6887669bb78c4d
+  finding: 'Makes the tracked checkout bootstrap explicit in fresh-clone and contributor setup, and records synthetic fresh-clone verification. Public Git behavior and fictional example content only; no real identity, employer, application, or dated job-hunt content.'
+- base: 4a77db1a
+  reviewed_by: agent
+  date: 2026-08-25
   files: 9
   digest: sha256:f329e0de3c0a46ea
   finding: 'Adds a local-only GitHub refresh and agent-work cleanup policy, its fictional canary and eval record, the owner decision amendment, and public task records. No real identity, employer, application, or dated job-hunt content.'
@@ -4294,3 +4300,9 @@
   files: 3
   digest: sha256:1ff32c2038506282
   finding: 'Adds the public session handover and corrects the task verification to name the exact tested branch tip. No real identity, employer, application, or dated job-hunt content.'
+- base: 1aa2c8df
+  reviewed_by: agent
+  date: 2026-08-26
+  files: 6
+  digest: sha256:ce6887669bb78c4d
+  finding: 'Merges the already-reviewed fresh-clone setup documentation, synthetic verification, and public task records into the cleanup-workflow branch. No real identity, employer, application, or dated job-hunt content.'

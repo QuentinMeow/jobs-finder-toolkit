@@ -25,8 +25,11 @@ No `config.yaml` is needed to contribute: with none present, every tool falls
 back to the tracked `config.example.yaml` and the `examples/` Jordan Rivers
 fixture. (For PDF rendering, install LibreOffice — see `README.md`.)
 
-Optionally wire the tracked `git ws` workspace-dashboard shorthand and git hooks
-in one idempotent, stdlib-only step. The
+Run the checkout bootstrap once after the Python version check. It wires the
+tracked `git ws` workspace-dashboard shorthand and Git hooks in one idempotent,
+stdlib-only step, so it does not need the virtual environment. Git does not copy
+repository-local aliases or run setup code during clone or pull, so this step is
+required before `git ws` can work in each checkout. The
 pre-commit hook runs nine gates — a staged-`private/` reject, the leak guard over
 the staged index, the public review gate over the staged index, the vendored-copy
 drift check, the mail send-less policy, `compileall`, the instruction-file budget,
@@ -34,8 +37,8 @@ the reconciler, and the reference/markdown link check — and
 `automation/hooks/pre-commit` is the list:
 
 ```bash
-.venv/bin/python automation/bootstrap_overlay.py        # installs `git ws` + tracked pre-commit/pre-push hooks
-.venv/bin/python automation/bootstrap_overlay.py --check  # exits 1 if local Git setup is incomplete
+python3 automation/bootstrap_overlay.py          # installs `git ws` + tracked pre-commit/pre-push hooks
+python3 automation/bootstrap_overlay.py --check  # exits 1 if local Git setup is incomplete
 ```
 
 ## Running the checks
