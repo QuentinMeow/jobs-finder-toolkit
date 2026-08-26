@@ -4276,3 +4276,9 @@
   files: 4
   digest: sha256:902d64a5eabd0fc3
   finding: 'Moves the public task to review and records synthetic verification, the public branch, and PR number. No real identity, employer, application, or dated job-hunt content.'
+- base: 4a77db1a
+  reviewed_by: agent
+  date: 2026-08-25
+  files: 9
+  digest: sha256:f329e0de3c0a46ea
+  finding: 'Adds a local-only GitHub refresh and agent-work cleanup policy, its fictional canary and eval record, the owner decision amendment, and public task records. No real identity, employer, application, or dated job-hunt content.'

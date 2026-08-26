@@ -7,6 +7,66 @@ here fails while looking successful, and the evidence every claim rests on.
 Read it before merging anything, before writing a merge recipe into another
 document, and whenever a merge "succeeded" but the trunk does not have the work.
 
+## Worked PR body example
+
+```markdown
+## What changes for you
+
+### Exports no longer overwrite yesterday's file
+
+**Before.** `export.py` always wrote `out.csv`. Running it twice in one day
+replaced the first run's file with no warning, and there was no way to get the
+earlier one back.
+
+**After.** It writes `out-<YYYY-MM-DD>.csv` and refuses to overwrite a file that
+already exists.
+
+**What you'll notice.** Anything that reads `out.csv` by name stops finding it —
+scripts, spreadsheets, and the weekly mail job all need the new name. The export
+directory now accumulates one file per day; nothing deletes them, so that is a
+folder you have to clean out yourself.
+
+### The export takes longer
+
+**Before.** A run finished in about two seconds.
+
+**After.** A run takes about nine seconds, because it now checksums each row
+before writing so a truncated file is detected instead of shipped.
+
+**What you'll notice.** The wait is noticeable when you run it by hand. It is
+unchanged inside the nightly job, which nobody watches.
+
+## What & why
+
+`out.csv` was a fixed name chosen when the export ran once a week. It now runs on
+demand, so the fixed name means the newest run destroys the previous one.
+
+## Design
+
+Date-stamping is done by the caller, not inside the writer, so the writer stays
+usable for one-off paths in tests.
+
+## Verification
+
+Run at `9c1f2ab`, this branch's tip after its last rebase — not the worktree it
+was written in.
+
+```
+$ python -m unittest discover tests                               exit 0
+$ .venv/bin/python automation/gardener/verify_links.py            exit 0
+```
+
+Deltas this PR caused: +1 test file, +3 tests. No tree-wide totals here — those
+come from the post-merge canonical counts job on `main`.
+
+Ran the export twice in one day against a scratch directory and confirmed the
+second run exits 1 instead of overwriting.
+
+## What was filed
+
+Follow-up task for pruning old exports; no queue items.
+```
+
 ## 1. Why there are two tracks at all
 
 This repository contains two kinds of pull request, and **they need opposite
