@@ -79,3 +79,27 @@ PRIVATE · private
 The command exited 0 after the contract edit and exposed both repository states
 in the first view. `automation/metrics/instruction_budget.py --strict` also
 exited 0 after the root instruction grew from 293 to 300 lines.
+
+## One-line default follow-up — 2026-08-26
+
+The normal command now emits exactly one line and hides cached remote-only refs:
+
+```text
+$ ./automation/workspace/status.py --no-color
+ACTION: public main diverged: 3 local-only commits, 2 remote-only commits · 1 of 2 worktrees dirty · 1 local work branch
+```
+
+That live line was captured while this repair branch was checked out and dirty;
+the worktree and branch counts therefore prove the summary reacts to in-progress
+work. `-v` still rendered the complete two-worktree, local/cached-remote branch,
+file, commit, and remote inventory.
+
+The full workspace suite covers the new one-line `ACTION` and `OK` states,
+cached-remote omission, pluralization, private-overlay redaction in the new
+output mode, and every existing detailed-inventory and cleanup behavior:
+
+```text
+$ .venv/bin/python -m unittest discover automation/workspace/tests -v
+Ran 206 tests in 103.542s
+OK
+```

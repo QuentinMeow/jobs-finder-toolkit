@@ -65,7 +65,7 @@
     {
       "name": "github-workflow",
       "source": "./skills/github-workflow",
-      "description": "Get finished work from a local branch onto GitHub — write the PR description in this repo's human-facing Before/After format, split a long task into a stack of PRs that GitHub detects on its own, clear the gates that block a push (the pre-commit hook chain, the public review ledger, the leak guard, pre-push), and drive `gh` for CI, merges, and stack rebases. Use when the user asks to open a PR, write or rewrite a PR description, stack PRs, split work into stacked PRs, check CI, read a failing run's log, merge a stack, or rebase a stack after its base moved."
+      "description": "Get finished work from a local branch onto GitHub — refresh main, retire finished agent branches and worktrees, write the PR description, clear push gates, and drive `gh` for PRs, CI, merges, and stack rebases. Use for any GitHub operation in this repo, including pushes, PR creation or editing, CI checks, merges, and post-merge cleanup."
     },
     {
       "name": "explain-clearly",

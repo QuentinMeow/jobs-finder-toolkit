@@ -18,6 +18,8 @@ without asking anybody to maintain a record:
   probe — ``active`` | ``idle`` | ``stale`` | ``merged`` | ``orphaned`` |
   ``wedged``. Nothing is stored, so nothing can go stale or lie.
 
+The default output is one decision line: checkout sync, dirty-worktree count,
+and local work-branch count. ``-v`` opens the full inventory described above;
 ``--json`` emits the same model for tools; ``--stale <days>`` narrows the branch
 table to what nobody has touched (never the row you are standing on).
 
@@ -1476,6 +1478,8 @@ def _count(noun: str, amount: int) -> str:
         rendered = noun
     elif noun.endswith("y") and not noun.endswith(("ay", "ey", "iy", "oy", "uy")):
         rendered = noun[:-1] + "ies"
+    elif noun.endswith(("s", "x", "z", "ch", "sh")):
+        rendered = noun + "es"
     else:
         rendered = noun + "s"
     return f"{amount} {rendered}"
@@ -1604,6 +1608,147 @@ def _truncate(value: str, width: int) -> str:
     if len(value) <= width:
         return value
     return value[:max(0, width - 1)] + "…"
+
+
+def _checkout_summary(repo: Repository, palette: Palette) -> tuple[str, bool]:
+    """Return one plain-language checkout verdict and whether it needs action."""
+    label = repo.label.lower()
+    checkout = repo.checkout
+    if checkout is None:
+        return palette.paint(f"{label} checkout unavailable", palette.RED), True
+
+    subject = f"{label} {checkout.branch}"
+    sync = checkout.sync
+    if sync == "synced":
+        text = f"{subject} synced"
+        action = False
+    elif sync.startswith("diverged"):
+        ahead = checkout.ahead or 0
+        behind = checkout.behind or 0
+        text = (
+            f"{subject} diverged: {_count('local-only commit', ahead)}, "
+            f"{_count('remote-only commit', behind)}"
+        )
+        action = True
+    elif sync.startswith("ahead"):
+        text = f"{subject} has {_count('local-only commit', checkout.ahead or 0)}"
+        action = True
+    elif sync.startswith("behind"):
+        text = f"{subject} has {_count('remote-only commit', checkout.behind or 0)}"
+        action = True
+    elif sync == "local only":
+        text = f"{subject} has no upstream"
+        action = True
+    elif sync == "upstream missing":
+        text = f"{subject} upstream missing"
+        action = True
+    else:
+        text = f"{subject} {sync}"
+        action = sync != "synced"
+    return palette.paint(text, _sync_style(sync, palette)), action
+
+
+def _local_work_branches(repositories: Sequence[Repository]) -> list[Branch]:
+    """Local branches other than the protected ``main`` in each repository."""
+    return [
+        branch
+        for repo in repositories
+        for branch in repo.branches
+        if branch.scope in {"L", "L+R"} and branch.name != "main"
+    ]
+
+
+def render_summary(
+    repositories: Sequence[Repository],
+    palette: Palette,
+) -> str:
+    """Render the normal one-line answer; cached remote-only refs stay hidden."""
+    fragments: list[str] = []
+    needs_action = False
+    for repo in repositories:
+        checkout_text, checkout_action = _checkout_summary(repo, palette)
+        fragments.append(checkout_text)
+        needs_action = needs_action or checkout_action
+
+    worktrees = [worktree for repo in repositories for worktree in repo.worktrees]
+    dirty = sum(1 for worktree in worktrees if worktree.dirty)
+    unavailable = sum(1 for worktree in worktrees if worktree.status_error)
+    broken = sum(1 for worktree in worktrees if worktree.gone)
+    if unavailable:
+        fragments.append(
+            palette.paint(
+                f"{_count('worktree status', unavailable)} unavailable",
+                palette.RED,
+            )
+        )
+        needs_action = True
+    if dirty:
+        fragments.append(
+            palette.paint(
+                f"{dirty} of {_count('worktree', len(worktrees))} dirty",
+                palette.YELLOW,
+            )
+        )
+        needs_action = True
+    elif not unavailable:
+        fragments.append(
+            palette.paint(f"{_count('worktree', len(worktrees))} clean", palette.GREEN)
+        )
+    if broken:
+        fragments.append(
+            palette.paint(
+                f"{_count('broken worktree registration', broken)}",
+                palette.RED,
+            )
+        )
+        needs_action = True
+
+    local_work = _local_work_branches(repositories)
+    merged = sum(1 for branch in local_work if branch.state == STATE_MERGED)
+    if not local_work:
+        branch_text = "0 local work branches"
+        branch_style = palette.GREEN
+    elif merged == len(local_work):
+        branch_text = f"{_count('merged local work branch', merged)} ready to clean"
+        branch_style = palette.YELLOW
+        needs_action = True
+    elif merged:
+        branch_text = (
+            f"{_count('local work branch', len(local_work))} "
+            f"({merged} merged)"
+        )
+        branch_style = palette.YELLOW
+        needs_action = True
+    else:
+        branch_text = _count("local work branch", len(local_work))
+        branch_style = palette.YELLOW
+        needs_action = True
+    fragments.append(palette.paint(branch_text, branch_style))
+
+    for repo in repositories:
+        checkout = repo.checkout
+        if checkout is None or checkout.freshness == FRESHNESS_FRESH:
+            continue
+        if checkout.freshness == FRESHNESS_NO_REMOTE:
+            continue
+        age = _age_text(checkout.knowledge_age_seconds)
+        if checkout.freshness == FRESHNESS_BLIND:
+            cache_text = f"{repo.label.lower()} remote status {age} old—fetch first"
+        elif checkout.freshness == FRESHNESS_DATED:
+            cache_text = f"{repo.label.lower()} remote status {age} old"
+        else:
+            cache_text = f"{repo.label.lower()} remote status unknown—fetch first"
+        fragments.append(
+            palette.paint(
+                cache_text,
+                _freshness_style(checkout.freshness, palette),
+            )
+        )
+        needs_action = True
+
+    prefix = "ACTION" if needs_action else "OK"
+    prefix_style = palette.RED if needs_action else palette.GREEN
+    return f"{palette.paint(prefix, palette.BOLD, prefix_style)}: " + " · ".join(fragments)
 
 
 def render(
@@ -1984,7 +2129,7 @@ def _parser() -> argparse.ArgumentParser:
         "-v",
         "--verbose",
         action="store_true",
-        help="show changed files, commits, remotes, and worktree flags",
+        help="show the full worktree/branch inventory, including files and commits",
     )
     parser.add_argument(
         "--color",
@@ -2036,7 +2181,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     color_mode = "never" if args.no_color or os.environ.get("NO_COLOR") is not None else args.color
     use_color = color_mode == "always" or (color_mode == "auto" and sys.stdout.isatty())
-    print(render(repositories, REPO_ROOT, args.verbose, Palette(use_color), args.stale))
+    palette = Palette(use_color)
+    if args.verbose or args.stale is not None or args.pr:
+        print(render(repositories, REPO_ROOT, args.verbose, palette, args.stale))
+    else:
+        print(render_summary(repositories, palette))
     return 0
 
 

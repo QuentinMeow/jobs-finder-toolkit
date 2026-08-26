@@ -9,9 +9,10 @@ the permissions inherited by that process.
 
 ```bash
 # One local Git dashboard for the public toolkit and its optional private overlay.
-# Compact mode still lists every registered worktree and every local/cached-remote
-# branch; -v adds changed files, commit subjects, upstreams, remote URLs and
-# worktree administrative flags. It reads cached refs and never fetches.
+# The default is one actionable line: checkout sync, dirty worktrees, and local
+# work branches. -v opens the full inventory, including cached remote refs,
+# changed files, commits, upstreams, remotes, and worktree administrative flags.
+# It reads cached refs and never fetches.
 ./automation/workspace/status.py
 ./automation/workspace/status.py -v
 

@@ -60,3 +60,16 @@ Local deletions use `git branch -d` only. Remote deletions use
 rebuild `origin/main`, and every "contained in `origin/main`" verdict taken beforehand becomes
 false retroactively — a branch deleted as redundant could hold the only copy of a commit the
 rewrite dropped. That is the argument against ever putting this sweep on a schedule.
+
+## Amendment — 2026-08-25
+
+The owner gave a standing instruction for GitHub work: before any GitHub operation, try to
+fast-forward the local `main` worktree from `origin/main`, resolve task-owned conflicts without
+discarding unrelated edits, and sweep finished local agent work after the operation. The sweep is
+limited to branches and worktrees whose branch starts `codex/` or `claude/`; it still requires
+fresh exact-tree containment, no open PR dependency, and all cleanup safety checks. This
+supersedes the one-off-only sentence above for those local prefixes.
+
+Remote branch deletion remains outside that standing instruction. Worktrees are moved into the
+recoverable `local/workspace/trash-*` area through the cleanup planner; they are never removed with
+`rm` or `git worktree remove`.

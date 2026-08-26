@@ -1,7 +1,7 @@
 ---
 name: github-workflow
 visibility: public
-description: Get finished work from a local branch onto GitHub — write the PR description in this repo's human-facing Before/After format, split a long task into a stack of PRs that GitHub detects on its own, clear the gates that block a push (the pre-commit hook chain, the public review ledger, the leak guard, pre-push), and drive `gh` for CI, merges, and stack rebases. Use when the user asks to open a PR, write or rewrite a PR description, stack PRs, split work into stacked PRs, check CI, read a failing run's log, merge a stack, or rebase a stack after its base moved.
+description: Get finished work from a local branch onto GitHub — refresh main, retire finished agent branches and worktrees, write the PR description, clear push gates, and drive `gh` for PRs, CI, merges, and stack rebases. Use for any GitHub operation in this repo, including pushes, PR creation or editing, CI checks, merges, and post-merge cleanup.
 ---
 
 # GitHub Workflow — from a finished branch to a merged PR
@@ -16,6 +16,36 @@ this repo puts in front of a push, and the `gh` commands for each step.
 - "Split this into stacked PRs." · "Stack this on top of the previous PR."
 - "Is CI green?" · "Why did CI fail?" · "Merge the stack." · "Rebase the stack."
 - Any push from this repo — the gates below apply whether or not a PR follows.
+
+## 0. Refresh `main` and retire finished agent work
+
+Before any `gh` command or push, and again after a GitHub mutation:
+
+1. Resolve the owning repository and its `main` worktree. If that worktree is
+   clean, always try `git -C <main-worktree> pull --ff-only origin main`. If it
+   is dirty, fetch `origin` but preserve every edit and report why the pull was
+   skipped. Never stash, reset, or overwrite another worktree to make this pass.
+2. If the active task branch must absorb the refreshed `main`, resolve conflicts
+   whose correct result is supported by the task and tests. Preserve both sides
+   of unrelated or owner-authored changes; a reviewed branch is never
+   force-pushed silently. A diverged local `main` is not auto-merged: keep it and
+   surface the local-only commits instead of manufacturing a trunk merge.
+3. Sweep local branches and worktrees whose branch starts `codex/` or `claude/`.
+   “Useless” means fresh `origin/main` already contains its exact tree, not that
+   it merely looks old. Also require that no open PR names the branch as head or
+   base, no worktree has live changes or a live lock, and retiring it cannot
+   orphan unique commits or review-ledger evidence. An unanswerable check keeps
+   the item.
+4. Retire an unowned local branch with `git branch -d` only. For a worktree, use
+   `automation/workspace/cleanup.py --fetch --include-harness-worktrees` and
+   carry out only the qualifying `codex/` / `claude/` rows; it moves directories
+   into recoverable `local/workspace/trash-*` storage and re-checks safety at run
+   time. Never use `-D`, `rm`, or `git worktree remove`. This standing sweep is
+   local-only: it does not authorize deleting remote branches.
+
+Run the sweep even when it finds zero candidates, and report that number. The
+repository decision behind these boundaries is
+`memory/decisions/merged-branches-are-swept-after-their-prs-close.md`.
 
 ## 1. The PR description format
 
@@ -47,65 +77,9 @@ Writing rules:
 - This repo's `.github/pull_request_template.md` starts at `## What & why`. The
   human-facing section goes **above** it; the template's checklist stays.
 
-### Worked example (fictional)
-
-```markdown
-## What changes for you
-
-### Exports no longer overwrite yesterday's file
-
-**Before.** `export.py` always wrote `out.csv`. Running it twice in one day
-replaced the first run's file with no warning, and there was no way to get the
-earlier one back.
-
-**After.** It writes `out-<YYYY-MM-DD>.csv` and refuses to overwrite a file that
-already exists.
-
-**What you'll notice.** Anything that reads `out.csv` by name stops finding it —
-scripts, spreadsheets, and the weekly mail job all need the new name. The export
-directory now accumulates one file per day; nothing deletes them, so that is a
-folder you have to clean out yourself.
-
-### The export takes longer
-
-**Before.** A run finished in about two seconds.
-
-**After.** A run takes about nine seconds, because it now checksums each row
-before writing so a truncated file is detected instead of shipped.
-
-**What you'll notice.** The wait is noticeable when you run it by hand. It is
-unchanged inside the nightly job, which nobody watches.
-
-## What & why
-
-`out.csv` was a fixed name chosen when the export ran once a week. It now runs on
-demand, so the fixed name means the newest run destroys the previous one.
-
-## Design
-
-Date-stamping is done by the caller, not inside the writer, so the writer stays
-usable for one-off paths in tests.
-
-## Verification
-
-Run at `9c1f2ab`, this branch's tip after its last rebase — not the worktree it
-was written in.
-
-```
-$ python -m unittest discover tests                               exit 0
-$ .venv/bin/python automation/gardener/verify_links.py            exit 0
-```
-
-Deltas this PR caused: +1 test file, +3 tests. No tree-wide totals here — those
-come from the post-merge canonical counts job on `main`.
-
-Ran the export twice in one day against a scratch directory and confirmed the
-second run exits 1 instead of overwriting.
-
-## What was filed
-
-Follow-up task for pruning old exports; no queue items.
-```
+The full fictional worked example lives in
+[`reference.md`](reference.md#worked-pr-body-example); read it when drafting a
+new body or correcting one that lacks a concrete before/after effect.
 
 ### Check the body before posting it
 
