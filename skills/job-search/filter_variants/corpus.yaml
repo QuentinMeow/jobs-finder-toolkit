@@ -974,6 +974,40 @@ variants:
       decision: no_match
       accepted: false
 
+  - id: title-manager-product-suffix-is-an-intentional-review
+    domain: title
+    # Issue #234: production already preserves this IC-role + delimited product
+    # name shape for human review. Label the structural family so the snapshot
+    # audit does not report the supported classifier output as a new variant.
+    input:
+      title: Software Engineer, Widget Manager
+      profile:
+        titles:
+          include: [software engineer, engineering]
+          exclude: [manager, director, head of, vp]
+    expect:
+      decision: review
+      accepted: true
+      confidence: low
+      rule_ids: [title.manager_product_suffix_ambiguous]
+      review_contains: [title_manager_product_suffix_ambiguous]
+
+  - id: title-manager-tools-without-a-product-suffix-stays-excluded
+    domain: title
+    # Boundary for #234: the narrow exception requires a comma/dash-delimited
+    # segment that ENDS in Manager. Merely mentioning Manager inside a tools
+    # qualifier must not weaken the profile's explicit manager exclusion.
+    input:
+      title: Software Engineer (Manager Tools)
+      profile:
+        titles:
+          include: [software engineer, engineering]
+          exclude: [manager, director, head of, vp]
+    expect:
+      decision: no_match
+      accepted: false
+      rule_ids: [title.excluded.manager]
+
   - id: title-generalist-occupation-ambiguous-review
     domain: title
     # Decision 3a residual: a plausible/technical UNKNOWN occupation that is
