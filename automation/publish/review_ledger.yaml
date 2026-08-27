@@ -4348,3 +4348,9 @@
   files: 11
   digest: sha256:34953ce11be0c374
   finding: none
+- base: f42f9c69
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 7
+  digest: sha256:bd9d187b321e469a
+  finding: 'Adds fictional Android and React Native precedence controls and records the public stack dependency on PR #371. No real identity, employer, school, application, salary, or dated job-hunt content.'

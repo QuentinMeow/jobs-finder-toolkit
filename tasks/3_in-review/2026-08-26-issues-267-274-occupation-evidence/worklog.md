@@ -16,3 +16,13 @@
 - Updated the profile guidance to state the real bounded/separator-insensitive matching semantics and the remaining risk: scripts cannot prove a phrase denotes an occupation without becoming a global taxonomy.
 - Repaired verification is green: 8 focused occupation tests, 199 impacted focused tests, 827 full job-search tests, 185 corpus cases, and all 12 impact-selected policy/job-search gates.
 - Recorded the repair review row and prepared the clean branch commit for fresh independent review; publication remains intentionally deferred.
+
+## 2026-08-27 — session 3 (occupation-evidence precedence repair)
+
+- Added paired iOS-only controls proving explicit Android and React Native exclusions remain
+  hard `no_match` decisions, while the broad mobile profile keeps both titles as target matches.
+- Recorded the exact dependency on `codex/issue-234-manager-product-corpus` at
+  `67a0375f012e7ef579482de5b0272d4ec13bb0b2` (open PR #371): publish stacked on
+  that branch while the PR is open, or rebase onto `main` only after it merges.
+- Refreshed evidence is green: 9 focused occupation tests, 200 impacted focused tests,
+  828 full job-search tests, 187 corpus cases, and all 12 impact-selected policy/job-search gates.

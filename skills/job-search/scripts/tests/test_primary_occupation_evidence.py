@@ -30,6 +30,15 @@ PROFILES = {
         "primary": ["ios engineer", "mobile platform engineer",
                     "android engineer", "react native developer"],
     },
+    "ios_only": {
+        # Keep the broad mobile retrieval surface, but make the candidate's
+        # explicit platform negatives decisive before primary evidence.
+        "include": ["software engineer", "ios engineer", "mobile engineer",
+                    "android engineer", "react native developer", "ios",
+                    "mobile", "android", "react native", "application"],
+        "primary": ["ios engineer", "mobile platform engineer"],
+        "exclude": ["android", "react native"],
+    },
     "sdet": {
         "include": ["software engineer", "sdet", "qa automation",
                     "test infrastructure", "automation", "performance", "quality"],
@@ -81,6 +90,10 @@ CASES = (
      "Software Engineer, Notifications", "review"),
     ("mobile_web_experience", "mobile",
      "Senior Software Engineer, Web Experience", "review"),
+    ("ios_only_android_negative", "ios_only",
+     "Senior Android Engineer", "no_match"),
+    ("ios_only_react_native_negative", "ios_only",
+     "React Native Developer", "no_match"),
     ("sdet_qa_automation", "sdet", "QA Automation SDET", "match"),
     ("sdet_test_infrastructure", "sdet",
      "Software Engineer, Test Infrastructure", "match"),
@@ -120,7 +133,25 @@ class PrimaryOccupationEvidenceTests(unittest.TestCase):
                 decisions[case_id] = actual["decision"]
         self.assertEqual(sum(v == "match" for v in decisions.values()), 12)
         self.assertEqual(sum(v == "review" for v in decisions.values()), 17)
-        self.assertEqual(sum(v == "no_match" for v in decisions.values()), 0)
+        self.assertEqual(sum(v == "no_match" for v in decisions.values()), 2)
+
+    def test_ios_only_negatives_do_not_narrow_the_broad_mobile_profile(self):
+        expected_rules = {
+            "Senior Android Engineer": "title.excluded.android",
+            "React Native Developer": "title.excluded.react native",
+        }
+        for title, rule_id in expected_rules.items():
+            with self.subTest(profile="ios_only", title=title):
+                actual = assess_title(title, PROFILES["ios_only"])
+                self.assertEqual(actual["decision"], "no_match")
+                self.assertEqual(actual["rule_ids"], [rule_id])
+            with self.subTest(profile="mobile", title=title):
+                actual = assess_title(title, PROFILES["mobile"])
+                self.assertEqual(actual["decision"], "match")
+                self.assertTrue(any(
+                    item.startswith("title.primary_occupation.")
+                    for item in actual["rule_ids"]
+                ))
 
     def test_review_names_the_matched_and_missing_evidence(self):
         actual = assess_title(

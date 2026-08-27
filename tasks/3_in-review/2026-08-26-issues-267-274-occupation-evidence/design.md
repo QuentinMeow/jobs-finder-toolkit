@@ -10,6 +10,12 @@ This is opt-in. An absent or empty `titles.primary` produces the same title asse
 
 At the canonical assessor, `primary` never rescues a title that failed `include`, never overrides `titles.exclude`, and never creates a hard drop. The full pipeline has one pre-existing, explicitly configured exception: `titles.word_filter.include` or `soft_exclude` may rescue an assessor `no_match` to review, never to the main list; `word_filter.hard_exclude` still drops before the assessor. Focused tests pin both boundaries.
 
+The frozen profiles keep two mobile intents separate. The broad mobile profile declares iOS,
+Android, and React Native occupation phrases and must retain all three families as matches. The
+iOS-only profile keeps the same broad retrieval includes but explicitly excludes Android and
+React Native; those two negative policy decisions must remain `no_match`. This pins recall for
+the broad profile without weakening a narrower candidate-authored exclusion.
+
 ## Why this is needed
 
 The current title gate has one binary concept: an include term either matches or does not. That makes a broad supporting word indistinguishable from primary occupation evidence. A mobile profile can therefore treat `application` as proof that an application-security role is mobile engineering; an SDET profile can treat `automation`, `performance`, or `quality` as proof that business automation, backend performance, customer-quality, or manufacturing-quality work is software testing.
@@ -40,11 +46,11 @@ Rejected. Missing title evidence is uncertainty, not proof of a mismatch. Direct
 
 ## Frozen public matrix
 
-The matrix is fictional and contains no private profile or posting text. All three measurements use the same 29 titles and retrieval includes. The pre-feature measurement has no effective primary boundary, the first implementation uses the reproduced broad mobile declaration, and the repaired measurement replaces it with occupation-bearing phrases.
+The matrix is fictional and contains no private profile or posting text. All three measurements use the same 31 titles and retrieval includes. The pre-feature measurement has no effective primary boundary, the first implementation uses the reproduced broad mobile declaration, and the repaired measurement replaces it with occupation-bearing phrases. The two added iOS-only negative-policy rows are hard exclusions in every variant; they isolate candidate policy from the primary-evidence delta.
 
 | Family | Target-family controls that must remain `match` | Broad or adjacent controls that must become/remain `review` |
 |---|---|---|
-| Mobile / app platform | Senior iOS Engineer; Mobile Platform Engineer; Senior Android Engineer; React Native Developer | Mobile Mechanic; Mobile Sales Representative; Application Security; generic Notifications SWE; Web Experience SWE |
+| Mobile / app platform | Senior iOS Engineer; Mobile Platform Engineer; Senior Android Engineer; React Native Developer | Mobile Mechanic; Mobile Sales Representative; Application Security; generic Notifications SWE; Web Experience SWE; Android and React Native under the iOS-only profile are explicit `no_match` controls |
 | SDET / QA | QA Automation SDET; Test Infrastructure SWE | manual QA; IT/business automation; backend scalability/performance; customer quality; manufacturing quality; Core AI automation |
 | Gameplay / graphics | Senior Gameplay Engineer | generic storage SWE |
 | Robotics / autonomy | Senior Robotics Engineer | full-stack deployment tooling |
@@ -53,12 +59,21 @@ The matrix is fictional and contains no private profile or posting text. All thr
 | Database / storage | Postgres Product Engineer | Database Administrator |
 | Software engineering management | Software Engineering Manager | power-generation Engineering Manager |
 
-The repaired matrix has 29 inputs. With primary evidence absent (equivalent to pre-feature commit `07ee313`), it produces 28 `match`, 1 `review`, and 0 `no_match`; 16 adjacent controls are incorrectly in the main lane. The first implementation at `4a1fdb2`, measured with the expanded but still broad mobile declaration `primary: [ios, mobile, android, react native]`, produces 14 `match`, 15 `review`, and 0 `no_match`: `Mobile Mechanic` and `Mobile Sales Representative` are the two remaining false main-list matches. With occupation-bearing primary phrases, the repaired result is 12 `match`, 17 `review`, and 0 `no_match`.
+The repaired matrix has 31 inputs. With primary evidence absent (equivalent to pre-feature commit `07ee313`), it produces 28 `match`, 1 `review`, and 2 `no_match`; 16 adjacent controls are incorrectly in the main lane. The first implementation at `4a1fdb2`, measured with the expanded but still broad mobile declaration `primary: [ios, mobile, android, react native]`, produces 14 `match`, 15 `review`, and 2 `no_match`: `Mobile Mechanic` and `Mobile Sales Representative` are the two remaining false main-list matches. With occupation-bearing primary phrases, the repaired result is 12 `match`, 17 `review`, and 2 `no_match`. The two hard drops are only the iOS-only profile's explicit Android and React Native exclusions.
+
+## Stack dependency
+
+This change was built on `codex/issue-234-manager-product-corpus` at
+`67a0375f012e7ef579482de5b0272d4ec13bb0b2`, published as PR #371. While PR #371
+is open, publication uses that branch as the PR base. Rebase onto `main` only after PR #371
+merges; rebasing earlier would make this PR include or duplicate the manager-product corpus.
 
 ## Acceptance and rollback
 
 - Target-family recall: 12 of 12 positive controls must remain `match`, including Android and React Native.
 - Precision routing: all 17 broad or adjacent controls, including Mobile Mechanic and Mobile Sales Representative, must be `review`; none may become `no_match`.
+- Negative-policy precedence: Android and React Native remain `no_match` under the paired
+  iOS-only profile, while both remain `match` under the broad mobile profile.
 - Compatibility: every pre-existing corpus case and the shipped example profile must retain its verdict when `titles.primary` is absent or empty.
 - Auditability: a primary-evidence review must name the matched include terms and expected primary phrases; a main match must name the decisive matched primary phrase in both rule and evidence fields.
 - Precedence: primary cannot rescue an include miss or an explicit exclude at the assessor; a configured word-filter rescue remains review-only at the full-pipeline boundary.
