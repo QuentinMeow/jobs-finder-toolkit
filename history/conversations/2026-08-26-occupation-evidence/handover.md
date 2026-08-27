@@ -7,18 +7,24 @@
 
 - Nothing is blocked and no code is half-finished. Issues #267 and #274 now share one review-ready classifier change repaired after independent review.
 - A specialized search profile can declare `titles.primary`, the title phrases that establish its occupation. Before, broad include words could put adjacent occupations on the main shortlist; now an include-only title stays recoverable in bounded review.
-- The expanded frozen public matrix has 29 titles. It retains all 12 target-family matches, routes all 17 adjacent controls to review, and introduces no hard drop. Mobile Mechanic and Mobile Sales Representative are now explicit negative controls; Android and React Native are explicit recall controls.
+- The expanded frozen public matrix has 31 titles. It retains all 12 target-family matches, routes all 17 adjacent controls to review, and keeps two hard drops only where an iOS-only profile explicitly excludes Android and React Native. The broad mobile profile still matches both platforms.
 - Every successful primary match now records which primary phrase admitted it. Absent/empty primary configuration remains behavior-compatible, and the full pipeline's explicit word-filter rescue remains review-only.
 
 ## Where things stand
 
-- The branch is ready for fresh independent review and has not been pushed. All 827 job-search tests, the 185-case corpus validator, and all 12 config-less impact-selected gates passed after the repair.
+- The branch is ready for fresh independent review and has not been pushed. It depends on
+  `codex/issue-234-manager-product-corpus` at
+  `67a0375f012e7ef579482de5b0272d4ec13bb0b2`, the head of open PR #371. Publish
+  it with that branch as its base while #371 remains open; rebase onto `main` only after #371
+  merges. Verification figures below are refreshed in the task record after this repair.
 
 ## Decisions made for you
 
 - Primary evidence is profile-owned and opt-in; guessing from a global keyword list was rejected because the same word can be broad for one occupation and primary for another.
 - Primary declarations use occupation-bearing phrases rather than raw domain tokens. A broad declaration can still be misconfigured; enforcing semantics in generic code would recreate the rejected taxonomy.
 - Missing primary evidence routes to review, never rejection; undoing this changes one title-gate branch and requires no data migration.
+- Explicit `titles.exclude` remains decisive: the iOS-only controls drop Android and React
+  Native even though the broad mobile profile deliberately retains both as target families.
 - Primary evidence is title-only in this change. JD-body occupation proof needs a separate negation-aware design because one incidental mention already caused false positives.
 
 ## If X then Y
