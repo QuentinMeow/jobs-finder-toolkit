@@ -6,10 +6,10 @@ Add companies in companies.yaml; validate tokens with validate_companies.py.
 """
 from __future__ import annotations
 
-import concurrent.futures
 import http.cookiejar
 import json
 import re
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -19,7 +19,8 @@ import title_filter
 from common import (USER_AGENT, JobPosting, ashby_salary_range,
                     http_get, http_get_full, http_get_json,
                     http_post_json, http_post_json_full, parse_dt,
-                    provided_salary_range, record_source_warning, strip_html)
+                    provided_salary_range, record_source_warning,
+                    retry_after_seconds, strip_html)
 from title_filter import TitleWordFilter
 
 # Default search terms used by big-tech fetchers (Workday / Amazon) so we query a
@@ -33,6 +34,33 @@ DEFAULT_BIGTECH_TERMS = [
     "developer productivity",
     "site reliability",
 ]
+
+_WORKDAY_DETAIL_PACE_SECONDS = 0.25
+_WORKDAY_DETAIL_RECOVERY_ROUNDS = 2
+_WORKDAY_RETRY_AFTER_CEILING_SECONDS = 10.0
+_WORKDAY_FALLBACK_BACKOFF_SECONDS = 1.0
+
+
+class _WorkdayTenantPacer:
+    """Space request starts for one Workday tenant; never shared across boards."""
+
+    def __init__(self, interval: float, *, sleep=None, monotonic=None):
+        self.interval = max(float(interval), 0.0)
+        self._sleep = sleep or time.sleep
+        self._monotonic = monotonic or time.monotonic
+        self._next_start = 0.0
+
+    def wait(self) -> None:
+        delay = max(self._next_start - self._monotonic(), 0.0)
+        if delay:
+            self._sleep(delay)
+        self._next_start = self._monotonic() + self.interval
+
+    def defer(self, delay: float) -> None:
+        """Do not start another request for this tenant before ``delay``."""
+        self._next_start = max(
+            self._next_start, self._monotonic() + max(float(delay), 0.0))
+
 
 # Coarse title prefilter: skip a title the CANDIDATE'S PROFILE declared always
 # unwanted, before the (expensive) per-posting detail fetch. A dropped title never
@@ -430,6 +458,95 @@ def _title_prefilter(title: str, word_filter: TitleWordFilter | None = None) -> 
     return (word_filter or title_filter.INERT).prefilter(title)
 
 
+def _workday_posting(company: str, host: str, site: str, path: str,
+                     detail: dict) -> JobPosting | None:
+    jp = detail.get("jobPostingInfo") or {}
+    title = (jp.get("title") or "").strip()
+    if not title:
+        return None
+    loc = jp.get("location") or ""
+    extra = jp.get("additionalLocations") or []
+    if extra:
+        loc = f"{loc} / " + " / ".join(x for x in extra if x)
+    desc = strip_html(jp.get("jobDescription"))
+    remote_hint = "remote" if jp.get("remoteType") and "remote" in \
+        str(jp.get("remoteType")).lower() else ""
+    return JobPosting(
+        source="workday",
+        company=company,
+        title=title,
+        url=jp.get("externalUrl") or f"https://{host}/{site}{path}",
+        location=loc,
+        remote=_remote_from(f"{loc} {remote_hint}"),
+        posted_at=parse_dt(jp.get("startDate")),
+        description=desc,
+    )
+
+
+def _fetch_workday_details(company: str, host: str, site: str, base: str,
+                           paths: list[str]) -> tuple[list[JobPosting], list[str], int]:
+    """Fetch each path once, then retry only misses in two bounded rounds.
+
+    Returns ``(postings, final_failures, attempts)``. One pacer instance belongs
+    to this call/tenant; the outer source executor may run other tenants without
+    sharing its delay. Generic HTTP retries are disabled so a failed path remains
+    visible to this recovery loop instead of sleeping invisibly inside a worker.
+    """
+    pacer = _WorkdayTenantPacer(_WORKDAY_DETAIL_PACE_SECONDS)
+    recovered: dict[str, JobPosting] = {}
+    ordered_paths = list(dict.fromkeys(paths))
+    pending = list(ordered_paths)
+    last_errors: dict[str, str] = {}
+    attempts = 0
+
+    for recovery_round in range(_WORKDAY_DETAIL_RECOVERY_ROUNDS + 1):
+        if not pending:
+            break
+        missed: list[str] = []
+        for path in pending:
+            pacer.wait()
+            url = f"{base}{path}"
+            resp = http_get_full(url, retries=0)
+            attempts += 1
+            if resp.ok:
+                try:
+                    detail = json.loads(resp.body.decode("utf-8", "replace"))
+                except ValueError as exc:
+                    last_errors[path] = f"invalid JSON: {exc}"
+                    missed.append(path)
+                    continue
+                posting = _workday_posting(company, host, site, path, detail)
+                if posting is not None:
+                    recovered[path] = posting
+                # A valid JSON response with no posting is inspected and therefore
+                # not a transport-coverage miss. Preserve the old skip behavior.
+                last_errors.pop(path, None)
+                continue
+
+            last_errors[path] = resp.error or f"HTTP {resp.status}"
+            missed.append(path)
+            if resp.status == 429:
+                delay = retry_after_seconds(
+                    resp.headers,
+                    ceiling=_WORKDAY_RETRY_AFTER_CEILING_SECONDS,
+                )
+                if delay is None:
+                    delay = min(
+                        _WORKDAY_FALLBACK_BACKOFF_SECONDS * (2 ** recovery_round),
+                        _WORKDAY_RETRY_AFTER_CEILING_SECONDS,
+                    )
+                # The deferral applies to the tenant, not just this path: a 429 is
+                # a signal that the board wants the whole caller to slow down.
+                pacer.defer(delay)
+        pending = missed
+
+    failures = [f"{path}: {last_errors[path]}" for path in pending]
+    # Listing order is the stable output order, and the path-keyed map guarantees
+    # a recovered posting is emitted exactly once.
+    postings = [recovered[path] for path in ordered_paths if path in recovered]
+    return postings, failures, attempts
+
+
 def fetch_workday(company: str, token: str, host: str, site: str,
                   search_terms: list[str] | None = None,
                   max_candidates: int = 60,
@@ -498,58 +615,23 @@ def fetch_workday(company: str, token: str, host: str, site: str,
                 break
         g.attest(complete=False)
 
-    detail_failures: list[str] = []
-
-    def _detail(path: str) -> JobPosting | None:
-        try:
-            detail = http_get_json(f"{base}{path}")
-        except Exception as exc:  # noqa: BLE001
-            # Record before dropping. A per-posting failure returning a bare None
-            # meant a TOTAL detail outage (503, rate limit, expired session) came
-            # back as zero postings and zero errors — "this company has no
-            # matching jobs" — from a fetch that inspected nothing.
-            detail_failures.append(f"{path}: {exc}")
-            return None
-        jp = detail.get("jobPostingInfo") or {}
-        title = (jp.get("title") or "").strip()
-        if not title:
-            return None
-        loc = jp.get("location") or ""
-        extra = jp.get("additionalLocations") or []
-        if extra:
-            loc = f"{loc} / " + " / ".join(x for x in extra if x)
-        desc = strip_html(jp.get("jobDescription"))
-        remote_hint = "remote" if jp.get("remoteType") and "remote" in \
-            str(jp.get("remoteType")).lower() else ""
-        return JobPosting(
-            source="workday",
-            company=company,
-            title=title,
-            url=jp.get("externalUrl") or f"https://{host}/{site}{path}",
-            location=loc,
-            remote=_remote_from(f"{loc} {remote_hint}"),
-            posted_at=parse_dt(jp.get("startDate")),
-            description=desc,
-        )
-
     paths = list(seen_paths)[:max_candidates]
-    out = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-        for res in ex.map(_detail, paths):
-            if res is not None:
-                out.append(res)
+    out, detail_failures, detail_attempts = _fetch_workday_details(
+        company, host, site, base, paths)
     if paths and len(detail_failures) == len(paths):
         # Nothing was inspected. Raise so search_jobs.run_tasks records
         # `board:<company>: ...` and the run summary reports a source error,
         # instead of the board reporting cleanly that it has no matching jobs.
         raise RuntimeError(
-            f"workday {company}: all {len(paths)} detail fetches failed "
+            f"workday {company}: all {len(paths)} detail fetches failed after "
+            f"{detail_attempts} bounded attempts "
             f"(first: {detail_failures[0]})")
     if detail_failures:
         record_source_warning(
-            f"workday:{company}: {len(detail_failures)} of {len(paths)} detail "
-            f"fetches failed (first: {detail_failures[0]}); those postings were "
-            f"not inspected")
+            f"workday:{company}: coverage=incomplete; {len(detail_failures)} of "
+            f"{len(paths)} detail fetches failed after bounded recovery "
+            f"({detail_attempts} total attempts; first: {detail_failures[0]}); "
+            f"those postings were not inspected")
     return out
 
 

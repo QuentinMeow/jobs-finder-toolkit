@@ -64,10 +64,13 @@ class _CaptureCase(unittest.TestCase):
         # Save the real HTTP layer so a test's stub never leaks into another module.
         self._http = (sources.http_get_full, sources.http_post_json_full,
                       sources.http_get_json)
+        self._workday_pace = sources._WORKDAY_DETAIL_PACE_SECONDS
+        sources._WORKDAY_DETAIL_PACE_SECONDS = 0
 
     def tearDown(self):
         (sources.http_get_full, sources.http_post_json_full,
          sources.http_get_json) = self._http
+        sources._WORKDAY_DETAIL_PACE_SECONDS = self._workday_pace
         if self._prior is None:
             os.environ.pop("JOBHUNT_DATA_ROOT", None)
         else:
@@ -148,7 +151,7 @@ class WorkdayBadJsonRetryTests(_CaptureCase):
         responses = [_result(b'{ bad json'),
                      _result(b'{"jobPostings": []}')]  # good on retry
         sources.http_post_json_full = lambda *a, **k: responses.pop(0)
-        sources.http_get_json = lambda *a, **k: {}
+        sources.http_get_full = lambda *a, **k: _result(b"{}")
         sources.fetch_workday("Testco", "testco", "testco.wd5.myworkdayjobs.com",
                               "External", search_terms=["kubernetes"])
         searches = [m for m in self.manifests() if m.get("operation") == "search"]
@@ -213,7 +216,7 @@ class WorkdaySearchGroupTests(_CaptureCase):
                 b'"title": "Infra Engineer"}]}')
         # A short batch (<20) ends each term's paging after one POST.
         sources.http_post_json_full = lambda *a, **k: _result(page)
-        sources.http_get_json = lambda *a, **k: {}  # detail fetch → no posting
+        sources.http_get_full = lambda *a, **k: _result(b"{}")  # detail → no posting
 
         sources.fetch_workday("Testco", "testco", "testco.wd5.myworkdayjobs.com",
                               "External", search_terms=["kubernetes", "platform"])
