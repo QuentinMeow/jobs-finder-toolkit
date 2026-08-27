@@ -22,7 +22,7 @@ or known broken, and no owner action is required before review.
 ## Where things stand
 
 - Task `2026-08-20-workday-detail-429-recovery` is in review on branch
-  `codex/issue-235-workday-429-recovery`. The branch has not been pushed.
+  `codex/issue-235-workday-429-recovery` and PR #372 targets `main`.
 
 ## Decisions made for you
 

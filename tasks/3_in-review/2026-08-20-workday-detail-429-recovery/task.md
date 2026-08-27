@@ -5,7 +5,7 @@
 - **Source**: GitHub issue #235; deferred from the C9 sources/fetchers cluster
   (branch `fix/sources-and-fetchers`) because the fix belongs in
   `skills/job-search/scripts/common.py`, which another agent owned that session.
-- **Claimed-by**: Codex `/root/workstream_mapper` (2026-08-26, branch `codex/issue-235-workday-429-recovery`)
+- **Claimed-by**: Codex workstream mapper (2026-08-26, branch `codex/issue-235-workday-429-recovery`)
 
 ## Goal
 

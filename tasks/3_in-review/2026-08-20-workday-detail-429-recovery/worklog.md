@@ -1,6 +1,6 @@
 # Worklog — 2026-08-20-workday-detail-429-recovery
 
-## 2026-08-26 — session 1 (Codex `/root/workstream_mapper`)
+## 2026-08-26 — session 1 (Codex workstream mapper)
 
 - Claimed the deferred issue #235 task on `codex/issue-235-workday-429-recovery`.
 - Replaced the eight-request tenant burst with one paced request stream per Workday
@@ -15,7 +15,7 @@
 - No live Workday tenant benchmark was run; CI/PR review should treat the 250 ms
   default and 10-second provider-delay ceiling as operational defaults to observe.
 
-## 2026-08-26 — session 2 (Codex `/root/workstream_mapper`)
+## 2026-08-26 — session 2 (Codex workstream mapper)
 
 - Repaired the independent review blocker: response-read exceptions now become
   bounded per-path misses instead of aborting the tenant and losing healthy siblings.
@@ -24,3 +24,14 @@
   and the warning reports one miss, four total attempts, and incomplete coverage.
 - Re-ran the focused tests, complete job-search suite, required impact-selected gate,
   review ledger checks, reconciler, and pre-commit before committing the repair.
+
+## 2026-08-26 — session 3 (Codex workstream mapper)
+
+- Published PR #372 after exact-SHA checks passed in a detached checkout without
+  personal configuration or the private overlay.
+- CI exposed an operating-system-specific link-check failure: backticks made the
+  slash-prefixed internal agent label look like an absolute filesystem path. macOS
+  treated the nonexistent path as unresolved; Linux could not inspect `/root` and
+  raised a permission error.
+- Replaced the three path-like agent labels with plain role text. No runtime code,
+  retry behavior, or user-facing search result changed in this repair.
