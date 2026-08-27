@@ -25,26 +25,26 @@ import search_jobs  # noqa: E402
 PROFILES = {
     "mobile": {
         "include": ["software engineer", "ios engineer", "mobile engineer",
-                    "ios", "mobile", "application"],
-        "primary": ["ios", "mobile"],
+                    "android engineer", "react native developer", "ios",
+                    "mobile", "android", "react native", "application"],
+        "primary": ["ios engineer", "mobile platform engineer",
+                    "android engineer", "react native developer"],
     },
     "sdet": {
         "include": ["software engineer", "sdet", "qa automation",
                     "test infrastructure", "automation", "performance", "quality"],
-        "primary": ["sdet", "qa automation", "test infrastructure",
-                    "software test", "test automation"],
+        "primary": ["qa automation sdet",
+                    "software engineer test infrastructure"],
     },
     "game": {
         "include": ["software engineer", "gameplay engineer", "engine programmer",
                     "graphics engineer", "gameplay", "rendering"],
-        "primary": ["gameplay", "game engine", "graphics engineer",
-                    "rendering engineer", "unreal", "unity"],
+        "primary": ["gameplay engineer"],
     },
     "robotics": {
         "include": ["software engineer", "robotics engineer", "autonomy engineer",
                     "motion planning", "robotics", "autonomy"],
-        "primary": ["robotics", "autonomy", "autonomous", "motion planning",
-                    "robotic"],
+        "primary": ["robotics engineer"],
     },
     "writer": {
         "include": ["technical writer", "developer documentation",
@@ -53,7 +53,7 @@ PROFILES = {
     },
     "compiler": {
         "include": ["software engineer", "compiler engineer", "compiler", "toolchain"],
-        "primary": ["compiler", "toolchain"],
+        "primary": ["compiler engineer"],
     },
     "database": {
         "include": ["software engineer", "database engineer", "storage engineer",
@@ -71,6 +71,10 @@ PROFILES = {
 CASES = (
     ("mobile_native_ios", "mobile", "Senior iOS Engineer", "match"),
     ("mobile_platform", "mobile", "Mobile Platform Engineer", "match"),
+    ("mobile_android", "mobile", "Senior Android Engineer", "match"),
+    ("mobile_react_native", "mobile", "React Native Developer", "match"),
+    ("mobile_mechanic", "mobile", "Mobile Mechanic", "review"),
+    ("mobile_sales", "mobile", "Mobile Sales Representative", "review"),
     ("mobile_application_security", "mobile",
      "Senior Security Engineer, Application Security", "review"),
     ("mobile_backend_notifications", "mobile",
@@ -114,8 +118,8 @@ class PrimaryOccupationEvidenceTests(unittest.TestCase):
                 actual = assess_title(title, PROFILES[profile_name])
                 self.assertEqual(actual["decision"], expected)
                 decisions[case_id] = actual["decision"]
-        self.assertEqual(sum(v == "match" for v in decisions.values()), 10)
-        self.assertEqual(sum(v == "review" for v in decisions.values()), 15)
+        self.assertEqual(sum(v == "match" for v in decisions.values()), 12)
+        self.assertEqual(sum(v == "review" for v in decisions.values()), 17)
         self.assertEqual(sum(v == "no_match" for v in decisions.values()), 0)
 
     def test_review_names_the_matched_and_missing_evidence(self):
@@ -126,23 +130,78 @@ class PrimaryOccupationEvidenceTests(unittest.TestCase):
         self.assertIn("title_occupation_ambiguous", actual["review_reasons"])
         self.assertIn("title_primary_occupation_missing", actual["review_reasons"])
         self.assertIn("included:application", actual["evidence"])
-        self.assertIn("primary_expected:ios,mobile", actual["evidence"])
+        self.assertIn(
+            "primary_expected:ios engineer,mobile platform engineer,"
+            "android engineer,react native developer",
+            actual["evidence"])
+
+    def test_main_match_names_the_decisive_primary_phrase(self):
+        actual = assess_title("Senior iOS Engineer", PROFILES["mobile"])
+        self.assertEqual(actual["decision"], "match")
+        self.assertIn("title.primary_occupation.ios engineer",
+                      actual["rule_ids"])
+        self.assertIn("primary:ios engineer", actual["evidence"])
 
     def test_primary_is_opt_in_for_backward_compatibility(self):
         cfg = {"include": ["software engineer", "gameplay engineer", "gameplay"]}
+        without_primary = assess_title("Senior Software Engineer, Storage", cfg)
+        with_empty_primary = assess_title(
+            "Senior Software Engineer, Storage", {**cfg, "primary": []})
+        self.assertEqual(without_primary, with_empty_primary)
+        self.assertEqual(without_primary["decision"], "match")
+
+    def test_primary_cannot_rescue_an_include_miss(self):
+        actual = assess_title(
+            "Senior Android Engineer",
+            {"include": ["ios engineer"], "primary": ["android engineer"]})
+        self.assertEqual(actual["decision"], "review")
         self.assertEqual(
-            assess_title("Senior Software Engineer, Storage", cfg)["decision"],
-            "match")
+            actual["rule_ids"],
+            ["title.not_included", "title.occupation_ambiguous"])
+        self.assertNotIn("primary:android engineer", actual["evidence"])
 
     def test_primary_cannot_override_an_explicit_exclude(self):
         cfg = {
             **PROFILES["mobile"],
             "exclude": ["manager"],
-            "primary": ["mobile"],
+            "primary": ["mobile engineering manager"],
         }
         actual = assess_title("Mobile Engineering Manager", cfg)
         self.assertEqual(actual["decision"], "no_match")
         self.assertEqual(actual["rule_ids"], ["title.excluded.manager"])
+
+    def test_word_filter_can_only_rescue_an_exclude_to_pipeline_review(self):
+        profile = {
+            "titles": {
+                "include": ["ios engineer"],
+                "primary": ["ios engineer"],
+                "exclude": ["manager"],
+                "word_filter": {"soft_exclude": [" manager"]},
+            },
+        }
+        posting = JobPosting(
+            source="board", company="Example Telecom",
+            title="Mobile Engineering Manager",
+            url="https://example.test/jobs/manager",
+            description="Lead a fictional engineering group.")
+        ctx = {
+            "considered_urls": set(), "considered_pairs": set(),
+            "skip_days": 0, "search_tokens": [], "ignore_search_log": True,
+            "ai_native_keys": set(),
+            "title_word_filter": search_jobs.title_filter.load_word_lists(profile),
+        }
+        kept, counts = search_jobs.filter_score_rank(
+            [posting], profile, ctx, max_age=None, top_k=10,
+            max_per_company=10, sponsor_index=None, company_levels={},
+            registry=Registry([]),
+            now=datetime(2026, 8, 26, tzinfo=timezone.utc))
+        self.assertEqual(kept, [])
+        self.assertEqual(counts["n_review"], 1)
+        review = counts["review_postings"][0]
+        self.assertEqual(
+            review.filter_assessments["title"]["rule_ids"],
+            ["title.excluded.manager"])
+        self.assertIn("title_word_filter_override", review.review_reasons)
 
     def test_pipeline_routes_a_sibling_to_review_without_losing_the_target(self):
         postings = [
@@ -172,6 +231,12 @@ class PrimaryOccupationEvidenceTests(unittest.TestCase):
             ["Senior Security Engineer, Application Security"])
         self.assertEqual(counts["n_review"], 1)
         self.assertEqual(counts["n_occupation_ambiguous_overflow"], 0)
+        self.assertIn(
+            "title.primary_occupation.ios engineer",
+            kept[0].filter_assessments["title"]["rule_ids"])
+        self.assertIn(
+            "primary:ios engineer",
+            kept[0].filter_assessments["title"]["evidence"])
 
 
 if __name__ == "__main__":

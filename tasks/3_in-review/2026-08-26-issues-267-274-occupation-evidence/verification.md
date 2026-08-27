@@ -2,28 +2,31 @@
 
 ## Frozen before/after title verdicts
 
-The same 25 fictional profile/title inputs were evaluated before and after the implementation. The profile dictionaries already carried `titles.primary` in the baseline measurement; the old classifier ignored it.
+The repaired matrix has 29 fictional profile/title inputs, adding Android and React Native target controls plus the issue-reported Mobile Mechanic and a Mobile Sales Representative negative. Three measurements expose both the original defect and the first implementation's configuration gap:
 
 ```
-baseline at 07ee313: match=24, review=1, no_match=0
-after implementation: match=10, review=15, no_match=0
-delta: match=-14, review=+14, no_match=0
-target-family recall: 10/10 remained match
+pre-feature equivalent at 07ee313 (primary ignored): match=28, review=1, no_match=0
+first implementation at 4a1fdb2 with broad mobile primary terms: match=14, review=15, no_match=0
+repaired occupation-phrase matrix: match=12, review=17, no_match=0
+repair delta: match=-2, review=+2, no_match=0
+target-family recall: 12/12 remained match
 ```
+
+The two repaired verdicts are `Mobile Mechanic` and `Mobile Sales Representative`, both moved from main-list `match` to bounded `review`. No title became a hard drop.
 
 ## Focused occupation and pipeline regressions
 
 ```
 $ <repo-root>/.venv/bin/python -m unittest skills/job-search/scripts/tests/test_primary_occupation_evidence.py
-.....
-Ran 5 tests
+........
+Ran 8 tests
 OK
 EXIT=0
 ```
 
 ```
 $ <repo-root>/.venv/bin/python -m unittest skills/job-search/scripts/tests/test_primary_occupation_evidence.py skills/job-search/scripts/tests/test_filter_variants.py skills/job-search/scripts/tests/test_pipeline_corrections.py skills/job-search/scripts/tests/test_compact_output.py skills/job-search/scripts/tests/test_location_title.py
-Ran 196 tests
+Ran 199 tests
 OK
 EXIT=0
 ```
@@ -32,7 +35,7 @@ EXIT=0
 
 ```
 $ <repo-root>/.venv/bin/python skills/job-search/scripts/validate_filter_variants.py --check
-filter variant corpus clean: 181 cases
+filter variant corpus clean: 185 cases
 EXIT=0
 ```
 
@@ -40,7 +43,7 @@ EXIT=0
 
 ```
 $ <repo-root>/.venv/bin/python -m unittest discover -s skills/job-search/scripts/tests -p 'test_*.py'
-Ran 824 tests
+Ran 827 tests
 OK
 EXIT=0
 ```
@@ -51,7 +54,8 @@ The dedicated worktree had no `config.yaml` and no mounted private overlay. The 
 
 ```
 $ <repo-root>/.venv/bin/python automation/gates/run_gates.py --impact-from origin/main --jobs 8
-ALL GREEN
+12 of 37 gates selected; policy and job-search lanes
+ALL GREEN (12 of 37 gates ran)
 EXIT=0
 ```
 

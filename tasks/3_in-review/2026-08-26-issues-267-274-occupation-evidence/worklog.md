@@ -7,3 +7,12 @@
 - Added fictional mobile, SDET, gameplay, robotics, technical-writing, compiler, database, and engineering-manager controls. The final matrix is 10 target matches, 15 reviews, and zero hard drops.
 - Full job-search tests, the filter corpus, and the config-less impact gate passed. No skill instruction file changed, so no skill canary was required.
 - Next: independent branch review, then publication as one PR closing #267 and #274.
+
+## 2026-08-27 — session 2 (occupation-evidence repair)
+
+- Independent review reproduced a missing #267 control: `primary: [ios, mobile]` still promoted Mobile Mechanic and Mobile Sales Representative. The expanded 29-title baseline at `4a1fdb2` was 14 main matches and 15 reviews, with those two false matches.
+- Replaced broad primary tokens in the frozen profiles with occupation-bearing phrases, added Android and React Native recall controls, and moved both reported mobile-adjacent titles to bounded review. The repaired matrix is 12 target matches, 17 reviews, and zero hard drops.
+- Added decisive primary rule/evidence to every main match and pinned absent/empty compatibility, include-miss behavior, explicit-exclude precedence, and the full pipeline's configured word-filter review rescue.
+- Updated the profile guidance to state the real bounded/separator-insensitive matching semantics and the remaining risk: scripts cannot prove a phrase denotes an occupation without becoming a global taxonomy.
+- Repaired verification is green: 8 focused occupation tests, 199 impacted focused tests, 827 full job-search tests, 185 corpus cases, and all 12 impact-selected policy/job-search gates.
+- Recorded the repair review row and prepared the clean branch commit for fresh independent review; publication remains intentionally deferred.

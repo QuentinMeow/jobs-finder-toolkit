@@ -1017,12 +1017,92 @@ variants:
       title: Senior iOS Engineer
       profile:
         titles:
-          include: [software engineer, ios engineer, ios, mobile, application]
-          primary: [ios, mobile]
+          include: [software engineer, ios engineer, mobile engineer,
+                    android engineer, react native developer, ios, mobile,
+                    android, react native, application]
+          primary: [ios engineer, mobile platform engineer,
+                    android engineer, react native developer]
     expect:
       decision: match
       accepted: true
-      rule_ids: [title.included.ios engineer, title.included.ios]
+      rule_ids: [title.included.ios engineer, title.included.ios,
+                 title.primary_occupation.ios engineer]
+      evidence_contains: [primary:ios engineer]
+
+  - id: title-primary-android-evidence-is-a-match
+    domain: title
+    input:
+      title: Senior Android Engineer
+      profile:
+        titles:
+          include: [software engineer, ios engineer, mobile engineer,
+                    android engineer, react native developer, ios, mobile,
+                    android, react native, application]
+          primary: [ios engineer, mobile platform engineer,
+                    android engineer, react native developer]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.android engineer, title.included.android,
+                 title.primary_occupation.android engineer]
+      evidence_contains: [primary:android engineer]
+
+  - id: title-primary-react-native-evidence-is-a-match
+    domain: title
+    input:
+      title: React Native Developer
+      profile:
+        titles:
+          include: [software engineer, ios engineer, mobile engineer,
+                    android engineer, react native developer, ios, mobile,
+                    android, react native, application]
+          primary: [ios engineer, mobile platform engineer,
+                    android engineer, react native developer]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.react native developer,
+                 title.included.react native,
+                 title.primary_occupation.react native developer]
+      evidence_contains: [primary:react native developer]
+
+  - id: title-broad-mobile-mechanic-evidence-is-review
+    domain: title
+    input:
+      title: Mobile Mechanic
+      profile:
+        titles:
+          include: [software engineer, ios engineer, mobile engineer,
+                    android engineer, react native developer, ios, mobile,
+                    android, react native, application]
+          primary: [ios engineer, mobile platform engineer,
+                    android engineer, react native developer]
+    expect:
+      decision: review
+      accepted: true
+      rule_ids: [title.primary_occupation_missing, title.occupation_ambiguous]
+      evidence_contains: [included:mobile,
+                          "primary_expected:ios engineer,mobile platform engineer,android engineer,react native developer"]
+      review_contains: [title_primary_occupation_missing, title_occupation_ambiguous]
+
+  - id: title-broad-mobile-sales-evidence-is-review
+    domain: title
+    input:
+      title: Mobile Sales Representative
+      profile:
+        titles:
+          include: [software engineer, ios engineer, mobile engineer,
+                    android engineer, react native developer, ios, mobile,
+                    android, react native, application]
+          primary: [ios engineer, mobile platform engineer,
+                    android engineer, react native developer]
+    expect:
+      decision: review
+      accepted: true
+      rule_ids: [title.primary_occupation_missing, title.occupation_ambiguous]
+      evidence_contains: [included:mobile,
+                          "primary_expected:ios engineer,mobile platform engineer,android engineer,react native developer"]
+      review_contains: [title_primary_occupation_missing, title_occupation_ambiguous]
 
   - id: title-broad-application-evidence-is-review
     domain: title
@@ -1030,13 +1110,17 @@ variants:
       title: Senior Security Engineer, Application Security
       profile:
         titles:
-          include: [software engineer, ios engineer, ios, mobile, application]
-          primary: [ios, mobile]
+          include: [software engineer, ios engineer, mobile engineer,
+                    android engineer, react native developer, ios, mobile,
+                    android, react native, application]
+          primary: [ios engineer, mobile platform engineer,
+                    android engineer, react native developer]
     expect:
       decision: review
       accepted: true
       rule_ids: [title.primary_occupation_missing, title.occupation_ambiguous]
-      evidence_contains: [included:application, "primary_expected:ios,mobile"]
+      evidence_contains: [included:application,
+                          "primary_expected:ios engineer,mobile platform engineer,android engineer,react native developer"]
       review_contains: [title_primary_occupation_missing, title_occupation_ambiguous]
 
   - id: title-primary-sdet-evidence-is-a-match
@@ -1046,12 +1130,15 @@ variants:
       profile:
         titles:
           include: [software engineer, sdet, qa automation, automation, quality]
-          primary: [sdet, qa automation, test automation]
+          primary: [qa automation sdet,
+                    software engineer test infrastructure]
     expect:
       decision: match
       accepted: true
       rule_ids: [title.included.sdet, title.included.qa automation,
-                 title.included.automation]
+                 title.included.automation,
+                 title.primary_occupation.qa automation sdet]
+      evidence_contains: [primary:qa automation sdet]
 
   - id: title-broad-business-automation-evidence-is-review
     domain: title
@@ -1060,13 +1147,14 @@ variants:
       profile:
         titles:
           include: [software engineer, sdet, qa automation, automation, quality]
-          primary: [sdet, qa automation, test automation]
+          primary: [qa automation sdet,
+                    software engineer test infrastructure]
     expect:
       decision: review
       accepted: true
       rule_ids: [title.primary_occupation_missing, title.occupation_ambiguous]
       evidence_contains: [included:automation,
-                          "primary_expected:sdet,qa automation,test automation"]
+                          "primary_expected:qa automation sdet,software engineer test infrastructure"]
       review_contains: [title_primary_occupation_missing, title_occupation_ambiguous]
 
   - id: title-generalist-occupation-ambiguous-review
