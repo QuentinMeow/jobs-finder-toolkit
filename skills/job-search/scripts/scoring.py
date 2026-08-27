@@ -194,7 +194,8 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
     -> generic non-technical-occupation lexicon, SKIPPED for a title the profile's
     own `titles.include` cleanly names (`_is_clean_include_match`) ->
     not-included/broad-domain-without-role
-    residual (-> review, `title.occupation_ambiguous`) -> leadership ambiguity
+    residual (-> review, `title.occupation_ambiguous`) -> optional profile-owned
+    primary-occupation evidence (missing -> review) -> leadership ambiguity
     (review) -> match. Only (i) an explicit profile exclude (outside that narrow
     ambiguity) and (ii) a definite
     non-technical-occupation lexicon hit are hard `no_match` (Decision 3a); every
@@ -206,6 +207,7 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
     titles_cfg = titles_cfg or {}
     ntitle = normalize(title)
     include = titles_cfg.get("include") or []
+    primary = titles_cfg.get("primary") or []
     exclude = titles_cfg.get("exclude") or []
     # Strip known non-level phrases before applying excludes, so their words don't
     # trip a rule — e.g. "Member of Technical Staff" must survive the "staff" exclude.
@@ -290,6 +292,28 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
             rule_ids=[residual_rule_id, "title.occupation_ambiguous"],
             evidence=[f"broad_domain:{','.join(broad)}"] if broad else [],
             review_reasons=["title_occupation_ambiguous"])
+
+    # A specialized profile may separate broad retrieval terms (`include`) from
+    # the phrases that actually establish its target occupation (`primary`). The
+    # classifier cannot infer that distinction safely: `quality` is supporting
+    # evidence for an SDET search but primary evidence for another candidate.
+    # Keep the profile authoritative and make this guard opt-in. Missing primary
+    # evidence is uncertainty, never a hard drop, so a general title remains
+    # recoverable in the existing bounded occupation-review lane.
+    primary_matched = [term for term in primary if term_matches(term, ntitle)]
+    if primary and not primary_matched:
+        normalized_matched = list(dict.fromkeys(normalize(term) for term in matched))
+        normalized_primary = list(dict.fromkeys(normalize(term) for term in primary))
+        return _title_result(
+            "review", level, level_signal,
+            rule_ids=["title.primary_occupation_missing",
+                      "title.occupation_ambiguous"],
+            evidence=[
+                "included:" + ",".join(normalized_matched),
+                "primary_expected:" + ",".join(normalized_primary),
+            ],
+            review_reasons=["title_primary_occupation_missing",
+                            "title_occupation_ambiguous"])
 
     # Leadership/manager-family ambiguity -> conservative review.
     if _AMBIGUOUS_LEADERSHIP_RE.search(ntitle_excl):

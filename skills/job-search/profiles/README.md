@@ -58,6 +58,12 @@ there while you experiment cannot be committed by accident.
 
 - **titles.include / titles.exclude** — title gate. A posting is a candidate if its
   title contains at least one `include` term and none of the `exclude` terms.
+- **titles.primary** — optional main-list precision boundary for a specialized
+  profile. When non-empty, an included title must also contain one of these exact
+  target-family phrases to enter the main shortlist. A miss is kept in the bounded
+  occupation-review lane, never dropped. Leave it empty for a general search; the
+  list is profile-owned because a word such as `quality` can be broad in one search
+  and the target occupation in another.
 - **keywords.strong / good / negative** — scoring. `strong` matches in title+description
   (high weight), `good` in description (medium), `negative` lowers score (honest mis-fits).
 - **location.preferred / allow_remote / us_only / require_match** — `require_match: false` keeps
