@@ -1008,6 +1008,67 @@ variants:
       accepted: false
       rule_ids: [title.excluded.manager]
 
+  # GH #267 / #274: a specialized profile can declare which title phrases are
+  # PRIMARY occupation evidence. Broad include terms still retrieve adjacent
+  # titles, but they cannot put one on the main shortlist by themselves.
+  - id: title-primary-mobile-evidence-is-a-match
+    domain: title
+    input:
+      title: Senior iOS Engineer
+      profile:
+        titles:
+          include: [software engineer, ios engineer, ios, mobile, application]
+          primary: [ios, mobile]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.ios engineer, title.included.ios]
+
+  - id: title-broad-application-evidence-is-review
+    domain: title
+    input:
+      title: Senior Security Engineer, Application Security
+      profile:
+        titles:
+          include: [software engineer, ios engineer, ios, mobile, application]
+          primary: [ios, mobile]
+    expect:
+      decision: review
+      accepted: true
+      rule_ids: [title.primary_occupation_missing, title.occupation_ambiguous]
+      evidence_contains: [included:application, "primary_expected:ios,mobile"]
+      review_contains: [title_primary_occupation_missing, title_occupation_ambiguous]
+
+  - id: title-primary-sdet-evidence-is-a-match
+    domain: title
+    input:
+      title: QA Automation SDET
+      profile:
+        titles:
+          include: [software engineer, sdet, qa automation, automation, quality]
+          primary: [sdet, qa automation, test automation]
+    expect:
+      decision: match
+      accepted: true
+      rule_ids: [title.included.sdet, title.included.qa automation,
+                 title.included.automation]
+
+  - id: title-broad-business-automation-evidence-is-review
+    domain: title
+    input:
+      title: IT Automation Engineer
+      profile:
+        titles:
+          include: [software engineer, sdet, qa automation, automation, quality]
+          primary: [sdet, qa automation, test automation]
+    expect:
+      decision: review
+      accepted: true
+      rule_ids: [title.primary_occupation_missing, title.occupation_ambiguous]
+      evidence_contains: [included:automation,
+                          "primary_expected:sdet,qa automation,test automation"]
+      review_contains: [title_primary_occupation_missing, title_occupation_ambiguous]
+
   - id: title-generalist-occupation-ambiguous-review
     domain: title
     # Decision 3a residual: a plausible/technical UNKNOWN occupation that is
