@@ -101,11 +101,39 @@ canaries:
       - "Produces ONE bundled '..._Application_<job title>.txt' at the folder root (one per meta.yaml role), holding the three canonical sections each with a title line + '===' underline — COVER LETTER, WHY THIS COMPANY & ROLE, PAST EXPERIENCE."
       - "The COVER LETTER section starts with name + contact line, then the salutation — NO company/role subject line; body is >= 2 developed full-sentence paragraphs (60-180 words each), plain text (no Markdown/bold/bullets), ends 'Sincerely,' + name."
       - "Cover-letter content is individually researched for THIS company/role (concrete product specifics, no generic flattery, no fabricated product claims); every candidate claim traces to the profile/story bank."
+      - "Because the example profile contains relevant source-backed metrics, the differentiating-strength paragraph uses a real quantified achievement from that source rather than discarding or generalizing it."
       - "Renders the COVER LETTER section to '..._Cover_Letter_<job title>.{docx,pdf}' and passes check_cover_letter (>= 2 paragraphs in the 60-180 word band; 200-450 word body; no placeholders)."
     failure_modes:
       - "Reuses a boilerplate letter, or a telegraphic/keyword-fragment letter that fails check_cover_letter."
       - "Adds a subject line, uses Markdown/bold in the .txt, or mislabels the '===' section headers."
       - "Invents a product detail or a candidate achievement not in the profile/library."
+    primary_metric: rubric_pass
+    efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
+
+  - id: rw-sparse-source-qualitative-cover-letter
+    requires_overlay: false
+    prompt: >
+      Write the 110-150-word differentiating-strength paragraph for a fictional healthcare
+      support applicant. The entire approved candidate source says: they handled patient phone
+      support, scheduled appointments, prepared intake paperwork, processed payments and receipts,
+      and escalated sensitive cases to the appropriate specialist. Their follow-up notes gave
+      specialists the context needed to continue each case, and their organized service queue made
+      pending work visible to teammates. It contains no numbers or quantified achievements. The
+      role values calm communication, accurate records, and reliable follow-through.
+    setup: >
+      Chat-only sparse-source exercise; treat the facts in the prompt as the complete approved
+      profile/story bank. No private overlay, repository artifact, browsing, or company research is
+      needed. Exercise only the cover letter's second main paragraph.
+    expected_behavior:
+      - "Writes one developed 110-150-word paragraph that proves a differentiating strength with a concrete qualitative example tied to the role — specific source-backed actions, duties, artifacts, or processes, not generic self-praise; any stated outcome is also source-backed."
+      - "Uses only facts from the supplied sparse source and contains zero invented numeric claims: no counts, percentages, durations, rankings, scale estimates, or calculated impact."
+      - "Does not estimate, derive, round, or ask the user to invent a metric merely to satisfy the recipe; the lack of a metric does not block the paragraph."
+      - "Keeps the qualitative example traceable and does not turn an ordinary listed duty into an unsupported achievement, ownership claim, or business result."
+    failure_modes:
+      - "Invents a number, approximate magnitude, frequency, duration, ranking, or quantified impact."
+      - "Fabricates an outcome or ownership claim not supported by the supplied source."
+      - "Insists a metric is mandatory, asks the user to supply one solely to comply, or refuses to draft the paragraph."
+      - "Writes generic praise without a specific source-backed action, duty, artifact, or process."
     primary_metric: rubric_pass
     efficiency_metrics: [total_tokens, wall_clock_s, tool_calls]
 

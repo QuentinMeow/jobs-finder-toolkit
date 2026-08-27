@@ -365,9 +365,13 @@ paragraph 60–180 words (≥2 such paragraphs) and total body 200–450 words �
 front. **The 200-word floor binds the two main paragraphs alone** (the closing is optional): aim
 ~100–140 and ~110–150 words. **COVER LETTER body = two main paragraphs:** (1) interest + *researched* understanding of the
 company/product and why this specific role (name the role; concrete product specifics, never generic
-flattery); (2) your single most differentiating strength, proved with a real, quantified achievement
-mapped to the JD's top requirements (tell the story behind a bullet — don't relist). An optional
-25–45-word closing may follow.
+flattery); (2) your single most differentiating strength, proved with the strongest relevant
+evidence the approved sources actually support: use a real quantified achievement when a relevant
+source-backed metric exists; otherwise use a concrete, verifiable qualitative example (a specific
+action, duty, artifact, or process, plus an outcome only when an approved source supports it) mapped
+to the JD's top requirements. Never estimate, calculate, round, or invent a number to satisfy this
+recipe; the qualitative fallback changes the evidence form, not the traceability requirement. Tell
+the story behind a bullet rather than relisting it. An optional 25–45-word closing may follow.
 
 The other two sections are plain prose, every claim traceable to the profile / library:
 - **WHY THIS COMPANY & ROLE** — exactly two paragraphs, each a one-sentence summary then expand:

@@ -4318,3 +4318,9 @@
   files: 1
   digest: sha256:9c869fe0a8075eeb
   finding: 'Claims a public issue-resolution task using only the issue number and generic sparse-source cover-letter behavior. No real identity, employer, application, or dated job-hunt content.'
+- base: 54c16c14
+  reviewed_by: agent
+  date: 2026-08-26
+  files: 6
+  digest: sha256:00fd0dd8a02e8b7b
+  finding: 'Adds a public evidence-precedence rule, fictional sparse-source canary, and generic issue-resolution records. No real identity, employer, application, or dated job-hunt content.'
