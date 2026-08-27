@@ -39,8 +39,9 @@ DRY RUN IS THE DEFAULT. Nothing merges without `--execute`.
 Refusals (all non-zero, never best-effort — this script has no "try anyway" path):
 
   * a non-stacked PR whose base is not the intended base (the `#198` guard);
-  * a stacked PR whose `position` is not 1, unless `--atomic` names the complete
-    contiguous prefix (positions 1..k) that will be swept on purpose;
+  * a stacked PR whose `position` is not 1, unless `--atomic` explicitly names
+    every historical position 1..k: an independently confirmed `MERGED` prefix
+    followed by the complete contiguous `OPEN` suffix to sweep;
   * a head SHA that moved between classification and merge;
   * a PR that is draft, closed, or already merged;
   * an atomic sweep member whose latest-commit check rollup is not `SUCCESS`,
@@ -386,6 +387,31 @@ def assert_head_unmoved(classified: dict, fresh: dict) -> None:
             "that would land. Re-run and read the new plan.")
 
 
+def assert_stack_snapshot_unmoved(classified: dict, fresh: dict) -> None:
+    """Require every topology field used by a resumed stack plan to be stable."""
+    number = classified["number"]
+    before_entry = classified.get("stackEntry")
+    after_entry = fresh.get("stackEntry")
+    fields = (
+        ("track", track_of(classified), track_of(fresh)),
+        ("state", classified.get("state"), fresh.get("state")),
+        ("base", classified.get("baseRefName"), fresh.get("baseRefName")),
+        ("stack", _stack_cell(classified), _stack_cell(fresh)),
+    )
+    moved = [f"{label}={before!r}->{after!r}"
+             for label, before, after in fields if before != after]
+    if before_entry and after_entry:
+        before_size = (before_entry.get("stack") or {}).get("size")
+        after_size = (after_entry.get("stack") or {}).get("size")
+        if before_size != after_size:
+            moved.append(f"stack-size={before_size!r}->{after_size!r}")
+    if moved:
+        raise Refusal(
+            f"#{number}: the stack plan changed between classification and "
+            f"execution ({', '.join(moved)}). Re-run and read the new plan.")
+    assert_head_unmoved(classified, fresh)
+
+
 def assert_atomic_checks_succeeded(pull: dict) -> None:
     """Require the current head's combined check rollup to be ``SUCCESS``.
 
@@ -438,20 +464,24 @@ def assert_bottom_of_stack(pull: dict, atomic: bool) -> None:
     raise Refusal(
         f"#{pull['number']} is at position {position} of stack "
         f"#{stack.get('number', '?')} (size {stack.get('size', '?')}), not the "
-        "bottom. Merging entry k merges entries 1..k ATOMICALLY, into one merge "
-        "commit named after entry k — so this would silently land every PR below "
-        "it too. Pass --atomic if that is what you want. Note that for a stacked "
+        "bottom. Merging entry k atomically merges every currently unmerged PR "
+        "below it through k into one merge commit named after entry k — so this "
+        "could silently land more work. Pass --atomic with every historical "
+        "position explicitly named if that is what you want. For a stacked "
         "PR `baseRefName` proves nothing here: entries read `main` whether or not "
         "they are at the bottom.")
 
 
-def validate_atomic_sweep(pulls: list[dict]) -> None:
-    """Prove that `pulls` names one stack's complete swept prefix, 1..k.
+def validate_atomic_sweep(pulls: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Prove one complete stack prefix shaped ``MERGED* OPEN+``.
 
     GitHub's atomic endpoint accepts only the selected top entry; it does not
     accept the lower entries as request parameters. Requiring callers to name
-    the full prefix gives the driver something concrete to preflight before that
-    one irreversible request, instead of silently trusting unnamed swept PRs.
+    every historical position gives the driver something concrete to preflight
+    before that one irreversible request, instead of silently trusting unnamed
+    predecessors. GitHub preserves positions after lower members merge, so a
+    leading merged prefix is verification evidence, not a request to merge it
+    again.
     """
     if not pulls:
         raise Refusal("--atomic needs at least one pull request.")
@@ -461,9 +491,6 @@ def validate_atomic_sweep(pulls: list[dict]) -> None:
         raise Refusal(
             "--atomic is only for one native GitHub stack; these named pull "
             f"requests are ordinary: {', '.join(ordinary)}.")
-
-    for pull in pulls:
-        assert_open(pull)
 
     stack_numbers = {
         (pull["stackEntry"].get("stack") or {}).get("number")
@@ -484,31 +511,85 @@ def validate_atomic_sweep(pulls: list[dict]) -> None:
             f"positions 1..k. Named positions are {positions}; selected top is "
             f"position {top}. Name the complete contiguous prefix {expected}.")
 
+    prefix_length = 0
+    while (prefix_length < len(pulls)
+           and pulls[prefix_length]["state"] == "MERGED"):
+        prefix_length += 1
+    merged_prefix = pulls[:prefix_length]
+    open_suffix = pulls[prefix_length:]
+    if not open_suffix:
+        raise Refusal(
+            "--atomic names only already-MERGED members. Name at least one "
+            "OPEN member; the merged prefix is verification evidence, not a "
+            "merge target.")
+    if any(pull["state"] == "MERGED" for pull in open_suffix):
+        states = ", ".join(f"#{pull['number']}={pull['state']}"
+                           for pull in pulls)
+        raise Refusal(
+            "--atomic permits already-MERGED members only as one leading "
+            f"contiguous prefix from position 1. Named states are {states}.")
+    for pull in open_suffix:
+        assert_open(pull)
+    return merged_prefix, open_suffix
+
 
 def format_atomic_sweep(repo: str, pulls: list[dict]) -> str:
     """Explain the one-request effect of a validated atomic prefix."""
-    top = pulls[-1]
+    merged_prefix, open_suffix = validate_atomic_sweep(pulls)
+    top = open_suffix[-1]
     entry = top["stackEntry"]
     stack = entry.get("stack") or {}
-    numbers = ", ".join(f"#{pull['number']}" for pull in pulls)
-    return (
-        "Atomic fast path (one top-entry async request):\n"
+    open_numbers = ", ".join(f"#{pull['number']}" for pull in open_suffix)
+    lines = ["Atomic fast path (one top-entry async request):"]
+    if merged_prefix:
+        history = ", ".join(
+            f"#{pull['number']} at position {pull['stackEntry'].get('position')}"
+            for pull in merged_prefix)
+        lines.append(
+            "  historical merged prefix: " + history + "; under --execute, "
+            "freshly reclassify and independently verify each with GET "
+            "/merge -> 204, then skip it (no PUT).")
+    first_open = open_suffix[0]["stackEntry"].get("position")
+    position_label = "OPEN positions" if merged_prefix else "positions"
+    lines.append(
         f"  stack #{stack.get('number', '?')}: merging #{top['number']} at "
-        f"position {entry.get('position')} sweeps positions 1.."
-        f"{entry.get('position')} ({numbers}) into one merge commit.\n"
-        f"  {planned_command(repo, top)}"
-    )
+        f"position {entry.get('position')} sweeps {position_label} "
+        f"{first_open}..{entry.get('position')} ({open_numbers}) into one "
+        "merge commit.")
+    lines.append(f"  {planned_command(repo, top)}")
+    return "\n".join(lines)
 
 
 def preflight_atomic_sweep(repo: str, classified: list[dict]) -> list[dict]:
-    """Freshly validate and head-pin every named member before the one PUT."""
+    """Confirm history, then freshly validate every member before the PUT."""
+    merged_before, _ = validate_atomic_sweep(classified)
+    for pull in merged_before:
+        if not confirm_merged(repo, pull["number"]):
+            raise Refusal(
+                f"#{pull['number']}: GraphQL says MERGED, but the independent "
+                "GET /merge endpoint answers 404. No atomic request was sent.")
+        print(f"  #{pull['number']} historical position "
+              f"{pull['stackEntry'].get('position')} is pre-existing MERGED "
+              "and independently confirmed by GET /merge -> 204; skipping it "
+              "without a PUT.")
+
+    # This is deliberately the final network read before the PUT. Historical
+    # confirmations happen above it, so they cannot make the checked OPEN head
+    # or topology stale without this snapshot detecting the movement.
     fresh = [classify(repo, pull["number"]) for pull in classified]
-    validate_atomic_sweep(fresh)
     for before, after in zip(classified, fresh):
-        assert_head_unmoved(before, after)
-        assert_atomic_checks_succeeded(after)
-    print("  atomic preflight passed: every named member is in the same stack, "
-          "OPEN, non-draft, green, contiguous through the selected top, and "
+        assert_stack_snapshot_unmoved(before, after)
+    _, open_suffix = validate_atomic_sweep(fresh)
+    for pull in open_suffix:
+        if pull.get("mergeable") != "MERGEABLE":
+            raise Refusal(
+                f"#{pull['number']}: the OPEN atomic member is "
+                f"{pull.get('mergeable')!r}, not 'MERGEABLE'. Refusing before "
+                "the single head-pinned request.")
+        assert_atomic_checks_succeeded(pull)
+    print("  atomic preflight passed: every named member is in the same stack "
+          "and contiguous; the historical prefix is independently confirmed "
+          "merged, and every OPEN member is non-draft, mergeable, green, and "
           "head-pinned.")
     return fresh
 
@@ -722,10 +803,10 @@ def retarget(repo: str, number: int, base: str) -> None:
 def report_sweep(repo: str, remaining: list[dict]) -> list[dict]:
     """Re-read the PRs still queued; drop any GitHub merged atomically with ours.
 
-    Merging entry k of a stack merges entries 1..k into ONE merge commit named
-    after entry k, so a PR named later on the command line can already be merged
-    by the time its turn comes. That is the documented behaviour, so it is
-    reported and skipped rather than refused.
+    Merging entry k of a stack merges every currently unmerged lower entry
+    through k into ONE merge commit named after entry k, so a PR named later on
+    the command line can already be merged by the time its turn comes. That is
+    the documented behaviour, so it is reported and skipped rather than refused.
     """
     still_queued = []
     for pull in remaining:
@@ -1311,8 +1392,9 @@ def build_parser() -> argparse.ArgumentParser:
                              "and stops")
     parser.add_argument("--atomic", action="store_true",
                         help="merge one native stack prefix with one request; "
-                             "name every swept PR in positions 1..k, bottom to "
-                             "top")
+                             "name every historical position 1..k, bottom to "
+                             "top (a confirmed MERGED prefix may precede the "
+                             "OPEN suffix)")
     parser.add_argument("--no-cutover", action="store_true",
                         help="skip the post-merge cutover entirely: no fetch, "
                              "no fast-forward of the main working tree's base "
@@ -1358,6 +1440,14 @@ def main(argv: list[str] | None = None) -> int:
 
         if opts.atomic:
             validate_atomic_sweep(classified)
+        else:
+            # Dry-run and execute must agree on structural executability. A
+            # historical position above 1 is never inferred from `main`; the
+            # caller must name the complete prefix under explicit --atomic.
+            for pull in classified:
+                if track_of(pull) == "A":
+                    assert_open(pull)
+                    assert_bottom_of_stack(pull, atomic=False)
 
         mode = "EXECUTE" if opts.execute else "DRY RUN (nothing merges without --execute)"
         print(f"merge_stack.py: {repo} -- {mode}")
@@ -1400,11 +1490,17 @@ def main(argv: list[str] | None = None) -> int:
 
         if opts.atomic:
             fresh = preflight_atomic_sweep(repo, classified)
-            top = fresh[-1]
+            historical, open_suffix = validate_atomic_sweep(fresh)
+            top = open_suffix[-1]
+            first_open = open_suffix[0]["stackEntry"].get("position")
+            position_label = "OPEN positions" if historical else "positions"
             print(f"Sending one top-entry request for #{top['number']}; this "
-                  f"sweeps positions 1..{len(fresh)}:")
+                  f"sweeps {position_label} {first_open}.."
+                  f"{top['stackEntry'].get('position')} (the "
+                  f"{len(historical)} historical merged member(s) were "
+                  "verified and receive no PUT):")
             merge_track_a(repo, top, opts, preflighted=True)
-            for swept in fresh[:-1]:
+            for swept in open_suffix[:-1]:
                 if not confirm_merged(repo, swept["number"]):
                     raise Refusal(
                         f"#{swept['number']}: the top entry merged, but this "
@@ -1413,9 +1509,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  #{swept['number']} swept and independently confirmed "
                       f"by GET /pulls/{swept['number']}/merge -> 204.")
             print("All named pull requests merged and independently confirmed.")
-            # ONE merge commit landed, so one cutover — carrying every branch
-            # the sweep retired, not just the top entry's.
-            run_cutover(opts, fresh)
+            # ONE new merge commit landed, so one cutover carrying only the
+            # OPEN suffix. Historical prefix members landed earlier and are not
+            # described as part of this request's atomic sweep.
+            run_cutover(opts, open_suffix)
             return 0
 
         queue = list(classified)
