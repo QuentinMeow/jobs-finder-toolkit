@@ -110,6 +110,26 @@ class FilterVariantCorpusTests(unittest.TestCase):
         }]
         self.assertEqual(audit_postings(postings, PROFILE, corpus), [])
 
+    def test_known_manager_product_review_is_not_unlabeled(self):
+        corpus = load_corpus()
+        profile = {
+            **PROFILE,
+            "titles": {
+                "include": ["software engineer", "engineering"],
+                "exclude": ["manager", "director", "head of", "vp"],
+            },
+        }
+        postings = [{
+            "source": "greenhouse",
+            "company": "Example Corp",
+            "title": "Software Engineer, Ads Manager",
+            "url": "https://example.test/jobs/manager-product",
+            "location": "Remote - US",
+            "remote": "remote",
+            "description": "Build reliable distributed services.",
+        }]
+        self.assertEqual(audit_postings(postings, profile, corpus), [])
+
     def test_cosmetic_sponsorship_variants_share_one_signature(self):
         # Punctuation- and capitalization-only variants of the same denial must
         # collapse to a single structural signature (grouping, not novelty).
