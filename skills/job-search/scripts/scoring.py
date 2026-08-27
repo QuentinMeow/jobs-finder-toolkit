@@ -299,8 +299,12 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
     # evidence for an SDET search but primary evidence for another candidate.
     # Keep the profile authoritative and make this guard opt-in. Missing primary
     # evidence is uncertainty, never a hard drop, so a general title remains
-    # recoverable in the existing bounded occupation-review lane.
+    # recoverable in the existing bounded occupation-review lane. A successful
+    # match is recorded below as both a rule id and evidence value so a main-list
+    # admission names the primary phrase that decided it.
     primary_matched = [term for term in primary if term_matches(term, ntitle)]
+    normalized_primary_matched = list(dict.fromkeys(
+        normalize(term) for term in primary_matched))
     if primary and not primary_matched:
         normalized_matched = list(dict.fromkeys(normalize(term) for term in matched))
         normalized_primary = list(dict.fromkeys(normalize(term) for term in primary))
@@ -324,9 +328,14 @@ def assess_title(title: str | None, titles_cfg: dict | None) -> dict:
 
     rule_ids = ([f"title.included.{normalize(t)}" for t in matched]
                 or ["title.included"])
+    rule_ids.extend(
+        f"title.primary_occupation.{term}"
+        for term in normalized_primary_matched)
+    evidence = [level_signal] if level != "unknown" else []
+    evidence.extend(f"primary:{term}" for term in normalized_primary_matched)
     return _title_result(
         "match", level, level_signal, rule_ids=rule_ids,
-        evidence=[level_signal] if level != "unknown" else [])
+        evidence=evidence)
 
 
 def _title_result(decision, level, level_signal, *, rule_ids,
