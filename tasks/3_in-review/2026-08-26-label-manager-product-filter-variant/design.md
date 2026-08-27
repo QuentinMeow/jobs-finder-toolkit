@@ -15,5 +15,9 @@ Reuse the existing true-manager corpus and unit-test controls.
 ## Consequences and rollback
 
 Runtime title decisions do not change. The audit learns one supported review signature, while the
-true-manager and non-delimited-tool boundaries stay hard exclusions. Revert the new corpus rows and
-audit test if a production verdict changes or either fixture maps to an unintended signature.
+canonical title assessor keeps the true-manager and non-delimited-tool fixtures at `no_match` under
+their explicit include/exclude profile. That is not a universal pipeline hard exclusion: configured
+`titles.word_filter.include` or `soft_exclude` rules run at the pipeline boundary and may
+intentionally rescue an assessor `no_match` to review. Revert the new corpus rows and audit test if
+an assessor verdict changes under the fixture profile or either fixture maps to an unintended
+signature.

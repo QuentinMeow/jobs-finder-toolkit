@@ -18,13 +18,16 @@
 
 - Kept production classification unchanged and taught only the audit corpus about the known
   signature; undoing this is a three-fixture rollback with no data migration.
-- Pinned `Software Engineer (Manager Tools)` as an exclusion boundary and reused the existing true
-  manager controls instead of adding duplicate cases.
+- Pinned `Software Engineer (Manager Tools)` as a canonical-title-assessor `no_match` boundary under
+  the fixture profile and reused the existing true-manager controls instead of adding duplicates.
+  This is not a universal pipeline drop: configured `titles.word_filter.include` or `soft_exclude`
+  may intentionally rescue an assessor `no_match` to review.
 
 ## If X then Y
 
-- If a future classifier change alters either boundary, the corpus check fails before the audit can
-  silently accept the broader manager family.
+- If a future title-assessor change alters either fixture-profile boundary, the corpus check fails
+  before the audit can silently accept the broader manager family; a deliberate full-pipeline
+  word-filter rescue remains a separate, supported review path.
 
 ## Dead ends
 
