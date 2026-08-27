@@ -91,9 +91,9 @@ merges into a stale branch with nothing red anywhere (see
 | Tell | `stackEntry` is non-null | `stackEntry` is `null` |
 | Merge command | `PUT repos/{owner}/{repo}/pulls/{n}/merge-async` | `gh pr merge <n> --merge` |
 | `gh pr merge` | **HTTP 403** — refused | the correct command |
-| Bottom-of-stack test | `stackEntry.position == 1` (1-based) | `baseRefName == main` |
+| Bottom-of-stack test | `stackEntry.position == 1`, or explicit `--atomic` with every lower historical position named and confirmed (1-based) | `baseRefName == main` |
 | Retargeting the next PR | GitHub rebases it onto the stack base itself — **do not hand-edit a member's base** | **nothing retargets it but you** — `gh pr edit <n+1> --base main`, then read it back |
-| Merging is | **atomic** — entry *k* lands entries 1…*k* in ONE merge commit named after *k* | one PR, one merge commit |
+| Merging is | **atomic** — entry *k* lands every currently unmerged entry below it through *k* in ONE merge commit named after *k* | one PR, one merge commit |
 
 **The 403 is about stack membership and nothing else.** It is not the token
 (scopes include `repo`; `viewerPermission` is `ADMIN`), not the merge method
@@ -102,7 +102,10 @@ unprotected; the single ruleset restricts only `deletion` and `non_fast_forward`
 
 **For a stacked PR, `baseRefName == "main"` proves nothing.** Entries read `main`
 whether or not they sit at the bottom, so the base field cannot answer "is this
-the one I may merge?" there. `stackEntry.position == 1` can.
+the one I may merge?" there. Position 1 is the ordinary bottom. When lower
+positions already merged and GitHub preserves those historical positions, only
+the driver's explicit complete-prefix `--atomic` proof may establish the lowest
+unmerged member.
 
 ## 2. Step 0 — classify, always, before anything else
 
@@ -152,7 +155,8 @@ A stack member merges through the async endpoint, and **the endpoint's exit code
 is not the result**.
 
 ```bash
-# 1. Assert position == 1 (unless you intend an atomic multi-entry merge).
+# 1. Assert position == 1 (unless the driver's explicit atomic complete-prefix
+#    proof names and confirms every historical lower position).
 # 2. Fire the request. `sha` pins the head you classified.
 gh api --method PUT repos/{owner}/{repo}/pulls/<n>/merge-async \
     -f merge_method=merge -f sha=<headRefOid>
@@ -186,18 +190,24 @@ depend on which path the merge took. When the two sources disagree, report neith
 — that disagreement is itself the finding.
 
 **Merging a stack is atomic, and this is the surprise.** Merging entry *k* merges
-entries 1…*k* into **one** merge commit, titled after entry *k*. So merging the
-top of a seven-entry stack lands all seven and leaves six PRs pointing at a merge
-commit that names none of them. Merge entry 1 unless you specifically want the
-group; `merge_stack.py` refuses `position != 1` without `--atomic`.
+every currently unmerged entry below it through *k* into **one** merge commit,
+titled after entry *k*. If all seven positions are open, merging the top lands
+all seven and leaves six PRs pointing at a merge commit that names none of them.
+If lower positions already merged, only the remaining open group lands now.
+Merge the lowest unmerged entry unless you specifically want the ready group;
+`merge_stack.py` refuses a historical `position != 1` without an explicit
+complete-prefix `--atomic` proof.
 
-**Ready contiguous groups have a fast path.** Name the complete swept prefix in
-bottom-to-top order and select `--atomic`; the driver requires one native stack,
-positions exactly 1…*k*, and every named member to be open and non-draft. On
-`--execute` it freshly re-reads every member, rejects any moved head, then sends
-**one** head-pinned async request for the named top entry. It still polls that
-request to a terminal state and independently confirms the top and every named
-swept member:
+**Ready contiguous groups have a fast path.** Name every historical position
+1…*k* in bottom-to-top order and select `--atomic`; the driver requires one
+native stack and exactly one state shape: a leading `MERGED` prefix (possibly
+empty) followed by a nonempty `OPEN` suffix. On `--execute` it freshly re-reads
+every member and rejects changed state, base, head, stack, position, or size. It
+independently confirms each historical merged member through durable `GET
+/merge -> 204`, requires every open member to be non-draft, mergeable, green,
+and head-pinned, then sends **one** async request for the open top. It polls that
+request to a terminal state and independently confirms the top and every open
+member swept by that new merge:
 
 ```bash
 # Dry run first: says explicitly that #<top> sweeps positions 1..9.
@@ -211,13 +221,23 @@ swept member:
   <position-6> <position-7> <position-8> <position-9>
 ```
 
+This same form resumes a partially merged stack. Keep the already-merged lower
+positions in the command; they are verified and skipped without a PUT. Never
+pass only the higher historical position: a hole, reversed order, mixed stack,
+closed-unmerged predecessor, 404/unknown merge confirmation, or topology/head
+movement refuses before the one irreversible request. Dry-run output separates
+the historical prefix from the open suffix so it never describes earlier work
+as part of the new atomic merge.
+
 The latency reason is measured, not hypothetical: one ready nine-entry atomic
 merge completed in about **6 seconds**, while an older eleven-entry sequential
 merge took about **8 minutes 19 seconds**. The group sizes differ, so this is not
 a per-entry benchmark; it is evidence that avoiding ten extra request/poll/
-retarget cycles removes the dominant stack-merge wait when the whole prefix is
-already approved and ready. If any rung is not ready, omit `--atomic` and merge
-bottom-up normally.
+retarget cycles removes the dominant stack-merge wait when the whole open group
+is already approved and ready. If a rung is not ready, stop before it. A ready
+position 1 may merge alone; after that, GitHub preserves historical positions,
+so resume later with `--atomic` and the complete prefix rather than passing the
+higher PR alone.
 
 **Do not hand-edit a stack member's base.** Inside a native stack GitHub rebases
 the next entry onto the stack base by itself. `gh pr edit --base` here fights the
@@ -389,7 +409,7 @@ Ordered by how convincingly each one looks like success.
 | `enqueued` read as merged | a terminal status, no error | a merge queue holds the request; the trunk does not have the work | treat `enqueued` as not-merged |
 | Retarget that did not take | `gh pr edit` exits 0 | the base is unchanged | re-read `baseRefName` afterwards |
 | Redundant retarget reruns CI | the child already targets the intended base | `gh pr edit --base` mutates an already-correct PR and starts duplicate work | read first; skip the edit when equal |
-| Whole stack merged by accident | one merge commit, six PRs closed | merging entry *k* lands 1…*k* atomically | assert `position == 1` |
+| Whole open stack merged by accident | one merge commit, six PRs closed | merging entry *k* lands every currently unmerged lower entry through *k* atomically | assert position 1, or require explicit complete-prefix `--atomic` |
 | `gh pr merge` on a stack member | HTTP 403 | stack members cannot use it | classify first |
 | A PR number that will not resolve | "Could not resolve to a PullRequest" | the number names a **stack** | check `/stacks` |
 | Base branch deleted | the child PR is closed, not retargeted | GitHub closes children of a deleted base | never `--delete-branch` |
@@ -546,9 +566,10 @@ Rules:
 - **The line goes in the PR body, not in a commit message.** A commit trailer
   works only on the default branch's own commits, and this repo merges through
   merge commits and stacks; the body is the surface that always works.
-- **A stack member closes only what IT fixes.** Merging a stack lands entries
-  1…*k* in one merge commit, so a `Closes` line on the wrong entry closes an
-  issue before its fix is on `main`.
+- **A stack member closes only what IT fixes.** Merging a stack lands every
+  currently unmerged entry below the selected one through *k* in one merge
+  commit, so a `Closes` line on the wrong entry closes an issue before its fix
+  is on `main`.
 - **Do not use it for an issue the PR only partially addresses.** Write
   `Part of #N` instead — GitHub ignores it, and the issue stays open honestly.
 - **Nothing gates this.** It is a convention, deliberately: the eval gate and the
