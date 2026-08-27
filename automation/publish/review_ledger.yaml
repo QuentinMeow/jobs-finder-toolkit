@@ -4324,3 +4324,9 @@
   files: 6
   digest: sha256:00fd0dd8a02e8b7b
   finding: 'Adds a public evidence-precedence rule, fictional sparse-source canary, and generic issue-resolution records. No real identity, employer, application, or dated job-hunt content.'
+- base: a68b2b69
+  reviewed_by: agent
+  date: 2026-08-26
+  files: 9
+  digest: sha256:830ead94b49c9d86
+  finding: 'Updates the public canary count and records fictional canary results, verification, task review state, and session handover for issue #263. No real identity, employer, school, application, salary, or dated job-hunt content.'
