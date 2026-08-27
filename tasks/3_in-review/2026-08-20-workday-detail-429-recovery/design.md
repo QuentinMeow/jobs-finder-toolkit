@@ -20,8 +20,10 @@ not merely a slower request.
 3. Fetch every unique candidate path once, then run at most two recovery rounds over
    only the paths still missing. A 429 defers that tenant by its bounded
    `Retry-After`; a missing or invalid header falls back to bounded 1-second then
-   2-second delays. Transport failures and invalid success bodies use the same
-   finite missed-path rounds without inventing an unbounded loop.
+   2-second delays. Transport failures, response-read exceptions, and invalid
+   success bodies use the same finite missed-path rounds without inventing an
+   unbounded loop. Each path owns its exception boundary, so a broken response
+   cannot discard sibling details already recovered for the tenant.
 4. Key successes by listing path. A recovered path replaces its missed state and is
    emitted once even if it required several HTTP exchanges; a path that succeeded is
    never requested in a recovery round.

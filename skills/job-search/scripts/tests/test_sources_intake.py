@@ -15,6 +15,7 @@ JOBHUNT_DATA_ROOT, so no test writes into a real store.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import shutil
@@ -277,6 +278,32 @@ class WorkdayDetailOutageTests(_FetchCase):
         self.assertIn("Testco", warnings[0])
         self.assertIn("coverage=incomplete", warnings[0])
         self.assertIn("4 total attempts", warnings[0])
+
+    def test_response_read_failure_is_bounded_and_preserves_sibling(self):
+        sources.http_post_json_full = lambda *a, **k: _result(_WORKDAY_PAGE)
+        calls = {"/job/1": 0, "/job/2": 0}
+
+        def _read_failure(url, *a, **k):
+            path = "/job/1" if url.endswith("/job/1") else "/job/2"
+            calls[path] += 1
+            if path == "/job/2":
+                raise http.client.IncompleteRead(b'{"job"', 20)
+            return _result(json.dumps(_workday_detail("1")).encode())
+
+        sources.http_get_full = _read_failure
+        out = self._fetch()
+
+        self.assertEqual([posting.title for posting in out], ["Engineer 1"])
+        self.assertEqual(calls["/job/1"], 1)
+        self.assertEqual(
+            calls["/job/2"], sources._WORKDAY_DETAIL_RECOVERY_ROUNDS + 1)
+        warnings = common.drain_source_warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("1 of 2 detail fetches failed", warnings[0])
+        self.assertIn("4 total attempts", warnings[0])
+        self.assertIn("coverage=incomplete", warnings[0])
+        self.assertIn("IncompleteRead", warnings[0])
+        self.assertIn("not inspected", warnings[0])
 
     def test_healthy_fetch_reports_nothing(self):
         sources.http_post_json_full = lambda *a, **k: _result(_WORKDAY_PAGE)

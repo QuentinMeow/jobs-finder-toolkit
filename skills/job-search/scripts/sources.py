@@ -506,7 +506,13 @@ def _fetch_workday_details(company: str, host: str, site: str, base: str,
         for path in pending:
             pacer.wait()
             url = f"{base}{path}"
-            resp = http_get_full(url, retries=0)
+            try:
+                resp = http_get_full(url, retries=0)
+            except Exception as exc:  # noqa: BLE001 - one path must not abort the tenant
+                attempts += 1
+                last_errors[path] = f"{type(exc).__name__}: {exc}"
+                missed.append(path)
+                continue
             attempts += 1
             if resp.ok:
                 try:

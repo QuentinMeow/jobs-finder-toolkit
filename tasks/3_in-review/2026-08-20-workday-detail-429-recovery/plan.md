@@ -10,5 +10,7 @@
   snapshot-error path.
 - [x] Add offline regressions for delta-seconds, HTTP-date, hostile values,
   tenant isolation, recovery-only behavior, exact-once output, and persistent failure.
+- [x] Bound response-read exceptions per detail path and prove that a persistent
+  broken response neither escapes the recovery loop nor discards a healthy sibling.
 - [x] Run focused tests, the affected job-search suite, and impacted repository gates.
 - [x] Record verification, worklog, handover, public review, and move the task to review.

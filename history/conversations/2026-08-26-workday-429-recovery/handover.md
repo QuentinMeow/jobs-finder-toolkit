@@ -14,7 +14,10 @@ or known broken, and no owner action is required before review.
   neither honored them nor protected the run from a hostile value.
 - Persistent misses remain visible as `coverage=incomplete` evidence in the snapshot;
   before, the warning was durable but recovery did not exist.
-- All 10 focused tests, all 828 job-search tests, and all 12 impacted gates passed.
+- Response-read exceptions are isolated to one posting path, retried finitely, and
+  cannot erase sibling rows that were already recovered.
+- All 10 recovery tests, all 28 intake tests, all 829 job-search tests, and all 12
+  required impacted gates passed after the independent-review repair.
 
 ## Where things stand
 

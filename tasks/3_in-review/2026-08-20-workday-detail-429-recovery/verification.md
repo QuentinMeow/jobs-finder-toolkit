@@ -11,25 +11,38 @@ Ran 10 tests in 0.514s
 OK
 ```
 
+```
+$ ../../../.venv/bin/python -m unittest skills/job-search/scripts/tests/test_sources_intake.py
+............................
+----------------------------------------------------------------------
+Ran 28 tests in 0.066s
+
+OK
+```
+
 The suite uses a loopback-only HTTP server for the real 429 → 200 exchange; the
-managed sandbox therefore required permission to bind `127.0.0.1`.
+managed sandbox therefore required permission to bind `127.0.0.1`. The intake
+suite includes the repaired response-read case: one sibling succeeds once while
+the other raises `IncompleteRead` on all three finite attempts; the warning records
+one of two misses, four total attempts, and `coverage=incomplete`.
 
 ## Complete job-search test suite
 
 ```
 $ ../../../.venv/bin/python -m unittest discover -s skills/job-search/scripts/tests -t skills/job-search/scripts/tests
 ----------------------------------------------------------------------
-Ran 828 tests in 12.822s
+Ran 829 tests in 12.561s
 
 OK
 ```
 
-## Impacted repository gates
+## Required impact-selected repository gates
 
 ```
-$ ../../../.venv/bin/python automation/gates/run_gates.py --lane policy,job-search --jobs 8
-PASS   review-gate-verify-all  exit 0    18.8s
-PASS   tests-job-search       exit 0    14.1s
+$ ../../../.venv/bin/python automation/gates/run_gates.py --impact-from origin/main --jobs 8
+impact from 'origin/main' (merge-base a7924731c09c): focused; lanes: policy, job-search
+PASS   review-gate-verify-all  exit 0    12.6s
+PASS   tests-job-search       exit 0    13.8s
 PASS   instruction-budget     exit 0     0.1s
 PASS   vendor-drift           exit 0     0.1s
 PASS   reconciler             exit 0     0.1s

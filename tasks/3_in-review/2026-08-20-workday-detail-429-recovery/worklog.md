@@ -14,3 +14,13 @@
   file changed; this is implementation code plus deterministic unit coverage.
 - No live Workday tenant benchmark was run; CI/PR review should treat the 250 ms
   default and 10-second provider-delay ceiling as operational defaults to observe.
+
+## 2026-08-26 — session 2 (Codex `/root/workstream_mapper`)
+
+- Repaired the independent review blocker: response-read exceptions now become
+  bounded per-path misses instead of aborting the tenant and losing healthy siblings.
+- Added a full-fetch regression in which one detail succeeds and a second raises
+  `IncompleteRead` through all three finite attempts; the successful row survives
+  and the warning reports one miss, four total attempts, and incomplete coverage.
+- Re-ran the focused tests, complete job-search suite, required impact-selected gate,
+  review ledger checks, reconciler, and pre-commit before committing the repair.
