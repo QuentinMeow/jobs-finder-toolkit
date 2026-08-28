@@ -57,6 +57,44 @@ def _elapsed_ms(start: float) -> int:
     return int((time.monotonic() - start) * 1000)
 
 
+def retry_after_seconds(headers: dict | None, *, now: datetime | None = None,
+                        ceiling: float = 10.0) -> float | None:
+    """Return a bounded ``Retry-After`` delay, or ``None`` when unusable.
+
+    RFC 9110 permits either non-negative delta-seconds or an HTTP-date. Header
+    mappings are not guaranteed to preserve casing, and an upstream value is
+    untrusted input: a date years in the future (or ``Infinity``) must not stall
+    an entire search. The caller owns the retry policy; this helper only parses
+    and clamps the provider's hint.
+    """
+    raw = next((value for key, value in (headers or {}).items()
+                if str(key).lower() == "retry-after"), None)
+    if raw is None:
+        return None
+    limit = max(float(ceiling), 0.0)
+    value = str(raw).strip()
+    try:
+        delay = float(value)
+        if math.isnan(delay):
+            return None
+        if math.isinf(delay):
+            return limit if delay > 0 else 0.0
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at is None:
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        delay = (retry_at - current).total_seconds()
+    return min(max(delay, 0.0), limit)
+
+
 def _do_request(req: urllib.request.Request, timeout: int, method: str,
                 retries: int) -> HttpResult:
     """Perform ``req`` (with retries) and return an ``HttpResult`` — never raises."""
@@ -77,6 +115,11 @@ def _do_request(req: urllib.request.Request, timeout: int, method: str,
                 body = exc.read()
             except Exception:  # noqa: BLE001
                 body = b""
+            finally:
+                try:
+                    exc.close()
+                except Exception:  # noqa: BLE001 — cleanup cannot mask response
+                    pass
             headers = dict(exc.headers.items()) if exc.headers else {}
             ctype = exc.headers.get_content_type() if exc.headers else None
             last = HttpResult(req.full_url, exc.code, body, headers,

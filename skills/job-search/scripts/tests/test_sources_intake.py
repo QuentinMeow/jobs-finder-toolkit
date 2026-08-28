@@ -15,6 +15,7 @@ JOBHUNT_DATA_ROOT, so no test writes into a real store.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import shutil
@@ -44,10 +45,11 @@ _EXAMPLE_PROFILE = yaml.safe_load(
 EXAMPLE_FILTER = title_filter.load_word_lists(_EXAMPLE_PROFILE)
 
 
-def _result(body: bytes) -> HttpResult:
-    return HttpResult(url="https://example.test/x", status=200, body=body,
-                      headers={"content-type": "application/json"}, duration_ms=1,
-                      ok=True, error=None, method="GET",
+def _result(body: bytes, *, status=200, ok=True, error=None,
+            headers=None) -> HttpResult:
+    return HttpResult(url="https://example.test/x", status=status, body=body,
+                      headers=headers or {"content-type": "application/json"},
+                      duration_ms=1, ok=ok, error=error, method="GET",
                       content_type="application/json")
 
 
@@ -203,11 +205,22 @@ class _FetchCase(unittest.TestCase):
         capture_hooks._reset_for_tests()
         self._http = (sources.http_get_full, sources.http_post_json_full,
                       sources.http_get_json)
+        self._workday_timing = (
+            sources._WORKDAY_DETAIL_PACE_SECONDS,
+            sources._WORKDAY_FALLBACK_BACKOFF_SECONDS,
+            sources._WORKDAY_RETRY_AFTER_CEILING_SECONDS,
+        )
+        sources._WORKDAY_DETAIL_PACE_SECONDS = 0
+        sources._WORKDAY_FALLBACK_BACKOFF_SECONDS = 0
+        sources._WORKDAY_RETRY_AFTER_CEILING_SECONDS = 0
         common.drain_source_warnings()
 
     def tearDown(self):
         (sources.http_get_full, sources.http_post_json_full,
          sources.http_get_json) = self._http
+        (sources._WORKDAY_DETAIL_PACE_SECONDS,
+         sources._WORKDAY_FALLBACK_BACKOFF_SECONDS,
+         sources._WORKDAY_RETRY_AFTER_CEILING_SECONDS) = self._workday_timing
         if self._prior is None:
             os.environ.pop("JOBHUNT_DATA_ROOT", None)
         else:
@@ -239,9 +252,10 @@ class WorkdayDetailOutageTests(_FetchCase):
         sources.http_post_json_full = lambda *a, **k: _result(_WORKDAY_PAGE)
 
         def _boom(url, *a, **k):
-            raise RuntimeError("GET failed for %s: HTTP 503 Service Unavailable" % url)
+            return _result(b"", status=503, ok=False,
+                           error="HTTP 503 Service Unavailable")
 
-        sources.http_get_json = _boom
+        sources.http_get_full = _boom
         with self.assertRaises(RuntimeError) as ctx:
             self._fetch()
         self.assertIn("all 2 detail fetches failed", str(ctx.exception))
@@ -251,20 +265,50 @@ class WorkdayDetailOutageTests(_FetchCase):
 
         def _flaky(url, *a, **k):
             if url.endswith("/job/2"):
-                raise RuntimeError("HTTP 429 Too Many Requests")
-            return _workday_detail("1")
+                return _result(b"", status=429, ok=False,
+                               error="HTTP 429 Too Many Requests")
+            return _result(json.dumps(_workday_detail("1")).encode())
 
-        sources.http_get_json = _flaky
+        sources.http_get_full = _flaky
         out = self._fetch()
         self.assertEqual(len(out), 1)
         warnings = common.drain_source_warnings()
         self.assertEqual(len(warnings), 1)
         self.assertIn("1 of 2 detail fetches failed", warnings[0])
         self.assertIn("Testco", warnings[0])
+        self.assertIn("coverage=incomplete", warnings[0])
+        self.assertIn("4 total attempts", warnings[0])
+
+    def test_response_read_failure_is_bounded_and_preserves_sibling(self):
+        sources.http_post_json_full = lambda *a, **k: _result(_WORKDAY_PAGE)
+        calls = {"/job/1": 0, "/job/2": 0}
+
+        def _read_failure(url, *a, **k):
+            path = "/job/1" if url.endswith("/job/1") else "/job/2"
+            calls[path] += 1
+            if path == "/job/2":
+                raise http.client.IncompleteRead(b'{"job"', 20)
+            return _result(json.dumps(_workday_detail("1")).encode())
+
+        sources.http_get_full = _read_failure
+        out = self._fetch()
+
+        self.assertEqual([posting.title for posting in out], ["Engineer 1"])
+        self.assertEqual(calls["/job/1"], 1)
+        self.assertEqual(
+            calls["/job/2"], sources._WORKDAY_DETAIL_RECOVERY_ROUNDS + 1)
+        warnings = common.drain_source_warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("1 of 2 detail fetches failed", warnings[0])
+        self.assertIn("4 total attempts", warnings[0])
+        self.assertIn("coverage=incomplete", warnings[0])
+        self.assertIn("IncompleteRead", warnings[0])
+        self.assertIn("not inspected", warnings[0])
 
     def test_healthy_fetch_reports_nothing(self):
         sources.http_post_json_full = lambda *a, **k: _result(_WORKDAY_PAGE)
-        sources.http_get_json = lambda url, *a, **k: _workday_detail(url[-1])
+        sources.http_get_full = lambda url, *a, **k: _result(
+            json.dumps(_workday_detail(url[-1])).encode())
         self.assertEqual(len(self._fetch()), 2)
         self.assertEqual(common.drain_source_warnings(), [])
 
