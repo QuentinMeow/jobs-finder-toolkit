@@ -237,7 +237,7 @@ evals/
     stage-map.md                # the stage decomposition stage-benchmarks.md pins (fixtures + boundaries)
     reconciliation-stages.md    # the R-leg map: post-merge two-repository reconciliation (R1–R4)
   canaries/
-    <skill>.yaml                # 4–8 canaries per skill, 9 skills (see below)
+    <skill>.yaml                # 4–9 canaries per skill, 9 skills (see below)
   rubrics/
     judging.md                  # shared pass/fail discipline + blind pairwise A/B judging + κ note
     artifact-quality.md         # rubric for the artifacts a skill produces (resume, letter, dossier)
@@ -248,7 +248,7 @@ evals/
 
 The nine skills with a canary set are `application-tracker` (6), `ask-me-anything` (4),
 `behavioral-interview-prep` (5), `company-research` (6), `email-assistant` (8),
-`github-workflow` (4), `interview-calendar` (4), `job-search` (5) and `resume-writer` (8). Two
+`github-workflow` (4), `interview-calendar` (4), `job-search` (5) and `resume-writer` (9). Two
 public skills deliberately have none: `gardener` and `search-recall-audit`, whose routines are
 deterministic scripts covered by unit tests. An edit to either is therefore always a
 "skip with a recorded one-line rationale" under the risk-based gate above — there is no canary

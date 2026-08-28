@@ -287,8 +287,9 @@ never generic flattery.>
 
 <MAIN PARAGRAPH 2 — Unique personal strength (110-150 words): one full-sentence
 paragraph proving your single most differentiating strength for THIS role,
-with a real, quantified achievement from the profile/story bank mapped to the
-JD's top requirements. Tell the story behind a resume bullet; don't relist.>
+with the strongest relevant evidence the profile/story bank supports: use a
+real source-backed metric when one exists; otherwise use a concrete, verifiable
+qualitative example. Tell the story behind a resume bullet; don't relist.>
 
 <OPTIONAL closing (25-45 words): brief call to action + thanks.>
 
@@ -353,9 +354,14 @@ comma-spliced clause lists):
    it matters, and connect that to why you are drawn to this role. Specific and
    substantive — never generic flattery or invented product claims.
 2. **Main paragraph 2 — Unique personal strength (110-150 words).**
-   Prove your single most differentiating strength for THIS role with a real,
-   quantified achievement from the profile / story bank, mapped to the JD's top
-   requirements. Tell the story behind a resume bullet rather than relisting bullets.
+   Prove your single most differentiating strength for THIS role with the strongest
+   relevant evidence the profile / story bank actually supports. Use a real quantified
+   achievement when a relevant source-backed metric exists. When none exists, use a
+   concrete, verifiable qualitative example: a specific action, duty, artifact, or process
+   mapped to the JD's top requirements, plus an outcome only when the approved sources
+   support it. Never estimate, calculate, round, or invent a number to satisfy this recipe.
+   The qualitative fallback changes the evidence form, not the traceability requirement.
+   Tell the story behind a resume bullet rather than relisting bullets.
 
 An **optional** brief closing paragraph (25-45 words) may follow with a call to action and
 a thank-you. The salutation and one-line closings do NOT count toward the two main
@@ -375,8 +381,9 @@ paragraphs.
 - **Full sentences, active voice, strong verbs.** Recruiters read this after the resume; it
   must read like a person wrote it, not a keyword dump. This is the #1 quality bar.
 - **Complement, don't repeat** the resume — tell the story behind a bullet, don't relist it.
-- Mirror the JD's top / most-repeated requirements and prove each with a real, quantified
-  example. Focus on what you bring to them.
+- Mirror the JD's top / most-repeated requirements and prove each with the strongest relevant,
+  source-backed example available: quantified when an approved source contains a relevant metric,
+  otherwise concrete and qualitative. Focus on what you bring to them.
 - **Honesty**: if there's a real gap, name it briefly and reframe as fast-ramping — one clause,
   not a paragraph; never fabricate.
 - **Keep logistics OUT of the persuasive body.** Do NOT put visa/H-1B sponsorship, relocation,

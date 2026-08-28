@@ -4316,6 +4316,24 @@
   reviewed_by: agent
   date: 2026-08-26
   files: 1
+  digest: sha256:9c869fe0a8075eeb
+  finding: 'Claims a public issue-resolution task using only the issue number and generic sparse-source cover-letter behavior. No real identity, employer, application, or dated job-hunt content.'
+- base: 54c16c14
+  reviewed_by: agent
+  date: 2026-08-26
+  files: 6
+  digest: sha256:00fd0dd8a02e8b7b
+  finding: 'Adds a public evidence-precedence rule, fictional sparse-source canary, and generic issue-resolution records. No real identity, employer, application, or dated job-hunt content.'
+- base: a68b2b69
+  reviewed_by: agent
+  date: 2026-08-26
+  files: 9
+  digest: sha256:830ead94b49c9d86
+  finding: 'Updates the public canary count and records fictional canary results, verification, task review state, and session handover for issue #263. No real identity, employer, school, application, salary, or dated job-hunt content.'
+- base: 3c0d946c
+  reviewed_by: agent
+  date: 2026-08-26
+  files: 1
   digest: sha256:629c4e4f51e28933
   finding: none
 - base: 47aca53d
@@ -4353,6 +4371,12 @@
   date: 2026-08-26
   files: 5
   digest: sha256:254b60ebf259d470
+  finding: none
+- base: ed01afc5
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 8
+  digest: sha256:2b9dfa049f586741
   finding: none
 - base: eccaef47
   reviewed_by: agent
@@ -4403,9 +4427,21 @@
   files: 5
   digest: sha256:32b3b5c1a356bc72
   finding: none
+- base: 9cc5a321
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 17
+  digest: sha256:339fa786105c8d2e
+  finding: none
 - base: df9e6611
   reviewed_by: agent
   date: 2026-08-27
   files: 17
   digest: sha256:339fa786105c8d2e
+  finding: none
+- base: c3de504e
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 11
+  digest: sha256:69a68b4eb3384c4d
   finding: none
