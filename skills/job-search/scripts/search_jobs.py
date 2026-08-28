@@ -324,6 +324,7 @@ PROFILE_SCHEMA: dict = {
     "top_k": None,
     "titles": {
         "include": None,
+        "primary": None,
         "exclude": None,
         "exclude_neutralize": None,
         "occupation_review_cap": None,

@@ -172,11 +172,11 @@ FAST = ["--poll-interval", "0", "--timeout", "0"]
 
 class ClassificationTests(GhTestCase):
     def test_stack_membership_is_read_from_graphql(self):
-        fake = FakeGh(pulls={87: stacked(87, position=7, size=7)})
+        fake = FakeGh(pulls={87: stacked(87, position=1, size=7)})
         code, out = self.run_main(["--repo", REPO, "87"], fake)
         self.assertEqual(code, 0, out)
         self.assertIn("#87", out)
-        self.assertIn("#88 pos 7/7", out)
+        self.assertIn("#88 pos 1/7", out)
         self.assertEqual(len(fake.ran("api graphql")), 1)
 
     def test_a_non_stacked_pr_is_track_b(self):
@@ -275,6 +275,47 @@ class DryRunTests(GhTestCase):
         self.assertIn("merging #87 at position 3 sweeps positions 1..3", out)
         self.assertIn("#81, #84, #87", out)
         self.assertEqual(out.count("--method PUT"), 1, out)
+
+    def test_atomic_dry_run_distinguishes_historical_prefix_from_open_sweep(self):
+        """The live #375 shape plans no second PUT for its merged bottom."""
+        fake = FakeGh(pulls={
+            371: stacked(371, position=1, size=2, stack_number=375,
+                         state="MERGED", head="a" * 40),
+            374: stacked(374, position=2, size=2, stack_number=375,
+                         head="b" * 40),
+        })
+        code, out = self.run_main(
+            ["--repo", REPO, "--atomic", "371", "374"], fake)
+        self.assertEqual(code, 0, out)
+        self.assertIn("historical merged prefix", out)
+        self.assertIn("verify each with GET /merge -> 204", out)
+        self.assertIn("sweeps OPEN positions 2..2 (#374)", out)
+        self.assertEqual(out.count("--method PUT"), 1, out)
+        self.assertIn("pulls/374/merge-async", out)
+        self.assertNotIn("pulls/371/merge-async", out)
+        self.assertEqual(fake.ran("/merge"), [],
+                         "a dry run describes but does not perform confirmation")
+
+    def test_atomic_dry_run_refuses_a_lone_historical_position_two(self):
+        fake = FakeGh(pulls={
+            374: stacked(374, position=2, size=2, stack_number=375),
+        })
+        code, out = self.run_main(
+            ["--repo", REPO, "--atomic", "374"], fake)
+        self.assertEqual(code, 1, out)
+        self.assertIn("complete contiguous prefix [1]", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_non_atomic_dry_run_refuses_position_two_instead_of_printing_put(self):
+        """The unsupported live command must not tell the caller to execute."""
+        fake = FakeGh(pulls={
+            374: stacked(374, position=2, size=2, stack_number=375),
+        })
+        code, out = self.run_main(["--repo", REPO, "374"], fake)
+        self.assertEqual(code, 1, out)
+        self.assertIn("not the bottom", out)
+        self.assertNotIn("--method PUT", out)
+        self.assertNotIn("Re-run with --execute", out)
 
 
 class TrackATests(GhTestCase):
@@ -417,6 +458,216 @@ class TrackATests(GhTestCase):
             self.assertIn(
                 ["api", f"repos/{REPO}/pulls/{number}/merge"], fake.calls)
 
+    def test_atomic_resumes_after_confirmed_historical_prefix(self):
+        """Exact live shape: MERGED pos1 + OPEN pos2 sends only pos2's PUT."""
+        cutovers = []
+        original_cutover = merge_stack.run_cutover
+        merge_stack.run_cutover = lambda opts, pulls: cutovers.append(
+            [pull["number"] for pull in pulls])
+        self.addCleanup(
+            lambda: setattr(merge_stack, "run_cutover", original_cutover))
+        fake, dispatch = self._fake(pulls={
+            371: [stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED", head="a" * 40,
+                          check_state=None),
+                  stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED", head="a" * 40,
+                          check_state=None)],
+            374: [stacked(374, position=2, size=2, stack_number=375,
+                          head="b" * 40),
+                  stacked(374, position=2, size=2, stack_number=375,
+                          head="b" * 40)],
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "371", "374"])
+        self.assertEqual(code, 0, out)
+        puts = fake.ran("--method PUT")
+        self.assertEqual(len(puts), 1, fake.calls)
+        self.assertIn("pulls/374/merge-async", " ".join(puts[0]))
+        self.assertNotIn("pulls/371/merge-async", " ".join(puts[0]))
+        prefix_check = ["api", f"repos/{REPO}/pulls/371/merge"]
+        self.assertIn(prefix_check, fake.calls)
+        graphql_indices = [index for index, call in enumerate(fake.calls)
+                           if "api graphql" in " ".join(call)]
+        self.assertLess(fake.calls.index(prefix_check), max(graphql_indices))
+        self.assertLess(max(graphql_indices), fake.calls.index(puts[0]))
+        self.assertIn("pre-existing MERGED", out)
+        self.assertIn("skipping it without a PUT", out)
+        self.assertNotIn("#371 swept", out)
+        self.assertEqual(cutovers, [[374]],
+                         "historical branches did not land in this cutover")
+
+    def test_atomic_resumes_after_two_confirmed_historical_members(self):
+        fake, dispatch = self._fake(pulls={
+            371: [stacked(371, position=1, size=3, stack_number=375,
+                          state="MERGED", head="a" * 40),
+                  stacked(371, position=1, size=3, stack_number=375,
+                          state="MERGED", head="a" * 40)],
+            372: [stacked(372, position=2, size=3, stack_number=375,
+                          state="MERGED", head="b" * 40),
+                  stacked(372, position=2, size=3, stack_number=375,
+                          state="MERGED", head="b" * 40)],
+            374: [stacked(374, position=3, size=3, stack_number=375,
+                          head="c" * 40),
+                  stacked(374, position=3, size=3, stack_number=375,
+                          head="c" * 40)],
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", "--no-cutover",
+             *FAST, "371", "372", "374"])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(fake.ran("--method PUT")), 1, fake.calls)
+        self.assertIn(["api", f"repos/{REPO}/pulls/371/merge"], fake.calls)
+        self.assertIn(["api", f"repos/{REPO}/pulls/372/merge"], fake.calls)
+        self.assertIn("historical merged member(s) were verified", out)
+
+    def test_atomic_refuses_when_historical_prefix_is_not_confirmed_merged(self):
+        fake, dispatch = self._fake(pulls={
+            371: [stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED"),
+                  stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED")],
+            374: stacked(374, position=2, size=2, stack_number=375),
+        })
+        fake.responses = {
+            f"pulls/371/merge": (1, "", "gh: Not Found (HTTP 404)"),
+            **fake.responses,
+        }
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "371", "374"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("GraphQL says MERGED", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_refuses_unknown_historical_confirmation_status(self):
+        fake, dispatch = self._fake(pulls={
+            371: [stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED"),
+                  stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED")],
+            374: stacked(374, position=2, size=2, stack_number=375),
+        })
+        fake.responses = {
+            f"pulls/371/merge": (1, "", "gh: Server Error (HTTP 500)"),
+            **fake.responses,
+        }
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "371", "374"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("neither 204 nor 404", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_refuses_nonleading_merged_member_before_any_put(self):
+        fake, dispatch = self._fake(pulls={
+            371: stacked(371, position=1, size=3, stack_number=375),
+            372: stacked(372, position=2, size=3, stack_number=375,
+                         state="MERGED"),
+            374: stacked(374, position=3, size=3, stack_number=375),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST,
+             "371", "372", "374"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("one leading contiguous prefix", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_refuses_closed_unmerged_predecessor_before_any_put(self):
+        fake, dispatch = self._fake(pulls={
+            371: stacked(371, position=1, size=2, stack_number=375,
+                         state="CLOSED"),
+            374: stacked(374, position=2, size=2, stack_number=375),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "371", "374"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("not OPEN", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_refuses_only_merged_members_before_any_put(self):
+        fake, dispatch = self._fake(pulls={
+            371: stacked(371, position=1, size=1, stack_number=375,
+                         state="MERGED"),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "371"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("only already-MERGED members", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_refuses_resume_topology_drift_before_any_put(self):
+        fake, dispatch = self._fake(pulls={
+            371: [stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED"),
+                  stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED")],
+            374: [stacked(374, position=2, size=2, stack_number=375,
+                          head="b" * 40),
+                  stacked(374, position=2, size=2, stack_number=376,
+                          head="b" * 40)],
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "371", "374"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("stack plan changed", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_refuses_resume_base_drift_before_any_put(self):
+        fake, dispatch = self._fake(pulls={
+            371: [stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED"),
+                  stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED")],
+            374: [stacked(374, position=2, size=2, stack_number=375,
+                          base="main", head="b" * 40),
+                  stacked(374, position=2, size=2, stack_number=375,
+                          base="release", head="b" * 40)],
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "371", "374"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("base='main'->'release'", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_refuses_resume_state_drift_before_any_put(self):
+        fake, dispatch = self._fake(pulls={
+            371: [stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED"),
+                  stacked(371, position=1, size=2, stack_number=375,
+                          state="CLOSED")],
+            374: stacked(374, position=2, size=2, stack_number=375),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "371", "374"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("state='MERGED'->'CLOSED'", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
+    def test_atomic_refuses_open_member_that_is_not_mergeable(self):
+        fake, dispatch = self._fake(pulls={
+            371: [stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED"),
+                  stacked(371, position=1, size=2, stack_number=375,
+                          state="MERGED")],
+            374: stacked(374, position=2, size=2, stack_number=375,
+                         mergeable="CONFLICTING"),
+        })
+        code, out = self._run(
+            fake, dispatch,
+            ["--repo", REPO, "--execute", "--atomic", *FAST, "371", "374"])
+        self.assertEqual(code, 1, out)
+        self.assertIn("not 'MERGEABLE'", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
+
     def test_atomic_requires_every_swept_position_to_be_named(self):
         fake, dispatch = self._fake(pulls={
             81: stacked(81, position=1, size=4),
@@ -551,8 +802,7 @@ class TrackATests(GhTestCase):
                             ["--repo", REPO, "--execute", *FAST, "87"])
         self.assertEqual(code, 1)
 
-    def test_an_atomic_sweep_is_reported_and_skipped(self):
-        """Merging entry k lands 1..k; a PR named later can already be merged."""
+    def test_non_atomic_stack_positions_above_one_refuse_before_any_put(self):
         fake, dispatch = self._fake(pulls={
             87: [stacked(87, position=1, size=2)],
             86: [stacked(86, position=2, size=2),
@@ -560,9 +810,9 @@ class TrackATests(GhTestCase):
         })
         code, out = self._run(fake, dispatch,
                               ["--repo", REPO, "--execute", *FAST, "87", "86"])
-        self.assertEqual(code, 0, out)
-        self.assertIn("swept into the same atomic merge", out)
-        self.assertEqual(len(fake.ran("--method PUT")), 1)
+        self.assertEqual(code, 1, out)
+        self.assertIn("not the bottom", out)
+        self.assertEqual(fake.ran("--method PUT"), [])
 
 
 class TrackBTests(GhTestCase):

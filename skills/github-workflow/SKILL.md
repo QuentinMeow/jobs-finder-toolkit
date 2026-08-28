@@ -179,6 +179,15 @@ gh pr create --base feat/01-parser  --head feat/02-renderer --title '...' --body
 gh pr create --base feat/02-renderer --head feat/03-cli     --title '...' --body-file local/pr-3.md
 ```
 
+**Every response that opens a dependent PR also states both merge outcomes:**
+
+- Merge bottom-up and classify each PR before merging.
+- Native stack: use the async stack path; GitHub rebases the next entry, so
+  never hand-edit its base.
+- Ordinary chain: use `gh pr merge`; after the parent lands, retarget the child
+  to `main` and read the base back.
+- Keep the lower head branch in both worlds—deleting it closes the child PR.
+
 **Accepting that offer changes which merge commands work.** A native stack is a
 first-class server-side object with its own number; its members **cannot** be
 merged by `gh pr merge` (HTTP 403), they merge through
@@ -211,20 +220,33 @@ probes tell them apart: `gh api repos/{owner}/{repo}/stacks` lists every stack
 (`?state=open` is ignored — filter on `.open`), and GraphQL's
 `pullRequest { baseRefName stackEntry { position stack { number size } } }` says
 whether *this* PR is in one and where. A **stack member** merges only through
-`PUT .../pulls/<n>/merge-async` (`gh pr merge` answers HTTP 403) and needs
-`stackEntry.position == 1` — inside a stack `baseRefName` reads `main` for entries
-that are not at the bottom, so it proves nothing there. An **ordinary PR** merges
+`PUT .../pulls/<n>/merge-async` (`gh pr merge` answers HTTP 403) and normally
+needs `stackEntry.position == 1` — inside a stack `baseRefName` reads `main` for
+entries that are not at the bottom, so it proves nothing there. GitHub preserves
+historical positions after lower members merge; the only resume path is explicit
+`--atomic` with every position 1…*k* named, shaped as a durable-confirmed
+`MERGED` prefix followed by the `OPEN` suffix. An **ordinary PR** merges
 with `gh pr merge <n> --merge` and needs `baseRefName` to be the branch you intend;
 nothing retargets it but you. Merging out of order strands the PRs below, and
 **deleting a head branch on merge closes** the PR above it rather than retargeting
 it (`#136`). Any SHA rewrite orphans the review-ledger rows written on those
 branches — see "A stacked PR's row does not survive the merge" below.
 
-**Merging a stack is atomic.** Merging entry *k* merges entries 1…*k* into **one**
-merge commit, titled after entry *k*: in stack `#88`, PRs `#81`, `#84` and `#87`
-all carry merge commit `281bc9333e8f84c8c5049aef808f438df0f335cd` ("Merge pull
-request #87"), so merging the top would have landed all seven. Merge entry 1
-unless you want the whole group.
+**Merging a stack is atomic.** Merging entry *k* merges every currently unmerged
+entry below it through *k* into **one** merge commit, titled after entry *k*.
+When the whole prefix is open, that is positions 1…*k*: in stack `#88`, PRs
+`#81`, `#84` and `#87` all carry merge commit
+`281bc9333e8f84c8c5049aef808f438df0f335cd` ("Merge pull request #87"), so
+merging the top then would have landed all seven. Merge the lowest unmerged entry
+unless you want the ready open group.
+
+If a lower member already merged but GitHub still reports its historical
+position, name the complete prefix and use `--atomic`; do not pass the higher PR
+alone. The driver freshly reclassifies every name, independently confirms each
+leading `MERGED` member through `GET /merge -> 204`, requires the remaining
+members to be open, mergeable and green, then sends one head-pinned request for
+the open top. A hole, reordered position, closed predecessor, changed topology,
+or unconfirmed merged state refuses before any PUT.
 
 **The merge recipe, and why `delete_branch_on_merge` stays off.** Auto-retarget is
 a **stack** behaviour and has nothing to do with `delete_branch_on_merge`: inside a
