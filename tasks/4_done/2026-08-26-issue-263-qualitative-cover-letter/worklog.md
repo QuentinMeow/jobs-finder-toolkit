@@ -26,3 +26,13 @@
 - Final verification passed: 147 deterministic resume-writer tests and all 19 impact-selected
   repository gates. The eval pins match the implementation commit, the instruction budget is green,
   and the task is now in review with its public handover and verification record complete.
+
+## 2026-08-27 — session 3 (Codex merge orchestrator)
+
+- Refreshed the reviewed branch twice as `main` advanced beneath it, using normal merge commits.
+  Both conflicts were confined to the append-only review ledger and preserved each parent history.
+- Corrected the first unpushed merge commit's authorship trailers before publication; no feature
+  file changed. Two independent reviewers approved final head `f430cc10`.
+- All 19 selected gates, all 147 focused resume-writer tests, the existing 9/9 canary record, and
+  GitHub CI were green. PR #373 merged as `3f3d123c`, closing issue #263, and its local branch and
+  worktree were later retired through recoverable cleanup.

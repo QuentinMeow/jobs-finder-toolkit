@@ -35,3 +35,12 @@
   raised a permission error.
 - Replaced the three path-like agent labels with plain role text. No runtime code,
   retry behavior, or user-facing search result changed in this repair.
+
+## 2026-08-27 — session 4 (Codex merge orchestrator)
+
+- Merged the latest public `main` into the reviewed branch without rebasing or rewriting it. The
+  append-only review ledger was the sole conflict; both parent histories were preserved unchanged.
+- Independent review approved final head `5e5a34f9`, exact-head gates and CI passed, and PR #372
+  merged as `aeaf1fc8`. Issue #235 closed with the merge.
+- The final publication repair changed no Workday runtime or test byte from the reviewed feature
+  head. Its local branch and worktree were later retired through recoverable cleanup.

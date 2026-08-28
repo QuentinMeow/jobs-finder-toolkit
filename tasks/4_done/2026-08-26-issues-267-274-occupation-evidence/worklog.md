@@ -26,3 +26,14 @@
   that branch while the PR is open, or rebase onto `main` only after it merges.
 - Refreshed evidence is green: 9 focused occupation tests, 200 impacted focused tests,
   828 full job-search tests, 187 corpus cases, and all 12 impact-selected policy/job-search gates.
+
+## 2026-08-27 — session 4 (Codex merge orchestrator)
+
+- After PR #371 merged, refreshed the reviewed occupation branch from current `main` without a
+  rebase or force-push. The append-only review ledger was the sole conflict, and the resolution
+  preserved both histories plus the exact reconciliation row.
+- Independent review approved final head `ebac6a99`; all 12 selected gates, all 828 job-search
+  tests, and GitHub CI passed without changing the reviewed occupation feature bytes.
+- The repaired explicit-prefix stack driver merged PR #374 behind independently confirmed PR #371.
+  The merge landed as `71ec5b0a`, closed issues #267 and #274, and the local branch and worktree
+  were later retired through recoverable cleanup.

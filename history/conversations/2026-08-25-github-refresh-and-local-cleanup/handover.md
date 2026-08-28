@@ -14,7 +14,7 @@
 ## Where things stand
 
 - In review on `codex/github-refresh-and-cleanup`; all five canaries and all 32 selected pre-PR
-  gates passed. Full evidence is in the [task verification](../../../tasks/3_in-review/2026-08-25-refresh-main-and-clean-agent-branches/verification.md).
+  gates passed. Full evidence is in the [task verification](../../../tasks/4_done/2026-08-25-refresh-main-and-clean-agent-branches/verification.md).
 
 ## Decisions made for you
 
