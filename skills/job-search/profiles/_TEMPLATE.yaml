@@ -8,6 +8,14 @@ updated: "YYYY-MM-DD"
 titles:
   include:                 # title must contain >=1 of these (word-boundary, case-insensitive)
     - software engineer
+  # Optional for a SPECIALIZED search: a title that matches `include` but none of
+  # these stays recoverable in the bounded review lane instead of entering the
+  # main shortlist. This list is profile-owned; scripts never guess broad words.
+  # Leave empty for a general search. Use occupation-bearing phrases such as
+  # "ios engineer" or "qa automation sdet", not broad domain words such as
+  # "mobile", "application", or "quality". Matching is bounded and
+  # separator-insensitive rather than literal-string equality.
+  primary: []
   exclude:                 # drop if title contains any of these
     - manager
     - intern

@@ -4360,3 +4360,52 @@
   files: 8
   digest: sha256:2b9dfa049f586741
   finding: none
+- base: 67a0375f
+  reviewed_by: agent
+  date: 2026-08-26
+  files: 2
+  digest: sha256:15c5ef06803ae624
+  finding: none
+- base: 07ee3139
+  reviewed_by: agent
+  date: 2026-08-26
+  files: 13
+  digest: sha256:d5244d1ef9523726
+  finding: none
+- base: 4a1fdb20
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 11
+  digest: sha256:34953ce11be0c374
+  finding: none
+- base: f42f9c69
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 7
+  digest: sha256:bd9d187b321e469a
+  finding: 'Adds fictional Android and React Native precedence controls and records the public stack dependency on PR #371. No real identity, employer, school, application, salary, or dated job-hunt content.'
+- commit: 714074ca
+  base: d149ca69
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 13
+  digest: sha256:aeed51183c0ca398
+  finding: 'Reconciles GitHub''s four exact patch-equivalent rewrites of issue #267/#274 after PR #371 merged. The original reviewed commits remain the merge''s other parent; no product tree bytes differ. Public fictional occupation fixtures and process records only; no real identity, employer, school, application, salary, or dated job-hunt content.'
+- base: 67a0375f
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 5
+  digest: sha256:32b3b5c1a356bc72
+  finding: none
+- base: 714074ca
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 5
+  digest: sha256:32b3b5c1a356bc72
+  finding: none
+- base: df9e6611
+  reviewed_by: agent
+  date: 2026-08-27
+  files: 17
+  digest: sha256:339fa786105c8d2e
+  finding: none
